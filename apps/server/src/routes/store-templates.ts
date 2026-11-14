@@ -6,6 +6,8 @@ import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   storeTemplateApplyErrorSchema,
   storeTemplateApplyRequestSchema,
+  storeTemplateCopyRequestSchema,
+  storeTemplateDashboardErrorSchema,
   storeTemplateInstallListSchema,
   storeTemplatePlanSchema,
   storeTemplateOptionsSchema,
@@ -18,6 +20,8 @@ import { createStoreTemplateService } from "../dashboards/store-template-service
 import {
   createStoreTemplateUpdateService,
   StoreUpdateDecisionMissing,
+  StoreUpdateReviewChanged,
+  StoreUpdateScopeNotApplicable,
   StoreUpdateUnmergeable,
 } from "../dashboards/store-template-updates.js";
 import type { StoreTemplateDefinition } from "../dashboards/store-template.js";
@@ -30,6 +34,10 @@ const installParamsSchema = z.object({ requestId: z.uuid() });
 const updateParamsSchema = z.object({
   requestId: z.uuid(),
   updateId: z.uuid(),
+});
+const updateDashboardParamsSchema = z.object({
+  updateId: z.uuid(),
+  key: z.string().regex(/^dashboard:[a-z0-9:_-]{1,100}$/),
 });
 
 export function registerStoreTemplateRoutes(
@@ -278,6 +286,127 @@ export function registerStoreTemplateRoutes(
             return reply.code(204).send();
           } catch (error) {
             return sendError(reply, ...failed(error));
+          }
+        },
+      );
+      /** Errors of the updated dashboard's copy, swap and swap back. */
+      const dashboardError = (
+        reply: Parameters<typeof sendError>[0],
+        error: unknown,
+      ) => {
+        if (error instanceof StoreUpdateReviewChanged)
+          return reply.code(409).send(
+            storeTemplateDashboardErrorSchema.parse({
+              error: error.code,
+              records: error.records,
+              ...(error.refs.length ? { refs: error.refs } : {}),
+            }),
+          );
+        if (error instanceof StoreUpdateUnmergeable)
+          return reply.code(409).send(
+            storeTemplateDashboardErrorSchema.parse({
+              error: error.code,
+              key: error.key,
+              refs: error.refs,
+              ...(error.paths.length ? { paths: error.paths } : {}),
+            }),
+          );
+        if (error instanceof StoreUpdateScopeNotApplicable)
+          return reply.code(409).send(
+            storeTemplateDashboardErrorSchema.parse({
+              error: error.code,
+              devices: error.devices,
+            }),
+          );
+        return sendError(reply, ...failed(error));
+      };
+      for (const [action, summary] of [
+        [
+          "swap",
+          "Put the updated copy of a store-template dashboard on every screen of the original in one step, archiving the original",
+        ],
+        [
+          "swap-back",
+          "Put the archived original of a swapped store-template dashboard back on its screens, archiving the copy",
+        ],
+      ] as const)
+        scope.post(
+          `${path}/updates/:updateId/dashboards/:key/${action}`,
+          {
+            schema: routeSchema({
+              summary,
+              tags: ["dashboards"],
+              response: storeTemplateUpdateSchema,
+              errors: [403, 404, 409, 503],
+              errorSchemas: { 409: storeTemplateDashboardErrorSchema },
+            }),
+          },
+          async (request, reply) => {
+            const access = await resolveAccess(deps.db, request, reply);
+            if (!access) return;
+            if (
+              !can(access.role, "dashboards:update") ||
+              !can(access.role, "devices:manage")
+            )
+              return sendError(reply, 403, "forbidden");
+            const params = updateDashboardParamsSchema.safeParse(
+              request.params,
+            );
+            if (!params.success)
+              return sendError(reply, 404, "store_template_update_not_found");
+            try {
+              reply.header("cache-control", "no-store");
+              const { updateId, key } = params.data;
+              return storeTemplateUpdateSchema.parse(
+                action === "swap"
+                  ? await updates.swap(access, updateId, key)
+                  : await updates.swapBack(access, updateId, key),
+              );
+            } catch (error) {
+              return dashboardError(reply, error);
+            }
+          },
+        );
+      scope.post(
+        `${path}/updates/:updateId/dashboards/:key/copy`,
+        {
+          schema: routeSchema({
+            summary:
+              "Create the updated copy of a store-template dashboard, unassigned from screens, once the update's data is published",
+            tags: ["dashboards"],
+            body: storeTemplateCopyRequestSchema.nullish(),
+            response: storeTemplateUpdateSchema,
+            errors: [400, 403, 404, 409, 503],
+            errorSchemas: { 409: storeTemplateDashboardErrorSchema },
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (!can(access.role, "dashboards:create"))
+            return sendError(reply, 403, "forbidden");
+          const params = updateDashboardParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "store_template_update_not_found");
+          const body = storeTemplateCopyRequestSchema
+            .nullish()
+            .safeParse(request.body);
+          if (!body.success) return sendError(reply, 400, "invalid_request");
+          try {
+            reply.header("cache-control", "no-store");
+            return storeTemplateUpdateSchema.parse(
+              await updates.createCopy(
+                access,
+                params.data.updateId,
+                params.data.key,
+                {
+                  replace: body.data?.replace === true,
+                  discardCopyEdits: body.data?.discardCopyEdits === true,
+                },
+              ),
+            );
+          } catch (error) {
+            return dashboardError(reply, error);
           }
         },
       );

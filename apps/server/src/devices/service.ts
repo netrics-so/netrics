@@ -41,6 +41,7 @@ import {
   insertDevice,
   insertPairing,
   issueDeviceTokens,
+  lockDashboardArchive,
   listDevices,
   pruneStalePairings,
   readPairing,
@@ -200,7 +201,7 @@ export function storedScope(row: DeviceRow): DeviceFilterScope {
  * as for a dashboard's own fixed scope; disabled slides count, since they
  * can be enabled later.
  */
-function validateScope(
+export function validateScope(
   dashboard: NonNullable<Awaited<ReturnType<typeof findDashboard>>>,
   values: DeviceFilterScope,
 ): string | null {
@@ -423,11 +424,15 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         db,
         { workspaceId: actor.workspaceId, userId: actor.userId },
         async (tx): Promise<Result<DeviceRow>> => {
-          if (
-            body.dashboardId &&
-            !(await findDashboard(tx, actor.workspaceId, body.dashboardId))
-          ) {
-            return fail(404, "dashboard_not_found");
+          if (body.dashboardId) {
+            const dashboard = await lockDashboardArchive(
+              tx,
+              actor.workspaceId,
+              body.dashboardId,
+            );
+            if (!dashboard) return fail(404, "dashboard_not_found");
+            // Replaced by an updated store-template copy (11E).
+            if (dashboard.archivedAt) return fail(409, "dashboard_archived");
           }
           const platform = storedPlatform(pairing.platform);
           const device = await insertDevice(tx, {
@@ -815,10 +820,16 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         db,
         { workspaceId: actor.workspaceId, userId: actor.userId },
         async (tx) => {
-          if (
-            body.dashboardId &&
-            !(await findDashboard(tx, actor.workspaceId, body.dashboardId))
-          ) {
+          // Under a share lock: a concurrent template swap archiving it
+          // either moves this screen too or is seen here (11E).
+          const assigned = body.dashboardId
+            ? await lockDashboardArchive(
+                tx,
+                actor.workspaceId,
+                body.dashboardId,
+              )
+            : null;
+          if (body.dashboardId && !assigned) {
             return fail<Device>(404, "dashboard_not_found");
           }
           const current = await findDevice(tx, actor.workspaceId, deviceId, {
@@ -826,6 +837,14 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           });
           if (!current) {
             return fail<Device>(404, "device_not_found");
+          }
+          // An archived dashboard (replaced by an updated store-template
+          // copy, 11E) takes no new screens; one already on it keeps it.
+          if (
+            assigned?.archivedAt &&
+            body.dashboardId !== current.dashboardId
+          ) {
+            return fail<Device>(409, "dashboard_archived");
           }
           const dashboardId =
             body.dashboardId !== undefined

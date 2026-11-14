@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Dashboard } from "@netrics/database";
 import {
   customerReplacement,
+  dashboardFromItems,
   dashboardItems,
   desymbolize,
   isScopeItem,
@@ -632,5 +633,45 @@ describe("store-template items", () => {
       `preparation:source:${apple.id}:downloads#step:calculate_store_name`,
     );
     expect(refs).toContain(`preparation:source:${apple.id}:downloads#output:0`);
+  });
+});
+
+describe("dashboardFromItems", () => {
+  const key = "dashboard:portfolio" as const;
+  const widget = (slide: string, title: string) => ({
+    slide,
+    type: "text",
+    title,
+  });
+  const items = (entries: [string, unknown][]): Items =>
+    new Map(entries.map(([ref, value]) => [`${key}#${ref}` as never, value]));
+
+  it("keeps the customer's widget and slide order, with additions after their predecessor", () => {
+    const current = items([
+      ["slide:custom:mine", { name: "Mine" }],
+      ["slide:0", { name: "Template" }],
+      ["widget:custom:own", widget("slide:0", "Own")],
+      ["widget:downloads", widget("slide:0", "Downloads")],
+    ]);
+    const next = items([
+      ["slide:0", { name: "Template" }],
+      ["widget:downloads", widget("slide:0", "Downloads")],
+      ["widget:summary", widget("slide:0", "Summary")],
+    ]);
+    // Merged items come sorted by reference, not in dashboard order.
+    const merged = items([
+      ["slide:0", { name: "Template" }],
+      ["slide:custom:mine", { name: "Mine" }],
+      ["widget:summary", widget("slide:0", "Summary")],
+      ["widget:downloads", widget("slide:0", "Downloads")],
+      ["widget:custom:own", widget("slide:0", "Own")],
+    ]);
+    const dashboard = dashboardFromItems(key, merged, { current, next }, {});
+    expect(Object.keys(dashboard.slides)).toEqual(["custom:mine", "slide:0"]);
+    expect(Object.keys(dashboard.widgets)).toEqual([
+      "custom:own",
+      "widget:downloads",
+      "widget:summary",
+    ]);
   });
 });

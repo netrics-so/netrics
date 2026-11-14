@@ -519,6 +519,13 @@
       "when": 1794695153757,
       "tag": "0073_oauth_authorization_project",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1794697392178,
+      "tag": "0074_dashboard_archive",
+      "breakpoints": true
     }
   ]
 }

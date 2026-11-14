@@ -72,6 +72,7 @@ export async function presentSummaries(
         ? summary.primaryFormat
         : "16x9",
       screenCount: summary.screenCount,
+      archivedAt: summary.archivedAt?.toISOString() ?? null,
       preview: {
         background: theme.tokens.background,
         surface: theme.tokens.surface,

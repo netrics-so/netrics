@@ -1191,6 +1191,45 @@ describe("device dashboard", () => {
     });
   });
 
+  it("refuses to assign an archived dashboard to a screen", async () => {
+    const signups = { metricKey: "demo.signups", period: "last_7_days" };
+    const replaced = await tileDashboard("Replaced wall", [
+      { ...signups, connectionId, title: "Sign-ups" },
+    ]);
+    const { device, accessToken } = await pair("Archive TV", replaced);
+    const other = await pair("Other TV", salesId);
+    await admin`update dashboards set archived_at = now() where id = ${replaced}`;
+    // A screen already on it keeps working until it is swapped.
+    expect((await read(accessToken)).body.dashboard).toEqual({
+      id: replaced,
+      name: "Replaced wall",
+    });
+    expect(
+      (
+        await call(
+          "PATCH",
+          `/v1/workspaces/${workspaceId}/devices/${device.id}`,
+          { cookie: owner, payload: { name: "Renamed archive TV" } },
+        )
+      ).statusCode,
+    ).toBe(200);
+    // No other screen can be put on it, neither on PATCH nor on pairing.
+    expectError(
+      await reassign(other.device.id, replaced),
+      409,
+      "dashboard_archived",
+    );
+    const pairing = await startPairing();
+    expectError(
+      await approve(owner, { code: pairing.code, dashboardId: replaced }),
+      409,
+      "dashboard_archived",
+    );
+    const [row] =
+      await admin`select dashboard_id from devices where id = ${other.device.id}`;
+    expect(row!.dashboard_id).toBe(salesId);
+  });
+
   it("reports the connection's health per tile", async () => {
     const { accessToken } = await pair("Health TV", brokenId);
     // The data is there, but the connection needs new credentials.

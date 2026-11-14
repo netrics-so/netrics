@@ -9,6 +9,7 @@ import {
   compareMeasureQuerySchema,
   compareMeasureReadingsResponseSchema,
   publishedModelCatalogSchema,
+  dashboardListQuerySchema,
   projectFilterQuerySchema,
 } from "@netrics/contracts";
 import {
@@ -319,7 +320,7 @@ export function registerDashboardRoutes(
           schema: routeSchema({
             summary: "List dashboards",
             tags: ["dashboards"],
-            querystring: projectFilterQuerySchema,
+            querystring: dashboardListQuerySchema,
             response: dashboardListResponseSchema,
             errors: [403, 404],
           }),
@@ -329,7 +330,7 @@ export function registerDashboardRoutes(
           if (!access) {
             return;
           }
-          const filter = projectFilterQuerySchema.safeParse(request.query);
+          const filter = dashboardListQuerySchema.safeParse(request.query);
           if (!filter.success) {
             return sendError(reply, 400, "invalid_request");
           }
@@ -469,7 +470,7 @@ export function registerDashboardRoutes(
           schema: routeSchema({
             summary: "Delete a dashboard",
             tags: ["dashboards"],
-            errors: [403, 404],
+            errors: [403, 404, 409],
           }),
         },
         async (request, reply) => {

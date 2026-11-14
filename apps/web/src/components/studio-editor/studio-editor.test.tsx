@@ -78,6 +78,7 @@ const dashboard: Dashboard = {
   version: 1,
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
+  archivedAt: null,
   settings: {
     showHeader: true,
     autoAdvance: true,

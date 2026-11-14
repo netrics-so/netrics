@@ -13,6 +13,7 @@ import {
 } from "@netrics/contracts";
 import {
   DatasetStoreError,
+  deleteDashboard,
   findDashboard,
   hasSqlstate,
   insertAuditEvent,
@@ -33,6 +34,9 @@ import {
   DataServiceError,
   datasetStoreStatus,
 } from "../data/service.js";
+import { createUpdatedDashboardCopy, DashboardCopyUnfit } from "./service.js";
+import { storeTemplateCopy } from "./store-portfolio.js";
+import { storedScope, validateScope } from "../devices/service.js";
 import {
   deriveInstallCompletion,
   ensureInstallCompleted,
@@ -40,6 +44,7 @@ import {
 } from "./store-template-legacy.js";
 import {
   canonical,
+  dashboardFromItems,
   dashboardItems,
   itemKindOf,
   withSlideKeys,
@@ -121,6 +126,47 @@ export class StoreUpdateUnmergeable extends DataServiceError {
   }
 }
 
+/**
+ * The customer's dashboard changed since the update was reviewed: an item
+ * it asks about has no fitting decision. Carries the fresh plan records of
+ * that dashboard, to review again.
+ */
+export class StoreUpdateReviewChanged extends DataServiceError {
+  constructor(
+    readonly records: StoreTemplatePlan["records"],
+    /** The decided items whose current value changed since the apply. */
+    readonly refs: string[] = [],
+  ) {
+    super("store_update_review_changed", 409);
+  }
+}
+
+/**
+ * A stored decision; dashboard decisions carry a hash of the customer's
+ * value they were made on (`current`), so a later edit asks again.
+ */
+type StoredDecision = Decision & { current?: string };
+/**
+ * A hash of an item's value in one state; absent items hash alike. A
+ * widget's value includes its slide and position, so moving a widget the
+ * customer decided on asks for review again: by design, as the decision
+ * was made on the widget where it was.
+ */
+const valueHash = (value: unknown) =>
+  createHash("sha256")
+    .update(value === undefined ? "absent" : JSON.stringify(canonical(value)))
+    .digest("hex");
+
+/**
+ * Screens whose fixed scope the dashboard they would move to cannot apply
+ * (its shared filters changed): nothing moves. Names each screen and why.
+ */
+export class StoreUpdateScopeNotApplicable extends DataServiceError {
+  constructor(readonly devices: { id: string; name: string; code: string }[]) {
+    super("device_scope_not_applicable", 409);
+  }
+}
+
 /** The data drafts an update wrote (data_template_updates.drafts). */
 const storedDraftsSchema = z.array(
   z.object({
@@ -139,6 +185,20 @@ const storedDashboardsSchema = z.array(
     copyId: z.uuid().nullable(),
     swappedAt: z.iso.datetime().nullable(),
     swappedBackAt: z.iso.datetime().nullable(),
+    /** The copy's widget and slide ids → template keys (once made). */
+    copyWidgetKeys: z.record(z.string(), z.string()).optional(),
+    /** The new template's dashboard in comparison form (once made). */
+    templateOriginal: z.unknown().optional(),
+    /** The record as it was before the swap, for swapping back. */
+    previousOriginal: z.unknown().optional(),
+    previousWidgetKeys: z.record(z.string(), z.string()).nullable().optional(),
+    previousTemplateVersion: z.number().int().optional(),
+    /** The original's version the copy was made from. */
+    originalVersion: z.number().int().optional(),
+    /** The copy's version when it was made (edited in Studio since if not). */
+    copyVersion: z.number().int().optional(),
+    /** A newer update of the install replaced this one: no more swaps. */
+    superseded: z.boolean().optional(),
   }),
 );
 type StoredDashboard = z.infer<typeof storedDashboardsSchema>[number];
@@ -184,6 +244,10 @@ interface ComputedPlan {
   upcoming: Items;
   preparations: Map<string, PreparationRow>;
   models: Map<string, ModelRow>;
+  /** Template record and dataset ids → keys (new records as `new:<key>`). */
+  idsToKeys: Map<string, string>;
+  /** Per dashboard key: the widget and slide keys its current state used. */
+  dashboardKeys: Map<string, Record<string, string>>;
 }
 
 const isUpdateAvailable = (
@@ -198,6 +262,17 @@ const isUpdateAvailable = (
       record.kind !== "dataset" &&
       record.templateVersion < latest,
   );
+
+/** Plan records as the API shows them (classify never lists unchanged items). */
+const planRecords = (records: RecordPlan[]): StoreTemplatePlan["records"] =>
+  records.map(({ version: _version, items, ...record }) => ({
+    ...record,
+    items: items as StoreTemplatePlan["records"][number]["items"],
+  }));
+
+/** The item reference of a dashboard widget key (`widget:<name>`, `custom:<id>`). */
+const dashboardWidgetRef = (key: string, widgetKey: string) =>
+  `${key}#widget:${widgetKey.startsWith("widget:") ? widgetKey.slice("widget:".length) : widgetKey}`;
 
 export function createStoreTemplateUpdateService(deps: {
   db: Database;
@@ -414,6 +489,7 @@ export function createStoreTemplateUpdateService(deps: {
     };
     const plans: RecordPlan[] = [];
     const seen = new Set<string>();
+    const dashboardKeys = new Map<string, Record<string, string>>();
     for (const row of live) {
       const kind = row.kind as Kind;
       let name: string,
@@ -453,13 +529,11 @@ export function createStoreTemplateUpdateService(deps: {
         name = dashboard.name;
         version = dashboard.version;
         recordOriginal = originalItems(row);
+        const keys = templateKeys(row, dashboard.slides, recordOriginal);
+        dashboardKeys.set(row.key, keys);
         currentItems = dashboardItems(
           row.key,
-          normalizeDashboard(
-            dashboard,
-            templateKeys(row, dashboard.slides, recordOriginal),
-            idsToKeys,
-          ),
+          normalizeDashboard(dashboard, keys, idsToKeys),
         );
       }
       seen.add(row.key);
@@ -529,6 +603,8 @@ export function createStoreTemplateUpdateService(deps: {
       upcoming,
       preparations,
       models,
+      idsToKeys,
+      dashboardKeys,
     };
   }
 
@@ -617,7 +693,11 @@ export function createStoreTemplateUpdateService(deps: {
       createdAt: row.createdAt.toISOString(),
       drafts: views,
       dashboards: dashboards.map((dashboard) => ({
-        ...dashboard,
+        key: dashboard.key,
+        originalId: dashboard.originalId,
+        copyId: dashboard.copyId,
+        swappedAt: dashboard.swappedAt,
+        swappedBackAt: dashboard.swappedBackAt,
         // The updated copy is made once the data it shows is published.
         ready: published && dashboard.copyId === null,
       })),
@@ -933,6 +1013,28 @@ export function createStoreTemplateUpdateService(deps: {
         swappedAt: null,
         swappedBackAt: null,
       }));
+    // Older updates of the install can no longer swap: their copies were
+    // built from what this update replaces.
+    for (const older of await tx
+      .select({
+        id: schema.dataTemplateUpdates.id,
+        dashboards: schema.dataTemplateUpdates.dashboards,
+      })
+      .from(schema.dataTemplateUpdates)
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, actor.workspaceId),
+          eq(schema.dataTemplateUpdates.requestId, requestId),
+        ),
+      ))
+      await saveEntries(
+        tx,
+        actor.workspaceId,
+        older.id,
+        storedDashboardsSchema
+          .parse(older.dashboards)
+          .map((entry) => ({ ...entry, superseded: true })),
+      );
     // One open update per install (data_template_updates_one_open).
     await tx
       .update(schema.dataTemplateUpdates)
@@ -951,7 +1053,14 @@ export function createStoreTemplateUpdateService(deps: {
         requestId,
         fromVersion: plan.install.templateVersion,
         toVersion: template.version,
-        decisions: body.decisions,
+        decisions: body.decisions.map((decision): StoredDecision =>
+          recordKeyOf(decision.ref).startsWith("dashboard:")
+            ? {
+                ...(decision as Decision),
+                current: valueHash(plan.current.get(decision.ref as ItemRef)),
+              }
+            : (decision as Decision),
+        ),
         drafts,
         dashboards,
         createdBy: actor.callerId,
@@ -972,7 +1081,564 @@ export function createStoreTemplateUpdateService(deps: {
     return updateView(tx, actor.workspaceId, update!);
   }
 
+  /** The install's lock (store-template-service.ts). */
+  async function lockInstall(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+  ) {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${workspaceId + ":" + requestId}))`,
+    );
+  }
+
+  /**
+   * The update and its dashboard entry under the install's lock, or 404
+   * store_template_update_not_found (another workspace's id included).
+   */
+  async function lockedEntry(
+    tx: Transaction,
+    workspaceId: string,
+    updateId: string,
+    key: string,
+  ) {
+    const read = async () =>
+      (
+        await tx
+          .select()
+          .from(schema.dataTemplateUpdates)
+          .where(
+            and(
+              eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+              eq(schema.dataTemplateUpdates.id, updateId),
+            ),
+          )
+      )[0];
+    const found = await read();
+    if (!found) reject("store_template_update_not_found", 404);
+    await lockInstall(tx, workspaceId, found.requestId);
+    // Read again under the lock: a concurrent copy or swap went first.
+    const row = (await read())!;
+    const entries = storedDashboardsSchema.parse(row.dashboards);
+    const entry = entries.find((dashboard) => dashboard.key === key);
+    if (!entry) reject("store_template_update_not_found", 404);
+    return { row, entries, entry };
+  }
+
+  async function saveEntries(
+    tx: Transaction,
+    workspaceId: string,
+    updateId: string,
+    entries: StoredDashboard[],
+    closedAt?: Date,
+  ) {
+    await tx
+      .update(schema.dataTemplateUpdates)
+      .set({ dashboards: entries, ...(closedAt ? { closedAt } : {}) })
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.id, updateId),
+        ),
+      );
+  }
+
+  /** Creates the updated copy of one dashboard of an update (createCopy). */
+  async function writeCopy(
+    tx: Transaction,
+    actor: Actor,
+    updateId: string,
+    key: string,
+    options: { replace?: boolean; discardCopyEdits?: boolean },
+  ): Promise<StoreTemplateUpdate> {
+    const { row, entries, entry } = await lockedEntry(
+      tx,
+      actor.workspaceId,
+      updateId,
+      key,
+    );
+    // A copy deleted since counts as none.
+    const existing =
+      entry.copyId === null
+        ? null
+        : await findDashboard(tx, actor.workspaceId, entry.copyId);
+    if (existing && !options.replace) reject("store_update_copy_exists", 409);
+    if (row.closedAt !== null) reject("store_update_closed", 409);
+    if (existing) {
+      // Replacing (the original changed since): only a copy no screen
+      // shows and that is not swapped in. Its row stays locked until it is
+      // deleted, so a screen assigned to it meanwhile (lockDashboardArchive
+      // takes a share lock) waits, then finds it gone.
+      await tx.execute(
+        sql`select id from dashboards where workspace_id = ${actor.workspaceId} and id = ${existing.id} for update`,
+      );
+      const onScreens = await tx
+        .select({ id: schema.devices.id })
+        .from(schema.devices)
+        .where(
+          and(
+            eq(schema.devices.workspaceId, actor.workspaceId),
+            eq(schema.devices.dashboardId, existing.id),
+            isNull(schema.devices.revokedAt),
+          ),
+        )
+        .limit(1);
+      if (
+        onScreens.length > 0 ||
+        (entry.swappedAt !== null && entry.swappedBackAt === null)
+      )
+        reject("store_update_copy_in_use", 409);
+      // Edits made in the copy are the customer's: dropped only on request.
+      if (
+        entry.copyVersion !== undefined &&
+        existing.version !== entry.copyVersion &&
+        !options.discardCopyEdits
+      )
+        reject("store_update_copy_edited", 409);
+    }
+    // The copy shows published definitions only, never drafts.
+    const view = await updateView(tx, actor.workspaceId, row);
+    if (view.drafts.some((draft) => !draft.published))
+      reject("store_update_drafts_unpublished", 409);
+    if (row.toVersion !== template.version) reject("store_update_stale", 409);
+    const plan = await planOrUnavailable(tx, actor.workspaceId, row.requestId);
+    if (!plan) reject("store_template_baseline_unavailable", 409);
+    const record = plan.records.find(
+      (candidate) =>
+        candidate.key === key && candidate.recordId === entry.originalId,
+    );
+    const next = plan.next.get(key);
+    if (!record || next?.kind !== "dashboard")
+      reject("store_update_stale", 409);
+    const only = (items: Items): Items =>
+      new Map([...items].filter(([ref]) => recordKeyOf(ref) === key));
+    // The decisions the customer made when applying, against the dashboard
+    // as it is now: an item they did not decide on, or decided on a value
+    // they changed since, is theirs to review again (never overwritten).
+    const changed = (row.decisions as StoredDecision[])
+      .filter(
+        (decision) =>
+          recordKeyOf(decision.ref) === key &&
+          decision.current !== undefined &&
+          decision.current !== valueHash(plan.current.get(decision.ref)),
+      )
+      .map((decision) => decision.ref);
+    if (changed.length)
+      throw new StoreUpdateReviewChanged(planRecords([record]), changed);
+    let merged: Items;
+    try {
+      merged = merge(
+        only(plan.original),
+        only(plan.current),
+        only(plan.upcoming),
+        row.decisions as Decision[],
+      );
+    } catch (error) {
+      if (error instanceof MergeDecisionMissing)
+        throw new StoreUpdateReviewChanged(planRecords([record]));
+      throw error;
+    }
+    let normalized: NormalizedDashboard;
+    try {
+      normalized = dashboardFromItems(
+        key,
+        merged,
+        { current: only(plan.current), next: only(plan.upcoming) },
+        plan.ids,
+      );
+    } catch (error) {
+      if (error instanceof UnmergeableRecord)
+        throw new StoreUpdateUnmergeable(key, error.refs);
+      throw error;
+    }
+    let result: Awaited<ReturnType<typeof createUpdatedDashboardCopy>>;
+    try {
+      result = await createUpdatedDashboardCopy(tx, actor, {
+        sourceId: entry.originalId,
+        name: storeTemplateCopy(actor.locale).updatedName(record.name),
+        merged: normalized,
+        widgetKeys: plan.dashboardKeys.get(key) ?? {},
+      });
+    } catch (error) {
+      if (error instanceof DashboardCopyUnfit)
+        throw new StoreUpdateUnmergeable(
+          key,
+          error.widgetKeys.map((widgetKey) =>
+            dashboardWidgetRef(key, widgetKey),
+          ),
+          [error.problem],
+        );
+      throw error;
+    }
+    if (!result.ok) throw new DataServiceError(result.error, result.status);
+    const copy = result.value.dashboard;
+    if (existing) await deleteDashboard(tx, actor.workspaceId, existing.id);
+    await saveEntries(
+      tx,
+      actor.workspaceId,
+      updateId,
+      entries.map((candidate) =>
+        candidate.key === key
+          ? {
+              ...candidate,
+              copyId: copy.id,
+              copyWidgetKeys: result.value.widgetKeys,
+              originalVersion: record.version ?? undefined,
+              copyVersion: copy.version,
+              // A fresh copy starts unswapped.
+              swappedAt: null,
+              swappedBackAt: null,
+              templateOriginal: normalizeTemplateDashboard(
+                next.request,
+                next.widgetKeys,
+                plan.idsToKeys,
+              ),
+            }
+          : candidate,
+      ),
+    );
+    await insertAuditEvent(tx, {
+      workspaceId: actor.workspaceId,
+      actorUserId: actor.callerId,
+      action: "dashboard.template_copy_created",
+      target: copy.id,
+      metadata: {
+        requestId: row.requestId,
+        updateId,
+        key,
+        sourceId: entry.originalId,
+        name: copy.name,
+        ...(existing ? { replacedId: existing.id } : {}),
+      },
+    });
+    return openUpdateView(tx, actor.workspaceId, updateId);
+  }
+
+  async function openUpdateView(
+    tx: Transaction,
+    workspaceId: string,
+    updateId: string,
+  ) {
+    const [row] = await tx
+      .select()
+      .from(schema.dataTemplateUpdates)
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.id, updateId),
+        ),
+      );
+    return updateView(tx, workspaceId, row!);
+  }
+
+  /**
+   * Moves every screen (not revoked) on `from` to `to` in tx, fixed scopes
+   * included, after checking each scope against `to`; any that does not
+   * apply refuses the whole move (StoreUpdateScopeNotApplicable). `from`
+   * is locked first, so a concurrent assignment to it either lands before
+   * (and moves) or sees it archived. Returns the moved device ids.
+   */
+  async function moveScreens(
+    tx: Transaction,
+    workspaceId: string,
+    from: string,
+    to: string,
+  ): Promise<string[]> {
+    await tx.execute(
+      sql`select id from dashboards where workspace_id = ${workspaceId} and id = ${from} for update`,
+    );
+    const target = await findDashboard(tx, workspaceId, to);
+    if (!target) reject("store_update_stale", 409);
+    const devices = await tx
+      .select()
+      .from(schema.devices)
+      .where(
+        and(
+          eq(schema.devices.workspaceId, workspaceId),
+          eq(schema.devices.dashboardId, from),
+          isNull(schema.devices.revokedAt),
+        ),
+      )
+      .orderBy(asc(schema.devices.id))
+      .for("update");
+    const problems: { id: string; name: string; code: string }[] = [];
+    for (const device of devices) {
+      if (device.scope === null) continue;
+      let code: string | null;
+      try {
+        code = validateScope(target, storedScope(device));
+      } catch {
+        code = "device_scope_not_applicable";
+      }
+      if (code) problems.push({ id: device.id, name: device.name, code });
+    }
+    if (problems.length) throw new StoreUpdateScopeNotApplicable(problems);
+    const ids = devices.map((device) => device.id);
+    if (ids.length)
+      await tx
+        .update(schema.devices)
+        .set({
+          dashboardId: to,
+          scope: sql`case when ${schema.devices.scope} is null then null
+            else jsonb_set(${schema.devices.scope}, '{dashboardId}', to_jsonb(${to}::text)) end`,
+        })
+        .where(
+          and(
+            eq(schema.devices.workspaceId, workspaceId),
+            inArray(schema.devices.id, ids),
+          ),
+        );
+    return ids;
+  }
+
+  async function setArchived(
+    tx: Transaction,
+    workspaceId: string,
+    dashboardId: string,
+    archivedAt: Date | null,
+  ) {
+    await tx
+      .update(schema.dashboards)
+      .set({ archivedAt })
+      .where(
+        and(
+          eq(schema.dashboards.workspaceId, workspaceId),
+          eq(schema.dashboards.id, dashboardId),
+        ),
+      );
+  }
+
+  async function dashboardRecord(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    key: string,
+  ) {
+    const [record] = await tx
+      .select()
+      .from(schema.dataTemplateRecords)
+      .where(
+        and(
+          eq(schema.dataTemplateRecords.workspaceId, workspaceId),
+          eq(schema.dataTemplateRecords.requestId, requestId),
+          eq(schema.dataTemplateRecords.key, key),
+        ),
+      );
+    return record;
+  }
+  async function setRecord(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    key: string,
+    values: Partial<typeof schema.dataTemplateRecords.$inferInsert>,
+  ) {
+    await tx
+      .update(schema.dataTemplateRecords)
+      .set(values)
+      .where(
+        and(
+          eq(schema.dataTemplateRecords.workspaceId, workspaceId),
+          eq(schema.dataTemplateRecords.requestId, requestId),
+          eq(schema.dataTemplateRecords.key, key),
+        ),
+      );
+  }
+
+  /**
+   * Puts the copy on every screen of the original in one step (swap), or
+   * the original back on every screen of the copy (swap back).
+   */
+  async function writeSwap(
+    tx: Transaction,
+    actor: Actor,
+    updateId: string,
+    key: string,
+    direction: "swap" | "back",
+  ): Promise<StoreTemplateUpdate> {
+    const at = now();
+    const { row, entries, entry } = await lockedEntry(
+      tx,
+      actor.workspaceId,
+      updateId,
+      key,
+    );
+    const swapped = entry.swappedAt !== null && entry.swappedBackAt === null;
+    // Idempotent: a repeat (double click, two tabs) changes nothing.
+    if (direction === "swap" ? swapped : entry.swappedBackAt !== null)
+      return openUpdateView(tx, actor.workspaceId, updateId);
+    if (direction === "swap" && entry.superseded)
+      reject("store_update_superseded", 409);
+    if (entry.copyId === null) reject("store_update_copy_missing", 409);
+    if (direction === "back" && !swapped)
+      reject("store_update_not_swapped", 409);
+    // A closed update swaps only what it swapped before (swap again).
+    if (direction === "swap" && row.closedAt !== null && !entry.swappedAt)
+      reject("store_update_closed", 409);
+    const record = await dashboardRecord(
+      tx,
+      actor.workspaceId,
+      row.requestId,
+      key,
+    );
+    const [from, to] =
+      direction === "swap"
+        ? [entry.originalId, entry.copyId]
+        : [entry.copyId, entry.originalId];
+    // The record must still show what this update left it on.
+    if (!record || record.recordId !== from || record.detachedAt !== null)
+      reject("store_update_stale", 409);
+    if (!(await findDashboard(tx, actor.workspaceId, from)))
+      reject("store_update_stale", 409);
+    if (!(await findDashboard(tx, actor.workspaceId, to)))
+      reject(
+        direction === "swap"
+          ? "store_update_copy_missing"
+          : "store_update_stale",
+        409,
+      );
+    // The copy was made from the original as it was then: an original
+    // edited since would lose those edits on the screens (replace the copy).
+    if (direction === "swap" && entry.originalVersion !== undefined) {
+      const [original] = await tx
+        .select({ version: schema.dashboards.version })
+        .from(schema.dashboards)
+        .where(
+          and(
+            eq(schema.dashboards.workspaceId, actor.workspaceId),
+            eq(schema.dashboards.id, entry.originalId),
+          ),
+        )
+        .for("update");
+      if (original && original.version !== entry.originalVersion)
+        reject("store_update_original_changed", 409);
+    }
+    const devices = await moveScreens(tx, actor.workspaceId, from, to);
+    await setArchived(tx, actor.workspaceId, from, at);
+    await setArchived(tx, actor.workspaceId, to, null);
+    let next: StoredDashboard;
+    if (direction === "swap") {
+      await setRecord(tx, actor.workspaceId, row.requestId, key, {
+        recordId: to,
+        original: { normalized: entry.templateOriginal },
+        widgetKeys: entry.copyWidgetKeys ?? {},
+        templateVersion: row.toVersion,
+      });
+      next = {
+        ...entry,
+        swappedAt: at.toISOString(),
+        swappedBackAt: null,
+        previousOriginal: record.original,
+        previousWidgetKeys: (record.widgetKeys ?? null) as Record<
+          string,
+          string
+        > | null,
+        previousTemplateVersion: record.templateVersion,
+      };
+    } else {
+      await setRecord(tx, actor.workspaceId, row.requestId, key, {
+        recordId: to,
+        original: entry.previousOriginal,
+        widgetKeys: entry.previousWidgetKeys ?? null,
+        templateVersion:
+          entry.previousTemplateVersion ?? record.templateVersion,
+      });
+      next = { ...entry, swappedBackAt: at.toISOString() };
+    }
+    const nextEntries = entries.map((candidate) =>
+      candidate.key === key ? next : candidate,
+    );
+    // Done when every dashboard of the update is on its copy.
+    const done =
+      direction === "swap" &&
+      row.closedAt === null &&
+      nextEntries.every(
+        (candidate) =>
+          candidate.swappedAt !== null && candidate.swappedBackAt === null,
+      );
+    await saveEntries(
+      tx,
+      actor.workspaceId,
+      updateId,
+      nextEntries,
+      done ? at : undefined,
+    );
+    await insertAuditEvent(tx, {
+      workspaceId: actor.workspaceId,
+      actorUserId: actor.callerId,
+      action:
+        direction === "swap"
+          ? "dashboard.template_swapped"
+          : "dashboard.template_swapped_back",
+      target: to,
+      metadata: {
+        requestId: row.requestId,
+        updateId,
+        key,
+        originalId: entry.originalId,
+        copyId: entry.copyId,
+        devices,
+      },
+    });
+    return openUpdateView(tx, actor.workspaceId, updateId);
+  }
+
   return {
+    /**
+     * Puts an update's dashboard copy on every screen of the original in
+     * one transaction (fixed scopes included, each checked against the
+     * copy) and archives the original; the template record follows the
+     * copy at the new version. Under the install's lock; idempotent.
+     */
+    swap(
+      actor: Actor,
+      updateId: string,
+      key: string,
+    ): Promise<StoreTemplateUpdate> {
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        (tx) => writeSwap(tx, actor, updateId, key, "swap"),
+      );
+    },
+    /**
+     * The reverse of swap: the archived original back on every screen of
+     * the copy, the copy archived, the record back to the original as it
+     * was. The data side rolls back through its own history.
+     */
+    swapBack(
+      actor: Actor,
+      updateId: string,
+      key: string,
+    ): Promise<StoreTemplateUpdate> {
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        (tx) => writeSwap(tx, actor, updateId, key, "back"),
+      );
+    },
+    /**
+     * Creates the updated copy of an update's dashboard once every data
+     * draft of the update is published: the customer's dashboard with the
+     * decisions of the apply, unassigned from screens. Under the install's
+     * lock; a second call answers store_update_copy_exists.
+     */
+    createCopy(
+      actor: Actor,
+      updateId: string,
+      key: string,
+      /**
+       * `replace`: a fresh copy instead of an unswapped one no screen shows;
+       * one edited since it was made only with `discardCopyEdits`.
+       */
+      options: { replace?: boolean; discardCopyEdits?: boolean } = {},
+    ): Promise<StoreTemplateUpdate> {
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        (tx) => writeCopy(tx, actor, updateId, key, options),
+      );
+    },
     /**
      * Closes an install's update without touching its drafts: they stay
      * ordinary drafts the customer edits, restores or publishes, and a new
@@ -1170,13 +1836,9 @@ export function createStoreTemplateUpdateService(deps: {
             toVersion: template.version,
             basis: computed.basis,
             summary: computed.summary,
-            records: computed.records
-              .filter((record) => record.items.length > 0)
-              // classify never lists unchanged items.
-              .map(({ version: _version, items, ...record }) => ({
-                ...record,
-                items: items as StoreTemplatePlan["records"][number]["items"],
-              })),
+            records: planRecords(
+              computed.records.filter((record) => record.items.length > 0),
+            ),
           };
         },
       );

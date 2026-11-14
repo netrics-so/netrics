@@ -29,6 +29,7 @@ function card(overrides: Partial<DashboardCardData> = {}): DashboardCardData {
     slideCount: 3,
     widgetCount: 2,
     updatedAt: "2026-10-04T10:00:00.000Z",
+    archivedAt: null,
     theme: { builtin: "netrics_dark", id: null, name: "netrics Dark" },
     accent: "#e5572f",
     primaryFormat: "16x9",

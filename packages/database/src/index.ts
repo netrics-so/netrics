@@ -165,6 +165,7 @@ export {
   dashboardHasModelWidgets,
   insertDashboard,
   listDashboards,
+  lockDashboardArchive,
   metricWidgets,
   replaceDashboard,
   schema1Tiles,

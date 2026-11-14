@@ -198,3 +198,35 @@ export const storeTemplatePlanSchema = z.object({
   ),
 });
 export type StoreTemplatePlan = z.infer<typeof storeTemplatePlanSchema>;
+/**
+ * Errors of creating an updated dashboard copy and of swapping it:
+ * `store_update_review_changed` carries the fresh plan `records` of the
+ * dashboard (it changed since the update was reviewed);
+ * `store_update_unmergeable` names the dashboard (`key`), the template
+ * widgets that do not fit (`refs`) and why (`paths`);
+ * `device_scope_not_applicable` lists the screens whose fixed scope the
+ * copy cannot apply, each with its scope problem (`code`).
+ */
+export const storeTemplateDashboardErrorSchema = z.object({
+  error: z.string().min(1),
+  key: z.string().optional(),
+  refs: z.array(z.string()).optional(),
+  paths: z.array(z.string()).optional(),
+  records: storeTemplatePlanSchema.shape.records.optional(),
+  devices: z
+    .array(z.object({ id: z.uuid(), name: z.string(), code: z.string() }))
+    .optional(),
+});
+/**
+ * Creating an updated dashboard copy. `replace`: build a fresh copy from
+ * the original as it is now instead of the existing one, which must be
+ * unswapped and on no screen (409 store_update_copy_in_use otherwise).
+ */
+export const storeTemplateCopyRequestSchema = z.strictObject({
+  replace: z.boolean().optional(),
+  /**
+   * With `replace`: also when the copy was edited since it was made (409
+   * store_update_copy_edited otherwise); those edits are lost.
+   */
+  discardCopyEdits: z.boolean().optional(),
+});
