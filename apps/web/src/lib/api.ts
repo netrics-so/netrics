@@ -1,4 +1,5 @@
 import { dataErrorCodeKey } from "./data-errors";
+import { projectQueryString } from "./project-scope";
 import { ZodError, type ZodType } from "zod";
 
 import {
@@ -98,6 +99,10 @@ import {
   createSharedKeyConnectionsRequestSchema,
   createInvitationRequestSchema,
   createProjectRequestSchema,
+  activeProjectResponseSchema,
+  setActiveProjectRequestSchema,
+  type ActiveProjectResponse,
+  type ProjectFilterQuery,
   createWorkspaceRequestSchema,
   deleteConnectionResponseSchema,
   enqueueSyncResponseSchema,
@@ -409,14 +414,16 @@ export function listConnectors(
   return serverGet(connectorListResponseSchema, cookieHeader, "/v1/connectors");
 }
 
+/** All connections, or those of a project scope (#573). */
 export function listConnections(
   cookieHeader: string,
   workspaceId: string,
+  query?: ProjectFilterQuery,
 ): Promise<ConnectionListResponse> {
   return serverGet(
     connectionListResponseSchema,
     cookieHeader,
-    `/v1/workspaces/${workspaceId}/connections`,
+    `/v1/workspaces/${workspaceId}/connections${projectQueryString(query)}`,
   );
 }
 
@@ -700,6 +707,42 @@ export function createProject(
   );
 }
 
+/** The user's active project in the workspace; null is "All projects". */
+export function setActiveProject(
+  workspaceId: string,
+  projectId: string | null,
+): Promise<ActiveProjectResponse> {
+  return browserSend(
+    activeProjectResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}/active-project`,
+    setActiveProjectRequestSchema.parse({ projectId }),
+  );
+}
+
+/** Hides a project and its items from lists and pickers (#572). */
+export function archiveProject(
+  workspaceId: string,
+  projectId: string,
+): Promise<ProjectResponse> {
+  return browserSend(
+    projectResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/projects/${projectId}/archive`,
+  );
+}
+
+export function unarchiveProject(
+  workspaceId: string,
+  projectId: string,
+): Promise<ProjectResponse> {
+  return browserSend(
+    projectResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/projects/${projectId}/unarchive`,
+  );
+}
+
 export function previewConnection(
   workspaceId: string,
   input: PreviewConnectionRequest,
@@ -931,14 +974,16 @@ export function triggerConnectionSync(
 // Dashboards and metrics (#48, #49)
 // ---------------------------------------------------------------------------
 
+/** All dashboards, or those of a project scope (#573). */
 export function listDashboards(
   cookieHeader: string,
   workspaceId: string,
+  query?: ProjectFilterQuery,
 ): Promise<DashboardListResponse> {
   return serverGet(
     dashboardListResponseSchema,
     cookieHeader,
-    `/v1/workspaces/${workspaceId}/dashboards`,
+    `/v1/workspaces/${workspaceId}/dashboards${projectQueryString(query)}`,
   );
 }
 

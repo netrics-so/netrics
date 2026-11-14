@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type KeyboardEvent,
@@ -22,6 +23,7 @@ import {
   type NavPermissions,
   type NavSection,
 } from "@/lib/app-nav";
+import { setActiveProject } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { useT } from "@/lib/i18n/client";
 
@@ -36,7 +38,29 @@ export interface AppShellProps {
   /** How many connections the workspace has, and how many need attention. */
   sourceCount: number;
   attention: number;
+  /** The workspace's projects that are not archived, for the switcher. */
+  projects: readonly { id: string; name: string }[];
+  /** The user's active project; null is "All projects" (#573). */
+  activeProjectId: string | null;
   children: ReactNode;
+}
+
+/**
+ * Stores the active project and reloads the page's lists, which follow
+ * it; false when the server refused (the page stays as it was).
+ */
+export async function switchProject(
+  workspaceId: string,
+  projectId: string | null,
+  refresh: () => void,
+): Promise<boolean> {
+  try {
+    await setActiveProject(workspaceId, projectId);
+  } catch {
+    return false;
+  }
+  refresh();
+  return true;
 }
 
 /**
@@ -124,6 +148,8 @@ const SECTIONS: readonly NavSection[] = ["dashboards", "sources", "screens"];
 function Sidebar({
   workspaceId,
   workspaces,
+  projects,
+  activeProjectId,
   items,
   active,
   pathname,
@@ -180,6 +206,14 @@ function Sidebar({
         </button>
       </div>
       <WorkspaceSwitcher workspaceId={workspaceId} workspaces={workspaces} />
+      {projects.length > 0 ? (
+        <ProjectSwitcher
+          key={`${workspaceId}:${activeProjectId ?? ""}`}
+          workspaceId={workspaceId}
+          projects={projects}
+          activeProjectId={activeProjectId}
+        />
+      ) : null}
       <nav className="shell-nav" aria-label={t("sidebar")}>
         <ul className="shell-nav-list">
           {home ? row(home) : null}
@@ -255,6 +289,64 @@ function WorkspaceSwitcher({
         <span className="shell-menu-item-label">{t("new")}</span>
       </Link>
     </Menu>
+  );
+}
+
+/**
+ * The active project (#573): lists and pickers on every page follow it;
+ * the choice is stored with the membership, so it follows the user.
+ */
+function ProjectSwitcher({
+  workspaceId,
+  projects,
+  activeProjectId,
+}: Pick<ShellParts, "workspaceId" | "projects" | "activeProjectId">) {
+  const t = useT("shell");
+  const router = useRouter();
+  const id = useId();
+  const [value, setValue] = useState(activeProjectId ?? "");
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function onChange(next: string) {
+    const previous = value;
+    setValue(next);
+    setPending(true);
+    setFailed(false);
+    const switched = await switchProject(workspaceId, next || null, () =>
+      router.refresh(),
+    );
+    if (!switched) {
+      setValue(previous);
+      setFailed(true);
+    }
+    setPending(false);
+  }
+
+  return (
+    <div className="project-switcher">
+      <label htmlFor={id} className="project-switcher-label">
+        {t("projectSwitcher")}
+      </label>
+      <select
+        id={id}
+        value={value}
+        disabled={pending}
+        onChange={(event) => void onChange(event.target.value)}
+      >
+        <option value="">{t("allProjects")}</option>
+        {projects.map((project) => (
+          <option key={project.id} value={project.id}>
+            {project.name}
+          </option>
+        ))}
+      </select>
+      {failed ? (
+        <p className="project-switcher-error" role="alert">
+          {t("projectSwitchFailed")}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

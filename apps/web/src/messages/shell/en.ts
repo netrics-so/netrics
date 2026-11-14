@@ -16,6 +16,9 @@ export const shellEn = {
       current: "current",
       new: "New workspace",
     },
+    projectSwitcher: "Project",
+    allProjects: "All projects",
+    projectSwitchFailed: "Could not switch the project. Try again.",
     sections: {
       dashboards: "Dashboards",
       sources: "Sources",

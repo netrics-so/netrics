@@ -4,9 +4,10 @@ import type { ReactNode } from "react";
 import { can } from "@netrics/domain";
 
 import { AppShell } from "@/components/app-shell/app-shell";
-import { listConnections, listWorkspaces } from "@/lib/api";
+import { listConnections, listProjects, listWorkspaces } from "@/lib/api";
 import { sourcesNeedingAttention } from "@/lib/app-nav";
 import { getCurrentMe } from "@/lib/current-user";
+import { projectChoices } from "@/lib/project-scope";
 import { requireSession } from "@/lib/session";
 
 interface WorkspaceLayoutProps {
@@ -34,7 +35,12 @@ export default async function WorkspaceLayout({
   if (!membership) {
     notFound();
   }
-  const { connections } = await listConnections(cookieHeader, workspaceId);
+  // Source health stays workspace-wide on purpose (#573): a failing
+  // source in another project still needs attention.
+  const [{ connections }, { projects }] = await Promise.all([
+    listConnections(cookieHeader, workspaceId),
+    listProjects(cookieHeader, workspaceId),
+  ]);
 
   return (
     <AppShell
@@ -48,6 +54,11 @@ export default async function WorkspaceLayout({
       }}
       sourceCount={connections.length}
       attention={sourcesNeedingAttention(connections)}
+      projects={projectChoices(projects, null).map(({ id, name }) => ({
+        id,
+        name,
+      }))}
+      activeProjectId={membership.activeProjectId}
     >
       {children}
     </AppShell>
