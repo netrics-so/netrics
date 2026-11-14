@@ -506,3 +506,68 @@ export const manualDatasetReadResponseSchema = z.object({
   offset: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
 });
+
+/** What an impact check asks about: a preparation, a model or some of a model's measures. */
+export const dataImpactTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("preparation"), id: z.uuid() }),
+  z.object({ kind: z.literal("model"), id: z.uuid() }),
+  z.object({
+    kind: z.literal("measure"),
+    /** The model. */
+    id: z.uuid(),
+    measureIds: z.array(id).min(1).max(50),
+  }),
+]);
+export const dataImpactQuerySchema = z.strictObject({
+  // repeated ?measureId=a&measureId=b; a single value is coerced to [value]
+  measureId: z
+    .union([id, z.array(id).min(1).max(50)])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : [v].flat())),
+});
+/**
+ * What depends on a preparation, model or measure, before it is published
+ * (11C). Items the caller may not see are counted in `hidden`, not named.
+ */
+export const dataImpactResponseSchema = z.object({
+  target: dataImpactTargetSchema,
+  preparations: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  models: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      publishedVersion: z.number().int().positive().nullable(),
+      /** Preparation targets only: the target version this model's live release reads; null when it reads none yet. */
+      pinnedVersion: z.number().int().positive().nullable(),
+    }),
+  ),
+  measures: z.array(z.object({ modelId: z.uuid(), id, name: z.string() })),
+  dashboards: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      widgets: z.array(
+        z.object({
+          id: z.uuid(),
+          type: z.string(),
+          title: z.string().nullable(),
+        }),
+      ),
+      /** Bound through a shared filter mapping only (no widget). */
+      viaFilter: z.boolean(),
+    }),
+  ),
+  screens: z.array(
+    z.object({ id: z.uuid(), name: z.string(), dashboardId: z.uuid() }),
+  ),
+  hidden: z.object({
+    preparations: z.number().int().nonnegative(),
+    models: z.number().int().nonnegative(),
+    dashboards: z.number().int().nonnegative(),
+    screens: z.number().int().nonnegative(),
+  }),
+  /** Model and measure targets: measures whose draft differs from the live release; null when never published. */
+  changedMeasureIds: z.array(id).nullable(),
+});
+export type DataImpactTarget = z.infer<typeof dataImpactTargetSchema>;
+export type DataImpact = z.infer<typeof dataImpactResponseSchema>;

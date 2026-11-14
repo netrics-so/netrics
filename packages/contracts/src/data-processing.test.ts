@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  dataImpactQuerySchema,
   modelMeasureCellSchema,
   semanticModelDefinitionSchema,
 } from "./data-processing.js";
@@ -94,5 +95,21 @@ describe("windowed measure contracts", () => {
         comparedTo: { from: "2026-09-01T00:00:00Z", to: "2026-09-30" },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("dataImpactQuerySchema", () => {
+  it("coerces a single measure id to a list", () => {
+    expect(dataImpactQuerySchema.parse({ measureId: "revenue" })).toEqual({
+      measureId: ["revenue"],
+    });
+    expect(
+      dataImpactQuerySchema.parse({ measureId: ["revenue", "orders"] }),
+    ).toEqual({ measureId: ["revenue", "orders"] });
+    expect(dataImpactQuerySchema.parse({})).toEqual({});
+  });
+  it("rejects invalid measure ids", () => {
+    expect(() => dataImpactQuerySchema.parse({ measureId: "1bad" })).toThrow();
+    expect(() => dataImpactQuerySchema.parse({ other: "x" })).toThrow();
   });
 });

@@ -13,8 +13,9 @@ import {
   dataSourceViewSchema,
   preparationViewSchema,
   modelViewSchema,
+  dataImpactResponseSchema,
 } from "@netrics/contracts";
-import type { ProjectFilterQuery } from "@netrics/contracts";
+import type { DataImpact, ProjectFilterQuery } from "@netrics/contracts";
 import type {
   PreparationGraph,
   SemanticModelDefinition,
@@ -176,6 +177,26 @@ export const publishPreparation = (
     "POST",
     base(workspaceId) + `/preparations/${id}/publish`,
     { version },
+  );
+/**
+ * What depends on a preparation, a model or some of its measures, for the
+ * publish confirmation (11C). Workspace-wide, whatever project is active.
+ */
+export const readDataImpact = (
+  workspaceId: string,
+  target: { kind: "preparation" | "model"; id: string; measureIds?: string[] },
+): Promise<DataImpact> =>
+  browserSend(
+    dataImpactResponseSchema,
+    "GET",
+    base(workspaceId) +
+      `/${target.kind === "preparation" ? "preparations" : "models"}/${target.id}/impact` +
+      (target.kind === "model" && target.measureIds?.length
+        ? "?" +
+          new URLSearchParams(
+            target.measureIds.map((id) => ["measureId", id]),
+          ).toString()
+        : ""),
   );
 export const saveModel = (
   workspaceId: string,

@@ -1,5 +1,28 @@
 export const dataEn = {
   data: {
+    impact: {
+      title: "Publish {name}?",
+      loading: "Checking what uses this…",
+      failed: "Could not check what uses this. You can still publish.",
+      none: "Nothing uses this yet.",
+      scope: "Includes every project, not only the one you’re viewing.",
+      preparations:
+        "{count, plural, one {# preparation} other {# preparations}}",
+      models: "{count, plural, one {# model} other {# models}}",
+      measures: "{count, plural, one {# measure} other {# measures}}",
+      dashboards: "{count, plural, one {# dashboard} other {# dashboards}}",
+      screens:
+        "{count, plural, one {# paired screen} other {# paired screens}}",
+      hidden:
+        "{count, plural, one {# more you can't open} other {# more you can't open}}",
+      pinned: "Uses version {version} until the model is published again.",
+      pinnedSection: "These change only after the model is published again.",
+      viaFilter: "Through a shared filter",
+      untitledWidget: "Untitled widget",
+      changed: "Changed",
+      confirm: "Publish",
+      cancel: "Cancel",
+    },
     dashboard: {
       sourceReconnect: "Reconnect {name} to resume imports.",
       sourceAccess: "Update access for {name} to resume imports.",

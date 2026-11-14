@@ -19,9 +19,13 @@ import {
   manualDatasetPageInputSchema,
   preparationGraphSchema,
   semanticModelDefinitionSchema,
+  type DataImpact,
+  type DataImpactTarget,
   type SourceDatasetDefinition,
 } from "@netrics/contracts";
 import {
+  can,
+  type WorkspaceRole,
   DataProcessingError,
   DATA_EXECUTION_VERSION,
   ProcessingBudget,
@@ -62,6 +66,11 @@ import {
   type ProjectFilter,
   type Transaction,
 } from "@netrics/database";
+import {
+  collectDataImpact,
+  loadImpactGraph,
+  redactDataImpact,
+} from "./impact.js";
 
 export class DataServiceError extends Error {
   constructor(
@@ -1336,9 +1345,51 @@ export function createDataService(
         .returning();
       return { model: modelView(row!) };
     });
+  /**
+   * What depends on a preparation, model or some of a model's measures
+   * (11C), for the publish confirmation. Workspace-wide: an item's project
+   * never hides a consequence. Lists what the caller may open and counts
+   * the rest. Never blocks publishing.
+   */
+  const impact = (
+    actor: DataActor & { role: WorkspaceRole },
+    target: DataImpactTarget,
+  ) =>
+    // A read-only scan: read committed, so it never forces serialization
+    // retries on concurrent writers.
+    run(
+      actor,
+      async (tx): Promise<DataImpact> => {
+        if (target.kind === "preparation")
+          await findPreparation(tx, actor.workspaceId, target.id);
+        else {
+          const model = await findDataModel(tx, actor.workspaceId, target.id);
+          if (target.kind === "measure") {
+            const definition = semanticModelDefinitionSchema.safeParse(
+              model.definition,
+            );
+            if (
+              target.measureIds.some(
+                (id) => !definition.data?.measures.some((m) => m.id === id),
+              )
+            )
+              fail("data_measure_not_found", 404);
+          }
+        }
+        const graph = await loadImpactGraph(tx, actor.workspaceId);
+        return redactDataImpact(collectDataImpact(graph, target), {
+          data: can(actor.role, "data:edit"),
+          dashboards: can(actor.role, "dashboards:view"),
+          screens: can(actor.role, "devices:view"),
+        });
+      },
+      db,
+      "read committed",
+    );
   return {
     listSources,
     setProject,
+    impact,
     previewModel: (
       actor: DataActor,
       definition: SemanticModelDefinition,

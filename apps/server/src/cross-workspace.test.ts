@@ -370,6 +370,107 @@ describe("identifier probing: no sub-resource existence oracle", () => {
     expect(p1?.archivedAt).toBeNull();
   });
 
+  it("W1's preparation and model impact are indistinguishable from a random uuid inside W2", async () => {
+    // A writes a manual table, a preparation and a model in W1; C (owner of
+    // W2) aims their real ids at W2's impact routes.
+    const source = await call(world.app, {
+      method: "POST",
+      url: `/v1/workspaces/${w1Id}/data/manual`,
+      cookie: cookies.a,
+      payload: {
+        definition: {
+          key: "probe",
+          name: "Probe",
+          version: 1,
+          mode: "snapshot",
+          grain: "one row",
+          keyFields: ["id"],
+          retentionDays: 30,
+          fields: [
+            {
+              id: "id",
+              name: "ID",
+              type: "string",
+              nullable: false,
+              classification: "internal",
+            },
+          ],
+        },
+        records: [{ values: { id: "one" } }],
+      },
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    const datasetId = (source.json() as { datasetId: string }).datasetId;
+    const prep = await call(world.app, {
+      method: "POST",
+      url: `/v1/workspaces/${w1Id}/data/preparations`,
+      cookie: cookies.a,
+      payload: {
+        name: "Probe",
+        graph: {
+          version: 1,
+          nodes: [{ id: "source", type: "source", datasetId }],
+          outputs: ["source"],
+        },
+      },
+    });
+    expect(prep.statusCode, prep.body).toBe(200);
+    const model = await call(world.app, {
+      method: "POST",
+      url: `/v1/workspaces/${w1Id}/data/models`,
+      cookie: cookies.a,
+      payload: {
+        name: "Probe",
+        definition: {
+          version: 1,
+          datasets: [datasetId],
+          relationships: [],
+          dimensions: [],
+          measures: [
+            {
+              id: "rows",
+              name: "Rows",
+              kind: "aggregate",
+              datasetId,
+              aggregate: { id: "rows", name: "Rows", op: "count" },
+            },
+          ],
+        },
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const probes = [
+      [
+        "preparations",
+        (prep.json() as { preparation: { id: string } }).preparation.id,
+        "",
+      ],
+      ["models", (model.json() as { model: { id: string } }).model.id, ""],
+      [
+        "models",
+        (model.json() as { model: { id: string } }).model.id,
+        "?measureId=rows",
+      ],
+    ] as const;
+    for (const [kind, realId, query] of probes) {
+      const [real, ghost] = await Promise.all(
+        [realId, randomUUID()].map((id) =>
+          call(world.app, {
+            method: "GET",
+            url: `/v1/workspaces/${w2Id}/data/${kind}/${id}/impact${query}`,
+            cookie: cookies.c,
+          }),
+        ),
+      );
+      expect(real!.statusCode, `${kind} ${query}`).toBe(404);
+      expect(real!.json()).toEqual(ghost!.json());
+      expect(real!.headers["content-type"]).toBe(
+        ghost!.headers["content-type"],
+      );
+      expect(real!.body).not.toContain(realId);
+    }
+  });
+
   it("a user who is not a W1 member is indistinguishable from a random uuid", async () => {
     for (const target of [userIds.c, randomUUID()]) {
       expectError(

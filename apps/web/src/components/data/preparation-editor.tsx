@@ -10,6 +10,7 @@ import {
   previewPreparation,
   savePreparation,
   publishPreparation,
+  readDataImpact,
   restorePreparation,
   type DataSource,
   type PreparationDraft,
@@ -47,6 +48,10 @@ import {
   preparationFieldName,
 } from "@/lib/preparation-editing";
 import { PreparationStepList } from "./preparation-step-list";
+import {
+  publishAfterConfirmation,
+  useImpactConfirmation,
+} from "./publish-impact-dialog";
 
 export function PreparationEditor({
   workspaceId,
@@ -123,6 +128,9 @@ export function PreparationEditor({
     key: ReturnType<typeof dataErrorKey>;
   } | null>(null);
   const request = useRef(0);
+  const confirmation = useImpactConfirmation(
+    name.trim() || t("defaultPreparation"),
+  );
   const current = useMemo(() => canonicalJson({ name, graph }), [name, graph]),
     dirty = current !== savedState || (!record && graph.nodes.length > 0);
   const graphSignature = useMemo(() => canonicalJson(graph), [graph]);
@@ -219,7 +227,8 @@ export function PreparationEditor({
     setError(null);
     setNotice(null);
     setBusy(publish ? "publish" : "save");
-    try {
+    let saved = false;
+    const save = async () => {
       const result =
         record && !dirty
           ? { preparation: record }
@@ -232,19 +241,40 @@ export function PreparationEditor({
               },
               record?.id,
             );
+      saved = result.preparation !== record;
       setRecord(result.preparation);
       setSavedState(current);
       onSaved(result.preparation);
-      if (publish) {
-        const published = await publishPreparation(
-          workspaceId,
-          result.preparation.id,
-          result.preparation.version,
-        );
-        setRecord(published.preparation);
-        onSaved(published.preparation);
-        setNotice(t("publishedNotice"));
-      } else setNotice(t("saved"));
+      return result.preparation;
+    };
+    try {
+      if (!publish) {
+        await save();
+        setNotice(t("saved"));
+        return;
+      }
+      const outcome = await publishAfterConfirmation({
+        existed: !!record,
+        save,
+        confirm: (draft) =>
+          confirmation.ask(async () => ({
+            impact: await readDataImpact(workspaceId, {
+              kind: "preparation",
+              id: draft.id,
+            }),
+          })),
+        publish: async (draft) => {
+          const published = await publishPreparation(
+            workspaceId,
+            draft.id,
+            draft.version,
+          );
+          setRecord(published.preparation);
+          onSaved(published.preparation);
+        },
+      });
+      if (outcome === "published") setNotice(t("publishedNotice"));
+      else if (saved) setNotice(t("saved"));
     } catch (failure) {
       // Publishing checks every step and can fail at one.
       reportFailure(failure, graph);
@@ -415,6 +445,7 @@ export function PreparationEditor({
   }
   return (
     <section className="data-editor" aria-labelledby="preparation-title">
+      {confirmation.dialog}
       <header className="data-editor-header">
         <div>
           <button type="button" className="link-button" onClick={onClose}>
