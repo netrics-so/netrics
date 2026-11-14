@@ -17,6 +17,7 @@ import {
   type StoreTemplateInputs,
   type StoreTemplateKey,
 } from "./store-template.js";
+import { withSlideKeys } from "./store-template-items.js";
 
 /**
  * Completes an install made before template versions (baseline from 0072):
@@ -298,11 +299,8 @@ function complete({
     );
     if (widget) widgetKeys[String(widget.id)] = `widget:${metric}`;
   }
-  // Slide keys: version 1 builds one slide; the first by position is it.
-  const [first] = [...snapshot!.slides].sort(
-    (a, b) => Number(a.position) - Number(b.position),
-  );
-  if (first && first.id !== undefined) widgetKeys[String(first.id)] = "slide:0";
+  // Slide keys: version 1 builds one slide, the one holding its widgets.
+  Object.assign(widgetKeys, withSlideKeys(widgetKeys, snapshot!.slides, 1));
 
   const parsedInputs = storeTemplateInputsSchema.safeParse({
     name: dashboard.name,

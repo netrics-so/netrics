@@ -34,6 +34,7 @@ import {
 } from "../test-db.js";
 import { createStoreTemplateService } from "./store-template-service.js";
 import { createStoreTemplateUpdateService } from "./store-template-updates.js";
+import { ensureInstallCompleted } from "./store-template-legacy.js";
 import {
   dashboardItems,
   normalizeTemplateDashboard,
@@ -53,6 +54,7 @@ import { now } from "./test-helpers.js";
  */
 function fixture(
   ratings: "remove" | "retitle" | "keep",
+  options: { slideName?: string } = {},
 ): StoreTemplateDefinition {
   return {
     version: 2,
@@ -77,6 +79,7 @@ function fixture(
       }
       if (record.kind === "dashboard") {
         const request = structuredClone(record.request);
+        if (options.slideName) request.slides![0]!.name = options.slideName;
         const widgets = request.slides![0]!.widgets!;
         const ratingsWidget = widgets[2]!;
         if (ratings === "remove") widgets.splice(2, 1);
@@ -575,6 +578,61 @@ describe("store-template updates", { timeout: TIMEOUT_MS }, () => {
     const [record] =
       await owner`select widget_keys from data_template_records where request_id=${requestId} and key='dashboard:portfolio'`;
     expect(Object.values(record!.widget_keys as object)).toContain("slide:0");
+  });
+
+  it("finds the template slide by its template widgets when no slide key was stored", async () => {
+    const { workspaceId, requestId, installed } = await installIn([
+      "google-play",
+    ]);
+    // An install keyed before slides were: its widget keys only.
+    const [templateSlide] =
+      await owner`select id, name from dashboard_slides where dashboard_id=${installed.dashboardId}`;
+    await owner`update data_template_records set widget_keys = widget_keys - ${templateSlide!.id as string}::text
+      where request_id=${requestId} and key='dashboard:portfolio'`;
+    // In front of it, a customer slide that looks exactly like it.
+    await owner`update dashboard_slides set position = position + 1 where dashboard_id=${installed.dashboardId}`;
+    const [mine] =
+      await owner`insert into dashboard_slides (dashboard_id, workspace_id, position, name)
+      values (${installed.dashboardId}, ${workspaceId}, 0, ${templateSlide!.name as string}) returning id`;
+    const plan = await updates(
+      fixture("remove", { slideName: "Portfolio v2" }),
+    ).plan(actor(workspaceId), requestId);
+    // The template's slide change targets the template's slide; the
+    // customer's slide is theirs.
+    expect(item(plan, "dashboard:portfolio#slide:0")).toMatchObject({
+      outcome: "template",
+      next: expect.objectContaining({ name: "Portfolio v2" }),
+    });
+    expect(
+      item(plan, `dashboard:portfolio#slide:custom:${mine!.id as string}`),
+    ).toMatchObject({ outcome: "customer", change: "added" });
+    // Template widgets stay on the template slide: no change, no conflict.
+    expect(item(plan, "dashboard:portfolio#widget:downloads")).toBeUndefined();
+    expect(items(plan).filter((i) => i.outcome === "choose")).toEqual([]);
+    expect(item(plan, "dashboard:portfolio#widget:summary")).toMatchObject({
+      outcome: "template",
+      next: expect.objectContaining({ slide: "slide:0" }),
+    });
+  });
+
+  it("plans the same before and after the baseline is written", async () => {
+    for (const legacy of [false, true]) {
+      const { workspaceId, requestId } = await installIn([
+        "app-store-connect",
+        "google-play",
+      ]);
+      if (legacy) await makeLegacy(workspaceId, requestId);
+      const read = await updates(v2).plan(actor(workspaceId), requestId);
+      await withWorkspace(db, { workspaceId }, (tx) =>
+        ensureInstallCompleted(tx, workspaceId, requestId),
+      );
+      const [install] =
+        await owner`select inputs from data_template_installs where request_id=${requestId}`;
+      expect(install!.inputs).not.toBeNull();
+      const written = await updates(v2).plan(actor(workspaceId), requestId);
+      expect(written.basis).toBe(read.basis);
+      expect(written).toEqual(read);
+    }
   });
 
   it("reports a baseline that cannot be read instead of a wrong plan", async () => {

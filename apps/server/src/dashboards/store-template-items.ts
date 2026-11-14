@@ -347,8 +347,11 @@ export function normalizeDashboard(
 
 /**
  * Adds slide keys to a dashboard's template keys that have none (installs
- * made before slides were keyed): the first `templateSlides` slides in
- * position order are the template's, as widget keys are derived.
+ * made before slides were keyed, and baselines): a template slide is a slide
+ * that holds keyed template widgets, in position order, at most
+ * `templateSlides` of them. Every other slide stays the customer's
+ * (`custom:<id>`), however much it looks like the template's, so a slide the
+ * customer inserted in front never takes the template slide's place.
  */
 export function withSlideKeys(
   widgetKeys: Record<string, string>,
@@ -358,8 +361,20 @@ export function withSlideKeys(
   if (Object.values(widgetKeys).some((key) => key.startsWith("slide:")))
     return widgetKeys;
   const keys = { ...widgetKeys };
-  (slides as readonly { id?: unknown; position?: unknown }[])
-    .slice()
+  (
+    slides as readonly {
+      id?: unknown;
+      position?: unknown;
+      widgets?: unknown;
+    }[]
+  )
+    .filter(
+      (slide) =>
+        Array.isArray(slide.widgets) &&
+        slide.widgets.some((widget: { id?: unknown }) =>
+          widgetKeys[String(widget.id)]?.startsWith("widget:"),
+        ),
+    )
     .sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0))
     .slice(0, templateSlides)
     .forEach((slide, index) => {
