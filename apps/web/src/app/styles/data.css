@@ -98,6 +98,9 @@
 .data-step-list li[data-state] > p.error {
   padding: 8px 10px;
 }
+.data-step-list li[data-state] > p.help {
+  padding: 0 12px;
+}
 .data-preview-panel {
   min-width: 0;
   background: var(--surface);
