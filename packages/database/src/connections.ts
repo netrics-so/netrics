@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, lte, max, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
+import { projectFilterSql, type ProjectFilter } from "./project-filter.js";
 import { deleteSignedKeyToken } from "./signed-key-tokens.js";
 
 // Connection persistence for the API (netrics_app, inside withWorkspace).
@@ -84,6 +85,8 @@ export async function findConnection(
 export async function listConnections(
   tx: Transaction,
   workspaceId: string,
+  /** Narrows to a project (#572); absent: the full list. */
+  filter: ProjectFilter = {},
 ): Promise<ConnectionWithState[]> {
   const rows = await tx
     .select({
@@ -106,7 +109,12 @@ export async function listConnections(
         eq(schema.connectionOAuth.workspaceId, workspaceId),
       ),
     )
-    .where(eq(schema.connections.workspaceId, workspaceId))
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        projectFilterSql(schema.connections.projectId, workspaceId, filter),
+      ),
+    )
     .orderBy(schema.connections.createdAt);
   return rows;
 }

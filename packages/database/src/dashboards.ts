@@ -4,6 +4,7 @@ import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
+import { projectFilterSql, type ProjectFilter } from "./project-filter.js";
 
 // Dashboard persistence (#49; slides and widgets since ADR 0015), as
 // netrics_app inside withWorkspace. Every query names the workspace
@@ -210,6 +211,8 @@ export function schema1Tiles(
 export async function listDashboards(
   tx: Transaction,
   workspaceId: string,
+  /** Narrows to a project (#572); absent: the full list. */
+  filter: ProjectFilter = {},
 ): Promise<DashboardSummary[]> {
   // Spelled out: drizzle leaves column names unqualified in a select list.
   const count = (table: string, filter = sql``) => sql<number>`(
@@ -233,7 +236,12 @@ export async function listDashboards(
       screenCount: count("devices", sql`and c.revoked_at is null`),
     })
     .from(schema.dashboards)
-    .where(eq(schema.dashboards.workspaceId, workspaceId))
+    .where(
+      and(
+        eq(schema.dashboards.workspaceId, workspaceId),
+        projectFilterSql(schema.dashboards.projectId, workspaceId, filter),
+      ),
+    )
     .orderBy(desc(schema.dashboards.updatedAt));
   const previews = await loadPreviewWidgets(tx, workspaceId);
   return rows.map((row) => ({

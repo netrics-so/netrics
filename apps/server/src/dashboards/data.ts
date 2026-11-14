@@ -34,6 +34,8 @@ import {
   resolveDataPolicy,
   type Transaction,
   type DashboardWidgetRow,
+  projectFilterSql,
+  type ProjectFilter,
 } from "@netrics/database";
 import {
   createDataLoader,
@@ -105,7 +107,12 @@ export async function publishedModel(
     },
   };
 }
-export async function publishedModels(tx: Transaction, workspaceId: string) {
+export async function publishedModels(
+  tx: Transaction,
+  workspaceId: string,
+  /** Narrows to a project (#572); absent: every published model. */
+  filter: ProjectFilter = {},
+) {
   const rows = await tx
     .select({ id: schema.dataModels.id })
     .from(schema.dataModels)
@@ -113,6 +120,7 @@ export async function publishedModels(tx: Transaction, workspaceId: string) {
       and(
         eq(schema.dataModels.workspaceId, workspaceId),
         sql`${schema.dataModels.publishedVersion} is not null`,
+        projectFilterSql(schema.dataModels.projectId, workspaceId, filter),
       ),
     );
   const models = [];

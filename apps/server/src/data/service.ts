@@ -44,6 +44,7 @@ import {
   withWorkspace,
   schema,
   findProject,
+  projectFilterSql,
   ingestDatasetPage,
   listObservationCatalog,
   readObservationDataset,
@@ -57,6 +58,7 @@ import {
   SessionLockTimeoutError,
   withSessionAdvisoryLock,
   type Database,
+  type ProjectFilter,
   type Transaction,
 } from "@netrics/database";
 
@@ -1036,7 +1038,7 @@ export function createDataService(
       target,
       metadata,
     });
-  const listSources = (actor: DataActor) =>
+  const listSources = (actor: DataActor, filter: ProjectFilter = {}) =>
     run(actor, async (tx, now) => {
       const items: SourceView[] = [];
       const roots = await tx
@@ -1191,7 +1193,13 @@ export function createDataService(
           });
       void now;
       return {
-        sources: items,
+        sources: await filterSourcesByProject(
+          tx,
+          actor.workspaceId,
+          items,
+          new Map(prepared.map(({ parent }) => [parent.id, parent.projectId])),
+          filter,
+        ),
         ...(legacyCatalog.truncated ? { truncated: true } : {}),
       };
     });
@@ -1706,13 +1714,22 @@ export function createDataService(
           generationId: result.generationId,
         };
       }),
-    listPreparations: (actor: DataActor) =>
+    listPreparations: (actor: DataActor, filter: ProjectFilter = {}) =>
       run(actor, async (tx) => ({
         preparations: (
           await tx
             .select()
             .from(schema.dataPreparations)
-            .where(eq(schema.dataPreparations.workspaceId, actor.workspaceId))
+            .where(
+              and(
+                eq(schema.dataPreparations.workspaceId, actor.workspaceId),
+                projectFilterSql(
+                  schema.dataPreparations.projectId,
+                  actor.workspaceId,
+                  filter,
+                ),
+              ),
+            )
             .orderBy(asc(schema.dataPreparations.name))
         ).map(preparationView),
       })),
@@ -2022,13 +2039,22 @@ export function createDataService(
         await audit(tx, actor, "data.preparation_published", id);
         return { preparation: preparationView(updated!) };
       }),
-    listModels: (actor: DataActor) =>
+    listModels: (actor: DataActor, filter: ProjectFilter = {}) =>
       run(actor, async (tx) => ({
         models: (
           await tx
             .select()
             .from(schema.dataModels)
-            .where(eq(schema.dataModels.workspaceId, actor.workspaceId))
+            .where(
+              and(
+                eq(schema.dataModels.workspaceId, actor.workspaceId),
+                projectFilterSql(
+                  schema.dataModels.projectId,
+                  actor.workspaceId,
+                  filter,
+                ),
+              ),
+            )
             .orderBy(asc(schema.dataModels.name))
         ).map(modelView),
       })),
@@ -2334,6 +2360,57 @@ export function createDataService(
       }
     },
   };
+}
+
+/**
+ * Narrows the source list to a project (#572). A source follows its
+ * connection's project, a prepared output its preparation's; manual and
+ * other sources count as unassigned.
+ */
+async function filterSourcesByProject(
+  tx: Transaction,
+  workspaceId: string,
+  items: SourceView[],
+  preparationProjects: Map<string, string | null>,
+  filter: ProjectFilter,
+): Promise<SourceView[]> {
+  if (filter.project === undefined) return items;
+  const connections = await tx
+    .select({
+      id: schema.connections.id,
+      projectId: schema.connections.projectId,
+    })
+    .from(schema.connections)
+    .where(eq(schema.connections.workspaceId, workspaceId));
+  const connectionProjects = new Map(
+    connections.map((row) => [row.id, row.projectId]),
+  );
+  const visible =
+    filter.project === "all"
+      ? new Set(
+          (
+            await tx
+              .select({ id: schema.projects.id })
+              .from(schema.projects)
+              .where(
+                and(
+                  eq(schema.projects.workspaceId, workspaceId),
+                  isNull(schema.projects.archivedAt),
+                ),
+              )
+          ).map((row) => row.id),
+        )
+      : new Set([filter.project]);
+  const unassignedVisible =
+    filter.project === "all" || filter.unassigned === "include";
+  return items.filter((item) => {
+    const projectId = item.id.startsWith("prepared:")
+      ? (preparationProjects.get(item.id.split(":")[1]!) ?? null)
+      : item.connectionId
+        ? (connectionProjects.get(item.connectionId) ?? null)
+        : null;
+    return projectId === null ? unassignedVisible : visible.has(projectId);
+  });
 }
 
 async function findDataModel(

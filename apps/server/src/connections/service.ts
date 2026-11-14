@@ -76,6 +76,7 @@ import {
   type ConnectionWithState,
   type Database,
   type Transaction,
+  type ProjectFilter,
 } from "@netrics/database";
 
 import {
@@ -2050,9 +2051,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       );
     },
 
-    async list(actor: Actor) {
+    async list(actor: Actor, filter: ProjectFilter = {}) {
       const rows = await inWorkspace(actor, (tx) =>
-        listConnectionRows(tx, actor.workspaceId),
+        listConnectionRows(tx, actor.workspaceId, filter),
       );
       return rows.map((loaded) =>
         presentConnection(registry, loaded, actor.locale),

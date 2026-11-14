@@ -9,6 +9,7 @@ import {
   compareMeasureQuerySchema,
   compareMeasureReadingsResponseSchema,
   publishedModelCatalogSchema,
+  projectFilterQuerySchema,
 } from "@netrics/contracts";
 import {
   loadCompareSources,
@@ -156,6 +157,7 @@ export function registerDashboardRoutes(
           schema: routeSchema({
             summary: "List published models for dashboard bindings",
             tags: ["dashboards"],
+            querystring: projectFilterQuerySchema,
             response: publishedModelCatalogSchema,
             errors: [403, 404],
           }),
@@ -163,10 +165,12 @@ export function registerDashboardRoutes(
         async (request, reply) => {
           const access = await authorize(request, reply, "data:query");
           if (!access) return;
+          const filter = projectFilterQuerySchema.safeParse(request.query);
+          if (!filter.success) return sendError(reply, 400, "invalid_request");
           return withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) => publishedModels(tx, access.workspaceId),
+            (tx) => publishedModels(tx, access.workspaceId, filter.data),
           );
         },
       );
@@ -315,6 +319,7 @@ export function registerDashboardRoutes(
           schema: routeSchema({
             summary: "List dashboards",
             tags: ["dashboards"],
+            querystring: projectFilterQuerySchema,
             response: dashboardListResponseSchema,
             errors: [403, 404],
           }),
@@ -324,8 +329,12 @@ export function registerDashboardRoutes(
           if (!access) {
             return;
           }
+          const filter = projectFilterQuerySchema.safeParse(request.query);
+          if (!filter.success) {
+            return sendError(reply, 400, "invalid_request");
+          }
           return dashboardListResponseSchema.parse({
-            dashboards: await dashboards.list(access),
+            dashboards: await dashboards.list(access, filter.data),
           });
         },
       );

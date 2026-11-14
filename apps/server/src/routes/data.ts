@@ -63,14 +63,28 @@ export function registerDataRoutes(
     }
     return parsed.data.id;
   };
-  const doc = (summary: string, response: z.ZodType, body?: z.ZodType) =>
+  const doc = (
+    summary: string,
+    response: z.ZodType,
+    body?: z.ZodType,
+    querystring?: z.ZodType,
+  ) =>
     routeSchema({
       summary,
       tags: ["data"],
       response,
       ...(body ? { body } : {}),
+      ...(querystring ? { querystring } : {}),
       errors: [400, 403, 404, 409, 413, 503],
     });
+  const projectFilter = (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = contracts.projectFilterQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      sendError(reply, 400, "invalid_request");
+      return null;
+    }
+    return parsed.data;
+  };
   void app.register(
     (scope, _options, done) => {
       scope.addHook("onRequest", createRequireSession(deps.authService));
@@ -80,12 +94,16 @@ export function registerDataRoutes(
           schema: doc(
             "List typed source and prepared datasets",
             contracts.dataSourcesResponseSchema,
+            undefined,
+            contracts.projectFilterQuerySchema,
           ),
         },
         (request, reply) =>
-          execute(request, reply, "data:preview", (a) =>
-            service.listSources(a),
-          ),
+          execute(request, reply, "data:preview", async (a) => {
+            const filter = projectFilter(request, reply);
+            if (!filter) return;
+            return service.listSources(a, filter);
+          }),
       );
       scope.post(
         "/workspaces/:workspaceId/data/preview",
@@ -224,12 +242,16 @@ export function registerDataRoutes(
           schema: doc(
             "List preparation drafts and publication versions",
             contracts.preparationListResponseSchema,
+            undefined,
+            contracts.projectFilterQuerySchema,
           ),
         },
         (request, reply) =>
-          execute(request, reply, "data:edit", (a) =>
-            service.listPreparations(a),
-          ),
+          execute(request, reply, "data:edit", async (a) => {
+            const filter = projectFilter(request, reply);
+            if (!filter) return;
+            return service.listPreparations(a, filter);
+          }),
       );
       scope.post(
         "/workspaces/:workspaceId/data/preparations",
@@ -334,10 +356,16 @@ export function registerDataRoutes(
           schema: doc(
             "List model drafts and publication versions",
             contracts.modelListResponseSchema,
+            undefined,
+            contracts.projectFilterQuerySchema,
           ),
         },
         (request, reply) =>
-          execute(request, reply, "data:edit", (a) => service.listModels(a)),
+          execute(request, reply, "data:edit", async (a) => {
+            const filter = projectFilter(request, reply);
+            if (!filter) return;
+            return service.listModels(a, filter);
+          }),
       );
       scope.post(
         "/workspaces/:workspaceId/data/models/preview",

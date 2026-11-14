@@ -58,6 +58,7 @@ import {
   type SlideInput,
   type Transaction,
   type WidgetInput,
+  type ProjectFilter,
 } from "@netrics/database";
 import {
   CURRENCY_DIMENSION,
@@ -1364,12 +1365,12 @@ export function createDashboardService(deps: {
   };
 
   return {
-    list(actor: Actor) {
+    list(actor: Actor, filter: ProjectFilter = {}) {
       return inWorkspace(actor, async (tx) =>
         presentSummaries(
           tx,
           actor.workspaceId,
-          await listDashboards(tx, actor.workspaceId),
+          await listDashboards(tx, actor.workspaceId, filter),
         ),
       );
     },

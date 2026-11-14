@@ -12162,12 +12162,38 @@
         "tags": [
           "dashboards"
         ],
-        "security": [
-          {
-            "session": []
-          }
-        ],
         "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "all"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              ]
+            },
+            "in": "query",
+            "name": "project",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "unassigned",
+            "required": false
+          },
           {
             "schema": {
               "type": "string"
@@ -12175,6 +12201,11 @@
             "in": "path",
             "name": "workspaceId",
             "required": true
+          }
+        ],
+        "security": [
+          {
+            "session": []
           }
         ],
         "responses": {
@@ -12287,6 +12318,27 @@
                     "models"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
                 }
               }
             }
@@ -14824,12 +14876,38 @@
         "tags": [
           "dashboards"
         ],
-        "security": [
-          {
-            "session": []
-          }
-        ],
         "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "all"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              ]
+            },
+            "in": "query",
+            "name": "project",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "unassigned",
+            "required": false
+          },
           {
             "schema": {
               "type": "string"
@@ -14837,6 +14915,11 @@
             "in": "path",
             "name": "workspaceId",
             "required": true
+          }
+        ],
+        "security": [
+          {
+            "session": []
           }
         ],
         "responses": {
@@ -15063,6 +15146,27 @@
                     "dashboards"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
                 }
               }
             }
@@ -31548,12 +31652,38 @@
         "tags": [
           "data"
         ],
-        "security": [
-          {
-            "session": []
-          }
-        ],
         "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "all"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              ]
+            },
+            "in": "query",
+            "name": "project",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "unassigned",
+            "required": false
+          },
           {
             "schema": {
               "type": "string"
@@ -31561,6 +31691,11 @@
             "in": "path",
             "name": "workspaceId",
             "required": true
+          }
+        ],
+        "security": [
+          {
+            "session": []
           }
         ],
         "responses": {
@@ -34102,12 +34237,38 @@
         "tags": [
           "data"
         ],
-        "security": [
-          {
-            "session": []
-          }
-        ],
         "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "all"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              ]
+            },
+            "in": "query",
+            "name": "project",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "unassigned",
+            "required": false
+          },
           {
             "schema": {
               "type": "string"
@@ -34115,6 +34276,11 @@
             "in": "path",
             "name": "workspaceId",
             "required": true
+          }
+        ],
+        "security": [
+          {
+            "session": []
           }
         ],
         "responses": {
@@ -40189,12 +40355,38 @@
         "tags": [
           "data"
         ],
-        "security": [
-          {
-            "session": []
-          }
-        ],
         "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "all"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              ]
+            },
+            "in": "query",
+            "name": "project",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "unassigned",
+            "required": false
+          },
           {
             "schema": {
               "type": "string"
@@ -40202,6 +40394,11 @@
             "in": "path",
             "name": "workspaceId",
             "required": true
+          }
+        ],
+        "security": [
+          {
+            "session": []
           }
         ],
         "responses": {
@@ -69167,12 +69364,38 @@
         "tags": [
           "connections"
         ],
-        "security": [
-          {
-            "session": []
-          }
-        ],
         "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "all"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              ]
+            },
+            "in": "query",
+            "name": "project",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "unassigned",
+            "required": false
+          },
           {
             "schema": {
               "type": "string"
@@ -69180,6 +69403,11 @@
             "in": "path",
             "name": "workspaceId",
             "required": true
+          }
+        ],
+        "security": [
+          {
+            "session": []
           }
         ],
         "responses": {
@@ -69384,6 +69612,27 @@
                     "connections"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
                 }
               }
             }
