@@ -16,6 +16,8 @@ import {
   movePreparationStep,
   preparationMoveProblem,
   preparationRemovalProblem,
+  preparationStepStates,
+  preparationStepFailure,
 } from "./preparation-editing";
 
 const source: DataTable = {
@@ -549,5 +551,58 @@ it("changes a promoted sole source without changing its published output identit
     id: "published_output",
     type: "source",
     datasetId: "old",
+  });
+});
+
+describe("step states after a failure", () => {
+  const graph: PreparationGraph = {
+    version: 1,
+    nodes: [
+      { id: "a", type: "source", datasetId: "s1" },
+      {
+        id: "b",
+        type: "calculate",
+        input: "a",
+        fieldId: "x",
+        name: "X",
+        expression: { kind: "literal", type: "integer", value: 1 },
+      },
+      {
+        id: "c",
+        type: "filter",
+        input: "b",
+        expression: { kind: "literal", type: "boolean", value: true },
+      },
+      { id: "d", type: "source", datasetId: "s2" },
+      {
+        id: "e",
+        type: "join",
+        left: "c",
+        right: "d",
+        keys: [{ left: "x", right: "x" }],
+        mode: "left",
+        cardinality: "many_to_one",
+        rightPrefix: "r.",
+      },
+      { id: "f", type: "select", input: "d", fields: ["x"] },
+    ],
+    outputs: ["e", "f"],
+  };
+  it("marks the failed step and everything that reads it, across joins", () => {
+    expect(Object.fromEntries(preparationStepStates(graph, "b"))).toEqual({
+      b: "failed",
+      c: "affected",
+      e: "affected",
+    });
+  });
+  it("marks nothing for a step that is not in the graph", () => {
+    expect(preparationStepStates(graph, "gone").size).toBe(0);
+  });
+  it("keeps a location only when its step exists", () => {
+    expect(
+      preparationStepFailure({ nodeId: "b", fieldId: "x" }, graph),
+    ).toEqual({ nodeId: "b", fieldId: "x" });
+    expect(preparationStepFailure({ nodeId: "gone" }, graph)).toBeNull();
+    expect(preparationStepFailure({ fieldId: "x" }, graph)).toBeNull();
   });
 });

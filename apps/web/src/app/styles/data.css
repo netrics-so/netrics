@@ -79,6 +79,25 @@
 .data-step-list span {
   overflow-wrap: anywhere;
 }
+.data-step-list li[data-state] {
+  padding-left: 8px;
+}
+.data-step-list li[data-state="failed"] {
+  border-left: 3px solid var(--danger);
+}
+.data-step-list li[data-state="affected"] {
+  border-left: 3px dashed var(--muted);
+}
+.data-step-list li[data-state="failed"] .data-step-status {
+  color: var(--danger);
+}
+.data-step-list li[data-state] > p {
+  margin: 4px 0 8px;
+  font-size: 12px;
+}
+.data-step-list li[data-state] > p.error {
+  padding: 8px 10px;
+}
 .data-preview-panel {
   min-width: 0;
   background: var(--surface);

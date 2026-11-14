@@ -212,6 +212,14 @@ export const dataEn = {
     defaultPreparation: "Untitled preparation",
     defaultModel: "Untitled model",
     steps: "Applied steps",
+    stepStatus: {
+      failed: "Failed",
+      affected: "Affected",
+    },
+    stepFailed: "This step failed. {message}",
+    stepFailedColumn: "Column: {column}",
+    stepAffected:
+      "Not checked: this step uses the result of a failed step. Earlier steps still preview.",
     editStep: "Edit step",
     applyStepChanges: "Preview and apply changes",
     moveStepUp: "Move step earlier",
