@@ -95,6 +95,23 @@ export function dataErrorKey(error: unknown) {
       : "";
   return dataErrorCodeKey(code);
 }
+export interface DataErrorLocation {
+  nodeId?: string;
+  fieldId?: string;
+}
+/** The preparation step and column a data error names; only the keys that are set. */
+export function dataErrorLocation(error: unknown): DataErrorLocation {
+  const source =
+    error instanceof ApiError
+      ? error.details
+      : error instanceof DataProcessingError
+        ? error
+        : {};
+  return {
+    ...(source.nodeId ? { nodeId: source.nodeId } : {}),
+    ...(source.fieldId ? { fieldId: source.fieldId } : {}),
+  };
+}
 export function enteredValue(
   type: DataType,
   text: string,
