@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type KeyboardEvent,
@@ -22,6 +23,7 @@ import {
   type NavPermissions,
   type NavSection,
 } from "@/lib/app-nav";
+import { ApiError, setActiveProject } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { useT } from "@/lib/i18n/client";
 
@@ -36,7 +38,51 @@ export interface AppShellProps {
   /** How many connections the workspace has, and how many need attention. */
   sourceCount: number;
   attention: number;
+  /** The workspace's projects that are not archived, for the switcher. */
+  projects: readonly { id: string; name: string }[];
+  /** The user's active project; null is "All projects" (#573). */
+  activeProjectId: string | null;
   children: ReactNode;
+}
+
+/** How a project switch ended. */
+export type ProjectSwitchOutcome = "switched" | "archived" | "failed";
+
+/**
+ * Stores the active project and reloads the page, whose lists follow it.
+ * A refused switch reloads too, so the switcher and the lists show what
+ * is stored (a project archived meanwhile drops out of the switcher).
+ */
+export async function switchProject(
+  workspaceId: string,
+  projectId: string | null,
+  refresh: () => void,
+): Promise<ProjectSwitchOutcome> {
+  let outcome: ProjectSwitchOutcome = "switched";
+  try {
+    await setActiveProject(workspaceId, projectId);
+  } catch (cause) {
+    outcome =
+      cause instanceof ApiError && cause.code === "project_archived"
+        ? "archived"
+        : "failed";
+  }
+  refresh();
+  return outcome;
+}
+
+/** Why the switcher shows something else than was chosen. */
+export function ProjectSwitchError({
+  outcome,
+}: {
+  outcome: Exclude<ProjectSwitchOutcome, "switched">;
+}) {
+  const t = useT("shell");
+  return (
+    <p className="project-switcher-error" role="alert">
+      {t(outcome === "archived" ? "projectArchived" : "projectSwitchFailed")}
+    </p>
+  );
 }
 
 /**
@@ -124,6 +170,8 @@ const SECTIONS: readonly NavSection[] = ["dashboards", "sources", "screens"];
 function Sidebar({
   workspaceId,
   workspaces,
+  projects,
+  activeProjectId,
   items,
   active,
   pathname,
@@ -180,6 +228,14 @@ function Sidebar({
         </button>
       </div>
       <WorkspaceSwitcher workspaceId={workspaceId} workspaces={workspaces} />
+      {projects.length > 0 ? (
+        <ProjectSwitcher
+          key={workspaceId}
+          workspaceId={workspaceId}
+          projects={projects}
+          activeProjectId={activeProjectId}
+        />
+      ) : null}
       <nav className="shell-nav" aria-label={t("sidebar")}>
         <ul className="shell-nav-list">
           {home ? row(home) : null}
@@ -255,6 +311,68 @@ function WorkspaceSwitcher({
         <span className="shell-menu-item-label">{t("new")}</span>
       </Link>
     </Menu>
+  );
+}
+
+/**
+ * The active project (#573): lists and pickers on every page follow it;
+ * the choice is stored with the membership, so it follows the user.
+ */
+function ProjectSwitcher({
+  workspaceId,
+  projects,
+  activeProjectId,
+}: Pick<ShellParts, "workspaceId" | "projects" | "activeProjectId">) {
+  const t = useT("shell");
+  const router = useRouter();
+  const id = useId();
+  const [value, setValue] = useState(activeProjectId ?? "");
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState<Exclude<
+    ProjectSwitchOutcome,
+    "switched"
+  > | null>(null);
+  // The stored choice, after a refresh or a change elsewhere.
+  useEffect(() => {
+    setValue(activeProjectId ?? "");
+  }, [activeProjectId]);
+
+  async function onChange(next: string) {
+    if (pending) return;
+    const previous = value;
+    setValue(next);
+    setPending(true);
+    setFailed(null);
+    const outcome = await switchProject(workspaceId, next || null, () =>
+      router.refresh(),
+    );
+    if (outcome !== "switched") {
+      setValue(previous);
+      setFailed(outcome);
+    }
+    setPending(false);
+  }
+
+  return (
+    <div className="project-switcher">
+      <label htmlFor={id} className="project-switcher-label">
+        {t("projectSwitcher")}
+      </label>
+      <select
+        id={id}
+        value={value}
+        aria-busy={pending}
+        onChange={(event) => void onChange(event.target.value)}
+      >
+        <option value="">{t("allProjects")}</option>
+        {projects.map((project) => (
+          <option key={project.id} value={project.id}>
+            {project.name}
+          </option>
+        ))}
+      </select>
+      {failed ? <ProjectSwitchError outcome={failed} /> : null}
+    </div>
   );
 }
 

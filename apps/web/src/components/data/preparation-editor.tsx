@@ -52,6 +52,7 @@ export function PreparationEditor({
   sources: sourceCatalog,
   initial,
   sourceId,
+  projectId = null,
   onSaved,
   onClose,
   onDirty,
@@ -60,6 +61,8 @@ export function PreparationEditor({
   sources: DataSource[];
   initial: PreparationDraft | null;
   sourceId?: string;
+  /** The project a new preparation starts in (#573). */
+  projectId?: string | null;
   onSaved: (draft: PreparationDraft) => void;
   onClose: () => void;
   onDirty: (dirty: boolean) => void;
@@ -224,7 +227,7 @@ export function PreparationEditor({
               {
                 name: name.trim(),
                 graph,
-                ...(record ? { version: record.version } : {}),
+                ...(record ? { version: record.version } : { projectId }),
               },
               record?.id,
             );

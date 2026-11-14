@@ -1,8 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Locale } from "@netrics/domain";
 
-import { AppShellFrame, type AppShellProps } from "./app-shell";
+import {
+  AppShellFrame,
+  ProjectSwitchError,
+  switchProject,
+  type AppShellProps,
+} from "./app-shell";
 import { renderI18n } from "@/lib/i18n/test-render";
 
 vi.mock("next/navigation", () => ({
@@ -30,6 +35,8 @@ function render(
       permissions={{ viewDevices: true, createConnections: true }}
       sourceCount={3}
       attention={0}
+      projects={[]}
+      activeProjectId={null}
       {...overrides}
     >
       <p id="page">page</p>
@@ -49,6 +56,114 @@ function sidebarLinks(html: string): [string, string | null][] {
     /aria-current="([^"]*)"/.exec(attributes)?.[1] ?? null,
   ]);
 }
+
+const A = "00000000-0000-4000-8000-0000000000aa";
+const B = "00000000-0000-4000-8000-0000000000bb";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("project switcher (#573)", () => {
+  it("switches the active project and refreshes", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ activeProjectId: A }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const refresh = vi.fn();
+    await expect(switchProject(W, A, refresh)).resolves.toBe("switched");
+    expect(fetch).toHaveBeenCalledWith(
+      `/v1/workspaces/${W}/active-project`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ projectId: A }),
+      }),
+    );
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [409, "project_archived", "archived"],
+    [503, "unavailable", "failed"],
+  ] as const)(
+    "refreshes after a failed switch (%i %s) so the page shows what is stored",
+    async (status, error, outcome) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ error }), {
+              status,
+              headers: { "content-type": "application/json" },
+            }),
+        ),
+      );
+      const refresh = vi.fn();
+      await expect(switchProject(W, A, refresh)).resolves.toBe(outcome);
+      expect(refresh).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("marks the switcher busy, not disabled, while switching", () => {
+    const html = render(BASE, {
+      projects: [{ id: A, name: "Alpha" }],
+      activeProjectId: null,
+    });
+    expect(html).toContain('aria-busy="false"');
+    expect(html).not.toMatch(/<select[^>]*disabled/);
+  });
+
+  it("has a message for a project archived meanwhile", () => {
+    expect(
+      renderI18n(<ProjectSwitchError outcome="archived" />, "en"),
+    ).toContain("This project has been archived and can’t be chosen.");
+    expect(
+      renderI18n(<ProjectSwitchError outcome="archived" />, "de"),
+    ).toContain("Dieses Projekt ist archiviert und kann nicht gewählt werden.");
+    expect(renderI18n(<ProjectSwitchError outcome="failed" />, "en")).toContain(
+      "Could not switch the project. Try again.",
+    );
+  });
+
+  it("offers All projects and the projects, the active one selected", () => {
+    const html = render(BASE, {
+      projects: [
+        { id: A, name: "Alpha" },
+        { id: B, name: "Beta" },
+      ],
+      activeProjectId: B,
+    });
+    expect(html).toContain(">Project</label>");
+    expect(html).toContain('<option value="">All projects</option>');
+    expect(html).toContain(`<option value="${A}">Alpha</option>`);
+    expect(html).toContain(`<option value="${B}" selected="">Beta</option>`);
+    const all = render(BASE, {
+      projects: [{ id: A, name: "Alpha" }],
+      activeProjectId: null,
+    });
+    expect(all).toContain('<option value="" selected="">All projects</option>');
+  });
+
+  it("hides the switcher without projects", () => {
+    const html = render(BASE);
+    expect(html).not.toContain(">Project</label>");
+    expect(html).not.toContain("All projects");
+  });
+
+  it("speaks German", () => {
+    const html = render(
+      BASE,
+      { projects: [{ id: A, name: "Alpha" }], activeProjectId: null },
+      "de",
+    );
+    expect(html).toContain(">Projekt</label>");
+    expect(html).toContain(">Alle Projekte</option>");
+  });
+});
 
 describe("app shell (#302)", () => {
   it("lists only existing destinations with their routes", () => {

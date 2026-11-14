@@ -4713,6 +4713,29 @@ button.shell-menu-item--danger {
   right: 0;
 }
 
+/* The active project (#573), under the workspace switcher. */
+.project-switcher {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+
+.project-switcher-label {
+  color: var(--muted);
+  font-size: var(--size-12);
+  font-weight: 600;
+}
+
+.project-switcher select {
+  width: 100%;
+}
+
+.project-switcher-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--size-12);
+}
+
 .shell-body {
   display: flex;
   flex-direction: column;

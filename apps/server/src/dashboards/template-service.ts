@@ -178,7 +178,10 @@ export function createTemplateService(deps: TemplateServiceDeps) {
         }
         return deps.dashboards.create(
           actor,
-          createDashboardRequestSchema.parse(built),
+          createDashboardRequestSchema.parse({
+            ...built,
+            projectId: body.projectId,
+          }),
         );
       }
 
@@ -246,7 +249,10 @@ export function createTemplateService(deps: TemplateServiceDeps) {
       }
       return deps.dashboards.create(
         actor,
-        createDashboardRequestSchema.parse(built),
+        createDashboardRequestSchema.parse({
+          ...built,
+          projectId: body.projectId,
+        }),
       );
     },
   };

@@ -14,6 +14,7 @@ import {
   preparationViewSchema,
   modelViewSchema,
 } from "@netrics/contracts";
+import type { ProjectFilterQuery } from "@netrics/contracts";
 import type {
   PreparationGraph,
   SemanticModelDefinition,
@@ -22,6 +23,7 @@ import type {
 import { browserSend, ApiError } from "./api";
 import { referenceRecordPages } from "./data-editing";
 import { apiFetch } from "./api-fetch";
+import { projectQueryString } from "./project-scope";
 
 export type DataSource = z.infer<typeof dataSourceViewSchema>;
 export type PreparationDraft = z.infer<typeof preparationViewSchema>;
@@ -45,20 +47,84 @@ async function read<T>(
     throw new ApiError(response.status, "data_operation_failed");
   return schema.parse(await response.json());
 }
+/** Datasets, preparations and models; all, or those of a project scope. */
 export async function getDataWorkspace(
   workspaceId: string,
   cookie?: string,
+  query?: ProjectFilterQuery,
 ): Promise<DataWorkspace> {
+  const filter = projectQueryString(query);
   const [sources, preparations, models] = await Promise.all([
-    read(dataSourcesResponseSchema, base(workspaceId) + "/sources", cookie),
     read(
-      preparationListResponseSchema,
-      base(workspaceId) + "/preparations",
+      dataSourcesResponseSchema,
+      base(workspaceId) + "/sources" + filter,
       cookie,
     ),
-    read(modelListResponseSchema, base(workspaceId) + "/models", cookie),
+    read(
+      preparationListResponseSchema,
+      base(workspaceId) + "/preparations" + filter,
+      cookie,
+    ),
+    read(
+      modelListResponseSchema,
+      base(workspaceId) + "/models" + filter,
+      cookie,
+    ),
   ]);
   return { ...sources, ...preparations, ...models };
+}
+/** One model by id, whatever its project; null when it is gone. */
+export async function getModel(
+  workspaceId: string,
+  id: string,
+  cookie?: string,
+): Promise<ModelDraft | null> {
+  try {
+    return (
+      await read(
+        modelResponseSchema,
+        base(workspaceId) + "/models/" + encodeURIComponent(id),
+        cookie,
+      )
+    ).model;
+  } catch (failure) {
+    if (failure instanceof ApiError && failure.status === 404) return null;
+    throw failure;
+  }
+}
+/** The datasets alone, e.g. for the editors' source picker (#573). */
+export async function getDataSources(
+  workspaceId: string,
+  cookie?: string,
+  query?: ProjectFilterQuery,
+): Promise<DataSource[]> {
+  const { sources } = await read(
+    dataSourcesResponseSchema,
+    base(workspaceId) + "/sources" + projectQueryString(query),
+    cookie,
+  );
+  return sources;
+}
+/** Moves a preparation or model to a project, or to none; no new draft. */
+export function setDataProject(
+  workspaceId: string,
+  kind: "preparations" | "models",
+  id: string,
+  projectId: string | null,
+): Promise<{ projectId: string | null }> {
+  return kind === "preparations"
+    ? browserSend(
+        preparationResponseSchema,
+        "PUT",
+        base(workspaceId) + `/preparations/${id}/project`,
+        { projectId },
+      ).then((response) => response.preparation)
+    : browserSend(
+        modelResponseSchema,
+        "PUT",
+        base(workspaceId) + `/models/${id}/project`,
+        { projectId },
+      ).then((response) => response.model);
 }
 export const previewData = (
   workspaceId: string,
@@ -89,6 +155,8 @@ export const savePreparation = (
     graph: PreparationGraph;
     version?: number;
     adoptLatestInputs?: boolean;
+    /** The project a new item starts in (#573); ignored for drafts. */
+    projectId?: string | null;
   },
   id?: string,
 ) =>
@@ -116,6 +184,8 @@ export const saveModel = (
     definition: SemanticModelDefinition;
     version?: number;
     adoptLatestInputs?: boolean;
+    /** The project a new item starts in (#573); ignored for drafts. */
+    projectId?: string | null;
   },
   id?: string,
 ) =>

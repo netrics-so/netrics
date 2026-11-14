@@ -82,9 +82,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     meta: "{count, plural, =0 {Noch keine Dashboards} one {# Dashboard} other {# Dashboards}}",
     metaLive:
       "{count, plural, one {# Dashboard} other {# Dashboards}} · {live} live auf Bildschirmen",
-    projectFilter: "Projekt",
-    allProjects: "Alle Projekte",
-    noProject: "Kein Projekt",
+    activeProjectMeta: "In {project}",
     newDashboard: "Neues Dashboard",
     templates: "Mit einer Vorlage starten",
     template: {
@@ -115,6 +113,15 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       summary: "Projekte verwalten",
       count:
         "{count, plural, =0 {noch keine} one {# Projekt} other {# Projekte}}",
+      archive: "Archivieren",
+      unarchive: "Aus dem Archiv holen",
+      archived: "Archiviert",
+      archiveHint:
+        "Archivierte Projekte und ihre Inhalte sind in Listen und Auswahlen ausgeblendet. Bildschirme zeigen ihre Dashboards weiter an.",
+      archiveNamed: "{name} archivieren",
+      unarchiveNamed: "{name} aus dem Archiv holen",
+      project: "Projekt",
+      noProject: "Kein Projekt",
     },
   },
 };

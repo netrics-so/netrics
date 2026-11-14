@@ -532,4 +532,51 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
     expect(await read(installed.dashboardId)).toBe("12.4");
     expect(await read(second.value.id)).toBe("12.4");
   });
+  it("installs into the requested project, refusing archived and foreign ones (#573)", async () => {
+    const workspace = await createWorkspace(db, {
+      name: "Projects",
+      ownerUserId: userId,
+    });
+    const other = await createWorkspace(db, {
+      name: "Foreign",
+      ownerUserId: userId,
+    });
+    const project = async (id: string, archived: boolean) =>
+      (
+        await owner`insert into projects(workspace_id,name,archived_at)
+          values (${id},${"P " + randomUUID()},${archived ? new Date(now) : null})
+          returning id`
+      )[0]!.id as string;
+    const active = await project(workspace, false);
+    const archived = await project(workspace, true);
+    const foreign = await project(other, false);
+    const connection = randomUUID();
+    await owner`insert into connections(id,workspace_id,connector_id,name,setup_pending)
+      values (${connection},${workspace},'app-store-connect','Apple',false)`;
+    const as = { ...actor(), workspaceId: workspace };
+    const request = (projectId: string) => ({
+      requestId: randomUUID(),
+      name: "In a project",
+      connections: [connection],
+      groups: [],
+      projectId,
+    });
+    for (const refused of [archived, foreign]) {
+      await expect(service().install(as, request(refused))).rejects.toThrow(
+        "project_not_found",
+      );
+      expect(await count("dashboards", workspace)).toBe(0);
+      expect(await count("data_preparations", workspace)).toBe(0);
+    }
+    const result = await service().install(as, request(active));
+    const projectOf = async (table: string, id: string) =>
+      (
+        await owner.unsafe(`select project_id from ${table} where id=$1`, [id])
+      )[0]!.project_id as string | null;
+    expect(await projectOf("dashboards", result.dashboardId)).toBe(active);
+    for (const model of Object.values(result.models))
+      expect(await projectOf("data_models", model)).toBe(active);
+    for (const preparation of result.preparationIds)
+      expect(await projectOf("data_preparations", preparation)).toBe(active);
+  });
 });

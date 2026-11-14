@@ -25,9 +25,15 @@ const PAGE = 50;
 export function StoreTemplateForm({
   workspaceId,
   initialConnectionId,
+  projectId = null,
 }: {
   workspaceId: string;
   initialConnectionId?: string;
+  /**
+   * The user's active project: the dashboard, preparations and models
+   * start in it (#573).
+   */
+  projectId?: string | null;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
@@ -220,6 +226,7 @@ export function StoreTemplateForm({
     setError(null);
     try {
       const result = await installStoreTemplate(workspaceId, {
+        ...(projectId ? { projectId } : {}),
         requestId,
         name: name.trim(),
         connections: selected,

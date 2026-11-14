@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 
-import { CreateDashboardForm } from "../create-dashboard-form";
+import {
+  CreateDashboardForm,
+  blankDashboardRequest,
+} from "../create-dashboard-form";
 import { thumbnailFrame } from "./dashboard-thumbnail";
 import {
   DashboardsBrowser,
-  filterByProject,
   type DashboardCardData,
 } from "./dashboards-browser";
 
@@ -54,7 +56,6 @@ function render(
     <DashboardsBrowser
       workspaceId={WORKSPACE}
       dashboards={[card()]}
-      projects={[]}
       canCreate
       canEdit
       title="Dashboards"
@@ -115,25 +116,30 @@ describe("dashboards page (#304)", () => {
     expect(html).toContain("+</span> New dashboard");
   });
 
-  it("filters by project only when there are projects", () => {
-    expect(render()).not.toContain("All projects");
-    const html = render({ projects: [{ id: PROJECT, name: "Wurfel" }] });
-    expect(html).toContain(
-      '<option value="" selected="">All projects</option>',
-    );
-    expect(html).toContain(`<option value="${PROJECT}">Wurfel</option>`);
-    // The one dashboard has no project, so that choice is offered too.
-    expect(html).toContain('<option value="none">No project</option>');
+  it("lists exactly the dashboards it is given, without a project filter (#573)", () => {
+    const html = render({
+      dashboards: [
+        card({ id: "00000000-0000-4000-8000-000000000011", name: "In A" }),
+        card({
+          id: "00000000-0000-4000-8000-000000000012",
+          name: "Unassigned",
+          projectId: PROJECT,
+        }),
+      ],
+    });
+    expect(html.match(/class="dash-card"/g)).toHaveLength(2);
+    expect(html).toContain(">In A<");
+    expect(html).toContain(">Unassigned<");
+    // The active project in the shell decides; the page has no filter.
+    expect(html).not.toContain("<select");
+    expect(html).not.toContain("All projects");
+    expect(html).not.toContain("No project");
   });
 
-  it("filters dashboards by project", () => {
-    const list = [
-      { id: "a", projectId: PROJECT },
-      { id: "b", projectId: null },
-    ];
-    expect(filterByProject(list, "").map((d) => d.id)).toEqual(["a", "b"]);
-    expect(filterByProject(list, PROJECT).map((d) => d.id)).toEqual(["a"]);
-    expect(filterByProject(list, "none").map((d) => d.id)).toEqual(["b"]);
+  it("says when the active project has no dashboards yet", () => {
+    const html = render({ dashboards: [], projectName: "Wurfel" });
+    expect(html).toContain("No dashboards in this project yet.");
+    expect(html).toContain("dashboards-template--overview");
   });
 
   it("has a friendly empty state", () => {
@@ -147,10 +153,7 @@ describe("dashboards page (#304)", () => {
   });
 
   it("speaks German", () => {
-    const html = render(
-      { dashboards: [card({ screenCount: 1 })], projects: [] },
-      "de",
-    );
+    const html = render({ dashboards: [card({ screenCount: 1 })] }, "de");
     expect(html).toContain("Mit einer Vorlage starten");
     expect(html).toContain(">3 Folien<");
     expect(html).toContain(">Auf 1 Bildschirm<");
@@ -184,5 +187,18 @@ describe("create form preselection (#304)", () => {
     const blank = renderI18n(<CreateDashboardForm workspaceId={WORKSPACE} />);
     expect(blank).toMatch(/checked="" value="blank"/);
     expect(blank).toContain('name="primary-format"');
+  });
+});
+
+describe("new dashboards in the active project (#573)", () => {
+  it("creates a blank dashboard in the active project", () => {
+    expect(blankDashboardRequest("Wall", "16x9", PROJECT)).toEqual({
+      name: "Wall",
+      projectId: PROJECT,
+    });
+    expect(blankDashboardRequest("Wall", "9x16", null)).toEqual({
+      name: "Wall",
+      primaryFormat: "9x16",
+    });
   });
 });

@@ -85,6 +85,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
         state: connection.state,
         setupPending: connection.setupPending,
         connectorId: connection.connectorId,
+        projectId: connection.projectId,
       },
     ]),
   );
@@ -102,7 +103,9 @@ export default async function StudioPage({ params }: StudioPageProps) {
         projects={projects.map((project) => ({
           id: project.id,
           name: project.name,
+          archivedAt: project.archivedAt,
         }))}
+        activeProjectId={membership.activeProjectId}
         devices={devices?.devices ?? null}
         currency={{
           displayCurrency: workspaceResult?.workspace.displayCurrency ?? null,

@@ -2581,6 +2581,8 @@ export const createDashboardFromTemplateRequestSchema = z.discriminatedUnion(
       template: z.literal("overview"),
       /** Default "Overview". */
       name: nameSchema.optional(),
+      /** The project it starts in (#573); not an archived one. */
+      projectId: z.uuid().nullable().optional(),
     }),
     z.object({
       template: z.literal("brand"),
@@ -2598,6 +2600,8 @@ export const createDashboardFromTemplateRequestSchema = z.discriminatedUnion(
        * (fetched now if needed), null: no logo.
        */
       logoImageId: z.uuid().nullable().optional(),
+      /** The project it starts in (#573); not an archived one. */
+      projectId: z.uuid().nullable().optional(),
     }),
   ],
 );

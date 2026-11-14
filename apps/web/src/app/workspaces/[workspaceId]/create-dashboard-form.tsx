@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type {
+  CreateDashboardRequest,
   DashboardTemplateOptionsResponse,
   WorkspaceImage,
 } from "@netrics/contracts";
@@ -22,6 +23,7 @@ import {
   fetchResourceIcon,
 } from "@/lib/api";
 import { brandAccent } from "@/lib/dominant-color";
+import { inProject } from "@/lib/project-scope";
 import { readIconPixels } from "@/lib/icon-pixels";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { PREVIEW_FORMAT_ORDER } from "@/lib/studio-formats";
@@ -42,6 +44,18 @@ function resourceKey(resource: { connectionId: string; resourceId: string }) {
   return `${resource.connectionId}|${resource.resourceId}`;
 }
 
+/** A blank dashboard, in the active project when there is one (#573). */
+export function blankDashboardRequest(
+  name: string,
+  format: ScreenFormat,
+  projectId: string | null,
+): CreateDashboardRequest {
+  return inProject(
+    { name, ...(format === "16x9" ? {} : { primaryFormat: format }) },
+    projectId,
+  );
+}
+
 /**
  * "New dashboard": blank, or from a template (ADR 0015 section 9, #226).
  * Templates are generated on the server; the Brand template's icon is
@@ -52,10 +66,13 @@ function resourceKey(resource: { connectionId: string; resourceId: string }) {
 export function CreateDashboardForm({
   workspaceId,
   initialChoice = "blank",
+  projectId = null,
 }: {
   workspaceId: string;
   /** The template preselected, e.g. from a template card (#304). */
   initialChoice?: Choice;
+  /** The user's active project: a new dashboard starts in it (#573). */
+  projectId?: string | null;
 }) {
   const locale = useLocale();
   const t = useT("workspace.newDashboard");
@@ -173,23 +190,35 @@ export function CreateDashboardForm({
     try {
       const { dashboard } =
         choice === "blank"
-          ? await createDashboard(workspaceId, {
-              name: trimmed,
-              ...(format === "16x9" ? {} : { primaryFormat: format }),
-            })
+          ? await createDashboard(
+              workspaceId,
+              blankDashboardRequest(trimmed, format, projectId),
+            )
           : choice === "overview"
-            ? await createDashboardFromTemplate(workspaceId, {
-                template: "overview",
-                ...(trimmed ? { name: trimmed } : {}),
-              })
-            : await createDashboardFromTemplate(workspaceId, {
-                template: "brand",
-                connectionId: selected!.connectionId,
-                resourceId: selected!.resourceId,
-                ...(trimmed ? { name: trimmed } : {}),
-                accentColor: accent,
-                logoImageId: icon?.id ?? null,
-              });
+            ? await createDashboardFromTemplate(
+                workspaceId,
+                inProject(
+                  {
+                    template: "overview" as const,
+                    ...(trimmed ? { name: trimmed } : {}),
+                  },
+                  projectId,
+                ),
+              )
+            : await createDashboardFromTemplate(
+                workspaceId,
+                inProject(
+                  {
+                    template: "brand" as const,
+                    connectionId: selected!.connectionId,
+                    resourceId: selected!.resourceId,
+                    ...(trimmed ? { name: trimmed } : {}),
+                    accentColor: accent,
+                    logoImageId: icon?.id ?? null,
+                  },
+                  projectId,
+                ),
+              );
       router.push(
         `/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`,
       );

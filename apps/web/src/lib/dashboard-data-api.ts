@@ -4,6 +4,7 @@ import {
   publishedModelCatalogSchema,
   dashboardDataResponseSchema,
   type MetricPeriod,
+  type ProjectFilterQuery,
 } from "@netrics/contracts";
 import type {
   CompareFormat,
@@ -13,11 +14,16 @@ import type {
   MeasureWidgetBinding,
 } from "@netrics/domain";
 import { browserSend } from "./api";
-export const loadPublishedModels = (workspaceId: string) =>
+import { projectQueryString } from "./project-scope";
+/** Published models for bindings; all, or those of a project scope (#573). */
+export const loadPublishedModels = (
+  workspaceId: string,
+  query?: ProjectFilterQuery,
+) =>
   browserSend(
     publishedModelCatalogSchema,
     "GET",
-    `/v1/workspaces/${workspaceId}/dashboards/published-models`,
+    `/v1/workspaces/${workspaceId}/dashboards/published-models${projectQueryString(query)}`,
   );
 export const previewDashboardMeasures = (
   workspaceId: string,

@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 import { can } from "@netrics/domain";
 
 import { ApproveDeviceForm, type ApprovableWorkspace } from "./approve-form";
-import { listDashboards, listWorkspaces } from "@/lib/api";
+import { listDashboards, listProjects, listWorkspaces } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
+import { pickableDashboards } from "@/lib/project-pickers";
+import { projectScope } from "@/lib/project-scope";
 import { getSessionUser } from "@/lib/session";
 import { headers } from "next/headers";
 
@@ -43,17 +45,24 @@ export default async function ApproveDevicePage({
   const manageable = workspaces.filter((workspace) =>
     can(workspace.role, "devices:manage"),
   );
+  // Each workspace offers its active project's and unassigned dashboards,
+  // never those of archived projects (#573).
   const approvable: ApprovableWorkspace[] = await Promise.all(
-    manageable.map(async (workspace) => ({
-      id: workspace.id,
-      name: workspace.name,
-      dashboards: (
-        await listDashboards(cookieHeader, workspace.id)
-      ).dashboards.map((dashboard) => ({
-        id: dashboard.id,
-        name: dashboard.name,
-      })),
-    })),
+    manageable.map(async (workspace) => {
+      const [{ dashboards }, { projects }] = await Promise.all([
+        listDashboards(cookieHeader, workspace.id),
+        listProjects(cookieHeader, workspace.id),
+      ]);
+      return {
+        id: workspace.id,
+        name: workspace.name,
+        dashboards: pickableDashboards(
+          dashboards,
+          projectScope(workspace.activeProjectId, projects),
+          null,
+        ).map((dashboard) => ({ id: dashboard.id, name: dashboard.name })),
+      };
+    }),
   );
 
   const t = await getT("deviceApproval");

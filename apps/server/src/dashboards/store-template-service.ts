@@ -342,6 +342,7 @@ export function createStoreTemplateService(deps: {
                 const saved = await data.savePreparation(actor, {
                   name: name.slice(0, 100),
                   graph,
+                  projectId: input.projectId,
                 });
                 await data.publishPreparation(
                   actor,
@@ -390,6 +391,7 @@ export function createStoreTemplateService(deps: {
                 const model = await data.saveModel(actor, {
                   name: `${input.name} · ${t[metric]}`.slice(0, 100),
                   definition,
+                  projectId: input.projectId,
                 });
                 await data.publishModel(
                   actor,
@@ -412,14 +414,15 @@ export function createStoreTemplateService(deps: {
                 : undefined;
               const dashboard = await createDashboardService({ db: tx }).create(
                 actor,
-                createDashboardRequestSchema.parse(
-                  buildStoreDashboard(
+                createDashboardRequestSchema.parse({
+                  ...buildStoreDashboard(
                     input.name,
                     models,
                     actor.locale,
                     product,
                   ),
-                ),
+                  projectId: input.projectId,
+                }),
               );
               if (!dashboard.ok)
                 reject(
