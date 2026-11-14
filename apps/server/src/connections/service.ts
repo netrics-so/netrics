@@ -1557,6 +1557,20 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     });
   }
 
+  /** The project if it still takes new connections (not archived), else null. */
+  async function activeProjectOf(
+    actor: Actor,
+    projectId: string | null,
+  ): Promise<string | null> {
+    if (!projectId) {
+      return null;
+    }
+    const project = await inWorkspace(actor, (tx) =>
+      findProject(tx, actor.workspaceId, projectId),
+    );
+    return project && project.archivedAt === null ? project.id : null;
+  }
+
   /**
    * An existing connection of this workspace that can lend its stored
    * signed key to new connections (#395): found with the workspace
@@ -1870,7 +1884,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return lending;
       }
       const { existing, lent } = lending.value;
-      const projectId = body.projectId ?? existing.row.projectId;
+      // The lending connection's project only while it takes new
+      // connections: an archived one leaves them without a project instead
+      // of refusing the request (#589). A project the request names is
+      // checked as usual.
+      const projectId =
+        body.projectId ??
+        (await activeProjectOf(actor, existing.row.projectId));
       return createConnections(
         actor,
         {

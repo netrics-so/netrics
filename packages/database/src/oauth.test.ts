@@ -296,6 +296,20 @@ describe("authorization rows", () => {
       ),
       /oauth_authorizations_account_change/,
     );
+    // A project is for new connections only (#589).
+    await expectDbError(
+      withWorkspace(db, { workspaceId: workspaceA }, (tx) =>
+        insertOAuthAuthorization(
+          tx,
+          authorization(workspaceA, userA, {
+            purpose: "reauthorize",
+            connectionId: connectionA,
+            projectId: randomUUID(),
+          }),
+        ),
+      ),
+      /oauth_authorizations_project_connect/,
+    );
   });
 
   it("accepts only relative return paths", async () => {
@@ -376,6 +390,7 @@ describe("consume_oauth_authorization", () => {
       provider: "google",
       connectorId: "demo",
       connectionId: connectionA,
+      projectId: null,
       purpose: "reauthorize",
       allowAccountChange: true,
       returnPath: "/workspaces/a/connections/c",
@@ -432,6 +447,7 @@ describe("consume_oauth_authorization", () => {
         "provider",
         "connector_id",
         "connection_id",
+        "project_id",
         "purpose",
         "allow_account_change",
         "return_path",

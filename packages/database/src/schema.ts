@@ -1483,6 +1483,11 @@ export const oauthAuthorizations = pgTable(
     // key (connection_id, workspace_id) → connections pins it to this
     // workspace and goes with the connection.
     connectionId: uuid("connection_id"),
+    // The project a new connection starts in (#589); null for none. Checked
+    // at start and again at the callback; a deleted project clears it.
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     purpose: text("purpose").notNull(),
     // Whether the grant may come from a different provider account than the
     // one linked to the connection (reauthorization only).
@@ -1513,6 +1518,10 @@ export const oauthAuthorizations = pgTable(
     check(
       "oauth_authorizations_purpose_connection",
       sql`(${table.purpose} = 'reauthorize') = (${table.connectionId} is not null)`,
+    ),
+    check(
+      "oauth_authorizations_project_connect",
+      sql`${table.projectId} is null or ${table.purpose} = 'connect'`,
     ),
     check(
       "oauth_authorizations_account_change",

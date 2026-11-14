@@ -887,11 +887,17 @@ export const oauthReturnPathSchema = z
  * reauthorizes that connection (connections:update).
  * `allowAccountChange` (reauthorization only) accepts a grant from a
  * different provider account than the linked one.
+ * `projectId` (new connections only) starts the connection in that project
+ * of the workspace (#589); an archived or unknown one is refused (404
+ * project_not_found). If it is archived or deleted before the callback, the
+ * connection is created without a project and the return path says so
+ * (`projectNotice=unassigned`).
  */
 export const startOAuthAuthorizationRequestSchema = z.object({
   connectorId: z.string().min(1).max(200),
   connectionId: z.uuid().optional(),
   allowAccountChange: z.boolean().optional(),
+  projectId: z.uuid().nullable().optional(),
   returnPath: oauthReturnPathSchema.optional(),
 });
 export type StartOAuthAuthorizationRequest = z.infer<

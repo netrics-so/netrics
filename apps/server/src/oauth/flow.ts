@@ -20,6 +20,7 @@ import {
   findConnection,
   findConnectionOAuth,
   findMembership,
+  findProject,
   insertAuditEvent,
   insertConnection,
   insertOAuthAuthorization,
@@ -200,6 +201,11 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       if (allowAccountChange && purpose === "connect") {
         return { ok: false, status: 400, error: "invalid_request" };
       }
+      // A project is for new connections; a reauthorization keeps its own.
+      const projectId = body.projectId ?? null;
+      if (projectId && purpose === "reauthorize") {
+        return { ok: false, status: 400, error: "invalid_request" };
+      }
       const connectionId = body.connectionId ?? null;
       const returnPath =
         body.returnPath ?? defaultReturnPath(actor.workspaceId, connectionId);
@@ -245,6 +251,17 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
               };
             }
           }
+          if (projectId) {
+            const project = await findProject(tx, actor.workspaceId, projectId);
+            // Archived projects take no new connections (#572).
+            if (!project || project.archivedAt !== null) {
+              return {
+                ok: false as const,
+                status: 404 as const,
+                error: "project_not_found",
+              };
+            }
+          }
           await insertOAuthAuthorization(tx, {
             id,
             workspaceId: actor.workspaceId,
@@ -252,6 +269,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
             provider: strategy.provider,
             connectorId: body.connectorId,
             connectionId,
+            projectId,
             purpose,
             allowAccountChange,
             returnPath,
@@ -558,7 +576,12 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
     };
   }
 
-  /** A new connection in the setup state, holding the grant. */
+  /**
+   * A new connection in the setup state, holding the grant, in the project
+   * named at start (#589). A project archived or deleted since then is not
+   * a reason to drop the grant: the connection starts without one, and the
+   * return path says so.
+   */
   async function connect(
     tx: Transaction,
     authorization: ConsumedOAuthAuthorization,
@@ -567,6 +590,20 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
   ): Promise<Stored> {
     const { workspaceId, userId, provider } = authorization;
     const connectionId = randomUUID();
+    let projectId: string | null = null;
+    let projectDropped = false;
+    if (authorization.projectId) {
+      const project = await findProject(
+        tx,
+        workspaceId,
+        authorization.projectId,
+      );
+      if (project && project.archivedAt === null) {
+        projectId = project.id;
+      } else {
+        projectDropped = true;
+      }
+    }
     const sealed = sealGrant(workspaceId, connectionId, grant);
     await insertConnection(tx, {
       id: connectionId,
@@ -575,7 +612,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       name: manifest.name,
       config: {},
       credentialsEncrypted: sealed.credentialsEncrypted,
-      projectId: null,
+      projectId,
       pollIntervalSeconds: manifest.minRefreshIntervalSeconds,
       setupPending: true,
     });
@@ -609,6 +646,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
         redirectTo: withOutcome(authorization.returnPath, {
           oauth: "connected",
           connection: connectionId,
+          ...(projectDropped ? { projectNotice: "unassigned" } : {}),
         }),
       },
       releasedRefreshToken: null,

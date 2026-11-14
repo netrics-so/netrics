@@ -90,6 +90,11 @@ export default async function NewConnectionPage({
       <>
         <h1>{t("finishSetup")}</h1>
         <p className="subtitle">{workspaceResult.workspace.name}</p>
+        {query.projectNotice === "unassigned" ? (
+          <div className="notice page-alert" role="status">
+            {t("projectUnassigned")}
+          </div>
+        ) : null}
         <FinishSetup
           workspaceId={workspaceId}
           connection={connection}

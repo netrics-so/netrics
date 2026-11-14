@@ -267,6 +267,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "Deine Rolle ({role}) kann in diesem Workspace keine Verbindungen anlegen.",
       back: "Zurück zu den Quellen",
       finishSetup: "Einrichtung abschließen",
+      projectUnassigned:
+        "Das Projekt wurde archiviert, während du beim Anbieter warst. Diese Verbindung ist deshalb in keinem Projekt. Nach der Einrichtung kannst du auf ihrer Seite ein Projekt wählen.",
     },
     detail: {
       dataTables: "Datentabellen",

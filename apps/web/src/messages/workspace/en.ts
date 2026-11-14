@@ -253,6 +253,8 @@ export const workspaceEn = {
         "Your role ({role}) cannot create connections in this workspace.",
       back: "Back to sources",
       finishSetup: "Finish setup",
+      projectUnassigned:
+        "The project was archived while you were at the provider, so this connection is not in a project. You can choose a project on its page once setup is finished.",
     },
     detail: {
       dataTables: "Data tables",

@@ -23,6 +23,8 @@ export interface NewOAuthAuthorization {
   connectorId: string;
   /** The connection to reauthorize; null for a new connection. */
   connectionId: string | null;
+  /** The project a new connection starts in (#589); none by default. */
+  projectId?: string | null;
   purpose: OAuthAuthorizationPurpose;
   allowAccountChange: boolean;
   returnPath: string;
@@ -55,6 +57,8 @@ export interface ConsumedOAuthAuthorization {
   provider: string;
   connectorId: string;
   connectionId: string | null;
+  /** As stored at start; the callback checks it again. */
+  projectId: string | null;
   purpose: OAuthAuthorizationPurpose;
   allowAccountChange: boolean;
   returnPath: string;
@@ -69,6 +73,7 @@ interface ConsumedRow extends Record<string, unknown> {
   provider: string;
   connector_id: string;
   connection_id: string | null;
+  project_id: string | null;
   purpose: OAuthAuthorizationPurpose;
   allow_account_change: boolean;
   return_path: string;
@@ -99,6 +104,7 @@ export async function consumeOAuthAuthorization(
     provider: row.provider,
     connectorId: row.connector_id,
     connectionId: row.connection_id,
+    projectId: row.project_id,
     purpose: row.purpose,
     allowAccountChange: row.allow_account_change,
     returnPath: row.return_path,

@@ -12,10 +12,12 @@ import type {
   ConnectorUnavailable,
   DiscoveredResource,
   OAuthCallbackOutcome,
+  StartOAuthAuthorizationRequest,
 } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
 import { webTranslator } from "./i18n/catalogs";
+import { inProject } from "./project-scope";
 
 /** Where self-hosters learn to register a Google OAuth app. */
 export const GOOGLE_OAUTH_SETUP_GUIDE =
@@ -278,4 +280,28 @@ export function propertyView(
           : level
         : null,
   };
+}
+
+/**
+ * The start request of an OAuth authorization: a new connection starts in
+ * the active project (#589); a reauthorization keeps the connection's own
+ * project and may allow an account change.
+ */
+export function oauthStartRequest(input: {
+  connectorId: string;
+  returnPath: string;
+  connectionId?: string;
+  allowAccountChange?: boolean;
+  projectId?: string | null;
+}): StartOAuthAuthorizationRequest {
+  const { connectorId, returnPath, connectionId } = input;
+  if (connectionId) {
+    return {
+      connectorId,
+      returnPath,
+      connectionId,
+      ...(input.allowAccountChange ? { allowAccountChange: true } : {}),
+    };
+  }
+  return inProject({ connectorId, returnPath }, input.projectId ?? null);
 }
