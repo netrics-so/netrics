@@ -20,6 +20,7 @@ import {
   type StoreMetric,
   type StoreTemplateSource,
 } from "./dashboards/store-portfolio.js";
+import { ensureInstallCompleted } from "./dashboards/store-template-legacy.js";
 import {
   createTestDatabase,
   type TestDatabase,
@@ -306,5 +307,64 @@ describe("0072 store template versions", () => {
       "model:ratings",
     ]);
     expect(keys.filter((key) => key.startsWith("legacy:"))).toHaveLength(3);
+  });
+  const complete = (workspace: string, requestId: string) =>
+    withWorkspace(db, { workspaceId: workspace }, (tx) =>
+      ensureInstallCompleted(tx, workspace, requestId),
+    );
+  it("completes a migrated install once and keeps the customer widget unkeyed", async () => {
+    const rows = async () =>
+      owner`select key, record_id, original, widget_keys from data_template_records
+        where workspace_id=${workspaceId} order by key`;
+    const before = await rows();
+    const done = await complete(workspaceId, main.requestId);
+    expect(done).toMatchObject({
+      ok: true,
+      inputs: {
+        name: "Customer name",
+        locale: "de",
+        fixedProduct: null,
+        groups: null,
+        connections: [...main.sources]
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .map(({ id, name, datasets }) => ({ id, name, datasets })),
+      },
+    });
+    const after = await rows();
+    expect(after.filter((r) => r.key.startsWith("legacy:"))).toEqual([]);
+    expect(after.map((r) => r.key)).toContain("preparation:append:ratings:0:0");
+    // Same records and originals, only keyed by the template now.
+    expect(after.map((r) => [r.record_id, r.original]).sort()).toEqual(
+      before.map((r) => [r.record_id, r.original]).sort(),
+    );
+    const dashboard = after.find((r) => r.key === "dashboard:portfolio")!;
+    expect(dashboard.widget_keys).toEqual({
+      [main.widgetIds[0]!]: "widget:downloads",
+      [main.widgetIds[1]!]: "widget:proceeds",
+      [main.widgetIds[2]!]: "widget:ratings",
+    });
+    const [install] =
+      await owner`select inputs from data_template_installs where workspace_id=${workspaceId}`;
+    expect(install!.inputs).toEqual(done.ok ? done.inputs : null);
+
+    expect(await complete(workspaceId, main.requestId)).toMatchObject({
+      ok: true,
+      inputs: install!.inputs,
+    });
+    expect(await rows()).toEqual(after);
+  });
+  it("leaves an install whose dashboard is gone without a baseline", async () => {
+    expect(await complete(otherId, other.requestId)).toEqual({
+      ok: false,
+      code: "store_template_baseline_unavailable",
+    });
+    const [install] =
+      await owner`select inputs from data_template_installs where workspace_id=${otherId}`;
+    expect(install!.inputs).toBeNull();
+    // Not even visible from another workspace.
+    expect(await complete(workspaceId, other.requestId)).toEqual({
+      ok: false,
+      code: "store_template_baseline_unavailable",
+    });
   });
 });
