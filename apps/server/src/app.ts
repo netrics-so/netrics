@@ -1,5 +1,6 @@
 import { registerDataRoutes } from "./routes/data.js";
 import { registerStoreTemplateRoutes } from "./routes/store-templates.js";
+import type { StoreTemplateDefinition } from "./dashboards/store-template.js";
 import { registerDataPolicyRoutes } from "./routes/data-policy.js";
 import cors from "@fastify/cors";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
@@ -72,6 +73,8 @@ export interface AppDeps {
   logger?: FastifyBaseLogger;
   /** Reuse of computed device payloads (default 30 s); tests pass 0. */
   devicePayloadCacheMs?: number;
+  /** The newest store template; tests pass other versions. */
+  storeTemplate?: StoreTemplateDefinition;
 }
 
 export async function buildApp(
@@ -216,6 +219,7 @@ export async function buildApp(
     registry,
     policy: config.dataPolicy,
     ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.storeTemplate ? { template: deps.storeTemplate } : {}),
   });
   registerThemeRoutes(app, { authService, db });
   registerGoalRoutes(app, {

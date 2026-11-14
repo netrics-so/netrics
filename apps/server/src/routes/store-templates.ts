@@ -4,15 +4,22 @@ import { can, DataProcessingError, type DataPolicy } from "@netrics/domain";
 import type { Database } from "@netrics/database";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
+  storeTemplateApplyErrorSchema,
+  storeTemplateApplyRequestSchema,
   storeTemplateInstallListSchema,
   storeTemplatePlanSchema,
   storeTemplateOptionsSchema,
   storeTemplateRequestSchema,
   storeTemplateResultSchema,
+  storeTemplateUpdateSchema,
 } from "@netrics/contracts";
 import type { AuthService } from "../auth/index.js";
 import { createStoreTemplateService } from "../dashboards/store-template-service.js";
-import { createStoreTemplateUpdateService } from "../dashboards/store-template-updates.js";
+import {
+  createStoreTemplateUpdateService,
+  StoreUpdateDecisionMissing,
+  StoreUpdateUnmergeable,
+} from "../dashboards/store-template-updates.js";
 import type { StoreTemplateDefinition } from "../dashboards/store-template.js";
 import { DataServiceError } from "../data/service.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
@@ -20,6 +27,10 @@ import { createRequireSession } from "./session.js";
 import { routeSchema } from "./openapi.js";
 
 const installParamsSchema = z.object({ requestId: z.uuid() });
+const updateParamsSchema = z.object({
+  requestId: z.uuid(),
+  updateId: z.uuid(),
+});
 
 export function registerStoreTemplateRoutes(
   app: FastifyInstance,
@@ -171,6 +182,100 @@ export function registerStoreTemplateRoutes(
             return storeTemplatePlanSchema.parse(
               await updates.plan(access, params.data.requestId),
             );
+          } catch (error) {
+            return sendError(reply, ...failed(error));
+          }
+        },
+      );
+      scope.post(
+        `${path}/installs/:requestId/update`,
+        {
+          schema: routeSchema({
+            summary:
+              "Apply a store-template update as data drafts, with a choice per conflicting item",
+            tags: ["dashboards"],
+            body: storeTemplateApplyRequestSchema,
+            response: storeTemplateUpdateSchema,
+            errors: [400, 403, 404, 409, 413, 503],
+            errorSchemas: {
+              400: storeTemplateApplyErrorSchema,
+              409: storeTemplateApplyErrorSchema,
+            },
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (
+            !can(access.role, "data:edit") ||
+            !can(access.role, "dashboards:create")
+          )
+            return sendError(reply, 403, "forbidden");
+          const params = installParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "store_template_not_found");
+          const input = parseBody(
+            storeTemplateApplyRequestSchema,
+            request,
+            reply,
+          );
+          if (!input) return;
+          try {
+            reply.header("cache-control", "no-store");
+            return storeTemplateUpdateSchema.parse(
+              await updates.apply(access, params.data.requestId, input),
+            );
+          } catch (error) {
+            if (error instanceof StoreUpdateDecisionMissing)
+              return reply.code(400).send(
+                storeTemplateApplyErrorSchema.parse({
+                  error: error.code,
+                  refs: error.refs,
+                }),
+              );
+            if (error instanceof StoreUpdateUnmergeable)
+              return reply.code(409).send(
+                storeTemplateApplyErrorSchema.parse({
+                  error: error.code,
+                  key: error.key,
+                  refs: error.refs,
+                  ...(error.paths.length ? { paths: error.paths } : {}),
+                }),
+              );
+            if (error instanceof DataProcessingError)
+              return sendError(reply, 400, error.code);
+            return sendError(reply, ...failed(error));
+          }
+        },
+      );
+      scope.post(
+        `${path}/installs/:requestId/updates/:updateId/close`,
+        {
+          schema: routeSchema({
+            summary:
+              "Close an applied store-template update; its drafts stay as ordinary drafts",
+            tags: ["dashboards"],
+            errors: [403, 404, 503],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (
+            !can(access.role, "data:edit") ||
+            !can(access.role, "dashboards:create")
+          )
+            return sendError(reply, 403, "forbidden");
+          const params = updateParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "store_template_update_not_found");
+          try {
+            await updates.closeUpdate(
+              access,
+              params.data.requestId,
+              params.data.updateId,
+            );
+            return reply.code(204).send();
           } catch (error) {
             return sendError(reply, ...failed(error));
           }

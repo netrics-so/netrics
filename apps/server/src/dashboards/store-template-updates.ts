@@ -1,26 +1,41 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
+  preparationGraphSchema,
+  semanticModelDefinitionSchema,
   type CreateDashboardRequest,
+  type StoreTemplateApplyRequest,
   type StoreTemplateInstallList,
   type StoreTemplatePlan,
+  type StoreTemplateUpdate,
 } from "@netrics/contracts";
 import {
+  DatasetStoreError,
   findDashboard,
+  hasSqlstate,
+  insertAuditEvent,
   schema,
   withWorkspace,
   type Database,
   type Transaction,
 } from "@netrics/database";
-import type {
-  Locale,
-  PreparationGraph,
-  SemanticModelDefinition,
+import {
+  DEFAULT_DATA_POLICY,
+  type DataPolicy,
+  type Locale,
+  type PreparationGraph,
+  type SemanticModelDefinition,
 } from "@netrics/domain";
-import { DataServiceError } from "../data/service.js";
+import {
+  createDataService,
+  DataServiceError,
+  datasetStoreStatus,
+} from "../data/service.js";
 import {
   deriveInstallCompletion,
+  ensureInstallCompleted,
   type LegacyDashboardSnapshot,
 } from "./store-template-legacy.js";
 import {
@@ -28,18 +43,26 @@ import {
   dashboardItems,
   itemKindOf,
   withSlideKeys,
+  modelFromItems,
   modelItems,
   normalizeDashboard,
   normalizeLegacyDashboard,
   normalizeTemplateDashboard,
+  preparationFromItems,
   preparationItems,
+  itemRefOfPath,
   recordKeyOf,
+  UnmergeableRecord,
+  type ItemRef,
   type Items,
   type NormalizedDashboard,
 } from "./store-template-items.js";
 import {
   classify,
+  merge,
+  MergeDecisionMissing,
   summarize,
+  type Decision,
   type PlanItem,
   type UpdateSummary,
 } from "./store-template-merge.js";
@@ -58,17 +81,70 @@ import {
  * the list of installs with a summary of what a newer template version
  * changes, and per install the three-way plan (original template, the
  * customer's current records, the new template) the customer reviews before
- * applying it. Read-only: an install made before versions is completed in
- * memory; applying an update writes the completion (ensureInstallCompleted).
+ * applying it. Status and plan are read-only: an install made before
+ * versions is completed in memory. Applying an update writes the completion
+ * (ensureInstallCompleted), then the data changes as drafts through the
+ * data service; nothing goes live before the customer publishes them.
  */
 type Actor = { workspaceId: string; callerId: string; locale: Locale };
 type RecordRow = typeof schema.dataTemplateRecords.$inferSelect;
 type InstallRow = typeof schema.dataTemplateInstalls.$inferSelect;
+type UpdateRow = typeof schema.dataTemplateUpdates.$inferSelect;
+type PreparationRow = typeof schema.dataPreparations.$inferSelect;
+type ModelRow = typeof schema.dataModels.$inferSelect;
 type Kind = "preparation" | "model" | "dashboard";
 
 function reject(code: string, status: 404 | 409): never {
   throw new DataServiceError(code, status);
 }
+
+/** Applying with conflicts or removals still undecided; lists their refs. */
+export class StoreUpdateDecisionMissing extends DataServiceError {
+  constructor(readonly refs: string[]) {
+    super("store_update_decision_missing", 400);
+  }
+}
+
+/**
+ * The merged content of a record cannot be written: a reference resolves
+ * to nothing, or the result is not a valid definition. Names the record and
+ * the items (when known); nothing of the update is written.
+ */
+export class StoreUpdateUnmergeable extends DataServiceError {
+  constructor(
+    readonly key: string,
+    readonly refs: string[],
+    /** Validation issue paths in the merged record, when it failed one. */
+    readonly paths: string[] = [],
+  ) {
+    super("store_update_unmergeable", 409);
+  }
+}
+
+/** The data drafts an update wrote (data_template_updates.drafts). */
+const storedDraftsSchema = z.array(
+  z.object({
+    key: z.string(),
+    kind: z.enum(["preparation", "model"]),
+    recordId: z.uuid(),
+    version: z.number().int(),
+  }),
+);
+type StoredDraft = z.infer<typeof storedDraftsSchema>[number];
+/** The dashboards an update changes (data_template_updates.dashboards). */
+const storedDashboardsSchema = z.array(
+  z.object({
+    key: z.string(),
+    originalId: z.uuid(),
+    copyId: z.uuid().nullable(),
+    swappedAt: z.iso.datetime().nullable(),
+    swappedBackAt: z.iso.datetime().nullable(),
+  }),
+);
+type StoredDashboard = z.infer<typeof storedDashboardsSchema>[number];
+
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 /** A record's original in any of its stored shapes. */
 type Original =
@@ -97,6 +173,17 @@ interface ComputedPlan {
   records: RecordPlan[];
   summary: UpdateSummary;
   basis: string;
+  /** What applying the plan builds from. */
+  inputs: StoreTemplateInputs;
+  /** Every key the install knows → its record id (detached ones too). */
+  ids: StoreTemplateIds;
+  rows: RecordRow[];
+  next: Map<string, StoreTemplateRecord>;
+  original: Items;
+  current: Items;
+  upcoming: Items;
+  preparations: Map<string, PreparationRow>;
+  models: Map<string, ModelRow>;
 }
 
 const isUpdateAvailable = (
@@ -116,10 +203,12 @@ export function createStoreTemplateUpdateService(deps: {
   db: Database;
   registry: ConnectorRegistry;
   now?: () => Date;
+  policy?: DataPolicy;
   /** The newest template; tests pass other versions. */
   template?: StoreTemplateDefinition;
 }) {
-  const template = deps.template ?? storeTemplate;
+  const template = deps.template ?? storeTemplate,
+    now = deps.now ?? (() => new Date());
 
   async function installRow(
     tx: Transaction,
@@ -431,6 +520,15 @@ export function createStoreTemplateUpdateService(deps: {
       records: plans,
       summary: summarize(original, upcoming, plan),
       basis,
+      inputs,
+      ids,
+      rows,
+      next,
+      original,
+      current,
+      upcoming,
+      preparations,
+      models,
     };
   }
 
@@ -447,7 +545,529 @@ export function createStoreTemplateUpdateService(deps: {
     }
   }
 
+  /** The install's open update (none closed it yet), as the API shows it. */
+  async function openUpdateOf(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+  ): Promise<StoreTemplateUpdate | null> {
+    const [row] = await tx
+      .select()
+      .from(schema.dataTemplateUpdates)
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.requestId, requestId),
+          isNull(schema.dataTemplateUpdates.closedAt),
+        ),
+      );
+    return row ? updateView(tx, workspaceId, row) : null;
+  }
+  async function updateView(
+    tx: Transaction,
+    workspaceId: string,
+    row: UpdateRow,
+  ): Promise<StoreTemplateUpdate> {
+    const drafts = storedDraftsSchema.parse(row.drafts),
+      dashboards = storedDashboardsSchema.parse(row.dashboards);
+    const ids = (kind: StoredDraft["kind"]) =>
+      drafts.filter((d) => d.kind === kind).map((d) => d.recordId);
+    const current = new Map<
+      string,
+      { name: string; publishedVersion: number | null }
+    >();
+    for (const [table, kind] of [
+      [schema.dataPreparations, "preparation"],
+      [schema.dataModels, "model"],
+    ] as const)
+      if (ids(kind).length)
+        for (const record of await tx
+          .select({
+            id: table.id,
+            name: table.name,
+            publishedVersion: table.publishedVersion,
+          })
+          .from(table)
+          .where(
+            and(
+              eq(table.workspaceId, workspaceId),
+              inArray(table.id, ids(kind)),
+            ),
+          ))
+          current.set(record.id, record);
+    const views = drafts.flatMap((draft) => {
+      const record = current.get(draft.recordId);
+      if (!record) return [];
+      return [
+        {
+          ...draft,
+          name: record.name,
+          published:
+            record.publishedVersion !== null &&
+            record.publishedVersion >= draft.version,
+        },
+      ];
+    });
+    const published = views.every((draft) => draft.published);
+    return {
+      id: row.id,
+      requestId: row.requestId,
+      fromVersion: row.fromVersion,
+      toVersion: row.toVersion,
+      createdAt: row.createdAt.toISOString(),
+      drafts: views,
+      dashboards: dashboards.map((dashboard) => ({
+        ...dashboard,
+        // The updated copy is made once the data it shows is published.
+        ready: published && dashboard.copyId === null,
+      })),
+    };
+  }
+
+  /**
+   * Writes the update's data drafts in tx: each preparation and model the
+   * merge changes is saved as a draft of its record (its published version
+   * stays live), records the new version adds are created unpublished, and
+   * records it no longer builds are detached and kept. Dashboards are not
+   * written: the updated copy is made after the drafts are published.
+   */
+  async function writeUpdate(
+    tx: Transaction,
+    actor: Actor,
+    requestId: string,
+    body: StoreTemplateApplyRequest,
+  ): Promise<StoreTemplateUpdate> {
+    const at = now();
+    const install = await installRow(tx, actor.workspaceId, requestId);
+    if (!install) reject("store_template_not_found", 404);
+    // Under the install's lock: an install made before versions gets its
+    // inputs and keys written, so the plan below reads stored state only.
+    const completed = await ensureInstallCompleted(
+      tx,
+      actor.workspaceId,
+      requestId,
+    );
+    if (!completed.ok) reject("store_template_baseline_unavailable", 409);
+    const rows = await recordRows(tx, actor.workspaceId, requestId);
+    if (!isUpdateAvailable(install, rows, template.version))
+      reject("store_template_up_to_date", 409);
+    const plan = await planOrUnavailable(tx, actor.workspaceId, requestId);
+    if (!plan) reject("store_template_baseline_unavailable", 409);
+    // The same plan applied twice (double click, two tabs) is stale first.
+    if (plan.basis !== body.basis) reject("store_update_stale", 409);
+    // An earlier update's drafts are the customer's to publish, or they
+    // close that update (closeUpdate) to leave them as ordinary drafts:
+    // a new apply would build on them and lose track of them.
+    const open = await openUpdateOf(tx, actor.workspaceId, requestId);
+    if (open && open.drafts.some((draft) => !draft.published))
+      reject("store_update_open", 409);
+    let merged: Items;
+    try {
+      merged = merge(
+        plan.original,
+        plan.current,
+        plan.upcoming,
+        body.decisions as Decision[],
+      );
+    } catch (error) {
+      if (error instanceof MergeDecisionMissing)
+        throw new StoreUpdateDecisionMissing(error.refs);
+      throw error;
+    }
+
+    const data = createDataService(tx, now, deps.policy ?? DEFAULT_DATA_POLICY);
+    const ids: Record<string, string> = { ...plan.ids };
+    const live = new Map(
+      plan.rows
+        .filter((row) => row.detachedAt === null)
+        .map((row) => [row.key, row]),
+    );
+    const keys = template.keys(plan.inputs);
+    const drafts: StoredDraft[] = [];
+    const created: (typeof schema.dataTemplateRecords.$inferInsert)[] = [];
+    const recordItems = (key: string): Items =>
+      new Map([...merged].filter(([itemRef]) => recordKeyOf(itemRef) === key));
+    // Whether merge took an item's value from the new template.
+    const planned = new Map(
+      plan.records.flatMap((record) => record.items).map((i) => [i.ref, i]),
+    );
+    const choices = new Map(body.decisions.map((d) => [d.ref, d.choice]));
+    const fromNext = (itemRef: string) => {
+      const planItem = planned.get(itemRef as ItemRef);
+      return (
+        planItem?.outcome === "template" ||
+        planItem?.outcome === "scope" ||
+        (planItem?.outcome === "choose" && choices.get(itemRef) === "template")
+      );
+    };
+    const datasetsOf = (items: Items, key: string) =>
+      (items.get(`${key}#settings:datasets`) as unknown[] | undefined) ?? [];
+    /**
+     * A merged record that resolves and validates, or 409
+     * store_update_unmergeable naming the record and its items.
+     */
+    const checked = <T extends PreparationGraph | SemanticModelDefinition>(
+      key: string,
+      build: () => T,
+      valid: z.ZodType,
+    ): T => {
+      let built: T;
+      try {
+        built = build();
+      } catch (error) {
+        if (error instanceof UnmergeableRecord)
+          throw new StoreUpdateUnmergeable(key, error.refs);
+        throw error;
+      }
+      const parsed = valid.safeParse(built);
+      if (!parsed.success)
+        // The items the issues point at, so the review can show them.
+        throw new StoreUpdateUnmergeable(
+          key,
+          [
+            ...new Set(
+              parsed.error.issues.map((issue) =>
+                itemRefOfPath(key, built, issue.path),
+              ),
+            ),
+          ],
+          // A root-level issue's path is the record key, never "".
+          parsed.error.issues.map((issue) =>
+            issue.path.length ? issue.path.map(String).join(".") : key,
+          ),
+        );
+      return built;
+    };
+    for (const key of keys) {
+      const next = plan.next.get(key)!;
+      if (next.kind === "dashboard") continue;
+      const row = live.get(key);
+      if (!row) {
+        // Detached keys keep their record (the template no longer tracks
+        // it); only a key the install never had is new.
+        if (plan.ids[key]) continue;
+        const record = template.build(
+          key,
+          plan.inputs,
+          ids as StoreTemplateIds,
+        );
+        const saved =
+          record.kind === "preparation"
+            ? (
+                await data.savePreparation(actor, {
+                  name: record.name,
+                  graph: record.graph,
+                  projectId: plan.inputs.projectId,
+                })
+              ).preparation
+            : record.kind === "model"
+              ? (
+                  await data.saveModel(actor, {
+                    name: record.name,
+                    definition: record.definition,
+                    projectId: plan.inputs.projectId,
+                  })
+                ).model
+              : null;
+        if (!saved || record.kind === "dashboard") continue;
+        ids[key] = saved.id;
+        drafts.push({
+          key,
+          kind: record.kind,
+          recordId: saved.id,
+          version: saved.version,
+        });
+        created.push({
+          workspaceId: actor.workspaceId,
+          requestId,
+          key,
+          kind: record.kind,
+          recordId: saved.id,
+          templateVersion: template.version,
+          original:
+            record.kind === "preparation"
+              ? { graph: record.graph }
+              : { definition: record.definition },
+          widgetKeys: null,
+        });
+        continue;
+      }
+      if (next.kind === "preparation") {
+        const current = plan.preparations.get(row.recordId);
+        if (!current) continue;
+        const graph = checked(
+          key,
+          () =>
+            preparationFromItems(
+              key,
+              recordItems(key),
+              { current: current.graph as PreparationGraph, next: next.graph },
+              ids,
+            ),
+          preparationGraphSchema,
+        );
+        if (same(graph, current.graph)) continue;
+        const { preparation } = await data.savePreparation(
+          actor,
+          { name: current.name, graph, version: current.version },
+          current.id,
+        );
+        drafts.push({
+          key,
+          kind: "preparation",
+          recordId: preparation.id,
+          version: preparation.version,
+        });
+      } else {
+        const current = plan.models.get(row.recordId);
+        if (!current) continue;
+        const definition = checked(
+          key,
+          () =>
+            modelFromItems(
+              key,
+              recordItems(key),
+              {
+                current: current.definition as SemanticModelDefinition,
+                next: next.definition,
+              },
+              ids,
+              {
+                datasets: {
+                  original: datasetsOf(plan.original, key),
+                  current: datasetsOf(plan.current, key),
+                  next: datasetsOf(plan.upcoming, key),
+                },
+                fromNext,
+              },
+            ),
+          semanticModelDefinitionSchema,
+        );
+        if (same(definition, current.definition)) continue;
+        const { model } = await data.saveModel(
+          actor,
+          { name: current.name, definition, version: current.version },
+          current.id,
+        );
+        drafts.push({
+          key,
+          kind: "model",
+          recordId: model.id,
+          version: model.version,
+        });
+      }
+    }
+
+    // Records the new version no longer builds: detached, never deleted
+    // (whether the customer chose remove or keep, or app scope dropped
+    // them); their content stays as the customer left it.
+    const built = new Set(keys);
+    const gone = [...live.values()]
+      .filter(
+        (row) =>
+          (row.kind === "preparation" || row.kind === "model") &&
+          !built.has(row.key),
+      )
+      .map((row) => row.key);
+    if (gone.length)
+      await tx
+        .update(schema.dataTemplateRecords)
+        .set({ detachedAt: at })
+        .where(
+          and(
+            eq(schema.dataTemplateRecords.workspaceId, actor.workspaceId),
+            eq(schema.dataTemplateRecords.requestId, requestId),
+            inArray(schema.dataTemplateRecords.key, gone),
+          ),
+        );
+    // The new template content is the original of every data record from
+    // now on; the dashboards keep theirs until their updated copy exists.
+    for (const row of live.values()) {
+      if (!built.has(row.key) && row.kind !== "dataset") continue;
+      if (row.kind === "dashboard") continue;
+      const record =
+        row.kind === "dataset"
+          ? null
+          : template.build(row.key, plan.inputs, ids as StoreTemplateIds);
+      await tx
+        .update(schema.dataTemplateRecords)
+        .set({
+          templateVersion: template.version,
+          ...(record?.kind === "preparation"
+            ? { original: { graph: record.graph } }
+            : record?.kind === "model"
+              ? { original: { definition: record.definition } }
+              : {}),
+        })
+        .where(
+          and(
+            eq(schema.dataTemplateRecords.workspaceId, actor.workspaceId),
+            eq(schema.dataTemplateRecords.requestId, requestId),
+            eq(schema.dataTemplateRecords.key, row.key),
+          ),
+        );
+    }
+    if (created.length)
+      await tx.insert(schema.dataTemplateRecords).values(created);
+    await tx
+      .update(schema.dataTemplateInstalls)
+      .set({ templateVersion: template.version, updatedAt: at })
+      .where(
+        and(
+          eq(schema.dataTemplateInstalls.workspaceId, actor.workspaceId),
+          eq(schema.dataTemplateInstalls.requestId, requestId),
+        ),
+      );
+
+    const dashboards: StoredDashboard[] = plan.records
+      .filter(
+        (record) =>
+          record.kind === "dashboard" &&
+          record.recordId !== null &&
+          record.items.length > 0,
+      )
+      .map((record) => ({
+        key: record.key,
+        originalId: record.recordId!,
+        copyId: null,
+        swappedAt: null,
+        swappedBackAt: null,
+      }));
+    // One open update per install (data_template_updates_one_open).
+    await tx
+      .update(schema.dataTemplateUpdates)
+      .set({ closedAt: at })
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, actor.workspaceId),
+          eq(schema.dataTemplateUpdates.requestId, requestId),
+          isNull(schema.dataTemplateUpdates.closedAt),
+        ),
+      );
+    const [update] = await tx
+      .insert(schema.dataTemplateUpdates)
+      .values({
+        workspaceId: actor.workspaceId,
+        requestId,
+        fromVersion: plan.install.templateVersion,
+        toVersion: template.version,
+        decisions: body.decisions,
+        drafts,
+        dashboards,
+        createdBy: actor.callerId,
+        createdAt: at,
+      })
+      .returning();
+    await insertAuditEvent(tx, {
+      workspaceId: actor.workspaceId,
+      actorUserId: actor.callerId,
+      action: "data.store_template_update_applied",
+      target: requestId,
+      metadata: {
+        requestId,
+        fromVersion: plan.install.templateVersion,
+        toVersion: template.version,
+      },
+    });
+    return updateView(tx, actor.workspaceId, update!);
+  }
+
   return {
+    /**
+     * Closes an install's update without touching its drafts: they stay
+     * ordinary drafts the customer edits, restores or publishes, and a new
+     * update can be applied. Idempotent: closing a closed update is a no-op.
+     */
+    closeUpdate(
+      actor: Actor,
+      requestId: string,
+      updateId: string,
+    ): Promise<void> {
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        async (tx) => {
+          // The install's lock: never half-way through an apply.
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + requestId}))`,
+          );
+          const [update] = await tx
+            .select({
+              id: schema.dataTemplateUpdates.id,
+              closedAt: schema.dataTemplateUpdates.closedAt,
+            })
+            .from(schema.dataTemplateUpdates)
+            .where(
+              and(
+                eq(schema.dataTemplateUpdates.workspaceId, actor.workspaceId),
+                eq(schema.dataTemplateUpdates.requestId, requestId),
+                eq(schema.dataTemplateUpdates.id, updateId),
+              ),
+            );
+          if (!update) reject("store_template_update_not_found", 404);
+          if (update.closedAt !== null) return;
+          await tx
+            .update(schema.dataTemplateUpdates)
+            .set({ closedAt: now() })
+            .where(
+              and(
+                eq(schema.dataTemplateUpdates.workspaceId, actor.workspaceId),
+                eq(schema.dataTemplateUpdates.id, updateId),
+              ),
+            );
+          await insertAuditEvent(tx, {
+            workspaceId: actor.workspaceId,
+            actorUserId: actor.callerId,
+            action: "store_template_update.closed",
+            target: updateId,
+            metadata: { requestId, updateId },
+          });
+        },
+      );
+    },
+    /**
+     * Applies an update the customer reviewed (`basis`) with a choice for
+     * every conflict and proposed removal; one serializable transaction
+     * under the install's lock, so a second or concurrent apply of the same
+     * plan finds the basis changed (store_update_stale).
+     */
+    async apply(
+      actor: Actor,
+      requestId: string,
+      body: StoreTemplateApplyRequest,
+    ): Promise<StoreTemplateUpdate> {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          return await withWorkspace(
+            deps.db,
+            { workspaceId: actor.workspaceId, userId: actor.callerId },
+            async (tx) => {
+              // The install's lock (store-template-service.ts).
+              await tx.execute(
+                sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + requestId}))`,
+              );
+              return writeUpdate(tx, actor, requestId, body);
+            },
+            { isolationLevel: "serializable" },
+          );
+        } catch (error) {
+          const conflict =
+            hasSqlstate(error, "40001") ||
+            hasSqlstate(error, "40P01") ||
+            (error instanceof DataServiceError &&
+              error.code === "version_conflict");
+          if (conflict && attempt < 2) continue;
+          if (conflict) reject("version_conflict", 409);
+          if (error instanceof DatasetStoreError)
+            throw new DataServiceError(
+              error.code,
+              datasetStoreStatus(error.code),
+            );
+          throw error;
+        }
+      }
+      return reject("version_conflict", 409);
+    },
     list(actor: Actor): Promise<StoreTemplateInstallList> {
       return withWorkspace(
         deps.db,
@@ -517,9 +1137,11 @@ export function createStoreTemplateUpdateService(deps: {
               dashboardIds: idsOf("dashboard"),
               modelIds: idsOf("model"),
               preparationIds: idsOf("preparation"),
-              // Applying an update (and so an open update) arrives with the
-              // apply endpoint.
-              openUpdate: null,
+              openUpdate: await openUpdateOf(
+                tx,
+                actor.workspaceId,
+                install.requestId,
+              ),
             });
           }
           return { installs: result };

@@ -126,7 +126,16 @@ export function preparationItems(
   return items;
 }
 
-/** Replaces each of the model's datasets by `datasets[<index>]`. */
+/**
+ * Replaces each of the model's datasets by `datasets[<index>]`. Items store
+ * positions, not datasets: an item "unchanged in all three states" has the
+ * same position text, even when the dataset at that position differs (which
+ * the update resolves per state, see modelFromItems). That is exact for the
+ * store models, which read one dataset; revisit for templates whose models
+ * read several. customerReplacement and the identity rule in slotOf rest on
+ * the same single-dataset assumption: with one dataset a list position is
+ * unambiguous, with several a swap and a remove-and-append look alike.
+ */
 function datasetSlots(value: unknown, datasets: unknown[]): unknown {
   if (typeof value === "string") {
     const index = datasets.indexOf(value);
@@ -168,6 +177,419 @@ export function modelItems(
   );
   items.set(ref(key, "settings", "datasets"), canonical(datasets));
   return items;
+}
+
+/** A value an update cannot turn back into a real reference. */
+export class UnresolvableReference extends Error {
+  constructor(readonly value: string) {
+    super("store_update_unmergeable");
+  }
+}
+/** A record whose merged items cannot be rebuilt; `refs` are the items. */
+export class UnmergeableRecord extends Error {
+  constructor(
+    readonly key: StoreTemplateKey,
+    readonly refs: string[],
+  ) {
+    super("store_update_unmergeable");
+  }
+}
+
+/**
+ * The inverse of symbolize: `ref:<key>` becomes the key's record id and
+ * `ref:<key>:<out>` `prepared:<id>:<out>`, with `ids` holding a real id for
+ * every key (new records created before their dependants). A whole key
+ * wins over key plus output, like an exact id wins in symbolize. Throws
+ * UnresolvableReference for a `ref:` no key resolves: writing it would
+ * store a reference to nothing.
+ */
+export function desymbolize(
+  value: unknown,
+  ids: Readonly<Record<string, string>>,
+): unknown {
+  if (typeof value === "string") {
+    if (!value.startsWith("ref:")) return value;
+    const rest = value.slice("ref:".length);
+    if (Object.hasOwn(ids, rest)) return ids[rest]!;
+    const cut = rest.lastIndexOf(":"),
+      key = rest.slice(0, cut);
+    if (cut > 0 && Object.hasOwn(ids, key))
+      return `prepared:${ids[key]!}:${rest.slice(cut + 1)}`;
+    throw new UnresolvableReference(value);
+  }
+  if (Array.isArray(value))
+    return value.map((entry) => desymbolize(entry, ids));
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([name, entry]) => [
+        name,
+        desymbolize(entry, ids),
+      ]),
+    );
+  return value;
+}
+
+/**
+ * The ids of `present` in order: the customer's order, with each id only
+ * the template has placed right after the id before it in the template's
+ * order (first when none is before it).
+ */
+export function mergeOrder(
+  current: readonly string[],
+  next: readonly string[],
+  present: ReadonlySet<string>,
+): string[] {
+  const order = current.filter((id) => present.has(id));
+  let previous: string | undefined;
+  for (const id of next) {
+    if (!present.has(id)) continue;
+    if (!order.includes(id))
+      order.splice(
+        previous === undefined ? 0 : order.indexOf(previous) + 1,
+        0,
+        id,
+      );
+    previous = id;
+  }
+  for (const id of present) if (!order.includes(id)) order.push(id);
+  return order;
+}
+
+/** The ids of one item kind of a record in `items`, with their values. */
+function itemsOf(items: Items, key: StoreTemplateKey, kind: ItemKind) {
+  const prefix = `${key}#${kind}:`;
+  return new Map(
+    [...items]
+      .filter(([itemRef]) => itemRef.startsWith(prefix))
+      .map(([itemRef, value]) => [itemRef.slice(prefix.length), value]),
+  );
+}
+const byIndex = (values: Map<string, unknown>) =>
+  [...values].sort(([a], [b]) => Number(a) - Number(b));
+
+/**
+ * Resolves the items of one record; every item that cannot be resolved is
+ * collected, then the whole record is refused (UnmergeableRecord).
+ */
+function resolver(key: StoreTemplateKey) {
+  const failed: string[] = [];
+  return {
+    resolve(itemRef: string, fn: () => unknown): unknown {
+      try {
+        return fn();
+      } catch (error) {
+        if (!(error instanceof UnresolvableReference)) throw error;
+        failed.push(itemRef);
+        return undefined;
+      }
+    },
+    done() {
+      if (failed.length) throw new UnmergeableRecord(key, failed);
+    },
+  };
+}
+
+/**
+ * A preparation graph from (merged) items, with real ids: steps in the
+ * current graph's order, template additions after their predecessor.
+ */
+export function preparationFromItems(
+  key: StoreTemplateKey,
+  items: Items,
+  order: { current: PreparationGraph | null; next: PreparationGraph | null },
+  ids: Readonly<Record<string, string>>,
+): PreparationGraph {
+  const steps = itemsOf(items, key, "step"),
+    check = resolver(key);
+  const nodes = mergeOrder(
+    order.current?.nodes.map((node) => node.id) ?? [],
+    order.next?.nodes.map((node) => node.id) ?? [],
+    new Set(steps.keys()),
+  ).map((id) => ({
+    id,
+    ...(check.resolve(ref(key, "step", id), () =>
+      desymbolize(steps.get(id), ids),
+    ) as object),
+  }));
+  check.done();
+  return {
+    version: 1,
+    nodes: nodes as PreparationGraph["nodes"],
+    outputs: byIndex(itemsOf(items, key, "output")).map(
+      ([, value]) => value,
+    ) as string[],
+  };
+}
+
+export type DatasetLists = {
+  original: readonly unknown[];
+  current: readonly unknown[];
+  next: readonly unknown[];
+};
+const indexIn = (list: readonly unknown[], value: unknown) =>
+  list.findIndex((entry) => JSON.stringify(entry) === JSON.stringify(value));
+
+/** The metric a store preparation reference is for (`ref:preparation:…`). */
+function metricOf(dataset: unknown): string | undefined {
+  if (typeof dataset !== "string") return undefined;
+  return (
+    /^ref:preparation:source:[^:]+:([^:]+)/.exec(dataset)?.[1] ??
+    /^ref:preparation:append:([^:]+):/.exec(dataset)?.[1]
+  );
+}
+
+/**
+ * The customer's dataset in place of a template dataset they replaced, only
+ * when that reading is unambiguous: the dataset is in the original, not in
+ * the customer's model; the customer's model has as many datasets as the
+ * original and exactly one of its own, at the dataset's original position;
+ * and that position is not the end of a longer list (there, their own
+ * dataset reads just as well as removed-and-appended). Undefined otherwise:
+ * the customer kept it, removed it, or it is unclear, and they choose.
+ */
+export function customerReplacement(
+  lists: DatasetLists,
+  dataset: unknown,
+): unknown {
+  const position = indexIn(lists.original, dataset);
+  if (position === -1 || indexIn(lists.current, dataset) !== -1)
+    return undefined;
+  const own = lists.current.filter(
+    (entry) => indexIn(lists.original, entry) === -1,
+  );
+  const replacement = lists.current[position];
+  const last = lists.current.length - 1;
+  return lists.current.length === lists.original.length &&
+    own.length === 1 &&
+    indexIn(own, replacement) === 0 &&
+    (position < last || lists.current.length === 1)
+    ? replacement
+    : undefined;
+}
+
+/**
+ * The first template dataset the customer removed from their model (without
+ * replacing it) that a value of the new template reads, as in the new
+ * template's list; undefined when it reads none. Taking that value would add
+ * the dataset back, so the customer chooses (store-template-merge.ts).
+ */
+export function removedDatasetRead(
+  lists: DatasetLists,
+  value: unknown,
+): unknown {
+  for (const index of slotsIn(value)) {
+    const dataset = lists.next[index];
+    if (
+      index < lists.next.length &&
+      indexIn(lists.original, dataset) !== -1 &&
+      indexIn(lists.current, dataset) === -1 &&
+      customerReplacement(lists, dataset) === undefined
+    )
+      return dataset;
+  }
+  return undefined;
+}
+
+/**
+ * A model's datasets after an update: the new template's datasets (app
+ * scope), without those the customer removed or replaced (in the original,
+ * not in their model) unless a value taken from the new template reads one
+ * the customer removed (`readByTemplate`, which they chose); then the
+ * customer's own datasets (in neither the original nor the new template) in
+ * the customer's order, so what reads them keeps working. Values are
+ * symbolic, as in `settings:datasets`.
+ */
+export function mergeDatasets(
+  lists: DatasetLists,
+  readByTemplate: readonly unknown[] = [],
+): unknown[] {
+  const merged = lists.next.filter(
+    (dataset) =>
+      indexIn(lists.original, dataset) === -1 ||
+      indexIn(lists.current, dataset) !== -1 ||
+      (indexIn(readByTemplate, dataset) !== -1 &&
+        customerReplacement(lists, dataset) === undefined),
+  );
+  for (const dataset of lists.current)
+    if (
+      indexIn(lists.original, dataset) === -1 &&
+      indexIn(merged, dataset) === -1
+    )
+      merged.push(dataset);
+  return merged;
+}
+
+/**
+ * The dataset an item's `datasets[<index>]` reads after the update, or
+ * undefined.
+ *
+ * A template value's slot is in the new template's list; a template dataset
+ * the customer replaced reads the customer's dataset instead.
+ *
+ * A customer value's slot is in the customer's list and keeps reading the
+ * same dataset wherever the merged list has it; only a true replacement
+ * follows the template by position: the original dataset is gone from the
+ * new template, and the new template's dataset at its original position is
+ * one the original did not have and is for the same metric (e.g. one source
+ * becomes an append tree). Anything else would silently re-point the value,
+ * so it does not resolve.
+ */
+function slotOf(
+  index: number,
+  fromNext: boolean,
+  lists: DatasetLists,
+  merged: readonly unknown[],
+): unknown {
+  const list = fromNext ? lists.next : lists.current;
+  if (index >= list.length) return undefined;
+  const dataset = list[index];
+  if (fromNext) {
+    const replacement = customerReplacement(lists, dataset);
+    if (replacement !== undefined)
+      return indexIn(merged, replacement) !== -1 ? replacement : undefined;
+  }
+  if (indexIn(merged, dataset) !== -1) return dataset;
+  if (fromNext) return undefined;
+  const position = indexIn(lists.original, dataset),
+    replacement = lists.next[position];
+  if (
+    position !== -1 &&
+    position < lists.next.length &&
+    indexIn(lists.next, dataset) === -1 &&
+    indexIn(lists.original, replacement) === -1 &&
+    indexIn(merged, replacement) !== -1 &&
+    metricOf(dataset) !== undefined &&
+    metricOf(dataset) === metricOf(replacement)
+  )
+    return replacement;
+  return undefined;
+}
+
+const SLOT = /^datasets\[(\d+)\]$/;
+/** Replaces each `datasets[<index>]` by the dataset `slot` finds for it. */
+function unslot(value: unknown, slot: (index: number) => unknown): unknown {
+  if (typeof value === "string") {
+    const match = SLOT.exec(value);
+    return match ? slot(Number(match[1])) : value;
+  }
+  if (Array.isArray(value)) return value.map((entry) => unslot(entry, slot));
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([name, entry]) => [name, unslot(entry, slot)]),
+    );
+  return value;
+}
+/** The slot indexes `datasets[<index>]` a value reads. */
+function slotsIn(value: unknown): number[] {
+  if (typeof value === "string") {
+    const match = SLOT.exec(value);
+    return match ? [Number(match[1])] : [];
+  }
+  if (Array.isArray(value)) return value.flatMap(slotsIn);
+  if (value !== null && typeof value === "object")
+    return Object.values(value).flatMap(slotsIn);
+  return [];
+}
+
+/**
+ * A model definition from (merged) items, with real ids: measures and
+ * dimensions in the current definition's order, template additions after
+ * their predecessor. Its datasets are mergeDatasets of the three states,
+ * and each item's dataset slots are read against the state its value came
+ * from (`fromNext`: the new template's). Without `sources`, the record's
+ * own `settings:datasets` item is every state's list.
+ */
+export function modelFromItems(
+  key: StoreTemplateKey,
+  items: Items,
+  order: {
+    current: SemanticModelDefinition | null;
+    next: SemanticModelDefinition | null;
+  },
+  ids: Readonly<Record<string, string>>,
+  sources?: {
+    datasets: DatasetLists;
+    fromNext: (itemRef: string) => boolean;
+  },
+): SemanticModelDefinition {
+  const datasetsRef = ref(key, "settings", "datasets");
+  const own = (items.get(datasetsRef) as unknown[] | undefined) ?? [];
+  const lists = sources?.datasets ?? { original: own, current: own, next: own };
+  const fromNext = (itemRef: string) => sources?.fromNext(itemRef) ?? true;
+  // The datasets the new template's values read (the list itself aside).
+  const readByTemplate = [...items]
+    .filter(([itemRef]) => itemRef !== datasetsRef && fromNext(itemRef))
+    .flatMap(([, value]) => slotsIn(value))
+    .map((index) => lists.next[index]);
+  const merged = mergeDatasets(lists, readByTemplate),
+    check = resolver(key);
+  const resolve = (itemRef: string, value: unknown) =>
+    check.resolve(itemRef, () =>
+      desymbolize(
+        unslot(value, (index) => {
+          const dataset = slotOf(index, fromNext(itemRef), lists, merged);
+          if (dataset === undefined)
+            throw new UnresolvableReference(`datasets[${index}]`);
+          return dataset;
+        }),
+        ids,
+      ),
+    );
+  const ordered = (kind: "measure" | "dimension") => {
+    const values = itemsOf(items, key, kind);
+    const ofKind = (def: SemanticModelDefinition | null) =>
+      (kind === "measure" ? def?.measures : def?.dimensions)?.map(
+        (entry) => entry.id,
+      ) ?? [];
+    return mergeOrder(
+      ofKind(order.current),
+      ofKind(order.next),
+      new Set(values.keys()),
+    ).map((id) => resolve(ref(key, kind, id), values.get(id)));
+  };
+  const definition = {
+    version: 1 as const,
+    datasets: check.resolve(datasetsRef, () =>
+      desymbolize(merged, ids),
+    ) as string[],
+    relationships: byIndex(itemsOf(items, key, "relationship")).map(
+      ([index, value]) => resolve(ref(key, "relationship", index), value),
+    ) as SemanticModelDefinition["relationships"],
+    dimensions: ordered("dimension") as SemanticModelDefinition["dimensions"],
+    measures: ordered("measure") as SemanticModelDefinition["measures"],
+  };
+  check.done();
+  return definition;
+}
+
+/**
+ * The item refs of a record that a validation issue path points at (e.g.
+ * `nodes.3.expression` → that step), or the path itself when no item does.
+ */
+export function itemRefOfPath(
+  key: StoreTemplateKey,
+  record: PreparationGraph | SemanticModelDefinition,
+  path: readonly PropertyKey[],
+): string {
+  // A root-level issue (e.g. the record as a whole) names the record.
+  if (path.length === 0) return key;
+  const [part, index] = path;
+  const at = typeof index === "number" ? index : Number(index);
+  if ("nodes" in record) {
+    if (part === "nodes" && record.nodes[at])
+      return ref(key, "step", record.nodes[at].id);
+    if (part === "outputs" && Number.isInteger(at))
+      return ref(key, "output", String(at));
+  } else {
+    if (part === "measures" && record.measures[at])
+      return ref(key, "measure", record.measures[at].id);
+    if (part === "dimensions" && record.dimensions[at])
+      return ref(key, "dimension", record.dimensions[at].id);
+    if (part === "relationships" && Number.isInteger(at))
+      return ref(key, "relationship", String(at));
+    if (part === "datasets") return ref(key, "settings", "datasets");
+  }
+  return path.map(String).join(".");
 }
 
 export interface NormalizedDashboard {

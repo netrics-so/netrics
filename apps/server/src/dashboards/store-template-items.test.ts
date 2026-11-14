@@ -2,13 +2,22 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Dashboard } from "@netrics/database";
 import {
+  customerReplacement,
   dashboardItems,
+  desymbolize,
   isScopeItem,
+  itemRefOfPath,
+  mergeDatasets,
+  mergeOrder,
+  modelFromItems,
   modelItems,
   normalizeDashboard,
   normalizeLegacyDashboard,
   normalizeTemplateDashboard,
+  preparationFromItems,
   preparationItems,
+  UnmergeableRecord,
+  UnresolvableReference,
   withSlideKeys,
   type Items,
 } from "./store-template-items.js";
@@ -145,6 +154,260 @@ const dashboardOf = (records: ReturnType<typeof install>["records"]) =>
   > & { kind: "dashboard" };
 
 describe("store-template items", () => {
+  it("rebuilds every preparation and model from its items with real ids", () => {
+    const { items, ids, records } = install();
+    // A new record has only the template's order.
+    for (const record of records) {
+      if (record.kind === "preparation")
+        expect(
+          preparationFromItems(
+            record.key,
+            items,
+            { current: null, next: record.graph },
+            ids,
+          ),
+        ).toEqual(record.graph);
+      if (record.kind === "model")
+        expect(
+          modelFromItems(
+            record.key,
+            items,
+            { current: null, next: record.definition },
+            ids,
+          ),
+        ).toEqual(record.definition);
+    }
+  });
+
+  it("resolves symbolic references whose keys hold colons", () => {
+    const ids = {
+      "preparation:append:downloads:0:0": "a",
+      "preparation:source:c:downloads": "s",
+    };
+    expect(
+      desymbolize(
+        {
+          x: "ref:preparation:append:downloads:0:0:append_0_0",
+          y: ["ref:preparation:source:c:downloads"],
+          z: "plain",
+        },
+        ids,
+      ),
+    ).toEqual({ x: "prepared:a:append_0_0", y: ["s"], z: "plain" });
+    // A reference to nothing is never written.
+    expect(() => desymbolize({ z: "ref:unknown" }, ids)).toThrow(
+      UnresolvableReference,
+    );
+  });
+
+  describe("model datasets after an update", () => {
+    const key = "model:downloads";
+    type Lists = { original: string[]; current: string[]; next: string[] };
+    type Measures = Record<string, { slot: number; fromNext?: boolean }>;
+    // Store preparations of one metric (a source, its append) and another.
+    const source = "ref:preparation:source:c:downloads:output",
+      append = "ref:preparation:append:downloads:0:0:out",
+      other = "ref:preparation:append:proceeds:0:0:out";
+    const ids = {
+      "preparation:source:c:downloads": "S",
+      "preparation:append:downloads:0:0": "T",
+      "preparation:append:proceeds:0:0": "P",
+    };
+    /** Measures by id: the slot they read, and whether the value is the template's. */
+    const rebuild = (lists: Lists, measures: Measures) => {
+      const items: Items = new Map([
+        [`${key}#settings:datasets`, [...lists.next]],
+      ]);
+      for (const [id, measure] of Object.entries(measures))
+        items.set(`${key}#measure:${id}`, {
+          id,
+          datasetId: `datasets[${measure.slot}]`,
+        });
+      const definition = modelFromItems(
+        key,
+        items,
+        { current: null, next: null },
+        ids,
+        {
+          datasets: lists,
+          fromNext: (itemRef) =>
+            measures[itemRef.split("#measure:")[1] ?? ""]?.fromNext ?? false,
+        },
+      );
+      return {
+        datasets: definition.datasets,
+        reads: Object.fromEntries(
+          definition.measures.map((m) => [
+            m.id,
+            (m as { datasetId?: string }).datasetId,
+          ]),
+        ),
+      };
+    };
+    const refused = (lists: Lists, measures: Measures) => {
+      try {
+        rebuild(lists, measures);
+      } catch (error) {
+        expect(error).toBeInstanceOf(UnmergeableRecord);
+        return (error as UnmergeableRecord).refs;
+      }
+      throw new Error("expected the record to be refused");
+    };
+
+    it("keeps a customer value on its dataset when the template inserts one in front", () => {
+      expect(
+        rebuild(
+          { original: ["A", "B"], current: ["A", "B"], next: ["C", "A", "B"] },
+          { a: { slot: 0 }, b: { slot: 1 } },
+        ),
+      ).toEqual({ datasets: ["C", "A", "B"], reads: { a: "A", b: "B" } });
+    });
+
+    it("refuses a customer value on a dataset the template drops, keeps the others", () => {
+      const lists = { original: ["A", "B"], current: ["A", "B"], next: ["B"] };
+      expect(rebuild(lists, { b: { slot: 1 } })).toEqual({
+        datasets: ["B"],
+        reads: { b: "B" },
+      });
+      expect(refused(lists, { a: { slot: 0 }, b: { slot: 1 } })).toEqual([
+        `${key}#measure:a`,
+      ]);
+    });
+
+    it("keeps each customer value on its dataset when the template reorders them", () => {
+      expect(
+        rebuild(
+          { original: ["A", "B"], current: ["A", "B"], next: ["B", "A"] },
+          { a: { slot: 0 }, b: { slot: 1 } },
+        ),
+      ).toEqual({ datasets: ["B", "A"], reads: { a: "A", b: "B" } });
+    });
+
+    it("follows a true replacement (one source becomes an append tree)", () => {
+      expect(
+        rebuild(
+          { original: [source], current: [source], next: [append] },
+          { s: { slot: 0 }, t: { slot: 0, fromNext: true } },
+        ),
+      ).toEqual({
+        datasets: ["prepared:T:out"],
+        reads: { s: "prepared:T:out", t: "prepared:T:out" },
+      });
+    });
+
+    it("never follows a replacement for another metric, or of anything else", () => {
+      expect(
+        refused(
+          { original: [source], current: [source], next: [other] },
+          { s: { slot: 0 } },
+        ),
+      ).toEqual([`${key}#measure:s`]);
+      expect(
+        refused(
+          { original: ["S"], current: ["S"], next: ["T"] },
+          { s: { slot: 0 } },
+        ),
+      ).toEqual([`${key}#measure:s`]);
+    });
+
+    it("keeps the customer's own datasets after the template's, in their order", () => {
+      expect(
+        rebuild(
+          { original: [source], current: ["M", source, "N"], next: [append] },
+          { m: { slot: 0 }, a: { slot: 1 }, n: { slot: 2 } },
+        ),
+      ).toEqual({
+        datasets: ["prepared:T:out", "M", "N"],
+        reads: { m: "M", a: "prepared:T:out", n: "N" },
+      });
+    });
+
+    it("takes the customer's dataset as a replacement only when that is unambiguous", () => {
+      const of = (original: string[], current: string[], dataset: string) =>
+        customerReplacement({ original, current, next: original }, dataset);
+      expect(of(["A"], ["M"], "A")).toBe("M");
+      expect(of(["A", "B"], ["M", "B"], "A")).toBe("M");
+      // Two of their own, or theirs at the end of a longer list (removed
+      // and appended reads the same): not a replacement, they choose.
+      expect(of(["A"], ["M", "N"], "A")).toBeUndefined();
+      expect(of(["A", "B"], ["A", "M"], "B")).toBeUndefined();
+      expect(of(["A", "B"], ["M", "N"], "A")).toBeUndefined();
+    });
+
+    it("reads the customer's dataset where they replaced the template's", () => {
+      // The customer swapped A for their own M; the template changes a
+      // measure on A and adds one: both read M, and A does not come back.
+      expect(
+        rebuild(
+          { original: ["A"], current: ["M"], next: ["A"] },
+          {
+            changed: { slot: 0, fromNext: true },
+            added: { slot: 0, fromNext: true },
+            mine: { slot: 0 },
+          },
+        ),
+      ).toEqual({
+        datasets: ["M"],
+        reads: { changed: "M", added: "M", mine: "M" },
+      });
+    });
+
+    it("adds back a dataset the customer removed only for the template's value they chose", () => {
+      const lists = { original: ["A", "B"], current: ["B"], next: ["A", "B"] };
+      // Chose the template's (the item reads A from the new template).
+      expect(
+        rebuild(lists, { t: { slot: 0, fromNext: true }, b: { slot: 0 } }),
+      ).toEqual({ datasets: ["A", "B"], reads: { t: "A", b: "B" } });
+      // Chose their own (it reads B from their list): A stays out.
+      expect(rebuild(lists, { t: { slot: 0 }, b: { slot: 0 } })).toEqual({
+        datasets: ["B"],
+        reads: { t: "B", b: "B" },
+      });
+    });
+
+    it("leaves out a template dataset the customer removed unless a template value reads it", () => {
+      const lists = { original: ["A", "B"], current: ["A"], next: ["A", "B"] };
+      expect(rebuild(lists, { a: { slot: 0 } })).toEqual({
+        datasets: ["A"],
+        reads: { a: "A" },
+      });
+      expect(
+        rebuild(lists, { a: { slot: 0 }, t: { slot: 1, fromNext: true } }),
+      ).toEqual({ datasets: ["A", "B"], reads: { a: "A", t: "B" } });
+      expect(mergeDatasets(lists)).toEqual(["A"]);
+      expect(mergeDatasets(lists, ["B"])).toEqual(["A", "B"]);
+    });
+  });
+
+  it("names the record for a validation issue of the record as a whole", () => {
+    const graph = storeTemplate.build(
+      "preparation:source:c:downloads",
+      { ...inputs, connections: [{ ...apple, id: "c" }] },
+      {
+        "dataset:mapping": "m",
+        "dataset:products": "p",
+      } as StoreTemplateIds,
+    );
+    if (graph.kind !== "preparation") throw new Error("a preparation");
+    expect(itemRefOfPath("preparation:x", graph.graph, [])).toBe(
+      "preparation:x",
+    );
+    expect(itemRefOfPath("preparation:x", graph.graph, ["nodes", 0])).toBe(
+      `preparation:x#step:${graph.graph.nodes[0]!.id}`,
+    );
+  });
+
+  it("keeps the customer's order and places template additions after their predecessor", () => {
+    expect(
+      mergeOrder(
+        ["a", "mine", "b"],
+        ["new0", "a", "new1", "b"],
+        new Set(["a", "b", "mine", "new0", "new1"]),
+      ),
+    ).toEqual(["new0", "a", "new1", "mine", "b"]);
+    expect(mergeOrder(["a", "b"], ["b"], new Set(["b"]))).toEqual(["b"]);
+  });
+
   it("turns record ids into template keys so two installs compare equal", () => {
     const first = install(),
       second = install();

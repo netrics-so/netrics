@@ -1,7 +1,9 @@
 import {
   isScopeItem,
   itemKindOf,
+  mergeDatasets,
   recordKeyOf,
+  removedDatasetRead,
   type ItemRef,
   type Items,
 } from "./store-template-items.js";
@@ -21,6 +23,12 @@ export interface PlanItem {
   ref: ItemRef;
   change: "added" | "changed" | "removed";
   outcome: Outcome;
+  /**
+   * Why a template change is a choice: taking it reads `dataset` (symbolic,
+   * from the new template's list), which the customer removed.
+   */
+  reason?: "reads_removed_dataset";
+  dataset?: unknown;
   original?: unknown;
   current?: unknown;
   next?: unknown;
@@ -120,6 +128,26 @@ function refsOf(...sets: Items[]): ItemRef[] {
   return [...refs].sort();
 }
 
+const isModelDatasets = (ref: ItemRef) =>
+  recordKeyOf(ref).startsWith("model:") && ref.endsWith("#settings:datasets");
+
+/** A model item's dataset lists in the three states (empty otherwise). */
+function datasetLists(
+  original: Items,
+  current: Items,
+  next: Items,
+  ref: ItemRef,
+) {
+  const key = recordKeyOf(ref),
+    kind = itemKindOf(ref);
+  const of = (items: Items) =>
+    key.startsWith("model:") &&
+    (kind === "measure" || kind === "dimension" || kind === "relationship")
+      ? ((items.get(`${key}#settings:datasets`) as unknown[] | undefined) ?? [])
+      : [];
+  return { original: of(original), current: of(current), next: of(next) };
+}
+
 /** Every item that is not unchanged, by ref. */
 export function classify(
   original: Items,
@@ -130,8 +158,16 @@ export function classify(
   const plan: PlanItem[] = [];
   for (const ref of refsOf(original, current, next)) {
     const o = original.get(ref),
-      c = current.get(ref),
-      n = next.get(ref);
+      c = current.get(ref);
+    let n = next.get(ref);
+    // A model's datasets: what the update writes (the template's, the
+    // customer's own kept, removed ones left out), not the template's list.
+    if (n !== undefined && isModelDatasets(ref))
+      n = mergeDatasets({
+        original: (o as unknown[] | undefined) ?? [],
+        current: (c as unknown[] | undefined) ?? [],
+        next: n as unknown[],
+      });
     const values = {
       ...(o === undefined ? {} : { original: o }),
       ...(c === undefined ? {} : { current: c }),
@@ -154,7 +190,21 @@ export function classify(
     }
     const { outcome, change } = outcomeOf(o, c, n);
     if (outcome === "unchanged") continue;
-    plan.push({ ref, change: change!, outcome, ...values });
+    // A template value that reads a dataset the customer removed would add
+    // it back: theirs to choose, never silent.
+    const removed =
+      outcome === "template"
+        ? removedDatasetRead(datasetLists(original, current, next, ref), n)
+        : undefined;
+    plan.push({
+      ref,
+      change: change!,
+      outcome: removed === undefined ? outcome : "choose",
+      ...(removed === undefined
+        ? {}
+        : { reason: "reads_removed_dataset" as const, dataset: removed }),
+      ...values,
+    });
   }
   return plan;
 }
@@ -180,6 +230,10 @@ export function merge(
   for (const ref of refsOf(original, current, next)) {
     const item = plan.get(ref);
     let source: Items = current;
+    if (item?.outcome === "scope" && item.next !== undefined) {
+      merged.set(ref, item.next);
+      continue;
+    }
     if (item?.outcome === "template" || item?.outcome === "scope")
       source = next;
     else if (item?.outcome === "choose") {

@@ -100,6 +100,35 @@ export const storeTemplateUpdateSchema = z.object({
 });
 export type StoreTemplateUpdate = z.infer<typeof storeTemplateUpdateSchema>;
 /**
+ * Applying an update: the plan's `basis` (the state the customer reviewed)
+ * and a choice for every item the plan asks about (`choose`: template or
+ * customer; `propose_removal`: remove or keep).
+ */
+export const storeTemplateApplyRequestSchema = z.strictObject({
+  basis: z.string(),
+  decisions: z.array(
+    z.strictObject({
+      ref: z.string(),
+      choice: z.enum(["template", "customer", "remove", "keep"]),
+    }),
+  ),
+});
+export type StoreTemplateApplyRequest = z.infer<
+  typeof storeTemplateApplyRequestSchema
+>;
+/**
+ * `store_update_decision_missing` lists the items still without a choice;
+ * `store_update_unmergeable` names the record (`key`) whose merged content
+ * cannot be written and, when known, its items; `paths` are the validation
+ * issue paths in that record when the merged content fails validation.
+ */
+export const storeTemplateApplyErrorSchema = z.object({
+  error: z.string().min(1),
+  key: z.string().optional(),
+  refs: z.array(z.string()).optional(),
+  paths: z.array(z.string()).optional(),
+});
+/**
  * The workspace's store-template installs and whether a newer template
  * version is available. `summary` is null when the install is up to date
  * or its baseline cannot be read (`error`).
@@ -154,6 +183,12 @@ export const storeTemplatePlanSchema = z.object({
             "propose_removal",
             "scope",
           ]),
+          /**
+           * Why a template change is a choice: taking it brings back
+           * `dataset` (symbolic), which the customer removed from the model.
+           */
+          reason: z.enum(["reads_removed_dataset"]).optional(),
+          dataset: z.string().optional(),
           original: z.unknown().optional(),
           current: z.unknown().optional(),
           next: z.unknown().optional(),
