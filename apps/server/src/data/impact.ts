@@ -1,8 +1,18 @@
-import type { DataImpact, DataImpactTarget } from "@netrics/contracts";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import {
+  compareMeasureBindingSchema,
+  dashboardDataFiltersSchema,
+  measureWidgetBindingSchema,
+  preparationGraphSchema,
+  semanticModelDefinitionSchema,
+  type DataImpact,
+  type DataImpactTarget,
+} from "@netrics/contracts";
 import {
   measureDependencies,
   type SemanticModelDefinition,
 } from "@netrics/domain";
+import { schema, type Transaction } from "@netrics/database";
 
 /**
  * Everything one workspace's impact checks read (11C "Impact before
@@ -239,5 +249,179 @@ export function redactDataImpact(
       dashboards: may.dashboards ? 0 : impact.dashboards.length,
       screens: may.screens ? 0 : impact.screens.length,
     },
+  };
+}
+
+/** Preparation ids in a `dependencies` jsonb (`{ prepared: { <id>: version } }`). */
+function pins(dependencies: unknown): Record<string, number> {
+  const prepared = (dependencies as { prepared?: unknown } | null)?.prepared;
+  if (!prepared || typeof prepared !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(prepared).filter(
+      (entry): entry is [string, number] => typeof entry[1] === "number",
+    ),
+  );
+}
+
+/** The measure ids a model-bound widget reads; null when its binding is unreadable. */
+function widgetMeasures(type: string, binding: unknown): string[] | null {
+  if (type === "compare") {
+    const parsed = compareMeasureBindingSchema.safeParse(binding);
+    return parsed.success ? Object.values(parsed.data.measureIds) : null;
+  }
+  const parsed = measureWidgetBindingSchema.safeParse(binding);
+  return parsed.success ? parsed.data.measureIds : null;
+}
+
+/**
+ * Reads one workspace's impact graph. Runs inside `withWorkspace` (RLS) and
+ * still names the workspace on every table it reads.
+ */
+export async function loadImpactGraph(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<ImpactGraph> {
+  const prep = schema.dataPreparations,
+    prepVersion = schema.dataPreparationVersions,
+    model = schema.dataModels,
+    release = schema.dataModelReleases,
+    widget = schema.dashboardWidgets,
+    dashboard = schema.dashboards,
+    device = schema.devices;
+  const preparationRows = await tx
+    .select({
+      id: prep.id,
+      name: prep.name,
+      graph: prep.graph,
+      dependencies: prepVersion.dependencies,
+    })
+    .from(prep)
+    .leftJoin(
+      prepVersion,
+      and(
+        eq(prepVersion.workspaceId, workspaceId),
+        eq(prepVersion.preparationId, prep.id),
+        eq(prepVersion.version, prep.publishedVersion),
+      ),
+    )
+    .where(eq(prep.workspaceId, workspaceId));
+  const modelRows = await tx
+    .select({
+      id: model.id,
+      name: model.name,
+      definition: model.definition,
+      publishedVersion: model.publishedVersion,
+      released: release.definition,
+      dependencies: release.dependencies,
+    })
+    .from(model)
+    .leftJoin(
+      release,
+      and(
+        eq(release.workspaceId, workspaceId),
+        eq(release.modelId, model.id),
+        eq(release.version, model.publishedVersion),
+      ),
+    )
+    .where(eq(model.workspaceId, workspaceId));
+  const widgetRows = await tx
+    .select({
+      id: widget.id,
+      dashboardId: widget.dashboardId,
+      type: widget.type,
+      title: widget.title,
+      modelId: widget.modelId,
+      binding: widget.modelBinding,
+    })
+    .from(widget)
+    .where(and(eq(widget.workspaceId, workspaceId), isNotNull(widget.modelId)));
+  const dashboardRows = await tx
+    .select({
+      id: dashboard.id,
+      name: dashboard.name,
+      dataFilters: dashboard.dataFilters,
+    })
+    .from(dashboard)
+    .where(eq(dashboard.workspaceId, workspaceId));
+  const deviceRows = await tx
+    .select({
+      id: device.id,
+      name: device.name,
+      dashboardId: device.dashboardId,
+    })
+    .from(device)
+    .where(
+      and(
+        eq(device.workspaceId, workspaceId),
+        isNull(device.revokedAt),
+        isNotNull(device.dashboardId),
+      ),
+    );
+  return {
+    preparations: preparationRows.map((row) => {
+      const graph = preparationGraphSchema.safeParse(row.graph);
+      return {
+        id: row.id,
+        name: row.name,
+        draftReads: graph.success
+          ? graph.data.nodes.flatMap((node) =>
+              node.type === "source" && node.datasetId.startsWith("prepared:")
+                ? [node.datasetId.split(":")[1]!]
+                : [],
+            )
+          : [],
+        publishedReads: Object.keys(pins(row.dependencies)),
+      };
+    }),
+    models: modelRows.flatMap((row) => {
+      const draft = semanticModelDefinitionSchema.safeParse(row.definition);
+      if (!draft.success) return [];
+      const released =
+        row.released === null
+          ? null
+          : semanticModelDefinitionSchema.safeParse(row.released);
+      return [
+        {
+          id: row.id,
+          name: row.name,
+          publishedVersion: row.publishedVersion,
+          draft: draft.data,
+          released: released?.success ? released.data : null,
+          releasePins: pins(row.dependencies),
+        },
+      ];
+    }),
+    widgets: widgetRows.flatMap((row) => {
+      const measureIds = widgetMeasures(row.type, row.binding);
+      return measureIds && row.modelId
+        ? [
+            {
+              id: row.id,
+              dashboardId: row.dashboardId,
+              type: row.type,
+              title: row.title,
+              modelId: row.modelId,
+              measureIds,
+            },
+          ]
+        : [];
+    }),
+    filterModels: dashboardRows.flatMap((row) => {
+      const filters = dashboardDataFiltersSchema.safeParse(row.dataFilters);
+      return filters.success
+        ? filters.data.flatMap((filter) =>
+            filter.mappings.map((mapping) => ({
+              dashboardId: row.id,
+              modelId: mapping.modelId,
+            })),
+          )
+        : [];
+    }),
+    dashboards: dashboardRows.map(({ id, name }) => ({ id, name })),
+    devices: deviceRows.flatMap((row) =>
+      row.dashboardId
+        ? [{ id: row.id, name: row.name, dashboardId: row.dashboardId }]
+        : [],
+    ),
   };
 }

@@ -574,6 +574,40 @@ export function registerDataRoutes(
       );
       for (const kind of ["preparations", "models"] as const) {
         scope.get(
+          `/workspaces/:workspaceId/data/${kind}/:id/impact`,
+          {
+            schema: doc(
+              "List what depends on a preparation, model or measure before publishing",
+              contracts.dataImpactResponseSchema,
+              undefined,
+              kind === "models" ? contracts.dataImpactQuerySchema : undefined,
+            ),
+          },
+          (request, reply) =>
+            execute(request, reply, "data:edit", async (actor) => {
+              const resourceId = id(request, reply);
+              if (!resourceId) return;
+              const query = contracts.dataImpactQuerySchema.safeParse(
+                kind === "models" ? request.query : {},
+              );
+              if (!query.success)
+                return sendError(reply, 400, "invalid_request");
+              reply.header("cache-control", "no-store");
+              return service.impact(
+                actor,
+                kind === "preparations"
+                  ? { kind: "preparation", id: resourceId }
+                  : query.data.measureId
+                    ? {
+                        kind: "measure",
+                        id: resourceId,
+                        measureIds: query.data.measureId,
+                      }
+                    : { kind: "model", id: resourceId },
+              );
+            }),
+        );
+        scope.get(
           `/workspaces/:workspaceId/data/${kind}/:id/inputs`,
           {
             schema: routeSchema({
