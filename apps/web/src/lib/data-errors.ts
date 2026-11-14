@@ -27,6 +27,7 @@ export function dataErrorCodeKey(code: string) {
   if (/unit|currency|numeric|type_mismatch|explicit.*cast/.test(code))
     return "units";
   if (/field.*(missing|not_found)|schema_changed/.test(code)) return "field";
+  if (code === "builder_incomplete") return "builderIncomplete";
   if (/formula|expression/.test(code)) return "formula";
   if (/invalid|exists|snapshot_required|key_taken/.test(code)) return "invalid";
   return "generic";

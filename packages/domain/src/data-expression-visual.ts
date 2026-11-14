@@ -391,7 +391,11 @@ export function visualModelComplete(model: VisualModel): boolean {
   }
 }
 
-function canonicalJson(value: unknown): string {
+/**
+ * JSON with sorted keys and without undefined keys: equal for equal data.
+ * For plain JSON values only (a Date or other toJSON object serialises as {}).
+ */
+export function canonicalJson(value: unknown): string {
   if (Array.isArray(value))
     return "[" + value.map(canonicalJson).join(",") + "]";
   if (value && typeof value === "object")

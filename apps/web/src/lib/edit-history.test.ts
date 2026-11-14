@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EDIT_HISTORY_LIMIT,
+  recordChange,
   recordEdit,
   redoEdit,
   replacePresent,
@@ -45,5 +46,58 @@ describe("edit history", () => {
     h = recordEdit(h, "ac", "k");
     expect(h.past).toEqual(["a"]);
     expect(undoEdit(h).present).toBe("a");
+  });
+  it("records no undo step when the new present equals the old one", () => {
+    const graph = { nodes: [{ id: "a", type: "filter" }] };
+    const h = startHistory(graph);
+    expect(recordChange(h, { nodes: [{ id: "a", type: "filter" }] })).toBe(h);
+    const changed = recordChange(h, { nodes: [] });
+    expect([changed.past, changed.present]).toEqual([[graph], { nodes: [] }]);
+  });
+  it("treats a step rebuilt with another key order as unchanged", () => {
+    // Read from the API (zod key order) ...
+    const stored = {
+      nodes: [
+        { id: "s", type: "source", datasetId: "d" },
+        { id: "a", input: "s", type: "select", fields: ["x", "y"] },
+        {
+          id: "c",
+          input: "a",
+          type: "cast",
+          fieldId: "x",
+          to: "decimal",
+          onError: "null",
+        },
+      ],
+      outputs: ["c"],
+    };
+    // ... and as the step form builds them when applied unchanged.
+    const applied = {
+      nodes: [
+        { id: "s", type: "source", datasetId: "d" },
+        { id: "a", type: "select", input: "s", fields: ["x", "y"] },
+        {
+          type: "cast",
+          id: "c",
+          input: "a",
+          onError: "null",
+          fieldId: "x",
+          to: "decimal",
+        },
+      ],
+      outputs: ["c"],
+    };
+    const h = startHistory(stored);
+    expect(recordChange(h, applied)).toBe(h);
+    // A real change still records and clears redo.
+    const redoable = undoEdit(recordEdit(h, { ...stored, outputs: [] }));
+    expect(redoable.future).toHaveLength(1);
+    const changed = recordChange(redoable, {
+      ...applied,
+      nodes: applied.nodes.slice(0, 2),
+      outputs: ["a"],
+    });
+    expect(changed.past).toEqual([stored]);
+    expect(changed.future).toEqual([]);
   });
 });

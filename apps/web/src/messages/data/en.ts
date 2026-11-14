@@ -465,6 +465,89 @@ export const dataEn = {
     freshPreview: "Preview reflects your current draft.",
     previewInitial: "Choose measures and preview this draft before publishing.",
     previewOutdated: "The draft changed. Preview it again before publishing.",
+    builder: {
+      keepWhen: "Keep rows when",
+      newValue: "Value of the new column",
+      view: "Edit as",
+      visual: "Visual",
+      all: "All of these are true",
+      any: "Any of these is true",
+      join: "Combine conditions",
+      condition: "Condition {number}",
+      group: "Group {number}",
+      addCondition: "Add condition",
+      addGroup: "Add group",
+      remove: "Remove",
+      column: "Column",
+      measure: "Measure",
+      operator: "Comparison",
+      value: "Value",
+      otherColumn: "Another column",
+      compareWith: "Compare with",
+      addValue: "Add value",
+      removeValue: "Remove value {number}",
+      literal: "Value to compare",
+      source: "Source",
+      fixedValue: "Fixed value",
+      secondValue: "Second value",
+      negated: "Does not match",
+      operators: {
+        eq: "is",
+        ne: "is not",
+        lt: "is less than",
+        lte: "is at most",
+        gt: "is greater than",
+        gte: "is at least",
+        in: "is one of",
+        contains: "contains",
+        starts_with: "starts with",
+        is_null: "is empty",
+      },
+      kind: "Calculation",
+      kinds: {
+        value: "Value",
+        if: "If … then … otherwise",
+        boolean: "True when",
+      },
+      operation: "Operation",
+      arithmetic: {
+        none: "No operation",
+        add: "plus",
+        subtract: "minus",
+        multiply: "times",
+        divide: "divided by",
+      },
+      result: "Result",
+      wrap: {
+        none: "As is",
+        round: "Round",
+        abs: "Absolute value",
+        coalesce: "If empty, use",
+      },
+      digits: "Decimal places",
+      then: "Then",
+      else: "Otherwise",
+      true: "True",
+      false: "False",
+      currency: "Currency",
+      utc: "UTC",
+      missing: "Missing column {id}",
+      invalidValue: "Enter a valid value ({type}).",
+      notVisual: {
+        function:
+          "This formula uses a function the visual builder cannot show. Edit it as a formula.",
+        nesting:
+          "This formula nests calculations deeper than the visual builder can show. Edit it as a formula.",
+        operand:
+          "This formula compares something other than a column on the left. Edit it as a formula.",
+        literal:
+          "This formula uses a value the visual builder cannot show, such as an empty value or structured data. Edit it as a formula.",
+        negation:
+          "This formula negates more than a single condition. Edit it as a formula.",
+        arity:
+          "This formula calls a function with an unusual number of arguments. Edit it as a formula.",
+      },
+    },
     errors: {
       window:
         "Check the rolling and comparison measures. Each needs a base measure, a date dimension on the provider reporting date and a length within the allowed range.",
@@ -495,6 +578,7 @@ export const dataEn = {
         "Someone changed this data. Reload the page before saving again.",
       formula:
         "Check the formula’s names, functions and brackets, then try again.",
+      builderIncomplete: "Complete every condition, or remove the empty ones.",
       field:
         "A referenced column is unavailable. Review the selected dataset and columns.",
       cardinality:

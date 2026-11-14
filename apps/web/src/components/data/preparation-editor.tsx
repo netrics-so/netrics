@@ -1,11 +1,11 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   DataField,
   PreparationGraph,
   PreparationNode,
 } from "@netrics/domain";
-import { formatDataFormula } from "@netrics/domain";
+import { canonicalJson, formatDataFormula } from "@netrics/domain";
 import {
   previewPreparation,
   savePreparation,
@@ -27,6 +27,7 @@ import { StepForm } from "./step-form";
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
 import {
+  recordChange,
   recordEdit,
   redoEdit,
   startHistory,
@@ -92,7 +93,7 @@ export function PreparationEditor({
   );
   const graph = graphHistory.present;
   const [savedState, setSavedState] = useState(
-    JSON.stringify({
+    canonicalJson({
       name: initial?.name ?? t("defaultPreparation"),
       graph: initial?.graph ?? graph,
     }),
@@ -122,16 +123,16 @@ export function PreparationEditor({
     key: ReturnType<typeof dataErrorKey>;
   } | null>(null);
   const request = useRef(0);
-  const current = JSON.stringify({ name, graph }),
+  const current = useMemo(() => canonicalJson({ name, graph }), [name, graph]),
     dirty = current !== savedState || (!record && graph.nodes.length > 0);
-  const graphSignature = JSON.stringify(graph);
+  const graphSignature = useMemo(() => canonicalJson(graph), [graph]);
   const shownStepError = stepError?.graph === graphSignature ? stepError : null;
   /** Mark the failing step when the error names one in `failed`; otherwise show the banner. */
   function reportFailure(failure: unknown, failed: PreparationGraph) {
     const step = preparationStepFailure(dataErrorLocation(failure), failed);
     if (step)
       setStepError({
-        graph: JSON.stringify(failed),
+        graph: canonicalJson(failed),
         ...step,
         key: dataErrorKey(failure),
       });
@@ -172,7 +173,7 @@ export function PreparationEditor({
       const table = result.outputs[output]!;
       setPreview({ ...table, warnings: result.warnings });
       setSelected(output);
-      setPreviewState(JSON.stringify(next));
+      setPreviewState(canonicalJson(next));
       // Only a check of every output proves the marked step is fixed.
       if (validateAll) setStepError(null);
     } catch (failure) {
@@ -193,7 +194,7 @@ export function PreparationEditor({
                 warnings: result.warnings,
               });
               setSelected(output);
-              setPreviewState(JSON.stringify(next));
+              setPreviewState(canonicalJson(next));
             }
           } catch {
             if (sequence === request.current) setPreview(null);
@@ -276,7 +277,7 @@ export function PreparationEditor({
       setRecord(next);
       setName(next.name);
       setGraphHistory(startHistory(next.graph));
-      setSavedState(JSON.stringify({ name: next.name, graph: next.graph }));
+      setSavedState(canonicalJson({ name: next.name, graph: next.graph }));
       setSelected(next.graph.outputs[0] ?? "");
       setAdding(false);
       setEditing(null);
@@ -397,7 +398,8 @@ export function PreparationEditor({
         throw failure;
       }
     }
-    setGraphHistory((h) => recordEdit(h, next));
+    // A step applied unchanged leaves no undo step.
+    setGraphHistory((h) => recordChange(h, next));
   }
   async function move(direction: "up" | "down") {
     try {

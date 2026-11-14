@@ -6,6 +6,8 @@
  * nothing changes).
  */
 
+import { canonicalJson } from "@netrics/domain";
+
 /** Most undo steps kept; the oldest are dropped first. */
 export const EDIT_HISTORY_LIMIT = 100;
 
@@ -37,6 +39,21 @@ export function recordEdit<T>(
     ? history.past
     : [...history.past, history.present].slice(-EDIT_HISTORY_LIMIT);
   return { past, present: next, future: [], lastEditKey: editKey };
+}
+
+/**
+ * `recordEdit`, unless `next` is the same data as the present (key order and
+ * undefined keys aside): then the history is returned as it is, since
+ * applying something unchanged is no edit.
+ */
+export function recordChange<T>(
+  history: EditHistory<T>,
+  next: T,
+  editKey: string | null = null,
+): EditHistory<T> {
+  return canonicalJson(next) === canonicalJson(history.present)
+    ? history
+    : recordEdit(history, next, editKey);
 }
 
 /** Steps back; unchanged when there is nothing to undo. */

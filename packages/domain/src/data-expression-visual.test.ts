@@ -6,6 +6,7 @@ import {
   type DataType,
 } from "./data-expression.js";
 import {
+  canonicalJson,
   emptyVisualModel,
   fromVisual,
   sameDataExpression,
@@ -281,5 +282,17 @@ describe("visual expression model", () => {
     ).toBe(true);
     expect(sameDataExpression(lit("integer", 2), lit("number", 2))).toBe(false);
     expect(sameDataExpression(cmp1, call("eq", field("a")))).toBe(false);
+  });
+});
+
+describe("canonicalJson", () => {
+  it("ignores key order and undefined keys", () => {
+    expect(
+      canonicalJson({ id: "a", input: "s", type: "select", x: undefined }),
+    ).toBe(canonicalJson({ type: "select", id: "a", input: "s" }));
+    expect(canonicalJson([{ b: 1, a: [2, { d: 3, c: 4 }] }])).toBe(
+      '[{"a":[2,{"c":4,"d":3}],"b":1}]',
+    );
+    expect(canonicalJson({ a: 1 })).not.toBe(canonicalJson({ a: "1" }));
   });
 });
