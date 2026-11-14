@@ -19,6 +19,7 @@ import {
   appendPreparation,
   preparationAt,
   dataErrorKey,
+  dataErrorLocation,
 } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import { DataTable } from "./data-table";
@@ -34,7 +35,11 @@ import {
   movePreparationStep,
   preparationMoveProblem,
   preparationRemovalProblem,
+  preparationStepFailure,
+  preparationStepStates,
+  preparationFieldName,
 } from "@/lib/preparation-editing";
+import { PreparationStepList } from "./preparation-step-list";
 
 export function PreparationEditor({
   workspaceId,
@@ -96,9 +101,32 @@ export function PreparationEditor({
     >(null);
   const [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
+  // A data error attributed to one step, kept with the graph it was found in.
+  // It is shown only while that graph is the current one, so undo, edits and
+  // restores never leave a marker on a step that changed or no longer exists.
+  const [stepError, setStepError] = useState<{
+    graph: string;
+    nodeId: string;
+    fieldId?: string;
+    key: ReturnType<typeof dataErrorKey>;
+  } | null>(null);
   const request = useRef(0);
   const current = JSON.stringify({ name, graph }),
     dirty = current !== savedState || (!record && graph.nodes.length > 0);
+  const graphSignature = JSON.stringify(graph);
+  const shownStepError = stepError?.graph === graphSignature ? stepError : null;
+  /** Mark the failing step when the error names one in `failed`; otherwise show the banner. */
+  function reportFailure(failure: unknown, failed: PreparationGraph) {
+    const step = preparationStepFailure(dataErrorLocation(failure), failed);
+    if (step)
+      setStepError({
+        graph: JSON.stringify(failed),
+        ...step,
+        key: dataErrorKey(failure),
+      });
+    else setError(t(`errors.${dataErrorKey(failure)}`));
+    return step;
+  }
   const currentOutput = graph.outputs.includes(selected)
     ? selected
     : (graph.outputs[0] ?? "");
@@ -110,35 +138,56 @@ export function PreparationEditor({
     next: PreparationGraph,
     output: string,
     validateAll = false,
+    // The saved draft to check against; a restore passes the record it just received.
+    saved: PreparationDraft | null = record,
   ) {
     const sequence = ++request.current;
+    const draft = saved ? { id: saved.id, version: saved.version } : undefined;
     setBusy("preview");
     setError(null);
     setNotice(null);
     try {
       const validation = validateAll
-        ? await previewPreparation(
-            workspaceId,
-            next,
-            record ? { id: record.id, version: record.version } : undefined,
-          )
+        ? await previewPreparation(workspaceId, next, draft)
         : null;
       const result = validation?.outputs[output]
         ? validation
         : await previewPreparation(
             workspaceId,
             preparationAt(next, output),
-            record ? { id: record.id, version: record.version } : undefined,
+            draft,
           );
       if (sequence !== request.current) return;
       const table = result.outputs[output]!;
       setPreview({ ...table, warnings: result.warnings });
       setSelected(output);
       setPreviewState(JSON.stringify(next));
+      // Only a check of every output proves the marked step is fixed.
+      if (validateAll) setStepError(null);
     } catch (failure) {
       if (sequence === request.current) {
-        setError(t(`errors.${dataErrorKey(failure)}`));
-        setPreview(null);
+        const step = reportFailure(failure, next);
+        const shown = preparationAt(next, output);
+        if (
+          step &&
+          validateAll &&
+          !shown.nodes.some((node) => node.id === step.nodeId)
+        ) {
+          // The failure is in another branch: this step still previews.
+          try {
+            const result = await previewPreparation(workspaceId, shown, draft);
+            if (sequence === request.current) {
+              setPreview({
+                ...result.outputs[output]!,
+                warnings: result.warnings,
+              });
+              setSelected(output);
+              setPreviewState(JSON.stringify(next));
+            }
+          } catch {
+            if (sequence === request.current) setPreview(null);
+          }
+        } else setPreview(null);
       }
       throw failure;
     } finally {
@@ -147,7 +196,7 @@ export function PreparationEditor({
   }
   useEffect(() => {
     if (graph.outputs[0])
-      void show(graph, graph.outputs[0]).catch(() => undefined);
+      void show(graph, graph.outputs[0], true).catch(() => undefined);
     return () => {
       request.current++;
     };
@@ -185,7 +234,8 @@ export function PreparationEditor({
         setNotice(t("publishedNotice"));
       } else setNotice(t("saved"));
     } catch (failure) {
-      setError(t(`errors.${dataErrorKey(failure)}`));
+      // Publishing checks every step and can fail at one.
+      reportFailure(failure, graph);
     } finally {
       setBusy(null);
     }
@@ -196,6 +246,7 @@ export function PreparationEditor({
     setError(null);
     setNotice(null);
     request.current++;
+    let restored: PreparationDraft | null = null;
     try {
       const result =
         version === undefined
@@ -223,14 +274,24 @@ export function PreparationEditor({
       setPreview(null);
       setPreviewState("");
       onSaved(next);
-      setNotice(
-        t(version === undefined ? "latestInputsNotice" : "restoredNotice"),
-      );
+      restored = next;
     } catch (failure) {
       setError(t(`errors.${dataErrorKey(failure)}`));
     } finally {
       setBusy(null);
     }
+    if (!restored) return;
+    // The restored graph can equal the one with a marked step (adopting the
+    // latest inputs never changes it), so check every output again: a passing
+    // check clears the marker, a failing one marks the step for this graph.
+    const output = restored.graph.outputs[0];
+    if (output)
+      void show(restored.graph, output, true, restored).catch(() => undefined);
+    else setStepError(null);
+    // After show(), which clears notices when it starts.
+    setNotice(
+      t(version === undefined ? "latestInputsNotice" : "restoredNotice"),
+    );
   }
   const initialSource = graph.nodes.find((n) => n.type === "source");
   function changeSource(id: string) {
@@ -302,14 +363,31 @@ export function PreparationEditor({
                 : [],
         });
     } catch (failure) {
-      if (sequence === request.current)
-        setError(t(`errors.${dataErrorKey(failure)}`));
+      if (sequence === request.current) reportFailure(failure, graph);
     } finally {
       if (sequence === request.current) setBusy(null);
     }
   }
-  async function changeGraph(next: PreparationGraph, output: string) {
-    await show(next, output, true);
+  /**
+   * Check `next` and apply it. A failure in a step the change did not touch
+   * still applies the change and marks that step, so it can be fixed or
+   * undone; a failure in a changed step rejects the change.
+   */
+  async function changeGraph(
+    next: PreparationGraph,
+    output: string,
+    changedIds: string[],
+  ) {
+    try {
+      await show(next, output, true);
+    } catch (failure) {
+      const step = preparationStepFailure(dataErrorLocation(failure), next);
+      if (!step || changedIds.includes(step.nodeId)) {
+        // The graph stays as it was, so the step marker would not show.
+        if (step) setError(t(`errors.${dataErrorKey(failure)}`));
+        throw failure;
+      }
+    }
     setHistory((list) => [...list, graph]);
     setGraph(next);
   }
@@ -318,6 +396,7 @@ export function PreparationEditor({
       await changeGraph(
         movePreparationStep(graph, selected, direction),
         selected,
+        [selected],
       );
     } catch (failure) {
       if (failure instanceof PreparationEditError)
@@ -369,8 +448,9 @@ export function PreparationEditor({
               removing ||
               !name.trim() ||
               !graph.nodes.length ||
-              previewState !== JSON.stringify(graph) ||
-              !!error
+              previewState !== graphSignature ||
+              !!error ||
+              !!shownStepError
             }
             onClick={() => void persist(true)}
           >
@@ -464,38 +544,52 @@ export function PreparationEditor({
             </div>
           ) : null}
           <h3>{t("steps")}</h3>
-          <ol className="data-step-list">
-            {graph.nodes.map((node) => (
-              <li key={node.id}>
-                <button
-                  type="button"
-                  aria-current={node.id === selected ? "step" : undefined}
-                  disabled={
-                    !!busy ||
-                    inputMetadata.loading ||
-                    !!inputMetadata.error ||
-                    adding ||
-                    !!editing ||
-                    removing
+          <PreparationStepList
+            nodes={graph.nodes}
+            selected={selected}
+            states={
+              shownStepError
+                ? preparationStepStates(graph, shownStepError.nodeId)
+                : new Map()
+            }
+            failure={
+              shownStepError
+                ? {
+                    message: t(`errors.${shownStepError.key}`),
+                    ...(shownStepError.fieldId
+                      ? {
+                          column: preparationFieldName(
+                            graph,
+                            sources,
+                            shownStepError.fieldId,
+                            fields,
+                          ),
+                        }
+                      : {}),
                   }
-                  onClick={() => {
-                    setAdding(false);
-                    void show(graph, node.id).catch(() => undefined);
-                  }}
-                >
-                  <span>
-                    {node.type === "source"
-                      ? (sources.find((s) => s.id === node.datasetId)?.name ??
-                        t("source"))
-                      : t(node.type)}
-                  </span>
-                  {node.type === "calculate" ? (
-                    <small>{node.name}</small>
-                  ) : null}
-                </button>
-              </li>
-            ))}
-          </ol>
+                : null
+            }
+            label={(node) => ({
+              title:
+                node.type === "source"
+                  ? (sources.find((s) => s.id === node.datasetId)?.name ??
+                    t("source"))
+                  : t(node.type),
+              ...(node.type === "calculate" ? { detail: node.name } : {}),
+            })}
+            disabled={
+              !!busy ||
+              inputMetadata.loading ||
+              !!inputMetadata.error ||
+              adding ||
+              !!editing ||
+              removing
+            }
+            onSelect={(nodeId) => {
+              setAdding(false);
+              void show(graph, nodeId).catch(() => undefined);
+            }}
+          />
           <button
             type="button"
             disabled={
@@ -530,7 +624,9 @@ export function PreparationEditor({
               setGraph(previous);
               setAdding(false);
               if (previous.outputs[0])
-                void show(previous, previous.outputs[0]).catch(() => undefined);
+                void show(previous, previous.outputs[0], true).catch(
+                  () => undefined,
+                );
               else {
                 setPreview(null);
                 setSelected("");
@@ -672,6 +768,7 @@ export function PreparationEditor({
                         next.nodes.some((node) => node.id === selected)
                           ? selected
                           : next.outputs[0]!,
+                        [],
                       )
                         .then(() => setRemoving(false))
                         .catch(() => undefined);
@@ -721,6 +818,7 @@ export function PreparationEditor({
                 await changeGraph(
                   replacePreparationStep(graph, editing.node.id, nodes),
                   editing.node.id,
+                  [editing.node.id],
                 );
                 setEditing(null);
               }}
@@ -778,7 +876,11 @@ export function PreparationEditor({
               }}
               onApply={async (nodes) => {
                 const next = appendPreparation(graph, nodes, currentOutput);
-                await changeGraph(next, currentOutput);
+                await changeGraph(
+                  next,
+                  currentOutput,
+                  next.nodes.slice(graph.nodes.length).map((node) => node.id),
+                );
                 setAdding(false);
               }}
             />

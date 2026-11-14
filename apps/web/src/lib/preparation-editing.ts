@@ -3,6 +3,7 @@ import {
   type PreparationGraph,
   type PreparationNode,
 } from "@netrics/domain";
+import type { DataErrorLocation } from "./data-editing";
 
 export type PreparationEditProblem =
   | "missingStep"
@@ -27,6 +28,68 @@ export function preparationStepInputs(node: PreparationNode): string[] {
   if (node.type === "append") return node.inputs;
   if (node.type === "join") return [node.left, node.right];
   return [node.input];
+}
+export type PreparationStepState = "failed" | "affected";
+/** The failed step and every step that reads its result, directly or through others. Empty if the step is not in the graph. */
+export function preparationStepStates(
+  graph: PreparationGraph,
+  failedNodeId: string,
+): Map<string, PreparationStepState> {
+  const states = new Map<string, PreparationStepState>();
+  if (!graph.nodes.some((node) => node.id === failedNodeId)) return states;
+  // Follow inputs, not list order: an independent branch listed later stays unmarked.
+  const users = new Map<string, string[]>();
+  for (const node of graph.nodes)
+    for (const input of preparationStepInputs(node))
+      users.set(input, [...(users.get(input) ?? []), node.id]);
+  states.set(failedNodeId, "failed");
+  const queue = [failedNodeId];
+  for (let id = queue.shift(); id !== undefined; id = queue.shift())
+    for (const user of users.get(id) ?? [])
+      if (!states.has(user)) {
+        states.set(user, "affected");
+        queue.push(user);
+      }
+  return states;
+}
+/** The location if its step exists in `graph`, else null (the caller falls back to the banner). */
+export function preparationStepFailure(
+  location: DataErrorLocation,
+  graph: PreparationGraph,
+): { nodeId: string; fieldId?: string } | null {
+  const { nodeId, fieldId } = location;
+  if (!nodeId || !graph.nodes.some((node) => node.id === nodeId)) return null;
+  return { nodeId, ...(fieldId ? { fieldId } : {}) };
+}
+interface NamedField {
+  id: string;
+  name: string;
+}
+/**
+ * A column's display name for a step error: the current preview, a step that
+ * names it (calculate, rename), the source data the graph reads, else the id.
+ */
+export function preparationFieldName(
+  graph: PreparationGraph,
+  sources: readonly { id: string; fields: readonly NamedField[] }[],
+  fieldId: string,
+  previewFields: readonly NamedField[] = [],
+): string {
+  const previewed = previewFields.find((field) => field.id === fieldId);
+  if (previewed) return previewed.name;
+  for (const node of graph.nodes)
+    if (node.type === "calculate" && node.fieldId === fieldId) return node.name;
+  for (const node of graph.nodes)
+    if (node.type === "rename" && Object.hasOwn(node.names, fieldId))
+      return node.names[fieldId]!;
+  for (const node of graph.nodes)
+    if (node.type === "source") {
+      const field = sources
+        .find((source) => source.id === node.datasetId)
+        ?.fields.find((field) => field.id === fieldId);
+      if (field) return field.name;
+    }
+  return fieldId;
 }
 function rewire(
   node: PreparationNode,

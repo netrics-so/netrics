@@ -221,6 +221,14 @@ export const dataDe: Catalog<typeof dataEn> = {
     defaultPreparation: "Unbenannte Aufbereitung",
     defaultModel: "Unbenanntes Modell",
     steps: "Angewendete Schritte",
+    stepStatus: {
+      failed: "Fehlgeschlagen",
+      affected: "Betroffen",
+    },
+    stepFailed: "Dieser Schritt ist fehlgeschlagen. {message}",
+    stepFailedColumn: "Spalte: {column}",
+    stepAffected:
+      "Nicht geprüft: Dieser Schritt verwendet das Ergebnis eines fehlgeschlagenen Schritts. Frühere Schritte kannst du weiter ansehen.",
     editStep: "Schritt bearbeiten",
     applyStepChanges: "Änderungen prüfen und anwenden",
     moveStepUp: "Schritt früher ausführen",
