@@ -1,5 +1,5 @@
 "use client";
-import { useId } from "react";
+import { useId, useState } from "react";
 import {
   reconcileComparison,
   type DataField,
@@ -12,7 +12,7 @@ import {
 } from "@netrics/domain";
 import type { BuilderChoices } from "@/lib/builder-choices";
 import { useLocale, useT } from "@/lib/i18n/client";
-import { literalDisplayType } from "@/lib/literal-input";
+import { rowDisplayType } from "@/lib/literal-input";
 import { emptyLiteral, ListField, LiteralField } from "./literal-field";
 
 export type BuilderNoun = "column" | "measure";
@@ -116,12 +116,27 @@ function ComparisonRow({
       : [];
   const right = row.right;
   const literal = right?.kind === "literal" ? right.literal : undefined;
+  // Decided when the row opens (or its column or operator changes), then
+  // kept while the value is typed.
+  const [display, setDisplay] = useState<
+    { key: string; type: DataType } | undefined
+  >();
+  const displayKey = [
+    row.fieldId,
+    row.operator,
+    right?.kind ?? "",
+    literal ? "literal" : "",
+  ].join("\u0000");
+  const shown = field
+    ? rowDisplayType(display, field.type, literal, locale, displayKey)
+    : undefined;
+  if (shown && shown !== display) setDisplay(shown);
   const literalType: DataType | null = field
     ? field.type === "json"
       ? null
       : row.operator === "in"
         ? field.type
-        : literalDisplayType(field.type, literal, locale)
+        : shown!.type
     : row.operator === "in"
       ? listItemType(literal)
       : (literal?.type ?? null);

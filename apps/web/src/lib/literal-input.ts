@@ -4,6 +4,7 @@
  * wall-clock UTC, and every literal passes `validateDataValue`.
  */
 import {
+  canonicalJson,
   validateDataValue,
   type DataLiteral,
   type DataType,
@@ -132,9 +133,30 @@ export function literalDisplayType(
     literal.value === undefined
   )
     return columnType;
-  return literalFromInput(columnType, literalInputText(literal, locale), locale)
+  const read = literalFromInput(
+    columnType,
+    literalInputText(literal, locale),
+    locale,
+  );
+  return read && canonicalJson(read.value) === canonicalJson(literal.value)
     ? columnType
     : literal.type;
+}
+
+/**
+ * A comparison row's input type, decided when the row opens (or its column
+ * or operator changes, `key`) and then kept while the value is typed, so the
+ * input never switches type mid-edit.
+ */
+export function rowDisplayType(
+  previous: { key: string; type: DataType } | undefined,
+  columnType: DataType,
+  literal: DataLiteral | undefined,
+  locale: Locale,
+  key: string,
+): { key: string; type: DataType } {
+  if (previous?.key === key) return previous;
+  return { key, type: literalDisplayType(columnType, literal, locale) };
 }
 
 /**
@@ -149,11 +171,16 @@ export function literalEdit(
   locale: Locale,
   previous: DataLiteral | undefined,
 ): DataLiteral {
-  const units = currencyCode
-    ? { unit: previous?.unit ?? "currency", currency: currencyCode }
-    : previous?.unit !== undefined && previous.currency === undefined
-      ? { unit: previous.unit }
-      : undefined;
+  // Units belong to numbers, currencies to exact decimals.
+  const numeric = type === "integer" || type === "number" || type === "decimal";
+  const code = type === "decimal" ? currencyCode : "";
+  const units = !numeric
+    ? undefined
+    : code
+      ? { unit: previous?.unit ?? "currency", currency: code }
+      : previous?.unit !== undefined && previous.currency === undefined
+        ? { unit: previous.unit }
+        : undefined;
   return (
     literalFromInput(type, text, locale, units) ?? {
       kind: "literal",

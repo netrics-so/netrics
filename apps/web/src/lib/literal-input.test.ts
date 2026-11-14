@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   literalDisplayType,
+  rowDisplayType,
   literalEdit,
   literalFromInput,
   literalInputText,
@@ -145,7 +146,7 @@ describe("literal input", () => {
       type: "number" as const,
       value: 1e21,
     };
-    expect(literalDisplayType("decimal", integer, "en")).toBe("decimal");
+    expect(literalDisplayType("decimal", integer, "en")).toBe("integer");
     expect(literalDisplayType("number", number, "de")).toBe("number");
     // "1e+21" is no decimal text: the input keeps the literal's own type.
     expect(literalDisplayType("decimal", big, "en")).toBe("number");
@@ -185,6 +186,89 @@ describe("literal input", () => {
       value: null,
       unit: "currency",
       currency: "EUR",
+    });
+  });
+
+  it("shows a literal in the column's input only when it reads back equal", () => {
+    const text = {
+      kind: "literal" as const,
+      type: "string" as const,
+      value: "true",
+    };
+    expect(literalDisplayType("boolean", text, "en")).toBe("string");
+    const integer = {
+      kind: "literal" as const,
+      type: "integer" as const,
+      value: 2,
+    };
+    expect(literalDisplayType("number", integer, "en")).toBe("number");
+    // Integer 0 reads as decimal "0", not as the number 0.
+    expect(
+      literalDisplayType(
+        "decimal",
+        { kind: "literal", type: "integer", value: 0 },
+        "en",
+      ),
+    ).toBe("integer");
+  });
+
+  it("keeps a row's input type while its value is typed", () => {
+    const stored = {
+      kind: "literal" as const,
+      type: "number" as const,
+      value: 0.5,
+    };
+    const opened = rowDisplayType(undefined, "integer", stored, "en", "n|gt");
+    expect(opened.type).toBe("number");
+    const typed = {
+      kind: "literal" as const,
+      type: "number" as const,
+      value: 1,
+    };
+    expect(rowDisplayType(opened, "integer", typed, "en", "n|gt")).toBe(opened);
+    // Another column or operator decides again.
+    expect(
+      rowDisplayType(opened, "integer", undefined, "en", "m|gt").type,
+    ).toBe("integer");
+  });
+
+  it("carries a unit only on numbers and a currency only on decimals", () => {
+    const money = {
+      kind: "literal" as const,
+      type: "decimal" as const,
+      value: "1",
+      unit: "currency",
+      currency: "EUR",
+    };
+    expect(literalEdit("string", "x", "EUR", "en", money)).toEqual({
+      kind: "literal",
+      type: "string",
+      value: "x",
+    });
+    // A currency unit goes with its currency: neither moves to a number.
+    expect(literalEdit("number", "2", "EUR", "en", money)).toEqual({
+      kind: "literal",
+      type: "number",
+      value: 2,
+    });
+    const percent = {
+      kind: "literal" as const,
+      type: "decimal" as const,
+      value: "1",
+      unit: "percent",
+    };
+    expect(literalEdit("number", "2", "", "en", percent)).toEqual({
+      kind: "literal",
+      type: "number",
+      value: 2,
+      unit: "percent",
+    });
+    expect(
+      literalEdit("date", "", "", "en", { ...money, unit: "percent" }),
+    ).toEqual({
+      kind: "literal",
+      type: "date",
+      value: null,
     });
   });
 });
