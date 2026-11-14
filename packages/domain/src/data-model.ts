@@ -168,15 +168,17 @@ function singleValueDimensions(expression?: DataExpression): Set<string> {
   return result;
 }
 
-/** A formula over its dependencies' cells; currencies become currency fields. */
-function evaluateFormula(
-  expression: DataExpression,
+/**
+ * The row fields a formula sees for its dependencies' cells: each currency
+ * becomes a currency field next to the measure, under an id no other field uses.
+ */
+function formulaFields(
   dependencies: ReadonlyArray<readonly [string, DataCell]>,
   nameOf: (id: string) => string,
-  budget: ProcessingBudget,
-): DataCell {
-  const row: DataRow = {},
-    fields: DataField[] = [];
+  hasCurrency: (cell: DataCell) => boolean,
+): { measures: DataField[]; currencies: DataField[] } {
+  const measures: DataField[] = [],
+    currencies: DataField[] = [];
   const usedIds = new Set(dependencies.map(([ref]) => ref));
   for (const [ref, result] of dependencies) {
     const f: DataField = {
@@ -186,23 +188,90 @@ function evaluateFormula(
       nullable: true,
       ...(result.unit ? { unit: result.unit } : {}),
     };
-    if (result.currency) {
+    if (hasCurrency(result)) {
       let currencyId = ref + ".currency";
       while (usedIds.has(currencyId)) currencyId += ".currency";
       usedIds.add(currencyId);
       f.currencyField = currencyId;
-      row[currencyId] = result.currency;
-      fields.push({
+      currencies.push({
         id: currencyId,
         name: "Currency",
         type: "string",
         nullable: false,
       });
     }
-    fields.push(f);
-    row[ref] = result.value;
+    measures.push(f);
   }
-  return compileRowExpression(expression, fields).evaluate(row, budget);
+  return { measures, currencies };
+}
+
+/** A formula over its dependencies' cells; currencies become currency fields. */
+function evaluateFormula(
+  expression: DataExpression,
+  dependencies: ReadonlyArray<readonly [string, DataCell]>,
+  nameOf: (id: string) => string,
+  budget: ProcessingBudget,
+): DataCell {
+  const { measures, currencies } = formulaFields(
+    dependencies,
+    nameOf,
+    (cell) => !!cell.currency,
+  );
+  const row: DataRow = {};
+  dependencies.forEach(([ref, result], i) => {
+    row[ref] = result.value;
+    const currencyField = measures[i]!.currencyField;
+    if (currencyField) row[currencyField] = result.currency;
+  });
+  return compileRowExpression(expression, [
+    ...currencies,
+    ...measures,
+  ]).evaluate(row, budget);
+}
+
+/**
+ * The measures a formula measure may reference, as the row fields its formula
+ * is checked against: every measure except `measureId` and those depending on
+ * it (directly or through others), typed by its probe. A currency measure gets
+ * a currency field, as it has whenever the query sees a currency. Measures
+ * whose probe fails are left out.
+ */
+export function formulaMeasureFields(
+  model: SemanticModelDefinition,
+  sources: ReadonlyMap<string, Pick<DataTable, "fields">>,
+  measureId: string,
+): DataField[] {
+  const byId = new Map(model.measures.map((m) => [m.id, m]));
+  const dependsOn = new Map<string, boolean>();
+  const reaches = (id: string, path: Set<string>): boolean => {
+    if (id === measureId) return true;
+    const known = dependsOn.get(id);
+    if (known !== undefined) return known;
+    const measure = byId.get(id);
+    if (!measure || path.has(id)) return false;
+    path.add(id);
+    const result = measureDependencies(measure).some((d) => reaches(d, path));
+    path.delete(id);
+    dependsOn.set(id, result);
+    return result;
+  };
+  const cells: Array<readonly [string, DataCell]> = [];
+  for (const measure of model.measures) {
+    if (reaches(measure.id, new Set())) continue;
+    try {
+      const cell = measureTypeProbe(model, sources, [measure.id]).get(
+        measure.id,
+      );
+      if (cell) cells.push([measure.id, cell]);
+    } catch {
+      // Not usable in a formula until the measure itself is fixed.
+    }
+  }
+  return formulaFields(
+    cells,
+    (id) => byId.get(id)!.name,
+    (cell) => !!cell.currency || cell.unit === "currency",
+  ).measures;
 }
 
 /**
