@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parseDataFormula, formatDataFormula } from "./data-formula.js";
 import { compileRowExpression, type DataField } from "./data-expression.js";
+import { fromVisual, sameDataExpression } from "./data-expression-visual.js";
+import { mulberry32, randomVisualModel } from "./test-helpers.js";
 const fields: DataField[] = [
   { id: "revenue", name: "Revenue", type: "decimal", nullable: true },
   { id: "downloads", name: "Downloads", type: "integer", nullable: true },
@@ -128,5 +130,114 @@ describe("editable formulas", () => {
     expect(() =>
       parseDataFormula('"private unterminated data', fields),
     ).toThrow(/^formula_string_invalid$/);
+  });
+  it("formula text round-trips every visual expression", () => {
+    for (const seed of [1, 2, 3]) {
+      const random = mulberry32(seed);
+      for (let i = 0; i < 1000; i++)
+        for (const target of ["condition", "calculation"] as const) {
+          const e = fromVisual(
+            randomVisualModel(
+              random,
+              fields.map((f) => f.id),
+              target,
+            ),
+          );
+          const text = formatDataFormula(e, fields);
+          expect(
+            sameDataExpression(parseDataFormula(text, fields), e),
+            `seed ${seed} #${i}: ${text}`,
+          ).toBe(true);
+        }
+    }
+  });
+  it("prints literal forms that parse back to the same literal", () => {
+    expect(
+      formatDataFormula(
+        { kind: "literal", type: "date", value: "2026-01-31" },
+        [],
+      ),
+    ).toBe('DATE("2026-01-31")');
+    expect(
+      formatDataFormula({ kind: "literal", type: "decimal", value: "2" }, []),
+    ).toBe('DECIMAL("2")');
+    expect(
+      formatDataFormula(
+        { kind: "literal", type: "decimal", value: "-1.50" },
+        [],
+      ),
+    ).toBe("-1.50");
+    expect(
+      formatDataFormula({ kind: "literal", type: "number", value: 1e21 }, []),
+    ).toBe('NUMBER("1e+21")');
+    expect(parseDataFormula("-5", [])).toEqual({
+      kind: "literal",
+      type: "integer",
+      value: -5,
+    });
+    expect(parseDataFormula("-[Revenue]", fields)).toEqual({
+      kind: "call",
+      fn: "negate",
+      args: [{ kind: "field", fieldId: "revenue" }],
+    });
+    expect(() => parseDataFormula('DATE("2026-13-01")', [])).toThrow(
+      "formula_literal_invalid",
+    );
+  });
+  it("parses every literal form and refuses malformed ones", () => {
+    expect(parseDataFormula('TIMESTAMP("2026-01-31T12:00:00Z")', [])).toEqual({
+      kind: "literal",
+      type: "timestamp",
+      value: "2026-01-31T12:00:00Z",
+    });
+    expect(parseDataFormula('JSON("[1,\\"a\\"]")', [])).toEqual({
+      kind: "literal",
+      type: "json",
+      value: [1, "a"],
+    });
+    expect(parseDataFormula('-DECIMAL("-2")', [])).toEqual({
+      kind: "literal",
+      type: "decimal",
+      value: "2",
+    });
+    expect(parseDataFormula('UNIT(NUMBER("1.5"), "kg")', [])).toEqual({
+      kind: "literal",
+      type: "number",
+      value: 1.5,
+      unit: "kg",
+    });
+    for (const text of [
+      'NUMBER("abc")',
+      'NUMBER("")',
+      'DECIMAL("1e3")',
+      'JSON("{")',
+      "DATE([Revenue])",
+      'DATE("2026-01-01", "x")',
+      "DATE()",
+    ])
+      expect(() => parseDataFormula(text, fields), text).toThrow(
+        "formula_literal_invalid",
+      );
+    // Stored window filters keep parsing TO_DATE as a call.
+    expect(parseDataFormula('TO_DATE("2026-01-31")', [])).toEqual({
+      kind: "call",
+      fn: "to_date",
+      args: [{ kind: "literal", type: "string", value: "2026-01-31" }],
+    });
+  });
+  it("keeps binary minus and negates non-literal operands", () => {
+    expect(evaluate("10 - -3")).toBe(13);
+    expect(parseDataFormula("2 * -[Downloads]", fields)).toEqual({
+      kind: "call",
+      fn: "multiply",
+      args: [
+        { kind: "literal", type: "integer", value: 2 },
+        {
+          kind: "call",
+          fn: "negate",
+          args: [{ kind: "field", fieldId: "downloads" }],
+        },
+      ],
+    });
   });
 });
