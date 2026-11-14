@@ -114,6 +114,7 @@ export function ExpressionEditor({
             id={id + "-formula"}
             value={current.text}
             fields={fields}
+            noun={noun}
             describedBy={current.note ? id + "-note" : undefined}
             onChange={(text) => {
               setSwitchError(null);

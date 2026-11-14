@@ -615,6 +615,33 @@ export const dataDe: Catalog<typeof dataEn> = {
       filter:
         "Die Kennzahl kann die gewählte Dimension oder den Filter nicht verwenden. Füge eine kompatible Beziehung hinzu oder wähle eine andere Dimension.",
     },
+    completion: {
+      label: "Vorschläge",
+      kinds: {
+        function: "Funktion",
+        field: "Spalte",
+        measure: "Kennzahl",
+        operator: "Operator",
+        keyword: "Wert",
+      },
+      params: {
+        value: "Wert",
+        number: "Zahl",
+        digits: "Nachkommastellen",
+        text: "Text",
+        search: "Suchtext",
+        condition: "Bedingung",
+        then: "wenn wahr",
+        else: "wenn falsch",
+        fallback: "Ersatzwert",
+        list: "Liste",
+        date: "Datum",
+        json: "strukturierte Daten",
+        key: "Schlüssel",
+        left: "links",
+        right: "rechts",
+      },
+    },
     types: {
       string: "Text",
       boolean: "Wahr / falsch",
