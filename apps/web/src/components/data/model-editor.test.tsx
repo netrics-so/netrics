@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { DataImpact } from "@netrics/contracts";
 import {
   emptyVisualModel,
   type ModelMeasure,
@@ -12,6 +13,7 @@ import {
   changeModelDefinition,
   ModelEditor,
   modelEditorState,
+  modelImpact,
 } from "./model-editor";
 
 const source: DataSource = {
@@ -552,5 +554,86 @@ describe("model editor edits", () => {
       measures: [{ ...revenue, name: "Sales" }],
     });
     expect(renamed.past).toHaveLength(1);
+  });
+});
+
+describe("model editor publish confirmation", () => {
+  const M = "00000000-0000-4000-8000-000000000011";
+  const impact = (
+    measureIds: string[] | undefined,
+    widgets: string[],
+  ): DataImpact => ({
+    target: measureIds
+      ? { kind: "measure", id: M, measureIds }
+      : { kind: "model", id: M },
+    preparations: [],
+    models: [],
+    measures: [],
+    dashboards: [
+      {
+        id: "00000000-0000-4000-8000-000000000021",
+        name: "Sales",
+        widgets: widgets.map((id) => ({ id, type: "measure", title: null })),
+        viaFilter: false,
+      },
+    ],
+    screens: [],
+    hidden: { preparations: 0, models: 0, dashboards: 0, screens: 0 },
+    changedMeasureIds: ["revenue", "removed"],
+  });
+  const W1 = "00000000-0000-4000-8000-000000000031";
+  const W2 = "00000000-0000-4000-8000-000000000032";
+
+  it("marks the widgets of changed measures that are still in the draft", async () => {
+    const calls: Array<{ measureIds?: string[] }> = [];
+    const read = vi.fn(
+      async (
+        _workspace: string,
+        target: { kind: "preparation" | "model"; measureIds?: string[] },
+      ) => {
+        calls.push(target);
+        return target.measureIds
+          ? impact(target.measureIds, [W1])
+          : impact(undefined, [W1, W2]);
+      },
+    );
+    const check = await modelImpact(
+      "w",
+      M,
+      definition([revenue, rolling]),
+      read,
+    );
+    expect(calls.map((c) => c.measureIds)).toEqual([undefined, ["revenue"]]);
+    expect(check.changedWidgetIds).toEqual([W1]);
+    expect(check.impact.dashboards[0]!.widgets).toHaveLength(2);
+  });
+
+  it("keeps the impact when the follow-up read fails", async () => {
+    let first = true;
+    const read = vi.fn(async () => {
+      if (first) {
+        first = false;
+        return impact(undefined, [W1]);
+      }
+      throw new Error("offline");
+    });
+    const check = await modelImpact("w", M, definition([revenue]), read);
+    expect(check.changedWidgetIds).toBeUndefined();
+    expect(check.impact.dashboards).toHaveLength(1);
+  });
+
+  it("renders no confirmation until Publish is pressed", () => {
+    expect(
+      renderI18n(
+        <ModelEditor
+          workspaceId="w"
+          sources={[source]}
+          initial={null}
+          onSaved={() => undefined}
+          onClose={() => undefined}
+          onDirty={() => undefined}
+        />,
+      ),
+    ).not.toContain("<dialog");
   });
 });

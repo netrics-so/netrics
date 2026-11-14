@@ -4352,6 +4352,34 @@ a.health-badge:hover {
   background: rgba(0, 0, 0, 0.6);
 }
 
+/* Publish confirmation with what depends on the item (#571). */
+.publish-impact-list {
+  max-height: 50vh;
+  overflow: auto;
+  margin: 12px 0;
+}
+
+.publish-impact-list h3 {
+  font-size: 14px;
+  margin: 12px 0 4px;
+}
+
+.publish-impact-list ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.publish-impact-list .data-badge {
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.publish-impact .actions {
+  display: flex;
+  gap: 8px;
+}
+
 .assign-list {
   list-style: none;
   margin: 12px 0;

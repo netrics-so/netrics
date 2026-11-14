@@ -2,6 +2,30 @@ import type { Catalog } from "@netrics/domain";
 import type { dataEn } from "./en";
 export const dataDe: Catalog<typeof dataEn> = {
   data: {
+    impact: {
+      title: "{name} veröffentlichen?",
+      loading: "Prüfe, was das verwendet …",
+      failed:
+        "Konnte nicht prüfen, was das verwendet. Du kannst trotzdem veröffentlichen.",
+      none: "Noch nichts verwendet das.",
+      scope: "Umfasst alle Projekte, nicht nur das, das du gerade ansiehst.",
+      preparations:
+        "{count, plural, one {# Aufbereitung} other {# Aufbereitungen}}",
+      models: "{count, plural, one {# Modell} other {# Modelle}}",
+      measures: "{count, plural, one {# Kennzahl} other {# Kennzahlen}}",
+      dashboards: "{count, plural, one {# Dashboard} other {# Dashboards}}",
+      screens:
+        "{count, plural, one {# gekoppelter Bildschirm} other {# gekoppelte Bildschirme}}",
+      hidden:
+        "{count, plural, one {# weiteres, das du nicht öffnen kannst} other {# weitere, die du nicht öffnen kannst}}",
+      pinned:
+        "Nutzt Version {version}, bis das Modell erneut veröffentlicht wird.",
+      viaFilter: "Über einen gemeinsamen Filter",
+      untitledWidget: "Widget ohne Titel",
+      changed: "Geändert",
+      confirm: "Veröffentlichen",
+      cancel: "Abbrechen",
+    },
     dashboard: {
       sourceReconnect: "Verbinde {name} erneut, um Importe fortzusetzen.",
       sourceAccess:

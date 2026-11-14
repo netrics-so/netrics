@@ -25,6 +25,7 @@ import {
   previewModelDefinition,
   saveModel,
   publishModel,
+  readDataImpact,
   restoreModel,
   type DataSource,
   type ModelDraft,
@@ -54,6 +55,11 @@ import {
 } from "./model-preview-table";
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
+import {
+  publishAfterConfirmation,
+  useImpactConfirmation,
+  type ImpactCheck,
+} from "./publish-impact-dialog";
 import { useDraftSources } from "@/lib/data-source-metadata";
 import {
   resolveExpressionDraft,
@@ -147,6 +153,40 @@ const EMPTY: SemanticModelDefinition = {
   dimensions: [],
   measures: [],
 };
+/**
+ * The model's impact for the publish confirmation, plus the widgets that
+ * read a measure whose draft differs from the live release (asked per
+ * measure, at most 50 at a time). Measures only in the release cannot be
+ * asked about; a failed follow-up only drops the "changed" markers.
+ */
+export async function modelImpact(
+  workspaceId: string,
+  id: string,
+  definition: SemanticModelDefinition,
+  read: typeof readDataImpact = readDataImpact,
+): Promise<ImpactCheck> {
+  const impact = await read(workspaceId, { kind: "model", id });
+  const changed = (impact.changedMeasureIds ?? []).filter((measure) =>
+    definition.measures.some((m) => m.id === measure),
+  );
+  const changedWidgetIds: string[] = [];
+  try {
+    for (let start = 0; start < changed.length; start += 50) {
+      const narrowed = await read(workspaceId, {
+        kind: "model",
+        id,
+        measureIds: changed.slice(start, start + 50),
+      });
+      for (const dashboard of narrowed.dashboards)
+        for (const widget of dashboard.widgets)
+          changedWidgetIds.push(widget.id);
+    }
+  } catch {
+    return { impact };
+  }
+  return { impact, changedWidgetIds };
+}
+
 export function ModelEditor({
   workspaceId,
   sources: sourceCatalog,
@@ -181,6 +221,7 @@ export function ModelEditor({
   };
   const [record, setRecord] = useState(initial),
     [name, setName] = useState(initial?.name ?? t("defaultModel"));
+  const confirmation = useImpactConfirmation(name.trim() || t("defaultModel"));
   const inputMetadata = useDraftSources(
     workspaceId,
     "models",
@@ -422,38 +463,57 @@ export function ModelEditor({
     setNotice(null);
     try {
       const model = build();
-      const saved =
-        record &&
-        !dirty &&
-        (!publish || record.publishedVersion !== record.version)
-          ? { model: record }
-          : await saveModel(
-              workspaceId,
-              {
-                name: name.trim(),
-                definition: model,
-                ...(record ? { version: record.version } : { projectId }),
-              },
-              record?.id,
-            );
-      setRecord(saved.model);
-      setEdits((h) =>
-        replacePresent(h, { definition: model, expressionDrafts: {} }),
-      );
-      const signature = modelEditorState(name, model, {});
-      setSavedState(signature);
-      if (fresh) setPreviewState(signature + queryState);
-      onSaved(saved.model);
-      if (publish) {
-        const published = await publishModel(
-          workspaceId,
-          saved.model.id,
-          saved.model.version,
+      let saved = false;
+      const save = async () => {
+        const result =
+          record &&
+          !dirty &&
+          (!publish || record.publishedVersion !== record.version)
+            ? { model: record }
+            : await saveModel(
+                workspaceId,
+                {
+                  name: name.trim(),
+                  definition: model,
+                  ...(record ? { version: record.version } : { projectId }),
+                },
+                record?.id,
+              );
+        saved = result.model !== record;
+        setRecord(result.model);
+        setEdits((h) =>
+          replacePresent(h, { definition: model, expressionDrafts: {} }),
         );
-        setRecord(published.model);
-        onSaved(published.model);
-        setNotice(t("publishedNotice"));
-      } else setNotice(t("saved"));
+        const signature = modelEditorState(name, model, {});
+        setSavedState(signature);
+        if (fresh) setPreviewState(signature + queryState);
+        onSaved(result.model);
+        return result.model;
+      };
+      if (!publish) {
+        await save();
+        setNotice(t("saved"));
+        return;
+      }
+      const outcome = await publishAfterConfirmation({
+        existed: !!record,
+        save,
+        confirm: (draft) =>
+          confirmation.ask(() =>
+            modelImpact(workspaceId, draft.id, draft.definition),
+          ),
+        publish: async (draft) => {
+          const published = await publishModel(
+            workspaceId,
+            draft.id,
+            draft.version,
+          );
+          setRecord(published.model);
+          onSaved(published.model);
+        },
+      });
+      if (outcome === "published") setNotice(t("publishedNotice"));
+      else if (saved) setNotice(t("saved"));
     } catch (failure) {
       setError(t(`errors.${dataErrorKey(failure)}`));
     } finally {
@@ -584,6 +644,7 @@ export function ModelEditor({
   );
   return (
     <section className="data-editor" aria-labelledby="model-title">
+      {confirmation.dialog}
       <header className="data-editor-header">
         <div>
           <button type="button" className="link-button" onClick={onClose}>
