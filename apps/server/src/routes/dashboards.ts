@@ -470,7 +470,7 @@ export function registerDashboardRoutes(
           schema: routeSchema({
             summary: "Delete a dashboard",
             tags: ["dashboards"],
-            errors: [403, 404],
+            errors: [403, 404, 409],
           }),
         },
         async (request, reply) => {

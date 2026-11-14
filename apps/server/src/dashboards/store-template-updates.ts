@@ -13,6 +13,7 @@ import {
 } from "@netrics/contracts";
 import {
   DatasetStoreError,
+  deleteDashboard,
   findDashboard,
   hasSqlstate,
   insertAuditEvent,
@@ -131,10 +132,25 @@ export class StoreUpdateUnmergeable extends DataServiceError {
  * that dashboard, to review again.
  */
 export class StoreUpdateReviewChanged extends DataServiceError {
-  constructor(readonly records: StoreTemplatePlan["records"]) {
+  constructor(
+    readonly records: StoreTemplatePlan["records"],
+    /** The decided items whose current value changed since the apply. */
+    readonly refs: string[] = [],
+  ) {
     super("store_update_review_changed", 409);
   }
 }
+
+/**
+ * A stored decision; dashboard decisions carry a hash of the customer's
+ * value they were made on (`current`), so a later edit asks again.
+ */
+type StoredDecision = Decision & { current?: string };
+/** A hash of an item's value in one state; absent items hash alike. */
+const valueHash = (value: unknown) =>
+  createHash("sha256")
+    .update(value === undefined ? "absent" : JSON.stringify(canonical(value)))
+    .digest("hex");
 
 /**
  * Screens whose fixed scope the dashboard they would move to cannot apply
@@ -172,6 +188,10 @@ const storedDashboardsSchema = z.array(
     previousOriginal: z.unknown().optional(),
     previousWidgetKeys: z.record(z.string(), z.string()).nullable().optional(),
     previousTemplateVersion: z.number().int().optional(),
+    /** The original's version the copy was made from. */
+    originalVersion: z.number().int().optional(),
+    /** A newer update of the install replaced this one: no more swaps. */
+    superseded: z.boolean().optional(),
   }),
 );
 type StoredDashboard = z.infer<typeof storedDashboardsSchema>[number];
@@ -986,6 +1006,28 @@ export function createStoreTemplateUpdateService(deps: {
         swappedAt: null,
         swappedBackAt: null,
       }));
+    // Older updates of the install can no longer swap: their copies were
+    // built from what this update replaces.
+    for (const older of await tx
+      .select({
+        id: schema.dataTemplateUpdates.id,
+        dashboards: schema.dataTemplateUpdates.dashboards,
+      })
+      .from(schema.dataTemplateUpdates)
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, actor.workspaceId),
+          eq(schema.dataTemplateUpdates.requestId, requestId),
+        ),
+      ))
+      await saveEntries(
+        tx,
+        actor.workspaceId,
+        older.id,
+        storedDashboardsSchema
+          .parse(older.dashboards)
+          .map((entry) => ({ ...entry, superseded: true })),
+      );
     // One open update per install (data_template_updates_one_open).
     await tx
       .update(schema.dataTemplateUpdates)
@@ -1004,7 +1046,14 @@ export function createStoreTemplateUpdateService(deps: {
         requestId,
         fromVersion: plan.install.templateVersion,
         toVersion: template.version,
-        decisions: body.decisions,
+        decisions: body.decisions.map((decision): StoredDecision =>
+          recordKeyOf(decision.ref).startsWith("dashboard:")
+            ? {
+                ...(decision as Decision),
+                current: valueHash(plan.current.get(decision.ref as ItemRef)),
+              }
+            : (decision as Decision),
+        ),
         drafts,
         dashboards,
         createdBy: actor.callerId,
@@ -1093,6 +1142,7 @@ export function createStoreTemplateUpdateService(deps: {
     actor: Actor,
     updateId: string,
     key: string,
+    options: { replace?: boolean },
   ): Promise<StoreTemplateUpdate> {
     const { row, entries, entry } = await lockedEntry(
       tx,
@@ -1100,8 +1150,33 @@ export function createStoreTemplateUpdateService(deps: {
       updateId,
       key,
     );
-    if (entry.copyId !== null) reject("store_update_copy_exists", 409);
+    // A copy deleted since counts as none.
+    const existing =
+      entry.copyId === null
+        ? null
+        : await findDashboard(tx, actor.workspaceId, entry.copyId);
+    if (existing && !options.replace) reject("store_update_copy_exists", 409);
     if (row.closedAt !== null) reject("store_update_closed", 409);
+    if (existing) {
+      // Replacing (the original changed since): only a copy no screen
+      // shows and that is not swapped in.
+      const onScreens = await tx
+        .select({ id: schema.devices.id })
+        .from(schema.devices)
+        .where(
+          and(
+            eq(schema.devices.workspaceId, actor.workspaceId),
+            eq(schema.devices.dashboardId, existing.id),
+            isNull(schema.devices.revokedAt),
+          ),
+        )
+        .limit(1);
+      if (
+        onScreens.length > 0 ||
+        (entry.swappedAt !== null && entry.swappedBackAt === null)
+      )
+        reject("store_update_copy_in_use", 409);
+    }
     // The copy shows published definitions only, never drafts.
     const view = await updateView(tx, actor.workspaceId, row);
     if (view.drafts.some((draft) => !draft.published))
@@ -1119,7 +1194,18 @@ export function createStoreTemplateUpdateService(deps: {
     const only = (items: Items): Items =>
       new Map([...items].filter(([ref]) => recordKeyOf(ref) === key));
     // The decisions the customer made when applying, against the dashboard
-    // as it is now: an item they did not decide on means it changed since.
+    // as it is now: an item they did not decide on, or decided on a value
+    // they changed since, is theirs to review again (never overwritten).
+    const changed = (row.decisions as StoredDecision[])
+      .filter(
+        (decision) =>
+          recordKeyOf(decision.ref) === key &&
+          decision.current !== undefined &&
+          decision.current !== valueHash(plan.current.get(decision.ref)),
+      )
+      .map((decision) => decision.ref);
+    if (changed.length)
+      throw new StoreUpdateReviewChanged(planRecords([record]), changed);
     let merged: Items;
     try {
       merged = merge(
@@ -1167,6 +1253,7 @@ export function createStoreTemplateUpdateService(deps: {
     }
     if (!result.ok) throw new DataServiceError(result.error, result.status);
     const copy = result.value.dashboard;
+    if (existing) await deleteDashboard(tx, actor.workspaceId, existing.id);
     await saveEntries(
       tx,
       actor.workspaceId,
@@ -1177,6 +1264,10 @@ export function createStoreTemplateUpdateService(deps: {
               ...candidate,
               copyId: copy.id,
               copyWidgetKeys: result.value.widgetKeys,
+              originalVersion: record.version ?? undefined,
+              // A fresh copy starts unswapped.
+              swappedAt: null,
+              swappedBackAt: null,
               templateOriginal: normalizeTemplateDashboard(
                 next.request,
                 next.widgetKeys,
@@ -1197,6 +1288,7 @@ export function createStoreTemplateUpdateService(deps: {
         key,
         sourceId: entry.originalId,
         name: copy.name,
+        ...(existing ? { replacedId: existing.id } : {}),
       },
     });
     return openUpdateView(tx, actor.workspaceId, updateId);
@@ -1355,6 +1447,8 @@ export function createStoreTemplateUpdateService(deps: {
     // Idempotent: a repeat (double click, two tabs) changes nothing.
     if (direction === "swap" ? swapped : entry.swappedBackAt !== null)
       return openUpdateView(tx, actor.workspaceId, updateId);
+    if (direction === "swap" && entry.superseded)
+      reject("store_update_superseded", 409);
     if (entry.copyId === null) reject("store_update_copy_missing", 409);
     if (direction === "back" && !swapped)
       reject("store_update_not_swapped", 409);
@@ -1376,6 +1470,22 @@ export function createStoreTemplateUpdateService(deps: {
       reject("store_update_stale", 409);
     if (!(await findDashboard(tx, actor.workspaceId, from)))
       reject("store_update_stale", 409);
+    // The copy was made from the original as it was then: an original
+    // edited since would lose those edits on the screens (replace the copy).
+    if (direction === "swap" && entry.originalVersion !== undefined) {
+      const [original] = await tx
+        .select({ version: schema.dashboards.version })
+        .from(schema.dashboards)
+        .where(
+          and(
+            eq(schema.dashboards.workspaceId, actor.workspaceId),
+            eq(schema.dashboards.id, entry.originalId),
+          ),
+        )
+        .for("update");
+      if (original && original.version !== entry.originalVersion)
+        reject("store_update_original_changed", 409);
+    }
     const devices = await moveScreens(tx, actor.workspaceId, from, to);
     await setArchived(tx, actor.workspaceId, from, at);
     await setArchived(tx, actor.workspaceId, to, null);
@@ -1490,11 +1600,13 @@ export function createStoreTemplateUpdateService(deps: {
       actor: Actor,
       updateId: string,
       key: string,
+      /** `replace`: a fresh copy instead of an unswapped one no screen shows. */
+      options: { replace?: boolean } = {},
     ): Promise<StoreTemplateUpdate> {
       return withWorkspace(
         deps.db,
         { workspaceId: actor.workspaceId, userId: actor.callerId },
-        (tx) => writeCopy(tx, actor, updateId, key),
+        (tx) => writeCopy(tx, actor, updateId, key, options),
       );
     },
     /**

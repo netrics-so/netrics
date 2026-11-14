@@ -6,6 +6,7 @@ import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   storeTemplateApplyErrorSchema,
   storeTemplateApplyRequestSchema,
+  storeTemplateCopyRequestSchema,
   storeTemplateDashboardErrorSchema,
   storeTemplateInstallListSchema,
   storeTemplatePlanSchema,
@@ -298,6 +299,7 @@ export function registerStoreTemplateRoutes(
             storeTemplateDashboardErrorSchema.parse({
               error: error.code,
               records: error.records,
+              ...(error.refs.length ? { refs: error.refs } : {}),
             }),
           );
         if (error instanceof StoreUpdateUnmergeable)
@@ -372,6 +374,7 @@ export function registerStoreTemplateRoutes(
             summary:
               "Create the updated copy of a store-template dashboard, unassigned from screens, once the update's data is published",
             tags: ["dashboards"],
+            body: storeTemplateCopyRequestSchema.nullish(),
             response: storeTemplateUpdateSchema,
             errors: [400, 403, 404, 409, 503],
             errorSchemas: { 409: storeTemplateDashboardErrorSchema },
@@ -385,6 +388,10 @@ export function registerStoreTemplateRoutes(
           const params = updateDashboardParamsSchema.safeParse(request.params);
           if (!params.success)
             return sendError(reply, 404, "store_template_update_not_found");
+          const body = storeTemplateCopyRequestSchema
+            .nullish()
+            .safeParse(request.body);
+          if (!body.success) return sendError(reply, 400, "invalid_request");
           try {
             reply.header("cache-control", "no-store");
             return storeTemplateUpdateSchema.parse(
@@ -392,6 +399,7 @@ export function registerStoreTemplateRoutes(
                 access,
                 params.data.updateId,
                 params.data.key,
+                { replace: body.data?.replace === true },
               ),
             );
           } catch (error) {

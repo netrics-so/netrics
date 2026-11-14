@@ -2329,6 +2329,253 @@ describe(
   },
 );
 
+/** Version 2 that also retitles the downloads widget. */
+const retitlingDownloads: StoreTemplateDefinition = {
+  ...v2,
+  build(key, inputs, ids) {
+    const record = v2.build(key, inputs, ids);
+    if (record.kind !== "dashboard") return record;
+    const request = structuredClone(record.request);
+    request.slides![0]!.widgets[0]!.title = "Downloads (v2)";
+    return { ...record, request };
+  },
+};
+const DOWNLOADS_TITLE = "Downloads and user installs";
+/** Renames the widget titled `from` in Studio. */
+const retitle = (workspaceId: string, id: string, from: string, to: string) =>
+  editDashboard(workspaceId, id, (slides) =>
+    slides.map((slide) => ({
+      ...slide,
+      widgets: (slide.widgets as { title: string | null }[]).map((w) =>
+        w.title === from ? { ...w, title: to } : w,
+      ),
+    })),
+  );
+
+describe(
+  "keeping the customer's changes between apply, copy and swap",
+  { timeout: TIMEOUT_MS },
+  () => {
+    it("asks again when a widget decided on changed after the apply", async () => {
+      const { workspaceId, installed, update } = await appliedUpdate(
+        retitlingDownloads,
+        async (install) => {
+          await retitle(
+            install.workspaceId,
+            install.installed.dashboardId,
+            DOWNLOADS_TITLE,
+            "Our downloads",
+          );
+        },
+      );
+      await publishDrafts(workspaceId, update);
+      // The customer chose the template's title for a title they have since
+      // changed again: taking the template's would overwrite that change.
+      await retitle(
+        workspaceId,
+        installed.dashboardId,
+        "Our downloads",
+        "Our downloads, again",
+      );
+      const refused = await updates(retitlingDownloads)
+        .createCopy(actor(workspaceId), update.id, "dashboard:portfolio")
+        .catch((error: unknown) => error);
+      expect(refused).toMatchObject({
+        code: "store_update_review_changed",
+        status: 409,
+        refs: ["dashboard:portfolio#widget:downloads"],
+        records: [
+          expect.objectContaining({
+            key: "dashboard:portfolio",
+            items: expect.arrayContaining([
+              expect.objectContaining({
+                ref: "dashboard:portfolio#widget:downloads",
+                outcome: "choose",
+              }),
+            ]),
+          }),
+        ],
+      });
+      const copies =
+        await owner`select id from dashboards where workspace_id=${workspaceId}`;
+      expect(copies).toHaveLength(1);
+    });
+
+    it("makes a new copy when the earlier one was deleted", async () => {
+      const { workspaceId, update } = await appliedUpdate();
+      await publishDrafts(workspaceId, update);
+      const first = await updates(v2).createCopy(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      const removed = await dashboardService().remove(
+        actor(workspaceId),
+        first.dashboards[0]!.copyId!,
+      );
+      expect(removed.ok).toBe(true);
+      const second = await updates(v2).createCopy(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      expect(second.dashboards[0]!.copyId).not.toBe(
+        first.dashboards[0]!.copyId,
+      );
+      await readDashboard(workspaceId, second.dashboards[0]!.copyId!);
+    });
+
+    it("refuses to swap when the original changed after the copy, and replaces the copy", async () => {
+      const { workspaceId, installed, update, copyId, screenId } =
+        await withCopy();
+      await retitle(
+        workspaceId,
+        installed.dashboardId,
+        DOWNLOADS_TITLE,
+        "Edited after the copy",
+      );
+      await expect(
+        updates(v2).swap(actor(workspaceId), update.id, "dashboard:portfolio"),
+      ).rejects.toThrow("store_update_original_changed");
+      expect(await devicesOn(installed.dashboardId)).toContain(screenId);
+      // Without replace, the copy stays the one there is.
+      await expect(
+        updates(v2).createCopy(
+          actor(workspaceId),
+          update.id,
+          "dashboard:portfolio",
+        ),
+      ).rejects.toThrow("store_update_copy_exists");
+      // A copy with a screen is in use and is never replaced.
+      const onCopy = await screenOn(workspaceId, copyId);
+      await expect(
+        updates(v2).createCopy(
+          actor(workspaceId),
+          update.id,
+          "dashboard:portfolio",
+          { replace: true },
+        ),
+      ).rejects.toThrow("store_update_copy_in_use");
+      await owner`update devices set revoked_at=now() where id=${onCopy}`;
+      const replaced = await updates(v2).createCopy(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+        { replace: true },
+      );
+      const freshId = replaced.dashboards[0]!.copyId!;
+      expect(freshId).not.toBe(copyId);
+      const [gone] =
+        await owner`select count(*)::int as n from dashboards where id=${copyId}`;
+      expect(gone!.n).toBe(0);
+      expect(titles(await readDashboard(workspaceId, freshId))).toContain(
+        "Edited after the copy",
+      );
+      await updates(v2).swap(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      expect(await devicesOn(freshId)).toContain(screenId);
+    });
+
+    it("refuses to swap again when the original changed after the swap back", async () => {
+      const { workspaceId, installed, update } = await withCopy();
+      await updates(v2).swap(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      await updates(v2).swapBack(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      await retitle(
+        workspaceId,
+        installed.dashboardId,
+        DOWNLOADS_TITLE,
+        "Edited after the swap back",
+      );
+      await expect(
+        updates(v2).swap(actor(workspaceId), update.id, "dashboard:portfolio"),
+      ).rejects.toThrow("store_update_original_changed");
+    });
+
+    it("keeps an archived rollback target read-only, but lets it be duplicated", async () => {
+      const { workspaceId, installed, update } = await withCopy();
+      await updates(v2).swap(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      const view = await readDashboard(workspaceId, installed.dashboardId);
+      const saved = await dashboardService().replace(
+        actor(workspaceId),
+        installed.dashboardId,
+        replaceDashboardRequestSchema.parse({
+          version: view.version,
+          name: "Renamed",
+          projectId: view.projectId,
+          slides: view.slides.map(({ layouts: _l, ...slide }) => slide),
+        }),
+      );
+      expect(saved).toMatchObject({
+        ok: false,
+        status: 409,
+        error: "dashboard_archived",
+      });
+      expect(
+        await dashboardService().remove(
+          actor(workspaceId),
+          installed.dashboardId,
+        ),
+      ).toMatchObject({ ok: false, status: 409, error: "dashboard_archived" });
+      const copy = await dashboardService().duplicate(
+        actor(workspaceId),
+        installed.dashboardId,
+        {},
+      );
+      expect(copy.ok).toBe(true);
+      // An archived dashboard no update points at is the customer's again.
+      await owner`update dashboards set archived_at=now() where id=${
+        copy.ok ? copy.value.id : ""
+      }`;
+      expect(
+        (
+          await dashboardService().remove(
+            actor(workspaceId),
+            copy.ok ? copy.value.id : "",
+          )
+        ).ok,
+      ).toBe(true);
+    });
+
+    it("refuses to swap an update a newer one superseded", async () => {
+      const { workspaceId, requestId, update } = await withCopy();
+      await updates(v2).swap(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      await updates(v2).swapBack(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      const plan = await updates(v2).plan(actor(workspaceId), requestId);
+      const newer = await updates(v2).apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: choices(plan, "template"),
+      });
+      expect(newer.id).not.toBe(update.id);
+      await expect(
+        updates(v2).swap(actor(workspaceId), update.id, "dashboard:portfolio"),
+      ).rejects.toThrow("store_update_superseded");
+    });
+  },
+);
+
 describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
   let app: FastifyInstance;
   const signup = async (email: string) => {
@@ -2660,6 +2907,23 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
     const again = await copy(workspaceId, editor);
     expect(again.statusCode).toBe(409);
     expect(again.json()).toEqual({ error: "store_update_copy_exists" });
+    const replaced = await updated.inject({
+      method: "POST",
+      url: `/v1/workspaces/${workspaceId}/dashboard-templates/stores/updates/${update.id}/dashboards/dashboard:portfolio/copy`,
+      headers: { cookie: editor },
+      payload: { replace: true },
+    });
+    expect(replaced.statusCode).toBe(200);
+    expect(
+      storeTemplateUpdateSchema.parse(replaced.json()).dashboards[0]!.copyId,
+    ).not.toBe(next.dashboards[0]!.copyId);
+    const invalid = await updated.inject({
+      method: "POST",
+      url: `/v1/workspaces/${workspaceId}/dashboard-templates/stores/updates/${update.id}/dashboards/dashboard:portfolio/copy`,
+      headers: { cookie: editor },
+      payload: { replace: "yes" },
+    });
+    expect(invalid.statusCode).toBe(400);
   });
 
   it("swaps and swaps back for those who manage screens only", async () => {

@@ -963,7 +963,7 @@ const idsOf = (items: Items, key: StoreTemplateKey, kind: ItemKind) => [
 
 /**
  * The inverse of dashboardItems, with real ids (desymbolize): a dashboard
- * from (merged) items. Filters and slides are in the current dashboard's
+ * from (merged) items. Filters, slides and widgets are in the current dashboard's
  * order, with the template's additions after their predecessor in the
  * template's order (mergeOrder); `slide:<index>` and `widget:<name>` are
  * the template's, `custom:<id>` the customer's. Throws UnmergeableRecord
@@ -998,7 +998,8 @@ export function dashboardFromItems(
     result.filters[id] = real("filter", id, value);
   for (const [id, value] of ordered("slide"))
     result.slides[slideKeyOf(id)] = real("slide", id, value);
-  for (const [id, value] of itemsOf(items, key, "widget")) {
+  // Widgets in the customer's order too (slide by slide, reading order).
+  for (const [id, value] of ordered("widget")) {
     const { slide, ...rest } = value as { slide: string } & object;
     result.widgets[widgetKeyOf(id)] = {
       slide,

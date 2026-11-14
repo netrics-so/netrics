@@ -217,3 +217,11 @@ export const storeTemplateDashboardErrorSchema = z.object({
     .array(z.object({ id: z.uuid(), name: z.string(), code: z.string() }))
     .optional(),
 });
+/**
+ * Creating an updated dashboard copy. `replace`: build a fresh copy from
+ * the original as it is now instead of the existing one, which must be
+ * unswapped and on no screen (409 store_update_copy_in_use otherwise).
+ */
+export const storeTemplateCopyRequestSchema = z.strictObject({
+  replace: z.boolean().optional(),
+});

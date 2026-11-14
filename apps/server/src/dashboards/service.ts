@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "drizzle-orm";
+
 import {
   publishedModel,
   validateDashboardMeasure,
@@ -1341,6 +1343,28 @@ async function validateDataBindings(
   }
 }
 
+/**
+ * Whether the dashboard is archived and a store-template update can swap
+ * back to it (its original or copy, 11E): kept as it is, read-only, so
+ * the rollback restores what was there. Duplicating it stays allowed.
+ */
+async function isRollbackTarget(
+  tx: Transaction,
+  workspaceId: string,
+  dashboard: Dashboard,
+): Promise<boolean> {
+  if (!dashboard.archivedAt) return false;
+  const rows = await tx.execute(
+    sql`select 1 from data_template_updates u,
+          jsonb_array_elements(u.dashboards) entry
+        where u.workspace_id = ${workspaceId}
+          and (entry ->> 'originalId' = ${dashboard.id}
+            or entry ->> 'copyId' = ${dashboard.id})
+        limit 1`,
+  );
+  return rows.length > 0;
+}
+
 /** A stored widget as the input to write it again (duplicate, copies). */
 function widgetInputOf(widget: DashboardWidgetRow): WidgetInput {
   return {
@@ -1539,6 +1563,14 @@ export async function createUpdatedDashboardCopy(
     written.push({ slideKey, widgetKeys: keys });
   }
   if (slides.length === 0) slides.push({ ...EMPTY_SLIDE, id: randomUUID() });
+  // The Studio's limit on data widgets (a compare counts twice).
+  if (
+    slides
+      .flatMap((slide) => slide.widgets)
+      .reduce((sum, widget) => sum + dataWidgetCost(widget.type), 0) >
+    STUDIO_LIMITS.dataWidgets
+  )
+    return fail(400, "too_many_data_widgets");
 
   const filters: unknown[] = [];
   for (const [id, filter] of Object.entries(merged.filters)) {
@@ -1772,6 +1804,9 @@ export function createDashboardService(deps: {
         if (!current) {
           return fail<DashboardView>(404, NOT_FOUND);
         }
+        if (await isRollbackTarget(tx, actor.workspaceId, current)) {
+          return fail<DashboardView>(409, "dashboard_archived");
+        }
         if (
           !(await checkProject(
             tx,
@@ -1961,6 +1996,9 @@ export function createDashboardService(deps: {
         );
         if (!existing) {
           return fail<null>(404, NOT_FOUND);
+        }
+        if (await isRollbackTarget(tx, actor.workspaceId, existing)) {
+          return fail<null>(409, "dashboard_archived");
         }
         await deleteDashboard(tx, actor.workspaceId, dashboardId);
         await insertAuditEvent(tx, {
