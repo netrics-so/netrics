@@ -466,6 +466,134 @@ describe("connecting", () => {
   });
 });
 
+describe("connecting in a project (#589)", () => {
+  async function createProject(
+    name: string,
+    workspace = workspaceId,
+  ): Promise<string> {
+    const response = await post(
+      `/v1/workspaces/${workspace}/projects`,
+      cookies.owner,
+      { name },
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    return (response.json() as { project: { id: string } }).project.id;
+  }
+
+  async function archive(projectId: string) {
+    const response = await post(
+      `/v1/workspaces/${workspaceId}/projects/${projectId}/archive`,
+      cookies.owner,
+      {},
+    );
+    expect(response.statusCode, response.body).toBe(200);
+  }
+
+  it("creates the connection in the project named at start", async () => {
+    const projectId = await createProject("Apps");
+    const url = await startUrl(cookies.editor, { projectId });
+    const [row] = await admin`
+      select project_id from oauth_authorizations
+      where state_hash = ${hash(new URL(url).searchParams.get("state")!)}`;
+    expect(row!.project_id).toBe(projectId);
+    const result = await callback(cookies.editor, fixture.consent(url));
+    expect(result.outcome).toBe("connected");
+    const id = connectionIdOf(result);
+    expect(result.redirectTo).toBe(
+      `/workspaces/${workspaceId}/connections/new?oauth=connected&connection=${id}`,
+    );
+    expect((await getConnection(id)).projectId).toBe(projectId);
+  });
+
+  it("creates it without a project when none is named, or null", async () => {
+    for (const body of [{}, { projectId: null }]) {
+      const id = connectionIdOf(await flow(cookies.owner, body));
+      expect((await getConnection(id)).projectId).toBeNull();
+    }
+  });
+
+  it("refuses an archived, unknown or other workspace's project at start", async () => {
+    const archivedId = await createProject("Archived");
+    await archive(archivedId);
+    const foreignId = await createProject("Foreign", secondWorkspaceId);
+    const before =
+      await admin`select count(*)::int as n from oauth_authorizations`;
+    for (const projectId of [
+      archivedId,
+      foreignId,
+      "00000000-0000-4000-8000-000000000000",
+    ]) {
+      const response = await start(cookies.owner, { projectId });
+      expect(response.statusCode, response.body).toBe(404);
+      expect(errorResponseSchema.parse(response.json()).error).toBe(
+        "project_not_found",
+      );
+    }
+    const after =
+      await admin`select count(*)::int as n from oauth_authorizations`;
+    expect(after[0]!.n).toBe(before[0]!.n);
+    // The other workspace's own flow takes its project.
+    const url = await startUrl(
+      cookies.owner,
+      { projectId: foreignId },
+      secondWorkspaceId,
+    );
+    const id = connectionIdOf(
+      await callback(cookies.owner, fixture.consent(url)),
+    );
+    expect((await getConnection(id, secondWorkspaceId)).projectId).toBe(
+      foreignId,
+    );
+  });
+
+  it("refuses a project with a reauthorization", async () => {
+    const projectId = await createProject("Reauth");
+    const id = connectionIdOf(await flow(cookies.owner));
+    const response = await start(cookies.owner, {
+      connectionId: id,
+      projectId,
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("connects without a project when it was archived or deleted during the flow, and says so for archived", async () => {
+    const archivedId = await createProject("Archived later");
+    const archivedUrl = await startUrl(cookies.owner, {
+      projectId: archivedId,
+    });
+    await archive(archivedId);
+    const archivedResult = await callback(
+      cookies.owner,
+      fixture.consent(archivedUrl),
+    );
+    expect(archivedResult.outcome).toBe("connected");
+    const archivedConnection = connectionIdOf(archivedResult);
+    expect(archivedResult.redirectTo).toBe(
+      `/workspaces/${workspaceId}/connections/new?oauth=connected&connection=${archivedConnection}&projectNotice=unassigned`,
+    );
+    expect((await getConnection(archivedConnection)).projectId).toBeNull();
+
+    const deletedId = await createProject("Deleted later");
+    const deletedUrl = await startUrl(cookies.owner, { projectId: deletedId });
+    const removed = await app.inject({
+      method: "DELETE",
+      url: `/v1/workspaces/${workspaceId}/projects/${deletedId}`,
+      headers: { cookie: cookies.owner },
+    });
+    expect(removed.statusCode, removed.body).toBeLessThan(300);
+    const deletedResult = await callback(
+      cookies.owner,
+      fixture.consent(deletedUrl),
+    );
+    // A deleted project leaves the stored authorization without one (the
+    // foreign key clears it), so the connection simply starts unassigned.
+    expect(deletedResult.outcome).toBe("connected");
+    expect(
+      (await getConnection(connectionIdOf(deletedResult))).projectId,
+    ).toBeNull();
+  });
+});
+
 describe("callback validation", () => {
   let before: { connections: number; grants: number };
   beforeEach(async () => {

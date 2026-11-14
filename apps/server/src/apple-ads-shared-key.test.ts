@@ -579,6 +579,69 @@ describe("Apple Ads: add another ad account with a connection's key (#395)", () 
     ]);
   });
 
+  it("joins the lending connection's project, or none when that project is archived (#589)", async () => {
+    const project = (
+      await call(owner, w1, "POST", "/projects", { name: "Lending" })
+    ).json() as { project: { id: string } };
+    const projectId = project.project.id;
+    const moved = await call(owner, w1, "PATCH", `/connections/${ids.us}`, {
+      projectId,
+    });
+    expect(moved.statusCode, moved.body).toBe(200);
+    const addJp = () =>
+      call(owner, w1, "POST", `/connections/${ids.us}/shared-key/connections`, {
+        connections: [{ name: "Apple Ads · JP", config: accountConfig(JP) }],
+      });
+    const removeJp = async () => {
+      const removed = await call(owner, w1, "DELETE", `/connections/${ids.jp}`);
+      expect(removed.statusCode, removed.body).toBeLessThan(300);
+    };
+
+    // Lending project active: the new connection joins it.
+    await removeJp();
+    const joined = await addJp();
+    expect(joined.statusCode, joined.body).toBe(200);
+    const [inProject] = connectionsResponseSchema.parse(
+      joined.json(),
+    ).connections;
+    expect(inProject!.projectId).toBe(projectId);
+    ids.jp = inProject!.id;
+
+    // Archived: no project, instead of 404 project_not_found.
+    const archived = await call(
+      owner,
+      w1,
+      "POST",
+      `/projects/${projectId}/archive`,
+    );
+    expect(archived.statusCode, archived.body).toBe(200);
+    await removeJp();
+    const unassigned = await addJp();
+    expect(unassigned.statusCode, unassigned.body).toBe(200);
+    const [withoutProject] = connectionsResponseSchema.parse(
+      unassigned.json(),
+    ).connections;
+    expect(withoutProject!.projectId).toBeNull();
+    ids.jp = withoutProject!.id;
+
+    // Naming the archived project explicitly is still refused.
+    await removeJp();
+    const named = await call(
+      owner,
+      w1,
+      "POST",
+      `/connections/${ids.us}/shared-key/connections`,
+      {
+        projectId,
+        connections: [{ name: "Apple Ads · JP", config: accountConfig(JP) }],
+      },
+    );
+    expect(named.statusCode).toBe(404);
+    expect(errorResponseSchema.parse(named.json()).error).toBe(
+      "project_not_found",
+    );
+  });
+
   it("answers 404 for an unknown connection", async () => {
     const unknown = await call(
       owner,

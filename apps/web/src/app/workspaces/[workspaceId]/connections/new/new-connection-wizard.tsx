@@ -316,6 +316,7 @@ export function NewConnectionWizard({
             connectorId={connector.id}
             provider={oauthProvider}
             returnPath={`/workspaces/${workspaceId}/connections/new`}
+            projectId={projectId}
           />
         </div>
       ) : null}

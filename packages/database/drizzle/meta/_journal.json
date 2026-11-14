@@ -512,6 +512,13 @@
       "when": 1794683033113,
       "tag": "0072_store_template_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1794695153757,
+      "tag": "0073_oauth_authorization_project",
+      "breakpoints": true
     }
   ]
 }

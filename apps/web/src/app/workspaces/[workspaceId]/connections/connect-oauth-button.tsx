@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { apiErrorMessage, startOAuthAuthorization } from "@/lib/api";
-import { providerName } from "@/lib/oauth-connection";
+import { oauthStartRequest, providerName } from "@/lib/oauth-connection";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 interface ConnectOAuthButtonProps {
@@ -14,6 +14,8 @@ interface ConnectOAuthButtonProps {
   connectionId?: string;
   /** App path the provider returns to (validated by the API). */
   returnPath: string;
+  /** The project a new connection starts in (the active one, #589). */
+  projectId?: string | null;
   /** Offer "Use a different account" (reauthorization only). */
   offerAccountChange?: boolean;
   primary?: boolean;
@@ -30,6 +32,7 @@ export function ConnectOAuthButton({
   provider,
   connectionId,
   returnPath,
+  projectId = null,
   offerAccountChange = false,
   primary = true,
 }: ConnectOAuthButtonProps) {
@@ -44,12 +47,16 @@ export function ConnectOAuthButton({
     setError(null);
     setPending(true);
     try {
-      const { authorizationUrl } = await startOAuthAuthorization(workspaceId, {
-        connectorId,
-        returnPath,
-        ...(connectionId ? { connectionId } : {}),
-        ...(connectionId && otherAccount ? { allowAccountChange: true } : {}),
-      });
+      const { authorizationUrl } = await startOAuthAuthorization(
+        workspaceId,
+        oauthStartRequest({
+          connectorId,
+          returnPath,
+          ...(connectionId ? { connectionId } : {}),
+          allowAccountChange: otherAccount,
+          projectId,
+        }),
+      );
       window.location.assign(authorizationUrl);
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));

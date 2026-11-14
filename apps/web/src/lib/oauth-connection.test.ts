@@ -8,6 +8,7 @@ import {
 import {
   GOOGLE_OAUTH_SETUP_GUIDE,
   disconnectQuery,
+  oauthStartRequest,
   parseDisconnected,
   fromDimensionsValue,
   oauthOutcomeMessage,
@@ -280,5 +281,41 @@ describe("in German", () => {
         "de",
       ).detail,
     ).toContain("NETRICS_OAUTH_GOOGLE_CLIENT_ID");
+  });
+});
+
+describe("oauthStartRequest (#589)", () => {
+  const P = "00000000-0000-4000-8000-0000000000aa";
+  const C = "00000000-0000-4000-8000-0000000000cc";
+  const base = { connectorId: "google-search-console", returnPath: "/x" };
+
+  it("starts a new connection in the active project", () => {
+    expect(oauthStartRequest({ ...base, projectId: P })).toEqual({
+      ...base,
+      projectId: P,
+    });
+  });
+
+  it("names no project under All projects", () => {
+    expect(oauthStartRequest({ ...base, projectId: null })).toEqual(base);
+    expect(oauthStartRequest(base)).toEqual(base);
+  });
+
+  it("never sends a project with a reauthorization", () => {
+    expect(
+      oauthStartRequest({
+        ...base,
+        connectionId: C,
+        allowAccountChange: true,
+        projectId: P,
+      }),
+    ).toEqual({ ...base, connectionId: C, allowAccountChange: true });
+    expect(
+      oauthStartRequest({
+        ...base,
+        connectionId: C,
+        allowAccountChange: false,
+      }),
+    ).toEqual({ ...base, connectionId: C });
   });
 });
