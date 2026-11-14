@@ -31,12 +31,12 @@ are never cached across connections.
 
 ## Data and interpretation
 
-| Dataset         | Retained data                                                                                 | Suggested use                                                            |
-| --------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `install_rows`  | App/day/country, daily user and device installs, original columns                             | Sum the chosen install field over a reporting period                     |
-| `earning_rows`  | Signed merchant amount/currency, transaction type/day, billing report month, original columns | Sum all signed merchant amounts by app and currency                      |
-| `store_ratings` | App/country/language/default form factor/day snapshot, score/count, availability              | Latest scoped score and count per app                                    |
-| `report_status` | App/report type/month, availability, checked time, object names and unmapped row count        | Distinguish missing, inaccessible and invalid reports from zero activity |
+| Dataset         | Retained data                                                                                                        | Suggested use                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `install_rows`  | App/day/country, daily user and device installs, original columns                                                    | Sum the chosen install field over a reporting period                     |
+| `earning_rows`  | Signed merchant amount/currency, transaction type/day, billing report month, original columns                        | Sum all signed merchant amounts by app and currency                      |
+| `store_ratings` | From the public Play Store listing: app/country/language/default form factor/day snapshot, score/count, availability | Latest scoped score and count per app                                    |
+| `report_status` | App/report type/month, availability, checked time, object names and unmapped row count                               | Distinguish missing, inaccessible and invalid reports from zero activity |
 
 Provider reporting details are described in Google's
 [downloadable report reference](https://support.google.com/googleplay/android-developer/answer/6135870?hl=en).
@@ -53,7 +53,7 @@ unmapped count. Blank install values remain null, not zero. Aggregates with
 some missing inputs expose a partial status; an explicit preparation filter
 can deliberately exclude those inputs.
 
-Ratings use the public Play listing's structured data, without authentication,
+**Source: the public Play Store listing.** Ratings use its structured data, without authentication,
 for the configured country/language and its default form factor. This is a
 best-effort public presentation source, **not a documented aggregate-rating
 API**. An incomplete listing is recorded as such; a site change, blocking

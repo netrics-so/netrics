@@ -203,6 +203,20 @@ describe("Google Play account connector", () => {
 });
 
 describe("public listing scope and availability", () => {
+  it("names the public Play Store listing as the ratings source in both languages", () => {
+    const config = googlePlayManifest.configSchema.properties as Record<
+      string,
+      { description: string }
+    >;
+    expect(config.ratingStorefront!.description).toContain(
+      "public Play Store listing",
+    );
+    expect(
+      googlePlayManifest.translations!.de!.config!.ratingStorefront!
+        .description,
+    ).toContain("öffentlichen Play-Store-Eintrag");
+  });
+
   it("keeps country, language and form factor explicit; zero ratings remain distinct from a missing listing", async () => {
     const fake = fakePlay();
     const first = await listingSnapshot(

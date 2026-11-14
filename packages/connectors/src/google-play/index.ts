@@ -43,7 +43,7 @@ import { reportCatalog, reportedPackages, syncPlayReports } from "./sync.js";
 const de: ManifestTranslation = {
   name: "Google Play",
   description:
-    "Installationsberichte, genaue Erlöszeilen einschließlich Gebühren und Rückerstattungen sowie öffentliche Bewertungen deiner Apps für das gewählte Land. Ein Google-Konto verbindet mehrere Apps.",
+    "Installationsberichte, genaue Erlöszeilen einschließlich Gebühren und Rückerstattungen sowie Bewertungen aus dem öffentlichen Play-Store-Eintrag deiner Apps. Ein Google-Konto verbindet mehrere Apps.",
   resourceNoun: { singular: "App", plural: "Apps" },
   config: {
     reportBucket: {
@@ -54,7 +54,7 @@ const de: ManifestTranslation = {
     ratingStorefront: {
       title: "Land für Bewertungen",
       description:
-        "Ländercode aus zwei Buchstaben, zum Beispiel DE oder US. Standard: US. Die öffentliche Bewertung und ihre Anzahl gelten für dieses Land und den Standard-Gerätetyp der Store-Seite.",
+        "Ländercode aus zwei Buchstaben, zum Beispiel DE oder US. Standard: US. Die Bewertungen stammen aus dem öffentlichen Play-Store-Eintrag für dieses Land und den Standard-Gerätetyp, nicht aus einer Google-API.",
     },
     ratingLanguage: {
       title: "Sprache der Store-Seite",
@@ -81,7 +81,7 @@ export const googlePlayManifest: ConnectorManifest = {
   brandColor: "#34a853",
   name: "Google Play",
   description:
-    "Install reports, exact earnings lines including fees and refunds, and scoped public listing ratings for your apps. Connect several apps with one Google account.",
+    "Install reports, exact earnings lines including fees and refunds, and ratings from the public Play Store listing of your apps. Connect several apps with one Google account.",
   url: "https://play.google.com/console/",
   docsUrl:
     "https://github.com/netrics-so/netrics/blob/main/docs/connectors/google-play.md",
@@ -105,7 +105,7 @@ export const googlePlayManifest: ConnectorManifest = {
         type: "string",
         title: "Rating country",
         description:
-          "Two-letter country code, for example US or DE. Defaults to US. Public rating and count refer to this country's listing and its default form factor.",
+          "Two-letter country code, for example US or DE. Defaults to US. Ratings come from the public Play Store listing for this country and its default form factor, not from a Google API.",
         default: "US",
       },
       ratingLanguage: {

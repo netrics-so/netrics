@@ -63,7 +63,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     proceedsDefinition:
       "Apple: Einheiten × Entwicklererlös je Einheit. Google: alle vorzeichenbehafteten Händlerbeträge einschließlich Gebühren, Rückerstattungen und Anpassungen. Währungen bleiben getrennt.",
     ratingsDefinition:
-      "Zuletzt erfasste Bewertung und Anzahl je Store-Eintrag und Land. Bewertungen werden nie über Apps oder Stores gemittelt. Öffentliche Google-Play-Bewertungen sind eine Quelle ohne Verfügbarkeitsgarantie.",
+      "Zuletzt erfasste Bewertung und Anzahl je Store-Eintrag und Land. Bewertungen werden nie über Apps oder Stores gemittelt. Google-Play-Bewertungen stammen aus dem öffentlichen Play-Store-Eintrag; sie können ohne Garantie fehlen.",
     missingDefinition:
       "Berichte können später eintreffen. Bekannte Werte bleiben als unvollständig sichtbar; ausstehende und fehlende Werte werden nicht als 0 behandelt. Nicht zugeordnete Kontozeilen bleiben von Apps getrennt.",
     create: "Bearbeitbares Dashboard erstellen",
