@@ -39,6 +39,7 @@ import {
   type PreparationGraph,
   type SemanticModelDefinition,
   type ModelQuery,
+  attributeDataError,
 } from "@netrics/domain";
 import {
   withWorkspace,
@@ -63,10 +64,25 @@ export class DataServiceError extends Error {
   constructor(
     public readonly code: string,
     public readonly status: 400 | 404 | 409 | 413 | 503 = 400,
+    /** Id of the preparation step (PreparationNode.id) whose work failed. */
+    public readonly nodeId?: string,
   ) {
     super(code);
     this.name = "DataServiceError";
   }
+}
+/**
+ * `error` without the step id it names. Step ids are local to one graph, so
+ * an error from an upstream preparation's graph must not leave it with one:
+ * the consuming graph attributes it to its own source step, and model routes
+ * report no step.
+ */
+function withoutStep(error: unknown): unknown {
+  if (error instanceof DataProcessingError && error.nodeId !== undefined)
+    return new DataProcessingError(error.code, error.fieldId);
+  if (error instanceof DataServiceError && error.nodeId !== undefined)
+    return new DataServiceError(error.code, error.status);
+  return error;
 }
 const MAX_SNAPSHOT_EXPIRY = Date.parse("9999-12-31T23:59:59Z");
 /**
@@ -308,13 +324,18 @@ function checkRestoredModelBindings(
         fail("data_model_schema_changed", 409);
       continue;
     }
-    const inputs = preparationFieldReferences(
-      prepared.graph,
-      loader.tables,
-      prepared.outputId,
-      fields,
-      loader.budget,
-    );
+    let inputs: ReturnType<typeof preparationFieldReferences>;
+    try {
+      inputs = preparationFieldReferences(
+        prepared.graph,
+        loader.tables,
+        prepared.outputId,
+        fields,
+        loader.budget,
+      );
+    } catch (error) {
+      throw withoutStep(error);
+    }
     for (const [input, dependencies] of inputs) {
       const existing = required.get(input);
       if (!existing) {
@@ -601,7 +622,12 @@ export function createDataLoader(
           )
             result = { ...result, expiresAt: input.expiresAt };
       } else {
-        const execution = executePreparation(graph, inputs, budget);
+        let execution: ReturnType<typeof executePreparation>;
+        try {
+          execution = executePreparation(graph, inputs, budget);
+        } catch (error) {
+          throw withoutStep(error);
+        }
         execution.warnings.forEach((w) => warnings.add(w));
         result = execution.outputs[output]!;
         if (!override && !warnings.has("data_source_pending")) {
@@ -1222,7 +1248,13 @@ export function createDataService(
     const inputs = new Map<string, DataTable>();
     for (const n of graph.nodes)
       if (n.type === "source")
-        inputs.set(n.datasetId, await loader.load(n.datasetId));
+        try {
+          inputs.set(n.datasetId, await loader.load(n.datasetId));
+        } catch (error) {
+          if (error instanceof DataServiceError && error.nodeId === undefined)
+            throw new DataServiceError(error.code, error.status, n.id);
+          throw attributeDataError(error, n.id);
+        }
     const output = executePreparation(graph, inputs, loader.budget);
     return { loader, output };
   };

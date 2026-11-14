@@ -283,6 +283,209 @@ describe("data API authorization and contract", () => {
         .statusCode,
     ).toBe(200);
   });
+  it("attributes preview and publish failures to the failing step", async () => {
+    const graph = {
+      version: 1,
+      nodes: [
+        { id: "source", type: "source", datasetId },
+        {
+          id: "calc",
+          type: "calculate",
+          input: "source",
+          fieldId: "net",
+          name: "Net",
+          expression: { kind: "field", fieldId: "missing" },
+        },
+        {
+          id: "kept",
+          type: "filter",
+          input: "calc",
+          expression: { kind: "literal", type: "boolean", value: true },
+        },
+      ],
+      outputs: ["kept"],
+    };
+    const located = {
+      error: "expression_field_not_found",
+      fieldId: "missing",
+      nodeId: "calc",
+    };
+    const preview = await call("POST", "/preparations/preview", editor, {
+      graph,
+    });
+    expect([preview.statusCode, preview.json()]).toEqual([400, located]);
+    const gone = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [{ id: "source", type: "source", datasetId: randomUUID() }],
+        outputs: ["source"],
+      },
+    });
+    expect([gone.statusCode, gone.json()]).toEqual([
+      404,
+      { error: "data_source_not_found", nodeId: "source" },
+    ]);
+    const saved = await call("POST", "/preparations", editor, {
+      name: "Broken",
+      graph,
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const published = await call(
+      "POST",
+      `/preparations/${saved.json().preparation.id}/publish`,
+      editor,
+      { version: 1 },
+    );
+    expect([published.statusCode, published.json()]).toEqual([400, located]);
+    const conflict = await call(
+      "POST",
+      `/preparations/${saved.json().preparation.id}/publish`,
+      editor,
+      { version: 7 },
+    );
+    expect([conflict.statusCode, conflict.json()]).toEqual([
+      409,
+      { error: "version_conflict" },
+    ]);
+  });
+  it("attributes a failing upstream preparation to the consuming source step, never to the upstream step", async () => {
+    const definition = {
+      key: "groups",
+      name: "Groups",
+      version: 1,
+      mode: "snapshot",
+      grain: "one row",
+      keyFields: ["id"],
+      retentionDays: 30,
+      fields: ["id", "group"].map((id) => ({
+        id,
+        name: id,
+        type: "string",
+        nullable: false,
+        classification: "internal",
+      })),
+    };
+    const source = await call("POST", "/manual", editor, {
+      definition,
+      records: [
+        { values: { id: "1", group: "a" } },
+        { values: { id: "2", group: "b" } },
+      ],
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    const groups = source.json().datasetId as string;
+    // Upstream step ids deliberately collide with the consuming graph's ids.
+    const upstream = await call("POST", "/preparations", editor, {
+      name: "Upstream",
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "source", type: "source", datasetId: groups },
+          {
+            id: "calc",
+            type: "join",
+            left: "source",
+            right: "source",
+            keys: [{ left: "group", right: "group" }],
+            mode: "inner",
+            cardinality: "many_to_one",
+            rightPrefix: "r_",
+          },
+        ],
+        outputs: ["calc"],
+      },
+    });
+    expect(upstream.statusCode, upstream.body).toBe(200);
+    const upstreamId = upstream.json().preparation.id as string;
+    const published = await call(
+      "POST",
+      `/preparations/${upstreamId}/publish`,
+      editor,
+      { version: 1 },
+    );
+    expect(published.statusCode, published.body).toBe(200);
+    // New rows make the upstream join fail when it is rebuilt.
+    const changed = await call("PUT", `/manual/${groups}`, editor, {
+      definition,
+      generationId: source.json().generationId,
+      records: [
+        { values: { id: "1", group: "a" } },
+        { values: { id: "2", group: "a" } },
+      ],
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
+    const preview = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [
+          {
+            id: "input",
+            type: "source",
+            datasetId: `prepared:${upstreamId}:calc`,
+          },
+          {
+            id: "calc",
+            type: "filter",
+            input: "input",
+            expression: { kind: "literal", type: "boolean", value: true },
+          },
+        ],
+        outputs: ["calc"],
+      },
+    });
+    expect([preview.statusCode, preview.json()]).toEqual([
+      400,
+      { error: "preparation_join_cardinality_violation", nodeId: "input" },
+    ]);
+    const model = await call("POST", "/models/preview", editor, {
+      definition: {
+        version: 1,
+        datasets: [`prepared:${upstreamId}:calc`],
+        relationships: [],
+        dimensions: [],
+        measures: [
+          {
+            id: "rows",
+            name: "Rows",
+            kind: "aggregate",
+            datasetId: `prepared:${upstreamId}:calc`,
+            aggregate: { id: "rows", name: "Rows", op: "count" },
+          },
+        ],
+      },
+      query: { measureIds: ["rows"], groupBy: [] },
+    });
+    expect([model.statusCode, model.json()]).toEqual([
+      400,
+      { error: "preparation_join_cardinality_violation" },
+    ]);
+    const unpublished = await call("POST", "/preparations", editor, {
+      name: "Never published",
+      graph: {
+        version: 1,
+        nodes: [{ id: "source", type: "source", datasetId: groups }],
+        outputs: ["source"],
+      },
+    });
+    expect(unpublished.statusCode, unpublished.body).toBe(200);
+    const pending = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [
+          {
+            id: "input",
+            type: "source",
+            datasetId: `prepared:${unpublished.json().preparation.id}:source`,
+          },
+        ],
+        outputs: ["input"],
+      },
+    });
+    expect([pending.statusCode, pending.json()]).toEqual([
+      409,
+      { error: "data_source_not_published", nodeId: "input" },
+    ]);
+  });
   it("lets viewers query published results while keeping drafts, previews and formulas restricted", async () => {
     const response = await call("POST", `/models/${modelId}/query`, viewer, {
       measureIds: ["total"],
@@ -1888,8 +2091,8 @@ describe("rolling and period-offset model measures", () => {
       expect(refused.statusCode, refused.body).toBe(400);
     }
 
-    // Semantic rules surface as stable codes when publishing.
-    for (const [measures, code] of [
+    // Semantic rules surface as stable codes, with the measure, when publishing.
+    for (const [measures, body] of [
       [
         [
           {
@@ -1907,11 +2110,17 @@ describe("rolling and period-offset model measures", () => {
           },
           { ...rolling, baseMeasureId: "double" },
         ],
-        "model_window_base_aggregate_required",
+        {
+          error: "model_window_base_aggregate_required",
+          fieldId: "units_7d",
+        },
       ],
       [
         [{ ...rolling, timeDimensionId: "at" }],
-        "model_window_date_dimension_required",
+        {
+          error: "model_window_date_dimension_required",
+          fieldId: "units_7d",
+        },
       ],
       [
         [
@@ -1930,17 +2139,17 @@ describe("rolling and period-offset model measures", () => {
             offset: { unit: "day", length: 100 },
           },
         ],
-        "model_window_lookback_limit",
+        { error: "model_window_lookback_limit", fieldId: "too_far" },
       ],
       [
         [{ ...weekChange, id: "loop", baseMeasureId: "loop" }],
-        "model_measure_cycle",
+        { error: "model_measure_cycle" },
       ],
     ] as const) {
       const model = await create("Invalid windows", [...measures]);
       const refused = await publish(model);
       expect(refused.statusCode, refused.body).toBe(400);
-      expect(refused.json()).toEqual({ error: code });
+      expect(refused.json()).toEqual(body);
     }
   });
 

@@ -172,11 +172,13 @@ import {
   type UpdateGoalRequest,
   createThemeRequestSchema,
   themeErrorResponseSchema,
+  dataErrorResponseSchema,
   themeListResponseSchema,
   themeResponseSchema,
   updateThemeRequestSchema,
   type CreateThemeRequest,
   type ThemeErrorResponse,
+  type DataErrorResponse,
   type ThemeListResponse,
   type ThemeResponse,
   type UpdateThemeRequest,
@@ -196,8 +198,14 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly code: string,
-    /** Extra fields some errors carry (theme contrast, dashboards in use). */
-    public readonly details: Omit<ThemeErrorResponse, "error"> = {},
+    /**
+     * Extra fields some errors carry (theme contrast, dashboards in use, the
+     * failing preparation step and column).
+     */
+    public readonly details: Omit<
+      ThemeErrorResponse & DataErrorResponse,
+      "error"
+    > = {},
   ) {
     super(code);
     this.name = "ApiError";
@@ -260,9 +268,13 @@ async function readErrorCode(response: Response): Promise<string> {
   }
 }
 
+const detailedErrorResponseSchema = themeErrorResponseSchema.extend(
+  dataErrorResponseSchema.shape,
+);
+
 async function readError(response: Response): Promise<ApiError> {
   try {
-    const { error, ...details } = themeErrorResponseSchema.parse(
+    const { error, ...details } = detailedErrorResponseSchema.parse(
       await response.json(),
     );
     return new ApiError(response.status, error, details);

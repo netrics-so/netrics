@@ -110,13 +110,34 @@ export class DataProcessingError extends Error {
   constructor(
     public readonly code: string,
     public readonly fieldId?: string,
+    /** Id of the preparation step (PreparationNode.id) whose work failed. */
+    public readonly nodeId?: string,
   ) {
     super(fieldId ? `${code}: ${fieldId}` : code);
     this.name = "DataProcessingError";
   }
 }
-export function dataFail(code: string, fieldId?: string): never {
-  throw new DataProcessingError(code, fieldId);
+export function dataFail(
+  code: string,
+  fieldId?: string,
+  nodeId?: string,
+): never {
+  throw new DataProcessingError(code, fieldId, nodeId);
+}
+/** Failures of the whole run's operation budget, never of one step. */
+const GRAPH_LEVEL_CODES: ReadonlySet<string> = new Set([
+  "processing_budget_exceeded",
+  "processing_budget_invalid",
+]);
+/** `error` attributed to `nodeId`, unless it is not a DataProcessingError, is a whole-run budget failure, or a deeper step already claimed it (then `error` itself). */
+export function attributeDataError(error: unknown, nodeId: string): unknown {
+  if (
+    !(error instanceof DataProcessingError) ||
+    error.nodeId !== undefined ||
+    GRAPH_LEVEL_CODES.has(error.code)
+  )
+    return error;
+  return new DataProcessingError(error.code, error.fieldId, nodeId);
 }
 export class ProcessingBudget {
   operations = 0;

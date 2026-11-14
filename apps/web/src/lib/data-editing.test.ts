@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { dataErrorCodeKey } from "./data-errors";
-import { parseEnteredTable, enteredValue, preparationAt } from "./data-editing";
-import type { PreparationGraph } from "@netrics/domain";
+import {
+  dataErrorKey,
+  dataErrorLocation,
+  parseEnteredTable,
+  enteredValue,
+  preparationAt,
+} from "./data-editing";
+import { previewPreparation } from "./data-api";
+import { DataProcessingError, type PreparationGraph } from "@netrics/domain";
 describe("entered reference data", () => {
   it("preserves leading zeroes and exact decimals while reading quoted CSV", () => {
     const table = parseEnteredTable(
@@ -212,4 +219,37 @@ it("keeps explicit append column mappings attached when preserving an existing p
   });
   expect(branch.columnMappings?.output).toBeUndefined();
   expect(result.outputs).toEqual(graph.outputs);
+});
+describe("data error location", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("reads the failing step and column from API and engine errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          {
+            error: "expression_field_not_found",
+            fieldId: "missing",
+            nodeId: "calc",
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    const failure = await previewPreparation("w", {
+      version: 1,
+      nodes: [{ id: "source", type: "source", datasetId: "s" }],
+      outputs: ["source"],
+    }).catch((error: unknown) => error);
+    expect(dataErrorLocation(failure)).toEqual({
+      nodeId: "calc",
+      fieldId: "missing",
+    });
+    expect(dataErrorKey(failure)).toBe("field");
+    expect(dataErrorLocation(new DataProcessingError("x", "f", "n"))).toEqual({
+      nodeId: "n",
+      fieldId: "f",
+    });
+    expect(dataErrorLocation(new Error("x"))).toEqual({});
+  });
 });
