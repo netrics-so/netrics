@@ -1,3 +1,4 @@
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance, InjectOptions } from "fastify";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -29,8 +30,9 @@ interface Shape {
   prep: string;
   model: string;
   dashboard: string;
+  filters: string;
 }
-let w1: Shape, w2: Shape;
+let w1: Shape, w2: Shape, brokenModel: string;
 
 const call = (
   method: "GET" | "POST" | "PUT",
@@ -65,7 +67,7 @@ const definition = (datasetId: string, total = "sum") => ({
   version: 1,
   datasets: [datasetId],
   relationships: [],
-  dimensions: [],
+  dimensions: [{ id: "label", name: "Label", datasetId, fieldId: "id" }],
   measures: [
     {
       id: "spend",
@@ -233,8 +235,77 @@ async function buildShape(cookie: string, name: string): Promise<Shape> {
   expect(dashboardSaved.statusCode, dashboardSaved.body).toBe(200);
   const dashboard = (dashboardSaved.json() as { dashboard: { id: string } })
     .dashboard.id;
-  await withWorkspace(db, { workspaceId }, (tx) =>
-    tx.insert(schema.devices).values([
+  // A dashboard tied to the model only through a shared filter mapping.
+  const filtersSaved = await call(
+    "POST",
+    "/dashboards",
+    cookie,
+    {
+      name: name + " filters",
+      settings: {
+        dataFilters: [
+          {
+            id: "label",
+            name: "Label",
+            type: "string",
+            mode: "values",
+            defaultValue: null,
+            mappings: [{ modelId: model, dimensionId: "label" }],
+          },
+        ],
+      },
+      slides: [{ widgets: [] }],
+    },
+    workspaceId,
+  );
+  expect(filtersSaved.statusCode, filtersSaved.body).toBe(200);
+  const filters = (filtersSaved.json() as { dashboard: { id: string } })
+    .dashboard.id;
+  await withWorkspace(db, { workspaceId }, async (tx) => {
+    // A compare widget bound to the model's measures (#507), written as
+    // stored: its metric side needs a connection this fixture does not have.
+    const [measureWidget] = await tx
+      .select()
+      .from(schema.dashboardWidgets)
+      .where(
+        and(
+          eq(schema.dashboardWidgets.workspaceId, workspaceId),
+          eq(schema.dashboardWidgets.dashboardId, dashboard),
+        ),
+      );
+    const [connection] = await tx
+      .insert(schema.connections)
+      .values({ workspaceId, connectorId: "demo", name: "Shop" })
+      .returning({ id: schema.connections.id });
+    await tx.insert(schema.dashboardWidgets).values({
+      connectionId: connection!.id,
+      metricKey: "demo.orders",
+      aggregation: "sum",
+      period: "last_7_days",
+      denominatorConnectionId: connection!.id,
+      denominatorMetricKey: "demo.visits",
+      denominatorAggregation: "sum",
+      slideId: measureWidget!.slideId,
+      dashboardId: dashboard,
+      workspaceId,
+      type: "compare",
+      modelId: model,
+      modelBinding: {
+        modelId: model,
+        dateDimensionId: "label",
+        measureIds: {
+          numerator: "spend",
+          denominator: "doubled",
+          ratio: "doubled",
+        },
+      },
+      x: 6,
+      y: 0,
+      w: 6,
+      h: 3,
+      title: "Ratio",
+    });
+    await tx.insert(schema.devices).values([
       { workspaceId, name: "Lobby", dashboardId: dashboard },
       {
         workspaceId,
@@ -242,9 +313,18 @@ async function buildShape(cookie: string, name: string): Promise<Shape> {
         dashboardId: dashboard,
         revokedAt: new Date(),
       },
-    ]),
-  );
-  return { workspaceId, prep, model, dashboard };
+      {
+        workspaceId,
+        name: "Scoped",
+        dashboardId: filters,
+        scope: {
+          dashboardId: filters,
+          values: { label: { kind: "values", values: ["one"] } },
+        },
+      },
+    ]);
+  });
+  return { workspaceId, prep, model, dashboard, filters };
 }
 
 beforeAll(async () => {
@@ -268,6 +348,32 @@ beforeAll(async () => {
   viewerW1 = await signup("impact-viewer@example.com");
   w1 = await buildShape(ownerW1, "W1");
   w2 = await buildShape(ownerW2, "W2");
+  // A published model whose stored draft no longer parses: its live
+  // release still reads the preparation and must stay listed.
+  const broken = await call("POST", "/data/models", ownerW1, {
+    name: "W1 broken draft",
+    definition: definition(`prepared:${w1.prep}:kept`),
+  });
+  expect(broken.statusCode, broken.body).toBe(200);
+  brokenModel = modelResponseSchema.parse(broken.json()).model.id;
+  expect(
+    (
+      await call("POST", `/data/models/${brokenModel}/publish`, ownerW1, {
+        version: 1,
+      })
+    ).statusCode,
+  ).toBe(200);
+  await withWorkspace(db, { workspaceId: w1.workspaceId }, (tx) =>
+    tx
+      .update(schema.dataModels)
+      .set({ definition: { version: 1, retired: true } })
+      .where(
+        and(
+          eq(schema.dataModels.workspaceId, w1.workspaceId),
+          eq(schema.dataModels.id, brokenModel),
+        ),
+      ),
+  );
   expect(
     (
       await addMemberViaInvitation(
@@ -299,6 +405,12 @@ describe("impact before publish routes", () => {
     expect(body.target).toEqual({ kind: "preparation", id: w1.prep });
     expect(body.models).toEqual([
       {
+        id: brokenModel,
+        name: "W1 broken draft",
+        publishedVersion: 1,
+        pinnedVersion: 1,
+      },
+      {
         id: w1.model,
         name: "W1 model",
         publishedVersion: 1,
@@ -309,11 +421,18 @@ describe("impact before publish routes", () => {
       {
         id: w1.dashboard,
         name: "W1 dashboard",
-        widgets: [{ id: expect.any(String), type: "measure", title: "Spend" }],
+        widgets: [
+          { id: expect.any(String), type: "compare", title: "Ratio" },
+          { id: expect.any(String), type: "measure", title: "Spend" },
+        ],
         viaFilter: false,
       },
+      { id: w1.filters, name: "W1 filters", widgets: [], viaFilter: true },
     ]);
-    expect(body.screens.map((s) => s.name)).toEqual(["Lobby"]);
+    expect(body.screens).toEqual([
+      { id: expect.any(String), name: "Lobby", dashboardId: w1.dashboard },
+      { id: expect.any(String), name: "Scoped", dashboardId: w1.filters },
+    ]);
     expect(body.hidden).toEqual({
       preparations: 0,
       models: 0,
@@ -322,6 +441,25 @@ describe("impact before publish routes", () => {
     });
     for (const foreign of [w2.prep, w2.model, w2.dashboard])
       expect(JSON.stringify(body)).not.toContain(foreign);
+    // The model with the unreadable draft still answers.
+    const broken = await call(
+      "GET",
+      `/data/models/${brokenModel}/impact`,
+      ownerW1,
+    );
+    expect(broken.statusCode, broken.body).toBe(200);
+    expect(
+      dataImpactResponseSchema.parse(broken.json()).changedMeasureIds,
+    ).toEqual([]);
+    expect(
+      (
+        await call(
+          "GET",
+          `/data/models/${brokenModel}/impact?measureId=spend`,
+          ownerW1,
+        )
+      ).statusCode,
+    ).toBe(404);
   });
 
   it("answers 404 for another workspace's preparation and model", async () => {
@@ -368,7 +506,14 @@ describe("impact before publish routes", () => {
     expect(body.measures).toEqual([
       { modelId: w1.model, id: "doubled", name: "Doubled spend" },
     ]);
+    // A shared filter reads dimensions only: the filter-only dashboard and
+    // its scoped screen are not affected by a measure.
     expect(body.dashboards.map((d) => d.id)).toEqual([w1.dashboard]);
+    expect(body.dashboards[0]!.widgets.map((w) => w.type)).toEqual([
+      "compare",
+      "measure",
+    ]);
+    expect(body.screens.map((s) => s.name)).toEqual(["Lobby"]);
     const rows = dataImpactResponseSchema.parse(
       (
         await call(
@@ -426,7 +571,11 @@ describe("impact before publish routes", () => {
       (await call("GET", `/data/models/${w1.model}/impact`, ownerW1)).json(),
     );
     expect(impact.changedMeasureIds).toEqual(["spend"]);
-    expect(impact.dashboards.map((d) => d.id)).toEqual([w1.dashboard]);
+    expect(impact.dashboards.map((d) => [d.id, d.viaFilter])).toEqual([
+      [w1.dashboard, false],
+      [w1.filters, true],
+    ]);
+    expect(impact.screens.map((s) => s.name)).toEqual(["Lobby", "Scoped"]);
     const published = await call(
       "POST",
       `/data/models/${w1.model}/publish`,

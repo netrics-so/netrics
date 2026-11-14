@@ -236,21 +236,32 @@ export function redactDataImpact(
   impact: Collected,
   may: { data: boolean; dashboards: boolean; screens: boolean },
 ): DataImpact {
+  // A screen names the dashboard it shows, so screens are only named
+  // when the caller may also see dashboards.
+  const screens = may.screens && may.dashboards;
   return {
     ...impact,
     preparations: may.data ? impact.preparations : [],
     models: may.data ? impact.models : [],
     measures: may.data ? impact.measures : [],
     dashboards: may.dashboards ? impact.dashboards : [],
-    screens: may.screens ? impact.screens : [],
+    screens: screens ? impact.screens : [],
     hidden: {
       preparations: may.data ? 0 : impact.preparations.length,
       models: may.data ? 0 : impact.models.length,
       dashboards: may.dashboards ? 0 : impact.dashboards.length,
-      screens: may.screens ? 0 : impact.screens.length,
+      screens: screens ? 0 : impact.screens.length,
     },
   };
 }
+
+const EMPTY_DEFINITION: SemanticModelDefinition = {
+  version: 1,
+  datasets: [],
+  relationships: [],
+  dimensions: [],
+  measures: [],
+};
 
 /** Preparation ids in a `dependencies` jsonb (`{ prepared: { <id>: version } }`). */
 function pins(dependencies: unknown): Record<string, number> {
@@ -375,18 +386,20 @@ export async function loadImpactGraph(
     }),
     models: modelRows.flatMap((row) => {
       const draft = semanticModelDefinitionSchema.safeParse(row.definition);
-      if (!draft.success) return [];
       const released =
         row.released === null
           ? null
           : semanticModelDefinitionSchema.safeParse(row.released);
+      const live = released?.success ? released.data : null;
       return [
         {
           id: row.id,
           name: row.name,
           publishedVersion: row.publishedVersion,
-          draft: draft.data,
-          released: released?.success ? released.data : null,
+          // A draft that no longer parses still leaves the live release
+          // (and its pins) in force: read the release in its place.
+          draft: draft.success ? draft.data : (live ?? EMPTY_DEFINITION),
+          released: live,
           releasePins: pins(row.dependencies),
         },
       ];

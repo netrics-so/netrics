@@ -75,6 +75,30 @@ describe("PublishImpactDialog", () => {
     ).not.toContain("Uses version");
   });
 
+  it("says dashboards and screens change only after the model is published again", () => {
+    const note = "These change only after the model is published again.";
+    const html = render(impactWithHidden);
+    // Once under dashboards, once under paired screens.
+    expect(html.split(note)).toHaveLength(3);
+    expect(html.indexOf(note)).toBeGreaterThan(html.indexOf("1 dashboard"));
+    expect(html.lastIndexOf(note)).toBeGreaterThan(
+      html.indexOf("3 paired screens"),
+    );
+    // Not for a model target, nor for a preparation no release pins.
+    expect(
+      render({ ...impactWithHidden, target: { kind: "model", id: M } }),
+    ).not.toContain(note);
+    expect(
+      render({
+        ...impactWithHidden,
+        models: [{ ...impactWithHidden.models[0]!, pinnedVersion: null }],
+      }),
+    ).not.toContain(note);
+    expect(render(impactWithHidden, "de")).toContain(
+      "Diese ändern sich erst, wenn das Modell erneut veröffentlicht wird.",
+    );
+  });
+
   it("marks widgets reading changed measures and filter-only dashboards", () => {
     const html = render(
       {

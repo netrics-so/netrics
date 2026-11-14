@@ -16,6 +16,7 @@ export const dataEn = {
       hidden:
         "{count, plural, one {# more you can't open} other {# more you can't open}}",
       pinned: "Uses version {version} until the model is published again.",
+      pinnedSection: "These change only after the model is published again.",
       viaFilter: "Through a shared filter",
       untitledWidget: "Untitled widget",
       changed: "Changed",

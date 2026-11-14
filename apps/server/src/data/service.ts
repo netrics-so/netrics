@@ -1355,30 +1355,37 @@ export function createDataService(
     actor: DataActor & { role: WorkspaceRole },
     target: DataImpactTarget,
   ) =>
-    run(actor, async (tx): Promise<DataImpact> => {
-      if (target.kind === "preparation")
-        await findPreparation(tx, actor.workspaceId, target.id);
-      else {
-        const model = await findDataModel(tx, actor.workspaceId, target.id);
-        if (target.kind === "measure") {
-          const definition = semanticModelDefinitionSchema.parse(
-            model.definition,
-          );
-          if (
-            target.measureIds.some(
-              (id) => !definition.measures.some((m) => m.id === id),
+    // A read-only scan: read committed, so it never forces serialization
+    // retries on concurrent writers.
+    run(
+      actor,
+      async (tx): Promise<DataImpact> => {
+        if (target.kind === "preparation")
+          await findPreparation(tx, actor.workspaceId, target.id);
+        else {
+          const model = await findDataModel(tx, actor.workspaceId, target.id);
+          if (target.kind === "measure") {
+            const definition = semanticModelDefinitionSchema.safeParse(
+              model.definition,
+            );
+            if (
+              target.measureIds.some(
+                (id) => !definition.data?.measures.some((m) => m.id === id),
+              )
             )
-          )
-            fail("data_measure_not_found", 404);
+              fail("data_measure_not_found", 404);
+          }
         }
-      }
-      const graph = await loadImpactGraph(tx, actor.workspaceId);
-      return redactDataImpact(collectDataImpact(graph, target), {
-        data: can(actor.role, "data:edit"),
-        dashboards: can(actor.role, "dashboards:view"),
-        screens: can(actor.role, "devices:view"),
-      });
-    });
+        const graph = await loadImpactGraph(tx, actor.workspaceId);
+        return redactDataImpact(collectDataImpact(graph, target), {
+          data: can(actor.role, "data:edit"),
+          dashboards: can(actor.role, "dashboards:view"),
+          screens: can(actor.role, "devices:view"),
+        });
+      },
+      db,
+      "read committed",
+    );
   return {
     listSources,
     setProject,

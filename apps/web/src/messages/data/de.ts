@@ -20,6 +20,8 @@ export const dataDe: Catalog<typeof dataEn> = {
         "{count, plural, one {# weiteres, das du nicht öffnen kannst} other {# weitere, die du nicht öffnen kannst}}",
       pinned:
         "Nutzt Version {version}, bis das Modell erneut veröffentlicht wird.",
+      pinnedSection:
+        "Diese ändern sich erst, wenn das Modell erneut veröffentlicht wird.",
       viaFilter: "Über einen gemeinsamen Filter",
       untitledWidget: "Widget ohne Titel",
       changed: "Geändert",

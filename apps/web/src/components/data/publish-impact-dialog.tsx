@@ -149,6 +149,11 @@ function ImpactList({
     hidden.dashboards +
     hidden.screens;
   if (total === 0) return <p className="muted">{t("none")}</p>;
+  const preparationTarget = impact.target.kind === "preparation";
+  // A model release keeps the preparation version it was published with,
+  // so its dashboards and screens change only when it is published again.
+  const pinned =
+    preparationTarget && impact.models.some((m) => m.pinnedVersion !== null);
   const section = (
     key: "preparations" | "models" | "measures" | "dashboards" | "screens",
     items: ReactNode[],
@@ -157,6 +162,9 @@ function ImpactList({
     items.length + unnamed > 0 ? (
       <section key={key}>
         <h3>{t(key, { count: items.length + unnamed })}</h3>
+        {pinned && (key === "dashboards" || key === "screens") ? (
+          <p className="muted">{t("pinnedSection")}</p>
+        ) : null}
         <ul>
           {items}
           {unnamed > 0 ? (
@@ -165,7 +173,6 @@ function ImpactList({
         </ul>
       </section>
     ) : null;
-  const preparationTarget = impact.target.kind === "preparation";
   return (
     <div className="publish-impact-list">
       <p className="muted">{t("scope")}</p>

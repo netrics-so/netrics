@@ -348,6 +348,19 @@ describe("redactDataImpact", () => {
     });
   });
 
+  it("counts screens instead of naming them when dashboards are hidden", () => {
+    const out = redactDataImpact(full, {
+      data: true,
+      dashboards: false,
+      screens: true,
+    });
+    expect(out.dashboards).toEqual([]);
+    expect(out.screens).toEqual([]);
+    expect(out.hidden).toMatchObject({ dashboards: 2, screens: 2 });
+    for (const dashboard of full.dashboards)
+      expect(JSON.stringify(out)).not.toContain(dashboard.id);
+  });
+
   it("names everything when the caller may see everything", () => {
     expect(
       redactDataImpact(full, { data: true, dashboards: true, screens: true }),
