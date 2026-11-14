@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -64,6 +73,8 @@ export interface DashboardSummary {
   primaryFormat: string;
   /** Screens (not revoked) that show the dashboard. */
   screenCount: number;
+  /** Replaced by an updated store-template copy (11E); null otherwise. */
+  archivedAt: Date | null;
   /**
    * The widgets of the first enabled slide, in the primary format's grid,
    * for a thumbnail; empty when no slide is enabled.
@@ -211,8 +222,11 @@ export function schema1Tiles(
 export async function listDashboards(
   tx: Transaction,
   workspaceId: string,
-  /** Narrows to a project (#572); absent: the full list. */
-  filter: ProjectFilter = {},
+  /**
+   * Narrows to a project (#572); absent: the full list. Archived dashboards
+   * (11E) only with `archived: "include"`.
+   */
+  filter: ProjectFilter & { archived?: "include" } = {},
 ): Promise<DashboardSummary[]> {
   // Spelled out: drizzle leaves column names unqualified in a select list.
   const count = (table: string, filter = sql``) => sql<number>`(
@@ -230,6 +244,7 @@ export async function listDashboards(
       themeId: schema.dashboards.themeId,
       accentColor: schema.dashboards.accentColor,
       primaryFormat: schema.dashboards.primaryFormat,
+      archivedAt: schema.dashboards.archivedAt,
       tileCount: count("dashboard_widgets", sql`and c.type = 'metric'`),
       widgetCount: count("dashboard_widgets"),
       slideCount: count("dashboard_slides"),
@@ -240,6 +255,9 @@ export async function listDashboards(
       and(
         eq(schema.dashboards.workspaceId, workspaceId),
         projectFilterSql(schema.dashboards.projectId, workspaceId, filter),
+        filter.archived === "include"
+          ? undefined
+          : isNull(schema.dashboards.archivedAt),
       ),
     )
     .orderBy(desc(schema.dashboards.updatedAt));

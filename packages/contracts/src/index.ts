@@ -372,6 +372,11 @@ export const projectFilterQuerySchema = z.strictObject({
 });
 export type ProjectFilterQuery = z.infer<typeof projectFilterQuerySchema>;
 
+/** The dashboard list's query: a project filter, and archived ones (11E). */
+export const dashboardListQuerySchema = projectFilterQuerySchema.extend({
+  archived: z.literal("include").optional(),
+});
+
 export const projectListResponseSchema = z.object({
   projects: z.array(projectSchema),
 });
@@ -2428,6 +2433,12 @@ export const dashboardSchema = z.object({
    * format is auto or a custom layout of the slide. Default 16x9.
    */
   primaryFormat: screenFormatSchema,
+  /**
+   * Set while an updated store-template copy replaces it on its screens
+   * (11E): hidden from lists and pickers, and no screen can be assigned to
+   * it; only a swap or swap-back changes it.
+   */
+  archivedAt: z.iso.datetime().nullable(),
   slides: z.array(dashboardSlideSchema),
   /**
    * The metric widgets of all slides in reading order, as tiles. Kept for
@@ -2466,6 +2477,11 @@ export const dashboardListResponseSchema = z.object({
       primaryFormat: screenFormatSchema,
       /** Screens (not revoked) that show this dashboard. */
       screenCount: z.number().int().min(0),
+      /**
+       * Set while an updated store-template copy replaces it on its screens
+       * (11E); listed only with `archived=include`.
+       */
+      archivedAt: z.iso.datetime().nullable(),
       /**
        * A thumbnail of the first enabled slide: the theme's colours and
        * its widgets on the primary format's grid (none without one).

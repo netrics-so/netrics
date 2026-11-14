@@ -438,6 +438,7 @@ export async function presentDashboard(
     updatedAt: dashboard.updatedAt.toISOString(),
     settings: settingsOf(dashboard),
     primaryFormat: dashboard.primaryFormat as ScreenFormatKey,
+    archivedAt: dashboard.archivedAt?.toISOString() ?? null,
     slides: dashboard.slides.map((slide) => ({
       id: slide.id,
       position: slide.position,
@@ -1373,7 +1374,7 @@ export function createDashboardService(deps: {
   };
 
   return {
-    list(actor: Actor, filter: ProjectFilter = {}) {
+    list(actor: Actor, filter: ProjectFilter & { archived?: "include" } = {}) {
       return inWorkspace(actor, async (tx) =>
         presentSummaries(
           tx,

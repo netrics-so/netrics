@@ -880,6 +880,12 @@ export const dashboards = pgTable(
      * 4); every other format is auto or a custom layout.
      */
     primaryFormat: text("primary_format").notNull().default("16x9"),
+    /**
+     * Replaced by an updated copy of a store template (11E): hidden from
+     * lists and pickers, and no screen can be assigned to it; screens on it
+     * keep showing it. Only a swap or swap-back sets or clears it.
+     */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

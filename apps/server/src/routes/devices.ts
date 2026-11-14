@@ -407,7 +407,7 @@ export function registerDeviceRoutes(
             tags: ["devices"],
             body: approveDeviceRequestSchema,
             response: deviceResponseSchema,
-            errors: [403, 404, 429],
+            errors: [403, 404, 409, 429],
           }),
         },
         async (request, reply) => {

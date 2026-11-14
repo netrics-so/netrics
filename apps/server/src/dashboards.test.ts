@@ -1560,6 +1560,41 @@ describe("dashboard studio API", () => {
     );
   });
 
+  it("lists archived dashboards with archivedAt", async () => {
+    const kept = await studio({ name: "Kept" });
+    const archived = await studio({ name: "Replaced by an update" });
+    // Only a store-template swap archives a dashboard; no endpoint does.
+    await admin`update dashboards set archived_at = now() where id = ${archived.id}`;
+    const list = async (query = "") =>
+      dashboardListResponseSchema.parse(
+        (await call("GET", `${base()}${query}`, viewer)).json(),
+      ).dashboards;
+    // Hidden from the lists and pickers by default.
+    const shown = await list();
+    expect(shown.map((d) => d.id)).toContain(kept.id);
+    expect(shown.map((d) => d.id)).not.toContain(archived.id);
+    expect(shown.find((d) => d.id === kept.id)!.archivedAt).toBeNull();
+    expect((await list("?project=all")).map((d) => d.id)).not.toContain(
+      archived.id,
+    );
+    // Listed, with when, on request.
+    const all = await list("?archived=include");
+    expect(all.find((d) => d.id === archived.id)!.archivedAt).toMatch(
+      /^\d{4}-\d\d-\d\dT/,
+    );
+    expect(all.find((d) => d.id === kept.id)!.archivedAt).toBeNull();
+    // Still readable by id, for the swap back.
+    const read = dashboardResponseSchema.parse(
+      (await call("GET", `${base()}/${archived.id}`, viewer)).json(),
+    ).dashboard;
+    expect(read.archivedAt).not.toBeNull();
+    expect(
+      dashboardResponseSchema.parse(
+        (await call("GET", `${base()}/${kept.id}`, viewer)).json(),
+      ).dashboard.archivedAt,
+    ).toBeNull();
+  });
+
   it("keeps slides and widgets inside their workspace", async () => {
     const dashboard = await studio();
     const strangers = await newWorkspace(stranger);

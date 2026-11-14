@@ -14910,6 +14910,17 @@
           },
           {
             "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "archived",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "in": "path",
@@ -15044,6 +15055,18 @@
                             "minimum": 0,
                             "maximum": 9007199254740991
                           },
+                          "archivedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "preview": {
                             "type": "object",
                             "properties": {
@@ -15136,6 +15159,7 @@
                           "accent",
                           "primaryFormat",
                           "screenCount",
+                          "archivedAt",
                           "preview"
                         ],
                         "additionalProperties": false
@@ -18128,6 +18152,18 @@
                             "9x16"
                           ]
                         },
+                        "archivedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -20440,6 +20476,7 @@
                         "updatedAt",
                         "settings",
                         "primaryFormat",
+                        "archivedAt",
                         "slides",
                         "tiles"
                       ],
@@ -20964,6 +21001,18 @@
                             "9x16"
                           ]
                         },
+                        "archivedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -23276,6 +23325,7 @@
                         "updatedAt",
                         "settings",
                         "primaryFormat",
+                        "archivedAt",
                         "slides",
                         "tiles"
                       ],
@@ -26262,6 +26312,18 @@
                             "9x16"
                           ]
                         },
+                        "archivedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -28574,6 +28636,7 @@
                         "updatedAt",
                         "settings",
                         "primaryFormat",
+                        "archivedAt",
                         "slides",
                         "tiles"
                       ],
@@ -29233,6 +29296,18 @@
                             "9x16"
                           ]
                         },
+                        "archivedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -31545,6 +31620,7 @@
                         "updatedAt",
                         "settings",
                         "primaryFormat",
+                        "archivedAt",
                         "slides",
                         "tiles"
                       ],
@@ -70651,6 +70727,27 @@
               }
             }
           },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Conflict"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Too many requests; try again later",
             "content": {
@@ -78994,6 +79091,18 @@
                             "9x16"
                           ]
                         },
+                        "archivedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -81306,6 +81415,7 @@
                         "updatedAt",
                         "settings",
                         "primaryFormat",
+                        "archivedAt",
                         "slides",
                         "tiles"
                       ],
