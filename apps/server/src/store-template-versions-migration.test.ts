@@ -338,7 +338,10 @@ describe("0072 store template versions", () => {
       before.map((r) => [r.record_id, r.original]).sort(),
     );
     const dashboard = after.find((r) => r.key === "dashboard:portfolio")!;
+    const [slide] =
+      await owner`select id from dashboard_slides where dashboard_id=${main.dashboardId} order by position limit 1`;
     expect(dashboard.widget_keys).toEqual({
+      [slide!.id as string]: "slide:0",
       [main.widgetIds[0]!]: "widget:downloads",
       [main.widgetIds[1]!]: "widget:proceeds",
       [main.widgetIds[2]!]: "widget:ratings",

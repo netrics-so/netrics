@@ -4,6 +4,7 @@ import {
   STORE_TEMPLATE_VERSION,
   storeTemplate,
   storeTemplateInputsSchema,
+  storeTemplateV1,
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
@@ -52,10 +53,13 @@ const fixtureInputs: StoreTemplateInputs = {
   fixedProduct: null,
   groups: null,
 };
-function buildAll(inputs: StoreTemplateInputs): StoreTemplateRecord[] {
+function buildAll(
+  inputs: StoreTemplateInputs,
+  template = storeTemplate,
+): StoreTemplateRecord[] {
   const ids = fakeIds();
-  return storeTemplate.keys(inputs).map((key) => {
-    const record = storeTemplate.build(key, inputs, ids);
+  return template.keys(inputs).map((key) => {
+    const record = template.build(key, inputs, ids);
     ids[key] = ids[key] ?? uuidFor(key);
     return record;
   });
@@ -90,6 +94,12 @@ describe("versioned store template", () => {
       "dashboard:portfolio",
     ]);
     expect(sha256(JSON.stringify(records))).toBe(VERSION_1_HASH);
+  });
+  it("keeps version 1 for the baseline after the template moves on", () => {
+    expect(storeTemplateV1.version).toBe(1);
+    expect(
+      sha256(JSON.stringify(buildAll(fixtureInputs, storeTemplateV1))),
+    ).toBe(VERSION_1_HASH);
   });
   it("needs a version bump for any content change", () => {
     expect(VERSION_HASHES[STORE_TEMPLATE_VERSION]).toBe(

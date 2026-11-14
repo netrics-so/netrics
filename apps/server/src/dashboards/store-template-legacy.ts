@@ -17,6 +17,7 @@ import {
   type StoreTemplateInputs,
   type StoreTemplateKey,
 } from "./store-template.js";
+import { withSlideKeys } from "./store-template-items.js";
 
 /**
  * Completes an install made before template versions (baseline from 0072):
@@ -30,6 +31,30 @@ import {
 const GERMAN_DOWNLOADS_V1 = "Downloads und Nutzerinstallationen";
 /** Key renames per update statement. */
 const RENAME_CHUNK = 1000;
+/** Sources per append preparation in version 1, frozen here. */
+const V1_APPEND_WIDTH = 80;
+
+/**
+ * The preparation keys version 1 builds for these connections, frozen here
+ * (store-template.ts may move on): a source per connection and metric, then
+ * per metric the append rounds of ceil(N/80), ceil(N/80/80), ... until one.
+ */
+export function v1PreparationKeys(connectionIds: string[]): string[] {
+  const keys: string[] = [];
+  for (const id of connectionIds)
+    for (const metric of storeMetrics) keys.push(sourceKey(id, metric));
+  const rounds: number[] = [];
+  for (let count = connectionIds.length; count > 1;) {
+    count = Math.ceil(count / V1_APPEND_WIDTH);
+    rounds.push(count);
+  }
+  for (const metric of storeMetrics)
+    rounds.forEach((count, round) => {
+      for (let index = 0; index < count; index++)
+        keys.push(appendKey(metric, round, index));
+    });
+  return keys;
+}
 
 /** The dashboard as the migration stored it: rows as `to_jsonb`. */
 export interface LegacyDashboardSnapshot {
@@ -228,6 +253,17 @@ function complete({
     must(reads.length === 0);
   }
 
+  // The derived keys are exactly the preparations version 1 builds for
+  // these connections (ceil(N/80) appends a round): a hand-edited or
+  // corrupt tree (an extra pass-through append, a missing chunk) is not
+  // read as a template install.
+  const derived = Object.values(keys).sort(),
+    expected = v1PreparationKeys(connectionIds).sort();
+  must(
+    derived.length === expected.length &&
+      derived.every((key, index) => key === expected[index]),
+  );
+
   // Locale from the frozen German downloads measure name.
   const downloads = models.downloads.measures.find((m) => m.id === "downloads");
   const locale = downloads?.name === GERMAN_DOWNLOADS_V1 ? "de" : "en";
@@ -263,6 +299,8 @@ function complete({
     );
     if (widget) widgetKeys[String(widget.id)] = `widget:${metric}`;
   }
+  // Slide keys: version 1 builds one slide, the one holding its widgets.
+  Object.assign(widgetKeys, withSlideKeys(widgetKeys, snapshot!.slides, 1));
 
   const parsedInputs = storeTemplateInputsSchema.safeParse({
     name: dashboard.name,
@@ -281,16 +319,18 @@ function complete({
 }
 
 /**
- * Runs completeLegacyInstall in tx and writes inputs, keys and widget keys;
- * a no-op when the install already has inputs. The install row is locked, so
- * concurrent callers complete it once.
+ * The completion of an install without writing it: for an install made
+ * before versions, its derived inputs, `legacy:<id>` → key renames and
+ * widget/slide keys (`pending: true`); for any other install, its stored
+ * inputs and keys. Read-only, so status and plan reads never write.
  */
-export async function ensureInstallCompleted(
+export async function deriveInstallCompletion(
   tx: Transaction,
   workspaceId: string,
   requestId: string,
-): Promise<LegacyCompletion> {
-  const [install] = await tx
+  options: { lock?: boolean } = {},
+): Promise<LegacyCompletion & { pending?: boolean }> {
+  const query = tx
     .select()
     .from(schema.dataTemplateInstalls)
     .where(
@@ -298,8 +338,8 @@ export async function ensureInstallCompleted(
         eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
         eq(schema.dataTemplateInstalls.requestId, requestId),
       ),
-    )
-    .for("update");
+    );
+  const [install] = await (options.lock ? query.for("update") : query);
   if (!install) return unavailable;
   const records = await tx
     .select()
@@ -365,7 +405,26 @@ export async function ensureInstallCompleted(
       datasets: {},
     })),
   });
-  if (!done.ok) return done;
+  return done.ok ? { ...done, pending: true } : done;
+}
+
+/**
+ * Runs completeLegacyInstall in tx and writes inputs, keys and widget keys;
+ * a no-op when the install already has inputs. The install row is locked, so
+ * concurrent callers complete it once. For writes (applying an update).
+ */
+export async function ensureInstallCompleted(
+  tx: Transaction,
+  workspaceId: string,
+  requestId: string,
+): Promise<LegacyCompletion> {
+  const { pending, ...done } = await deriveInstallCompletion(
+    tx,
+    workspaceId,
+    requestId,
+    { lock: true },
+  );
+  if (!done.ok || !pending) return done;
   // The dashboard original stays `{ legacySnapshot }` here; turning it into
   // the normalized item form belongs with the normalization itself
   // (template updates, Task 5), which reads both shapes.

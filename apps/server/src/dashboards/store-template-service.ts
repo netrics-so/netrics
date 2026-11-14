@@ -82,7 +82,8 @@ function normalize(input: StoreTemplateRequest) {
 /**
  * Widget id → widget template key of a dashboard the template just created:
  * its widgets in reading order (slide position, then y, x) are the
- * template's widgets in `widgetKeys` order.
+ * template's widgets in `widgetKeys` order; its slides in position order are
+ * `slide:<index>`.
  */
 async function installedWidgetKeys(
   tx: Transaction,
@@ -113,9 +114,21 @@ async function installedWidgetKeys(
     );
   if (widgets.length !== widgetKeys.length)
     throw new Error("store template widgets differ from their keys");
-  return Object.fromEntries(
-    widgets.map((widget, index) => [widget.id, widgetKeys[index]!]),
-  );
+  // Slides in position order are the template's slides: `slide:<index>`.
+  const slides = await tx
+    .select({ id: schema.dashboardSlides.id })
+    .from(schema.dashboardSlides)
+    .where(
+      and(
+        eq(schema.dashboardSlides.workspaceId, workspaceId),
+        eq(schema.dashboardSlides.dashboardId, dashboardId),
+      ),
+    )
+    .orderBy(asc(schema.dashboardSlides.position));
+  return Object.fromEntries([
+    ...slides.map((slide, index) => [slide.id, `slide:${index}`]),
+    ...widgets.map((widget, index) => [widget.id, widgetKeys[index]!]),
+  ]);
 }
 
 export function createStoreTemplateService(deps: {
@@ -502,7 +515,12 @@ export function createStoreTemplateService(deps: {
                         ? { graph: record.graph }
                         : record.kind === "model"
                           ? { definition: record.definition }
-                          : { request: record.request },
+                          : // The widget keys in the request's reading
+                            // order: a jsonb `widgetKeys` map loses order.
+                            {
+                              request: record.request,
+                              widgetKeys: record.widgetKeys,
+                            },
                     widgetKeys:
                       record.kind === "dashboard" ? dashboardWidgetKeys : null,
                   })),
