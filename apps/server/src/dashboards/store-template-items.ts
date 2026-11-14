@@ -170,11 +170,29 @@ export function modelItems(
   return items;
 }
 
+/** A value an update cannot turn back into a real reference. */
+export class UnresolvableReference extends Error {
+  constructor(readonly value: string) {
+    super("store_update_unmergeable");
+  }
+}
+/** A record whose merged items cannot be rebuilt; `refs` are the items. */
+export class UnmergeableRecord extends Error {
+  constructor(
+    readonly key: StoreTemplateKey,
+    readonly refs: string[],
+  ) {
+    super("store_update_unmergeable");
+  }
+}
+
 /**
  * The inverse of symbolize: `ref:<key>` becomes the key's record id and
  * `ref:<key>:<out>` `prepared:<id>:<out>`, with `ids` holding a real id for
  * every key (new records created before their dependants). A whole key
- * wins over key plus output, like an exact id wins in symbolize.
+ * wins over key plus output, like an exact id wins in symbolize. Throws
+ * UnresolvableReference for a `ref:` no key resolves: writing it would
+ * store a reference to nothing.
  */
 export function desymbolize(
   value: unknown,
@@ -188,7 +206,7 @@ export function desymbolize(
       key = rest.slice(0, cut);
     if (cut > 0 && Object.hasOwn(ids, key))
       return `prepared:${ids[key]!}:${rest.slice(cut + 1)}`;
-    return value;
+    throw new UnresolvableReference(value);
   }
   if (Array.isArray(value))
     return value.map((entry) => desymbolize(entry, ids));
@@ -238,9 +256,29 @@ function itemsOf(items: Items, key: StoreTemplateKey, kind: ItemKind) {
   );
 }
 const byIndex = (values: Map<string, unknown>) =>
-  [...values]
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([, value]) => value);
+  [...values].sort(([a], [b]) => Number(a) - Number(b));
+
+/**
+ * Resolves the items of one record; every item that cannot be resolved is
+ * collected, then the whole record is refused (UnmergeableRecord).
+ */
+function resolver(key: StoreTemplateKey) {
+  const failed: string[] = [];
+  return {
+    resolve(itemRef: string, fn: () => unknown): unknown {
+      try {
+        return fn();
+      } catch (error) {
+        if (!(error instanceof UnresolvableReference)) throw error;
+        failed.push(itemRef);
+        return undefined;
+      }
+    },
+    done() {
+      if (failed.length) throw new UnmergeableRecord(key, failed);
+    },
+  };
+}
 
 /**
  * A preparation graph from (merged) items, with real ids: steps in the
@@ -252,38 +290,85 @@ export function preparationFromItems(
   order: { current: PreparationGraph | null; next: PreparationGraph | null },
   ids: Readonly<Record<string, string>>,
 ): PreparationGraph {
-  const steps = itemsOf(items, key, "step");
+  const steps = itemsOf(items, key, "step"),
+    check = resolver(key);
   const nodes = mergeOrder(
     order.current?.nodes.map((node) => node.id) ?? [],
     order.next?.nodes.map((node) => node.id) ?? [],
     new Set(steps.keys()),
   ).map((id) => ({
     id,
-    ...(desymbolize(steps.get(id), ids) as object),
+    ...(check.resolve(ref(key, "step", id), () =>
+      desymbolize(steps.get(id), ids),
+    ) as object),
   }));
+  check.done();
   return {
     version: 1,
     nodes: nodes as PreparationGraph["nodes"],
-    outputs: byIndex(itemsOf(items, key, "output")) as string[],
+    outputs: byIndex(itemsOf(items, key, "output")).map(
+      ([, value]) => value,
+    ) as string[],
   };
 }
 
-/** Replaces each `datasets[<index>]` by that dataset (inverse of datasetSlots). */
-function unslot(value: unknown, datasets: readonly unknown[]): unknown {
+type DatasetLists = {
+  original: readonly unknown[];
+  current: readonly unknown[];
+  next: readonly unknown[];
+};
+const indexIn = (list: readonly unknown[], value: unknown) =>
+  list.findIndex((entry) => JSON.stringify(entry) === JSON.stringify(value));
+
+/**
+ * A model's datasets after an update: the new template's datasets (app
+ * scope), then the customer's own datasets (in neither the original nor the
+ * new template) in the customer's order, so what reads them keeps working.
+ * Values are symbolic, as in `settings:datasets`.
+ */
+export function mergeDatasets(lists: DatasetLists): unknown[] {
+  const merged = [...lists.next];
+  for (const dataset of lists.current)
+    if (
+      indexIn(lists.original, dataset) === -1 &&
+      indexIn(merged, dataset) === -1
+    )
+      merged.push(dataset);
+  return merged;
+}
+
+/**
+ * Where an item's `datasets[<index>]` points in the merged datasets, or -1.
+ * A template value's slot is in the new template's list (which leads the
+ * merged one); a customer value's slot is in the customer's list: their own
+ * dataset stays theirs, a template dataset follows the template by position.
+ */
+function slotOf(
+  index: number,
+  fromNext: boolean,
+  lists: DatasetLists,
+  merged: readonly unknown[],
+): number {
+  if (fromNext) return index < lists.next.length ? index : -1;
+  if (index >= lists.current.length) return -1;
+  const dataset = lists.current[index],
+    templateIndex = indexIn(lists.original, dataset);
+  if (templateIndex !== -1)
+    return templateIndex < lists.next.length ? templateIndex : -1;
+  return indexIn(merged, dataset);
+}
+
+const SLOT = /^datasets\[(\d+)\]$/;
+/** Replaces each `datasets[<index>]` by the dataset `slot` finds for it. */
+function unslot(value: unknown, slot: (index: number) => unknown): unknown {
   if (typeof value === "string") {
-    const match = /^datasets\[(\d+)\]$/.exec(value);
-    return match && Number(match[1]) < datasets.length
-      ? datasets[Number(match[1])]
-      : value;
+    const match = SLOT.exec(value);
+    return match ? slot(Number(match[1])) : value;
   }
-  if (Array.isArray(value))
-    return value.map((entry) => unslot(entry, datasets));
+  if (Array.isArray(value)) return value.map((entry) => unslot(entry, slot));
   if (value !== null && typeof value === "object")
     return Object.fromEntries(
-      Object.entries(value).map(([name, entry]) => [
-        name,
-        unslot(entry, datasets),
-      ]),
+      Object.entries(value).map(([name, entry]) => [name, unslot(entry, slot)]),
     );
   return value;
 }
@@ -291,7 +376,10 @@ function unslot(value: unknown, datasets: readonly unknown[]): unknown {
 /**
  * A model definition from (merged) items, with real ids: measures and
  * dimensions in the current definition's order, template additions after
- * their predecessor; dataset slots point at the merged datasets.
+ * their predecessor. Its datasets are mergeDatasets of the three states,
+ * and each item's dataset slots are read against the state its value came
+ * from (`fromNext`: the new template's). Without `sources`, the record's
+ * own `settings:datasets` item is every state's list.
  */
 export function modelFromItems(
   key: StoreTemplateKey,
@@ -301,11 +389,33 @@ export function modelFromItems(
     next: SemanticModelDefinition | null;
   },
   ids: Readonly<Record<string, string>>,
+  sources?: {
+    datasets: DatasetLists;
+    fromNext: (itemRef: string) => boolean;
+  },
 ): SemanticModelDefinition {
-  const datasets =
+  const own =
     (items.get(ref(key, "settings", "datasets")) as unknown[] | undefined) ??
     [];
-  const resolve = (value: unknown) => desymbolize(unslot(value, datasets), ids);
+  const lists = sources?.datasets ?? { original: own, current: own, next: own };
+  const merged = mergeDatasets(lists),
+    check = resolver(key);
+  const resolve = (itemRef: string, value: unknown) =>
+    check.resolve(itemRef, () =>
+      desymbolize(
+        unslot(value, (index) => {
+          const at = slotOf(
+            index,
+            sources?.fromNext(itemRef) ?? true,
+            lists,
+            merged,
+          );
+          if (at === -1) throw new UnresolvableReference(`datasets[${index}]`);
+          return merged[at];
+        }),
+        ids,
+      ),
+    );
   const ordered = (kind: "measure" | "dimension") => {
     const values = itemsOf(items, key, kind);
     const ofKind = (def: SemanticModelDefinition | null) =>
@@ -316,17 +426,21 @@ export function modelFromItems(
       ofKind(order.current),
       ofKind(order.next),
       new Set(values.keys()),
-    ).map((id) => resolve(values.get(id)));
+    ).map((id) => resolve(ref(key, kind, id), values.get(id)));
   };
-  return {
-    version: 1,
-    datasets: desymbolize(datasets, ids) as string[],
+  const definition = {
+    version: 1 as const,
+    datasets: check.resolve(ref(key, "settings", "datasets"), () =>
+      desymbolize(merged, ids),
+    ) as string[],
     relationships: byIndex(itemsOf(items, key, "relationship")).map(
-      resolve,
+      ([index, value]) => resolve(ref(key, "relationship", index), value),
     ) as SemanticModelDefinition["relationships"],
     dimensions: ordered("dimension") as SemanticModelDefinition["dimensions"],
     measures: ordered("measure") as SemanticModelDefinition["measures"],
   };
+  check.done();
+  return definition;
 }
 
 export interface NormalizedDashboard {

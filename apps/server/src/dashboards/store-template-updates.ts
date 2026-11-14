@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
+  preparationGraphSchema,
+  semanticModelDefinitionSchema,
   type CreateDashboardRequest,
   type StoreTemplateApplyRequest,
   type StoreTemplateInstallList,
@@ -25,7 +28,11 @@ import {
   type PreparationGraph,
   type SemanticModelDefinition,
 } from "@netrics/domain";
-import { createDataService, DataServiceError } from "../data/service.js";
+import {
+  createDataService,
+  DataServiceError,
+  datasetStoreStatus,
+} from "../data/service.js";
 import {
   deriveInstallCompletion,
   ensureInstallCompleted,
@@ -44,6 +51,8 @@ import {
   preparationFromItems,
   preparationItems,
   recordKeyOf,
+  UnmergeableRecord,
+  type ItemRef,
   type Items,
   type NormalizedDashboard,
 } from "./store-template-items.js";
@@ -95,21 +104,41 @@ export class StoreUpdateDecisionMissing extends DataServiceError {
   }
 }
 
-/** A data draft an update wrote (data_template_updates.drafts). */
-interface StoredDraft {
-  key: string;
-  kind: "preparation" | "model";
-  recordId: string;
-  version: number;
+/**
+ * The merged content of a record cannot be written: a reference resolves
+ * to nothing, or the result is not a valid definition. Names the record and
+ * the items (when known); nothing of the update is written.
+ */
+export class StoreUpdateUnmergeable extends DataServiceError {
+  constructor(
+    readonly key: string,
+    readonly refs: string[],
+  ) {
+    super("store_update_unmergeable", 409);
+  }
 }
-/** A dashboard an update changes (data_template_updates.dashboards). */
-interface StoredDashboard {
-  key: string;
-  originalId: string;
-  copyId: string | null;
-  swappedAt: string | null;
-  swappedBackAt: string | null;
-}
+
+/** The data drafts an update wrote (data_template_updates.drafts). */
+const storedDraftsSchema = z.array(
+  z.object({
+    key: z.string(),
+    kind: z.enum(["preparation", "model"]),
+    recordId: z.uuid(),
+    version: z.number().int(),
+  }),
+);
+type StoredDraft = z.infer<typeof storedDraftsSchema>[number];
+/** The dashboards an update changes (data_template_updates.dashboards). */
+const storedDashboardsSchema = z.array(
+  z.object({
+    key: z.string(),
+    originalId: z.uuid(),
+    copyId: z.uuid().nullable(),
+    swappedAt: z.iso.datetime().nullable(),
+    swappedBackAt: z.iso.datetime().nullable(),
+  }),
+);
+type StoredDashboard = z.infer<typeof storedDashboardsSchema>[number];
 
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
@@ -536,8 +565,8 @@ export function createStoreTemplateUpdateService(deps: {
     workspaceId: string,
     row: UpdateRow,
   ): Promise<StoreTemplateUpdate> {
-    const drafts = row.drafts as StoredDraft[],
-      dashboards = row.dashboards as StoredDashboard[];
+    const drafts = storedDraftsSchema.parse(row.drafts),
+      dashboards = storedDashboardsSchema.parse(row.dashboards);
     const ids = (kind: StoredDraft["kind"]) =>
       drafts.filter((d) => d.kind === kind).map((d) => d.recordId);
     const current = new Map<
@@ -621,7 +650,13 @@ export function createStoreTemplateUpdateService(deps: {
       reject("store_template_up_to_date", 409);
     const plan = await planOrUnavailable(tx, actor.workspaceId, requestId);
     if (!plan) reject("store_template_baseline_unavailable", 409);
+    // The same plan applied twice (double click, two tabs) is stale first.
     if (plan.basis !== body.basis) reject("store_update_stale", 409);
+    // An earlier update's drafts are the customer's to publish (or discard)
+    // first: a new apply would build on them and lose track of them.
+    const open = await openUpdateOf(tx, actor.workspaceId, requestId);
+    if (open && open.drafts.some((draft) => !draft.published))
+      reject("store_update_open", 409);
     let merged: Items;
     try {
       merged = merge(
@@ -648,6 +683,38 @@ export function createStoreTemplateUpdateService(deps: {
     const created: (typeof schema.dataTemplateRecords.$inferInsert)[] = [];
     const recordItems = (key: string): Items =>
       new Map([...merged].filter(([itemRef]) => recordKeyOf(itemRef) === key));
+    // Whether merge took an item's value from the new template.
+    const planned = new Map(
+      plan.records.flatMap((record) => record.items).map((i) => [i.ref, i]),
+    );
+    const choices = new Map(body.decisions.map((d) => [d.ref, d.choice]));
+    const fromNext = (itemRef: string) => {
+      const planItem = planned.get(itemRef as ItemRef);
+      return (
+        planItem?.outcome === "template" ||
+        planItem?.outcome === "scope" ||
+        (planItem?.outcome === "choose" && choices.get(itemRef) === "template")
+      );
+    };
+    const datasetsOf = (items: Items, key: string) =>
+      (items.get(`${key}#settings:datasets`) as unknown[] | undefined) ?? [];
+    /**
+     * A merged record that resolves and validates, or 409
+     * store_update_unmergeable naming the record and its items.
+     */
+    const checked = <T>(key: string, build: () => T, valid: z.ZodType): T => {
+      let built: T;
+      try {
+        built = build();
+      } catch (error) {
+        if (error instanceof UnmergeableRecord)
+          throw new StoreUpdateUnmergeable(key, error.refs);
+        throw error;
+      }
+      if (!valid.safeParse(built).success)
+        throw new StoreUpdateUnmergeable(key, []);
+      return built;
+    };
     for (const key of keys) {
       const next = plan.next.get(key)!;
       if (next.kind === "dashboard") continue;
@@ -705,11 +772,16 @@ export function createStoreTemplateUpdateService(deps: {
       if (next.kind === "preparation") {
         const current = plan.preparations.get(row.recordId);
         if (!current) continue;
-        const graph = preparationFromItems(
+        const graph = checked(
           key,
-          recordItems(key),
-          { current: current.graph as PreparationGraph, next: next.graph },
-          ids,
+          () =>
+            preparationFromItems(
+              key,
+              recordItems(key),
+              { current: current.graph as PreparationGraph, next: next.graph },
+              ids,
+            ),
+          preparationGraphSchema,
         );
         if (same(graph, current.graph)) continue;
         const { preparation } = await data.savePreparation(
@@ -726,14 +798,27 @@ export function createStoreTemplateUpdateService(deps: {
       } else {
         const current = plan.models.get(row.recordId);
         if (!current) continue;
-        const definition = modelFromItems(
+        const definition = checked(
           key,
-          recordItems(key),
-          {
-            current: current.definition as SemanticModelDefinition,
-            next: next.definition,
-          },
-          ids,
+          () =>
+            modelFromItems(
+              key,
+              recordItems(key),
+              {
+                current: current.definition as SemanticModelDefinition,
+                next: next.definition,
+              },
+              ids,
+              {
+                datasets: {
+                  original: datasetsOf(plan.original, key),
+                  current: datasetsOf(plan.current, key),
+                  next: datasetsOf(plan.upcoming, key),
+                },
+                fromNext,
+              },
+            ),
+          semanticModelDefinitionSchema,
         );
         if (same(definition, current.definition)) continue;
         const { model } = await data.saveModel(
@@ -901,7 +986,7 @@ export function createStoreTemplateUpdateService(deps: {
           if (error instanceof DatasetStoreError)
             throw new DataServiceError(
               error.code,
-              /quota|limit/.test(error.code) ? 413 : 400,
+              datasetStoreStatus(error.code),
             );
           throw error;
         }

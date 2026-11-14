@@ -18,6 +18,7 @@ import { createStoreTemplateService } from "../dashboards/store-template-service
 import {
   createStoreTemplateUpdateService,
   StoreUpdateDecisionMissing,
+  StoreUpdateUnmergeable,
 } from "../dashboards/store-template-updates.js";
 import type { StoreTemplateDefinition } from "../dashboards/store-template.js";
 import { DataServiceError } from "../data/service.js";
@@ -192,7 +193,10 @@ export function registerStoreTemplateRoutes(
             body: storeTemplateApplyRequestSchema,
             response: storeTemplateUpdateSchema,
             errors: [400, 403, 404, 409, 413, 503],
-            errorSchemas: { 400: storeTemplateApplyErrorSchema },
+            errorSchemas: {
+              400: storeTemplateApplyErrorSchema,
+              409: storeTemplateApplyErrorSchema,
+            },
           }),
         },
         async (request, reply) => {
@@ -222,6 +226,14 @@ export function registerStoreTemplateRoutes(
               return reply.code(400).send(
                 storeTemplateApplyErrorSchema.parse({
                   error: error.code,
+                  refs: error.refs,
+                }),
+              );
+            if (error instanceof StoreUpdateUnmergeable)
+              return reply.code(409).send(
+                storeTemplateApplyErrorSchema.parse({
+                  error: error.code,
+                  key: error.key,
                   refs: error.refs,
                 }),
               );

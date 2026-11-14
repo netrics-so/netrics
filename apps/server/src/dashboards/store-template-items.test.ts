@@ -5,6 +5,7 @@ import {
   dashboardItems,
   desymbolize,
   isScopeItem,
+  mergeDatasets,
   mergeOrder,
   modelFromItems,
   modelItems,
@@ -13,6 +14,8 @@ import {
   normalizeTemplateDashboard,
   preparationFromItems,
   preparationItems,
+  UnmergeableRecord,
+  UnresolvableReference,
   withSlideKeys,
   type Items,
 } from "./store-template-items.js";
@@ -184,11 +187,63 @@ describe("store-template items", () => {
         {
           x: "ref:preparation:append:downloads:0:0:append_0_0",
           y: ["ref:preparation:source:c:downloads"],
-          z: "ref:unknown",
+          z: "plain",
         },
         ids,
       ),
-    ).toEqual({ x: "prepared:a:append_0_0", y: ["s"], z: "ref:unknown" });
+    ).toEqual({ x: "prepared:a:append_0_0", y: ["s"], z: "plain" });
+    // A reference to nothing is never written.
+    expect(() => desymbolize({ z: "ref:unknown" }, ids)).toThrow(
+      UnresolvableReference,
+    );
+  });
+
+  it("merges a model's datasets: the template's, then the customer's own", () => {
+    expect(
+      mergeDatasets({
+        original: ["ref:a"],
+        current: ["mine", "ref:a", "ref:b"],
+        next: ["ref:c"],
+      }),
+    ).toEqual(["ref:c", "mine", "ref:b"]);
+    const key = "model:downloads";
+    const items: Items = new Map([
+      [`${key}#settings:datasets`, ["ref:c"]],
+      [`${key}#measure:t`, { id: "t", datasetId: "datasets[0]" }],
+      [`${key}#measure:mine`, { id: "mine", datasetId: "datasets[0]" }],
+      [`${key}#measure:a`, { id: "a", datasetId: "datasets[1]" }],
+      [`${key}#measure:old`, { id: "old", datasetId: "datasets[2]" }],
+    ]);
+    const lists = {
+      original: ["ref:a", "ref:z"],
+      current: ["mine", "ref:a", "ref:z"],
+      next: ["ref:c"],
+    };
+    const ids = { a: "A", c: "C", z: "Z" };
+    // Each item's slot is read against the state its value came from;
+    // `old` reads a template dataset the new template no longer has.
+    const build = () =>
+      modelFromItems(key, items, { current: null, next: null }, ids, {
+        datasets: lists,
+        fromNext: (itemRef) => itemRef.endsWith("#measure:t"),
+      });
+    expect(build).toThrow(UnmergeableRecord);
+    try {
+      build();
+    } catch (error) {
+      expect((error as UnmergeableRecord).refs).toEqual([`${key}#measure:old`]);
+    }
+    items.delete(`${key}#measure:old`);
+    const definition = build();
+    expect(definition.datasets).toEqual(["C", "mine"]);
+    expect(
+      Object.fromEntries(
+        definition.measures.map((m) => [
+          m.id,
+          (m as { datasetId?: string }).datasetId,
+        ]),
+      ),
+    ).toEqual({ t: "C", mine: "mine", a: "C" });
   });
 
   it("keeps the customer's order and places template additions after their predecessor", () => {

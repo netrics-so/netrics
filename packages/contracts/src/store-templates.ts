@@ -116,9 +116,14 @@ export const storeTemplateApplyRequestSchema = z.strictObject({
 export type StoreTemplateApplyRequest = z.infer<
   typeof storeTemplateApplyRequestSchema
 >;
-/** `store_update_decision_missing` lists the items still without a choice. */
+/**
+ * `store_update_decision_missing` lists the items still without a choice;
+ * `store_update_unmergeable` names the record (`key`) whose merged content
+ * cannot be written and, when known, its items.
+ */
 export const storeTemplateApplyErrorSchema = z.object({
   error: z.string().min(1),
+  key: z.string().optional(),
   refs: z.array(z.string()).optional(),
 });
 /**

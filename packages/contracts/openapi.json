@@ -56501,6 +56501,9 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "key": {
+                      "type": "string"
+                    },
                     "refs": {
                       "type": "array",
                       "items": {
@@ -56590,6 +56593,15 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "refs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [

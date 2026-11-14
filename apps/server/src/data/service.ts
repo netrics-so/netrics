@@ -979,6 +979,15 @@ export function createDataLoader(
   };
 }
 
+/** The status of a dataset-store error: conflict 409, quota or limit 413. */
+export function datasetStoreStatus(code: string): 400 | 409 | 413 {
+  return code.includes("conflict")
+    ? 409
+    : code.includes("quota") || code.includes("limit")
+      ? 413
+      : 400;
+}
+
 export function createDataService(
   db: Pick<Database, "transaction">,
   clock: () => Date = () => new Date(),
@@ -1040,14 +1049,7 @@ export function createDataService(
         )
           throw error;
         if (error instanceof DatasetStoreError)
-          fail(
-            error.code,
-            error.code.includes("conflict")
-              ? 409
-              : error.code.includes("quota") || error.code.includes("limit")
-                ? 413
-                : 400,
-          );
+          fail(error.code, datasetStoreStatus(error.code));
         if (
           hasSqlstate(error, "40001") ||
           hasSqlstate(error, "40P01") ||

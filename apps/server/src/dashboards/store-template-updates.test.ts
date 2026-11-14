@@ -19,9 +19,11 @@ import {
   workspaceResponseSchema,
   type StoreTemplatePlan,
 } from "@netrics/contracts";
-import type {
-  PreparationGraph,
-  SemanticModelDefinition,
+import {
+  DEFAULT_DATA_POLICY,
+  type DataPolicy,
+  type PreparationGraph,
+  type SemanticModelDefinition,
 } from "@netrics/domain";
 import { createDataService } from "../data/service.js";
 import { buildApp } from "../app.js";
@@ -110,12 +112,13 @@ const actor = (workspaceId: string) => ({
   callerId: userId,
   locale: "en" as const,
 });
-const updates = (template?: StoreTemplateDefinition) =>
+const updates = (template?: StoreTemplateDefinition, policy?: DataPolicy) =>
   createStoreTemplateUpdateService({
     db,
     registry,
     now: () => new Date(now),
     ...(template ? { template } : {}),
+    ...(policy ? { policy } : {}),
   });
 const item = (plan: StoreTemplatePlan, ref: string) =>
   plan.records.flatMap((record) => record.items).find((i) => i.ref === ref);
@@ -743,7 +746,235 @@ async function editStep(
     );
 }
 
+/** A second store connection in the install's inputs (app scope grows). */
+async function addConnection(workspaceId: string, requestId: string) {
+  const [extra] = await withWorkspace(db, { workspaceId }, (tx) =>
+    tx
+      .insert(schema.connections)
+      .values({
+        workspaceId,
+        connectorId: "google-play",
+        name: "Play account",
+        setupPending: false,
+      })
+      .returning(),
+  );
+  const [install] =
+    await owner`select inputs from data_template_installs where request_id=${requestId}`;
+  const inputs = install!.inputs as { connections: unknown[] };
+  inputs.connections.push({
+    id: extra!.id,
+    name: "Play account",
+    connectorId: "google-play",
+    datasets: {
+      install_rows: randomUUID(),
+      earning_rows: randomUUID(),
+      store_ratings: randomUUID(),
+    },
+  });
+  await owner`update data_template_installs set inputs=${owner.json(inputs as never)} where request_id=${requestId}`;
+  return extra!;
+}
+/** Everything an apply writes, to show a refused apply wrote nothing. */
+async function writtenState(workspaceId: string, requestId: string) {
+  return {
+    data: await publishedState(workspaceId),
+    install: [
+      ...(await owner`select template_version, inputs from data_template_installs where request_id=${requestId}`),
+    ],
+    records: [
+      ...(await owner`select key, record_id, template_version, original, detached_at
+        from data_template_records where request_id=${requestId} order by key`),
+    ],
+    updates: [
+      ...(await owner`select id, closed_at from data_template_updates where request_id=${requestId} order by id`),
+    ],
+    audit: [
+      ...(await owner`select id from audit_events where workspace_id=${workspaceId}
+        and action='data.store_template_update_applied'`),
+    ],
+  };
+}
+/**
+ * The downloads model reads a second dataset in its original and current
+ * state (the ratings source), with a customer measure on it; the new
+ * template no longer has that dataset, so the measure reads nothing.
+ */
+async function measureOnDroppedDataset(
+  workspaceId: string,
+  requestId: string,
+  modelId: string,
+  connectionId: string,
+) {
+  const ratings = (await recordOf(
+    requestId,
+    `preparation:source:${connectionId}:ratings`,
+  ))!.record_id as string;
+  const dataset = `prepared:${ratings}:output`;
+  const record = await recordOf(requestId, "model:downloads");
+  const original = record!.original as { definition: SemanticModelDefinition };
+  original.definition.datasets.push(dataset);
+  await owner`update data_template_records set original=${owner.json(original as never)}
+    where request_id=${requestId} and key='model:downloads'`;
+  const definition = await modelDefinition(modelId);
+  definition.datasets.push(dataset);
+  definition.measures.push({
+    ...definition.measures[0]!,
+    id: "on_ratings",
+    datasetId: dataset,
+  } as never);
+  await owner`update data_models set definition=${owner.json(definition as never)}, version=version+1
+    where id=${modelId} and workspace_id=${workspaceId}`;
+}
+
 describe("applying a store-template update", { timeout: TIMEOUT_MS }, () => {
+  it("keeps a dataset the customer added to a model, and what reads it", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn([
+      "app-store-connect",
+    ]);
+    // The customer's own preparation, read by a measure of theirs.
+    const source = (await recordOf(
+      requestId,
+      `preparation:source:${connections[0]!.id}:downloads`,
+    ))!.record_id as string;
+    const data = createDataService(db, () => new Date(now));
+    const { preparation: mine } = await data.savePreparation(
+      actor(workspaceId),
+      { name: "Mine", graph: (await preparationRow(source)).graph },
+    );
+    const dataset = `prepared:${mine.id}:output`;
+    const definition = await modelDefinition(installed.models.downloads);
+    definition.datasets.push(dataset);
+    definition.measures.push({
+      ...definition.measures[0]!,
+      id: "mine_total",
+      name: "Mine",
+      datasetId: dataset,
+    } as never);
+    const { model: current } = await data.getModel(
+      actor(workspaceId),
+      installed.models.downloads,
+    );
+    await data.saveModel(
+      actor(workspaceId),
+      { name: current.name, definition, version: current.version },
+      installed.models.downloads,
+    );
+    // The app scope grows too: the template's dataset becomes an append.
+    await addConnection(workspaceId, requestId);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    const append = (await recordOf(
+      requestId,
+      "preparation:append:downloads:0:0",
+    ))!.record_id as string;
+    const after = await modelDefinition(installed.models.downloads);
+    expect(after.datasets).toEqual([
+      expect.stringMatching(new RegExp(`^prepared:${append}:`)),
+      dataset,
+    ]);
+    const byId = Object.fromEntries(after.measures.map((m) => [m.id, m]));
+    expect(byId.mine_total).toMatchObject({ name: "Mine", datasetId: dataset });
+    expect(byId.downloads).toMatchObject({
+      name: "Downloads (v2)",
+      datasetId: after.datasets[0],
+    });
+    expect(byId.downloads_avg).toMatchObject({ datasetId: after.datasets[0] });
+    expect(
+      after.dimensions.every((d) => d.datasetId === after.datasets[0]),
+    ).toBe(true);
+  });
+
+  it("refuses a merge that would point at nothing, and writes nothing", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn([
+      "google-play",
+    ]);
+    await measureOnDroppedDataset(
+      workspaceId,
+      requestId,
+      installed.models.downloads,
+      connections[0]!.id,
+    );
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const before = await writtenState(workspaceId, requestId);
+    const error = await updates(v2)
+      .apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: choices(plan, "template"),
+      })
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      code: "store_update_unmergeable",
+      status: 409,
+      key: "model:downloads",
+      refs: ["model:downloads#measure:on_ratings"],
+    });
+    expect(await writtenState(workspaceId, requestId)).toEqual(before);
+  });
+
+  it("writes nothing when the apply fails part-way", async () => {
+    const { workspaceId, requestId } = await installIn(["app-store-connect"]);
+    // Three new source and three append preparations; room for one more.
+    await addConnection(workspaceId, requestId);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const before = await writtenState(workspaceId, requestId);
+    const limited = { ...DEFAULT_DATA_POLICY, maxPreparations: 4 };
+    await expect(
+      updates(v2, limited).apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: choices(plan, "template"),
+      }),
+    ).rejects.toMatchObject({ code: "data_preparation_limit", status: 413 });
+    expect(await writtenState(workspaceId, requestId)).toEqual(before);
+  });
+
+  it("waits for an open update's drafts before applying again", async () => {
+    const { workspaceId, requestId } = await installIn(["google-play"]);
+    const first = await updates(v2).plan(actor(workspaceId), requestId);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: first.basis,
+      decisions: choices(first, "template"),
+    });
+    const again = await updates(v2).plan(actor(workspaceId), requestId);
+    const body = { basis: again.basis, decisions: choices(again, "template") };
+    await expect(
+      updates(v2).apply(actor(workspaceId), requestId, body),
+    ).rejects.toMatchObject({ code: "store_update_open", status: 409 });
+    const open = (await updates(v2).list(actor(workspaceId))).installs[0]!
+      .openUpdate!;
+    expect(open.id).toBe(update.id);
+    expect(open.dashboards[0]!.ready).toBe(false);
+    // Once the drafts are published, a new apply replaces the update.
+    const data = createDataService(db, () => new Date(now));
+    for (const draft of update.drafts)
+      if (draft.kind === "preparation")
+        await data.publishPreparation(
+          actor(workspaceId),
+          draft.recordId,
+          draft.version,
+        );
+      else
+        await data.publishModel(
+          actor(workspaceId),
+          draft.recordId,
+          draft.version,
+        );
+    const replaced = await updates(v2).apply(
+      actor(workspaceId),
+      requestId,
+      body,
+    );
+    expect(replaced.id).not.toBe(update.id);
+    const rows =
+      await owner`select id, closed_at from data_template_updates where request_id=${requestId} order by created_at, id`;
+    expect(rows.filter((r) => r.closed_at === null).map((r) => r.id)).toEqual([
+      replaced.id,
+    ]);
+  });
+
   it("writes drafts only: dashboards and published queries stay as they were", async () => {
     const { workspaceId, requestId, installed, connections } = await installIn([
       "app-store-connect",
@@ -1462,6 +1693,37 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
     expect(
       storeTemplateInstallListSchema.parse(list.json()).installs[0]!.openUpdate,
     ).toEqual(update);
+  });
+
+  it("names the record a merge cannot write", async () => {
+    const other = await installIn(["google-play"]);
+    const [user] =
+      await owner`select user_id from memberships where workspace_id=${install.workspaceId} and role='editor'`;
+    await owner`insert into memberships (workspace_id, user_id, role)
+      values (${other.workspaceId}, ${user!.user_id as string}, 'editor')`;
+    await measureOnDroppedDataset(
+      other.workspaceId,
+      other.requestId,
+      other.installed.models.downloads,
+      other.connections[0]!.id,
+    );
+    const plan = await updates(v2).plan(
+      actor(other.workspaceId),
+      other.requestId,
+    );
+    const response = await post(
+      updated,
+      other.workspaceId,
+      other.requestId,
+      editor,
+      { basis: plan.basis, decisions: choices(plan, "template") },
+    );
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: "store_update_unmergeable",
+      key: "model:downloads",
+      refs: ["model:downloads#measure:on_ratings"],
+    });
   });
 
   it("answers another workspace's install like a random id when applying", async () => {
