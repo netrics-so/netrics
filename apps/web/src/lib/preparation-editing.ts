@@ -61,6 +61,36 @@ export function preparationStepFailure(
   if (!nodeId || !graph.nodes.some((node) => node.id === nodeId)) return null;
   return { nodeId, ...(fieldId ? { fieldId } : {}) };
 }
+interface NamedField {
+  id: string;
+  name: string;
+}
+/**
+ * A column's display name for a step error: the current preview, a step that
+ * names it (calculate, rename), the source data the graph reads, else the id.
+ */
+export function preparationFieldName(
+  graph: PreparationGraph,
+  sources: readonly { id: string; fields: readonly NamedField[] }[],
+  fieldId: string,
+  previewFields: readonly NamedField[] = [],
+): string {
+  const previewed = previewFields.find((field) => field.id === fieldId);
+  if (previewed) return previewed.name;
+  for (const node of graph.nodes)
+    if (node.type === "calculate" && node.fieldId === fieldId) return node.name;
+  for (const node of graph.nodes)
+    if (node.type === "rename" && Object.hasOwn(node.names, fieldId))
+      return node.names[fieldId]!;
+  for (const node of graph.nodes)
+    if (node.type === "source") {
+      const field = sources
+        .find((source) => source.id === node.datasetId)
+        ?.fields.find((field) => field.id === fieldId);
+      if (field) return field.name;
+    }
+  return fieldId;
+}
 function rewire(
   node: PreparationNode,
   from: string,

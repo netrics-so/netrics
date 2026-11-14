@@ -37,6 +37,7 @@ import {
   preparationRemovalProblem,
   preparationStepFailure,
   preparationStepStates,
+  preparationFieldName,
 } from "@/lib/preparation-editing";
 import { PreparationStepList } from "./preparation-step-list";
 
@@ -137,25 +138,24 @@ export function PreparationEditor({
     next: PreparationGraph,
     output: string,
     validateAll = false,
+    // The saved draft to check against; a restore passes the record it just received.
+    saved: PreparationDraft | null = record,
   ) {
     const sequence = ++request.current;
+    const draft = saved ? { id: saved.id, version: saved.version } : undefined;
     setBusy("preview");
     setError(null);
     setNotice(null);
     try {
       const validation = validateAll
-        ? await previewPreparation(
-            workspaceId,
-            next,
-            record ? { id: record.id, version: record.version } : undefined,
-          )
+        ? await previewPreparation(workspaceId, next, draft)
         : null;
       const result = validation?.outputs[output]
         ? validation
         : await previewPreparation(
             workspaceId,
             preparationAt(next, output),
-            record ? { id: record.id, version: record.version } : undefined,
+            draft,
           );
       if (sequence !== request.current) return;
       const table = result.outputs[output]!;
@@ -175,11 +175,7 @@ export function PreparationEditor({
         ) {
           // The failure is in another branch: this step still previews.
           try {
-            const result = await previewPreparation(
-              workspaceId,
-              shown,
-              record ? { id: record.id, version: record.version } : undefined,
-            );
+            const result = await previewPreparation(workspaceId, shown, draft);
             if (sequence === request.current) {
               setPreview({
                 ...result.outputs[output]!,
@@ -250,6 +246,7 @@ export function PreparationEditor({
     setError(null);
     setNotice(null);
     request.current++;
+    let restored: PreparationDraft | null = null;
     try {
       const result =
         version === undefined
@@ -277,14 +274,24 @@ export function PreparationEditor({
       setPreview(null);
       setPreviewState("");
       onSaved(next);
-      setNotice(
-        t(version === undefined ? "latestInputsNotice" : "restoredNotice"),
-      );
+      restored = next;
     } catch (failure) {
       setError(t(`errors.${dataErrorKey(failure)}`));
     } finally {
       setBusy(null);
     }
+    if (!restored) return;
+    // The restored graph can equal the one with a marked step (adopting the
+    // latest inputs never changes it), so check every output again: a passing
+    // check clears the marker, a failing one marks the step for this graph.
+    const output = restored.graph.outputs[0];
+    if (output)
+      void show(restored.graph, output, true, restored).catch(() => undefined);
+    else setStepError(null);
+    // After show(), which clears notices when it starts.
+    setNotice(
+      t(version === undefined ? "latestInputsNotice" : "restoredNotice"),
+    );
   }
   const initialSource = graph.nodes.find((n) => n.type === "source");
   function changeSource(id: string) {
@@ -551,10 +558,12 @@ export function PreparationEditor({
                     message: t(`errors.${shownStepError.key}`),
                     ...(shownStepError.fieldId
                       ? {
-                          column:
-                            fields.find(
-                              (field) => field.id === shownStepError.fieldId,
-                            )?.name ?? shownStepError.fieldId,
+                          column: preparationFieldName(
+                            graph,
+                            sources,
+                            shownStepError.fieldId,
+                            fields,
+                          ),
                         }
                       : {}),
                   }

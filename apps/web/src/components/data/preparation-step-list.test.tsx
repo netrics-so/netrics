@@ -80,6 +80,17 @@ describe("preparation step list", () => {
       expect(html.match(/data-state="affected"/g)).toHaveLength(2);
       expect(html).toContain(affected);
       expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>\s*<span>a</); // earlier steps stay usable
+      // Each marked step's button is described by its note.
+      for (const id of ["b", "c", "e"]) {
+        const note = html.match(
+          new RegExp(
+            `<button[^>]*aria-describedby="([^"]+)"[^>]*><span>${id}<`,
+          ),
+        )?.[1];
+        expect(note).toBeTruthy();
+        expect(html).toContain(`<p id="${note}"`);
+      }
+      expect(html).not.toMatch(/aria-describedby="[^"]*"[^>]*><span>a</);
     },
   );
 });

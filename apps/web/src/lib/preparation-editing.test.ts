@@ -18,6 +18,7 @@ import {
   preparationRemovalProblem,
   preparationStepStates,
   preparationStepFailure,
+  preparationFieldName,
 } from "./preparation-editing";
 
 const source: DataTable = {
@@ -604,5 +605,43 @@ describe("step states after a failure", () => {
     ).toEqual({ nodeId: "b", fieldId: "x" });
     expect(preparationStepFailure({ nodeId: "gone" }, graph)).toBeNull();
     expect(preparationStepFailure({ fieldId: "x" }, graph)).toBeNull();
+  });
+});
+
+describe("column names for a step error", () => {
+  const graph: PreparationGraph = {
+    version: 1,
+    nodes: [
+      { id: "a", type: "source", datasetId: "s1" },
+      {
+        id: "b",
+        type: "calculate",
+        input: "a",
+        fieldId: "net",
+        name: "Net",
+        expression: { kind: "literal", type: "integer", value: 1 },
+      },
+      { id: "c", type: "rename", input: "b", names: { amount: "Total" } },
+    ],
+    outputs: ["c"],
+  };
+  const sources = [
+    { id: "s1", fields: [{ id: "region", name: "Region" }] },
+    { id: "other", fields: [{ id: "elsewhere", name: "Elsewhere" }] },
+  ];
+  it("prefers the current preview's name", () => {
+    expect(
+      preparationFieldName(graph, sources, "net", [
+        { id: "net", name: "Net (preview)" },
+      ]),
+    ).toBe("Net (preview)");
+  });
+  it("falls back to a calculate step, a rename, the source data, then the id", () => {
+    expect(preparationFieldName(graph, sources, "net")).toBe("Net");
+    expect(preparationFieldName(graph, sources, "amount")).toBe("Total");
+    expect(preparationFieldName(graph, sources, "region")).toBe("Region");
+    // Only sources the graph reads count.
+    expect(preparationFieldName(graph, sources, "elsewhere")).toBe("elsewhere");
+    expect(preparationFieldName(graph, sources, "missing")).toBe("missing");
   });
 });
