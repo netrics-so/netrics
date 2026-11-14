@@ -8,6 +8,7 @@
  * | Dashboard data (saved, preview)        | 404             | 401          | n/a (session only)  |
  * | Dimension values, published models     | 404             | 401          | n/a (session only)  |
  * | Model query                            | 404             | 401          | n/a (session only)  |
+ * | Preparation preview (#561)             | 404             | 401          | n/a (session only)  |
  * | Paginated result session (#471)        | 404 / refused   | 401          | n/a (session only)  |
  * | Device payload, schemas 1–3            | foreign dashboard refused | own only | intersected, never widened |
  * | Server payload memo and ETag           | keyed by workspace | per device | keyed by scope   |
@@ -46,6 +47,7 @@ let app: FastifyInstance, db: Database, admin: Sql;
 let owner: string, editor: string, viewer: string, stranger: string;
 let workspaceId: string, otherWorkspaceId: string;
 let modelId: string, dashboardId: string, connectionId: string;
+let datasetId: string;
 let scoped: Paired, unscoped: Paired, foreign: Paired;
 let ip = 0;
 
@@ -342,7 +344,7 @@ beforeAll(async () => {
     },
   });
   expect(source.statusCode, source.body).toBe(200);
-  const datasetId = source.json().datasetId as string;
+  datasetId = source.json().datasetId as string;
   const model = await call("POST", `${data}/models`, {
     cookie: editor,
     payload: {
@@ -747,7 +749,23 @@ describe("device payloads under a fixed scope", () => {
 
 describe("query paths: cross-workspace and device-scope isolation", () => {
   const w = () => `/v1/workspaces/${workspaceId}`;
-  const paths = (): Array<[string, "GET" | "POST", string, unknown?]> => [
+  const graphFor = (id: string) => ({
+    graph: {
+      version: 1,
+      nodes: [{ id: "source", type: "source", datasetId: id }],
+      outputs: ["source"],
+    },
+  });
+  const paths = (): Array<
+    [string, "GET" | "POST", string, unknown?, (() => string)?]
+  > => [
+    [
+      "preparation preview",
+      "POST",
+      `${w()}/data/preparations/preview`,
+      graphFor(datasetId),
+      () => editor,
+    ],
     [
       "dashboard data",
       "POST",
@@ -791,9 +809,19 @@ describe("query paths: cross-workspace and device-scope isolation", () => {
   ];
 
   it("answers the workspace's own members and nobody else", async () => {
-    for (const [name, method, url, body] of paths()) {
-      const own = await call(method, url, { cookie: viewer, payload: body });
+    for (const [name, method, url, body, member] of paths()) {
+      const own = await call(method, url, {
+        cookie: (member ?? (() => viewer))(),
+        payload: body,
+      });
       expect(own.statusCode, `${name}: ${own.body}`).toBe(200);
+      if (member) {
+        const denied = await call(method, url, {
+          cookie: viewer,
+          payload: body,
+        });
+        expect(denied.statusCode, name).toBe(403);
+      }
       const outside = await call(method, url, {
         cookie: stranger,
         payload: body,
@@ -816,6 +844,12 @@ describe("query paths: cross-workspace and device-scope isolation", () => {
     const mine = `/v1/workspaces/${otherWorkspaceId}`;
     const nowhere = "0b9cc5c4-5a3e-4c1f-9a43-2f0d7e3e9f10";
     for (const [method, url, body, foreignId] of [
+      [
+        "POST",
+        `${mine}/data/preparations/preview`,
+        graphFor("{id}"),
+        datasetId,
+      ],
       ["POST", `${mine}/dashboards/{id}/data`, { values: {} }, dashboardId],
       [
         "POST",
@@ -830,13 +864,15 @@ describe("query paths: cross-workspace and device-scope isolation", () => {
         modelId,
       ],
     ] as const) {
+      const withId = (id: string) =>
+        JSON.parse(JSON.stringify(body).replaceAll("{id}", id)) as unknown;
       const real = await call(method, url.replace("{id}", foreignId), {
         cookie: stranger,
-        payload: body,
+        payload: withId(foreignId),
       });
       const unknown = await call(method, url.replace("{id}", nowhere), {
         cookie: stranger,
-        payload: body,
+        payload: withId(nowhere),
       });
       expect(real.statusCode, url).toBeGreaterThanOrEqual(400);
       expect([real.statusCode, real.json()], url).toEqual([
