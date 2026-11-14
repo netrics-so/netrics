@@ -26,6 +26,12 @@ import { DataTable } from "./data-table";
 import { StepForm } from "./step-form";
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
+import {
+  recordEdit,
+  redoEdit,
+  startHistory,
+  undoEdit,
+} from "@/lib/edit-history";
 import { useDraftSources } from "@/lib/data-source-metadata";
 import {
   PreparationEditError,
@@ -70,23 +76,25 @@ export function PreparationEditor({
   );
   const sources = inputMetadata.sources;
   const [name, setName] = useState(initial?.name ?? t("defaultPreparation"));
-  const [graph, setGraph] = useState<PreparationGraph>(
-    initial?.graph ?? {
-      version: 1,
-      nodes: sourceId
-        ? [{ id: "source", type: "source", datasetId: sourceId }]
-        : [],
-      outputs: sourceId ? ["source"] : [],
-    },
+  const [graphHistory, setGraphHistory] = useState(() =>
+    startHistory<PreparationGraph>(
+      initial?.graph ?? {
+        version: 1,
+        nodes: sourceId
+          ? [{ id: "source", type: "source", datasetId: sourceId }]
+          : [],
+        outputs: sourceId ? ["source"] : [],
+      },
+    ),
   );
+  const graph = graphHistory.present;
   const [savedState, setSavedState] = useState(
     JSON.stringify({
       name: initial?.name ?? t("defaultPreparation"),
       graph: initial?.graph ?? graph,
     }),
   );
-  const [history, setHistory] = useState<PreparationGraph[]>([]),
-    [selected, setSelected] = useState(graph.outputs[0] ?? "");
+  const [selected, setSelected] = useState(graph.outputs[0] ?? "");
   const [preview, setPreview] = useState<DataPreview | null>(null),
     [previewState, setPreviewState] = useState("");
   const [editing, setEditing] = useState<{
@@ -264,9 +272,8 @@ export function PreparationEditor({
       const next = result.preparation;
       setRecord(next);
       setName(next.name);
-      setGraph(next.graph);
+      setGraphHistory(startHistory(next.graph));
       setSavedState(JSON.stringify({ name: next.name, graph: next.graph }));
-      setHistory([]);
       setSelected(next.graph.outputs[0] ?? "");
       setAdding(false);
       setEditing(null);
@@ -305,8 +312,7 @@ export function PreparationEditor({
           nodes: [{ id: outputId, type: "source", datasetId: id }],
           outputs: [outputId],
         };
-    setHistory((list) => [...list, graph]);
-    setGraph(next);
+    setGraphHistory((h) => recordEdit(h, next));
     setSelected(outputId);
     setAdding(false);
     void show(next, outputId).catch(() => undefined);
@@ -388,8 +394,7 @@ export function PreparationEditor({
         throw failure;
       }
     }
-    setHistory((list) => [...list, graph]);
-    setGraph(next);
+    setGraphHistory((h) => recordEdit(h, next));
   }
   async function move(direction: "up" | "down") {
     try {
@@ -607,34 +612,43 @@ export function PreparationEditor({
           >
             {t("addStep")}
           </button>
-          <button
-            type="button"
-            disabled={
-              !history.length ||
-              !!busy ||
-              inputMetadata.loading ||
-              !!inputMetadata.error ||
-              adding ||
-              !!editing ||
-              removing
-            }
-            onClick={() => {
-              const previous = history.at(-1)!;
-              setHistory((list) => list.slice(0, -1));
-              setGraph(previous);
-              setAdding(false);
-              if (previous.outputs[0])
-                void show(previous, previous.outputs[0], true).catch(
-                  () => undefined,
-                );
-              else {
-                setPreview(null);
-                setSelected("");
+          {(
+            [
+              ["undo", undoEdit, graphHistory.past.length],
+              ["redo", redoEdit, graphHistory.future.length],
+            ] as const
+          ).map(([key, step, available]) => (
+            <button
+              key={key}
+              type="button"
+              disabled={
+                !available ||
+                !!busy ||
+                inputMetadata.loading ||
+                !!inputMetadata.error ||
+                adding ||
+                !!editing ||
+                removing
               }
-            }}
-          >
-            {t("undo")}
-          </button>
+              onClick={() => {
+                const present = step(graphHistory).present;
+                setGraphHistory(step(graphHistory));
+                setAdding(false);
+                if (present.outputs[0]) {
+                  if (!present.outputs.includes(selected))
+                    setSelected(present.outputs[0]);
+                  void show(present, present.outputs[0], true).catch(
+                    () => undefined,
+                  );
+                } else {
+                  setPreview(null);
+                  setSelected("");
+                }
+              }}
+            >
+              {t(key)}
+            </button>
+          ))}
           <p className="page-meta">{t("outputHint")}</p>
           {record?.publishedVersion ? (
             <p className="help">{t("preparationAdoptionHint")}</p>
