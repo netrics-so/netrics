@@ -18,6 +18,7 @@ import {
   hasSqlstate,
   DatasetStoreError,
   type Database,
+  type Transaction,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -39,6 +40,8 @@ import {
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
+  STORE_TEMPLATE_ID,
+  storeTemplateInputsSchema,
 } from "./store-template.js";
 
 type Actor = { workspaceId: string; callerId: string; locale: Locale };
@@ -74,6 +77,45 @@ function normalize(input: StoreTemplateRequest) {
   if (input.appScope && !connections.includes(input.appScope.connectionId))
     reject("store_scope_invalid");
   return { ...input, connections, groups };
+}
+
+/**
+ * Widget id → widget template key of a dashboard the template just created:
+ * its widgets in reading order (slide position, then y, x) are the
+ * template's widgets in `widgetKeys` order.
+ */
+async function installedWidgetKeys(
+  tx: Transaction,
+  workspaceId: string,
+  dashboardId: string,
+  widgetKeys: string[],
+): Promise<Record<string, string>> {
+  const widgets = await tx
+    .select({ id: schema.dashboardWidgets.id })
+    .from(schema.dashboardWidgets)
+    .innerJoin(
+      schema.dashboardSlides,
+      and(
+        eq(schema.dashboardSlides.id, schema.dashboardWidgets.slideId),
+        eq(schema.dashboardSlides.workspaceId, workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.dashboardWidgets.workspaceId, workspaceId),
+        eq(schema.dashboardWidgets.dashboardId, dashboardId),
+      ),
+    )
+    .orderBy(
+      asc(schema.dashboardSlides.position),
+      asc(schema.dashboardWidgets.y),
+      asc(schema.dashboardWidgets.x),
+    );
+  if (widgets.length !== widgetKeys.length)
+    throw new Error("store template widgets differ from their keys");
+  return Object.fromEntries(
+    widgets.map((widget, index) => [widget.id, widgetKeys[index]!]),
+  );
 }
 
 export function createStoreTemplateService(deps: {
@@ -426,8 +468,53 @@ export function createStoreTemplateService(deps: {
                 requestId: input.requestId,
                 requestHash: hash,
                 result,
+                templateId: STORE_TEMPLATE_ID,
+                templateVersion: template.version,
+                inputs: storeTemplateInputsSchema.parse(inputs),
                 createdAt: now(),
+                updatedAt: now(),
               });
+              const dashboardRecord = built.find(
+                (record) => record.kind === "dashboard",
+              )!;
+              const dashboardWidgetKeys = await installedWidgetKeys(
+                tx,
+                actor.workspaceId,
+                dashboardId,
+                dashboardRecord.kind === "dashboard"
+                  ? dashboardRecord.widgetKeys
+                  : [],
+              );
+              await tx.insert(schema.dataTemplateRecords).values([
+                ...built.map((record) => ({
+                  workspaceId: actor.workspaceId,
+                  requestId: input.requestId,
+                  key: record.key,
+                  kind: record.kind,
+                  recordId: ids[record.key]!,
+                  templateVersion: template.version,
+                  original:
+                    record.kind === "preparation"
+                      ? { graph: record.graph }
+                      : record.kind === "model"
+                        ? { definition: record.definition }
+                        : { request: record.request },
+                  widgetKeys:
+                    record.kind === "dashboard" ? dashboardWidgetKeys : null,
+                })),
+                ...(["dataset:mapping", "dataset:products"] as const).map(
+                  (key) => ({
+                    workspaceId: actor.workspaceId,
+                    requestId: input.requestId,
+                    key,
+                    kind: "dataset",
+                    recordId: ids[key],
+                    templateVersion: template.version,
+                    original: null,
+                    widgetKeys: null,
+                  }),
+                ),
+              ]);
               await insertAuditEvent(tx, {
                 workspaceId: actor.workspaceId,
                 actorUserId: actor.callerId,

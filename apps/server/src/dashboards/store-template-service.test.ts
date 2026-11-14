@@ -24,6 +24,7 @@ import { createStoreTemplateService } from "./store-template-service.js";
 import { queryDashboardData, dashboardDimensionValues } from "./data.js";
 import { createDashboardService } from "./service.js";
 import { buildStoreDashboard } from "./store-portfolio.js";
+import { STORE_TEMPLATE_VERSION } from "./store-template.js";
 import { createDashboardRequestSchema } from "@netrics/contracts";
 import { apple, google, inputs, now } from "./test-helpers.js";
 import type {
@@ -136,6 +137,57 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
       await owner`select data_filters from dashboards where id=${installed.dashboardId}`;
     expect(dashboard!.data_filters).toHaveLength(6);
   });
+  it("records the version, the inputs and each record's original", async () => {
+    const [row] =
+      await owner`select template_id, template_version, inputs from data_template_installs where workspace_id=${workspaceId} and request_id=${requestId}`;
+    expect(row!.template_id).toBe("store_portfolio");
+    expect(row!.template_version).toBe(STORE_TEMPLATE_VERSION);
+    expect(row!.inputs).toMatchObject({
+      name: "App portfolio",
+      locale: "en",
+      projectId: null,
+      fixedProduct: null,
+      connections: [{ id: apple.id }, { id: google.id }],
+      groups: [{ id: groupId, name: "Example app" }],
+    });
+    const records =
+      await owner`select key, kind, record_id, template_version, original, widget_keys from data_template_records where workspace_id=${workspaceId} order by key`;
+    expect(records).toHaveLength(6 + 3 + 3 + 1 + 2);
+    expect(records.map((r) => r.key)).toContain(
+      `preparation:source:${apple.id}:downloads`,
+    );
+    expect(
+      records.every((r) => r.template_version === STORE_TEMPLATE_VERSION),
+    ).toBe(true);
+    const model = records.find((r) => r.key === "model:downloads")!;
+    expect(model.record_id).toBe(installed.models.downloads);
+    const [release] =
+      await owner`select definition from data_model_releases where model_id=${installed.models.downloads} and version=1`;
+    expect(model.original).toEqual({ definition: release!.definition });
+    const append = records.find(
+      (r) => r.key === "preparation:append:proceeds:0:0",
+    )!;
+    const [version] =
+      await owner`select graph from data_preparation_versions where preparation_id=${append.record_id} and version=1`;
+    expect(append.original).toEqual({ graph: version!.graph });
+    expect(records.find((r) => r.key === "dataset:mapping")).toMatchObject({
+      kind: "dataset",
+      record_id: installed.mappingDatasetId,
+      original: null,
+    });
+    const dashboard = records.find((r) => r.key === "dashboard:portfolio")!;
+    expect(dashboard.record_id).toBe(installed.dashboardId);
+    expect(dashboard.original.request.name).toBe("App portfolio");
+    const widgets =
+      await owner`select id, model_id from dashboard_widgets where dashboard_id=${installed.dashboardId}`;
+    expect(Object.keys(dashboard.widget_keys).sort()).toEqual(
+      widgets.map((w) => w.id).sort(),
+    );
+    for (const widget of widgets)
+      expect(dashboard.widget_keys[widget.id]).toBe(
+        `widget:${Object.entries(installed.models).find(([, id]) => id === widget.model_id)![0]}`,
+      );
+  });
   it("reuses the same request without duplicates or overwriting customer edits", async () => {
     expect(
       await service().install(actor(), {
@@ -188,6 +240,7 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
       "data_preparations",
       "data_models",
       "data_template_installs",
+      "data_template_records",
     ])
       expect(await count(table, otherId)).toBe(0);
     await expect(
