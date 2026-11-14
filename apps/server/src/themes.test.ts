@@ -21,7 +21,10 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Dashboard themes (#216): built-ins, custom themes with a contrast floor,
 // optimistic concurrency, deletion guarded by use, and a theme per
@@ -141,7 +144,7 @@ beforeAll(async () => {
     expect(added.statusCode).toBe(200);
   }
   strangerWorkspaceId = await newWorkspace(stranger);
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

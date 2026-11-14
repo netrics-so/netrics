@@ -21,7 +21,11 @@ import {
   renewJobLease,
 } from "./jobs.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 function errorChain(error: unknown): string {
   const messages: string[] = [];
@@ -147,7 +151,7 @@ beforeAll(async () => {
   } finally {
     await admin.end({ timeout: 5 }).catch(() => undefined);
   }
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await appClient.end({ timeout: 5 }).catch(() => undefined);

@@ -1,7 +1,11 @@
 import postgres from "postgres";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createDatabase, withWorkspace, schema } from "./index.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 let test: TestDatabase,
   owner: postgres.Sql,
@@ -20,7 +24,10 @@ beforeAll(async () => {
     await owner`insert into connections(workspace_id,connector_id,name) values (${workspaceId},'publication-migration','Existing') returning id`;
   connectionId = c!.id as string;
   await owner`insert into data_datasets(workspace_id,connection_id,key,name) values (${workspaceId},${connectionId},'pruned','Previously pruned source')`;
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
+
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 afterAll(async () => {
   await owner?.end({ timeout: 5 });
 });

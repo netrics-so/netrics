@@ -18,7 +18,11 @@ import { adminSetDataPolicy } from "./data-policy.js";
 import { storeConnectorStage } from "./connector-staging.js";
 import { ingestDatasetPage } from "./datasets.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 const DAY = 86_400_000;
 
@@ -145,7 +149,7 @@ describe("existing connections (migration 0061)", () => {
         values (${dataset!.id as string},${workspaceId},1,${admin.json(definition)})`;
     }
     await test.migrate();
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await admin?.end({ timeout: 5 });
@@ -232,7 +236,7 @@ describe("choosing a connection's retention", () => {
     userId = user!.id as string;
     await admin`insert into connectors(id,version,manifest) values ('retention-fixture','1.0.0','{}')`;
     ({ client, db } = connect(test));
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await client?.end({ timeout: 5 });

@@ -1,20 +1,15 @@
-import {
-  cpSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
 
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { migrationsFolder, runMigrations } from "./index.js";
+import { migrationsFolder } from "./index.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+  type TestDatabase,
+} from "./test-db.js";
 
 // The periods-to-date migration (#331, ADR 0019 §3) on data in the previous
 // shape: widgets and tiles of every existing period stay as they are, this
@@ -23,51 +18,26 @@ import { migrationsFolder, runMigrations } from "./index.js";
 
 const MIGRATION = /^\d{4}_periods_to_date$/;
 
-const serverUrl =
-  process.env.NETRICS_TEST_ADMIN_URL ??
-  "postgres://netrics:netrics@localhost:5433/postgres";
-const name = `netrics_test_${randomBytes(6).toString("hex")}`;
-let adminUrl: string;
-let folder: string;
-
-/** A copy of the migrations folder that ends just before the migration. */
-function migrationsBefore(tag: RegExp): string {
-  const copy = mkdtempSync(path.join(tmpdir(), "netrics-migrations-"));
-  cpSync(migrationsFolder, copy, { recursive: true });
-  const journalPath = path.join(copy, "meta", "_journal.json");
-  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
-    entries: Array<{ idx: number; tag: string }>;
-  };
-  const index = journal.entries.findIndex((entry) => tag.test(entry.tag));
-  expect(index).toBeGreaterThan(0);
-  journal.entries = journal.entries.slice(0, index);
-  writeFileSync(journalPath, JSON.stringify(journal));
-  return copy;
+/** The tag of the migration just before this one. */
+function lastBefore(): string {
+  const journal = JSON.parse(
+    readFileSync(path.join(migrationsFolder, "meta", "_journal.json"), "utf8"),
+  ) as { entries: Array<{ tag: string }> };
+  const at = journal.entries.findIndex((entry) => MIGRATION.test(entry.tag));
+  expect(at).toBeGreaterThan(0);
+  return journal.entries[at - 1]!.tag;
 }
 
+let testDb: TestDatabase;
+let adminUrl: string;
+
 beforeAll(async () => {
-  const server = postgres(serverUrl, { max: 1 });
-  await server.unsafe(`CREATE DATABASE ${name}`);
-  await server.end({ timeout: 5 });
-  const url = new URL(serverUrl);
-  url.pathname = `/${name}`;
-  adminUrl = url.toString();
-  folder = migrationsBefore(MIGRATION);
+  testDb = await createTestDatabase({ upTo: lastBefore() });
+  adminUrl = testDb.adminUrl;
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
-  const client = postgres(adminUrl, { max: 1, onnotice: () => undefined });
-  try {
-    await migrate(drizzle(client), { migrationsFolder: folder });
-  } finally {
-    await client.end({ timeout: 5 });
-  }
-}, 60_000);
-
-afterAll(async () => {
-  rmSync(folder, { recursive: true, force: true });
-  const server = postgres(serverUrl, { max: 1 });
-  await server.unsafe(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-  await server.end({ timeout: 5 });
-});
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 
 describe("periods-to-date migration on existing widgets and tiles", () => {
   it("keeps every widget and tile and admits this week, quarter and year", async () => {
@@ -133,7 +103,7 @@ describe("periods-to-date migration on existing widgets and tiles", () => {
         /dashboard_tiles_period_valid/,
       );
 
-      await runMigrations(adminUrl);
+      await testDb.migrate();
 
       const widgets = await owner`
         select type, period from dashboard_widgets

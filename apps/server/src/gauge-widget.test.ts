@@ -30,7 +30,10 @@ import {
   withDevice,
 } from "./devices/dashboard.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The goal widget (#339, ADR 0019 section 5): a gauge names a goal of its
 // workspace; the dashboard API labels it with the goal's name and flags a
@@ -238,7 +241,7 @@ beforeAll(async () => {
     period: "this_month",
     target: 10,
   });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

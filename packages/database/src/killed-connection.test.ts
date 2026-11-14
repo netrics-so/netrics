@@ -14,7 +14,11 @@ import { withWorkspace } from "./context.js";
 import { createDatabase } from "./index.js";
 import { withSessionAdvisoryLock, type PooledDb } from "./reserved.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #511: a PostgreSQL session that ends while the server uses it (the backend
 // is terminated, the database restarts or fails over, the network drops) must
@@ -38,7 +42,7 @@ beforeAll(async () => {
   admin = postgres(testDb.adminUrl, { max: 1, onnotice: () => undefined });
   process.on("uncaughtException", onEscape);
   process.on("unhandledRejection", onEscape);
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   process.off("uncaughtException", onEscape);

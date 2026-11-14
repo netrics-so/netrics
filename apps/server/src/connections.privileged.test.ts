@@ -14,7 +14,10 @@ import { createDatabase, type Database } from "@netrics/database";
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Runs the connection routes on a superuser connection, where PostgreSQL
 // skips row-level security entirely. Isolation must then come from the
@@ -104,7 +107,7 @@ beforeAll(async () => {
   expect(created.statusCode).toBe(200);
   bobConnectionId = connectionResponseSchema.parse(created.json()).connection
     .id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

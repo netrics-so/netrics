@@ -19,7 +19,10 @@ import {
   encryptOAuthAccessToken,
 } from "./credentials.js";
 import { reencryptCredentials } from "./reencrypt.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 const oldKey = randomBytes(32).toString("base64");
 const newKey = randomBytes(32).toString("base64");
@@ -61,7 +64,7 @@ beforeAll(async () => {
       }),
     );
   }
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await appDb.$client.end({ timeout: 5 }).catch(() => undefined);

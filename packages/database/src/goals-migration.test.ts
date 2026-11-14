@@ -2,10 +2,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { migrationsFolder } from "./index.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The goals migration (#335, ADR 0019 section 4) on data in the previous
 // shape: existing workspaces, connections and widgets stay as they are;
@@ -73,7 +77,10 @@ beforeAll(async () => {
       (${slide!.id}, ${dashboard!.id}, ${workspaceId}, 'table', 3, 0, 4, 4,
        ${connectionId}, 'visits', 'sum', 'this_week',
        '{"groupBy":"route","limit":5}'::jsonb)`;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
+
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 
 afterAll(async () => {
   await app.end({ timeout: 5 }).catch(() => undefined);

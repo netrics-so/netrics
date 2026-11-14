@@ -23,7 +23,10 @@ import {
 import { REFRESH_MARGIN_MS } from "../oauth/tokens.js";
 import { capturingLogger } from "../oauth/test-provider.js";
 import { reencryptCredentials } from "../reencrypt.js";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { callWithSignedKey, SignedKeyRejectedError } from "./connector-auth.js";
 import {
   SignedKeyExchangeError,
@@ -76,7 +79,7 @@ beforeAll(async () => {
     credentialKeyring: KEYRING,
     logger: capturingLogger(logs),
   });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await db?.$client.end({ timeout: 5 }).catch(() => undefined);

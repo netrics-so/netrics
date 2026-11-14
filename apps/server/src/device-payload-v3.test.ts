@@ -28,7 +28,10 @@ import {
   type DeviceDashboardSchema,
 } from "./devices/service.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Device payload schema 3 (ADR 0017 section 9, #277): the primary layout,
 // custom layouts and the device's settings for every screen alike; schema
@@ -287,7 +290,7 @@ beforeAll(async () => {
     insert into connections (workspace_id, connector_id, name)
     values (${workspaceId}, 'demo', 'Demo') returning id`;
   connectionId = row!.id as string;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

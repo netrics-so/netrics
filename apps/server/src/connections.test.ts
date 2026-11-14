@@ -36,7 +36,10 @@ import { createCredentialKeyring } from "./credentials.js";
 import { loadConfig, type Config } from "./env.js";
 import { createJobHandlers } from "./jobs/handlers.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 
@@ -251,7 +254,7 @@ beforeAll(async () => {
     payload: { name: "Website" },
   });
   projectId = projectResponseSchema.parse(project.json()).project.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await world.close();

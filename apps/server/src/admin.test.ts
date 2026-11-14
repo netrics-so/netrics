@@ -20,7 +20,10 @@ import { buildApp } from "./app.js";
 import { INVITATION_TOKEN_HEADER, createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
 import { SETUP_TOKEN_HEADER, hashSetupToken } from "./setup.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { generatePrincipalToken, hashToken } from "./tokens.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
@@ -127,7 +130,7 @@ beforeAll(async () => {
     headers: { cookie: memberCookie },
     payload: { name: "Member WS" },
   });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

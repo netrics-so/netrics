@@ -24,7 +24,10 @@ import {
   type PreparationGraph,
   type SemanticModelDefinition,
 } from "@netrics/domain";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createDataService, type DataActor } from "./service.js";
 
 // Explicitly opt in: this is a reproducible local workload check, not a timing
@@ -136,7 +139,7 @@ beforeAll(async () => {
   );
   connectionId = connection!.id;
   service = createDataService(db, () => now);
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   if (!enabled) return;
   const [database] =

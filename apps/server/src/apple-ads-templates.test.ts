@@ -46,7 +46,10 @@ import {
 } from "./signed-keys/test-apple-ads.js";
 import { p256KeyPair } from "./signed-keys/test-keys.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #377 end to end, on fixture data: a real Apple Ads connection (the real
 // connector and provider against the offline fake of Apple's API) syncs a
@@ -244,7 +247,7 @@ beforeAll(async () => {
   });
   // Done: no backfill is queued any more.
   await admin`delete from jobs where connection_id = ${connectionId}`;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

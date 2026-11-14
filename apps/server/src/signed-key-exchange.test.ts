@@ -40,7 +40,10 @@ import {
   fixtureExchangeProvider,
 } from "./signed-keys/test-token-exchange.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #369 (ADR 0020 §2) through the API and the sync engine, with a fixture
 // provider that exchanges a signed client secret for an access token (no
@@ -132,7 +135,7 @@ beforeAll(async () => {
       })
     ).json(),
   ).workspaces[0]!.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

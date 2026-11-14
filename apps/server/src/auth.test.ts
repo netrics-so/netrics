@@ -14,7 +14,11 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import type { Mailer } from "./mail/mailer.js";
 import { loadConfig, type Config } from "./env.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 interface CapturedEmail {
   kind: "verification" | "password-reset";
@@ -97,7 +101,7 @@ beforeAll(async () => {
     checkDb: async () => true,
   });
   admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

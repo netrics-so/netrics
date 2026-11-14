@@ -14,7 +14,11 @@ import {
 } from "@netrics/database";
 
 import { createScheduler, runSchedulerTick } from "./scheduler.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 function schedulerUrlOf(testDb: TestDatabase): string {
   const url = new URL(testDb.adminUrl);
@@ -100,7 +104,7 @@ beforeAll(async () => {
       { connectionId: connFuture!, workspaceId, nextDueAt: FUTURE },
     ]),
   );
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await schedulerRaw.end({ timeout: 5 }).catch(() => undefined);

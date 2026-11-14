@@ -15,7 +15,10 @@ import type {
   PreparationGraph,
   SemanticModelDefinition,
 } from "@netrics/domain";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createDataService, type DataActor } from "./service.js";
 
 const NOW = new Date("2026-11-06T12:00:00Z");
@@ -72,7 +75,7 @@ beforeAll(async () => {
   const [user] =
     await admin`insert into users(email,display_name) values ('model-bindings@example.com','Owner') returning id`;
   callerId = user!.id as string;
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await db?.$client.end({ timeout: 5 });
   await admin?.end({ timeout: 5 });

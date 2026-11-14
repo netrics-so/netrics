@@ -14,6 +14,7 @@ import {
   createTestDatabase,
   TEST_DATABASE_DROP_TIMEOUT_MS,
   type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
 } from "./test-db.js";
 
 // Dataset history pruning against policy and connection-retention changes
@@ -136,7 +137,7 @@ describe("pruning dataset history concurrently with retention changes (#517)", (
       end $$;
       create trigger prune_test_gate before update on data_generations
       for each statement execute function prune_test_gate();`);
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     for (const client of [app, pruner, holder, gate, admin])
@@ -358,7 +359,7 @@ describe("prune on a large record table (#524)", () => {
     generationId = current!.id as string;
     // Live records without a deadline, as kept without a retention ceiling.
     await addRecords("live", 200_000, false);
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await admin?.end({ timeout: 5 });

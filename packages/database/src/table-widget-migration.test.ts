@@ -2,10 +2,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { migrationsFolder } from "./index.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The table widget's migration (#332, ADR 0019 sections 2 and 6) on data in
 // the previous shape: every stored widget type keeps satisfying the type
@@ -81,7 +85,10 @@ beforeAll(async () => {
        'Hello'),
       (${slideId}, ${dashboardId}, ${workspaceId}, 'clock', 6, 3, 2, 1,
        null)`;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
+
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 
 afterAll(async () => {
   await owner.end({ timeout: 5 }).catch(() => undefined);

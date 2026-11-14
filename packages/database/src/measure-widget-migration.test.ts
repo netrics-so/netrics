@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { migrationsFolder, createDatabase, withWorkspace } from "./index.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { sql } from "drizzle-orm";
 let test: TestDatabase,
   owner: postgres.Sql,
@@ -35,7 +39,10 @@ beforeAll(async () => {
     await owner`insert into dashboard_slides (dashboard_id, workspace_id, position) values (${dashboardId}, ${workspaceId}, 0) returning id`;
   slideId = slide!.id as string;
   await owner`insert into dashboard_widgets (dashboard_id, slide_id, workspace_id, type, x, y, w, h, text) values (${dashboardId}, ${slideId}, ${workspaceId}, 'text', 0, 0, 4, 2, 'Keep me')`;
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
+
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 afterAll(async () => {
   await owner?.end({ timeout: 5 });
 });

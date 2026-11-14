@@ -8,6 +8,10 @@ import { createDefaultRegistry } from "./connectors.js";
 import { syncCatalog } from "./sync/catalog.js";
 
 export type { TestDatabase };
+export {
+  TEST_DATABASE_DROP_TIMEOUT_MS,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "@netrics/database/testing";
 
 /**
  * A migrated test database with the default connector catalog written as

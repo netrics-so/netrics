@@ -28,7 +28,10 @@ import { createCredentialKeyring, encryptCredentials } from "./credentials.js";
 import { createDeviceService } from "./devices/service.js";
 import { loadConfig } from "./env.js";
 import { capturingLogger } from "./oauth/test-provider.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The latest-review widget (#340, ADR 0019 section 12) end to end: stored,
 // validated (a connector without reviews is refused), shown in the screens'
@@ -296,7 +299,7 @@ beforeAll(async () => {
     author: "ledger",
     createdAt: "2026-10-04T09:30:00Z",
   });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

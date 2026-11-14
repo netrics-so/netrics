@@ -46,7 +46,10 @@ import {
 } from "../oauth/test-provider.js";
 import { createOAuthTokenService } from "../oauth/tokens.js";
 import { Secret } from "../secret.js";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createWorker, type WorkerHandle } from "../worker.js";
 import { syncCatalog } from "./catalog.js";
 
@@ -248,7 +251,7 @@ beforeAll(async () => {
   });
   await worker.start();
   service = createDataService(appDb, () => new Date(clockMs));
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await worker?.stop();
   await schedulerRaw?.end({ timeout: 5 });

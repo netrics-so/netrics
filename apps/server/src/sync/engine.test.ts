@@ -37,7 +37,11 @@ import {
 } from "../jobs/handlers.js";
 import { DEFAULT_DATA_POLICY, type DataPolicy } from "@netrics/domain";
 import { syncCatalog } from "./catalog.js";
-import { createTestDatabase, type TestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createWorker, type WorkerHandle } from "../worker.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -621,7 +625,7 @@ beforeAll(async () => {
     heartbeatMs: 50,
   });
   await worker.start();
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await worker.stop().catch(() => undefined);

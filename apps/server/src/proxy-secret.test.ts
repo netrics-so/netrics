@@ -19,7 +19,11 @@ import {
 } from "./client-address.js";
 import { ConfigError, loadConfig } from "./env.js";
 import type { Mailer } from "./mail/mailer.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { generatePrincipalToken, hashToken } from "./tokens.js";
 
 // ADR 0013 (#156): NETRICS_PROXY_SECRET marks requests from the web frontend,
@@ -158,7 +162,7 @@ beforeAll(async () => {
     pino({ level: "trace" }, captureLogs),
   );
   withoutSecret = await buildInstance(undefined);
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await withSecret.close();

@@ -42,7 +42,11 @@ import {
   sealOAuthCredentials,
 } from "../oauth/tokens.js";
 import { runSchedulerTick } from "../scheduler.js";
-import { createTestDatabase, type TestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createWorker, type WorkerHandle } from "../worker.js";
 import { syncCatalog } from "./catalog.js";
 
@@ -311,7 +315,7 @@ beforeAll(async () => {
     logger,
   });
   await worker.start();
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await worker?.stop().catch(() => undefined);

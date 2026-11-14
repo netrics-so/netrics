@@ -20,7 +20,10 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createCredentialKeyring } from "../credentials.js";
 import { createSyncJobHandlers } from "./engine.js";
 import { NonRetryableJobError } from "../jobs/handlers.js";
@@ -208,7 +211,7 @@ beforeAll(async () => {
     },
   });
   await worker.start();
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   for (const value of cases.values()) value.release?.();
   await worker?.stop();

@@ -19,7 +19,10 @@ import {
   type SyncResult,
 } from "@netrics/connector-sdk";
 import { createGooglePlayConnector } from "@netrics/connectors";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createDatasetStaging } from "./staging.js";
 import {
   ALPHA,
@@ -81,7 +84,7 @@ beforeAll(async () => {
   db = createDatabase(test.appUrl);
   owner = createRawSqlClient(test.adminUrl, { max: 1 });
   await owner`insert into connectors(id,version,manifest) values ('google-play','0.1.0',${JSON.stringify(connector.manifest)}::jsonb) on conflict do nothing`;
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await db?.$client.end({ timeout: 5 });
   await owner?.end({ timeout: 5 });

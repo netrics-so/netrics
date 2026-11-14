@@ -17,7 +17,10 @@ import {
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 
@@ -102,7 +105,7 @@ describe("POST /v1/bootstrap", () => {
 
   beforeAll(async () => {
     world = await createWorld();
-  }, 30_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await world.close();

@@ -13,7 +13,10 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig, type Config } from "./env.js";
 import { SETUP_TOKEN_HEADER, prepareInstallationSetup } from "./setup.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 
@@ -86,7 +89,7 @@ describe("closed sign-up with a generated setup token", () => {
   beforeAll(async () => {
     instance = await createInstance({});
     token = loggedToken(instance.logs);
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   it("logs a setup URL with the token on the web origin", () => {
     const line = instance.logs.find((l) => l.includes("setupUrl"))!;

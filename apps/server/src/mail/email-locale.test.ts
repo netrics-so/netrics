@@ -13,7 +13,10 @@ import { workspaceListResponseSchema } from "@netrics/contracts";
 import { buildApp } from "../app.js";
 import { createAuthService } from "../auth/index.js";
 import { loadConfig } from "../env.js";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import type { InvitationEmail, LinkEmail, Mailer } from "./mailer.js";
 
 // #255 (ADR 0016 sections 3 and 5): the server picks each email's language
@@ -141,7 +144,7 @@ describe("verification and password reset emails", () => {
     await setLocale(world, "de-user@example.com", "de");
     await setLocale(world, "en-user@example.com", "en");
     await setLocale(world, "unset-user@example.com", null);
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   it("are written in the recipient's language", async () => {
     expect((await requestReset(world, "de-user@example.com")).locale).toBe(
@@ -174,7 +177,7 @@ describe("with NETRICS_DEFAULT_LOCALE=de", () => {
     await signUp(world, "english@example.com");
     await setLocale(world, "unset@example.com", null);
     await setLocale(world, "english@example.com", "en");
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   it("a user without a setting gets the instance default", async () => {
     expect((await requestReset(world, "unset@example.com")).locale).toBe("de");
@@ -224,7 +227,7 @@ describe("invitation emails", () => {
       .id;
     await signUp(world, "has-account-de@example.com");
     await setLocale(world, "has-account-de@example.com", "de");
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   it("use an existing account's language over the inviter's", async () => {
     await setLocale(world, "owner@example.com", "en");

@@ -36,7 +36,10 @@ import {
 } from "./oauth/test-provider.js";
 import { openOAuthCredentials } from "./oauth/tokens.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // ADR 0012, "Grant lock": the provider revokes per account (and project),
 // so every check of "does another connection hold this account's grant"
@@ -286,7 +289,7 @@ beforeAll(async () => {
     name: "Lock B",
     ownerUserId: user!.id,
   });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

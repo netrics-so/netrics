@@ -18,7 +18,10 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { ConfigError, loadConfig } from "./env.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #250 (ADR 0016): the user's language, the workspace's screen language and
 // the instance default.
@@ -141,7 +144,7 @@ describe("user language", () => {
 
   beforeAll(async () => {
     world = await createWorld();
-  }, 30_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
   afterAll(async () => world.close());
 
   it("starts in the browser's language at sign-up, else English", async () => {
@@ -201,7 +204,7 @@ describe("instance default at sign-up", () => {
 
   beforeAll(async () => {
     world = await createWorld({ NETRICS_DEFAULT_LOCALE: "de" });
-  }, 30_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
   afterAll(async () => world.close());
 
   it("comes before the browser's language", async () => {
@@ -236,7 +239,7 @@ describe("workspace screen language", () => {
       "member@example.com",
       "editor",
     );
-  }, 30_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
   afterAll(async () => world.close());
 
   function patchWorkspace(cookie: string, payload: unknown) {

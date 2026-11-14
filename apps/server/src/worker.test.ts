@@ -17,7 +17,11 @@ import {
   NonRetryableJobError,
   type JobHandler,
 } from "./jobs/handlers.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { createWorker, type WorkerHandle } from "./worker.js";
 
 function schedulerUrlOf(testDb: TestDatabase): string {
@@ -94,7 +98,7 @@ beforeAll(async () => {
     name: "Worker B",
     ownerUserId: userB!.id,
   });
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await schedulerRaw.end({ timeout: 5 }).catch(() => undefined);

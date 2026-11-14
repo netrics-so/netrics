@@ -22,7 +22,10 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 
@@ -141,7 +144,7 @@ beforeAll(async () => {
   }
   connectionId = await newConnection(workspaceId);
   foreignConnectionId = await newConnection(await newWorkspace(stranger));
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

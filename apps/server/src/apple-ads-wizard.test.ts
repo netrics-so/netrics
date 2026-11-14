@@ -47,7 +47,10 @@ import {
 } from "./signed-keys/test-apple-ads.js";
 import { pemBody } from "./signed-keys/test-keys.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #375 through the API: the guided Apple Ads setup. netrics generates the
 // key pair, the API user "pastes" the public key at a fake Apple Ads, the
@@ -191,7 +194,7 @@ beforeAll(async () => {
   });
   expect(created.statusCode).toBe(200);
   w2 = (created.json() as { workspace: { id: string } }).workspace.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

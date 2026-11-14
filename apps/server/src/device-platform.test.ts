@@ -27,7 +27,10 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { defaultDisplayMode } from "./devices/service.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The device platform (#406, ADR 0021): reported at pairing and in the
 // heartbeat, copied at approval, steering the name and display mode
@@ -185,7 +188,7 @@ beforeAll(async () => {
   stranger = await signUp("platform-stranger@example.com");
   workspaceId = await newWorkspace(owner);
   foreignWorkspaceId = await newWorkspace(stranger);
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

@@ -24,7 +24,11 @@ import { createDefaultRegistry } from "./connectors.js";
 import { createCredentialKeyring } from "./credentials.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig, type Config } from "./env.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { createJobHandlers } from "./jobs/handlers.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
 import { createWorker } from "./worker.js";
@@ -92,7 +96,7 @@ beforeAll(async () => {
   admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
   app = await buildWith();
   cookie = await signUp(app, "onboarding@example.com");
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

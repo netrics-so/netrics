@@ -55,7 +55,10 @@ import {
   type FakeReportEntry,
 } from "../signed-keys/test-apple-ads.js";
 import { p256KeyPair } from "../signed-keys/test-keys.js";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { syncCatalog } from "./catalog.js";
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -262,7 +265,7 @@ beforeAll(async () => {
       response.json(),
     ).connection.id;
   }
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

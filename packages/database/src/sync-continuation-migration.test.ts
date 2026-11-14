@@ -1,9 +1,13 @@
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { createDatabase, withWorkspace } from "./index.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 let test: TestDatabase,
   owner: postgres.Sql,
@@ -24,7 +28,10 @@ beforeAll(async () => {
   await owner`insert into jobs(kind,workspace_id,connection_id,payload,status) values ('connection.sync',${workspaceId},${connectionId},${JSON.stringify({ workspace_id: workspaceId, connection_id: connectionId })}::jsonb,'pending')`;
   for (const status of ["succeeded", "failed"])
     await owner`insert into sync_runs(workspace_id,connection_id,mode,requested_from,requested_to,attempt,status,started_at,finished_at,observations_written) values (${workspaceId},${connectionId},'backfill','2026-10-01','2026-11-01',1,${status},'2026-11-05','2026-11-05',12)`;
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
+
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 afterAll(async () => {
   await owner?.end({ timeout: 5 });
 });

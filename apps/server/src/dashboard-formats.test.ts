@@ -25,7 +25,10 @@ import {
   buildDeviceDashboardV2,
 } from "./devices/dashboard.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Primary formats and custom layouts in the dashboard document (#275, ADR
 // 0017 sections 4 and 8): validation, the sync rules on save, re-basing on
@@ -202,7 +205,7 @@ beforeAll(async () => {
     insert into connections (workspace_id, connector_id, name)
     values (${workspaceId}, 'demo', 'Demo') returning id`;
   connectionId = row!.id as string;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

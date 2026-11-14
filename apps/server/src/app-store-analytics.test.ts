@@ -47,7 +47,10 @@ import {
 } from "./signed-keys/test-app-store-connect.js";
 import { p256KeyPair, pemBody } from "./signed-keys/test-keys.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // "Enable App Store analytics" (#174, ADR 0014) through the API: a
 // temporary Admin key creates the missing ONGOING report requests in
@@ -233,7 +236,7 @@ beforeAll(async () => {
   });
   expect(created.statusCode).toBe(200);
   connectionId = connectionResponseSchema.parse(created.json()).connection.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

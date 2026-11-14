@@ -17,7 +17,11 @@ import {
   type ImageInput,
 } from "./images.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // workspace_images (#217): RLS and explicit predicates, immutability for the
 // application role, constraints, and the out-of-line storage of the bytes.
@@ -91,7 +95,7 @@ beforeAll(async () => {
     await admin`insert into workspaces (name) values ('B') returning id`;
   workspaceA = a!.id as string;
   workspaceB = b!.id as string;
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await admin.end({ timeout: 5 }).catch(() => undefined);

@@ -50,7 +50,10 @@ import {
 import { p256KeyPair } from "./signed-keys/test-keys.js";
 import { syncCatalog } from "./sync/catalog.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // App icons as workspace images and the dashboard templates (#226), end
 // to end: a real App Store Connect connection (signed key, in-memory App
@@ -405,7 +408,7 @@ beforeAll(async () => {
   connectionId = connectionResponseSchema.parse(created.json()).connection.id;
   // The first sync stores the sales and the apps' names.
   await runSync(connectionId);
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

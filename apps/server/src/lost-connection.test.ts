@@ -11,7 +11,11 @@ import {
 import { buildApp } from "./app.js";
 import type { AuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // A request whose PostgreSQL session is terminated mid-statement (failover,
 // restart, pg_terminate_backend) answers 503 with Retry-After, not a crash
@@ -49,7 +53,7 @@ beforeAll(async () => {
     return { ok: true };
   });
   await app.ready();
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

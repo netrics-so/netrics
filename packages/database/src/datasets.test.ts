@@ -7,7 +7,11 @@ import {
   type SourceDatasetDefinition,
   type DatasetPage,
 } from "@netrics/contracts";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { withWorkspace, hasSqlstate, type Db } from "./context.js";
 import { datasetWorkspaceBytes } from "./data-usage.js";
 import { DEFAULT_DATA_POLICY } from "@netrics/domain";
@@ -137,7 +141,7 @@ beforeAll(async () => {
   await test.migrate();
   app = postgres(test.appUrl, { max: 4 });
   db = drizzle(app, { schema: { ...schema, ...auth } });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await app?.end({ timeout: 5 });
   await admin?.end({ timeout: 5 });

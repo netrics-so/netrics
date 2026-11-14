@@ -47,7 +47,11 @@ import type { OAuthProviderDefinition } from "../oauth/providers/types.js";
 import { listMetrics, queryMetric } from "../metrics/query.js";
 import { runSchedulerTick } from "../scheduler.js";
 import { Secret } from "../secret.js";
-import { createTestDatabase, type TestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createWorker, type WorkerHandle } from "../worker.js";
 import { syncCatalog } from "./catalog.js";
 import BY_QUERY_DEVICE from "../../../../packages/connectors/src/google-search-console/fixtures/analytics-by-query-device.json" with { type: "json" };
@@ -445,7 +449,7 @@ beforeAll(async () => {
     logger,
   });
   await worker.start();
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await worker?.stop().catch(() => undefined);

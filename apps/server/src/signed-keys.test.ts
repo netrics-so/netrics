@@ -48,7 +48,10 @@ import {
   type TestKeyPair,
 } from "./signed-keys/test-keys.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // ADR 0014 in the API and the sync engine (#170): signed-key connectors are
 // available because this server has the provider; keys are validated (fields,
@@ -244,7 +247,7 @@ beforeAll(async () => {
       })
     ).json(),
   ).workspaces[0]!.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

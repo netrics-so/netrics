@@ -52,7 +52,10 @@ import {
   type FixtureClient,
 } from "./signed-keys/test-token-exchange.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
 
 // #371 (ADR 0020 §3) through the API, with the fixture exchange provider of
@@ -168,7 +171,7 @@ beforeAll(async () => {
   });
   expect(created.statusCode).toBe(200);
   w2 = (created.json() as { workspace: { id: string } }).workspace.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

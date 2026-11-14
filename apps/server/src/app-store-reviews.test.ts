@@ -46,7 +46,10 @@ import {
 } from "./signed-keys/test-app-store-connect.js";
 import { p256KeyPair, pemBody } from "./signed-keys/test-keys.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Ratings and reviews with an optional second key (#190, ADR 0014 decision
 // 2) through the API: a Customer Support key is checked against Apple
@@ -309,7 +312,7 @@ beforeAll(async () => {
   });
   expect(created.statusCode).toBe(200);
   connectionId = connectionResponseSchema.parse(created.json()).connection.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

@@ -24,7 +24,10 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // ADR 0012 in the API: OAuth connectors in the catalog, refusal of
 // connections whose provider is not configured, and the OAuth fields of a
@@ -173,7 +176,7 @@ beforeAll(async () => {
   workspaceId = workspaceListResponseSchema.parse(
     (await inject(unconfigured.app, "GET", "/v1/workspaces", cookie)).json(),
   ).workspaces[0]!.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await unconfigured?.close();

@@ -45,7 +45,10 @@ import {
 } from "./signed-keys/test-app-store-connect.js";
 import { p256KeyPair, pemBody } from "./signed-keys/test-keys.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The App Store Connect connector in the API (#171): one connection holds
 // one team key and one vendor number, and connections of different teams
@@ -287,7 +290,7 @@ beforeAll(async () => {
       })
     ).json(),
   ).workspaces[0]!.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

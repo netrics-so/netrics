@@ -21,7 +21,10 @@ import {
   type DatasetPage,
 } from "@netrics/connector-sdk";
 import { createGooglePlayConnector } from "@netrics/connectors";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createDatasetStaging } from "./staging.js";
 import {
   ALPHA,
@@ -66,7 +69,7 @@ beforeAll(async () => {
   schedulerUrl.username = "netrics_scheduler";
   schedulerUrl.password = "netrics_scheduler";
   schedulerDb = createDatabase(schedulerUrl.toString());
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await schedulerDb?.$client.end({ timeout: 5 });
   await db?.$client.end({ timeout: 5 });

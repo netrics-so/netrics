@@ -18,7 +18,10 @@ import {
   type PreparationGraph,
   type DataExpression,
 } from "@netrics/domain";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import {
   createDataService,
   DATA_SOURCE_CATALOG_ENTRIES,
@@ -171,7 +174,7 @@ beforeAll(async () => {
       },
     ],
   };
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await admin?.end({ timeout: 5 });
   await db?.$client.end({ timeout: 5 });

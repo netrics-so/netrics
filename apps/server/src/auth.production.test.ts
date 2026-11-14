@@ -9,7 +9,10 @@ import { createDatabase, type Database } from "@netrics/database";
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The API as configured for the hosted service: production mode, https
 // public URLs, real secrets, open sign-up and no SMTP transport.
@@ -41,7 +44,7 @@ beforeAll(async () => {
     // No mailer override: production without SMTP must pick the refusing one.
     authService: createAuthService(config, db, { logger }),
   });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();
