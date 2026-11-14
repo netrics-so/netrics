@@ -7,6 +7,15 @@ import { instanceDefaultLocale, requestLocale } from "./locale";
 import { EN_AREAS, en } from "@/messages/en";
 
 describe("web catalogs", () => {
+  it("names the public Play Store listing as the source of Google Play ratings", () => {
+    expect(en.storeTemplate.ratingsDefinition).toContain(
+      "public Play Store listing",
+    );
+    expect(WEB_CATALOGS.de.storeTemplate.ratingsDefinition).toContain(
+      "öffentlichen Play-Store-Eintrag",
+    );
+  });
+
   it.each(SUPPORTED_LOCALES.filter((locale) => locale !== "en"))(
     "%s has every English key, nothing else, and the same arguments",
     (locale) => {
