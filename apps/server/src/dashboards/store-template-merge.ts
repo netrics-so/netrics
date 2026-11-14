@@ -1,6 +1,7 @@
 import {
   isScopeItem,
   itemKindOf,
+  readsRemovedDataset,
   recordKeyOf,
   type ItemRef,
   type Items,
@@ -120,6 +121,23 @@ function refsOf(...sets: Items[]): ItemRef[] {
   return [...refs].sort();
 }
 
+/** A model item's dataset lists in the three states (empty otherwise). */
+function datasetLists(
+  original: Items,
+  current: Items,
+  next: Items,
+  ref: ItemRef,
+) {
+  const key = recordKeyOf(ref),
+    kind = itemKindOf(ref);
+  const of = (items: Items) =>
+    key.startsWith("model:") &&
+    (kind === "measure" || kind === "dimension" || kind === "relationship")
+      ? ((items.get(`${key}#settings:datasets`) as unknown[] | undefined) ?? [])
+      : [];
+  return { original: of(original), current: of(current), next: of(next) };
+}
+
 /** Every item that is not unchanged, by ref. */
 export function classify(
   original: Items,
@@ -154,7 +172,18 @@ export function classify(
     }
     const { outcome, change } = outcomeOf(o, c, n);
     if (outcome === "unchanged") continue;
-    plan.push({ ref, change: change!, outcome, ...values });
+    plan.push({
+      ref,
+      change: change!,
+      // A template value that reads a dataset the customer removed would
+      // add it back: theirs to choose, never silent.
+      outcome:
+        outcome === "template" &&
+        readsRemovedDataset(datasetLists(original, current, next, ref), n)
+          ? "choose"
+          : outcome,
+      ...values,
+    });
   }
   return plan;
 }

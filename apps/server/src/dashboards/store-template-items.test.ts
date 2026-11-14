@@ -5,6 +5,7 @@ import {
   dashboardItems,
   desymbolize,
   isScopeItem,
+  itemRefOfPath,
   mergeDatasets,
   mergeOrder,
   modelFromItems,
@@ -202,6 +203,15 @@ describe("store-template items", () => {
     const key = "model:downloads";
     type Lists = { original: string[]; current: string[]; next: string[] };
     type Measures = Record<string, { slot: number; fromNext?: boolean }>;
+    // Store preparations of one metric (a source, its append) and another.
+    const source = "ref:preparation:source:c:downloads:output",
+      append = "ref:preparation:append:downloads:0:0:out",
+      other = "ref:preparation:append:proceeds:0:0:out";
+    const ids = {
+      "preparation:source:c:downloads": "S",
+      "preparation:append:downloads:0:0": "T",
+      "preparation:append:proceeds:0:0": "P",
+    };
     /** Measures by id: the slot they read, and whether the value is the template's. */
     const rebuild = (lists: Lists, measures: Measures) => {
       const items: Items = new Map([
@@ -216,7 +226,7 @@ describe("store-template items", () => {
         key,
         items,
         { current: null, next: null },
-        {},
+        ids,
         {
           datasets: lists,
           fromNext: (itemRef) =>
@@ -275,21 +285,70 @@ describe("store-template items", () => {
     it("follows a true replacement (one source becomes an append tree)", () => {
       expect(
         rebuild(
-          { original: ["S"], current: ["S"], next: ["T"] },
+          { original: [source], current: [source], next: [append] },
           { s: { slot: 0 }, t: { slot: 0, fromNext: true } },
         ),
-      ).toEqual({ datasets: ["T"], reads: { s: "T", t: "T" } });
+      ).toEqual({
+        datasets: ["prepared:T:out"],
+        reads: { s: "prepared:T:out", t: "prepared:T:out" },
+      });
+    });
+
+    it("never follows a replacement for another metric, or of anything else", () => {
+      expect(
+        refused(
+          { original: [source], current: [source], next: [other] },
+          { s: { slot: 0 } },
+        ),
+      ).toEqual([`${key}#measure:s`]);
+      expect(
+        refused(
+          { original: ["S"], current: ["S"], next: ["T"] },
+          { s: { slot: 0 } },
+        ),
+      ).toEqual([`${key}#measure:s`]);
     });
 
     it("keeps the customer's own datasets after the template's, in their order", () => {
       expect(
         rebuild(
-          { original: ["A"], current: ["M", "A", "N"], next: ["C"] },
+          { original: [source], current: ["M", source, "N"], next: [append] },
           { m: { slot: 0 }, a: { slot: 1 }, n: { slot: 2 } },
         ),
       ).toEqual({
-        datasets: ["C", "M", "N"],
-        reads: { m: "M", a: "C", n: "N" },
+        datasets: ["prepared:T:out", "M", "N"],
+        reads: { m: "M", a: "prepared:T:out", n: "N" },
+      });
+    });
+
+    it("reads the customer's dataset where they replaced the template's", () => {
+      // The customer swapped A for their own M; the template changes a
+      // measure on A and adds one: both read M, and A does not come back.
+      expect(
+        rebuild(
+          { original: ["A"], current: ["M"], next: ["A"] },
+          {
+            changed: { slot: 0, fromNext: true },
+            added: { slot: 0, fromNext: true },
+            mine: { slot: 0 },
+          },
+        ),
+      ).toEqual({
+        datasets: ["M"],
+        reads: { changed: "M", added: "M", mine: "M" },
+      });
+    });
+
+    it("adds back a dataset the customer removed only for the template's value they chose", () => {
+      const lists = { original: ["A", "B"], current: ["B"], next: ["A", "B"] };
+      // Chose the template's (the item reads A from the new template).
+      expect(
+        rebuild(lists, { t: { slot: 0, fromNext: true }, b: { slot: 0 } }),
+      ).toEqual({ datasets: ["A", "B"], reads: { t: "A", b: "B" } });
+      // Chose their own (it reads B from their list): A stays out.
+      expect(rebuild(lists, { t: { slot: 0 }, b: { slot: 0 } })).toEqual({
+        datasets: ["B"],
+        reads: { t: "B", b: "B" },
       });
     });
 
@@ -305,6 +364,24 @@ describe("store-template items", () => {
       expect(mergeDatasets(lists)).toEqual(["A"]);
       expect(mergeDatasets(lists, ["B"])).toEqual(["A", "B"]);
     });
+  });
+
+  it("names the record for a validation issue of the record as a whole", () => {
+    const graph = storeTemplate.build(
+      "preparation:source:c:downloads",
+      { ...inputs, connections: [{ ...apple, id: "c" }] },
+      {
+        "dataset:mapping": "m",
+        "dataset:products": "p",
+      } as StoreTemplateIds,
+    );
+    if (graph.kind !== "preparation") throw new Error("a preparation");
+    expect(itemRefOfPath("preparation:x", graph.graph, [])).toBe(
+      "preparation:x",
+    );
+    expect(itemRefOfPath("preparation:x", graph.graph, ["nodes", 0])).toBe(
+      `preparation:x#step:${graph.graph.nodes[0]!.id}`,
+    );
   });
 
   it("keeps the customer's order and places template additions after their predecessor", () => {

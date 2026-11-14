@@ -126,7 +126,14 @@ export function preparationItems(
   return items;
 }
 
-/** Replaces each of the model's datasets by `datasets[<index>]`. */
+/**
+ * Replaces each of the model's datasets by `datasets[<index>]`. Items store
+ * positions, not datasets: an item "unchanged in all three states" has the
+ * same position text, even when the dataset at that position differs (which
+ * the update resolves per state, see modelFromItems). That is exact for the
+ * store models, which read one dataset; revisit for templates whose models
+ * read several.
+ */
 function datasetSlots(value: unknown, datasets: unknown[]): unknown {
   if (typeof value === "string") {
     const index = datasets.indexOf(value);
@@ -312,7 +319,7 @@ export function preparationFromItems(
   };
 }
 
-type DatasetLists = {
+export type DatasetLists = {
   original: readonly unknown[];
   current: readonly unknown[];
   next: readonly unknown[];
@@ -320,13 +327,64 @@ type DatasetLists = {
 const indexIn = (list: readonly unknown[], value: unknown) =>
   list.findIndex((entry) => JSON.stringify(entry) === JSON.stringify(value));
 
+/** The metric a store preparation reference is for (`ref:preparation:…`). */
+function metricOf(dataset: unknown): string | undefined {
+  if (typeof dataset !== "string") return undefined;
+  return (
+    /^ref:preparation:source:[^:]+:([^:]+)/.exec(dataset)?.[1] ??
+    /^ref:preparation:append:([^:]+):/.exec(dataset)?.[1]
+  );
+}
+
+/**
+ * The customer's dataset in place of a template dataset they replaced: the
+ * dataset is in the original, not in the customer's model, and the
+ * customer's dataset at its original position is one the original did not
+ * have. Undefined when the customer kept it or removed it without a
+ * replacement.
+ */
+export function customerReplacement(
+  lists: DatasetLists,
+  dataset: unknown,
+): unknown {
+  const position = indexIn(lists.original, dataset);
+  if (position === -1 || indexIn(lists.current, dataset) !== -1)
+    return undefined;
+  const replacement = lists.current[position];
+  return position < lists.current.length &&
+    indexIn(lists.original, replacement) === -1
+    ? replacement
+    : undefined;
+}
+
+/**
+ * Whether a value of the new template reads a template dataset the customer
+ * removed from their model (without replacing it). Taking that value would
+ * add the dataset back, so the customer chooses (store-template-merge.ts).
+ */
+export function readsRemovedDataset(
+  lists: DatasetLists,
+  value: unknown,
+): boolean {
+  return slotsIn(value).some((index) => {
+    const dataset = lists.next[index];
+    return (
+      index < lists.next.length &&
+      indexIn(lists.original, dataset) !== -1 &&
+      indexIn(lists.current, dataset) === -1 &&
+      customerReplacement(lists, dataset) === undefined
+    );
+  });
+}
+
 /**
  * A model's datasets after an update: the new template's datasets (app
- * scope), without those the customer removed (in the original, not in their
- * model) unless a value taken from the new template reads one
- * (`readByTemplate`); then the customer's own datasets (in neither the
- * original nor the new template) in the customer's order, so what reads
- * them keeps working. Values are symbolic, as in `settings:datasets`.
+ * scope), without those the customer removed or replaced (in the original,
+ * not in their model) unless a value taken from the new template reads one
+ * the customer removed (`readByTemplate`, which they chose); then the
+ * customer's own datasets (in neither the original nor the new template) in
+ * the customer's order, so what reads them keeps working. Values are
+ * symbolic, as in `settings:datasets`.
  */
 export function mergeDatasets(
   lists: DatasetLists,
@@ -336,7 +394,8 @@ export function mergeDatasets(
     (dataset) =>
       indexIn(lists.original, dataset) === -1 ||
       indexIn(lists.current, dataset) !== -1 ||
-      indexIn(readByTemplate, dataset) !== -1,
+      (indexIn(readByTemplate, dataset) !== -1 &&
+        customerReplacement(lists, dataset) === undefined),
   );
   for (const dataset of lists.current)
     if (
@@ -349,13 +408,18 @@ export function mergeDatasets(
 
 /**
  * The dataset an item's `datasets[<index>]` reads after the update, or
- * undefined. A template value's slot is in the new template's list. A
- * customer value's slot is in the customer's list and keeps reading the
+ * undefined.
+ *
+ * A template value's slot is in the new template's list; a template dataset
+ * the customer replaced reads the customer's dataset instead.
+ *
+ * A customer value's slot is in the customer's list and keeps reading the
  * same dataset wherever the merged list has it; only a true replacement
  * follows the template by position: the original dataset is gone from the
  * new template, and the new template's dataset at its original position is
- * one the original did not have (e.g. one source becomes an append tree).
- * Anything else would silently re-point the value, so it does not resolve.
+ * one the original did not have and is for the same metric (e.g. one source
+ * becomes an append tree). Anything else would silently re-point the value,
+ * so it does not resolve.
  */
 function slotOf(
   index: number,
@@ -366,17 +430,25 @@ function slotOf(
   const list = fromNext ? lists.next : lists.current;
   if (index >= list.length) return undefined;
   const dataset = list[index];
+  if (fromNext) {
+    const replacement = customerReplacement(lists, dataset);
+    if (replacement !== undefined)
+      return indexIn(merged, replacement) !== -1 ? replacement : undefined;
+  }
   if (indexIn(merged, dataset) !== -1) return dataset;
   if (fromNext) return undefined;
-  const position = indexIn(lists.original, dataset);
+  const position = indexIn(lists.original, dataset),
+    replacement = lists.next[position];
   if (
     position !== -1 &&
     position < lists.next.length &&
     indexIn(lists.next, dataset) === -1 &&
-    indexIn(lists.original, lists.next[position]) === -1 &&
-    indexIn(merged, lists.next[position]) !== -1
+    indexIn(lists.original, replacement) === -1 &&
+    indexIn(merged, replacement) !== -1 &&
+    metricOf(dataset) !== undefined &&
+    metricOf(dataset) === metricOf(replacement)
   )
-    return lists.next[position];
+    return replacement;
   return undefined;
 }
 
@@ -486,6 +558,8 @@ export function itemRefOfPath(
   record: PreparationGraph | SemanticModelDefinition,
   path: readonly PropertyKey[],
 ): string {
+  // A root-level issue (e.g. the record as a whole) names the record.
+  if (path.length === 0) return key;
   const [part, index] = path;
   const at = typeof index === "number" ? index : Number(index);
   if ("nodes" in record) {

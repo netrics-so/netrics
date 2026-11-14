@@ -731,7 +731,10 @@ export function createStoreTemplateUpdateService(deps: {
               ),
             ),
           ],
-          parsed.error.issues.map((issue) => issue.path.map(String).join(".")),
+          // A root-level issue's path is the record key, never "".
+          parsed.error.issues.map((issue) =>
+            issue.path.length ? issue.path.map(String).join(".") : key,
+          ),
         );
       return built;
     };

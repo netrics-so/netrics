@@ -888,6 +888,55 @@ describe("applying a store-template update", { timeout: TIMEOUT_MS }, () => {
     ).toBe(true);
   });
 
+  it("keeps a model on the dataset the customer swapped in, template changes included", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn([
+      "google-play",
+    ]);
+    const source = (await recordOf(
+      requestId,
+      `preparation:source:${connections[0]!.id}:downloads`,
+    ))!.record_id as string;
+    const data = createDataService(db, () => new Date(now));
+    const { preparation: mine } = await data.savePreparation(
+      actor(workspaceId),
+      { name: "Mine", graph: (await preparationRow(source)).graph },
+    );
+    // The customer points the whole model at their own preparation.
+    const template = `prepared:${source}:output`,
+      dataset = `prepared:${mine.id}:output`;
+    const definition = JSON.parse(
+      JSON.stringify(await modelDefinition(installed.models.downloads))
+        .split(template)
+        .join(dataset),
+    ) as SemanticModelDefinition;
+    const { model: current } = await data.getModel(
+      actor(workspaceId),
+      installed.models.downloads,
+    );
+    await data.saveModel(
+      actor(workspaceId),
+      { name: current.name, definition, version: current.version },
+      installed.models.downloads,
+    );
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    expect(item(plan, "model:downloads#measure:downloads")?.outcome).toBe(
+      "template",
+    );
+    await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    const after = await modelDefinition(installed.models.downloads);
+    expect(after.datasets).toEqual([dataset]);
+    expect(JSON.stringify(after)).not.toContain(template);
+    expect(after.measures.map((m) => [m.id, m.name])).toEqual([
+      ["downloads", "Downloads (v2)"],
+      ["downloads_avg", "Downloads (v2)"],
+    ]);
+    for (const measure of after.measures)
+      expect(measure).toMatchObject({ datasetId: dataset });
+  });
+
   it("refuses a merge that would point at nothing, and writes nothing", async () => {
     const { workspaceId, requestId, installed, connections } = await installIn([
       "google-play",

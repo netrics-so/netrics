@@ -219,6 +219,59 @@ describe("three-way store-template comparison", () => {
       ]),
     );
   });
+  it("asks before a template value adds back a dataset the customer removed", () => {
+    const datasets: ItemRef = "model:downloads#settings:datasets",
+      changed: ItemRef = "model:downloads#measure:downloads",
+      added: ItemRef = "model:downloads#measure:extra";
+    const measure = (name: string, slot: number) => ({
+      name,
+      datasetId: `datasets[${slot}]`,
+    });
+    // The customer removed A (B moved to its place); the template changes
+    // the measure on A and adds one on A.
+    const original = items([
+      [datasets, ["ref:a", "ref:b"]],
+      [changed, measure("Downloads", 0)],
+    ]);
+    const current = items([
+      [datasets, ["ref:b"]],
+      [changed, measure("Downloads", 0)],
+    ]);
+    const next = items([
+      [datasets, ["ref:a", "ref:b"]],
+      [changed, measure("Downloads (v2)", 0)],
+      [added, measure("Extra", 0)],
+    ]);
+    const outcomes = (o: Items, c: Items, n: Items) =>
+      Object.fromEntries(
+        classify(o, c, n)
+          .filter((i) => i.ref !== datasets)
+          .map((i) => [i.ref, [i.outcome, i.change]]),
+      );
+    expect(outcomes(original, current, next)).toEqual({
+      [changed]: ["choose", "changed"],
+      [added]: ["choose", "added"],
+    });
+    // Replaced instead (their own dataset at A's position): the template's
+    // values read the replacement, nothing to ask.
+    const replaced = items([
+      [datasets, ["mine", "ref:b"]],
+      [changed, measure("Downloads", 0)],
+    ]);
+    expect(outcomes(original, replaced, next)).toEqual({
+      [changed]: ["template", "changed"],
+      [added]: ["template", "added"],
+    });
+    const decide = (choice: "template" | "customer") =>
+      merge(original, current, next, [
+        { ref: changed, choice },
+        { ref: added, choice },
+      ]);
+    expect(decide("customer").get(changed)).toEqual(measure("Downloads", 0));
+    expect(decide("customer").has(added)).toBe(false);
+    expect(decide("template").get(added)).toEqual(measure("Extra", 0));
+  });
+
   it("refuses to merge with an undecided conflict", () => {
     const o = one(REF, a),
       c2 = one(REF, c),
