@@ -71,6 +71,19 @@ export class DataServiceError extends Error {
     this.name = "DataServiceError";
   }
 }
+/**
+ * `error` without the step id it names. Step ids are local to one graph, so
+ * an error from an upstream preparation's graph must not leave it with one:
+ * the consuming graph attributes it to its own source step, and model routes
+ * report no step.
+ */
+function withoutStep(error: unknown): unknown {
+  if (error instanceof DataProcessingError && error.nodeId !== undefined)
+    return new DataProcessingError(error.code, error.fieldId);
+  if (error instanceof DataServiceError && error.nodeId !== undefined)
+    return new DataServiceError(error.code, error.status);
+  return error;
+}
 const MAX_SNAPSHOT_EXPIRY = Date.parse("9999-12-31T23:59:59Z");
 /**
  * Source-picker bound for the legacy observation catalog, independent of the
@@ -311,13 +324,18 @@ function checkRestoredModelBindings(
         fail("data_model_schema_changed", 409);
       continue;
     }
-    const inputs = preparationFieldReferences(
-      prepared.graph,
-      loader.tables,
-      prepared.outputId,
-      fields,
-      loader.budget,
-    );
+    let inputs: ReturnType<typeof preparationFieldReferences>;
+    try {
+      inputs = preparationFieldReferences(
+        prepared.graph,
+        loader.tables,
+        prepared.outputId,
+        fields,
+        loader.budget,
+      );
+    } catch (error) {
+      throw withoutStep(error);
+    }
     for (const [input, dependencies] of inputs) {
       const existing = required.get(input);
       if (!existing) {
@@ -604,7 +622,12 @@ export function createDataLoader(
           )
             result = { ...result, expiresAt: input.expiresAt };
       } else {
-        const execution = executePreparation(graph, inputs, budget);
+        let execution: ReturnType<typeof executePreparation>;
+        try {
+          execution = executePreparation(graph, inputs, budget);
+        } catch (error) {
+          throw withoutStep(error);
+        }
         execution.warnings.forEach((w) => warnings.add(w));
         result = execution.outputs[output]!;
         if (!override && !warnings.has("data_source_pending")) {

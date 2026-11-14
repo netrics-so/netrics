@@ -124,9 +124,18 @@ export function dataFail(
 ): never {
   throw new DataProcessingError(code, fieldId, nodeId);
 }
-/** `error` attributed to `nodeId`, unless it is not a DataProcessingError or a deeper step already claimed it (then `error` itself). */
+/** Failures of the whole run's operation budget, never of one step. */
+const GRAPH_LEVEL_CODES: ReadonlySet<string> = new Set([
+  "processing_budget_exceeded",
+  "processing_budget_invalid",
+]);
+/** `error` attributed to `nodeId`, unless it is not a DataProcessingError, is a whole-run budget failure, or a deeper step already claimed it (then `error` itself). */
 export function attributeDataError(error: unknown, nodeId: string): unknown {
-  if (!(error instanceof DataProcessingError) || error.nodeId !== undefined)
+  if (
+    !(error instanceof DataProcessingError) ||
+    error.nodeId !== undefined ||
+    GRAPH_LEVEL_CODES.has(error.code)
+  )
     return error;
   return new DataProcessingError(error.code, error.fieldId, nodeId);
 }

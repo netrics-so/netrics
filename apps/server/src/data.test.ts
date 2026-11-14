@@ -348,6 +348,144 @@ describe("data API authorization and contract", () => {
       { error: "version_conflict" },
     ]);
   });
+  it("attributes a failing upstream preparation to the consuming source step, never to the upstream step", async () => {
+    const definition = {
+      key: "groups",
+      name: "Groups",
+      version: 1,
+      mode: "snapshot",
+      grain: "one row",
+      keyFields: ["id"],
+      retentionDays: 30,
+      fields: ["id", "group"].map((id) => ({
+        id,
+        name: id,
+        type: "string",
+        nullable: false,
+        classification: "internal",
+      })),
+    };
+    const source = await call("POST", "/manual", editor, {
+      definition,
+      records: [
+        { values: { id: "1", group: "a" } },
+        { values: { id: "2", group: "b" } },
+      ],
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    const groups = source.json().datasetId as string;
+    // Upstream step ids deliberately collide with the consuming graph's ids.
+    const upstream = await call("POST", "/preparations", editor, {
+      name: "Upstream",
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "source", type: "source", datasetId: groups },
+          {
+            id: "calc",
+            type: "join",
+            left: "source",
+            right: "source",
+            keys: [{ left: "group", right: "group" }],
+            mode: "inner",
+            cardinality: "many_to_one",
+            rightPrefix: "r_",
+          },
+        ],
+        outputs: ["calc"],
+      },
+    });
+    expect(upstream.statusCode, upstream.body).toBe(200);
+    const upstreamId = upstream.json().preparation.id as string;
+    const published = await call(
+      "POST",
+      `/preparations/${upstreamId}/publish`,
+      editor,
+      { version: 1 },
+    );
+    expect(published.statusCode, published.body).toBe(200);
+    // New rows make the upstream join fail when it is rebuilt.
+    const changed = await call("PUT", `/manual/${groups}`, editor, {
+      definition,
+      generationId: source.json().generationId,
+      records: [
+        { values: { id: "1", group: "a" } },
+        { values: { id: "2", group: "a" } },
+      ],
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
+    const preview = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [
+          {
+            id: "input",
+            type: "source",
+            datasetId: `prepared:${upstreamId}:calc`,
+          },
+          {
+            id: "calc",
+            type: "filter",
+            input: "input",
+            expression: { kind: "literal", type: "boolean", value: true },
+          },
+        ],
+        outputs: ["calc"],
+      },
+    });
+    expect([preview.statusCode, preview.json()]).toEqual([
+      400,
+      { error: "preparation_join_cardinality_violation", nodeId: "input" },
+    ]);
+    const model = await call("POST", "/models/preview", editor, {
+      definition: {
+        version: 1,
+        datasets: [`prepared:${upstreamId}:calc`],
+        relationships: [],
+        dimensions: [],
+        measures: [
+          {
+            id: "rows",
+            name: "Rows",
+            kind: "aggregate",
+            datasetId: `prepared:${upstreamId}:calc`,
+            aggregate: { id: "rows", name: "Rows", op: "count" },
+          },
+        ],
+      },
+      query: { measureIds: ["rows"], groupBy: [] },
+    });
+    expect([model.statusCode, model.json()]).toEqual([
+      400,
+      { error: "preparation_join_cardinality_violation" },
+    ]);
+    const unpublished = await call("POST", "/preparations", editor, {
+      name: "Never published",
+      graph: {
+        version: 1,
+        nodes: [{ id: "source", type: "source", datasetId: groups }],
+        outputs: ["source"],
+      },
+    });
+    expect(unpublished.statusCode, unpublished.body).toBe(200);
+    const pending = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [
+          {
+            id: "input",
+            type: "source",
+            datasetId: `prepared:${unpublished.json().preparation.id}:source`,
+          },
+        ],
+        outputs: ["input"],
+      },
+    });
+    expect([pending.statusCode, pending.json()]).toEqual([
+      409,
+      { error: "data_source_not_published", nodeId: "input" },
+    ]);
+  });
   it("lets viewers query published results while keeping drafts, previews and formulas restricted", async () => {
     const response = await call("POST", `/models/${modelId}/query`, viewer, {
       measureIds: ["total"],

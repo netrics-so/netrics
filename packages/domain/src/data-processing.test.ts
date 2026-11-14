@@ -731,6 +731,26 @@ describe("step attribution", () => {
     expect(error.code).toBe("preparation_graph_invalid");
     expect(error.nodeId).toBeUndefined();
   });
+  it("leaves the whole-graph operation budget without a step", () => {
+    let error: unknown;
+    try {
+      executePreparation(
+        { version: 1, nodes: [source, broken], outputs: ["calc"] },
+        sources,
+        new ProcessingBudget(3),
+      );
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(DataProcessingError);
+    expect(where(error as DataProcessingError)).toEqual([
+      "processing_budget_exceeded",
+      undefined,
+      undefined,
+    ]);
+    const budget = new DataProcessingError("processing_budget_exceeded");
+    expect(attributeDataError(budget, "calc")).toBe(budget);
+  });
   it("never re-attributes an already attributed error or foreign errors", () => {
     const deep = new DataProcessingError("x", undefined, "inner");
     expect(attributeDataError(deep, "outer")).toBe(deep);

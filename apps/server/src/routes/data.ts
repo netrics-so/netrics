@@ -41,14 +41,17 @@ export function registerDataRoutes(
     status: number,
     code: string,
     location: { fieldId?: string | undefined; nodeId?: string | undefined },
-  ) =>
-    reply.code(status).send(
-      contracts.dataErrorResponseSchema.parse({
-        error: code,
-        ...(location.fieldId ? { fieldId: location.fieldId } : {}),
-        ...(location.nodeId ? { nodeId: location.nodeId } : {}),
-      }),
-    );
+  ) => {
+    const located = contracts.dataErrorResponseSchema.safeParse({
+      error: code,
+      ...(location.fieldId ? { fieldId: location.fieldId } : {}),
+      ...(location.nodeId ? { nodeId: location.nodeId } : {}),
+    });
+    // A location that does not fit the contract never turns the error into a 500.
+    return located.success
+      ? reply.code(status).send(located.data)
+      : sendError(reply, status, code);
+  };
   const execute = async (
     request: FastifyRequest,
     reply: FastifyReply,
@@ -91,6 +94,7 @@ export function registerDataRoutes(
       errorSchemas: {
         400: contracts.dataErrorResponseSchema,
         404: contracts.dataErrorResponseSchema,
+        409: contracts.dataErrorResponseSchema,
       },
     });
   void app.register(
