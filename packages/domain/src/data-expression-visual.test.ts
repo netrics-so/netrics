@@ -11,6 +11,7 @@ import {
   sameDataExpression,
   toVisual,
   visualModelComplete,
+  type VisualCondition,
   type VisualModel,
 } from "./data-expression-visual.js";
 import {
@@ -35,13 +36,50 @@ const cmp2 = call("gt", field("amount"), lit("decimal", "1.50"));
 const cmp3 = call("is_null", field("b"));
 const cmp4 = call("lte", field("day"), field("c"));
 
+function uses(e: DataExpression, fns: readonly string[]): boolean {
+  return (
+    e.kind === "call" &&
+    (fns.includes(e.fn) || e.args.some((arg) => uses(arg, fns)))
+  );
+}
+function conditionOf(model: VisualModel): VisualCondition | null {
+  if (model.kind === "condition") return model;
+  return model.kind === "if" || model.kind === "boolean"
+    ? model.condition
+    : null;
+}
+/** Each row of the model's condition as its own expression, in item order. */
+function modelRows(model: VisualModel): string[] {
+  const condition = conditionOf(model);
+  if (!condition) return [];
+  return condition.items
+    .flatMap((item) => (item.kind === "group" ? item.rows : [item]))
+    .map((row) =>
+      JSON.stringify(
+        fromVisual({ kind: "condition", join: "and", items: [row] }),
+      ),
+    );
+}
+/** The comparison leaves of the expression's condition, left to right. */
+function expressionRows(e: DataExpression, model: VisualModel): string[] {
+  if (!conditionOf(model)) return [];
+  const root = model.kind === "if" && e.kind === "call" ? e.args[0]! : e;
+  const leaves = (node: DataExpression): string[] =>
+    node.kind === "call" && (node.fn === "and" || node.fn === "or")
+      ? node.args.flatMap(leaves)
+      : [JSON.stringify(node)];
+  return leaves(root);
+}
+
 const SEEDS = [1, 2, 3, 4, 5],
   DRAWS = 2000,
   ids = ["a", "b", "c", "amount", "day"];
 
 describe("visual expression model", () => {
   it("fromVisual(toVisual(e)) equals e for every representable generated expression", () => {
-    for (const seed of SEEDS)
+    for (const seed of SEEDS) {
+      let joins = 0,
+        rounds = 0;
       for (const target of ["condition", "calculation"] as const) {
         const random = mulberry32(seed);
         let representable = 0,
@@ -54,17 +92,29 @@ describe("visual expression model", () => {
           const r = toVisual(e, target);
           if (!r.representable) continue;
           representable++;
-          if (i % 2) generatedRepresentable++;
-          expect(
-            sameDataExpression(fromVisual(r.model), e),
-            `seed ${seed} #${i}: ${JSON.stringify(e)}`,
-          ).toBe(true);
+          if (i % 2) {
+            generatedRepresentable++;
+            if (uses(e, ["and", "or"])) joins++;
+            if (uses(e, ["round"])) rounds++;
+          }
+          const message = `seed ${seed} #${i}: ${JSON.stringify(e)}`;
+          expect(sameDataExpression(fromVisual(r.model), e), message).toBe(
+            true,
+          );
           expect(JSON.stringify(fromVisual(r.model))).toBe(JSON.stringify(e));
+          // Independent of fromVisual: the model's rows follow the
+          // expression's left-to-right order.
+          expect(modelRows(r.model), message).toEqual(
+            expressionRows(e, r.model),
+          );
         }
         expect(representable).toBeGreaterThan(DRAWS * 0.4); // not vacuous
         // Random (not model-built) expressions also hit the subset.
         expect(generatedRepresentable).toBeGreaterThan(DRAWS * 0.02);
       }
+      expect(joins, `seed ${seed} joins`).toBeGreaterThan(0);
+      expect(rounds, `seed ${seed} rounds`).toBeGreaterThan(0);
+    }
   });
 
   it("every generated visual model survives fromVisual → toVisual → fromVisual", () => {

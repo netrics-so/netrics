@@ -125,6 +125,51 @@ const VISUAL_LITERAL_TYPES = [
   "timestamp",
 ] as const;
 
+/** A comparison built straight as an expression (field on the left). */
+function randomComparisonExpression(
+  random: Random,
+  fieldIds: readonly string[],
+): DataExpression {
+  const fn = pick(random, VISUAL_COMPARISONS);
+  const left: DataExpression = {
+    kind: "field",
+    fieldId: pick(random, fieldIds),
+  };
+  if (fn === "is_null") return { kind: "call", fn, args: [left] };
+  const right: DataExpression =
+    fn === "in"
+      ? { kind: "literal", type: "json", value: listValue(random) }
+      : chance(random, 0.5)
+        ? { kind: "field", fieldId: pick(random, fieldIds) }
+        : randomLiteral(random, pick(random, VISUAL_LITERAL_TYPES), false);
+  const comparison: DataExpression = { kind: "call", fn, args: [left, right] };
+  return chance(random, 0.2)
+    ? { kind: "call", fn: "not", args: [comparison] }
+    : comparison;
+}
+
+/**
+ * An and/or tree built independently of the visual model: each argument is a
+ * comparison or, up to `levels` deep, another join (left and right nesting).
+ */
+function randomJoin(
+  random: Random,
+  fieldIds: readonly string[],
+  fn: "and" | "or",
+  levels: number,
+): DataExpression {
+  const argument = (): DataExpression =>
+    levels > 0 && chance(random, 0.4)
+      ? randomJoin(
+          random,
+          fieldIds,
+          pick(random, ["and", "or"] as const),
+          levels - 1,
+        )
+      : randomComparisonExpression(random, fieldIds);
+  return { kind: "call", fn, args: [argument(), argument()] };
+}
+
 /** Any expression shape: every function, 0–3 args, every literal type incl. null. */
 export function randomDataExpression(
   random: Random,
@@ -164,6 +209,26 @@ export function randomDataExpression(
         : fn === "if"
           ? 3
           : 2;
+    if ((fn === "and" || fn === "or") && chance(random, 0.5))
+      return randomJoin(random, fieldIds, fn, 1);
+    if (fn === "round" && chance(random, 0.7)) {
+      const digits: DataLiteral = {
+        kind: "literal",
+        type: "integer",
+        value: integer(random, 0, 4),
+      };
+      if (chance(random, 0.2)) digits.unit = pick(random, UNITS);
+      return {
+        kind: "call",
+        fn,
+        args: [
+          chance(random, 0.5)
+            ? { kind: "field", fieldId: pick(random, fieldIds) }
+            : randomDataExpression(random, fieldIds, depth - 1),
+          digits,
+        ],
+      };
+    }
     const args = Array.from({ length: arity }, (_v, index) =>
       index === 0 && (VISUAL_COMPARISONS as readonly string[]).includes(fn)
         ? { kind: "field" as const, fieldId: pick(random, fieldIds) }

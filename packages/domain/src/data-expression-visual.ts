@@ -80,15 +80,15 @@ export type ToVisualResult =
   | { representable: false; reason: NotVisualReason };
 
 type Call = Extract<DataExpression, { kind: "call" }>;
-type ArithmeticValue = Extract<VisualValue, { kind: "arithmetic" }>;
 
 /** Thrown inside the reader; carries why an expression is outside the subset. */
 class NotVisual {
   constructor(readonly reason: NotVisualReason) {}
 }
-const refuse = (reason: NotVisualReason): never => {
+/** A declared function (not an arrow) so TypeScript narrows after a call. */
+function refuse(reason: NotVisualReason): never {
   throw new NotVisual(reason);
-};
+}
 
 const comparisons: readonly string[] = VISUAL_COMPARISONS;
 const arithmetic: readonly string[] = VISUAL_ARITHMETIC;
@@ -131,10 +131,9 @@ function readLiteral(e: DataLiteral, list: boolean): DataLiteral {
       !Array.isArray(e.value) ||
       !e.value.every(
         (item) =>
-          (typeof item === "string" ||
-            typeof item === "boolean" ||
-            typeof item === "number") &&
-          item !== null,
+          typeof item === "string" ||
+          typeof item === "boolean" ||
+          typeof item === "number",
       )
     )
       refuse("literal");
@@ -170,7 +169,7 @@ function readComparison(e: DataExpression): VisualComparison {
   if (left.kind !== "field") refuse("operand");
   const row: VisualComparison = {
     kind: "comparison",
-    fieldId: (left as { fieldId: string }).fieldId,
+    fieldId: left.fieldId,
     operator,
     negated: false,
   };
@@ -255,13 +254,14 @@ function readCalculation(e: DataExpression): VisualCalculation {
       digits.type !== "integer" ||
       digits.unit !== undefined ||
       digits.currency !== undefined ||
+      typeof digits.value !== "number" ||
       !Number.isSafeInteger(digits.value)
     )
       refuse("operand");
     return {
       kind: "value",
       value,
-      wrap: { fn: "round", digits: (digits as DataLiteral).value as number },
+      wrap: { fn: "round", digits: digits.value },
     };
   }
   if (e.fn === "abs") {
@@ -348,7 +348,7 @@ function writeCondition(condition: VisualCondition): DataExpression {
 
 function writeValue(value: VisualValue): DataExpression {
   if (value.kind !== "arithmetic") return writeOperand(value);
-  const { operator, left, right } = value as ArithmeticValue;
+  const { operator, left, right } = value;
   return node(operator, [writeOperand(left), writeOperand(right)]);
 }
 
