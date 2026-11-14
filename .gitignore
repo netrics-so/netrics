@@ -25,3 +25,7 @@ xcuserdata/
 
 # tvOS signing team, per developer (see apps/netrics-tv/Config/Signing.xcconfig)
 Signing.local.xcconfig
+
+# Playwright (pnpm e2e)
+test-results/
+playwright-report/
