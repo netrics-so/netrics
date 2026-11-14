@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createWorkspace, withUserContext, withWorkspace } from "./context.js";
 import * as authSchema from "./auth-schema.js";
 import * as schema from "./schema.js";
+import { listMembershipsForUser } from "./users.js";
+import { setActiveProject, setProjectArchived } from "./workspaces.js";
 import {
   createTestDatabase,
   type TestDatabase,
@@ -190,6 +192,74 @@ describe("user context (workspace discovery)", () => {
     expect(memberships).toHaveLength(2);
     expect(memberships.every((m) => m.userId === u2)).toBeTruthy();
     expect(memberships.map((m) => m.role).sort()).toEqual(["owner", "viewer"]);
+  });
+});
+
+describe("effective active project", () => {
+  it("reads as All while the stored project is archived and comes back after", async () => {
+    const projectId = await withWorkspace(
+      db,
+      { workspaceId: workspaceA, userId: u1 },
+      async (tx) => {
+        const [project] = await tx
+          .insert(schema.projects)
+          .values({ workspaceId: workspaceA, name: "Archivable" })
+          .returning({ id: schema.projects.id });
+        await setActiveProject(tx, {
+          workspaceId: workspaceA,
+          userId: u1,
+          projectId: project!.id,
+        });
+        return project!.id;
+      },
+    );
+    const activeIn = async (): Promise<string | null | undefined> =>
+      (await listMembershipsForUser(db, u1)).find(
+        (m) => m.workspaceId === workspaceA,
+      )?.activeProjectId;
+    const archive = (archived: boolean) =>
+      withWorkspace(db, { workspaceId: workspaceA, userId: u1 }, (tx) =>
+        setProjectArchived(tx, {
+          workspaceId: workspaceA,
+          projectId,
+          archived,
+          now: new Date(),
+        }),
+      );
+
+    expect(await activeIn()).toBe(projectId);
+    const archived = await archive(true);
+    expect(archived?.archivedAt).toBeInstanceOf(Date);
+    expect(await activeIn()).toBeNull();
+    // The stored choice is kept, so unarchiving restores it.
+    const stored = await withWorkspace(
+      db,
+      { workspaceId: workspaceA, userId: u1 },
+      (tx) =>
+        tx
+          .select({ id: schema.memberships.activeProjectId })
+          .from(schema.memberships)
+          .where(
+            and(
+              eq(schema.memberships.workspaceId, workspaceA),
+              eq(schema.memberships.userId, u1),
+            ),
+          ),
+    );
+    expect(stored[0]?.id).toBe(projectId);
+    expect((await archive(false))?.archivedAt).toBeNull();
+    expect(await activeIn()).toBe(projectId);
+    // Another workspace's caller cannot archive it.
+    expect(
+      await withWorkspace(db, { workspaceId: workspaceB, userId: u2 }, (tx) =>
+        setProjectArchived(tx, {
+          workspaceId: workspaceB,
+          projectId,
+          archived: true,
+          now: new Date(),
+        }),
+      ),
+    ).toBeNull();
   });
 });
 

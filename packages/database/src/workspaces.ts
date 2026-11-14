@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
 import { createWorkspaceInTransaction } from "./context.js";
@@ -276,6 +276,37 @@ export async function renameProject(
   const rows = await tx
     .update(schema.projects)
     .set({ name: input.name })
+    .where(
+      and(
+        eq(schema.projects.id, input.projectId),
+        eq(schema.projects.workspaceId, input.workspaceId),
+      ),
+    )
+    .returning();
+  return rows[0] ?? null;
+}
+
+/**
+ * Archives (archived_at = now) or unarchives (null) a project. Archiving an
+ * archived project keeps its first archived_at. Null when the project is not
+ * in this workspace.
+ */
+export async function setProjectArchived(
+  tx: Transaction,
+  input: {
+    workspaceId: string;
+    projectId: string;
+    archived: boolean;
+    now: Date;
+  },
+): Promise<Project | null> {
+  const rows = await tx
+    .update(schema.projects)
+    .set({
+      archivedAt: input.archived
+        ? sql`coalesce(${schema.projects.archivedAt}, ${input.now.toISOString()}::timestamptz)`
+        : null,
+    })
     .where(
       and(
         eq(schema.projects.id, input.projectId),

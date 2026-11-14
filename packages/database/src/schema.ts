@@ -241,6 +241,9 @@ export const projects = pgTable("projects", {
     .notNull()
     .references(() => workspaces.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  // Archived projects are hidden from navigation and pickers; their items
+  // keep working on published dashboards and paired screens (#572).
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -1911,6 +1914,9 @@ export const dataPreparations = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     name: text("name").notNull(),
     graph: jsonb("graph").notNull(),
     version: integer("version").notNull().default(1),
@@ -1922,6 +1928,7 @@ export const dataPreparations = pgTable(
   },
   (t) => [
     unique("data_preparations_tenant_key").on(t.id, t.workspaceId),
+    index("data_preparations_project_idx").on(t.workspaceId, t.projectId),
     check(
       "data_preparations_versions",
       sql`${t.version} > 0 and (${t.publishedVersion} is null or ${t.publishedVersion} > 0)`,
@@ -1958,6 +1965,9 @@ export const dataModels = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     name: text("name").notNull(),
     definition: jsonb("definition").notNull(),
     version: integer("version").notNull().default(1),
@@ -1969,6 +1979,7 @@ export const dataModels = pgTable(
   },
   (t) => [
     unique("data_models_tenant_key").on(t.id, t.workspaceId),
+    index("data_models_project_idx").on(t.workspaceId, t.projectId),
     check(
       "data_models_versions",
       sql`${t.version} > 0 and (${t.publishedVersion} is null or ${t.publishedVersion} > 0)`,
