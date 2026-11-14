@@ -391,6 +391,9 @@ export const dataDe: Catalog<typeof dataEn> = {
     formulaMeasure: "Aus Kennzahlen berechnen",
     measureFormulaHelp:
       "Verwende Kennzahlnamen, zum Beispiel [Ertrag] - [Ausgaben]. Alle Operanden verwenden dieselben Filter.",
+    measureFilter: "Nur Zeilen einbeziehen, bei denen",
+    addMeasureFilter: "Filter hinzufügen",
+    removeMeasureFilter: "Filter entfernen",
     rollingMeasure: "Gleitender Zeitraum",
     offsetMeasure: "Vergleich mit früherem Zeitraum",
     baseMeasure: "Ausgangskennzahl",
@@ -614,6 +617,33 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Ein Klick auf dieses Widget kann den gewählten Filter nicht setzen. Verwende eine Tabelle oder ein Diagramm, gruppiert nach der Dimension, der dieser Filter zugeordnet ist, oder schalte die Interaktion aus.",
       filter:
         "Die Kennzahl kann die gewählte Dimension oder den Filter nicht verwenden. Füge eine kompatible Beziehung hinzu oder wähle eine andere Dimension.",
+    },
+    completion: {
+      label: "Vorschläge",
+      kinds: {
+        function: "Funktion",
+        field: "Spalte",
+        measure: "Kennzahl",
+        operator: "Operator",
+        keyword: "Wert",
+      },
+      params: {
+        value: "Wert",
+        number: "Zahl",
+        digits: "Nachkommastellen",
+        text: "Text",
+        search: "Suchtext",
+        condition: "Bedingung",
+        then: "wenn wahr",
+        else: "wenn falsch",
+        fallback: "Ersatzwert",
+        list: "Liste",
+        date: "Datum",
+        json: "strukturierte Daten",
+        key: "Schlüssel",
+        left: "links",
+        right: "rechts",
+      },
     },
     types: {
       string: "Text",

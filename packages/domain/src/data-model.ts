@@ -168,15 +168,17 @@ function singleValueDimensions(expression?: DataExpression): Set<string> {
   return result;
 }
 
-/** A formula over its dependencies' cells; currencies become currency fields. */
-function evaluateFormula(
-  expression: DataExpression,
+/**
+ * The row fields a formula sees for its dependencies' cells: each currency
+ * becomes a currency field next to the measure, under an id no other field uses.
+ */
+function formulaFields(
   dependencies: ReadonlyArray<readonly [string, DataCell]>,
   nameOf: (id: string) => string,
-  budget: ProcessingBudget,
-): DataCell {
-  const row: DataRow = {},
-    fields: DataField[] = [];
+  hasCurrency: (cell: DataCell) => boolean,
+): { measures: DataField[]; currencies: DataField[] } {
+  const measures: DataField[] = [],
+    currencies: DataField[] = [];
   const usedIds = new Set(dependencies.map(([ref]) => ref));
   for (const [ref, result] of dependencies) {
     const f: DataField = {
@@ -186,23 +188,110 @@ function evaluateFormula(
       nullable: true,
       ...(result.unit ? { unit: result.unit } : {}),
     };
-    if (result.currency) {
+    if (hasCurrency(result)) {
       let currencyId = ref + ".currency";
       while (usedIds.has(currencyId)) currencyId += ".currency";
       usedIds.add(currencyId);
       f.currencyField = currencyId;
-      row[currencyId] = result.currency;
-      fields.push({
+      currencies.push({
         id: currencyId,
         name: "Currency",
         type: "string",
         nullable: false,
       });
     }
-    fields.push(f);
-    row[ref] = result.value;
+    measures.push(f);
   }
-  return compileRowExpression(expression, fields).evaluate(row, budget);
+  return { measures, currencies };
+}
+
+/** A formula over its dependencies' cells; currencies become currency fields. */
+function evaluateFormula(
+  expression: DataExpression,
+  dependencies: ReadonlyArray<readonly [string, DataCell]>,
+  nameOf: (id: string) => string,
+  budget: ProcessingBudget,
+): DataCell {
+  const { measures, currencies } = formulaFields(
+    dependencies,
+    nameOf,
+    (cell) => !!cell.currency,
+  );
+  const row: DataRow = {};
+  dependencies.forEach(([ref, result], i) => {
+    row[ref] = result.value;
+    const currencyField = measures[i]!.currencyField;
+    if (currencyField) row[currencyField] = result.currency;
+  });
+  return compileRowExpression(expression, [
+    ...currencies,
+    ...measures,
+  ]).evaluate(row, budget);
+}
+
+/**
+ * Each measure's probe cell (see `measureTypeProbe`); measures whose probe
+ * fails are left out. One pass over the model when every measure checks.
+ */
+export function probeModelMeasures(
+  model: SemanticModelDefinition,
+  sources: ReadonlyMap<string, Pick<DataTable, "fields">>,
+): Map<string, DataCell> {
+  const ids = model.measures.map((m) => m.id);
+  try {
+    return measureTypeProbe(model, sources, ids);
+  } catch {
+    const cells = new Map<string, DataCell>();
+    for (const id of ids)
+      try {
+        const cell = measureTypeProbe(model, sources, [id]).get(id);
+        if (cell) cells.set(id, cell);
+      } catch {
+        // Not usable in a formula until the measure itself is fixed.
+      }
+    return cells;
+  }
+}
+
+/**
+ * The measures a formula measure may reference, as the row fields its formula
+ * is checked against: every measure except `measureId` and those depending on
+ * it (directly or through others), typed by its probe. A currency measure gets
+ * a currency field, as it has whenever the query sees a currency. Measures
+ * whose probe fails are left out. Pass `probed` (`probeModelMeasures`) to
+ * type several measures' fields from one probe.
+ */
+export function formulaMeasureFields(
+  model: SemanticModelDefinition,
+  sources: ReadonlyMap<string, Pick<DataTable, "fields">>,
+  measureId: string,
+  probed: ReadonlyMap<string, DataCell> = probeModelMeasures(model, sources),
+): DataField[] {
+  // Everything that reaches measureId, by walking dependents backwards.
+  const dependents = new Map<string, string[]>();
+  for (const measure of model.measures)
+    for (const dependency of measureDependencies(measure))
+      dependents.set(dependency, [
+        ...(dependents.get(dependency) ?? []),
+        measure.id,
+      ]);
+  const excluded = new Set([measureId]),
+    queue = [measureId];
+  while (queue.length)
+    for (const dependent of dependents.get(queue.shift()!) ?? [])
+      if (!excluded.has(dependent)) {
+        excluded.add(dependent);
+        queue.push(dependent);
+      }
+  const names = new Map(model.measures.map((m) => [m.id, m.name]));
+  const cells = model.measures
+    .filter((m) => !excluded.has(m.id) && probed.has(m.id))
+    .map((m) => [m.id, probed.get(m.id)!] as const);
+  return formulaFields(
+    cells,
+    (id) => names.get(id)!,
+    (cell) => !!cell.currency || cell.unit === "currency",
+  ).measures;
 }
 
 /**

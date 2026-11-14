@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  formulaMeasureFields,
+  probeModelMeasures,
   querySemanticModel,
   type SemanticModelDefinition,
 } from "./data-model.js";
@@ -649,5 +651,125 @@ it("keeps pending counts and boolean aggregates unknown until a known value deci
   expect(query([false]).rows[0]!.measures).toMatchObject({
     any: { value: null, status: "missing" },
     all: { value: false, status: "partial" },
+  });
+});
+
+describe("formula measure fields", () => {
+  const sales = {
+    fields: [
+      {
+        id: "amount",
+        name: "Amount",
+        type: "decimal" as const,
+        nullable: false,
+        unit: "currency",
+        currencyField: "cur",
+      },
+      { id: "cur", name: "Currency", type: "string" as const, nullable: false },
+      { id: "units", name: "Units", type: "integer" as const, nullable: false },
+    ],
+  };
+  const salesSources = new Map([["sales", sales]]);
+  const sum = (id: string, name: string, fieldId: string) => ({
+    id,
+    name,
+    kind: "aggregate" as const,
+    datasetId: "sales",
+    aggregate: { id, name, op: "sum" as const, fieldId },
+  });
+  const formula = (id: string, expression: DataExpression) => ({
+    id,
+    name: id,
+    kind: "formula" as const,
+    expression,
+  });
+  const salesModel = (
+    measures: SemanticModelDefinition["measures"],
+  ): SemanticModelDefinition => ({
+    version: 1,
+    datasets: ["sales"],
+    relationships: [],
+    dimensions: [],
+    measures,
+  });
+
+  it("types measures like evaluateFormula", () => {
+    const model = salesModel([
+      sum("revenue", "Revenue", "amount"),
+      sum("units", "Units", "units"),
+      formula("draft", field("revenue")),
+    ]);
+    expect(formulaMeasureFields(model, salesSources, "draft")).toEqual([
+      {
+        id: "revenue",
+        name: "Revenue",
+        type: "decimal",
+        nullable: true,
+        unit: "currency",
+        currencyField: "revenue.currency",
+      },
+      // Sums widen integers, as the query does.
+      { id: "units", name: "Units", type: "decimal", nullable: true },
+    ]);
+  });
+
+  it("excludes the measure and its dependents", () => {
+    const model = salesModel([
+      sum("revenue", "Revenue", "amount"),
+      formula("draft", field("revenue")),
+      formula("uses-draft", field("draft")),
+      formula("uses-uses-draft", field("uses-draft")),
+      formula("other", field("revenue")),
+    ]);
+    expect(
+      formulaMeasureFields(model, salesSources, "draft").map((f) => f.id),
+    ).toEqual(["revenue", "other"]);
+  });
+
+  it("excludes dependents through a cycle", () => {
+    // A depends on B and M; B depends on A: both depend on M.
+    const model = salesModel([
+      sum("m", "M", "amount"),
+      formula("a", {
+        kind: "call",
+        fn: "add",
+        args: [field("b"), field("m")],
+      }),
+      formula("b", field("a")),
+      sum("units", "Units", "units"),
+    ]);
+    const ids = formulaMeasureFields(model, salesSources, "m").map((f) => f.id);
+    expect(ids).not.toContain("a");
+    expect(ids).not.toContain("b");
+    expect(ids).toEqual(["units"]);
+  });
+
+  it("reuses one probe of the model", () => {
+    const model = salesModel([
+      sum("revenue", "Revenue", "amount"),
+      sum("broken", "Broken", "missing"),
+      formula("draft", field("revenue")),
+    ]);
+    const probed = probeModelMeasures(model, salesSources);
+    expect([...probed.keys()]).toEqual(["revenue", "draft"]);
+    expect(formulaMeasureFields(model, salesSources, "draft", probed)).toEqual(
+      formulaMeasureFields(model, salesSources, "draft"),
+    );
+    // Without sources, the given cells alone type the fields.
+    expect(
+      formulaMeasureFields(model, new Map(), "draft", probed).map((f) => f.id),
+    ).toEqual(["revenue"]);
+  });
+
+  it("omits measures that fail to probe", () => {
+    const model = salesModel([
+      sum("revenue", "Revenue", "amount"),
+      sum("broken", "Broken", "missing"),
+      formula("uses-broken", field("broken")),
+      formula("draft", field("revenue")),
+    ]);
+    expect(
+      formulaMeasureFields(model, salesSources, "draft").map((f) => f.id),
+    ).toEqual(["revenue"]);
   });
 });

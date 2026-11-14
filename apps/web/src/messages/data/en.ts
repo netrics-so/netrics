@@ -382,6 +382,9 @@ export const dataEn = {
     formulaMeasure: "Calculate from measures",
     measureFormulaHelp:
       "Reference measures by name, for example [Income] - [Spend]. All operands use the same filters.",
+    measureFilter: "Only include rows where",
+    addMeasureFilter: "Add a filter",
+    removeMeasureFilter: "Remove filter",
     rollingMeasure: "Rolling",
     offsetMeasure: "Compared with earlier period",
     baseMeasure: "Based on measure",
@@ -597,6 +600,33 @@ export const dataEn = {
         "Clicking this widget cannot set the chosen filter. Use a table or chart grouped by the dimension that filter maps to, or turn the interaction off.",
       filter:
         "This measure cannot use the selected dimension or filter. Add a compatible relationship or choose another dimension.",
+    },
+    completion: {
+      label: "Suggestions",
+      kinds: {
+        function: "Function",
+        field: "Column",
+        measure: "Measure",
+        operator: "Operator",
+        keyword: "Value",
+      },
+      params: {
+        value: "value",
+        number: "number",
+        digits: "decimal places",
+        text: "text",
+        search: "search text",
+        condition: "condition",
+        then: "if true",
+        else: "if false",
+        fallback: "fallback",
+        list: "list",
+        date: "date",
+        json: "structured data",
+        key: "key",
+        left: "left",
+        right: "right",
+      },
     },
     types: {
       string: "Text",

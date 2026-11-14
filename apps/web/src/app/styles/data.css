@@ -284,6 +284,37 @@
 .data-page .check input {
   flex-shrink: 0;
 }
+.data-formula-suggestions {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.data-formula-suggestions[hidden] {
+  display: none;
+}
+.data-formula-suggestions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.data-formula-suggestions li[aria-selected="true"] {
+  background: var(--accent-tint);
+}
+.data-formula-suggestions .help {
+  margin: 0;
+}
+.data-formula-hint {
+  font-family: var(--font-mono);
+}
 .data-reference-buttons {
   display: flex;
   flex-wrap: wrap;

@@ -35,6 +35,7 @@ export {
 } from "./data-model-windows.js";
 export * from "./data-field-references.js";
 export * from "./data-formula.js";
+export * from "./data-formula-completion.js";
 export * from "./data-policy.js";
 
 export * from "./dashboard-data.js";
