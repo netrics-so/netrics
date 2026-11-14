@@ -273,7 +273,8 @@ Draft changes support sample/historical preview and dependency impact. Publish
 an immutable model release that pins exact source schemas, preparation versions,
 relationships and measure versions. Build required prepared generations before
 atomically switching the active release. Failed builds keep the previous
-published result with explicit stale/error status. Rollback selects an older
+published result with explicit stale/error status (both sentences superseded,
+see [the addendum on lazy prepared results](#addendum-lazy-prepared-results-and-last-valid-fallback)). Rollback selects an older
 release only when its required data is still retained and authorized.
 
 Refresh jobs follow dependency order and rebuild affected partitions using
@@ -514,7 +515,8 @@ code has and the owner accepted.
   marked stale: the result carries `stale: true`, the failure's `error` code
   and the warning `using_last_valid_source_snapshot`. The fallback reads the
   input generations that result used, re-authorized, within the workspace's
-  snapshot policy and expiry.
+  snapshot policy and expiry. A query without a published release has no
+  fallback: the failure is returned as is.
 - A filter combination never queried before has no last valid result: after
   a failure it shows an error rather than stale data.
 - Building prepared generations before switching a release is not planned.
