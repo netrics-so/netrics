@@ -1,4 +1,4 @@
-import type { DataField } from "@netrics/domain";
+import type { DataExpression, DataField } from "@netrics/domain";
 
 /**
  * Deterministic data for the 11C journey (#570). Two sales tables with the
@@ -51,11 +51,47 @@ export const apps = {
   products: ["Puzzle Quest", "Road Racer"],
 };
 
+const field = (fieldId: string): DataExpression => ({ kind: "field", fieldId });
+
 export const expected = {
   appendedRows: 8,
   filteredRows: 6,
   germanRows: 3,
   germanyFormula: 'EQ([Country], "DE")',
+  /** The stored Germany step: Country is DE. */
+  germanyExpression: {
+    kind: "call",
+    fn: "eq",
+    args: [field("country"), { kind: "literal", type: "string", value: "DE" }],
+  } as DataExpression,
+  /** German revenue's stored filter: the Germany column is true. */
+  germanRevenueFilter: (germanyFieldId: string): DataExpression => ({
+    kind: "call",
+    fn: "eq",
+    args: [
+      field(germanyFieldId),
+      { kind: "literal", type: "boolean", value: true },
+    ],
+  }),
+  /** German share as stored: ROUND(DIVIDE(German revenue, Revenue), 2). */
+  germanShareExpression: (
+    germanRevenueId: string,
+    revenueId: string,
+  ): DataExpression => ({
+    kind: "call",
+    fn: "round",
+    args: [
+      {
+        kind: "call",
+        fn: "divide",
+        args: [field(germanRevenueId), field(revenueId)],
+      },
+      { kind: "literal", type: "integer", value: 2 },
+    ],
+  }),
+  /** 150.00 of 300.00; the engine's decimal drops the trailing zero. */
   germanShare: "0.5",
+  /** With German revenue as the largest German sale: 100.00 / 300.00. */
+  changedGermanShare: "0.33",
   germanShareFormula: "ROUND(DIVIDE([German revenue], [Revenue]), 2)",
 };

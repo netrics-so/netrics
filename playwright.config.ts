@@ -14,6 +14,7 @@ export default defineConfig({
   // bounded number of times, and on a database this small (sequential
   // scans) concurrent journeys in separate workspaces can still exhaust
   // those retries and fail with version_conflict.
+  // TODO(#598): go back to parallel workers once the API retries enough.
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,

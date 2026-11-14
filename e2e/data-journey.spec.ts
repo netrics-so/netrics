@@ -1,5 +1,12 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { PreparationNode } from "@netrics/domain";
 import { apps, expected, salesEu, salesUs } from "./fixtures/journey.ts";
+import {
+  createMeasureDashboard,
+  readDashboardValue,
+  readModel,
+  readPreparation,
+} from "./support/api.ts";
 import { fill, labels, type Locale } from "./support/labels.ts";
 import { seedReferenceTable, startWorkspace } from "./support/session.ts";
 
@@ -8,6 +15,8 @@ import { seedReferenceTable, startWorkspace } from "./support/session.ts";
  * records, append sources, confirm an entity mapping and publish a named
  * calculation without writing code, in English and in German. The formula
  * text areas are never typed into: the visual builders do all the work.
+ * Visual and formula views store the same definition, and a saved draft
+ * never changes what a published dashboard shows.
  */
 test("a customer builds and publishes without code", async ({
   page,
@@ -29,6 +38,7 @@ test("a customer builds and publishes without code", async ({
   // The mapping table is pasted into the reference editor.
   await page.getByRole("button", { name: t.newReference }).click();
   await page.getByRole("textbox", { name: t.referenceName }).fill(apps.name);
+  // The disclosure's summary; its text area's label repeats the text.
   await page.getByText(t.pasteTable, exact).first().click();
   await page.getByRole("textbox", { name: t.pasteTable }).fill(apps.tsv);
   await page.getByRole("button", { name: t.importTable }).click();
@@ -118,7 +128,7 @@ test("a customer builds and publishes without code", async ({
     .getByRole("combobox", { name: b.operator })
     .selectOption({ label: b.operators.gt });
   await condition(1).getByRole("textbox", { name: b.literal }).fill("0");
-  await page.getByRole("button", { name: b.addCondition }).first().click();
+  await page.getByRole("button", { name: b.addCondition }).click();
   await condition(2)
     .getByRole("combobox", { name: b.column, ...exact })
     .selectOption({ label: "Day" });
@@ -204,22 +214,41 @@ test("a customer builds and publishes without code", async ({
     page.getByRole("columnheader", { name: /^Product/ }),
   ).toBeVisible();
 
-  // 6. Save, then publish through the impact confirmation.
-  await page.getByRole("button", { name: t.save, ...exact }).click();
+  // 6. Save, then publish through the impact confirmation. The draft is
+  // saved first, so the preparation exists and the dialog must open.
+  const saveDraft = page.getByRole("button", { name: t.save, ...exact });
+  await saveDraft.click();
   await expect(
     page.getByRole("status").filter({ hasText: t.saved }),
   ).toBeVisible();
-  await publish(
-    page,
-    t.publish,
-    t.impact.confirm,
-    fill(t.impact.title, {
-      name: preparationName,
-    }),
-  );
+  await publish(page, t, fill(t.impact.title, { name: preparationName }));
   await expect(
     page.getByRole("status").filter({ hasText: t.publishedNotice }),
   ).toBeVisible();
+
+  // The stored step is the condition the rows described.
+  const published = await readPreparation(page, workspaceId, preparationName);
+  const germanyNode = published.value.nodes.find(
+    (node): node is Extract<PreparationNode, { type: "calculate" }> =>
+      node.type === "calculate" && node.name === "Germany",
+  );
+  expect(germanyNode?.expression).toEqual(expected.germanyExpression);
+  // Reapplied after a formula round trip, the step leaves the stored
+  // preparation byte for byte as it was, at the same version.
+  await germanyStep.click();
+  await page.getByRole("button", { name: t.editStep }).click();
+  await page.getByRole("radio", { name: t.formula }).check();
+  await expect(page.getByRole("combobox", { name: b.newValue })).toHaveValue(
+    expected.germanyFormula,
+  );
+  await page.getByRole("radio", { name: b.visual }).check();
+  await applyChanges.click();
+  await expect(applyChanges).not.toBeVisible();
+  await expect(page.getByText(t.changed)).toHaveCount(0);
+  await expect(saveDraft).toBeDisabled();
+  const reapplied = await readPreparation(page, workspaceId, preparationName);
+  expect(reapplied.version).toBe(published.version);
+  expect(reapplied.json).toBe(published.json);
 
   // 7. A model on the published output with three named measures.
   await page.getByRole("button", { name: t.back }).click();
@@ -231,6 +260,8 @@ test("a customer builds and publishes without code", async ({
   await page.getByRole("textbox", { name: t.modelName }).fill("Sales");
   await page.getByRole("checkbox", { name: preparationName }).check();
 
+  // Measure blocks have no accessible name of their own; a new measure is
+  // always the last one, so its fields are the last of their kind.
   const addMeasure = async (name: string) => {
     await page.getByRole("button", { name: t.addMeasure }).click();
     await page.getByRole("textbox", { name: t.measureName }).last().fill(name);
@@ -300,39 +331,122 @@ test("a customer builds and publishes without code", async ({
     }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: t.save, ...exact }).click();
+  const modelTitle = fill(t.impact.title, { name: "Sales" });
+  await saveDraft.click();
   await expect(
     page.getByRole("status").filter({ hasText: t.saved }),
   ).toBeVisible();
-  await publish(
-    page,
-    t.publish,
-    t.impact.confirm,
-    fill(t.impact.title, {
-      name: "Sales",
-    }),
+  // Saved first, so the dialog opens; nothing uses the model yet.
+  await publish(page, t, modelTitle, (dialog) =>
+    expect(dialog.getByText(t.impact.none)).toBeVisible(),
   );
   await expect(
     page.getByRole("status").filter({ hasText: t.publishedNotice }),
   ).toBeVisible();
 
-  // 8. The same definition, read as a formula.
-  await page.getByRole("radio", { name: t.formula }).last().check();
+  // 8. A dashboard shows the published German share.
+  const firstModel = await readModel(page, workspaceId, "Sales");
+  const measureId = (name: string) =>
+    firstModel.value.measures.find((measure) => measure.name === name)!.id;
+  const dashboardName = "Sales overview";
+  const dashboardId = await createMeasureDashboard(page, workspaceId, {
+    name: dashboardName,
+    modelId: firstModel.id,
+    measureId: measureId("German share"),
+  });
+  expect(await readDashboardValue(page, workspaceId, dashboardId)).toBe(
+    expected.germanShare,
+  );
+
+  // 9. A saved draft does not change the dashboard: German revenue becomes
+  // the largest German sale instead of their sum.
+  // Revenue, German revenue, German share: the second aggregation.
+  await page
+    .getByRole("combobox", { name: t.aggregate, ...exact })
+    .nth(1)
+    .selectOption({ label: t.max });
+  await saveDraft.click();
+  await expect(
+    page.getByRole("status").filter({ hasText: t.saved }),
+  ).toBeVisible();
+  expect((await readModel(page, workspaceId, "Sales")).version).toBeGreaterThan(
+    firstModel.version,
+  );
+  expect(await readDashboardValue(page, workspaceId, dashboardId)).toBe(
+    expected.germanShare,
+  );
+  await page.getByRole("button", { name: t.preview, ...exact }).click();
+  await expect(
+    page.getByRole("table").getByRole("cell", {
+      name: expected.changedGermanShare,
+      ...exact,
+    }),
+  ).toBeVisible();
+  // Publishing lists the dashboard that will change, then changes it.
+  await publish(page, t, modelTitle, (dialog) =>
+    expect(
+      dialog.getByRole("listitem").filter({ hasText: dashboardName }),
+    ).toBeVisible(),
+  );
+  await expect(
+    page.getByRole("status").filter({ hasText: t.publishedNotice }),
+  ).toBeVisible();
+  expect(await readDashboardValue(page, workspaceId, dashboardId)).toBe(
+    expected.changedGermanShare,
+  );
+
+  // 10. Stored as built: the measure filter and the calculation are the
+  // expected expressions.
+  const model = await readModel(page, workspaceId, "Sales");
+  const germanRevenue = model.value.measures.find(
+    (measure) => measure.name === "German revenue",
+  );
+  const germanyFieldId = germanyNode!.fieldId;
+  expect(
+    germanRevenue?.kind === "aggregate" ? germanRevenue.aggregate.filter : null,
+  ).toEqual(expected.germanRevenueFilter(germanyFieldId));
+  const share = model.value.measures.find(
+    (measure) => measure.name === "German share",
+  );
+  expect(share?.kind === "formula" ? share.expression : null).toEqual(
+    expected.germanShareExpression(
+      measureId("German revenue"),
+      measureId("Revenue"),
+    ),
+  );
+
+  // 11. The same calculation read as a formula, and back: nothing to save,
+  // and the stored model stays byte for byte as published.
+  // German revenue's filter and German share each have a view switch;
+  // German share's is the last.
+  const shareViews = page.getByRole("radiogroup", { name: b.view }).last();
+  await shareViews.getByRole("radio", { name: t.formula }).check();
   await expect(page.getByRole("combobox", { name: t.formula })).toHaveValue(
     expected.germanShareFormula,
   );
+  await shareViews.getByRole("radio", { name: b.visual }).check();
+  await expect(page.getByRole("combobox", { name: t.formula })).toHaveCount(0);
+  await expect(saveDraft).toBeDisabled();
+  const reread = await readModel(page, workspaceId, "Sales");
+  expect(reread.version).toBe(model.version);
+  expect(reread.json).toBe(model.json);
 });
 
-/** Publishes, accepting the impact confirmation when it opens. */
+/**
+ * Publishes a saved draft. The impact confirmation must open (a saved draft
+ * always has a record to check); `check` inspects it, then it is accepted.
+ */
 async function publish(
   page: Page,
-  label: string,
-  confirm: string,
+  t: ReturnType<typeof labels>,
   title: string,
+  check?: (dialog: Locator) => Promise<void>,
 ) {
-  await page.getByRole("button", { name: label, ...{ exact: true } }).click();
+  const confirm = t.impact.confirm;
+  await page.getByRole("button", { name: t.publish, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: title });
   await expect(dialog).toBeVisible();
+  await check?.(dialog);
   await dialog.getByRole("button", { name: confirm, exact: true }).click();
   await expect(dialog).not.toBeVisible();
 }
