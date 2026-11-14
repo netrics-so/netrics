@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   formulaMeasureFields,
+  probeModelMeasures,
   querySemanticModel,
   type SemanticModelDefinition,
 } from "./data-model.js";
@@ -723,6 +724,41 @@ describe("formula measure fields", () => {
     expect(
       formulaMeasureFields(model, salesSources, "draft").map((f) => f.id),
     ).toEqual(["revenue", "other"]);
+  });
+
+  it("excludes dependents through a cycle", () => {
+    // A depends on B and M; B depends on A: both depend on M.
+    const model = salesModel([
+      sum("m", "M", "amount"),
+      formula("a", {
+        kind: "call",
+        fn: "add",
+        args: [field("b"), field("m")],
+      }),
+      formula("b", field("a")),
+      sum("units", "Units", "units"),
+    ]);
+    const ids = formulaMeasureFields(model, salesSources, "m").map((f) => f.id);
+    expect(ids).not.toContain("a");
+    expect(ids).not.toContain("b");
+    expect(ids).toEqual(["units"]);
+  });
+
+  it("reuses one probe of the model", () => {
+    const model = salesModel([
+      sum("revenue", "Revenue", "amount"),
+      sum("broken", "Broken", "missing"),
+      formula("draft", field("revenue")),
+    ]);
+    const probed = probeModelMeasures(model, salesSources);
+    expect([...probed.keys()]).toEqual(["revenue", "draft"]);
+    expect(formulaMeasureFields(model, salesSources, "draft", probed)).toEqual(
+      formulaMeasureFields(model, salesSources, "draft"),
+    );
+    // Without sources, the given cells alone type the fields.
+    expect(
+      formulaMeasureFields(model, new Map(), "draft", probed).map((f) => f.id),
+    ).toEqual(["revenue"]);
   });
 
   it("omits measures that fail to probe", () => {

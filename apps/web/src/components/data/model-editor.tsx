@@ -1,11 +1,11 @@
 "use client";
 import {
   recordChange,
-  recordEdit,
   redoEdit,
   replacePresent,
   startHistory,
   undoEdit,
+  type EditHistory,
 } from "@/lib/edit-history";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
@@ -14,6 +14,7 @@ import {
   emptyVisualModel,
   formulaMeasureFields,
   parseDataFormula,
+  probeModelMeasures,
   type DataExpression,
   type SemanticModelDefinition,
   type ModelMeasure,
@@ -98,6 +99,29 @@ function comparableDraft(draft: ExpressionDraft): ExpressionDraft {
     draft.text === draft.origin.text
     ? { view: "visual", model: draft.origin.model, edited: draft.edited }
     : draft;
+}
+
+/**
+ * Applies a definition patch as one undo step (coalesced by `editKey`),
+ * dropping drafts it orphans. A patch that changes nothing records nothing.
+ */
+export function changeModelDefinition(
+  history: EditHistory<ModelEdit>,
+  patch: Partial<SemanticModelDefinition>,
+  editKey?: string,
+): EditHistory<ModelEdit> {
+  const definition = { ...history.present.definition, ...patch };
+  return recordChange(
+    history,
+    {
+      definition,
+      expressionDrafts: liveDrafts(
+        definition,
+        history.present.expressionDrafts,
+      ),
+    },
+    editKey,
+  );
 }
 
 /** Drafts of measures that no longer exist or no longer have that kind are dropped. */
@@ -219,12 +243,17 @@ export function ModelEditor({
   const fieldsFor = (id: string) =>
     sources.find((s) => s.id === id)?.fields ?? [];
   // The measures each calculated measure may use, typed by the checker.
+  // One probe of the model per definition; each formula's fields derive from it.
   const formulaFields = useMemo(() => {
     const sourceMap = new Map(sources.map((s) => [s.id, s]));
+    const probed = probeModelMeasures(definition, sourceMap);
     return new Map(
       definition.measures
         .filter((m) => m.kind === "formula")
-        .map((m) => [m.id, formulaMeasureFields(definition, sourceMap, m.id)]),
+        .map((m) => [
+          m.id,
+          formulaMeasureFields(definition, sourceMap, m.id, probed),
+        ]),
     );
   }, [definition, sources]);
   /** `editKey` coalesces consecutive edits of one text field into one undo step. */
@@ -232,17 +261,7 @@ export function ModelEditor({
     patch: Partial<SemanticModelDefinition>,
     editKey?: string,
   ) => {
-    setEdits((h) => {
-      const definition = { ...h.present.definition, ...patch };
-      return recordEdit(
-        h,
-        {
-          definition,
-          expressionDrafts: liveDrafts(definition, h.present.expressionDrafts),
-        },
-        editKey,
-      );
-    });
+    setEdits((h) => changeModelDefinition(h, patch, editKey));
     setNotice(null);
   };
   /**

@@ -90,6 +90,21 @@ describe("formula completion", () => {
     });
   });
 
+  it("keeps the text after an unclosed reference", () => {
+    for (const [text, expected] of [
+      ["[Rev + [Cost]", "[Revenue] + [Cost]"],
+      ["[Rev[Cost] * 2", "[Revenue][Cost] * 2"],
+      ["[Rev\n+ [Cost]", "[Revenue]\n+ [Cost]"],
+      ["[Rev + 1", "[Revenue] + 1"],
+    ] as const) {
+      const result = formulaCompletions(text, 4, fields);
+      expect(result, text).toMatchObject({ from: 0, to: 4 });
+      expect(applyFormulaCompletion(text, result, result.items[0]!).text).toBe(
+        expected,
+      );
+    }
+  });
+
   it("completes functions from a prefix", () => {
     const result = formulaCompletions("ROU", 3, fields);
     expect(result).toMatchObject({ from: 0, to: 3 });
@@ -108,6 +123,18 @@ describe("formula completion", () => {
     expect(
       formulaCompletions("tr", 2, fields).items.find((i) => i.label === "TRUE"),
     ).toEqual({ kind: "keyword", label: "TRUE", insert: "TRUE" });
+    // Logical words are operators, not values (AND( is also a function).
+    for (const [text, word] of [
+      ["x an", "AND"],
+      ["x o", "OR"],
+      ["no", "NOT"],
+    ] as const)
+      expect(
+        formulaCompletions(text, text.length, fields)
+          .items.filter((i) => i.label === word && i.kind !== "function")
+          .map((i) => i.kind),
+        text,
+      ).toEqual(["operator"]);
   });
 
   it("does not repeat an existing parenthesis", () => {

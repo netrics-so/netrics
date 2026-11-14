@@ -19,15 +19,46 @@ import {
 import { useT } from "@/lib/i18n/client";
 import type { BuilderNoun } from "./condition-builder";
 
-/** Suggestions open by themselves while a name is typed or after an operand. */
-function opensByItself(
+/**
+ * Suggestions open by themselves only while a column or function name is
+ * typed. Operators wait for Ctrl+Space, so Tab and Enter after an operand
+ * keep their usual meaning.
+ */
+export function opensByItself(
   result: ReturnType<typeof formulaCompletions>,
   cursor: number,
 ): boolean {
-  return (
-    result.items.length > 0 &&
-    (result.from < cursor || result.items[0]!.kind === "operator")
-  );
+  return result.items.length > 0 && result.from < cursor;
+}
+
+/** The parts of a keydown event the suggestion list reacts to. */
+export interface FormulaKey {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  isComposing: boolean;
+  keyCode: number;
+}
+
+/** What a key does to the suggestion list; null leaves it to the textarea. */
+export function formulaKeyAction(
+  event: FormulaKey,
+  expanded: boolean,
+): "open" | "next" | "previous" | "accept" | "close" | null {
+  // An input method (IME) is composing: its keys are not ours.
+  if (event.isComposing || event.keyCode === 229) return null;
+  if (event.ctrlKey && event.key === " ") return "open";
+  if (!expanded) return null;
+  if (event.key === "ArrowDown") return "next";
+  if (event.key === "ArrowUp") return "previous";
+  if (event.key === "Escape") return "close";
+  const plain =
+    !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+  return plain && (event.key === "Enter" || event.key === "Tab")
+    ? "accept"
+    : null;
 }
 
 /**
@@ -57,6 +88,7 @@ export function FormulaInput({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const pendingCursor = useRef<number | null>(null);
+  const composing = useRef(false);
   const cursor =
     selection === null ? value.length : Math.min(selection, value.length);
   const result = useMemo(
@@ -90,22 +122,28 @@ export function FormulaInput({
   const track = (event: SyntheticEvent<HTMLTextAreaElement>) =>
     setSelection(event.currentTarget.selectionStart);
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.ctrlKey && (event.key === " " || event.code === "Space")) {
-      event.preventDefault();
+    const action = formulaKeyAction(
+      {
+        key: event.code === "Space" ? " " : event.key,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        isComposing: event.nativeEvent.isComposing || composing.current,
+        keyCode: event.keyCode,
+      },
+      expanded,
+    );
+    if (!action) return;
+    event.preventDefault();
+    if (action === "open") {
       setActive(0);
       setOpen(true);
-      return;
-    }
-    if (!expanded) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const step = event.key === "ArrowDown" ? 1 : -1;
+    } else if (action === "next" || action === "previous") {
+      const step = action === "next" ? 1 : -1;
       setActive((current + step + items.length) % items.length);
-    } else if (event.key === "Enter" || event.key === "Tab") {
-      event.preventDefault();
-      accept(items[current]!);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
+    } else if (action === "accept") accept(items[current]!);
+    else {
       event.stopPropagation();
       setOpen(false);
     }
@@ -132,10 +170,26 @@ export function FormulaInput({
           const at = e.target.selectionStart;
           setSelection(at);
           setActive(0);
+          // Text an input method is still composing opens nothing.
           setOpen(
-            opensByItself(formulaCompletions(e.target.value, at, fields), at),
+            !composing.current &&
+              opensByItself(formulaCompletions(e.target.value, at, fields), at),
           );
           onChange(e.target.value);
+        }}
+        onCompositionStart={() => {
+          composing.current = true;
+          setOpen(false);
+        }}
+        onCompositionEnd={(e) => {
+          composing.current = false;
+          const at = e.currentTarget.selectionStart;
+          setOpen(
+            opensByItself(
+              formulaCompletions(e.currentTarget.value, at, fields),
+              at,
+            ),
+          );
         }}
         onSelect={track}
         onClick={track}

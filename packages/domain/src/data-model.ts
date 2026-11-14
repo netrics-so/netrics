@@ -230,46 +230,66 @@ function evaluateFormula(
 }
 
 /**
+ * Each measure's probe cell (see `measureTypeProbe`); measures whose probe
+ * fails are left out. One pass over the model when every measure checks.
+ */
+export function probeModelMeasures(
+  model: SemanticModelDefinition,
+  sources: ReadonlyMap<string, Pick<DataTable, "fields">>,
+): Map<string, DataCell> {
+  const ids = model.measures.map((m) => m.id);
+  try {
+    return measureTypeProbe(model, sources, ids);
+  } catch {
+    const cells = new Map<string, DataCell>();
+    for (const id of ids)
+      try {
+        const cell = measureTypeProbe(model, sources, [id]).get(id);
+        if (cell) cells.set(id, cell);
+      } catch {
+        // Not usable in a formula until the measure itself is fixed.
+      }
+    return cells;
+  }
+}
+
+/**
  * The measures a formula measure may reference, as the row fields its formula
  * is checked against: every measure except `measureId` and those depending on
  * it (directly or through others), typed by its probe. A currency measure gets
  * a currency field, as it has whenever the query sees a currency. Measures
- * whose probe fails are left out.
+ * whose probe fails are left out. Pass `probed` (`probeModelMeasures`) to
+ * type several measures' fields from one probe.
  */
 export function formulaMeasureFields(
   model: SemanticModelDefinition,
   sources: ReadonlyMap<string, Pick<DataTable, "fields">>,
   measureId: string,
+  probed: ReadonlyMap<string, DataCell> = probeModelMeasures(model, sources),
 ): DataField[] {
-  const byId = new Map(model.measures.map((m) => [m.id, m]));
-  const dependsOn = new Map<string, boolean>();
-  const reaches = (id: string, path: Set<string>): boolean => {
-    if (id === measureId) return true;
-    const known = dependsOn.get(id);
-    if (known !== undefined) return known;
-    const measure = byId.get(id);
-    if (!measure || path.has(id)) return false;
-    path.add(id);
-    const result = measureDependencies(measure).some((d) => reaches(d, path));
-    path.delete(id);
-    dependsOn.set(id, result);
-    return result;
-  };
-  const cells: Array<readonly [string, DataCell]> = [];
-  for (const measure of model.measures) {
-    if (reaches(measure.id, new Set())) continue;
-    try {
-      const cell = measureTypeProbe(model, sources, [measure.id]).get(
+  // Everything that reaches measureId, by walking dependents backwards.
+  const dependents = new Map<string, string[]>();
+  for (const measure of model.measures)
+    for (const dependency of measureDependencies(measure))
+      dependents.set(dependency, [
+        ...(dependents.get(dependency) ?? []),
         measure.id,
-      );
-      if (cell) cells.push([measure.id, cell]);
-    } catch {
-      // Not usable in a formula until the measure itself is fixed.
-    }
-  }
+      ]);
+  const excluded = new Set([measureId]),
+    queue = [measureId];
+  while (queue.length)
+    for (const dependent of dependents.get(queue.shift()!) ?? [])
+      if (!excluded.has(dependent)) {
+        excluded.add(dependent);
+        queue.push(dependent);
+      }
+  const names = new Map(model.measures.map((m) => [m.id, m.name]));
+  const cells = model.measures
+    .filter((m) => !excluded.has(m.id) && probed.has(m.id))
+    .map((m) => [m.id, probed.get(m.id)!] as const);
   return formulaFields(
     cells,
-    (id) => byId.get(id)!.name,
+    (id) => names.get(id)!,
     (cell) => !!cell.currency || cell.unit === "currency",
   ).measures;
 }

@@ -7,7 +7,12 @@ import {
 import type { ExpressionDraft } from "@/lib/expression-draft";
 import { renderI18n } from "@/lib/i18n/test-render";
 import type { DataSource, ModelDraft } from "@/lib/data-api";
-import { ModelEditor, modelEditorState } from "./model-editor";
+import { startHistory } from "@/lib/edit-history";
+import {
+  changeModelDefinition,
+  ModelEditor,
+  modelEditorState,
+} from "./model-editor";
 
 const source: DataSource = {
   id: "sales",
@@ -531,5 +536,21 @@ describe("model editor visual builder", () => {
         },
       }),
     ).toBe(modelEditorState("M", model, { "revenue:filter": rows }));
+  });
+});
+
+describe("model editor edits", () => {
+  it("records no undo step for a change that changes nothing", () => {
+    const model = definition([revenue]);
+    const history = startHistory({ definition: model, expressionDrafts: {} });
+    expect(
+      changeModelDefinition(history, {
+        measures: model.measures.map((m) => ({ ...m })),
+      }),
+    ).toBe(history);
+    const renamed = changeModelDefinition(history, {
+      measures: [{ ...revenue, name: "Sales" }],
+    });
+    expect(renamed.past).toHaveLength(1);
   });
 });

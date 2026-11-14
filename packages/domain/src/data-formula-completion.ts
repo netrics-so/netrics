@@ -350,27 +350,34 @@ function wordItems(prefix: string): FormulaCompletion[] {
     ...keywords
       .filter((name) => name.startsWith(prefix))
       .map((name) => ({
-        kind: "keyword" as const,
+        kind: operatorWords.has(name)
+          ? ("operator" as const)
+          : ("keyword" as const),
         label: name,
         insert: name,
       })),
   ];
 }
 
-/** The end of the reference that starts at `start`, or null if unclosed. */
-function referenceEnd(text: string, start: number): number | null {
-  let j = start + 1;
-  while (j < text.length) {
-    if (text[j] === "]") {
+/**
+ * Where the name being edited ends: just past its closing `]` when the rest
+ * of the name after the cursor reaches one, else the cursor. A `[` or a line
+ * break first means the reference is unclosed and what follows is other
+ * text, which must be kept.
+ */
+function referenceEnd(text: string, cursor: number): number {
+  for (let j = cursor; j < text.length; j++) {
+    const char = text[j];
+    if (char === "[" || char === "\n" || char === "\r") return cursor;
+    if (char === "]") {
       if (text[j + 1] === "]") {
-        j += 2;
+        j++;
         continue;
       }
       return j + 1;
     }
-    j++;
   }
-  return null;
+  return cursor;
 }
 
 /** Suggestions for the token at the cursor. Never throws. */
@@ -386,7 +393,7 @@ export function formulaCompletions(
     case "reference":
       return {
         from: state.start,
-        to: referenceEnd(text, state.start) ?? at,
+        to: referenceEnd(text, at),
         items: fieldItems(
           fields,
           state.name,
