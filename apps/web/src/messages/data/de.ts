@@ -209,6 +209,7 @@ export const dataDe: Catalog<typeof dataEn> = {
     preview: "Vorschau",
     previewing: "Vorschau wird vorbereitet…",
     undo: "Rückgängig",
+    redo: "Wiederholen",
     close: "Schließen",
     cancel: "Abbrechen",
     remove: "Entfernen",

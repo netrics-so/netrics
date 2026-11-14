@@ -365,4 +365,20 @@ describe("model editor windowed measures", () => {
       "Add a dimension on a date column first. Timestamps cannot anchor a window.",
     );
   });
+
+  it.each([
+    ["en", "Undo", "Redo"],
+    ["de", "Rückgängig", "Wiederholen"],
+  ] as const)(
+    "offers disabled undo and redo before any edit (%s)",
+    (locale, undo, redo) => {
+      const html = render([revenue], locale);
+      expect(html).toContain(
+        `<button type="button" disabled="">${undo}</button>`,
+      );
+      expect(html).toContain(
+        `<button type="button" disabled="">${redo}</button>`,
+      );
+    },
+  );
 });

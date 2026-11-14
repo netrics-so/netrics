@@ -201,6 +201,7 @@ export const dataEn = {
     preview: "Preview",
     previewing: "Preparing preview…",
     undo: "Undo",
+    redo: "Redo",
     close: "Close",
     cancel: "Cancel",
     remove: "Remove",

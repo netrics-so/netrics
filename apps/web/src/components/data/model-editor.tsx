@@ -1,4 +1,11 @@
 "use client";
+import {
+  recordEdit,
+  redoEdit,
+  replacePresent,
+  startHistory,
+  undoEdit,
+} from "@/lib/edit-history";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   formatDataFormula,
@@ -28,6 +35,7 @@ import {
 import {
   changeMeasureSiblings,
   isWindowedMeasure,
+  keepModelSelection,
   measureDependents,
   rollingBaseOf,
   timeDimensionCandidates,
@@ -41,6 +49,12 @@ import {
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
 import { useDraftSources } from "@/lib/data-source-metadata";
+
+/** What undo and redo restore: the definition and the unparsed formula texts. */
+interface ModelEdit {
+  definition: SemanticModelDefinition;
+  formulaTexts: Record<string, string>;
+}
 
 const EMPTY: SemanticModelDefinition = {
   version: 1,
@@ -87,8 +101,15 @@ export function ModelEditor({
     sourceCatalog,
   );
   const sources = inputMetadata.sources;
-  const [definition, setDefinition] = useState(initial?.definition ?? EMPTY);
-  const [formulaTexts, setFormulaTexts] = useState<Record<string, string>>({});
+  // Undo/redo covers the definition and the unparsed formula texts. The name,
+  // preview selection and filter stay outside it.
+  const [edits, setEdits] = useState(() =>
+    startHistory<ModelEdit>({
+      definition: initial?.definition ?? EMPTY,
+      formulaTexts: {},
+    }),
+  );
+  const { definition, formulaTexts } = edits.present;
   const [savedState, setSavedState] = useState(
     JSON.stringify({
       name: initial?.name ?? t("defaultModel"),
@@ -125,14 +146,41 @@ export function ModelEditor({
   );
   const fieldsFor = (id: string) =>
     sources.find((s) => s.id === id)?.fields ?? [];
-  const change = (patch: Partial<SemanticModelDefinition>) => {
-    setDefinition((d) => ({ ...d, ...patch }));
+  /** `editKey` coalesces consecutive edits of one text field into one undo step. */
+  const change = (
+    patch: Partial<SemanticModelDefinition>,
+    editKey?: string,
+  ) => {
+    setEdits((h) =>
+      recordEdit(
+        h,
+        { ...h.present, definition: { ...h.present.definition, ...patch } },
+        editKey,
+      ),
+    );
     setNotice(null);
   };
-  function changeMeasure(id: string, next: ModelMeasure) {
-    change({
-      measures: definition.measures.map((m) => (m.id === id ? next : m)),
-    });
+  function changeMeasure(id: string, next: ModelMeasure, editKey?: string) {
+    change(
+      {
+        measures: definition.measures.map((m) => (m.id === id ? next : m)),
+      },
+      editKey,
+    );
+  }
+  function stepHistory(step: typeof undoEdit) {
+    const next = step(edits);
+    setEdits(next);
+    const kept = keepModelSelection(
+      next.present.definition,
+      measureIds,
+      groupBy,
+    );
+    setMeasureIds(kept.measureIds);
+    setGroupBy(kept.groupBy);
+    setNotice(null);
+    setError(null);
+    setPreviewError(null);
   }
   function build() {
     return {
@@ -204,8 +252,9 @@ export function ModelEditor({
               record?.id,
             );
       setRecord(saved.model);
-      setDefinition(model);
-      setFormulaTexts({});
+      setEdits((h) =>
+        replacePresent(h, { definition: model, formulaTexts: {} }),
+      );
       const signature = JSON.stringify({
         name,
         definition: model,
@@ -253,8 +302,7 @@ export function ModelEditor({
       const next = saved.model;
       setRecord(next);
       setName(next.name);
-      setDefinition(next.definition);
-      setFormulaTexts({});
+      setEdits(startHistory({ definition: next.definition, formulaTexts: {} }));
       setSavedState(
         JSON.stringify({
           name: next.name,
@@ -372,6 +420,26 @@ export function ModelEditor({
           </p>
         </div>
         <div className="data-form-actions">
+          {(
+            [
+              ["undo", undoEdit, edits.past.length],
+              ["redo", redoEdit, edits.future.length],
+            ] as const
+          ).map(([key, step, available]) => (
+            <button
+              key={key}
+              type="button"
+              disabled={
+                !available ||
+                !!busy ||
+                inputMetadata.loading ||
+                !!inputMetadata.error
+              }
+              onClick={() => stepHistory(step)}
+            >
+              {t(key)}
+            </button>
+          ))}
           <button
             type="button"
             disabled={
@@ -656,12 +724,15 @@ export function ModelEditor({
             <p className="page-meta">{t("noDimensions")}</p>
           ) : null}
           {definition.dimensions.map((dimension) => {
-            const update = (patch: Partial<ModelDimension>) =>
-              change({
-                dimensions: definition.dimensions.map((d) =>
-                  d.id === dimension.id ? { ...d, ...patch } : d,
-                ),
-              });
+            const update = (patch: Partial<ModelDimension>, editKey?: string) =>
+              change(
+                {
+                  dimensions: definition.dimensions.map((d) =>
+                    d.id === dimension.id ? { ...d, ...patch } : d,
+                  ),
+                },
+                editKey,
+              );
             const anchoring = definition.measures.filter(
               (m) => isWindowedMeasure(m) && m.timeDimensionId === dimension.id,
             );
@@ -676,7 +747,12 @@ export function ModelEditor({
                     maxLength={100}
                     required
                     value={dimension.name}
-                    onChange={(e) => update({ name: e.target.value })}
+                    onChange={(e) =>
+                      update(
+                        { name: e.target.value },
+                        `dimension:${dimension.id}:name`,
+                      )
+                    }
                   />
                 </label>
                 {/* A window's anchor keeps its date column: another source
@@ -793,10 +869,11 @@ export function ModelEditor({
                     maxLength={100}
                     value={measure.name}
                     onChange={(e) =>
-                      changeMeasure(measure.id, {
-                        ...measure,
-                        name: e.target.value,
-                      })
+                      changeMeasure(
+                        measure.id,
+                        { ...measure, name: e.target.value },
+                        `measure:${measure.id}:name`,
+                      )
                     }
                   />
                 </label>
@@ -1002,10 +1079,19 @@ export function ModelEditor({
                       formatDataFormula(measure.expression, definition.measures)
                     }
                     onChange={(e) =>
-                      setFormulaTexts((texts) => ({
-                        ...texts,
-                        [measure.id]: e.target.value,
-                      }))
+                      setEdits((h) =>
+                        recordEdit(
+                          h,
+                          {
+                            ...h.present,
+                            formulaTexts: {
+                              ...h.present.formulaTexts,
+                              [measure.id]: e.target.value,
+                            },
+                          },
+                          `formula:${measure.id}`,
+                        ),
+                      )
                     }
                   />
                   <p className="help">{t("measureFormulaHelp")}</p>
