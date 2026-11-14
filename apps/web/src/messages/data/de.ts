@@ -510,6 +510,8 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Jemand hat diese Daten geändert. Lade die Seite vor dem Speichern neu.",
       formula:
         "Prüfe Namen, Funktionen und Klammern der Formel und versuche es erneut.",
+      builderIncomplete:
+        "Vervollständige jede Bedingung oder entferne die leeren.",
       field:
         "Eine referenzierte Spalte ist nicht verfügbar. Prüfe Datensatz und Spaltenauswahl.",
       cardinality:

@@ -495,6 +495,7 @@ export const dataEn = {
         "Someone changed this data. Reload the page before saving again.",
       formula:
         "Check the formula’s names, functions and brackets, then try again.",
+      builderIncomplete: "Complete every condition, or remove the empty ones.",
       field:
         "A referenced column is unavailable. Review the selected dataset and columns.",
       cardinality:
