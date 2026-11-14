@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Dashboard } from "@netrics/database";
 import {
+  customerReplacement,
   dashboardItems,
   desymbolize,
   isScopeItem,
@@ -319,6 +320,18 @@ describe("store-template items", () => {
         datasets: ["prepared:T:out", "M", "N"],
         reads: { m: "M", a: "prepared:T:out", n: "N" },
       });
+    });
+
+    it("takes the customer's dataset as a replacement only when that is unambiguous", () => {
+      const of = (original: string[], current: string[], dataset: string) =>
+        customerReplacement({ original, current, next: original }, dataset);
+      expect(of(["A"], ["M"], "A")).toBe("M");
+      expect(of(["A", "B"], ["M", "B"], "A")).toBe("M");
+      // Two of their own, or theirs at the end of a longer list (removed
+      // and appended reads the same): not a replacement, they choose.
+      expect(of(["A"], ["M", "N"], "A")).toBeUndefined();
+      expect(of(["A", "B"], ["A", "M"], "B")).toBeUndefined();
+      expect(of(["A", "B"], ["M", "N"], "A")).toBeUndefined();
     });
 
     it("reads the customer's dataset where they replaced the template's", () => {

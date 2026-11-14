@@ -132,7 +132,9 @@ export function preparationItems(
  * same position text, even when the dataset at that position differs (which
  * the update resolves per state, see modelFromItems). That is exact for the
  * store models, which read one dataset; revisit for templates whose models
- * read several.
+ * read several. customerReplacement and the identity rule in slotOf rest on
+ * the same single-dataset assumption: with one dataset a list position is
+ * unambiguous, with several a swap and a remove-and-append look alike.
  */
 function datasetSlots(value: unknown, datasets: unknown[]): unknown {
   if (typeof value === "string") {
@@ -337,11 +339,13 @@ function metricOf(dataset: unknown): string | undefined {
 }
 
 /**
- * The customer's dataset in place of a template dataset they replaced: the
- * dataset is in the original, not in the customer's model, and the
- * customer's dataset at its original position is one the original did not
- * have. Undefined when the customer kept it or removed it without a
- * replacement.
+ * The customer's dataset in place of a template dataset they replaced, only
+ * when that reading is unambiguous: the dataset is in the original, not in
+ * the customer's model; the customer's model has as many datasets as the
+ * original and exactly one of its own, at the dataset's original position;
+ * and that position is not the end of a longer list (there, their own
+ * dataset reads just as well as removed-and-appended). Undefined otherwise:
+ * the customer kept it, removed it, or it is unclear, and they choose.
  */
 export function customerReplacement(
   lists: DatasetLists,
@@ -350,31 +354,40 @@ export function customerReplacement(
   const position = indexIn(lists.original, dataset);
   if (position === -1 || indexIn(lists.current, dataset) !== -1)
     return undefined;
+  const own = lists.current.filter(
+    (entry) => indexIn(lists.original, entry) === -1,
+  );
   const replacement = lists.current[position];
-  return position < lists.current.length &&
-    indexIn(lists.original, replacement) === -1
+  const last = lists.current.length - 1;
+  return lists.current.length === lists.original.length &&
+    own.length === 1 &&
+    indexIn(own, replacement) === 0 &&
+    (position < last || lists.current.length === 1)
     ? replacement
     : undefined;
 }
 
 /**
- * Whether a value of the new template reads a template dataset the customer
- * removed from their model (without replacing it). Taking that value would
- * add the dataset back, so the customer chooses (store-template-merge.ts).
+ * The first template dataset the customer removed from their model (without
+ * replacing it) that a value of the new template reads, as in the new
+ * template's list; undefined when it reads none. Taking that value would add
+ * the dataset back, so the customer chooses (store-template-merge.ts).
  */
-export function readsRemovedDataset(
+export function removedDatasetRead(
   lists: DatasetLists,
   value: unknown,
-): boolean {
-  return slotsIn(value).some((index) => {
+): unknown {
+  for (const index of slotsIn(value)) {
     const dataset = lists.next[index];
-    return (
+    if (
       index < lists.next.length &&
       indexIn(lists.original, dataset) !== -1 &&
       indexIn(lists.current, dataset) === -1 &&
       customerReplacement(lists, dataset) === undefined
-    );
-  });
+    )
+      return dataset;
+  }
+  return undefined;
 }
 
 /**

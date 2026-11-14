@@ -183,6 +183,12 @@ export const storeTemplatePlanSchema = z.object({
             "propose_removal",
             "scope",
           ]),
+          /**
+           * Why a template change is a choice: taking it brings back
+           * `dataset` (symbolic), which the customer removed from the model.
+           */
+          reason: z.enum(["reads_removed_dataset"]).optional(),
+          dataset: z.string().optional(),
           original: z.unknown().optional(),
           current: z.unknown().optional(),
           next: z.unknown().optional(),

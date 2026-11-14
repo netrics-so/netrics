@@ -15,6 +15,7 @@ import {
   errorResponseSchema,
   meResponseSchema,
   storeTemplateInstallListSchema,
+  storeTemplatePlanSchema,
   storeTemplateUpdateSchema,
   workspaceResponseSchema,
   type StoreTemplatePlan,
@@ -935,6 +936,78 @@ describe("applying a store-template update", { timeout: TIMEOUT_MS }, () => {
     ]);
     for (const measure of after.measures)
       expect(measure).toMatchObject({ datasetId: dataset });
+  });
+
+  it("asks before a new template measure brings back a dataset the customer removed", async () => {
+    // Version 2 reads the ratings source in the downloads model too, with a
+    // measure on it; installs made from it start with that dataset.
+    const ratingsOf = (inputs: { connections: { id: string }[] }) =>
+      `preparation:source:${inputs.connections[0]!.id}:ratings`;
+    const reading: StoreTemplateDefinition = {
+      ...v2,
+      build(key, inputs, ids) {
+        const record = v2.build(key, inputs, ids);
+        if (record.kind !== "model" || key !== "model:downloads") return record;
+        const definition = structuredClone(record.definition);
+        const ratings = `prepared:${ids[ratingsOf(inputs)]!}:output`;
+        definition.datasets.push(ratings);
+        definition.measures.push({
+          ...definition.measures[0]!,
+          id: "on_ratings",
+          name: "On ratings",
+          datasetId: ratings,
+        } as never);
+        return { ...record, definition };
+      },
+    };
+    for (const choice of ["customer", "template"] as const) {
+      const { workspaceId, requestId, installed, connections } =
+        await installIn(["google-play"]);
+      // The original read the ratings source too; the customer removed it.
+      const ratings = `prepared:${
+        (await recordOf(
+          requestId,
+          `preparation:source:${connections[0]!.id}:ratings`,
+        ))!.record_id as string
+      }:output`;
+      const record = await recordOf(requestId, "model:downloads");
+      const original = record!.original as {
+        definition: SemanticModelDefinition;
+      };
+      original.definition.datasets.push(ratings);
+      await owner`update data_template_records set original=${owner.json(original as never)}
+        where request_id=${requestId} and key='model:downloads'`;
+      const plan = await updates(reading).plan(actor(workspaceId), requestId);
+      const added = "model:downloads#measure:on_ratings";
+      expect(item(plan, added)).toMatchObject({
+        outcome: "choose",
+        change: "added",
+        reason: "reads_removed_dataset",
+        dataset: `ref:preparation:source:${connections[0]!.id}:ratings:output`,
+      });
+      // The reason and dataset are part of the plan contract.
+      expect(storeTemplatePlanSchema.parse(plan)).toEqual(plan);
+      // The datasets item shows what the update writes: no ratings.
+      expect(item(plan, "model:downloads#settings:datasets")).toBeUndefined();
+      await updates(reading).apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: [
+          ...choices(plan, "template").filter((d) => d.ref !== added),
+          { ref: added, choice },
+        ],
+      });
+      const after = await modelDefinition(installed.models.downloads);
+      const measures = after.measures.map((m) => m.id);
+      if (choice === "customer") {
+        expect(after.datasets).not.toContain(ratings);
+        expect(measures).not.toContain("on_ratings");
+      } else {
+        expect(after.datasets).toContain(ratings);
+        expect(after.measures.find((m) => m.id === "on_ratings")).toMatchObject(
+          { datasetId: ratings },
+        );
+      }
+    }
   });
 
   it("refuses a merge that would point at nothing, and writes nothing", async () => {

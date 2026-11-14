@@ -270,6 +270,62 @@ describe("three-way store-template comparison", () => {
     expect(decide("customer").get(changed)).toEqual(measure("Downloads", 0));
     expect(decide("customer").has(added)).toBe(false);
     expect(decide("template").get(added)).toEqual(measure("Extra", 0));
+    // The plan says which dataset taking the template's value brings back.
+    expect(
+      classify(original, current, next).find((i) => i.ref === added),
+    ).toMatchObject({ reason: "reads_removed_dataset", dataset: "ref:a" });
+    expect(
+      classify(original, replaced, next).find((i) => i.ref === added),
+    ).not.toHaveProperty("reason");
+    // Two datasets of their own in place of one: unclear, so they choose.
+    const two = items([
+      [datasets, ["mine", "theirs"]],
+      [changed, measure("Downloads", 0)],
+    ]);
+    const single = items([
+      [datasets, ["ref:a"]],
+      [changed, measure("Downloads", 0)],
+    ]);
+    const singleNext = items([
+      [datasets, ["ref:a"]],
+      [changed, measure("Downloads (v2)", 0)],
+    ]);
+    expect(
+      classify(single, two, singleNext).find((i) => i.ref === changed),
+    ).toMatchObject({ outcome: "choose", dataset: "ref:a" });
+  });
+
+  it("shows a model's datasets as the update writes them", () => {
+    const datasets: ItemRef = "model:downloads#settings:datasets";
+    // The template moves to B; the customer's own M stays.
+    const plan = classify(
+      items([[datasets, ["ref:a"]]]),
+      items([[datasets, ["ref:a", "mine"]]]),
+      items([[datasets, ["ref:b"]]]),
+    );
+    expect(plan).toEqual([
+      expect.objectContaining({
+        ref: datasets,
+        outcome: "scope",
+        next: ["ref:b", "mine"],
+      }),
+    ]);
+    expect(
+      merge(
+        items([[datasets, ["ref:a"]]]),
+        items([[datasets, ["ref:a", "mine"]]]),
+        items([[datasets, ["ref:b"]]]),
+        [],
+      ).get(datasets),
+    ).toEqual(["ref:b", "mine"]);
+    // Nothing changes when the customer only added their own dataset.
+    expect(
+      classify(
+        items([[datasets, ["ref:a"]]]),
+        items([[datasets, ["ref:a", "mine"]]]),
+        items([[datasets, ["ref:a"]]]),
+      ),
+    ).toEqual([]);
   });
 
   it("refuses to merge with an undecided conflict", () => {

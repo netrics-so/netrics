@@ -56117,6 +56117,15 @@
                                     "scope"
                                   ]
                                 },
+                                "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "reads_removed_dataset"
+                                  ]
+                                },
+                                "dataset": {
+                                  "type": "string"
+                                },
                                 "original": {},
                                 "current": {},
                                 "next": {}
