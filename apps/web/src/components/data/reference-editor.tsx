@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import {
+  canonicalJson,
   DATA_TYPES,
   DataProcessingError,
   type DataField,
@@ -80,7 +81,8 @@ export function ReferenceEditor({
     page,
     Math.max(0, Math.ceil(rows.length / 50) - 1),
   );
-  const current = JSON.stringify({
+  // Key order never makes the editor dirty.
+  const current = canonicalJson({
     name,
     fields,
     rows,

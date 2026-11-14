@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { SemanticModelDefinition } from "@netrics/domain";
+import type { ModelMeasure, SemanticModelDefinition } from "@netrics/domain";
 import { renderI18n } from "@/lib/i18n/test-render";
 import type { DataSource, ModelDraft } from "@/lib/data-api";
-import { ModelEditor } from "./model-editor";
+import { ModelEditor, modelEditorState } from "./model-editor";
 
 const source: DataSource = {
   id: "sales",
@@ -381,4 +381,130 @@ describe("model editor windowed measures", () => {
       );
     },
   );
+});
+
+describe("model editor visual builder", () => {
+  const sum = (id: string, name: string) =>
+    ({
+      id,
+      name,
+      kind: "aggregate",
+      datasetId: "sales",
+      aggregate: { id, name, op: "sum", fieldId: "amount" },
+    }) as const;
+  const share: ModelMeasure = {
+    id: "share",
+    name: "Share formula",
+    kind: "formula",
+    expression: {
+      kind: "call",
+      fn: "divide",
+      args: [
+        { kind: "field", fieldId: "income" },
+        { kind: "field", fieldId: "spend" },
+      ],
+    },
+  };
+  const filtered: ModelMeasure = {
+    ...revenue,
+    aggregate: {
+      ...revenue.aggregate,
+      filter: {
+        kind: "call",
+        fn: "eq",
+        args: [
+          { kind: "field", fieldId: "app" },
+          { kind: "literal", type: "string", value: "x" },
+        ],
+      },
+    },
+  };
+
+  it("shows a calculated measure as a visual division", () => {
+    const html = card(
+      render([sum("income", "Income"), sum("spend", "Spend"), share]),
+      "Share formula",
+    );
+    expect(html).toContain(
+      '<option value="divide" selected="">divided by</option>',
+    );
+    expect(html).toMatch(/<option value="income" selected="">Income<\/option>/);
+    expect(html).toMatch(/<option value="spend" selected="">Spend<\/option>/);
+    // The measure does not offer itself.
+    expect(html).not.toContain('<option value="share"');
+    expect(html).toContain("Measure");
+  });
+
+  it("shows a measure filter as rows", () => {
+    const html = card(render([filtered]), "Revenue");
+    expect(html).toContain("Only include rows where");
+    expect(html).toContain('aria-label="Condition 1"');
+    expect(html).toContain("Remove filter");
+    expect(html).not.toContain("Add a filter");
+  });
+
+  it("offers a filter for an unfiltered aggregate", () => {
+    const html = card(render([revenue]), "Revenue");
+    expect(html).toContain("Add a filter");
+    expect(html).not.toContain("Only include rows where");
+  });
+
+  it("labels the measure filter in German", () => {
+    const html = card(render([filtered], "de"), "Revenue");
+    expect(html).toContain("Nur Zeilen einbeziehen, bei denen");
+    expect(html).toContain("Filter entfernen");
+    expect(card(render([revenue], "de"), "Revenue")).toContain(
+      "Filter hinzufügen",
+    );
+  });
+
+  it("is not dirty when opened", () => {
+    const model = definition([filtered, share]);
+    const html = renderI18n(
+      <ModelEditor
+        workspaceId="workspace"
+        sources={[source]}
+        initial={{ ...draft([]), name: "M", definition: model }}
+        onSaved={() => {}}
+        onClose={() => {}}
+        onDirty={() => {}}
+      />,
+    );
+    expect(html).not.toContain("Unpublished changes");
+    // Unedited drafts (a view switched without typing) are not edits.
+    expect(
+      modelEditorState("M", model, {
+        "share:formula": {
+          view: "formula",
+          text: "[Income] / [Spend]",
+          edited: false,
+        },
+      }),
+    ).toBe(modelEditorState("M", model, {}));
+    // Key order is not a change.
+    const reverse = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(reverse)
+        : value && typeof value === "object"
+          ? Object.fromEntries(
+              Object.entries(value)
+                .reverse()
+                .map(([key, inner]) => [key, reverse(inner)]),
+            )
+          : value;
+    const reordered = reverse(model) as SemanticModelDefinition;
+    expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(model));
+    expect(modelEditorState("M", reordered, {})).toBe(
+      modelEditorState("M", model, {}),
+    );
+    expect(
+      modelEditorState("M", model, {
+        "revenue:filter": {
+          view: "formula",
+          text: '[App] = "y"',
+          edited: true,
+        },
+      }),
+    ).not.toBe(modelEditorState("M", model, {}));
+  });
 });

@@ -382,6 +382,9 @@ export const dataEn = {
     formulaMeasure: "Calculate from measures",
     measureFormulaHelp:
       "Reference measures by name, for example [Income] - [Spend]. All operands use the same filters.",
+    measureFilter: "Only include rows where",
+    addMeasureFilter: "Add a filter",
+    removeMeasureFilter: "Remove filter",
     rollingMeasure: "Rolling",
     offsetMeasure: "Compared with earlier period",
     baseMeasure: "Based on measure",

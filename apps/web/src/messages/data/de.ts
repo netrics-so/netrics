@@ -391,6 +391,9 @@ export const dataDe: Catalog<typeof dataEn> = {
     formulaMeasure: "Aus Kennzahlen berechnen",
     measureFormulaHelp:
       "Verwende Kennzahlnamen, zum Beispiel [Ertrag] - [Ausgaben]. Alle Operanden verwenden dieselben Filter.",
+    measureFilter: "Nur Zeilen einbeziehen, bei denen",
+    addMeasureFilter: "Filter hinzufügen",
+    removeMeasureFilter: "Filter entfernen",
     rollingMeasure: "Gleitender Zeitraum",
     offsetMeasure: "Vergleich mit früherem Zeitraum",
     baseMeasure: "Ausgangskennzahl",

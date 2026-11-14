@@ -1,15 +1,20 @@
 "use client";
 import {
+  recordChange,
   recordEdit,
   redoEdit,
   replacePresent,
   startHistory,
   undoEdit,
 } from "@/lib/edit-history";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
-  formatDataFormula,
+  canonicalJson,
+  DataProcessingError,
+  emptyVisualModel,
+  formulaMeasureFields,
   parseDataFormula,
+  type DataExpression,
   type SemanticModelDefinition,
   type ModelMeasure,
   type DataField,
@@ -49,11 +54,55 @@ import {
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
 import { useDraftSources } from "@/lib/data-source-metadata";
+import {
+  resolveExpressionDraft,
+  type ExpressionDraft,
+} from "@/lib/expression-draft";
+import { ExpressionEditor } from "./expression-editor";
 
-/** What undo and redo restore: the definition and the unparsed formula texts. */
+/**
+ * What undo and redo restore: the definition and the expression drafts not
+ * yet resolved into it, keyed `${measureId}:formula` (a calculated measure)
+ * and `${measureId}:filter` (an aggregate's filter).
+ */
 interface ModelEdit {
   definition: SemanticModelDefinition;
-  formulaTexts: Record<string, string>;
+  expressionDrafts: Record<string, ExpressionDraft>;
+}
+
+/**
+ * The editor's state as compared for unsaved changes. Only edited drafts
+ * count: switching views without typing is no change, and neither is key
+ * order.
+ */
+export function modelEditorState(
+  name: string,
+  definition: SemanticModelDefinition,
+  drafts: Record<string, ExpressionDraft>,
+): string {
+  return canonicalJson({
+    name,
+    definition,
+    drafts: Object.fromEntries(
+      Object.entries(drafts).filter(([, draft]) => draft.edited),
+    ),
+  });
+}
+
+/** Drafts of measures that no longer exist or no longer have that kind are dropped. */
+function liveDrafts(
+  definition: SemanticModelDefinition,
+  drafts: Record<string, ExpressionDraft>,
+): Record<string, ExpressionDraft> {
+  const kinds = new Map(definition.measures.map((m) => [m.id, m.kind]));
+  return Object.fromEntries(
+    Object.entries(drafts).filter(([key]) => {
+      const at = key.lastIndexOf(":");
+      const kind = kinds.get(key.slice(0, at)),
+        part = key.slice(at + 1);
+      return part === "formula" ? kind === "formula" : kind === "aggregate";
+    }),
+  );
 }
 
 const EMPTY: SemanticModelDefinition = {
@@ -104,21 +153,21 @@ export function ModelEditor({
     sourceCatalog,
   );
   const sources = inputMetadata.sources;
-  // Undo/redo covers the definition and the unparsed formula texts. The name,
+  // Undo/redo covers the definition and the expression drafts. The name,
   // preview selection and filter stay outside it.
   const [edits, setEdits] = useState(() =>
     startHistory<ModelEdit>({
       definition: initial?.definition ?? EMPTY,
-      formulaTexts: {},
+      expressionDrafts: {},
     }),
   );
-  const { definition, formulaTexts } = edits.present;
-  const [savedState, setSavedState] = useState(
-    JSON.stringify({
-      name: initial?.name ?? t("defaultModel"),
-      definition: initial?.definition ?? EMPTY,
-      formulaTexts: {},
-    }),
+  const { definition, expressionDrafts } = edits.present;
+  const [savedState, setSavedState] = useState(() =>
+    modelEditorState(
+      initial?.name ?? t("defaultModel"),
+      initial?.definition ?? EMPTY,
+      {},
+    ),
   );
   const [measureIds, setMeasureIds] = useState(
     initial?.definition.measures.map((m) => m.id) ?? [],
@@ -136,8 +185,17 @@ export function ModelEditor({
     // Shown beside the Preview button, which sits far below the page header.
     [previewError, setPreviewError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
-  const current = JSON.stringify({ name, definition, formulaTexts }),
-    queryState = JSON.stringify({ measureIds, groupBy, filterText });
+  // The expression whose draft failed to save, to mark its rows.
+  const [expressionProblem, setExpressionProblem] = useState<{
+    key: string;
+    code: string;
+    fieldId?: string;
+  } | null>(null);
+  const current = useMemo(
+      () => modelEditorState(name, definition, expressionDrafts),
+      [name, definition, expressionDrafts],
+    ),
+    queryState = canonicalJson({ measureIds, groupBy, filterText });
   const dirty = current !== savedState,
     fresh = previewState === current + queryState;
   useEffect(() => {
@@ -149,20 +207,75 @@ export function ModelEditor({
   );
   const fieldsFor = (id: string) =>
     sources.find((s) => s.id === id)?.fields ?? [];
+  // The measures each calculated measure may use, typed by the checker.
+  const formulaFields = useMemo(() => {
+    const sourceMap = new Map(sources.map((s) => [s.id, s]));
+    return new Map(
+      definition.measures
+        .filter((m) => m.kind === "formula")
+        .map((m) => [m.id, formulaMeasureFields(definition, sourceMap, m.id)]),
+    );
+  }, [definition, sources]);
   /** `editKey` coalesces consecutive edits of one text field into one undo step. */
   const change = (
     patch: Partial<SemanticModelDefinition>,
     editKey?: string,
   ) => {
-    setEdits((h) =>
-      recordEdit(
+    setEdits((h) => {
+      const definition = { ...h.present.definition, ...patch };
+      return recordEdit(
         h,
-        { ...h.present, definition: { ...h.present.definition, ...patch } },
+        {
+          definition,
+          expressionDrafts: liveDrafts(definition, h.present.expressionDrafts),
+        },
         editKey,
-      ),
-    );
+      );
+    });
     setNotice(null);
   };
+  /**
+   * Keeps an expression draft. Views switched without edits replace the
+   * present (no undo step, no change); an unchanged draft records nothing.
+   */
+  function changeDraft(key: string, draft: ExpressionDraft) {
+    setEdits((h) => {
+      const next = {
+        ...h.present,
+        expressionDrafts: { ...h.present.expressionDrafts, [key]: draft },
+      };
+      return draft.edited
+        ? recordChange(h, next, `draft:${key}`)
+        : replacePresent(h, next);
+    });
+    setExpressionProblem(null);
+    setNotice(null);
+  }
+  /** Sets or removes an aggregate's filter, with its draft, as one edit. */
+  function changeMeasureFilter(
+    measure: ModelMeasure,
+    draft: ExpressionDraft | null,
+  ) {
+    const key = `${measure.id}:filter`;
+    setEdits((h) => {
+      const { [key]: _removed, ...drafts } = h.present.expressionDrafts;
+      return recordChange(h, {
+        definition: draft
+          ? h.present.definition
+          : {
+              ...h.present.definition,
+              measures: h.present.definition.measures.map((m) => {
+                if (m.id !== measure.id || m.kind !== "aggregate") return m;
+                const { filter: _filter, ...aggregate } = m.aggregate;
+                return { ...m, aggregate };
+              }),
+            },
+        expressionDrafts: draft ? { ...drafts, [key]: draft } : drafts,
+      });
+    });
+    setExpressionProblem(null);
+    setNotice(null);
+  }
   function changeMeasure(id: string, next: ModelMeasure, editKey?: string) {
     change(
       {
@@ -185,20 +298,59 @@ export function ModelEditor({
     setError(null);
     setPreviewError(null);
   }
-  function build() {
+  /**
+   * The definition with every draft resolved. Unedited drafts keep the stored
+   * expression object, so saving without edits changes nothing.
+   */
+  function build(): SemanticModelDefinition {
+    const resolve = (
+      key: string,
+      initial: DataExpression | undefined,
+      target: "condition" | "calculation",
+      fields: readonly DataField[],
+    ) => {
+      try {
+        return resolveExpressionDraft(
+          expressionDrafts[key],
+          initial,
+          target,
+          fields,
+        );
+      } catch (failure) {
+        if (failure instanceof DataProcessingError)
+          setExpressionProblem({
+            key,
+            code: failure.code,
+            ...(failure.fieldId ? { fieldId: failure.fieldId } : {}),
+          });
+        throw failure;
+      }
+    };
     return {
       ...definition,
-      measures: definition.measures.map((m) =>
-        m.kind === "formula" && formulaTexts[m.id] !== undefined
-          ? {
-              ...m,
-              expression: parseDataFormula(
-                formulaTexts[m.id]!,
-                definition.measures,
-              ),
-            }
-          : m,
-      ),
+      measures: definition.measures.map((m) => {
+        if (m.kind === "formula" && expressionDrafts[`${m.id}:formula`]) {
+          const expression = resolve(
+            `${m.id}:formula`,
+            m.expression,
+            "calculation",
+            formulaFields.get(m.id) ?? [],
+          );
+          return expression === m.expression ? m : { ...m, expression };
+        }
+        if (m.kind === "aggregate" && expressionDrafts[`${m.id}:filter`]) {
+          const filter = resolve(
+            `${m.id}:filter`,
+            m.aggregate.filter,
+            "condition",
+            fieldsFor(m.datasetId),
+          );
+          return filter === m.aggregate.filter
+            ? m
+            : { ...m, aggregate: { ...m.aggregate, filter } };
+        }
+        return m;
+      }),
     };
   }
   async function preview() {
@@ -256,13 +408,9 @@ export function ModelEditor({
             );
       setRecord(saved.model);
       setEdits((h) =>
-        replacePresent(h, { definition: model, formulaTexts: {} }),
+        replacePresent(h, { definition: model, expressionDrafts: {} }),
       );
-      const signature = JSON.stringify({
-        name,
-        definition: model,
-        formulaTexts: {},
-      });
+      const signature = modelEditorState(name, model, {});
       setSavedState(signature);
       if (fresh) setPreviewState(signature + queryState);
       onSaved(saved.model);
@@ -305,14 +453,11 @@ export function ModelEditor({
       const next = saved.model;
       setRecord(next);
       setName(next.name);
-      setEdits(startHistory({ definition: next.definition, formulaTexts: {} }));
-      setSavedState(
-        JSON.stringify({
-          name: next.name,
-          definition: next.definition,
-          formulaTexts: {},
-        }),
+      setEdits(
+        startHistory({ definition: next.definition, expressionDrafts: {} }),
       );
+      setExpressionProblem(null);
+      setSavedState(modelEditorState(next.name, next.definition, {}));
       setMeasureIds(next.definition.measures.map((measure) => measure.id));
       setGroupBy([]);
       setFilterText("");
@@ -1030,18 +1175,63 @@ export function ModelEditor({
                 </fieldset>
               ) : null}
               {measure.kind === "aggregate" ? (
-                <AggregateFields
-                  showName={false}
-                  fields={fieldsFor(measure.datasetId)}
-                  value={{ ...measure.aggregate, name: measure.name }}
-                  onChange={(aggregate) =>
-                    changeMeasure(measure.id, {
-                      ...measure,
-                      name: aggregate.name,
-                      aggregate,
-                    })
-                  }
-                />
+                <>
+                  <AggregateFields
+                    showName={false}
+                    fields={fieldsFor(measure.datasetId)}
+                    value={{ ...measure.aggregate, name: measure.name }}
+                    onChange={(aggregate) =>
+                      changeMeasure(measure.id, {
+                        ...measure,
+                        name: aggregate.name,
+                        aggregate,
+                      })
+                    }
+                  />
+                  {measure.aggregate.filter !== undefined ||
+                  expressionDrafts[`${measure.id}:filter`] ? (
+                    <>
+                      <ExpressionEditor
+                        label={t("measureFilter")}
+                        target="condition"
+                        fields={fieldsFor(measure.datasetId)}
+                        initial={measure.aggregate.filter}
+                        draft={expressionDrafts[`${measure.id}:filter`]}
+                        onDraftChange={(draft) =>
+                          changeDraft(`${measure.id}:filter`, draft)
+                        }
+                        problem={
+                          expressionProblem?.key === `${measure.id}:filter`
+                            ? expressionProblem
+                            : undefined
+                        }
+                      />
+                      <div className="data-form-actions">
+                        <button
+                          type="button"
+                          onClick={() => changeMeasureFilter(measure, null)}
+                        >
+                          {t("removeMeasureFilter")}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="data-form-actions">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          changeMeasureFilter(measure, {
+                            view: "visual",
+                            model: emptyVisualModel("condition"),
+                            edited: true,
+                          })
+                        }
+                      >
+                        {t("addMeasureFilter")}
+                      </button>
+                    </div>
+                  )}
+                </>
               ) : isWindowedMeasure(measure) ? (
                 <>
                   <WindowedMeasureFields
@@ -1071,30 +1261,20 @@ export function ModelEditor({
                 </>
               ) : (
                 <div className="field">
-                  <label htmlFor={measure.id}>{t("formula")}</label>
-                  <textarea
-                    id={measure.id}
-                    rows={2}
-                    required
-                    maxLength={10000}
-                    value={
-                      formulaTexts[measure.id] ??
-                      formatDataFormula(measure.expression, definition.measures)
+                  <ExpressionEditor
+                    label={t("formula")}
+                    target="calculation"
+                    noun="measure"
+                    fields={formulaFields.get(measure.id) ?? []}
+                    initial={measure.expression}
+                    draft={expressionDrafts[`${measure.id}:formula`]}
+                    onDraftChange={(draft) =>
+                      changeDraft(`${measure.id}:formula`, draft)
                     }
-                    onChange={(e) =>
-                      setEdits((h) =>
-                        recordEdit(
-                          h,
-                          {
-                            ...h.present,
-                            formulaTexts: {
-                              ...h.present.formulaTexts,
-                              [measure.id]: e.target.value,
-                            },
-                          },
-                          `formula:${measure.id}`,
-                        ),
-                      )
+                    problem={
+                      expressionProblem?.key === `${measure.id}:formula`
+                        ? expressionProblem
+                        : undefined
                     }
                   />
                   <p className="help">{t("measureFormulaHelp")}</p>
