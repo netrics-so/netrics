@@ -346,6 +346,8 @@ export type ActiveProjectResponse = z.infer<typeof activeProjectResponseSchema>;
 export const projectSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
+  /** Set while the project is archived: hidden from navigation and pickers. */
+  archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
 });
 export type Project = z.infer<typeof projectSchema>;

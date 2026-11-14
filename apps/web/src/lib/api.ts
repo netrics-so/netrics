@@ -208,7 +208,6 @@ export class ApiError extends Error {
 const API_ERROR_ALIASES: Readonly<Record<string, ApiErrorKey>> = {
   workspace_not_found: "record_not_found",
   member_not_found: "record_not_found",
-  project_not_found: "record_not_found",
   connection_not_found: "record_not_found",
   review_not_found: "record_not_found",
   image_type_mismatch: "image_invalid",
