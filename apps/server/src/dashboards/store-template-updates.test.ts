@@ -252,10 +252,34 @@ describe("store-template updates", { timeout: TIMEOUT_MS }, () => {
   });
 
   it("reads a fresh install as unchanged by the customer", async () => {
-    const { workspaceId, requestId } = await installIn(["google-play"]);
+    const { workspaceId, requestId, connections } = await installIn([
+      "google-play",
+    ]);
     const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    // Exactly the fixture's changes: any other item would be a difference
+    // between how the template builds a record and how it is stored.
+    const source = (metric: string) =>
+      `preparation:source:${connections[0]!.id}:${metric}#step:calculate_store_name`;
+    expect(
+      items(plan)
+        .filter((i) => i.outcome === "template")
+        .map((i) => i.ref)
+        .sort(),
+    ).toEqual(
+      [
+        "model:downloads#measure:downloads",
+        "model:downloads#measure:downloads_avg",
+        source("downloads"),
+        source("proceeds"),
+        source("ratings"),
+        "dashboard:portfolio#widget:summary",
+      ].sort(),
+    );
     expect(items(plan).filter((i) => i.outcome !== "template")).toEqual([
-      expect.objectContaining({ outcome: "propose_removal" }),
+      expect.objectContaining({
+        ref: "dashboard:portfolio#widget:ratings",
+        outcome: "propose_removal",
+      }),
     ]);
     expect(plan).toMatchObject({ fromVersion: 1, toVersion: 2 });
     expect(plan.basis).toMatch(/^[0-9a-f]{64}$/);
@@ -402,6 +426,8 @@ describe("store-template updates", { timeout: TIMEOUT_MS }, () => {
     inputs.fixedProduct = null;
     await owner`update data_template_installs set inputs=${owner.json(inputs as never)} where request_id=${one.requestId}`;
     const plan = await updates(v2).plan(actor(one.workspaceId), one.requestId);
+    // Changed inputs are a different basis.
+    expect(plan.basis).not.toBe(plans[0]!.basis);
     expect(items(plan).filter((i) => i.outcome === "choose")).toEqual([]);
     for (const ref of [
       `preparation:source:${extra!.id}:downloads#step:raw`,
@@ -463,10 +489,12 @@ describe("store-template updates", { timeout: TIMEOUT_MS }, () => {
       dashboardItems("dashboard:portfolio", normalized).size,
     ).toBeGreaterThan(0);
     // The migrated row snapshot (an install made before versions).
+    // Its basis differs: the inputs are derived (no install-time groups).
     await makeLegacy(workspaceId, requestId);
-    expect(await updates(v2).plan(actor(workspaceId), requestId)).toEqual(
-      reference,
-    );
+    expect(await updates(v2).plan(actor(workspaceId), requestId)).toEqual({
+      ...reference,
+      basis: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
   it("counts a template widget deleted before the migration as the customer's deletion", async () => {
@@ -506,10 +534,47 @@ describe("store-template updates", { timeout: TIMEOUT_MS }, () => {
     // The template removes it too: nothing to decide.
     const removed = await updates(v2).plan(actor(workspaceId), requestId);
     expect(item(removed, "dashboard:portfolio#widget:ratings")).toBeUndefined();
-    // Completing the baseline wrote inputs and keys once.
+    // Reading status and plans completes the baseline in memory only.
+    await updates(v2).list(actor(workspaceId));
     const [install] =
       await owner`select inputs from data_template_installs where request_id=${requestId}`;
-    expect(install!.inputs).not.toBeNull();
+    expect(install!.inputs).toBeNull();
+    const keys =
+      await owner`select key from data_template_records where request_id=${requestId} and key like 'legacy:%'`;
+    expect(keys.length).toBeGreaterThan(0);
+  });
+
+  it("keeps template slides apart from slides the customer inserts", async () => {
+    const { workspaceId, requestId, installed } = await installIn([
+      "google-play",
+    ]);
+    const reference = await updates(v2).plan(actor(workspaceId), requestId);
+    // The customer puts a slide of their own in front of the template's.
+    await owner`update dashboard_slides set position = position + 1 where dashboard_id=${installed.dashboardId}`;
+    await owner`insert into dashboard_slides (dashboard_id, workspace_id, position, name)
+      values (${installed.dashboardId}, ${workspaceId}, 0, 'Mine')`;
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const byRef = (p: StoreTemplatePlan) =>
+      Object.fromEntries(
+        items(p)
+          .filter((i) => !i.ref.includes("#slide:custom:"))
+          .map((i) => [i.ref, i]),
+      );
+    // The template's changes apply as before, nothing becomes a conflict.
+    expect(byRef(plan)).toEqual(byRef(reference));
+    expect(items(plan).filter((i) => i.outcome === "choose")).toEqual([]);
+    expect(
+      items(plan).find((i) => i.ref.includes("#slide:custom:")),
+    ).toMatchObject({ outcome: "customer", change: "added" });
+    // The new widget lands on the template's slide, not on position 0.
+    expect(item(plan, "dashboard:portfolio#widget:summary")).toMatchObject({
+      outcome: "template",
+      next: expect.objectContaining({ slide: "slide:0" }),
+    });
+    // The install stored the template slide's key with its widgets' keys.
+    const [record] =
+      await owner`select widget_keys from data_template_records where request_id=${requestId} and key='dashboard:portfolio'`;
+    expect(Object.values(record!.widget_keys as object)).toContain("slide:0");
   });
 
   it("reports a baseline that cannot be read instead of a wrong plan", async () => {

@@ -110,6 +110,70 @@ describe("three-way store-template comparison", () => {
       )[0]!.outcome,
     ).toBe("template");
   });
+  it("proposes a source preparation the new version stops building for a connection that stays", () => {
+    // Connection x stays (its downloads preparation is in every state); the
+    // new version no longer builds x's ratings preparation.
+    const kept: ItemRef = "preparation:source:x:downloads#step:raw";
+    const dropped: ItemRef = "preparation:source:x:ratings#step:raw";
+    const states = (current: unknown) =>
+      [
+        items([
+          [kept, a],
+          [dropped, a],
+        ]),
+        items([
+          [kept, a],
+          ...(current === undefined ? [] : [[dropped, current]]),
+        ] as [ItemRef, unknown][]),
+        items([[kept, a]]),
+      ] as const;
+    expect(classify(...states(a))).toEqual([
+      expect.objectContaining({ ref: dropped, outcome: "propose_removal" }),
+    ]);
+    expect(classify(...states(c))).toEqual([
+      expect.objectContaining({ ref: dropped, outcome: "choose" }),
+    ]);
+    expect(() => merge(...states(a), [])).toThrow(MergeDecisionMissing);
+    // The template adds a preparation for a connection that stays.
+    const added: ItemRef = "preparation:source:x:installs#step:raw";
+    expect(
+      classify(
+        items([[kept, a]]),
+        items([[kept, a]]),
+        items([
+          [kept, a],
+          [added, b],
+        ]),
+      ),
+    ).toEqual([expect.objectContaining({ ref: added, outcome: "template" })]);
+    const [o, , n] = states(a);
+    expect(summarize(o, n, classify(...states(a))).steps).toEqual({
+      added: 0,
+      changed: 0,
+      removed: 1,
+    });
+  });
+  it("asks before replacing an append preparation the customer edited", () => {
+    const step: ItemRef = "preparation:append:downloads:0:0#step:append_0_0";
+    // Not edited: the template's (app-scope) value, no question.
+    expect(classify(one(step, a), one(step, a), one(step, b))[0]!.outcome).toBe(
+      "scope",
+    );
+    // Edited by the customer: their choice, theirs unless they pick the template.
+    for (const next of [b, undefined])
+      expect(
+        classify(one(step, a), one(step, c), one(step, next))[0]!.outcome,
+      ).toBe("choose");
+    expect(classify(one(step, a), one(step, c), one(step, c))).toEqual([]);
+    expect(
+      merge(one(step, a), one(step, c), one(step, b), [
+        { ref: step, choice: "customer" },
+      ]).get(step),
+    ).toEqual(c);
+    expect(() => merge(one(step, a), one(step, c), one(step, b), [])).toThrow(
+      MergeDecisionMissing,
+    );
+  });
   it("merges per outcome and decision", () => {
     const ref2: ItemRef = "model:downloads#measure:extra";
     const ref3: ItemRef = "model:downloads#measure:gone";

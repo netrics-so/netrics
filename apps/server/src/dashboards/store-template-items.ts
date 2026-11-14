@@ -175,9 +175,12 @@ export interface NormalizedDashboard {
   settings: Record<string, unknown>;
   /** Shared filters by id; the app filter's fixed value is `app.fixedValue`. */
   filters: Record<string, unknown>;
-  /** By position. */
+  /** By slide key (`slide:<template index>`), or `custom:<slideId>`. */
   slides: Record<string, unknown>;
-  /** By widget key, or `custom:<widgetId>` for the customer's widgets. */
+  /**
+   * By widget key, or `custom:<widgetId>` for the customer's widgets; `slide`
+   * is the key of the slide the widget is on.
+   */
   widgets: Record<string, { slide: string; value: unknown }>;
 }
 
@@ -292,8 +295,10 @@ export type DashboardRowsLike = Record<string, unknown> & {
 };
 
 /**
- * The dashboard as stored. Template widgets are keyed by `widgetKeys`
- * (widget id → widget key); the others are `custom:<widgetId>`.
+ * The dashboard as stored. Template widgets and slides are keyed by
+ * `widgetKeys` (widget or slide id → `widget:<name>` / `slide:<index>`); the
+ * others are `custom:<id>`, so a slide the customer inserts or moves never
+ * shifts the template's.
  */
 export function normalizeDashboard(
   dashboard: Dashboard | DashboardRowsLike,
@@ -321,12 +326,13 @@ export function normalizeDashboard(
     (a, b) => Number(a.position ?? 0) - Number(b.position ?? 0),
   );
   for (const slide of ordered) {
-    const position = String(slide.position ?? 0);
-    slides[position] = slideValue(slide);
+    const slideKey =
+      widgetKeys[String(slide.id)] ?? `custom:${String(slide.id)}`;
+    slides[slideKey] = slideValue(slide);
     for (const widget of slide.widgets) {
       const id = String(widget.id);
       widgets[widgetKeys[id] ?? `custom:${id}`] = {
-        slide: position,
+        slide: slideKey,
         value: symbolize(widgetValue(widget), idsToKeys),
       };
     }
@@ -337,6 +343,29 @@ export function normalizeDashboard(
     slides,
     widgets,
   };
+}
+
+/**
+ * Adds slide keys to a dashboard's template keys that have none (installs
+ * made before slides were keyed): the first `templateSlides` slides in
+ * position order are the template's, as widget keys are derived.
+ */
+export function withSlideKeys(
+  widgetKeys: Record<string, string>,
+  slides: readonly object[],
+  templateSlides: number,
+): Record<string, string> {
+  if (Object.values(widgetKeys).some((key) => key.startsWith("slide:")))
+    return widgetKeys;
+  const keys = { ...widgetKeys };
+  (slides as readonly { id?: unknown; position?: unknown }[])
+    .slice()
+    .sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0))
+    .slice(0, templateSlides)
+    .forEach((slide, index) => {
+      keys[String(slide.id)] = `slide:${index}`;
+    });
+  return keys;
 }
 
 const camel = (row: Record<string, unknown>) =>
@@ -409,6 +438,7 @@ export function normalizeTemplateDashboard(
       logoImageId: settings.logoImageId ?? null,
       primaryFormat: parsed.primaryFormat,
       slides: (parsed.slides ?? []).map((slide, position) => ({
+        id: `template:slide:${position}`,
         position,
         name: slide.name ?? null,
         durationSeconds: slide.durationSeconds ?? null,
@@ -439,8 +469,14 @@ export function normalizeTemplateDashboard(
           }),
       })),
     },
-    // Each template widget's stand-in id maps to its key.
-    Object.fromEntries(widgetKeys.map((key) => [`template:${key}`, key])),
+    // Each template widget's and slide's stand-in id maps to its key.
+    Object.fromEntries([
+      ...widgetKeys.map((key) => [`template:${key}`, key]),
+      ...(parsed.slides ?? []).map((_, index) => [
+        `template:slide:${index}`,
+        `slide:${index}`,
+      ]),
+    ]),
     idsToKeys,
   );
 }
@@ -454,8 +490,17 @@ export function dashboardItems(
     items.set(ref(key, "settings", name), canonical(value));
   for (const [id, value] of Object.entries(d.filters))
     items.set(ref(key, "filter", id), canonical(value));
-  for (const [position, value] of Object.entries(d.slides))
-    items.set(ref(key, "slide", position), canonical(value));
+  for (const [slideKey, value] of Object.entries(d.slides))
+    items.set(
+      ref(
+        key,
+        "slide",
+        slideKey.startsWith("slide:")
+          ? slideKey.slice("slide:".length)
+          : slideKey,
+      ),
+      canonical(value),
+    );
   for (const [widgetKey, { slide, value }] of Object.entries(d.widgets)) {
     const id = widgetKey.startsWith("widget:")
       ? widgetKey.slice("widget:".length)
@@ -469,10 +514,11 @@ export function dashboardItems(
 }
 
 /**
- * App-scope parts (Global Constraints): never conflicts, always the new
- * template's value. Whole append preparations, a model's datasets and the
- * app filter's fixed value; that a per-connection source preparation exists
- * at all is scope too, which only the comparison of whole records can tell
+ * App-scope parts (Global Constraints): the new template's value, not a
+ * conflict. Whole append preparations (except parts the customer edited,
+ * which they decide on), a model's datasets and the app filter's fixed
+ * value; the source preparations of a connection the install gained or lost
+ * are scope too, which only comparing the states can tell
  * (store-template-merge.ts).
  */
 export function isScopeItem(ref: ItemRef | string): boolean {

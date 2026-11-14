@@ -180,9 +180,12 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
     expect(dashboard.original.request.name).toBe("App portfolio");
     const widgets =
       await owner`select id, model_id from dashboard_widgets where dashboard_id=${installed.dashboardId}`;
+    const [slide] =
+      await owner`select id from dashboard_slides where dashboard_id=${installed.dashboardId}`;
     expect(Object.keys(dashboard.widget_keys).sort()).toEqual(
-      widgets.map((w) => w.id).sort(),
+      [slide!.id, ...widgets.map((w) => w.id)].sort(),
     );
+    expect(dashboard.widget_keys[slide!.id]).toBe("slide:0");
     for (const widget of widgets)
       expect(dashboard.widget_keys[widget.id]).toBe(
         `widget:${Object.entries(installed.models).find(([, id]) => id === widget.model_id)![0]}`,

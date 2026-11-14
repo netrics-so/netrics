@@ -47,28 +47,35 @@ export class MergeDecisionMissing extends Error {
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 
-function recordKeys(...sets: Items[]): Set<string> {
-  const keys = new Set<string>();
+/** The connection of a `preparation:source:<connectionId>:<metric>` item. */
+function sourceConnection(ref: string): string | undefined {
+  const key = recordKeyOf(ref);
+  return key.startsWith("preparation:source:") ? key.split(":")[2] : undefined;
+}
+function connections(...sets: Items[]): Set<string> {
+  const ids = new Set<string>();
   for (const items of sets)
-    for (const ref of items.keys()) keys.add(recordKeyOf(ref));
-  return keys;
+    for (const ref of items.keys()) {
+      const id = sourceConnection(ref);
+      if (id !== undefined) ids.add(id);
+    }
+  return ids;
 }
 
 /**
- * Scope by item (isScopeItem), or a per-connection source preparation that
- * the new template adds or drops as a whole: the connection was added to or
- * removed from the install, which is app scope, not a template change.
+ * Scope by item (isScopeItem), or an item of a per-connection source
+ * preparation whose connection the install gained or lost (in one state and
+ * not the other): app scope, not a template change. A source preparation a
+ * new version adds or stops building for a connection that stays is an
+ * ordinary template change (added, or proposed for removal).
  */
 function scopeTest(original: Items, current: Items, next: Items) {
-  const before = recordKeys(original, current),
-    after = recordKeys(next);
+  const before = connections(original, current),
+    after = connections(next);
   return (ref: ItemRef) => {
     if (isScopeItem(ref)) return true;
-    const key = recordKeyOf(ref);
-    return (
-      key.startsWith("preparation:source:") &&
-      before.has(key) !== after.has(key)
-    );
+    const id = sourceConnection(ref);
+    return id !== undefined && before.has(id) !== after.has(id);
   };
 }
 
@@ -132,11 +139,15 @@ export function classify(
     };
     if (scope(ref)) {
       if (same(c, n)) continue;
+      // An append preparation is regenerated from the app scope, but a part
+      // the customer edited stays theirs until they pick the template's.
+      const edited =
+        recordKeyOf(ref).startsWith("preparation:append:") && !same(c, o);
       plan.push({
         ref,
         change:
           c === undefined ? "added" : n === undefined ? "removed" : "changed",
-        outcome: "scope",
+        outcome: edited ? "choose" : "scope",
         ...values,
       });
       continue;

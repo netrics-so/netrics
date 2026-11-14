@@ -9,6 +9,7 @@ import {
   normalizeLegacyDashboard,
   normalizeTemplateDashboard,
   preparationItems,
+  withSlideKeys,
   type Items,
 } from "./store-template-items.js";
 import {
@@ -186,11 +187,22 @@ describe("store-template items", () => {
     const { records, idsToKeys } = install();
     const record = dashboardOf(records);
     const rows = rowsOf(record);
-    const widgetKeys = Object.fromEntries(
-      rows.slides[0]!.widgets.map((widget, index) => [
+    const widgetKeys = Object.fromEntries([
+      [rows.slides[0]!.id, "slide:0"],
+      ...rows.slides[0]!.widgets.map((widget, index) => [
         widget.id,
         record.widgetKeys[index]!,
       ]),
+    ]);
+    const template = Object.fromEntries(
+      dashboardItems(
+        record.key,
+        normalizeTemplateDashboard(
+          record.request,
+          record.widgetKeys,
+          idsToKeys,
+        ),
+      ),
     );
     expect(
       Object.fromEntries(
@@ -199,18 +211,76 @@ describe("store-template items", () => {
           normalizeDashboard(rows, widgetKeys, idsToKeys),
         ),
       ),
-    ).toEqual(
+    ).toEqual(template);
+    // Without stored slide keys, the first slide by position is the template's.
+    expect(
       Object.fromEntries(
         dashboardItems(
           record.key,
-          normalizeTemplateDashboard(
-            record.request,
-            record.widgetKeys,
+          normalizeDashboard(
+            rows,
+            withSlideKeys(
+              Object.fromEntries(
+                Object.entries(widgetKeys as Record<string, string>).filter(
+                  ([, k]) => k !== "slide:0",
+                ),
+              ),
+              rows.slides,
+              1,
+            ),
             idsToKeys,
           ),
         ),
       ),
+    ).toEqual(template);
+  });
+  it("keys template slides by template index, not position", () => {
+    const { records, idsToKeys } = install();
+    const record = dashboardOf(records);
+    const rows = rowsOf(record);
+    const templateSlide = rows.slides[0]!;
+    const widgetKeys = Object.fromEntries([
+      [templateSlide.id, "slide:0"],
+      ...templateSlide.widgets.map((widget, index) => [
+        widget.id,
+        record.widgetKeys[index]!,
+      ]),
+    ]);
+    // The customer inserts a slide of their own in front of the template's.
+    const mine = {
+      ...templateSlide,
+      id: randomUUID(),
+      name: "Mine",
+      widgets: [],
+    };
+    const moved = {
+      ...rows,
+      slides: [
+        { ...mine, position: 0 },
+        { ...templateSlide, position: 1 },
+      ],
+    } as typeof rows;
+    const items = dashboardItems(
+      record.key,
+      normalizeDashboard(moved, widgetKeys, idsToKeys),
     );
+    const before = dashboardItems(
+      record.key,
+      normalizeDashboard(rows, widgetKeys, idsToKeys),
+    );
+    expect(items.get("dashboard:portfolio#slide:0")).toEqual(
+      before.get("dashboard:portfolio#slide:0"),
+    );
+    expect(items.get("dashboard:portfolio#widget:downloads")).toEqual(
+      before.get("dashboard:portfolio#widget:downloads"),
+    );
+    expect(items.get("dashboard:portfolio#widget:downloads")).toMatchObject({
+      slide: "slide:0",
+    });
+    expect(items.get(`dashboard:portfolio#slide:custom:${mine.id}`)).toEqual({
+      enabled: true,
+      name: "Mine",
+    });
   });
   it("reads a migrated row snapshot like the rows the service reads", () => {
     const { records, idsToKeys } = install();

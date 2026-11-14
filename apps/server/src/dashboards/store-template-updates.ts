@@ -20,11 +20,14 @@ import type {
 } from "@netrics/domain";
 import { DataServiceError } from "../data/service.js";
 import {
-  ensureInstallCompleted,
+  deriveInstallCompletion,
   type LegacyDashboardSnapshot,
 } from "./store-template-legacy.js";
 import {
+  canonical,
   dashboardItems,
+  itemKindOf,
+  withSlideKeys,
   modelItems,
   normalizeDashboard,
   normalizeLegacyDashboard,
@@ -55,8 +58,8 @@ import {
  * the list of installs with a summary of what a newer template version
  * changes, and per install the three-way plan (original template, the
  * customer's current records, the new template) the customer reviews before
- * applying it. Reading only; nothing here changes a record (completing a
- * pre-version install writes its derived inputs and keys, nothing else).
+ * applying it. Read-only: an install made before versions is completed in
+ * memory; applying an update writes the completion (ensureInstallCompleted).
  */
 type Actor = { workspaceId: string; callerId: string; locale: Locale };
 type RecordRow = typeof schema.dataTemplateRecords.$inferSelect;
@@ -157,11 +160,28 @@ export function createStoreTemplateUpdateService(deps: {
     workspaceId: string,
     requestId: string,
   ): Promise<ComputedPlan | null> {
-    const completion = await ensureInstallCompleted(tx, workspaceId, requestId);
+    // Read-only: an install made before versions is completed in memory
+    // (keys renamed, inputs derived); applying an update writes it.
+    const completion = await deriveInstallCompletion(
+      tx,
+      workspaceId,
+      requestId,
+    );
     if (!completion.ok) return null;
     const install = (await installRow(tx, workspaceId, requestId))!;
     const inputs = completion.inputs;
-    const rows = await recordRows(tx, workspaceId, requestId);
+    const rows = (await recordRows(tx, workspaceId, requestId)).map((row) => {
+      if (!completion.pending) return row;
+      const key = completion.keys[row.key] ?? row.key;
+      return {
+        ...row,
+        key,
+        widgetKeys:
+          key === "dashboard:portfolio"
+            ? completion.widgetKeys
+            : row.widgetKeys,
+      };
+    });
     const live = rows.filter(
       (row) => row.detachedAt === null && row.kind !== "dataset",
     );
@@ -232,6 +252,23 @@ export function createStoreTemplateUpdateService(deps: {
       if (record.kind !== "dashboard") throw new BaselineUnavailable();
       return nextItems(record);
     };
+    /**
+     * A dashboard's widget and slide keys; installs keyed before slides were
+     * get the first slides by position, as many as its original has.
+     */
+    const templateKeys = (
+      row: RecordRow,
+      slides: readonly object[],
+      originals: Items,
+    ) =>
+      withSlideKeys(
+        (row.widgetKeys ?? {}) as Record<string, string>,
+        slides,
+        [...originals.keys()].filter(
+          (ref) =>
+            itemKindOf(ref) === "slide" && !ref.includes("#slide:custom:"),
+        ).length,
+      );
     const originalItems = (row: RecordRow): Items => {
       const original = row.original as Original | null;
       if (original && "graph" in original && row.kind === "preparation")
@@ -268,7 +305,7 @@ export function createStoreTemplateUpdateService(deps: {
           row.key,
           normalizeLegacyDashboard(
             original.legacySnapshot,
-            (row.widgetKeys ?? {}) as Record<string, string>,
+            templateKeys(row, original.legacySnapshot.slides, v1),
             idsToKeys,
           ),
         );
@@ -293,7 +330,8 @@ export function createStoreTemplateUpdateService(deps: {
       let name: string,
         version: number,
         draft = false,
-        currentItems: Items;
+        currentItems: Items,
+        recordOriginal: Items | undefined;
       if (kind === "preparation") {
         const prep = preparations.get(row.recordId);
         if (!prep) continue;
@@ -325,17 +363,18 @@ export function createStoreTemplateUpdateService(deps: {
         if (!dashboard) continue;
         name = dashboard.name;
         version = dashboard.version;
+        recordOriginal = originalItems(row);
         currentItems = dashboardItems(
           row.key,
           normalizeDashboard(
             dashboard,
-            (row.widgetKeys ?? {}) as Record<string, string>,
+            templateKeys(row, dashboard.slides, recordOriginal),
             idsToKeys,
           ),
         );
       }
       seen.add(row.key);
-      add(original, originalItems(row));
+      add(original, recordOriginal ?? originalItems(row));
       add(current, currentItems);
       const built = next.get(row.key);
       if (built) add(upcoming, nextItems(built));
@@ -363,6 +402,8 @@ export function createStoreTemplateUpdateService(deps: {
       });
     }
 
+    // By key, whatever keys the rows were stored under (baseline renames).
+    plans.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     const plan = classify(original, current, upcoming);
     const byRecord = new Map<string, PlanItem[]>();
     for (const item of plan) {
@@ -374,6 +415,11 @@ export function createStoreTemplateUpdateService(deps: {
       .update(
         JSON.stringify([
           template.version,
+          install.templateVersion,
+          // The inputs the next version is built from (apps, scope, name).
+          createHash("sha256")
+            .update(JSON.stringify(canonical(inputs)))
+            .digest("hex"),
           ...plans
             .map((record) => [record.key, record.recordId, record.version])
             .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),

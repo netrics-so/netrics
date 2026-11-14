@@ -141,6 +141,7 @@ describe("completing installs made before template versions", () => {
       "preparation:append:ratings:0:0",
     );
     expect(Object.values(done.widgetKeys).sort()).toEqual([
+      "slide:0",
       "widget:downloads",
       "widget:proceeds",
       "widget:ratings",
