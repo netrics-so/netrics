@@ -35,6 +35,7 @@ export default async function StoreTemplatesPage({
       can(workspace.role, "data:publish") ? (
         <StoreTemplateForm
           workspaceId={workspaceId}
+          projectId={workspace.activeProjectId}
           initialConnectionId={
             typeof query.connection === "string" ? query.connection : undefined
           }

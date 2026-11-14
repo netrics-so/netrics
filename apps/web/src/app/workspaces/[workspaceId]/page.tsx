@@ -74,11 +74,19 @@ export default async function WorkspaceHomePage({
     notFound();
   }
   const role = membership.role;
-  // Dashboards and sources of the active project (#573).
+  // Dashboards and sources of the active project (#573); source health
+  // stays workspace-wide, like the shell's badge: a failing source in
+  // another project still needs attention.
   const scoped = navigationQuery(projectScope(membership.activeProjectId, []));
-  const [{ dashboards }, { connections }, devices] = await Promise.all([
+  const [
+    { dashboards },
+    { connections },
+    { connections: allConnections },
+    devices,
+  ] = await Promise.all([
     listDashboards(cookieHeader, workspaceId, scoped),
     listConnections(cookieHeader, workspaceId, scoped),
+    listConnections(cookieHeader, workspaceId),
     can(role, "devices:view")
       ? listDevices(cookieHeader, workspaceId).then((r) =>
           r.devices.filter((device) => device.revokedAt === null),
@@ -87,7 +95,7 @@ export default async function WorkspaceHomePage({
   ]);
   const now = Date.now();
   const online = devices?.filter((d) => isScreenOnline(d, now)).length ?? 0;
-  const attention = sourcesNeedingAttention(connections);
+  const attention = sourcesNeedingAttention(allConnections);
   const at = (area: string) => workspacePath(workspaceId, area);
 
   return (
@@ -146,7 +154,7 @@ export default async function WorkspaceHomePage({
           <p className="overview-value">
             {t("sourceCount", { count: connections.length })}
           </p>
-          {connections.length > 0 ? (
+          {allConnections.length > 0 ? (
             <p
               className={`overview-health ${attention > 0 ? "attention" : "fresh"}`}
             >

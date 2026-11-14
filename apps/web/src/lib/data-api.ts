@@ -73,6 +73,25 @@ export async function getDataWorkspace(
   ]);
   return { ...sources, ...preparations, ...models };
 }
+/** One model by id, whatever its project; null when it is gone. */
+export async function getModel(
+  workspaceId: string,
+  id: string,
+  cookie?: string,
+): Promise<ModelDraft | null> {
+  try {
+    return (
+      await read(
+        modelResponseSchema,
+        base(workspaceId) + "/models/" + encodeURIComponent(id),
+        cookie,
+      )
+    ).model;
+  } catch (failure) {
+    if (failure instanceof ApiError && failure.status === 404) return null;
+    throw failure;
+  }
+}
 /** The datasets alone, e.g. for the editors' source picker (#573). */
 export async function getDataSources(
   workspaceId: string,

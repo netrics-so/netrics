@@ -8,14 +8,6 @@
   margin-bottom: 18px;
 }
 
-.dashboards-filter select {
-  min-width: 160px;
-  padding: 8px 12px;
-  border-color: var(--border);
-  font-size: var(--size-13);
-  color: var(--text-2);
-}
-
 .dashboards-new {
   font-size: var(--size-13);
   font-weight: 700;
@@ -505,15 +497,6 @@
   .dashboards-page .page-actions {
     width: 100%;
     margin-left: 0;
-  }
-
-  .dashboards-filter {
-    flex: 1;
-  }
-
-  .dashboards-filter select {
-    width: 100%;
-    min-width: 0;
   }
 
   .dashboards-create-close {

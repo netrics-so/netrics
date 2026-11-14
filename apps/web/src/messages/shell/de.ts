@@ -21,6 +21,8 @@ export const shellDe: Catalog<typeof shellEn> = {
     allProjects: "Alle Projekte",
     projectSwitchFailed:
       "Projekt konnte nicht gewechselt werden. Versuch es noch einmal.",
+    projectArchived:
+      "Dieses Projekt ist archiviert und kann nicht gewählt werden.",
     sections: {
       dashboards: "Dashboards",
       sources: "Quellen",

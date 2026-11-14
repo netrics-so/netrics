@@ -10,6 +10,7 @@ import type {
 } from "@netrics/contracts";
 
 import { AppleAdsSetup } from "./apple-ads-setup";
+import { inProject } from "@/lib/project-scope";
 import { AppPicker } from "../app-picker";
 import { ConfigFields } from "../config-fields";
 import { ConnectOAuthButton } from "../connect-oauth-button";
@@ -57,6 +58,8 @@ interface NewConnectionWizardProps {
   standings?: Readonly<Record<string, ConnectorStanding>>;
   /** The connector chosen in the catalogue (`?connector=`), if any. */
   initialConnectorId?: string | null;
+  /** The user's active project: new connections start in it (#573). */
+  projectId?: string | null;
 }
 
 export function NewConnectionWizard({
@@ -64,6 +67,7 @@ export function NewConnectionWizard({
   connectors,
   standings = {},
   initialConnectorId = null,
+  projectId = null,
 }: NewConnectionWizardProps) {
   const locale = useLocale();
   const t = useT("connections.wizard");
@@ -243,13 +247,19 @@ export function NewConnectionWizard({
           resources = [...selectedResources];
         }
       }
-      const { connection } = await createConnection(workspaceId, {
-        connectorId: connector.id,
-        name: name.trim() || connector.name,
-        ...payload,
-        ...(resources ? { resources } : {}),
-        ...(connector.datasets?.length ? { retention } : {}),
-      });
+      const { connection } = await createConnection(
+        workspaceId,
+        inProject(
+          {
+            connectorId: connector.id,
+            name: name.trim() || connector.name,
+            ...payload,
+            ...(resources ? { resources } : {}),
+            ...(connector.datasets?.length ? { retention } : {}),
+          },
+          projectId,
+        ),
+      );
       router.push(`/workspaces/${workspaceId}/connections/${connection.id}`);
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
@@ -316,6 +326,7 @@ export function NewConnectionWizard({
           workspaceId={workspaceId}
           connector={connector}
           strategy={keyStrategy}
+          projectId={projectId}
         />
       ) : null}
 

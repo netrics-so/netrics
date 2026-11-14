@@ -23,6 +23,7 @@ import {
   fetchResourceIcon,
 } from "@/lib/api";
 import { brandAccent } from "@/lib/dominant-color";
+import { inProject } from "@/lib/project-scope";
 import { readIconPixels } from "@/lib/icon-pixels";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { PREVIEW_FORMAT_ORDER } from "@/lib/studio-formats";
@@ -49,11 +50,10 @@ export function blankDashboardRequest(
   format: ScreenFormat,
   projectId: string | null,
 ): CreateDashboardRequest {
-  return {
-    name,
-    ...(format === "16x9" ? {} : { primaryFormat: format }),
-    ...(projectId ? { projectId } : {}),
-  };
+  return inProject(
+    { name, ...(format === "16x9" ? {} : { primaryFormat: format }) },
+    projectId,
+  );
 }
 
 /**
@@ -71,7 +71,7 @@ export function CreateDashboardForm({
   workspaceId: string;
   /** The template preselected, e.g. from a template card (#304). */
   initialChoice?: Choice;
-  /** The user's active project: a blank dashboard starts in it (#573). */
+  /** The user's active project: a new dashboard starts in it (#573). */
   projectId?: string | null;
 }) {
   const locale = useLocale();
@@ -195,18 +195,30 @@ export function CreateDashboardForm({
               blankDashboardRequest(trimmed, format, projectId),
             )
           : choice === "overview"
-            ? await createDashboardFromTemplate(workspaceId, {
-                template: "overview",
-                ...(trimmed ? { name: trimmed } : {}),
-              })
-            : await createDashboardFromTemplate(workspaceId, {
-                template: "brand",
-                connectionId: selected!.connectionId,
-                resourceId: selected!.resourceId,
-                ...(trimmed ? { name: trimmed } : {}),
-                accentColor: accent,
-                logoImageId: icon?.id ?? null,
-              });
+            ? await createDashboardFromTemplate(
+                workspaceId,
+                inProject(
+                  {
+                    template: "overview" as const,
+                    ...(trimmed ? { name: trimmed } : {}),
+                  },
+                  projectId,
+                ),
+              )
+            : await createDashboardFromTemplate(
+                workspaceId,
+                inProject(
+                  {
+                    template: "brand" as const,
+                    connectionId: selected!.connectionId,
+                    resourceId: selected!.resourceId,
+                    ...(trimmed ? { name: trimmed } : {}),
+                    accentColor: accent,
+                    logoImageId: icon?.id ?? null,
+                  },
+                  projectId,
+                ),
+              );
       router.push(
         `/workspaces/${workspaceId}/dashboards/${dashboard.id}/studio`,
       );

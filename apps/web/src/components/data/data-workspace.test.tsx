@@ -43,6 +43,36 @@ describe("data lists follow the active project (#573)", () => {
     expect(getDataSources).not.toHaveBeenCalled();
   });
 
+  it("opens a linked model from another project without listing it (#573)", () => {
+    const model = {
+      id: "00000000-0000-4000-8000-0000000000m1",
+      name: "Revenue elsewhere",
+      definition: {
+        version: 1 as const,
+        datasets: [],
+        relationships: [],
+        dimensions: [],
+        measures: [],
+      },
+      projectId: "00000000-0000-4000-8000-0000000000bb",
+      version: 1,
+      publishedVersion: null,
+      updatedAt: "2026-11-14T00:00:00.000Z",
+    };
+    const html = renderI18n(
+      <DataWorkspace
+        workspaceId="workspace"
+        initial={{ sources: [], preparations: [], models: [] }}
+        openModelId={model.id}
+        openModel={model}
+      />,
+    );
+    // The editor is open on it…
+    expect(html).toContain('value="Revenue elsewhere"');
+    // …and the models tab still counts the navigation list only.
+    expect(html).toMatch(/aria-current="page"[^>]*>[^<]*<span>0<\/span>/);
+  });
+
   it("names the active project in the header", () => {
     const html = renderI18n(
       <DataWorkspace

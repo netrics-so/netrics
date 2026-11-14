@@ -94,7 +94,10 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
         <summary>
           <span>{page("projects.summary")}</span>
           <span className="dashboards-projects-count">
-            {page("projects.count", { count: projects.length })}
+            {page("projects.count", {
+              count: projects.filter((project) => project.archivedAt === null)
+                .length,
+            })}
           </span>
         </summary>
         <div className="dashboards-projects-body">

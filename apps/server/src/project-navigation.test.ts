@@ -556,6 +556,42 @@ describe("archived projects take no new dashboards or connections", () => {
     expect((await dashboard(W2.dashboards.none)).projectId).toBeNull();
   });
 
+  it("creates template dashboards in the requested project (#573)", async () => {
+    const templates = [
+      { template: "overview" },
+      {
+        template: "brand",
+        connectionId: W2.connections.A,
+        resourceId: "app-1",
+        logoImageId: null,
+      },
+    ];
+    for (const body of templates) {
+      const created = await ok(
+        call("POST", `${ws()}/dashboard-templates`, {
+          cookie: stranger,
+          payload: { ...body, projectId: W2.A },
+        }),
+      );
+      expect(created.dashboard.projectId).toBe(W2.A);
+      const unassigned = await ok(
+        call("POST", `${ws()}/dashboard-templates`, {
+          cookie: stranger,
+          payload: body,
+        }),
+      );
+      expect(unassigned.dashboard.projectId).toBeNull();
+      // Archived, or another workspace's project: refused alike.
+      for (const projectId of [W2.B, W1.A])
+        expectProjectNotFound(
+          await call("POST", `${ws()}/dashboard-templates`, {
+            cookie: stranger,
+            payload: { ...body, projectId },
+          }),
+        );
+    }
+  });
+
   it("keeps saving a dashboard that is already in an archived project", async () => {
     const saved = await save(W2.dashboards.B, W2.B);
     expect(saved.statusCode, saved.body).toBe(200);

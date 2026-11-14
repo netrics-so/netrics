@@ -63,6 +63,17 @@ export function projectChoices<
   );
 }
 
+/**
+ * A create request that starts the new item in the active project, so it
+ * shows in the list the user is looking at (#573); unchanged under "All".
+ */
+export function inProject<T extends object>(
+  body: T,
+  projectId: string | null,
+): T & { projectId?: string } {
+  return projectId ? { ...body, projectId } : body;
+}
+
 /** The active project's name for page headers; null under "All projects". */
 export function activeProjectName(
   scope: ProjectScope,

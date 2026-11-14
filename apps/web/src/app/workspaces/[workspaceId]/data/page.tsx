@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 import { DataWorkspace } from "@/components/data/data-workspace";
 import { listProjects, listWorkspaces } from "@/lib/api";
+import { getModel } from "@/lib/data-api";
 import { loadDataLists } from "@/lib/data-lists";
 import { projectScope } from "@/lib/project-scope";
 import { requireSession } from "@/lib/session";
@@ -36,7 +37,14 @@ export default async function DataPage({
       cookieHeader,
     ),
   ]);
-  // ?model=<id> opens that model, e.g. from the Studio to publish it (#508).
+  // ?model=<id> opens that model, e.g. from the Studio to publish it
+  // (#508), also when it is in another project than the active one: it
+  // opens without joining the list (#573).
+  const openModel =
+    typeof model === "string" &&
+    !lists.data.models.some((entry) => entry.id === model)
+      ? await getModel(workspaceId, model, cookieHeader).catch(() => null)
+      : null;
   return (
     <DataWorkspace
       workspaceId={workspaceId}
@@ -49,6 +57,7 @@ export default async function DataPage({
       }))}
       activeProjectId={membership.activeProjectId}
       {...(typeof model === "string" ? { openModelId: model } : {})}
+      {...(openModel ? { openModel } : {})}
     />
   );
 }

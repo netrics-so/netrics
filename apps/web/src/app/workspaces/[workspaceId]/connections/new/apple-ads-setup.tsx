@@ -32,11 +32,14 @@ import {
   type SignedKeyStrategy,
 } from "@/lib/signed-key";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { inProject } from "@/lib/project-scope";
 
 interface AppleAdsSetupProps {
   workspaceId: string;
   connector: ConnectorCatalogEntry;
   strategy: SignedKeyStrategy;
+  /** The user's active project: new connections start in it (#573). */
+  projectId?: string | null;
 }
 
 /**
@@ -51,6 +54,7 @@ export function AppleAdsSetup({
   workspaceId,
   connector,
   strategy,
+  projectId = null,
 }: AppleAdsSetupProps) {
   const locale = useLocale();
   const t = useT("connections.appleAds");
@@ -162,14 +166,23 @@ export function AppleAdsSetup({
     }
     setPending("create");
     try {
-      const { connections } = await createConnections(workspaceId, {
-        connectorId: connector.id,
-        ...keyPayload(strategy, values, keyPair?.pendingKeyId ?? null),
-        connections: chosen.map((account) => ({
-          name: t("connectionName", { account: account.name }).slice(0, 100),
-          config: appleAdsAccountConfig(account),
-        })),
-      });
+      const { connections } = await createConnections(
+        workspaceId,
+        inProject(
+          {
+            connectorId: connector.id,
+            ...keyPayload(strategy, values, keyPair?.pendingKeyId ?? null),
+            connections: chosen.map((account) => ({
+              name: t("connectionName", { account: account.name }).slice(
+                0,
+                100,
+              ),
+              config: appleAdsAccountConfig(account),
+            })),
+          },
+          projectId,
+        ),
+      );
       // The generated key moved into the connections.
       setKeyPair(null);
       router.push(

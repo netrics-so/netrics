@@ -23,7 +23,7 @@ import {
   type NavPermissions,
   type NavSection,
 } from "@/lib/app-nav";
-import { setActiveProject } from "@/lib/api";
+import { ApiError, setActiveProject } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { useT } from "@/lib/i18n/client";
 
@@ -45,22 +45,44 @@ export interface AppShellProps {
   children: ReactNode;
 }
 
+/** How a project switch ended. */
+export type ProjectSwitchOutcome = "switched" | "archived" | "failed";
+
 /**
- * Stores the active project and reloads the page's lists, which follow
- * it; false when the server refused (the page stays as it was).
+ * Stores the active project and reloads the page, whose lists follow it.
+ * A refused switch reloads too, so the switcher and the lists show what
+ * is stored (a project archived meanwhile drops out of the switcher).
  */
 export async function switchProject(
   workspaceId: string,
   projectId: string | null,
   refresh: () => void,
-): Promise<boolean> {
+): Promise<ProjectSwitchOutcome> {
+  let outcome: ProjectSwitchOutcome = "switched";
   try {
     await setActiveProject(workspaceId, projectId);
-  } catch {
-    return false;
+  } catch (cause) {
+    outcome =
+      cause instanceof ApiError && cause.code === "project_archived"
+        ? "archived"
+        : "failed";
   }
   refresh();
-  return true;
+  return outcome;
+}
+
+/** Why the switcher shows something else than was chosen. */
+export function ProjectSwitchError({
+  outcome,
+}: {
+  outcome: Exclude<ProjectSwitchOutcome, "switched">;
+}) {
+  const t = useT("shell");
+  return (
+    <p className="project-switcher-error" role="alert">
+      {t(outcome === "archived" ? "projectArchived" : "projectSwitchFailed")}
+    </p>
+  );
 }
 
 /**
@@ -208,7 +230,7 @@ function Sidebar({
       <WorkspaceSwitcher workspaceId={workspaceId} workspaces={workspaces} />
       {projects.length > 0 ? (
         <ProjectSwitcher
-          key={`${workspaceId}:${activeProjectId ?? ""}`}
+          key={workspaceId}
           workspaceId={workspaceId}
           projects={projects}
           activeProjectId={activeProjectId}
@@ -306,19 +328,27 @@ function ProjectSwitcher({
   const id = useId();
   const [value, setValue] = useState(activeProjectId ?? "");
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<Exclude<
+    ProjectSwitchOutcome,
+    "switched"
+  > | null>(null);
+  // The stored choice, after a refresh or a change elsewhere.
+  useEffect(() => {
+    setValue(activeProjectId ?? "");
+  }, [activeProjectId]);
 
   async function onChange(next: string) {
+    if (pending) return;
     const previous = value;
     setValue(next);
     setPending(true);
-    setFailed(false);
-    const switched = await switchProject(workspaceId, next || null, () =>
+    setFailed(null);
+    const outcome = await switchProject(workspaceId, next || null, () =>
       router.refresh(),
     );
-    if (!switched) {
+    if (outcome !== "switched") {
       setValue(previous);
-      setFailed(true);
+      setFailed(outcome);
     }
     setPending(false);
   }
@@ -331,7 +361,7 @@ function ProjectSwitcher({
       <select
         id={id}
         value={value}
-        disabled={pending}
+        aria-busy={pending}
         onChange={(event) => void onChange(event.target.value)}
       >
         <option value="">{t("allProjects")}</option>
@@ -341,11 +371,7 @@ function ProjectSwitcher({
           </option>
         ))}
       </select>
-      {failed ? (
-        <p className="project-switcher-error" role="alert">
-          {t("projectSwitchFailed")}
-        </p>
-      ) : null}
+      {failed ? <ProjectSwitchError outcome={failed} /> : null}
     </div>
   );
 }

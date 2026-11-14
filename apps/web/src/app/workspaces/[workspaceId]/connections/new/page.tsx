@@ -113,6 +113,7 @@ export default async function NewConnectionPage({
           (await listConnections(cookieHeader, workspaceId)).connections,
         )}
         initialConnectorId={connectorParam}
+        projectId={membership.activeProjectId}
       />
     </>
   );

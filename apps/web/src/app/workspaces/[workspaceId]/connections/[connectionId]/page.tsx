@@ -379,6 +379,7 @@ export default async function ConnectionDetailPage({
         <AddAdAccountPanel
           workspaceId={workspaceId}
           connectionId={connection.id}
+          projectId={membership.activeProjectId}
         />
       ) : null}
 

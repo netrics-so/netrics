@@ -17,6 +17,11 @@ export const storeTemplateRequestSchema = z.strictObject({
     )
     .default([]),
   appScope: app.optional(),
+  /**
+   * The project the dashboard, preparations and models start in (#573);
+   * not an archived one.
+   */
+  projectId: z.uuid().nullable().optional(),
 });
 export type StoreTemplateRequest = z.infer<typeof storeTemplateRequestSchema>;
 export const storeTemplateResultSchema = z.object({

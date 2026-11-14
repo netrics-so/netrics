@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Locale } from "@netrics/domain";
 
-import { AppShellFrame, switchProject, type AppShellProps } from "./app-shell";
+import {
+  AppShellFrame,
+  ProjectSwitchError,
+  switchProject,
+  type AppShellProps,
+} from "./app-shell";
 import { renderI18n } from "@/lib/i18n/test-render";
 
 vi.mock("next/navigation", () => ({
@@ -70,7 +75,7 @@ describe("project switcher (#573)", () => {
     );
     vi.stubGlobal("fetch", fetch);
     const refresh = vi.fn();
-    await expect(switchProject(W, A, refresh)).resolves.toBe(true);
+    await expect(switchProject(W, A, refresh)).resolves.toBe("switched");
     expect(fetch).toHaveBeenCalledWith(
       `/v1/workspaces/${W}/active-project`,
       expect.objectContaining({
@@ -81,20 +86,47 @@ describe("project switcher (#573)", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
-  it("does not refresh when the switch fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ error: "project_archived" }), {
-            status: 409,
-            headers: { "content-type": "application/json" },
-          }),
-      ),
+  it.each([
+    [409, "project_archived", "archived"],
+    [503, "unavailable", "failed"],
+  ] as const)(
+    "refreshes after a failed switch (%i %s) so the page shows what is stored",
+    async (status, error, outcome) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ error }), {
+              status,
+              headers: { "content-type": "application/json" },
+            }),
+        ),
+      );
+      const refresh = vi.fn();
+      await expect(switchProject(W, A, refresh)).resolves.toBe(outcome);
+      expect(refresh).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("marks the switcher busy, not disabled, while switching", () => {
+    const html = render(BASE, {
+      projects: [{ id: A, name: "Alpha" }],
+      activeProjectId: null,
+    });
+    expect(html).toContain('aria-busy="false"');
+    expect(html).not.toMatch(/<select[^>]*disabled/);
+  });
+
+  it("has a message for a project archived meanwhile", () => {
+    expect(
+      renderI18n(<ProjectSwitchError outcome="archived" />, "en"),
+    ).toContain("This project has been archived and can’t be chosen.");
+    expect(
+      renderI18n(<ProjectSwitchError outcome="archived" />, "de"),
+    ).toContain("Dieses Projekt ist archiviert und kann nicht gewählt werden.");
+    expect(renderI18n(<ProjectSwitchError outcome="failed" />, "en")).toContain(
+      "Could not switch the project. Try again.",
     );
-    const refresh = vi.fn();
-    await expect(switchProject(W, A, refresh)).resolves.toBe(false);
-    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("offers All projects and the projects, the active one selected", () => {

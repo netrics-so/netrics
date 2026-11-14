@@ -17,10 +17,16 @@ import {
 } from "@/lib/api";
 import { appleAdsAccountConfig, appleAdsAccounts } from "@/lib/apple-ads";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { inProject } from "@/lib/project-scope";
 
 interface AddAdAccountPanelProps {
   workspaceId: string;
   connectionId: string;
+  /**
+   * The user's active project: the new connections start in it (#573);
+   * under "All projects" they join the lending connection's project.
+   */
+  projectId?: string | null;
 }
 
 /**
@@ -33,6 +39,7 @@ interface AddAdAccountPanelProps {
 export function AddAdAccountPanel({
   workspaceId,
   connectionId,
+  projectId = null,
 }: AddAdAccountPanelProps) {
   const locale = useLocale();
   const t = useT("connections.appleAds");
@@ -90,12 +97,18 @@ export function AddAdAccountPanel({
       const { connections } = await createSharedKeyConnections(
         workspaceId,
         connectionId,
-        {
-          connections: chosen.map((account) => ({
-            name: t("connectionName", { account: account.name }).slice(0, 100),
-            config: appleAdsAccountConfig(account),
-          })),
-        },
+        inProject(
+          {
+            connections: chosen.map((account) => ({
+              name: t("connectionName", { account: account.name }).slice(
+                0,
+                100,
+              ),
+              config: appleAdsAccountConfig(account),
+            })),
+          },
+          projectId,
+        ),
       );
       setAdded(connections);
       setListed(null);

@@ -47,6 +47,7 @@ export function DataWorkspace({
   projects = NO_PROJECTS,
   activeProjectId = null,
   openModelId,
+  openModel,
 }: {
   workspaceId: string;
   initial: WorkspaceData;
@@ -58,6 +59,8 @@ export function DataWorkspace({
   activeProjectId?: string | null;
   /** A model to open first (the Studio links here to publish one). */
   openModelId?: string;
+  /** That model when the navigation list leaves it out (#573). */
+  openModel?: ModelDraft;
 }) {
   const t = useT("data"),
     dashboardsT = useT("dashboardsPage"),
@@ -69,8 +72,10 @@ export function DataWorkspace({
     [activeProjectId, projects],
   );
   const projectName = activeProjectName(scope, projects);
+  // A model of another project opens too, without joining the list.
   const linkedModel = openModelId
-    ? initial.models.find((model) => model.id === openModelId)
+    ? (initial.models.find((model) => model.id === openModelId) ??
+      (openModel?.id === openModelId ? openModel : undefined))
     : undefined;
   const [pickerSources, setPickerSources] = useState(
     initialPickerSources ?? initial.sources,
@@ -145,6 +150,8 @@ export function DataWorkspace({
         projectId,
       );
       setSaved({ ...editorRecord, projectId: moved.projectId });
+      // The lists follow the active project: the item joins or leaves them.
+      void refresh();
     } catch (failure) {
       setProjectError(t(`errors.${dataErrorKey(failure)}`));
     } finally {

@@ -19,6 +19,7 @@ export const shellEn = {
     projectSwitcher: "Project",
     allProjects: "All projects",
     projectSwitchFailed: "Could not switch the project. Try again.",
+    projectArchived: "This project has been archived and can’t be chosen.",
     sections: {
       dashboards: "Dashboards",
       sources: "Sources",

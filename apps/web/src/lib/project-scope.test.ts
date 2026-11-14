@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   inPickerScope,
+  inProject,
   navigationQuery,
   pickerQuery,
   projectChoices,
@@ -70,5 +71,15 @@ describe("project scope (#573)", () => {
     expect(projectQueryString({ project: A, unassigned: "include" })).toBe(
       `?project=${A}&unassigned=include`,
     );
+  });
+
+  it("starts new items in the active project (#573)", () => {
+    expect(inProject({ template: "overview" }, A)).toEqual({
+      template: "overview",
+      projectId: A,
+    });
+    expect(inProject({ template: "overview" }, null)).toEqual({
+      template: "overview",
+    });
   });
 });
