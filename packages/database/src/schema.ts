@@ -2101,7 +2101,18 @@ export const dataTemplateInstalls = pgTable(
     requestId: uuid("request_id").notNull(),
     requestHash: text("request_hash").notNull(),
     result: jsonb("result").notNull(),
+    /** Which template, and which version of it, the install was made from. */
+    templateId: text("template_id").notNull().default("store_portfolio"),
+    templateVersion: integer("template_version").notNull().default(1),
+    /**
+     * The install inputs the template builds from; null for an install made
+     * before versions existed until it is completed (store-template-legacy).
+     */
+    inputs: jsonb("inputs"),
     createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
@@ -2110,6 +2121,102 @@ export const dataTemplateInstalls = pgTable(
     check(
       "data_template_installs_hash",
       sql`${table.requestHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "data_template_installs_version_positive",
+      sql`${table.templateVersion} > 0`,
+    ),
+  ],
+);
+
+/**
+ * One record a template install created, under its template key, with the
+ * content it was created from (the "original" of three-way updates).
+ * Datasets have no original. Baseline rows of installs made before versions
+ * carry `legacy:<id>` keys for preparations until the install is completed.
+ */
+export const dataTemplateRecords = pgTable(
+  "data_template_records",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    key: text("key").notNull(),
+    kind: text("kind").notNull(),
+    recordId: uuid("record_id").notNull(),
+    templateVersion: integer("template_version").notNull(),
+    original: jsonb("original"),
+    /** Dashboards: widget id → widget template key; customer widgets absent. */
+    widgetKeys: jsonb("widget_keys"),
+    detachedAt: timestamp("detached_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.requestId, table.key],
+    }),
+    foreignKey({
+      name: "data_template_records_install_fk",
+      columns: [table.workspaceId, table.requestId],
+      foreignColumns: [
+        dataTemplateInstalls.workspaceId,
+        dataTemplateInstalls.requestId,
+      ],
+    }).onDelete("cascade"),
+    index("data_template_records_record_idx").on(
+      table.workspaceId,
+      table.recordId,
+    ),
+    check(
+      "data_template_records_kind_valid",
+      sql`${table.kind} in ('preparation','model','dashboard','dataset')`,
+    ),
+    check(
+      "data_template_records_original",
+      sql`(${table.kind} = 'dataset') = (${table.original} is null)`,
+    ),
+  ],
+);
+
+/**
+ * One update of an install from one template version to another: the
+ * customer's decisions, the drafts it wrote and the dashboard copies it made.
+ * At most one is open (closedAt null) per install.
+ */
+export const dataTemplateUpdates = pgTable(
+  "data_template_updates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    fromVersion: integer("from_version").notNull(),
+    toVersion: integer("to_version").notNull(),
+    decisions: jsonb("decisions").notNull(),
+    /** `{ key, kind, recordId, version }[]` */
+    drafts: jsonb("drafts").notNull(),
+    /** `{ key, originalId, copyId, swappedAt, swappedBackAt }[]` */
+    dashboards: jsonb("dashboards").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: "data_template_updates_install_fk",
+      columns: [table.workspaceId, table.requestId],
+      foreignColumns: [
+        dataTemplateInstalls.workspaceId,
+        dataTemplateInstalls.requestId,
+      ],
+    }).onDelete("cascade"),
+    uniqueIndex("data_template_updates_one_open")
+      .on(table.workspaceId, table.requestId)
+      .where(sql`${table.closedAt} is null`),
+    check(
+      "data_template_updates_versions",
+      sql`${table.fromVersion} > 0 and ${table.toVersion} > 0`,
     ),
   ],
 );

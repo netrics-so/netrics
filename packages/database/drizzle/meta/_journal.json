@@ -505,6 +505,13 @@
       "when": 1794677028963,
       "tag": "0071_project_archive_data_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1794683033113,
+      "tag": "0072_store_template_versions",
+      "breakpoints": true
     }
   ]
 }
