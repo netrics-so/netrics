@@ -33,6 +33,8 @@ export const storeTemplateCopy = (locale: Locale) =>
   locale === "de"
     ? {
         name: "App-Portfolio",
+        /** The updated copy of a dashboard (template updates, 11E). */
+        updatedName: (name: string) => `${name} (aktualisiert)`.slice(0, 100),
         downloads: "Downloads und Nutzerinstallationen",
         proceeds: "Erlöse nach Gebühren",
         ratings: "Store-Bewertungen",
@@ -62,6 +64,8 @@ export const storeTemplateCopy = (locale: Locale) =>
       }
     : {
         name: "App portfolio",
+        /** The updated copy of a dashboard (template updates, 11E). */
+        updatedName: (name: string) => `${name} (updated)`.slice(0, 100),
         downloads: "Downloads and user installs",
         proceeds: "Proceeds after fees",
         ratings: "Store ratings",

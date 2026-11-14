@@ -33,6 +33,8 @@ import {
   DataServiceError,
   datasetStoreStatus,
 } from "../data/service.js";
+import { createUpdatedDashboardCopy, DashboardCopyUnfit } from "./service.js";
+import { storeTemplateCopy } from "./store-portfolio.js";
 import {
   deriveInstallCompletion,
   ensureInstallCompleted,
@@ -40,6 +42,7 @@ import {
 } from "./store-template-legacy.js";
 import {
   canonical,
+  dashboardFromItems,
   dashboardItems,
   itemKindOf,
   withSlideKeys,
@@ -121,6 +124,17 @@ export class StoreUpdateUnmergeable extends DataServiceError {
   }
 }
 
+/**
+ * The customer's dashboard changed since the update was reviewed: an item
+ * it asks about has no fitting decision. Carries the fresh plan records of
+ * that dashboard, to review again.
+ */
+export class StoreUpdateReviewChanged extends DataServiceError {
+  constructor(readonly records: StoreTemplatePlan["records"]) {
+    super("store_update_review_changed", 409);
+  }
+}
+
 /** The data drafts an update wrote (data_template_updates.drafts). */
 const storedDraftsSchema = z.array(
   z.object({
@@ -139,6 +153,14 @@ const storedDashboardsSchema = z.array(
     copyId: z.uuid().nullable(),
     swappedAt: z.iso.datetime().nullable(),
     swappedBackAt: z.iso.datetime().nullable(),
+    /** The copy's widget and slide ids → template keys (once made). */
+    copyWidgetKeys: z.record(z.string(), z.string()).optional(),
+    /** The new template's dashboard in comparison form (once made). */
+    templateOriginal: z.unknown().optional(),
+    /** The record as it was before the swap, for swapping back. */
+    previousOriginal: z.unknown().optional(),
+    previousWidgetKeys: z.record(z.string(), z.string()).nullable().optional(),
+    previousTemplateVersion: z.number().int().optional(),
   }),
 );
 type StoredDashboard = z.infer<typeof storedDashboardsSchema>[number];
@@ -184,6 +206,10 @@ interface ComputedPlan {
   upcoming: Items;
   preparations: Map<string, PreparationRow>;
   models: Map<string, ModelRow>;
+  /** Template record and dataset ids → keys (new records as `new:<key>`). */
+  idsToKeys: Map<string, string>;
+  /** Per dashboard key: the widget and slide keys its current state used. */
+  dashboardKeys: Map<string, Record<string, string>>;
 }
 
 const isUpdateAvailable = (
@@ -198,6 +224,17 @@ const isUpdateAvailable = (
       record.kind !== "dataset" &&
       record.templateVersion < latest,
   );
+
+/** Plan records as the API shows them (classify never lists unchanged items). */
+const planRecords = (records: RecordPlan[]): StoreTemplatePlan["records"] =>
+  records.map(({ version: _version, items, ...record }) => ({
+    ...record,
+    items: items as StoreTemplatePlan["records"][number]["items"],
+  }));
+
+/** The item reference of a dashboard widget key (`widget:<name>`, `custom:<id>`). */
+const dashboardWidgetRef = (key: string, widgetKey: string) =>
+  `${key}#widget:${widgetKey.startsWith("widget:") ? widgetKey.slice("widget:".length) : widgetKey}`;
 
 export function createStoreTemplateUpdateService(deps: {
   db: Database;
@@ -414,6 +451,7 @@ export function createStoreTemplateUpdateService(deps: {
     };
     const plans: RecordPlan[] = [];
     const seen = new Set<string>();
+    const dashboardKeys = new Map<string, Record<string, string>>();
     for (const row of live) {
       const kind = row.kind as Kind;
       let name: string,
@@ -453,13 +491,11 @@ export function createStoreTemplateUpdateService(deps: {
         name = dashboard.name;
         version = dashboard.version;
         recordOriginal = originalItems(row);
+        const keys = templateKeys(row, dashboard.slides, recordOriginal);
+        dashboardKeys.set(row.key, keys);
         currentItems = dashboardItems(
           row.key,
-          normalizeDashboard(
-            dashboard,
-            templateKeys(row, dashboard.slides, recordOriginal),
-            idsToKeys,
-          ),
+          normalizeDashboard(dashboard, keys, idsToKeys),
         );
       }
       seen.add(row.key);
@@ -529,6 +565,8 @@ export function createStoreTemplateUpdateService(deps: {
       upcoming,
       preparations,
       models,
+      idsToKeys,
+      dashboardKeys,
     };
   }
 
@@ -617,7 +655,11 @@ export function createStoreTemplateUpdateService(deps: {
       createdAt: row.createdAt.toISOString(),
       drafts: views,
       dashboards: dashboards.map((dashboard) => ({
-        ...dashboard,
+        key: dashboard.key,
+        originalId: dashboard.originalId,
+        copyId: dashboard.copyId,
+        swappedAt: dashboard.swappedAt,
+        swappedBackAt: dashboard.swappedBackAt,
         // The updated copy is made once the data it shows is published.
         ready: published && dashboard.copyId === null,
       })),
@@ -972,7 +1014,218 @@ export function createStoreTemplateUpdateService(deps: {
     return updateView(tx, actor.workspaceId, update!);
   }
 
+  /** The install's lock (store-template-service.ts). */
+  async function lockInstall(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+  ) {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${workspaceId + ":" + requestId}))`,
+    );
+  }
+
+  /**
+   * The update and its dashboard entry under the install's lock, or 404
+   * store_template_update_not_found (another workspace's id included).
+   */
+  async function lockedEntry(
+    tx: Transaction,
+    workspaceId: string,
+    updateId: string,
+    key: string,
+  ) {
+    const read = async () =>
+      (
+        await tx
+          .select()
+          .from(schema.dataTemplateUpdates)
+          .where(
+            and(
+              eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+              eq(schema.dataTemplateUpdates.id, updateId),
+            ),
+          )
+      )[0];
+    const found = await read();
+    if (!found) reject("store_template_update_not_found", 404);
+    await lockInstall(tx, workspaceId, found.requestId);
+    // Read again under the lock: a concurrent copy or swap went first.
+    const row = (await read())!;
+    const entries = storedDashboardsSchema.parse(row.dashboards);
+    const entry = entries.find((dashboard) => dashboard.key === key);
+    if (!entry) reject("store_template_update_not_found", 404);
+    return { row, entries, entry };
+  }
+
+  async function saveEntries(
+    tx: Transaction,
+    workspaceId: string,
+    updateId: string,
+    entries: StoredDashboard[],
+    closedAt?: Date,
+  ) {
+    await tx
+      .update(schema.dataTemplateUpdates)
+      .set({ dashboards: entries, ...(closedAt ? { closedAt } : {}) })
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.id, updateId),
+        ),
+      );
+  }
+
+  /** Creates the updated copy of one dashboard of an update (createCopy). */
+  async function writeCopy(
+    tx: Transaction,
+    actor: Actor,
+    updateId: string,
+    key: string,
+  ): Promise<StoreTemplateUpdate> {
+    const { row, entries, entry } = await lockedEntry(
+      tx,
+      actor.workspaceId,
+      updateId,
+      key,
+    );
+    if (entry.copyId !== null) reject("store_update_copy_exists", 409);
+    if (row.closedAt !== null) reject("store_update_closed", 409);
+    // The copy shows published definitions only, never drafts.
+    const view = await updateView(tx, actor.workspaceId, row);
+    if (view.drafts.some((draft) => !draft.published))
+      reject("store_update_drafts_unpublished", 409);
+    if (row.toVersion !== template.version) reject("store_update_stale", 409);
+    const plan = await planOrUnavailable(tx, actor.workspaceId, row.requestId);
+    if (!plan) reject("store_template_baseline_unavailable", 409);
+    const record = plan.records.find(
+      (candidate) =>
+        candidate.key === key && candidate.recordId === entry.originalId,
+    );
+    const next = plan.next.get(key);
+    if (!record || next?.kind !== "dashboard")
+      reject("store_update_stale", 409);
+    const only = (items: Items): Items =>
+      new Map([...items].filter(([ref]) => recordKeyOf(ref) === key));
+    // The decisions the customer made when applying, against the dashboard
+    // as it is now: an item they did not decide on means it changed since.
+    let merged: Items;
+    try {
+      merged = merge(
+        only(plan.original),
+        only(plan.current),
+        only(plan.upcoming),
+        row.decisions as Decision[],
+      );
+    } catch (error) {
+      if (error instanceof MergeDecisionMissing)
+        throw new StoreUpdateReviewChanged(planRecords([record]));
+      throw error;
+    }
+    let normalized: NormalizedDashboard;
+    try {
+      normalized = dashboardFromItems(
+        key,
+        merged,
+        { current: only(plan.current), next: only(plan.upcoming) },
+        plan.ids,
+      );
+    } catch (error) {
+      if (error instanceof UnmergeableRecord)
+        throw new StoreUpdateUnmergeable(key, error.refs);
+      throw error;
+    }
+    let result: Awaited<ReturnType<typeof createUpdatedDashboardCopy>>;
+    try {
+      result = await createUpdatedDashboardCopy(tx, actor, {
+        sourceId: entry.originalId,
+        name: storeTemplateCopy(actor.locale).updatedName(record.name),
+        merged: normalized,
+        widgetKeys: plan.dashboardKeys.get(key) ?? {},
+      });
+    } catch (error) {
+      if (error instanceof DashboardCopyUnfit)
+        throw new StoreUpdateUnmergeable(
+          key,
+          error.widgetKeys.map((widgetKey) =>
+            dashboardWidgetRef(key, widgetKey),
+          ),
+          [error.problem],
+        );
+      throw error;
+    }
+    if (!result.ok) throw new DataServiceError(result.error, result.status);
+    const copy = result.value.dashboard;
+    await saveEntries(
+      tx,
+      actor.workspaceId,
+      updateId,
+      entries.map((candidate) =>
+        candidate.key === key
+          ? {
+              ...candidate,
+              copyId: copy.id,
+              copyWidgetKeys: result.value.widgetKeys,
+              templateOriginal: normalizeTemplateDashboard(
+                next.request,
+                next.widgetKeys,
+                plan.idsToKeys,
+              ),
+            }
+          : candidate,
+      ),
+    );
+    await insertAuditEvent(tx, {
+      workspaceId: actor.workspaceId,
+      actorUserId: actor.callerId,
+      action: "dashboard.template_copy_created",
+      target: copy.id,
+      metadata: {
+        requestId: row.requestId,
+        updateId,
+        key,
+        sourceId: entry.originalId,
+        name: copy.name,
+      },
+    });
+    return openUpdateView(tx, actor.workspaceId, updateId);
+  }
+
+  async function openUpdateView(
+    tx: Transaction,
+    workspaceId: string,
+    updateId: string,
+  ) {
+    const [row] = await tx
+      .select()
+      .from(schema.dataTemplateUpdates)
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.id, updateId),
+        ),
+      );
+    return updateView(tx, workspaceId, row!);
+  }
+
   return {
+    /**
+     * Creates the updated copy of an update's dashboard once every data
+     * draft of the update is published: the customer's dashboard with the
+     * decisions of the apply, unassigned from screens. Under the install's
+     * lock; a second call answers store_update_copy_exists.
+     */
+    createCopy(
+      actor: Actor,
+      updateId: string,
+      key: string,
+    ): Promise<StoreTemplateUpdate> {
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        (tx) => writeCopy(tx, actor, updateId, key),
+      );
+    },
     /**
      * Closes an install's update without touching its drafts: they stay
      * ordinary drafts the customer edits, restores or publishes, and a new
@@ -1170,13 +1423,9 @@ export function createStoreTemplateUpdateService(deps: {
             toVersion: template.version,
             basis: computed.basis,
             summary: computed.summary,
-            records: computed.records
-              .filter((record) => record.items.length > 0)
-              // classify never lists unchanged items.
-              .map(({ version: _version, items, ...record }) => ({
-                ...record,
-                items: items as StoreTemplatePlan["records"][number]["items"],
-              })),
+            records: planRecords(
+              computed.records.filter((record) => record.items.length > 0),
+            ),
           };
         },
       );

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   publishedModel,
   validateDashboardMeasure,
@@ -6,6 +8,7 @@ import {
 import {
   barWidgetOptionsSchema,
   dashboardDataFiltersSchema,
+  dashboardWidgetInputSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
   compareMeasureBindingSchema,
@@ -91,6 +94,11 @@ import { resolveThemeTokens } from "../themes/service.js";
 import { compareBindingProblem } from "./compare-measure.js";
 import { presentSummaries } from "./summaries.js";
 import { copyLayouts, rebaseSlides, resolveSlideLayouts } from "./layouts.js";
+import {
+  canonical,
+  normalizeDashboard,
+  type NormalizedDashboard,
+} from "./store-template-items.js";
 import {
   dashboardFormatWarnings,
   loadReadabilityInputs,
@@ -1333,6 +1341,286 @@ async function validateDataBindings(
   }
 }
 
+/** A stored widget as the input to write it again (duplicate, copies). */
+function widgetInputOf(widget: DashboardWidgetRow): WidgetInput {
+  return {
+    type: widget.type,
+    modelId: widget.modelId,
+    modelBinding: widget.modelBinding as
+      import("@netrics/domain").MeasureWidgetBinding | null,
+    filterExclusions:
+      widget.filterExclusions as import("@netrics/domain").DashboardFilterExclusion[],
+    x: widget.x,
+    y: widget.y,
+    w: widget.w,
+    h: widget.h,
+    title: widget.title,
+    connectionId: widget.connectionId,
+    metricKey: widget.metricKey,
+    aggregation: widget.aggregation,
+    period: widget.period,
+    dimensions: dimensionsOf(widget),
+    displayCurrency: widget.displayCurrency,
+    text: widget.text,
+    imageId: widget.imageId,
+    goalId: widget.goalId,
+    options: widget.options as Record<string, unknown>,
+    denominator: denominatorInputOf(widget),
+  };
+}
+
+/**
+ * A widget in comparison form (normalizeDashboard's value, real ids) as a
+ * request widget, to validate it like a Studio save does.
+ */
+function requestWidgetOf(value: unknown): unknown {
+  const v = value as Record<string, unknown>;
+  const type = String(v.type);
+  return {
+    type,
+    x: v.x,
+    y: v.y,
+    w: v.w,
+    h: v.h,
+    title: v.title ?? null,
+    filterExclusions: v.filterExclusions ?? [],
+    options: v.options ?? {},
+    ...(type === "measure" ? { binding: v.binding } : {}),
+    ...(type === "compare"
+      ? {
+          measure: v.binding ?? null,
+          denominator: {
+            connectionId: v.denominatorConnectionId,
+            metricKey: v.denominatorMetricKey,
+            aggregation: v.denominatorAggregation,
+            dimensions: v.denominatorDimensions ?? {},
+          },
+        }
+      : {}),
+    connectionId: v.connectionId,
+    metricKey: v.metricKey,
+    aggregation: v.aggregation,
+    period: v.period,
+    dimensions: v.dimensions ?? {},
+    displayCurrency: v.displayCurrency ?? null,
+    text: v.text,
+    imageId: v.imageId ?? null,
+    goalId: v.goalId ?? null,
+  };
+}
+
+/**
+ * The widgets of one slide of an updated copy do not fit together (out of
+ * the grid, too small, overlapping): the template's widgets meet the
+ * customer's layout. Names the slide and the widgets the update placed.
+ */
+export class DashboardCopyUnfit extends Error {
+  constructor(
+    readonly problem: string,
+    readonly widgetKeys: string[],
+  ) {
+    super(problem);
+  }
+}
+
+/**
+ * The updated copy of a store-template dashboard (template updates, 11E),
+ * unassigned from screens. Starts from the source dashboard as duplicate
+ * does (project unless archived, theme, primary format, slides, the
+ * customer's widgets and custom layouts), then applies `merged`: settings,
+ * filters and slides take its values and order; a widget it leaves as it
+ * is stays as stored with its custom layouts; a changed or added widget is
+ * validated like a Studio save and placed automatically in custom layouts;
+ * a widget it leaves out is not copied. Bindings are validated against the
+ * published models. `widgetKeys` are the source's (widget or slide id →
+ * template key); the result's are the copy's.
+ */
+export async function createUpdatedDashboardCopy(
+  tx: Transaction,
+  actor: Actor,
+  input: {
+    sourceId: string;
+    name: string;
+    merged: NormalizedDashboard; // merged items, refs unsymbolized
+    widgetKeys: Record<string, string>;
+  },
+): Promise<
+  Result<{ dashboard: DashboardView; widgetKeys: Record<string, string> }>
+> {
+  const { workspaceId } = actor;
+  const source = await findDashboard(tx, workspaceId, input.sourceId);
+  if (!source) return fail(404, NOT_FOUND);
+  const { merged } = input;
+  const keyOf = (id: string) => input.widgetKeys[id] ?? `custom:${id}`;
+  // The source in comparison form with real ids, to tell what changed.
+  const current = normalizeDashboard(source, input.widgetKeys, new Map());
+  const same = (a: unknown, b: unknown) =>
+    JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+  const sourceSlides = new Map(source.slides.map((s) => [keyOf(s.id), s]));
+  const sourceWidgets = new Map(
+    source.slides.flatMap((slide) =>
+      slide.widgets.map((widget) => [keyOf(widget.id), widget] as const),
+    ),
+  );
+  const settings = merged.settings as Record<string, unknown>;
+  const primary = String(
+    settings.primaryFormat ?? source.primaryFormat,
+  ) as ScreenFormat;
+  const sameFormat = primary === source.primaryFormat;
+
+  const slideKeys = [...Object.keys(merged.slides)];
+  for (const { slide } of Object.values(merged.widgets))
+    if (!slideKeys.includes(slide)) slideKeys.push(slide);
+  const sources = statusSourcesOf(tx, workspaceId, source);
+  const slides: SlideInput[] = [];
+  /** Per slide: the fresh id of each widget, to know which is which. */
+  const written: { slideKey: string; widgetKeys: string[] }[] = [];
+  for (const slideKey of slideKeys) {
+    const value = (merged.slides[slideKey] ?? {}) as Record<string, unknown>;
+    const stored = sourceSlides.get(slideKey) ?? null;
+    const widgets: WidgetInput[] = [];
+    const keys: string[] = [];
+    const placed: string[] = [];
+    for (const [widgetKey, entry] of Object.entries(merged.widgets)) {
+      if (entry.slide !== slideKey) continue;
+      const row = sourceWidgets.get(widgetKey);
+      const before = current.widgets[widgetKey];
+      if (
+        row &&
+        before &&
+        before.slide === slideKey &&
+        same(before.value, entry.value)
+      ) {
+        // As stored, keeping its id until the layouts are resolved.
+        widgets.push({ ...widgetInputOf(row), id: row.id });
+      } else {
+        const parsed = dashboardWidgetInputSchema.safeParse(
+          requestWidgetOf(entry.value),
+        );
+        if (!parsed.success) return fail(400, "invalid_widget");
+        const checked = await validateWidget(
+          tx,
+          workspaceId,
+          parsed.data,
+          sources,
+        );
+        if (!checked.ok) return checked;
+        widgets.push({ ...checked.value, id: null });
+        placed.push(widgetKey);
+      }
+      keys.push(widgetKey);
+    }
+    const problem = slideLayoutProblem(
+      widgets.map((widget) => ({
+        ...widget,
+        type: widget.type as WidgetType,
+      })),
+      primary,
+    );
+    if (problem) throw new DashboardCopyUnfit(problem, placed);
+    const layouts = resolveSlideLayouts({
+      widgets,
+      requested: undefined,
+      stored: sameFormat ? stored : null,
+      primary,
+    });
+    if (!layouts.ok) return layouts;
+    slides.push({
+      id: randomUUID(),
+      name: (value.name as string | undefined) ?? null,
+      durationSeconds: (value.durationSeconds as number | undefined) ?? null,
+      enabled: (value.enabled as boolean | undefined) ?? true,
+      backgroundImageId:
+        (value.backgroundImageId as string | undefined) ?? null,
+      backgroundDim: (value.backgroundDim as number | undefined) ?? 0,
+      widgets: widgets.map((widget) => ({ ...widget, id: randomUUID() })),
+      layouts: layouts.value,
+    });
+    written.push({ slideKey, widgetKeys: keys });
+  }
+  if (slides.length === 0) slides.push({ ...EMPTY_SLIDE, id: randomUUID() });
+
+  const filters: unknown[] = [];
+  for (const [id, filter] of Object.entries(merged.filters)) {
+    if (id === "app.fixedValue") continue;
+    const fixed = id === "app" ? merged.filters["app.fixedValue"] : undefined;
+    filters.push(
+      fixed === undefined
+        ? filter
+        : { ...(filter as object), fixedValue: fixed },
+    );
+  }
+  const dataFilters = dashboardDataFiltersSchema.safeParse(filters);
+  if (!dataFilters.success)
+    return fail(400, "dashboard_filter_mapping_invalid");
+  const bindings = await validateDataBindings(
+    tx,
+    workspaceId,
+    slides,
+    dataFilters.data,
+  );
+  if (!bindings.ok) return bindings;
+  const themeId = (settings.themeId as string | undefined) ?? null;
+  const logoImageId = (settings.logoImageId as string | undefined) ?? null;
+  if (!(await checkImages(tx, workspaceId, logoImageId, slides)))
+    return fail(400, "image_not_found");
+  // Like duplicate: a copy of an archived project's dashboard starts
+  // unassigned (#572).
+  const projectId =
+    source.projectId && (await checkProject(tx, workspaceId, source.projectId))
+      ? source.projectId
+      : null;
+  const copy = await insertDashboard(
+    tx,
+    workspaceId,
+    {
+      name: input.name.slice(0, 100),
+      projectId,
+      settings: {
+        dataFilters: dataFilters.data,
+        showHeader:
+          (settings.showHeader as boolean | undefined) ??
+          DEFAULT_DASHBOARD_SETTINGS.showHeader,
+        autoAdvance:
+          (settings.autoAdvance as boolean | undefined) ??
+          DEFAULT_DASHBOARD_SETTINGS.autoAdvance,
+        defaultSlideSeconds:
+          (settings.defaultSlideSeconds as number | undefined) ??
+          DEFAULT_DASHBOARD_SETTINGS.defaultSlideSeconds,
+        transition:
+          (settings.transition as string | undefined) ??
+          DEFAULT_DASHBOARD_SETTINGS.transition,
+        themeId,
+        themeBuiltin: themeId
+          ? null
+          : ((settings.themeBuiltin as string | undefined) ??
+            DEFAULT_THEME_KEY),
+        accentColor: (settings.accentColor as string | undefined) ?? null,
+        logoImageId,
+      },
+      primaryFormat: primary,
+      slides,
+    },
+    { ids: true },
+  );
+  const copyKeys: Record<string, string> = {};
+  slides.forEach((slide, index) => {
+    const { slideKey, widgetKeys } = written[index] ?? {
+      slideKey: "",
+      widgetKeys: [],
+    };
+    if (slideKey.startsWith("slide:")) copyKeys[slide.id!] = slideKey;
+    slide.widgets.forEach((widget, at) => {
+      const widgetKey = widgetKeys[at]!;
+      if (widgetKey.startsWith("widget:")) copyKeys[widget.id!] = widgetKey;
+    });
+  });
+  return ok({
+    dashboard: await presentDashboard(tx, workspaceId, copy, actor.locale),
+    widgetKeys: copyKeys,
+  });
+}
+
 function counts(dashboard: Dashboard) {
   return {
     tileCount: metricWidgets(dashboard.slides, { enabledOnly: false }).length,
@@ -1647,30 +1935,7 @@ export function createDashboardService(deps: {
             enabled: slide.enabled,
             backgroundImageId: slide.backgroundImageId,
             backgroundDim: slide.backgroundDim,
-            widgets: slide.widgets.map((widget) => ({
-              type: widget.type,
-              modelId: widget.modelId,
-              modelBinding: widget.modelBinding as
-                import("@netrics/domain").MeasureWidgetBinding | null,
-              filterExclusions:
-                widget.filterExclusions as import("@netrics/domain").DashboardFilterExclusion[],
-              x: widget.x,
-              y: widget.y,
-              w: widget.w,
-              h: widget.h,
-              title: widget.title,
-              connectionId: widget.connectionId,
-              metricKey: widget.metricKey,
-              aggregation: widget.aggregation,
-              period: widget.period,
-              dimensions: dimensionsOf(widget),
-              displayCurrency: widget.displayCurrency,
-              text: widget.text,
-              imageId: widget.imageId,
-              goalId: widget.goalId,
-              options: widget.options as Record<string, unknown>,
-              denominator: denominatorInputOf(widget),
-            })),
+            widgets: slide.widgets.map(widgetInputOf),
             layouts: copyLayouts(slide),
           })),
         });

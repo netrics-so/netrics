@@ -950,6 +950,65 @@ export function dashboardItems(
   return items;
 }
 
+/** A dashboard item's name back as the key normalizeDashboard uses. */
+const slideKeyOf = (id: string) =>
+  id.startsWith("custom:") ? id : `slide:${id}`;
+const widgetKeyOf = (id: string) =>
+  id.startsWith("custom:") ? id : `widget:${id}`;
+
+/** The ids of one item kind of a dashboard, in the items' order. */
+const idsOf = (items: Items, key: StoreTemplateKey, kind: ItemKind) => [
+  ...itemsOf(items, key, kind).keys(),
+];
+
+/**
+ * The inverse of dashboardItems, with real ids (desymbolize): a dashboard
+ * from (merged) items. Filters and slides are in the current dashboard's
+ * order, with the template's additions after their predecessor in the
+ * template's order (mergeOrder); `slide:<index>` and `widget:<name>` are
+ * the template's, `custom:<id>` the customer's. Throws UnmergeableRecord
+ * with every item whose references resolve to nothing.
+ */
+export function dashboardFromItems(
+  key: StoreTemplateKey,
+  items: Items,
+  order: { current: Items; next: Items },
+  ids: Readonly<Record<string, string>>,
+): NormalizedDashboard {
+  const { resolve, done } = resolver(key);
+  const real = (kind: ItemKind, id: string, value: unknown) =>
+    resolve(ref(key, kind, id), () => desymbolize(value, ids));
+  const ordered = (kind: ItemKind) => {
+    const present = itemsOf(items, key, kind);
+    return mergeOrder(
+      idsOf(order.current, key, kind),
+      idsOf(order.next, key, kind),
+      new Set(present.keys()),
+    ).map((id) => [id, present.get(id)] as const);
+  };
+  const result: NormalizedDashboard = {
+    settings: {},
+    filters: {},
+    slides: {},
+    widgets: {},
+  };
+  for (const [name, value] of itemsOf(items, key, "settings"))
+    result.settings[name] = real("settings", name, value);
+  for (const [id, value] of ordered("filter"))
+    result.filters[id] = real("filter", id, value);
+  for (const [id, value] of ordered("slide"))
+    result.slides[slideKeyOf(id)] = real("slide", id, value);
+  for (const [id, value] of itemsOf(items, key, "widget")) {
+    const { slide, ...rest } = value as { slide: string } & object;
+    result.widgets[widgetKeyOf(id)] = {
+      slide,
+      value: real("widget", id, rest),
+    };
+  }
+  done();
+  return result;
+}
+
 /**
  * App-scope parts (Global Constraints): the new template's value, not a
  * conflict. Whole append preparations (except parts the customer edited,

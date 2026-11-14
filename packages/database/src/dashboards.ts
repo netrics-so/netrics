@@ -665,6 +665,12 @@ export async function insertDashboard(
   tx: Transaction,
   workspaceId: string,
   input: DashboardInput,
+  /**
+   * `ids`: the slide and widget ids the input names are used (fresh ids the
+   * caller made, so it knows which widget became which); otherwise every id
+   * is new.
+   */
+  options: { ids?: boolean } = {},
 ): Promise<Dashboard> {
   const [row] = await tx
     .insert(schema.dashboards)
@@ -679,7 +685,17 @@ export async function insertDashboard(
   if (!row) {
     throw new Error("dashboard insert returned no row");
   }
-  await writeSlides(tx, workspaceId, row.id, input.slides, NO_IDS);
+  const keep = options.ids
+    ? {
+        slides: new Set(input.slides.flatMap((slide) => slide.id ?? [])),
+        widgets: new Set(
+          input.slides.flatMap((slide) =>
+            slide.widgets.flatMap((widget) => widget.id ?? []),
+          ),
+        ),
+      }
+    : NO_IDS;
+  await writeSlides(tx, workspaceId, row.id, input.slides, keep);
   const slides = await loadSlides(tx, workspaceId, row.id);
   await mirrorTiles(tx, workspaceId, row.id, slides);
   return { ...row, slides };
