@@ -486,6 +486,13 @@ describe("prune with many expired current generations (#531)", () => {
       await admin`insert into workspaces(name) values ('Current') returning id`;
     workspaceId = ws!.id as string;
     await admin`insert into connectors(id,version,manifest) values ('prune-fixture','1.0.0','{}')`;
+    // The test counts the index blocks one session reads. Autovacuum of
+    // these tables, due after the drain deletes every record, changes their
+    // pg_class row; the prune function's cached plans are then planned again,
+    // and the planner reads the primary key's metapage: one block without a
+    // scan, not a lookup (#556). The test runs its own ANALYZE instead.
+    await admin`alter table data_records set (autovacuum_enabled = false)`;
+    await admin`alter table data_generations set (autovacuum_enabled = false)`;
     for (let i = 0; i < GENERATIONS; i++) await currentGeneration();
     // Every dataset's only generation and its records expired, as after a
     // retention ceiling.

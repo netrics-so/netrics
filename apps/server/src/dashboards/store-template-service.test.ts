@@ -92,7 +92,15 @@ const count = async (table: string, workspace = workspaceId) =>
     )
   )[0]!.count;
 
-describe("atomic editable store templates", () => {
+// Each test here runs hundreds of statements one after another; the product
+// edit runs about 700 in 10 transactions. They take 0.3-0.7 s alone and up to
+// 3.4 s in a full `pnpm test` run on a loaded machine, close to vitest's 5 s
+// default, which the product edit went over once (#555). Their time follows
+// the server's latency, not the test, so the budget is about six times the
+// slowest full-run time seen.
+const TIMEOUT_MS = 20_000;
+
+describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
   it("installs definitions before the first reports without fake raw or prepared generations", async () => {
     installed = await service().install(actor(), input);
     expect(await count("dashboards")).toBe(1);
