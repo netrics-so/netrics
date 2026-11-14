@@ -452,6 +452,16 @@ export function buildStoreDashboard(
   locale: Locale,
   productId?: string,
 ): CreateDashboardRequest {
+  return buildStoreDashboardTemplate(name, models, locale, productId).request;
+}
+
+/** The store dashboard plus the template key of each widget, in reading order. */
+export function buildStoreDashboardTemplate(
+  name: string,
+  models: Record<StoreMetric, string>,
+  locale: Locale,
+  productId?: string,
+): { request: CreateDashboardRequest; widgetKeys: string[] } {
   const t = storeTemplateCopy(locale);
   const all = (dimensionId: string) =>
     Object.values(models).map((modelId) => ({ modelId, dimensionId }));
@@ -529,7 +539,7 @@ export function buildStoreDashboard(
     },
     options: { view: "table" as const, limit: 20 },
   });
-  return {
+  const request: CreateDashboardRequest = {
     name,
     settings: { showHeader: true, autoAdvance: false, dataFilters: filters },
     slides: [
@@ -550,5 +560,9 @@ export function buildStoreDashboard(
         ],
       },
     ],
+  };
+  return {
+    request,
+    widgetKeys: ["widget:downloads", "widget:proceeds", "widget:ratings"],
   };
 }

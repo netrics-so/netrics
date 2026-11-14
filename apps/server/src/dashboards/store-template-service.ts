@@ -24,23 +24,24 @@ import {
   exceedsDataPolicy,
   type DataPolicy,
   type Locale,
-  type PreparationGraph,
 } from "@netrics/domain";
 import { createDataService, DataServiceError } from "../data/service.js";
 import { createDashboardService } from "./service.js";
 import {
-  buildStorePreparation,
-  buildStoreAppend,
-  buildStoreModel,
-  buildStoreDashboard,
   storeTemplateCopy,
   type StoreTemplateSource,
   type StoreMetric,
   type StoreConnectorId,
 } from "./store-portfolio.js";
+import {
+  storeTemplate,
+  type StoreTemplateDefinition,
+  type StoreTemplateIds,
+  type StoreTemplateInputs,
+  type StoreTemplateRecord,
+} from "./store-template.js";
 
 type Actor = { workspaceId: string; callerId: string; locale: Locale };
-const metrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
 const appKey = (app: { connectionId: string; appId: string }) =>
   app.connectionId + ":" + app.appId;
 function reject(
@@ -80,9 +81,12 @@ export function createStoreTemplateService(deps: {
   registry: ConnectorRegistry;
   now?: () => Date;
   policy?: DataPolicy;
+  /** The template definition installs build from; tests pass other versions. */
+  template?: StoreTemplateDefinition;
 }) {
   const now = deps.now ?? (() => new Date()),
-    defaults = deps.policy ?? DEFAULT_DATA_POLICY;
+    defaults = deps.policy ?? DEFAULT_DATA_POLICY,
+    template = deps.template ?? storeTemplate;
   return {
     options(actor: Actor): Promise<StoreTemplateOptions> {
       return withWorkspace(
@@ -332,74 +336,6 @@ export function createStoreTemplateService(deps: {
                 }),
                 records: mappingRows,
               });
-              const preparationIds: string[] = [],
-                outputs: Record<StoreMetric, string[]> = {
-                  downloads: [],
-                  proceeds: [],
-                  ratings: [],
-                };
-              const publish = async (name: string, graph: PreparationGraph) => {
-                const saved = await data.savePreparation(actor, {
-                  name: name.slice(0, 100),
-                  graph,
-                  projectId: input.projectId,
-                });
-                await data.publishPreparation(
-                  actor,
-                  saved.preparation.id,
-                  saved.preparation.version,
-                );
-                preparationIds.push(saved.preparation.id);
-                return `prepared:${saved.preparation.id}:${graph.outputs[0]!}`;
-              };
-              for (const source of sources)
-                for (const metric of metrics)
-                  outputs[metric].push(
-                    await publish(
-                      `${t[metric]} · ${source.name}`,
-                      buildStorePreparation(
-                        source,
-                        metric,
-                        mapping.datasetId,
-                        products.datasetId,
-                        actor.locale,
-                      ),
-                    ),
-                  );
-              const combine = async (
-                metric: StoreMetric,
-                inputs: string[],
-              ): Promise<string> => {
-                if (inputs.length === 1) return inputs[0]!;
-                const next: string[] = [];
-                for (let offset = 0; offset < inputs.length; offset += 80)
-                  next.push(
-                    await publish(
-                      t[metric],
-                      buildStoreAppend(inputs.slice(offset, offset + 80)),
-                    ),
-                  );
-                return next.length === 1 ? next[0]! : combine(metric, next);
-              };
-              const models = {} as Record<StoreMetric, string>;
-              for (const metric of metrics) {
-                const definition = buildStoreModel(
-                  metric,
-                  await combine(metric, outputs[metric]),
-                  actor.locale,
-                );
-                const model = await data.saveModel(actor, {
-                  name: `${input.name} · ${t[metric]}`.slice(0, 100),
-                  definition,
-                  projectId: input.projectId,
-                });
-                await data.publishModel(
-                  actor,
-                  model.model.id,
-                  model.model.version,
-                );
-                models[metric] = model.model.id;
-              }
               const scoped = input.appScope
                 ? input.groups.find((group) =>
                     group.apps.some(
@@ -407,30 +343,79 @@ export function createStoreTemplateService(deps: {
                     ),
                   )
                 : undefined;
-              const product = input.appScope
-                ? scoped
-                  ? "product:" + scoped.id
-                  : appKey(input.appScope)
-                : undefined;
-              const dashboard = await createDashboardService({ db: tx }).create(
-                actor,
-                createDashboardRequestSchema.parse({
-                  ...buildStoreDashboard(
-                    input.name,
-                    models,
-                    actor.locale,
-                    product,
-                  ),
-                  projectId: input.projectId,
-                }),
-              );
-              if (!dashboard.ok)
-                reject(
-                  dashboard.error,
-                  dashboard.status as 400 | 404 | 409 | 413 | 503,
-                );
+              const inputs: StoreTemplateInputs = {
+                name: input.name,
+                locale: actor.locale,
+                projectId: input.projectId ?? null,
+                connections: sources,
+                fixedProduct: input.appScope
+                  ? scoped
+                    ? "product:" + scoped.id
+                    : appKey(input.appScope)
+                  : null,
+                groups: input.groups,
+              };
+              const ids = {
+                "dataset:mapping": mapping.datasetId,
+                "dataset:products": products.datasetId,
+              } as StoreTemplateIds;
+              const preparationIds: string[] = [],
+                models = {} as Record<StoreMetric, string>,
+                built: StoreTemplateRecord[] = [];
+              let dashboardId: string | undefined;
+              for (const key of template.keys(inputs)) {
+                const record = template.build(key, inputs, ids);
+                built.push(record);
+                if (record.kind === "preparation") {
+                  const saved = await data.savePreparation(actor, {
+                    name: record.name,
+                    graph: record.graph,
+                    projectId: input.projectId,
+                  });
+                  await data.publishPreparation(
+                    actor,
+                    saved.preparation.id,
+                    saved.preparation.version,
+                  );
+                  preparationIds.push(saved.preparation.id);
+                  ids[key] = saved.preparation.id;
+                } else if (record.kind === "model") {
+                  const model = await data.saveModel(actor, {
+                    name: record.name,
+                    definition: record.definition,
+                    projectId: input.projectId,
+                  });
+                  await data.publishModel(
+                    actor,
+                    model.model.id,
+                    model.model.version,
+                  );
+                  models[key.slice("model:".length) as StoreMetric] =
+                    model.model.id;
+                  ids[key] = model.model.id;
+                } else {
+                  const dashboard = await createDashboardService({
+                    db: tx,
+                  }).create(
+                    actor,
+                    createDashboardRequestSchema.parse({
+                      ...record.request,
+                      projectId: input.projectId,
+                    }),
+                  );
+                  if (!dashboard.ok)
+                    reject(
+                      dashboard.error,
+                      dashboard.status as 400 | 404 | 409 | 413 | 503,
+                    );
+                  dashboardId = dashboard.value.id;
+                  ids[key] = dashboard.value.id;
+                }
+              }
+              if (!dashboardId)
+                throw new Error("store template without dashboard");
               const result: StoreTemplateResult = {
-                dashboardId: dashboard.value.id,
+                dashboardId,
                 mappingDatasetId: mapping.datasetId,
                 productDatasetId: products.datasetId,
                 models,
@@ -447,7 +432,7 @@ export function createStoreTemplateService(deps: {
                 workspaceId: actor.workspaceId,
                 actorUserId: actor.callerId,
                 action: "data.store_template_installed",
-                target: dashboard.value.id,
+                target: dashboardId,
                 metadata: {
                   requestId: input.requestId,
                   mappingDatasetId: mapping.datasetId,
