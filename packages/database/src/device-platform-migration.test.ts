@@ -1,20 +1,11 @@
-import {
-  cpSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
-
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { migrationsFolder, runMigrations } from "./index.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+  type TestDatabase,
+} from "./test-db.js";
 
 // Migration 0051 (#406, ADR 0021) on data in the previous shape (0050):
 // a paired Apple TV and a turned browser kiosk with heartbeats, a revoked
@@ -24,51 +15,16 @@ import { migrationsFolder, runMigrations } from "./index.js";
 
 const LAST_BEFORE = "0050_connection_resources_kind_key";
 
-const serverUrl =
-  process.env.NETRICS_TEST_ADMIN_URL ??
-  "postgres://netrics:netrics@localhost:5433/postgres";
-const name = `netrics_test_${randomBytes(6).toString("hex")}`;
+let testDb: TestDatabase;
 let adminUrl: string;
-let folder: string;
-
-/** A copy of the migrations folder that ends at `lastTag`. */
-function migrationsUpTo(lastTag: string): string {
-  const copy = mkdtempSync(path.join(tmpdir(), "netrics-migrations-"));
-  cpSync(migrationsFolder, copy, { recursive: true });
-  const journalPath = path.join(copy, "meta", "_journal.json");
-  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
-    entries: Array<{ idx: number; tag: string }>;
-  };
-  const last = journal.entries.findIndex((entry) => entry.tag === lastTag);
-  expect(last).toBeGreaterThan(0);
-  journal.entries = journal.entries.slice(0, last + 1);
-  writeFileSync(journalPath, JSON.stringify(journal));
-  return copy;
-}
 
 beforeAll(async () => {
-  const server = postgres(serverUrl, { max: 1 });
-  await server.unsafe(`CREATE DATABASE ${name}`);
-  await server.end({ timeout: 5 });
-  const url = new URL(serverUrl);
-  url.pathname = `/${name}`;
-  adminUrl = url.toString();
-  folder = migrationsUpTo(LAST_BEFORE);
+  testDb = await createTestDatabase({ upTo: LAST_BEFORE });
+  adminUrl = testDb.adminUrl;
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
-  const client = postgres(adminUrl, { max: 1, onnotice: () => undefined });
-  try {
-    await migrate(drizzle(client), { migrationsFolder: folder });
-  } finally {
-    await client.end({ timeout: 5 });
-  }
-}, 60_000);
-
-afterAll(async () => {
-  rmSync(folder, { recursive: true, force: true });
-  const server = postgres(serverUrl, { max: 1 });
-  await server.unsafe(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-  await server.end({ timeout: 5 });
-});
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 
 describe("migration 0051 on paired TVs, kiosks and pairings", () => {
   it("keeps every row and adds a null platform", async () => {
@@ -117,7 +73,7 @@ describe("migration 0051 on paired TVs, kiosks and pairings", () => {
           '2026-10-01T10:10:00Z', '2026-10-01T10:01:00Z', ${workspaceId},
           ${tv!.id as string}, '2026-10-01T10:01:05Z')`;
 
-      await runMigrations(adminUrl);
+      await testDb.migrate();
 
       const devices = await owner`
         select id, name, dashboard_id, app_version, rotation, display_mode,

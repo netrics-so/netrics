@@ -24,7 +24,11 @@ import {
 import { createCredentialKeyring } from "../credentials.js";
 import { createJobHandlers, type JobHandler } from "../jobs/handlers.js";
 import { runSchedulerTick } from "../scheduler.js";
-import { createTestDatabase, type TestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createWorker, type WorkerHandle } from "../worker.js";
 import { syncCatalog } from "./catalog.js";
 
@@ -179,7 +183,7 @@ beforeAll(async () => {
     name: "Verification B",
     ownerUserId: userB!.id,
   });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await schedulerRaw.end({ timeout: 5 }).catch(() => undefined);

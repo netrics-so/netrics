@@ -14,7 +14,11 @@ import {
   SECURITY_RETENTION,
   type SecurityRetentionPolicy,
 } from "./security-retention.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #163: the privacy policy keeps security events (sign-ins with IP address
 // and browser) for 12 months. Every case runs against a fixed clock, far from
@@ -125,7 +129,7 @@ beforeAll(async () => {
   await admin`
     insert into auth.user (id, name, email, updated_at)
     values (${authUserId}, 'U', 'u@example.com', now())`;
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await admin.end({ timeout: 5 }).catch(() => undefined);

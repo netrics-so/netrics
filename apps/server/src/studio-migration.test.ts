@@ -17,7 +17,11 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildDeviceDashboard } from "./devices/dashboard.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The studio migration (ADR 0015 section 4) on dashboards written in the
 // previous shape: a screen that still asks for schema 1 must get exactly the
@@ -193,7 +197,7 @@ beforeAll(async () => {
 
   await testDb.migrate();
   db = createDatabase(testDb.appUrl, { max: 2 });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await owner?.end({ timeout: 5 }).catch(() => undefined);

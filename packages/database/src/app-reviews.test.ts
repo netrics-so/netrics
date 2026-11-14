@@ -20,7 +20,11 @@ import * as authSchema from "./auth-schema.js";
 import { withWorkspace } from "./context.js";
 import { migrationsFolder } from "./index.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Review text (ADR 0019 §11, #334) as netrics_app under RLS, and its
 // retention as netrics_scheduler. A fixed clock far from the wall clock.
@@ -106,7 +110,7 @@ beforeAll(async () => {
     await admin`insert into workspaces (name) values ('B') returning id`;
   workspaceA = a!.id as string;
   workspaceB = b!.id as string;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 beforeEach(async () => {
   await admin`delete from connections`;

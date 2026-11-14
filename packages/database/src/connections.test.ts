@@ -7,7 +7,11 @@ import { createWorkspace, withWorkspace } from "./context.js";
 import { runMigrations } from "./index.js";
 import * as authSchema from "./auth-schema.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 function errorChain(error: unknown): string {
   const messages: string[] = [];
@@ -165,7 +169,7 @@ beforeAll(async () => {
       .insert(schema.observations)
       .values(observationRows(connectionB, workspaceB));
   });
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await appClient.end({ timeout: 5 }).catch(() => undefined);
@@ -332,7 +336,11 @@ describe("observation identity and revisions", () => {
 });
 
 describe("migration idempotency", () => {
-  it("applies the full migration chain twice on the same database", async () => {
-    await expect(runMigrations(testDb.adminUrl)).resolves.toBeUndefined();
-  });
+  it(
+    "applies the full migration chain twice on the same database",
+    async () => {
+      await expect(runMigrations(testDb.adminUrl)).resolves.toBeUndefined();
+    },
+    TEST_DATABASE_SETUP_TIMEOUT_MS,
+  );
 });

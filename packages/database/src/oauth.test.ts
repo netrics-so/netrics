@@ -16,7 +16,11 @@ import {
   type NewOAuthAuthorization,
 } from "./oauth.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // ADR 0012 records: oauth_authorizations and connection_oauth under RLS,
 // the state-consuming SECURITY DEFINER function, and needs_reauthorization.
@@ -139,7 +143,7 @@ beforeAll(async () => {
     await insertOAuthAuthorization(tx, authorization(workspaceB, userB));
     await upsertConnectionOAuth(tx, grant(workspaceB, connectionB, "sub-b"));
   });
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await appClient.end({ timeout: 5 }).catch(() => undefined);

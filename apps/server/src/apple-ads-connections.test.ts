@@ -42,7 +42,10 @@ import {
 } from "./signed-keys/test-apple-ads.js";
 import { p256KeyPair, pemBody } from "./signed-keys/test-keys.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #373 through the API and the sync engine: the real Apple Ads provider
 // (token exchange, access probe) and connector against an offline fake of
@@ -182,7 +185,7 @@ beforeAll(async () => {
       })
     ).json(),
   ).workspaces[0]!.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

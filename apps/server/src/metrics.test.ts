@@ -28,7 +28,10 @@ import { createAuthService } from "./auth/index.js";
 import { buildDeviceDashboard } from "./devices/dashboard.js";
 import { loadConfig } from "./env.js";
 import { queryMetric, queryMetricBreakdown } from "./metrics/query.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 
@@ -167,7 +170,7 @@ beforeAll(async () => {
     civilDate(NOW, "UTC"),
     1000,
   );
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

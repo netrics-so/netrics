@@ -22,7 +22,10 @@ import {
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #257 (ADR 0016 section 6): the catalog keeps connector translations, and
 // the API names connectors and metrics in the caller's language.
@@ -115,7 +118,7 @@ describe("connector catalog sync", () => {
 
   beforeAll(async () => {
     world = await createWorld();
-  }, 30_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
   afterAll(async () => world.close());
 
   it("stores each manifest's translations in its jsonb row", async () => {
@@ -162,7 +165,7 @@ describe("the API in the caller's language", () => {
         { connectorId: "demo", name: "Demo" },
       ),
     ).connection.id;
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
   afterAll(async () => world.close());
 
   const setLocale = (locale: "en" | "de" | null) =>
@@ -304,7 +307,7 @@ describe("the instance default language", () => {
 
   beforeAll(async () => {
     world = await createWorld({ NETRICS_DEFAULT_LOCALE: "de" });
-  }, 30_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
   afterAll(async () => world.close());
 
   it("comes before Accept-Language and after the user's setting", async () => {

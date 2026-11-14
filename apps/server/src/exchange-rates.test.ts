@@ -26,7 +26,11 @@ import {
   refreshExchangeRates,
 } from "./exchange-rates/job.js";
 import { createScheduler, exchangeRateJobFor } from "./scheduler.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // The ECB rate job (#191), offline: stored ECB files stand in for the
 // network, and the database is a migrated test database.
@@ -148,7 +152,7 @@ describe("the rate job", () => {
     schedulerDb = createDatabase(url.toString());
     appDb = createDatabase(testDb.appUrl);
     admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await schedulerDb.$client.end({ timeout: 5 }).catch(() => undefined);

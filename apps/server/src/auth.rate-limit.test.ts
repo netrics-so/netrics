@@ -14,7 +14,11 @@ import { createAuthService } from "./auth/index.js";
 import { CLIENT_IP_HEADER } from "./auth/rate-limit.js";
 import { loadConfig } from "./env.js";
 import type { Mailer } from "./mail/mailer.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Sign-in allows 10 requests per client IP per minute (auth/rate-limit.ts).
 const SIGN_IN_MAX = 10;
@@ -69,7 +73,7 @@ beforeAll(async () => {
   admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
   apiA = await buildInstance();
   apiB = await buildInstance();
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await apiA.close();

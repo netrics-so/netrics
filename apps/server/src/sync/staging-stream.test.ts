@@ -23,7 +23,11 @@ import {
   type DatasetPage,
 } from "@netrics/connector-sdk";
 import { createGooglePlayConnector } from "@netrics/connectors";
-import { createTestDatabase, type TestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createDatasetStaging } from "./staging.js";
 
 // Incremental connector staging (ADR 0024, #525): drafts written page by
@@ -104,7 +108,7 @@ beforeAll(async () => {
   test = await createTestDatabase();
   db = createDatabase(test.appUrl);
   owner = createRawSqlClient(test.adminUrl, { max: 2 });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await db?.$client.end({ timeout: 5 });
   await owner?.end({ timeout: 5 });

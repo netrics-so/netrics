@@ -6,7 +6,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createWorkspace, withUserContext, withWorkspace } from "./context.js";
 import * as authSchema from "./auth-schema.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 function errorChain(error: unknown): string {
   const messages: string[] = [];
@@ -101,7 +105,7 @@ beforeAll(async () => {
       action: "project.created",
     }),
   );
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await appClient.end({ timeout: 5 }).catch(() => undefined);

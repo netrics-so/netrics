@@ -13,7 +13,10 @@ import {
 
 import { createDefaultRegistry } from "./connectors.js";
 import { requestOperatorBackfill } from "./operator-backfill.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 const registry = createDefaultRegistry();
 
@@ -52,7 +55,7 @@ beforeAll(async () => {
       },
     ]),
   );
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await appDb.$client.end({ timeout: 5 }).catch(() => undefined);

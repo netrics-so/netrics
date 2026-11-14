@@ -31,6 +31,16 @@ const pendingDrops: Array<() => Promise<void>> = [];
  */
 export const TEST_DATABASE_DROP_TIMEOUT_MS = 120_000;
 
+/**
+ * Budget for a hook that calls `createTestDatabase`, and for a test that
+ * calls `migrate()` on one. CREATE DATABASE and the migrations (one statement
+ * after another) take about a second on an idle server. Two full `pnpm test`
+ * runs at once took them past vitest's defaults, 10 s for a hook and 5 s for
+ * a test, and failed files that pass alone (#557). Their time follows the
+ * server's load, not the test.
+ */
+export const TEST_DATABASE_SETUP_TIMEOUT_MS = 60_000;
+
 afterAll(async () => {
   for (const drop of pendingDrops.splice(0)) {
     await drop();

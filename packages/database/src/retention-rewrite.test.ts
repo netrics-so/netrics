@@ -1,7 +1,11 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Retention changes write only the deadlines they move, and reach a
 // workspace's records without reading other workspaces' records (#518).
@@ -144,7 +148,7 @@ describe("retention changes write only the deadlines they move (#518)", () => {
     test = await createTestDatabase();
     admin = postgres(test.adminUrl, { max: 1, onnotice: () => undefined });
     await admin`insert into connectors(id,version,manifest) values ('rewrite-fixture','1.0.0','{}')`;
-  }, 60_000);
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await admin?.end({ timeout: 5 });

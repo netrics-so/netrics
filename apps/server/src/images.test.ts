@@ -30,7 +30,10 @@ import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
 import { capturingLogger } from "./oauth/test-provider.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Workspace images over HTTP (#217, ADR 0015 section 5).
 
@@ -181,7 +184,7 @@ beforeAll(async () => {
     "viewer",
   );
   expect(added.statusCode).toBe(200);
-});
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

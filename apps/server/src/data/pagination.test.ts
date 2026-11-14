@@ -17,7 +17,10 @@ import {
   type DataPolicy,
   type SemanticModelDefinition,
 } from "@netrics/domain";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import {
   createDataService,
   queryDataModel,
@@ -73,7 +76,7 @@ beforeAll(async () => {
   callerId = user!.id as string;
   viewerId = viewer!.id as string;
   await admin`insert into connectors(id,version,manifest) values ('pagination-fixture','1.0.0','{}')`;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await db?.$client.end({ timeout: 5 });
   await scheduler?.$client.end({ timeout: 5 });

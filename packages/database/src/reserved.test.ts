@@ -12,7 +12,11 @@ import {
   type PooledDb,
 } from "./reserved.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // #495: pinned first pages hold a session advisory lock on a reserved pool
 // connection around their serializable transaction. The pool has a single
@@ -31,7 +35,7 @@ beforeAll(async () => {
   db = drizzle(client, {
     schema: { ...schema, ...authSchema },
   }) as unknown as PooledDb;
-});
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await client?.end({ timeout: 5 });

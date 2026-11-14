@@ -30,7 +30,10 @@ import {
   type FixtureAccount,
 } from "./oauth/test-provider.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
 
 // Finishing the setup of an OAuth connection (ADR 0012, #136): discovering
@@ -272,7 +275,7 @@ beforeAll(async () => {
     expect(added.statusCode).toBe(200);
   }
   cookies.outsider = await signUp("setup-outsider@example.com");
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

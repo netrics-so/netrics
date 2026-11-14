@@ -15,7 +15,11 @@ import {
   upsertConnectionResources,
 } from "./resources.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Resource names of a connection (#194), as netrics_app under RLS.
 
@@ -88,7 +92,7 @@ beforeAll(async () => {
   await observe(workspaceA, connectionA, "downloads", { resource: "app-9" });
   await observe(workspaceA, connectionA, "impressions", { resource: "app-3" });
   await observe(workspaceB, connectionB, "downloads", { resource: "app-b" });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await appClient.end({ timeout: 5 });

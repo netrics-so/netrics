@@ -43,7 +43,10 @@ import {
 } from "./devices/service.js";
 import { loadConfig } from "./env.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { hashToken } from "./tokens.js";
 
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
@@ -213,7 +216,7 @@ beforeAll(async () => {
     stranger,
     await newWorkspace(stranger),
   );
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

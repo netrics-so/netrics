@@ -35,7 +35,10 @@ import {
   type FixtureAccount,
 } from "./oauth/test-provider.js";
 import { syncCatalog } from "./sync/catalog.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
 
 // The OAuth authorization flow (ADR 0012, #132) end to end in the API,
@@ -264,7 +267,7 @@ beforeAll(async () => {
     expect(added.statusCode).toBe(200);
   }
   editorUserId = (await findUserByEmail(db, "flow-editor@example.com"))!.id;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app?.close();

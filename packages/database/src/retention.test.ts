@@ -5,7 +5,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as authSchema from "./auth-schema.js";
 import { pruneHistory, type RetentionPolicy } from "./jobs.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 function roleUrl(base: string, role: string): string {
   const url = new URL(base);
@@ -82,7 +86,7 @@ beforeAll(async () => {
     insert into connections (workspace_id, connector_id, name)
     values (${workspaceId}, 'demo', 'C') returning id`;
   connectionId = connection!.id as string;
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await admin.end({ timeout: 5 }).catch(() => undefined);

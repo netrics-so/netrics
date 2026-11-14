@@ -10,13 +10,17 @@ import {
   findRolesWithDefaultPasswords,
   setRolePassword,
 } from "./roles.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 let testDb: TestDatabase;
 
 beforeAll(async () => {
   testDb = await createTestDatabase();
-});
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 describe("assertUnprivilegedRole", () => {
   it("accepts the application role", async () => {

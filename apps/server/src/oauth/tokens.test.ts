@@ -18,7 +18,10 @@ import {
   decryptOAuthAccessToken,
 } from "../credentials.js";
 import { Secret } from "../secret.js";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { OAuthProviders } from "./config.js";
 import {
   capturingLogger,
@@ -127,7 +130,7 @@ beforeAll(async () => {
     logger: capturingLogger(logs),
     egress: TEST_PROVIDER_EGRESS,
   });
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await provider?.close();

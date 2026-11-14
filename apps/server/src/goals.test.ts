@@ -20,7 +20,10 @@ import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Goals (#335, ADR 0019 section 4): a shared entity with its current
 // progress, the binding checked like a widget's plus what a goal needs,
@@ -237,7 +240,7 @@ beforeAll(async () => {
     workspaceId,
     "test-goals",
   );
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await app.close();

@@ -14,7 +14,10 @@ import {
   type Sql,
 } from "@netrics/database";
 import { createDefaultRegistry } from "../connectors.js";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { syncCatalog } from "../sync/catalog.js";
 import { createDataService } from "../data/service.js";
 import { createStoreTemplateService } from "./store-template-service.js";
@@ -77,7 +80,7 @@ beforeAll(async () => {
     await owner`insert into connections(id,workspace_id,connector_id,name,setup_pending)
       values (${source.id},${workspaceId},${source.connectorId},${source.name},false)`;
   await test.migrate();
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await db?.$client.end({ timeout: 5 });
   await owner?.end({ timeout: 5 });

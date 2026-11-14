@@ -10,7 +10,10 @@ import type {
   PreparationGraph,
   SemanticModelDefinition,
 } from "@netrics/domain";
-import { createTestDatabase } from "../test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "../test-db.js";
 import { createDataService, type DataActor } from "./service.js";
 
 const NOW = new Date("2026-11-05T12:00:00Z");
@@ -116,7 +119,7 @@ beforeAll(async () => {
   await test.migrate();
   db = createDatabase(test.appUrl);
   service = createDataService(db, () => NOW);
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await admin?.end({ timeout: 5 });
   await db?.$client.end({ timeout: 5 });

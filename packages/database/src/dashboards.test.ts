@@ -15,7 +15,11 @@ import {
   type WidgetInput,
 } from "./dashboards.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 let testDb: TestDatabase;
 let admin: postgres.Sql;
@@ -115,7 +119,7 @@ beforeAll(async () => {
                            values (${workspaceB}, 'demo', 'B') returning id`;
   connectionA = ca!.id as string;
   connectionB = cb!.id as string;
-}, 30_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await admin.end({ timeout: 5 }).catch(() => undefined);

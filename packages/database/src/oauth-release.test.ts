@@ -8,7 +8,11 @@ import { createWorkspace, withWorkspace } from "./context.js";
 import { deleteConnection } from "./connections.js";
 import { releaseOAuthGrant, upsertConnectionOAuth } from "./oauth.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // ADR 0012 disconnect, #133: oauth_release_grant is the app role's only view
 // of other workspaces' connection_oauth rows. It answers one boolean, only
@@ -93,7 +97,7 @@ beforeAll(async () => {
   await owner`insert into connectors (id, version, manifest)
     values ('demo', '1.0.0', '{"id":"demo"}')`;
   await owner.end({ timeout: 5 });
-});
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   await appClient?.end({ timeout: 5 });

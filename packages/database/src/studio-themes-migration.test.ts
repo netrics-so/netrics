@@ -1,21 +1,11 @@
-import {
-  cpSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
-
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { migrationsFolder, runMigrations } from "./index.js";
-import { provisionTestRoles } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+  type TestDatabase,
+} from "./test-db.js";
 
 // Migration 0034 (#216) on data in the previous shape: every existing
 // dashboard shows netrics Dark (today's palette) without an accent, its
@@ -23,56 +13,18 @@ import { provisionTestRoles } from "./test-db.js";
 
 const LAST_BEFORE = "0033_dashboard_studio";
 
-const serverUrl =
-  process.env.NETRICS_TEST_ADMIN_URL ??
-  "postgres://netrics:netrics@localhost:5433/postgres";
-const name = `netrics_test_${randomBytes(6).toString("hex")}`;
+let testDb: TestDatabase;
 let adminUrl: string;
 let appUrl: string;
-let folder: string;
-
-/** A copy of the migrations folder that ends at `lastTag`. */
-function migrationsUpTo(lastTag: string): string {
-  const copy = mkdtempSync(path.join(tmpdir(), "netrics-migrations-"));
-  cpSync(migrationsFolder, copy, { recursive: true });
-  const journalPath = path.join(copy, "meta", "_journal.json");
-  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
-    entries: Array<{ idx: number; tag: string }>;
-  };
-  const last = journal.entries.findIndex((entry) => entry.tag === lastTag);
-  expect(last).toBeGreaterThan(0);
-  journal.entries = journal.entries.slice(0, last + 1);
-  writeFileSync(journalPath, JSON.stringify(journal));
-  return copy;
-}
 
 beforeAll(async () => {
-  const server = postgres(serverUrl, { max: 1 });
-  await server.unsafe(`CREATE DATABASE ${name}`);
-  await server.end({ timeout: 5 });
-  const url = new URL(serverUrl);
-  url.pathname = `/${name}`;
-  adminUrl = url.toString();
-  const app = new URL(adminUrl);
-  app.username = "netrics_app";
-  app.password = "netrics_app";
-  appUrl = app.toString();
-  folder = migrationsUpTo(LAST_BEFORE);
+  testDb = await createTestDatabase({ upTo: LAST_BEFORE });
+  adminUrl = testDb.adminUrl;
+  appUrl = testDb.appUrl;
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
-  const client = postgres(adminUrl, { max: 1, onnotice: () => undefined });
-  try {
-    await migrate(drizzle(client), { migrationsFolder: folder });
-  } finally {
-    await client.end({ timeout: 5 });
-  }
-}, 60_000);
-
-afterAll(async () => {
-  rmSync(folder, { recursive: true, force: true });
-  const server = postgres(serverUrl, { max: 1 });
-  await server.unsafe(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-  await server.end({ timeout: 5 });
-});
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 
 describe("migration 0034 on existing dashboards", () => {
   it("gives every dashboard netrics Dark and isolates themes", async () => {
@@ -109,8 +61,7 @@ describe("migration 0034 on existing dashboards", () => {
         values (${dashboardIds[1]!}, ${a}, ${connection!.id as string},
           'c.downloads', 'sum', 'last_7_days', 0)`;
 
-      await runMigrations(adminUrl);
-      await provisionTestRoles();
+      await testDb.migrate();
 
       const rows = await owner`
         select name, version, theme_builtin, theme_id, accent_color

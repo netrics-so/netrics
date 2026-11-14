@@ -11,10 +11,14 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { migrationsFolder } from "./index.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  type TestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 
 // Migration 0037 (#275, ADR 0017) on data in the previous shape: tile
 // dashboards migrated by 0033 and studio dashboards with several slides come
@@ -117,7 +121,10 @@ beforeAll(async () => {
        'Hello'),
       (${slide(1)}, ${studioDashboard}, ${workspaceId}, 'clock', 10, 7, 2, 1,
        null)`;
-}, 60_000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
+
+// The test applies the remaining migrations.
+vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
 
 afterAll(async () => {
   await owner.end({ timeout: 5 }).catch(() => undefined);

@@ -18,7 +18,10 @@ import {
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
-import { createTestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
 import { addMemberViaInvitation } from "./test-helpers.js";
 
 let app: FastifyInstance, db: Database;
@@ -88,7 +91,7 @@ beforeAll(async () => {
       (await addMemberViaInvitation(app, db, owner, workspaceId, email, role))
         .statusCode,
     ).toBe(200);
-}, 60000);
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
   await app?.close();
   await db?.$client.end({ timeout: 5 });
