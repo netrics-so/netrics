@@ -48,3 +48,118 @@ export const storeTemplateOptionsSchema = z.object({
   ),
 });
 export type StoreTemplateOptions = z.infer<typeof storeTemplateOptionsSchema>;
+
+/** Added, changed and removed parts of one kind. */
+const storeTemplateCountsSchema = z.object({
+  added: z.number().int().min(0),
+  changed: z.number().int().min(0),
+  removed: z.number().int().min(0),
+});
+/**
+ * What a newer template version changes (not the customer's own edits),
+ * without app-scope parts; `conflicts` are items both changed, `removals`
+ * template parts proposed for removal.
+ */
+export const storeTemplateUpdateSummarySchema = z.object({
+  measures: storeTemplateCountsSchema,
+  steps: storeTemplateCountsSchema,
+  widgets: storeTemplateCountsSchema,
+  conflicts: z.number().int().min(0),
+  removals: z.number().int().min(0),
+});
+export type StoreTemplateUpdateSummary = z.infer<
+  typeof storeTemplateUpdateSummarySchema
+>;
+/** An applied update in progress: its data drafts and dashboard copies. */
+export const storeTemplateUpdateSchema = z.object({
+  id: z.uuid(),
+  requestId: z.uuid(),
+  fromVersion: z.number().int(),
+  toVersion: z.number().int(),
+  createdAt: z.iso.datetime(),
+  drafts: z.array(
+    z.object({
+      key: z.string(),
+      kind: z.enum(["preparation", "model"]),
+      recordId: z.uuid(),
+      name: z.string(),
+      version: z.number().int(),
+      published: z.boolean(),
+    }),
+  ),
+  dashboards: z.array(
+    z.object({
+      key: z.string(),
+      originalId: z.uuid(),
+      copyId: z.uuid().nullable(),
+      swappedAt: z.iso.datetime().nullable(),
+      swappedBackAt: z.iso.datetime().nullable(),
+      ready: z.boolean(),
+    }),
+  ),
+});
+export type StoreTemplateUpdate = z.infer<typeof storeTemplateUpdateSchema>;
+/**
+ * The workspace's store-template installs and whether a newer template
+ * version is available. `summary` is null when the install is up to date
+ * or its baseline cannot be read (`error`).
+ */
+export const storeTemplateInstallListSchema = z.object({
+  installs: z.array(
+    z.object({
+      requestId: z.uuid(),
+      name: z.string(),
+      templateVersion: z.number().int(),
+      latestVersion: z.number().int(),
+      updateAvailable: z.boolean(),
+      summary: storeTemplateUpdateSummarySchema.nullable(),
+      error: z.enum(["store_template_baseline_unavailable"]).nullable(),
+      dashboardIds: z.array(z.uuid()),
+      modelIds: z.array(z.uuid()),
+      preparationIds: z.array(z.uuid()),
+      openUpdate: storeTemplateUpdateSchema.nullable(),
+    }),
+  ),
+});
+export type StoreTemplateInstallList = z.infer<
+  typeof storeTemplateInstallListSchema
+>;
+/**
+ * The three-way plan of an update, per record: each item the template or
+ * the customer changed, with its original, current and new value. `basis`
+ * identifies the state the plan was made from.
+ */
+export const storeTemplatePlanSchema = z.object({
+  requestId: z.uuid(),
+  fromVersion: z.number().int(),
+  toVersion: z.number().int(),
+  basis: z.string().regex(/^[0-9a-f]{64}$/),
+  summary: storeTemplateUpdateSummarySchema,
+  records: z.array(
+    z.object({
+      key: z.string(),
+      kind: z.enum(["preparation", "model", "dashboard"]),
+      /** Null for a record the new version adds. */
+      recordId: z.uuid().nullable(),
+      name: z.string(),
+      hasUnpublishedDraft: z.boolean(),
+      items: z.array(
+        z.object({
+          ref: z.string(),
+          change: z.enum(["added", "changed", "removed"]),
+          outcome: z.enum([
+            "template",
+            "customer",
+            "choose",
+            "propose_removal",
+            "scope",
+          ]),
+          original: z.unknown().optional(),
+          current: z.unknown().optional(),
+          next: z.unknown().optional(),
+        }),
+      ),
+    }),
+  ),
+});
+export type StoreTemplatePlan = z.infer<typeof storeTemplatePlanSchema>;

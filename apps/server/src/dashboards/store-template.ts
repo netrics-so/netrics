@@ -255,3 +255,12 @@ export const storeTemplate: StoreTemplateDefinition = {
     throw new Error(`unknown store template key ${key}`);
   },
 };
+
+/**
+ * Version 1, which built every install made before versions (the baseline)
+ * and every install whose dashboard original lacks its widget keys. While
+ * the template is at version 1 this is the template itself; a newer version
+ * must leave a frozen copy of version 1 here (`store-template.test.ts`
+ * fails until it does).
+ */
+export const storeTemplateV1: StoreTemplateDefinition = storeTemplate;

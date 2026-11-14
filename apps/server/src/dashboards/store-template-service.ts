@@ -502,7 +502,12 @@ export function createStoreTemplateService(deps: {
                         ? { graph: record.graph }
                         : record.kind === "model"
                           ? { definition: record.definition }
-                          : { request: record.request },
+                          : // The widget keys in the request's reading
+                            // order: a jsonb `widgetKeys` map loses order.
+                            {
+                              request: record.request,
+                              widgetKeys: record.widgetKeys,
+                            },
                     widgetKeys:
                       record.kind === "dashboard" ? dashboardWidgetKeys : null,
                   })),

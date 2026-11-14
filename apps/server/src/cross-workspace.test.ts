@@ -393,6 +393,32 @@ describe("identifier probing: no sub-resource existence oracle", () => {
       );
     }
   });
+
+  it("W2's store-template install is indistinguishable from a random uuid inside W1", async () => {
+    // A store-template install of W2, written as the owner (no connections
+    // needed: W1 must not get far enough to read it).
+    const requestId = randomUUID();
+    await world.admin`insert into data_template_installs
+      (workspace_id, request_id, request_hash, result)
+      values (${w2Id}, ${requestId}, ${"0".repeat(64)}, ${world.admin.json({})})`;
+    for (const id of [requestId, randomUUID()])
+      expectError(
+        await call(world.app, {
+          method: "GET",
+          url: `/v1/workspaces/${w1Id}/dashboard-templates/stores/installs/${id}/update`,
+          cookie: cookies.a,
+        }),
+        404,
+        "store_template_not_found",
+      );
+    const listed = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${w1Id}/dashboard-templates/stores/installs`,
+      cookie: cookies.a,
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual({ installs: [] });
+  });
 });
 
 describe("malformed identifiers", () => {

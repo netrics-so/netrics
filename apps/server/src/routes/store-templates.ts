@@ -1,18 +1,25 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { can, DataProcessingError, type DataPolicy } from "@netrics/domain";
 import type { Database } from "@netrics/database";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
+  storeTemplateInstallListSchema,
+  storeTemplatePlanSchema,
   storeTemplateOptionsSchema,
   storeTemplateRequestSchema,
   storeTemplateResultSchema,
 } from "@netrics/contracts";
 import type { AuthService } from "../auth/index.js";
 import { createStoreTemplateService } from "../dashboards/store-template-service.js";
+import { createStoreTemplateUpdateService } from "../dashboards/store-template-updates.js";
+import type { StoreTemplateDefinition } from "../dashboards/store-template.js";
 import { DataServiceError } from "../data/service.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { createRequireSession } from "./session.js";
 import { routeSchema } from "./openapi.js";
+
+const installParamsSchema = z.object({ requestId: z.uuid() });
 
 export function registerStoreTemplateRoutes(
   app: FastifyInstance,
@@ -22,9 +29,16 @@ export function registerStoreTemplateRoutes(
     authService: AuthService;
     now?: () => Date;
     policy?: DataPolicy;
+    /** The newest store template; tests pass other versions. */
+    template?: StoreTemplateDefinition;
   },
 ) {
-  const service = createStoreTemplateService(deps);
+  const service = createStoreTemplateService(deps),
+    updates = createStoreTemplateUpdateService(deps);
+  const failed = (error: unknown) =>
+    error instanceof DataServiceError
+      ? ([error.status, error.code] as const)
+      : ([503, "data_operation_failed"] as const);
   void app.register(
     (scope, _options, done) => {
       scope.addHook("onRequest", createRequireSession(deps.authService));
@@ -104,6 +118,61 @@ export function registerStoreTemplateRoutes(
                 ? error.code
                 : "data_operation_failed",
             );
+          }
+        },
+      );
+      scope.get(
+        `${path}/installs`,
+        {
+          schema: routeSchema({
+            summary:
+              "List store-template installs and whether a newer template version is available",
+            tags: ["dashboards"],
+            response: storeTemplateInstallListSchema,
+            errors: [403, 404, 503],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (!can(access.role, "dashboards:view"))
+            return sendError(reply, 403, "forbidden");
+          try {
+            reply.header("cache-control", "no-store");
+            return storeTemplateInstallListSchema.parse(
+              await updates.list(access),
+            );
+          } catch (error) {
+            return sendError(reply, ...failed(error));
+          }
+        },
+      );
+      scope.get(
+        `${path}/installs/:requestId/update`,
+        {
+          schema: routeSchema({
+            summary:
+              "Compare an install's records with the newest store template, item by item",
+            tags: ["dashboards"],
+            response: storeTemplatePlanSchema,
+            errors: [403, 404, 409, 503],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (!can(access.role, "data:edit"))
+            return sendError(reply, 403, "forbidden");
+          const params = installParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "store_template_not_found");
+          try {
+            reply.header("cache-control", "no-store");
+            return storeTemplatePlanSchema.parse(
+              await updates.plan(access, params.data.requestId),
+            );
+          } catch (error) {
+            return sendError(reply, ...failed(error));
           }
         },
       );
