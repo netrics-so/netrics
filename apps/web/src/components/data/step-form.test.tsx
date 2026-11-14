@@ -35,11 +35,14 @@ describe("step form expressions", () => {
         fn: "gt",
         args: [
           { kind: "field", fieldId: "revenue" },
-          { kind: "literal", type: "decimal", value: "0" },
+          { kind: "literal", type: "integer", value: 0 },
         ],
       },
     });
     expect(html).toContain('aria-label="Condition 1"');
+    expect(html).toMatch(
+      /<input id="[^"]+" type="text" inputMode="decimal" value="0"/,
+    );
     expect(html).not.toContain("<textarea");
   });
 

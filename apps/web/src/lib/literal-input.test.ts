@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  literalDisplayType,
+  literalEdit,
   literalFromInput,
   literalInputText,
   listFromInput,
@@ -125,5 +127,64 @@ describe("literal input", () => {
     ]);
     expect(listFromInput("integer", ["1", "x"], "en")).toBeNull();
     expect(listFromInput("string", [], "en")).toBeNull();
+  });
+
+  it("shows a stored literal of another type in the column's input", () => {
+    const integer = {
+      kind: "literal" as const,
+      type: "integer" as const,
+      value: 0,
+    };
+    const number = {
+      kind: "literal" as const,
+      type: "number" as const,
+      value: 0.5,
+    };
+    const big = {
+      kind: "literal" as const,
+      type: "number" as const,
+      value: 1e21,
+    };
+    expect(literalDisplayType("decimal", integer, "en")).toBe("decimal");
+    expect(literalDisplayType("number", number, "de")).toBe("number");
+    // "1e+21" is no decimal text: the input keeps the literal's own type.
+    expect(literalDisplayType("decimal", big, "en")).toBe("number");
+    expect(literalDisplayType("decimal", undefined, "en")).toBe("decimal");
+  });
+
+  it("keeps the unit and currency while a value is cleared and retyped", () => {
+    const stored = {
+      kind: "literal" as const,
+      type: "number" as const,
+      value: 0.5,
+      unit: "percent",
+    };
+    const cleared = literalEdit("number", "", "", "en", stored);
+    expect(cleared).toEqual({
+      kind: "literal",
+      type: "number",
+      value: null,
+      unit: "percent",
+    });
+    expect(literalEdit("number", "0.6", "", "en", cleared)).toEqual({
+      kind: "literal",
+      type: "number",
+      value: 0.6,
+      unit: "percent",
+    });
+    const money = {
+      kind: "literal" as const,
+      type: "decimal" as const,
+      value: "1.00",
+      unit: "currency",
+      currency: "EUR",
+    };
+    expect(literalEdit("decimal", "1,", "EUR", "de", money)).toEqual({
+      kind: "literal",
+      type: "decimal",
+      value: null,
+      unit: "currency",
+      currency: "EUR",
+    });
   });
 });

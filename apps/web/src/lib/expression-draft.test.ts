@@ -82,9 +82,12 @@ describe("expression draft", () => {
       fields,
     );
     expect(again).toEqual(edited);
-    const resolved = resolveExpressionDraft(again, filter, "condition", fields);
-    expect(resolved).not.toBe(filter);
-    expect(sameDataExpression(resolved, filter)).toBe(true);
+    // Equal to the stored expression: the stored object comes back.
+    expect(resolveExpressionDraft(again, filter, "condition", fields)).toBe(
+      filter,
+    );
+    const fresh = resolveExpressionDraft(again, undefined, "condition", fields);
+    expect(sameDataExpression(fresh, filter)).toBe(true);
   });
 
   it("reads edited formula text and switches it to visual rows", () => {
@@ -173,5 +176,45 @@ describe("expression draft", () => {
     expect(() =>
       resolveExpressionDraft(draft, undefined, "condition", fields),
     ).toThrow(expect.objectContaining({ fieldId: "day" }));
+  });
+
+  it("returns the stored expression when edits are undone by hand", () => {
+    const draft = initialExpressionDraft(filter, "condition", fields);
+    if (draft.view !== "visual" || draft.model.kind !== "condition")
+      throw new Error("visual condition");
+    const model = draft.model;
+    const row = model.items[0]!;
+    if (row.kind !== "comparison") throw new Error("comparison");
+    const withRow = (next: typeof row): ExpressionDraft => ({
+      view: "visual",
+      edited: true,
+      model: { ...model, items: [next, ...model.items.slice(1)] },
+    });
+    // "Does not match" on and off again.
+    const toggled = withRow({ ...row, negated: false });
+    expect(resolveExpressionDraft(toggled, filter, "condition", fields)).toBe(
+      filter,
+    );
+    // A value changed and typed back (a new, equal literal object).
+    const retyped = withRow({
+      ...row,
+      right: {
+        kind: "literal",
+        literal: { kind: "literal", type: "date", value: "2026-01-31" },
+      },
+    });
+    expect(resolveExpressionDraft(retyped, filter, "condition", fields)).toBe(
+      filter,
+    );
+    const changed = withRow({
+      ...row,
+      right: {
+        kind: "literal",
+        literal: { kind: "literal", type: "date", value: "2026-02-01" },
+      },
+    });
+    expect(
+      resolveExpressionDraft(changed, filter, "condition", fields),
+    ).not.toBe(filter);
   });
 });

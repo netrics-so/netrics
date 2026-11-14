@@ -45,12 +45,14 @@ const operandKey = (operand: VisualOperand | null) =>
     ? "-"
     : operand.kind === "field"
       ? "f:" + operand.fieldId
-      : "l:" +
+      : // The checker types a literal by type and unit, not by its value,
+        // so typing a value neither grows the cache nor compiles again.
+        "l:" +
         JSON.stringify([
           operand.literal.type,
-          operand.literal.value,
           operand.literal.unit,
           operand.literal.currency,
+          operand.literal.value === null,
         ]);
 
 export function builderChoices(fields: readonly DataField[]): BuilderChoices {

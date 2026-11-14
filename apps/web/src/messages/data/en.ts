@@ -485,6 +485,11 @@ export const dataEn = {
       otherColumn: "Another column",
       compareWith: "Compare with",
       addValue: "Add value",
+      removeValue: "Remove value {number}",
+      literal: "Value to compare",
+      source: "Source",
+      fixedValue: "Fixed value",
+      secondValue: "Second value",
       negated: "Does not match",
       operators: {
         eq: "is",

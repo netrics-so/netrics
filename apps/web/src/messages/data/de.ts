@@ -499,6 +499,11 @@ export const dataDe: Catalog<typeof dataEn> = {
       otherColumn: "Andere Spalte",
       compareWith: "Vergleichen mit",
       addValue: "Wert hinzufügen",
+      removeValue: "Wert {number} entfernen",
+      literal: "Vergleichswert",
+      source: "Quelle",
+      fixedValue: "Fester Wert",
+      secondValue: "Zweiter Wert",
       negated: "Trifft nicht zu",
       operators: {
         eq: "ist",

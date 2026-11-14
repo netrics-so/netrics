@@ -39,6 +39,20 @@ export function recordEdit<T>(
   return { past, present: next, future: [], lastEditKey: editKey };
 }
 
+/**
+ * `recordEdit`, unless `next` has the same JSON as the present: then the
+ * history is returned as it is (applying something unchanged is no edit).
+ */
+export function recordChange<T>(
+  history: EditHistory<T>,
+  next: T,
+  editKey: string | null = null,
+): EditHistory<T> {
+  return JSON.stringify(next) === JSON.stringify(history.present)
+    ? history
+    : recordEdit(history, next, editKey);
+}
+
 /** Steps back; unchanged when there is nothing to undo. */
 export function undoEdit<T>(history: EditHistory<T>): EditHistory<T> {
   if (!history.past.length) return history;

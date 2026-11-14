@@ -114,3 +114,52 @@ export function listFromInput(
   }
   return { kind: "literal", type: "json", value: values };
 }
+
+/**
+ * The input type that shows a stored literal next to a column: the column's
+ * type when the literal's text reads as one (an integer `0` in a decimal
+ * column), else the literal's own type, so no stored value is hidden.
+ */
+export function literalDisplayType(
+  columnType: DataType,
+  literal: DataLiteral | undefined,
+  locale: Locale,
+): DataType {
+  if (
+    !literal ||
+    literal.type === columnType ||
+    literal.value === null ||
+    literal.value === undefined
+  )
+    return columnType;
+  return literalFromInput(columnType, literalInputText(literal, locale), locale)
+    ? columnType
+    : literal.type;
+}
+
+/**
+ * The literal after typing `text` (and a currency code) into the input of
+ * `previous`. Invalid or empty text gives an empty literal that keeps the
+ * unit and currency, so retyping the value does not lose them.
+ */
+export function literalEdit(
+  type: DataType,
+  text: string,
+  currencyCode: string,
+  locale: Locale,
+  previous: DataLiteral | undefined,
+): DataLiteral {
+  const units = currencyCode
+    ? { unit: previous?.unit ?? "currency", currency: currencyCode }
+    : previous?.unit !== undefined && previous.currency === undefined
+      ? { unit: previous.unit }
+      : undefined;
+  return (
+    literalFromInput(type, text, locale, units) ?? {
+      kind: "literal",
+      type,
+      value: type === "boolean" ? false : null,
+      ...units,
+    }
+  );
+}

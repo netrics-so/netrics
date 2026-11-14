@@ -11,7 +11,8 @@ import {
   type VisualGroup,
 } from "@netrics/domain";
 import type { BuilderChoices } from "@/lib/builder-choices";
-import { useT } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
+import { literalDisplayType } from "@/lib/literal-input";
 import { emptyLiteral, ListField, LiteralField } from "./literal-field";
 
 export type BuilderNoun = "column" | "measure";
@@ -102,6 +103,7 @@ function ComparisonRow({
   onRemove: () => void;
 }) {
   const t = useT("data"),
+    locale = useLocale(),
     id = useId();
   const field = choices.field(row.fieldId);
   const offered = field ? choices.operators(field) : [];
@@ -117,7 +119,9 @@ function ComparisonRow({
   const literalType: DataType | null = field
     ? field.type === "json"
       ? null
-      : field.type
+      : row.operator === "in"
+        ? field.type
+        : literalDisplayType(field.type, literal, locale)
     : row.operator === "in"
       ? listItemType(literal)
       : (literal?.type ?? null);
@@ -232,7 +236,7 @@ function ComparisonRow({
             </div>
           ) : literalType === null ? null : row.operator === "in" ? (
             <ListField
-              label={t("builder.value")}
+              label={t("builder.literal")}
               type={literalType}
               literal={literal}
               invalid={invalid}
@@ -242,7 +246,7 @@ function ComparisonRow({
             />
           ) : (
             <LiteralField
-              label={t("builder.value")}
+              label={t("builder.literal")}
               type={literalType}
               literal={literal}
               invalid={invalid}

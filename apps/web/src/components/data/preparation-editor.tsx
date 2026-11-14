@@ -27,6 +27,7 @@ import { StepForm } from "./step-form";
 import { PreviewNotes } from "./preview-notes";
 import { DefinitionHistory } from "./definition-history";
 import {
+  recordChange,
   recordEdit,
   redoEdit,
   startHistory,
@@ -397,7 +398,8 @@ export function PreparationEditor({
         throw failure;
       }
     }
-    setGraphHistory((h) => recordEdit(h, next));
+    // A step applied unchanged leaves no undo step.
+    setGraphHistory((h) => recordChange(h, next));
   }
   async function move(direction: "up" | "down") {
     try {

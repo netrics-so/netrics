@@ -60,7 +60,7 @@ function OperandField({
   return (
     <div role="group" aria-label={label} className="data-builder-row">
       <div className="field">
-        <label htmlFor={id + "-source"}>{label}</label>
+        <label htmlFor={id + "-source"}>{t("builder.source")}</label>
         <select
           id={id + "-source"}
           value={operand.kind}
@@ -73,7 +73,7 @@ function OperandField({
           }
         >
           <option value="field">{t(`builder.${noun}`)}</option>
-          <option value="literal">{t("builder.value")}</option>
+          <option value="literal">{t("builder.fixedValue")}</option>
         </select>
       </div>
       {operand.kind === "field" ? (
@@ -122,7 +122,7 @@ function OperandField({
             </select>
           </div>
           <LiteralField
-            label={t("builder.value")}
+            label={t("builder.fixedValue")}
             type={operand.literal.type}
             literal={operand.literal}
             currency={
@@ -218,7 +218,7 @@ function ValueEditor({
       </div>
       {value.kind === "arithmetic" ? (
         <OperandField
-          label={t(`builder.arithmetic.${value.operator}`)}
+          label={t("builder.secondValue")}
           operand={value.right}
           fields={choices.operandFields(value.left, "arithmetic")}
           choices={choices}

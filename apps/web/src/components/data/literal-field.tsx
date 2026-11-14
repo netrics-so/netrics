@@ -4,6 +4,7 @@ import type { DataLiteral, DataType } from "@netrics/domain";
 import { useLocale, useT } from "@/lib/i18n/client";
 import {
   listFromInput,
+  literalEdit,
   literalFromInput,
   literalInputText,
 } from "@/lib/literal-input";
@@ -61,19 +62,13 @@ export function LiteralField({
     locale = useLocale(),
     id = useId();
   const [[text = "", code = ""], setText] = useLiteralText(literal, (l) => [
-    l && l.type === type ? literalInputText(l, locale) : "",
+    // A stored literal of another type (an integer in a decimal column)
+    // still shows its value; the caller picks a type that can read it.
+    l ? literalInputText(l, locale) : "",
     l?.currency ?? "",
   ]);
-  const unitOptions = (currencyCode: string) =>
-    currencyCode
-      ? { unit: literal?.unit ?? "currency", currency: currencyCode }
-      : literal?.unit !== undefined && literal.currency === undefined
-        ? { unit: literal.unit }
-        : undefined;
   const emit = (nextText: string, nextCode: string) => {
-    const next =
-      literalFromInput(type, nextText, locale, unitOptions(nextCode)) ??
-      emptyLiteral(type);
+    const next = literalEdit(type, nextText, nextCode, locale, literal);
     setText([nextText, nextCode], next);
     onChange(next);
   };
@@ -186,13 +181,14 @@ export function ListField({
     onChange(list);
   };
   return (
-    <fieldset className="data-builder-list" aria-invalid={invalid || undefined}>
+    <fieldset className="data-builder-list">
       <legend>{label}</legend>
       {items.map((item, index) => (
         <span className="data-builder-inline" key={index}>
           {type === "boolean" ? (
             <select
               aria-label={label + " " + (index + 1)}
+              aria-invalid={invalid || undefined}
               value={item}
               onChange={(e) =>
                 emit(items.map((v, i) => (i === index ? e.target.value : v)))
@@ -216,6 +212,7 @@ export function ListField({
               step={type === "timestamp" ? 1 : undefined}
               value={item}
               aria-invalid={
+                invalid ||
                 (item !== "" && !literalFromInput(type, item, locale)) ||
                 undefined
               }
@@ -227,6 +224,7 @@ export function ListField({
           {items.length > 1 ? (
             <button
               type="button"
+              aria-label={t("builder.removeValue", { number: index + 1 })}
               onClick={() => emit(items.filter((_, i) => i !== index))}
             >
               {t("builder.remove")}

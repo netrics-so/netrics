@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EDIT_HISTORY_LIMIT,
+  recordChange,
   recordEdit,
   redoEdit,
   replacePresent,
@@ -45,5 +46,12 @@ describe("edit history", () => {
     h = recordEdit(h, "ac", "k");
     expect(h.past).toEqual(["a"]);
     expect(undoEdit(h).present).toBe("a");
+  });
+  it("records no undo step when the new present equals the old one", () => {
+    const graph = { nodes: [{ id: "a", type: "filter" }] };
+    const h = startHistory(graph);
+    expect(recordChange(h, { nodes: [{ id: "a", type: "filter" }] })).toBe(h);
+    const changed = recordChange(h, { nodes: [] });
+    expect([changed.past, changed.present]).toEqual([[graph], { nodes: [] }]);
   });
 });

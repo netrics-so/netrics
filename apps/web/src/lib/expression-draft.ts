@@ -9,7 +9,9 @@ import {
   formatDataFormula,
   fromVisual,
   parseDataFormula,
+  sameDataExpression,
   toVisual,
+  visualModelComplete,
   visualProblem,
   type DataExpression,
   type DataField,
@@ -88,6 +90,30 @@ export function resolveExpressionDraft(
 ): DataExpression {
   const current = draft ?? initialExpressionDraft(initial, target, fields);
   if (initial && !current.edited) return initial;
+  // Text typed back to the stored formula keeps the stored expression: some
+  // literals (a typed NULL) print in a form that reads back differently.
+  if (
+    initial &&
+    current.view === "formula" &&
+    current.text === formatDataFormula(initial, fields)
+  )
+    return initial;
+  // Edits undone by hand (a toggle on and off, a value typed back) keep it
+  // too, even when it does not check any more (a column removed upstream).
+  const same = (next: DataExpression) =>
+    initial && sameDataExpression(next, initial) ? initial : next;
+  if (current.view === "visual" && visualModelComplete(current.model)) {
+    const next = same(fromVisual(current.model));
+    if (next === initial) return next;
+  }
+  return same(editedExpression(current, target, fields));
+}
+
+function editedExpression(
+  current: ExpressionDraft,
+  target: VisualTarget,
+  fields: readonly DataField[],
+): DataExpression {
   if (current.view === "visual") {
     const problem = visualProblem(current.model, fields, target);
     if (problem) throw new DataProcessingError(problem.code, problem.fieldId);
@@ -95,9 +121,5 @@ export function resolveExpressionDraft(
   }
   if (current.origin && current.text === current.origin.text)
     return fromVisual(current.origin.model);
-  // Text typed back to the stored formula keeps the stored expression: some
-  // literals (a typed NULL) print in a form that reads back differently.
-  if (initial && current.text === formatDataFormula(initial, fields))
-    return initial;
   return parseDataFormula(current.text, fields);
 }

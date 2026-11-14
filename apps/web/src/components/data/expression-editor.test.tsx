@@ -8,6 +8,7 @@ const fields: DataField[] = [
   { id: "amount", name: "Amount", type: "decimal", nullable: true },
   { id: "day", name: "Day", type: "date", nullable: true },
   { id: "paid", name: "Paid", type: "boolean", nullable: true },
+  { id: "n", name: "N", type: "number", nullable: true },
 ];
 const field = (fieldId: string): DataExpression => ({ kind: "field", fieldId });
 const call = (
@@ -48,10 +49,13 @@ describe("expression editor", () => {
       call(
         "and",
         call("eq", field("country"), literal("string", "DE")),
-        call("gt", field("amount"), literal("decimal", "0")),
+        call("gt", field("amount"), literal("integer", 0)),
       ),
     );
     expect(groups(html, /^ aria-label="Condition \d"/)).toHaveLength(2);
+    expect(groups(html, /^ aria-label="Condition 2"/)[0]).toContain(
+      'value="0"',
+    );
     expect(html).toContain('<option value="eq" selected="">is</option>');
     expect(html).toContain(
       '<option value="gt" selected="">is greater than</option>',
@@ -159,5 +163,48 @@ describe("expression editor", () => {
       />,
     );
     expect(html).toContain('aria-invalid="true"');
+  });
+
+  it("shows stored values whose literal type differs from the column", () => {
+    const valueOf = (html: string) =>
+      /aria-label="Condition 1"[\s\S]*?<label for="([^"]+)">Value to compare<\/label>[\s\S]*?<input id="\1"[^>]*value="([^"]*)"/.exec(
+        html,
+      )?.[2];
+    const vergleichswert = (html: string) =>
+      /<label for="([^"]+)">Vergleichswert<\/label>[\s\S]*?<input id="\1"[^>]*value="([^"]*)"/.exec(
+        html,
+      )?.[2];
+    expect(
+      valueOf(render(call("gt", field("amount"), literal("integer", 0)))),
+    ).toBe("0");
+    expect(valueOf(render(call("gt", field("n"), literal("integer", 2))))).toBe(
+      "2",
+    );
+    expect(
+      valueOf(render(call("gt", field("n"), literal("number", 0.5)))),
+    ).toBe("0.5");
+    expect(
+      vergleichswert(
+        render(call("gt", field("n"), literal("number", 0.5)), "de"),
+      ),
+    ).toBe("0,5");
+  });
+
+  it("names value inputs and list items distinctly", () => {
+    const html = render(
+      call("in", field("country"), literal("json", ["DE", "x"])),
+    );
+    expect(html).toContain('aria-label="Remove value 1"');
+    expect(html).toContain('aria-label="Remove value 2"');
+    expect(html).not.toMatch(/<fieldset[^>]*aria-invalid/);
+    const calc = render(
+      call("add", field("amount"), literal("decimal", "1")),
+      "en",
+      "calculation",
+    );
+    expect(calc).toContain(">Source</label>");
+    expect(calc).toContain('aria-label="Second value"');
+    expect(calc).not.toContain('aria-label="plus"');
+    expect(calc).toContain(">Fixed value</label>");
   });
 });
