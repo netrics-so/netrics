@@ -12,6 +12,7 @@
  * | Paginated result session (#471)        | 404 / refused   | 401          | n/a (session only)  |
  * | Device payload, schemas 1–3            | foreign dashboard refused | own only | intersected, never widened |
  * | Server payload memo and ETag           | keyed by workspace | per device | keyed by scope   |
+ * | Store-template swap and swap back      | 404, no screen moves | n/a (session only) | scope checked against the target |
  */
 import type { FastifyInstance, InjectOptions } from "fastify";
 import pino from "pino";
@@ -951,5 +952,56 @@ describe("query paths: cross-workspace and device-scope isolation", () => {
     expect(body.dashboard).toBeNull();
     expect(body.slides).toEqual([]);
     expect(JSON.stringify(body)).not.toContain(dashboardId);
+  });
+
+  it("never moves another workspace's screens through a template swap", async () => {
+    // An update of this workspace whose copy would take the scoped screen.
+    const requestId = crypto.randomUUID();
+    const [copy] = await admin`
+      insert into dashboards (workspace_id, name) values (${workspaceId}, 'Copy')
+      returning id`;
+    await admin`insert into data_template_installs
+        (workspace_id, request_id, request_hash, result)
+      values (${workspaceId}, ${requestId}, ${"0".repeat(64)}, '{}'::jsonb)`;
+    const [update] = await admin`insert into data_template_updates
+        (workspace_id, request_id, from_version, to_version, decisions, drafts, dashboards)
+      values (${workspaceId}, ${requestId}, 1, 2, '[]'::jsonb, '[]'::jsonb,
+        ${admin.json([
+          {
+            key: "dashboard:portfolio",
+            originalId: dashboardId,
+            copyId: copy!.id as string,
+            swappedAt: null,
+            swappedBackAt: null,
+          },
+        ])})
+      returning id`;
+    const before = await admin`
+      select id, dashboard_id, scope from devices where workspace_id = ${workspaceId} order by id`;
+    for (const [workspace, action] of [
+      [otherWorkspaceId, "swap"],
+      [otherWorkspaceId, "swap-back"],
+      [workspaceId, "swap"],
+    ] as const)
+      expectError(
+        await call(
+          "POST",
+          `/v1/workspaces/${workspace}/dashboard-templates/stores/updates/${update!.id as string}/dashboards/dashboard:portfolio/${action}`,
+          { cookie: stranger },
+        ),
+        404,
+        workspace === workspaceId
+          ? "workspace_not_found"
+          : "store_template_update_not_found",
+      );
+    expect(
+      await admin`
+        select id, dashboard_id, scope from devices where workspace_id = ${workspaceId} order by id`,
+    ).toEqual(before);
+    const [dashboard] =
+      await admin`select archived_at from dashboards where id = ${dashboardId}`;
+    expect(dashboard!.archived_at).toBeNull();
+    await admin`delete from data_template_installs where request_id = ${requestId}`;
+    await admin`delete from dashboards where id = ${copy!.id as string}`;
   });
 });

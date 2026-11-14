@@ -41,6 +41,7 @@ import {
   insertDevice,
   insertPairing,
   issueDeviceTokens,
+  lockDashboardArchive,
   listDevices,
   pruneStalePairings,
   readPairing,
@@ -424,7 +425,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         { workspaceId: actor.workspaceId, userId: actor.userId },
         async (tx): Promise<Result<DeviceRow>> => {
           if (body.dashboardId) {
-            const dashboard = await findDashboard(
+            const dashboard = await lockDashboardArchive(
               tx,
               actor.workspaceId,
               body.dashboardId,
@@ -819,8 +820,14 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         db,
         { workspaceId: actor.workspaceId, userId: actor.userId },
         async (tx) => {
+          // Under a share lock: a concurrent template swap archiving it
+          // either moves this screen too or is seen here (11E).
           const assigned = body.dashboardId
-            ? await findDashboard(tx, actor.workspaceId, body.dashboardId)
+            ? await lockDashboardArchive(
+                tx,
+                actor.workspaceId,
+                body.dashboardId,
+              )
             : null;
           if (body.dashboardId && !assigned) {
             return fail<Device>(404, "dashboard_not_found");
@@ -833,7 +840,10 @@ export function createDeviceService(deps: DeviceServiceDeps) {
           }
           // An archived dashboard (replaced by an updated store-template
           // copy, 11E) takes no new screens; one already on it keeps it.
-          if (assigned?.archivedAt && assigned.id !== current.dashboardId) {
+          if (
+            assigned?.archivedAt &&
+            body.dashboardId !== current.dashboardId
+          ) {
             return fail<Device>(409, "dashboard_archived");
           }
           const dashboardId =

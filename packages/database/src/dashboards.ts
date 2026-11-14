@@ -809,3 +809,22 @@ export async function dashboardHasModelWidgets(
     .limit(1);
   return rows.length > 0;
 }
+
+/**
+ * The dashboard's archive state under a share lock, or null when it is not
+ * in the workspace: an assignment of a screen checks it so that a template
+ * swap archiving the dashboard concurrently either waits for it (and moves
+ * the screen) or is seen (11E).
+ */
+export async function lockDashboardArchive(
+  tx: Transaction,
+  workspaceId: string,
+  dashboardId: string,
+): Promise<{ archivedAt: Date | null } | null> {
+  const [row] = await tx
+    .select({ archivedAt: schema.dashboards.archivedAt })
+    .from(schema.dashboards)
+    .where(dashboardScope(workspaceId, dashboardId))
+    .for("share");
+  return row ?? null;
+}
