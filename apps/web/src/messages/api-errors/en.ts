@@ -30,6 +30,8 @@ export const apiErrorsEn = {
       "A workspace already exists for this installation.",
     forbidden: "Your role does not allow this action.",
     unauthorized: "Your session has expired — sign in again.",
+    project_not_found: "This project no longer exists.",
+    project_archived: "This project is archived. Unarchive it first.",
     record_not_found: "That record no longer exists.",
     invalid_request: "The request was invalid — check your input.",
     payload_too_large: "The request was too large to send.",

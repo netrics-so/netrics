@@ -346,6 +346,8 @@ export type ActiveProjectResponse = z.infer<typeof activeProjectResponseSchema>;
 export const projectSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
+  /** Set while the project is archived: hidden from navigation and pickers. */
+  archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
 });
 export type Project = z.infer<typeof projectSchema>;
@@ -358,6 +360,17 @@ export type RenameProjectRequest = z.infer<typeof renameProjectRequestSchema>;
 
 export const projectResponseSchema = z.object({ project: projectSchema });
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;
+
+/**
+ * Narrows a list to a project (#572). Absent: the full list. "all": unassigned
+ * items and items of unarchived projects. A project id: that project's items,
+ * plus unassigned ones with `unassigned=include`.
+ */
+export const projectFilterQuerySchema = z.strictObject({
+  project: z.union([z.literal("all"), z.uuid()]).optional(),
+  unassigned: z.literal("include").optional(),
+});
+export type ProjectFilterQuery = z.infer<typeof projectFilterQuerySchema>;
 
 export const projectListResponseSchema = z.object({
   projects: z.array(projectSchema),

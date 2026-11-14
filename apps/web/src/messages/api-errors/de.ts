@@ -33,6 +33,9 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Für diese Installation gibt es schon einen Workspace.",
     forbidden: "Deine Rolle erlaubt diese Aktion nicht.",
     unauthorized: "Deine Sitzung ist abgelaufen – melde dich erneut an.",
+    project_not_found: "Dieses Projekt gibt es nicht mehr.",
+    project_archived:
+      "Dieses Projekt ist archiviert. Hol es zuerst aus dem Archiv.",
     record_not_found: "Dieser Eintrag existiert nicht mehr.",
     invalid_request: "Die Anfrage war ungültig – prüf deine Eingaben.",
     payload_too_large: "Die Anfrage war zu groß zum Senden.",

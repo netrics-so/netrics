@@ -345,6 +345,31 @@ describe("identifier probing: no sub-resource existence oracle", () => {
     }
   });
 
+  it("archiving another workspace's project is indistinguishable from a random uuid", async () => {
+    // C owns W2 and aims W1's real project id at the archive routes.
+    for (const action of ["archive", "unarchive"] as const) {
+      for (const projectId of [p1Id, randomUUID()]) {
+        const response = await call(world.app, {
+          method: "POST",
+          url: `/v1/workspaces/${w2Id}/projects/${projectId}/${action}`,
+          cookie: cookies.c,
+        });
+        expectError(response, 404, "project_not_found");
+      }
+    }
+    const listed = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${w1Id}/projects`,
+      cookie: cookies.a,
+    });
+    const p1 = (
+      listed.json() as {
+        projects: { id: string; archivedAt: string | null }[];
+      }
+    ).projects.find((project) => project.id === p1Id);
+    expect(p1?.archivedAt).toBeNull();
+  });
+
   it("a user who is not a W1 member is indistinguishable from a random uuid", async () => {
     for (const target of [userIds.c, randomUUID()]) {
       expectError(

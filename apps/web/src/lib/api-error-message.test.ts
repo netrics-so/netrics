@@ -15,12 +15,27 @@ describe("apiErrorMessage", () => {
   });
 
   it("shares one message between codes that mean the same", () => {
-    expect(apiErrorMessage(new ApiError(404, "project_not_found"), "en")).toBe(
+    expect(apiErrorMessage(new ApiError(404, "member_not_found"), "en")).toBe(
       "That record no longer exists.",
     );
     expect(
       apiErrorMessage(new ApiError(415, "unsupported_media_type"), "de"),
     ).toBe("Diese Datei ist kein PNG-, JPEG- oder WebP-Bild.");
+  });
+
+  it("words project errors on their own", () => {
+    expect(apiErrorMessage(new ApiError(404, "project_not_found"), "en")).toBe(
+      "This project no longer exists.",
+    );
+    expect(apiErrorMessage(new ApiError(404, "project_not_found"), "de")).toBe(
+      "Dieses Projekt gibt es nicht mehr.",
+    );
+    expect(apiErrorMessage(new ApiError(409, "project_archived"), "en")).toBe(
+      "This project is archived. Unarchive it first.",
+    );
+    expect(apiErrorMessage(new ApiError(409, "project_archived"), "de")).toBe(
+      "Dieses Projekt ist archiviert. Hol es zuerst aus dem Archiv.",
+    );
   });
 
   it("names the dashboards that still use a theme", () => {

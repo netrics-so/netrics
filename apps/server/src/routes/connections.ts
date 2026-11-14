@@ -30,6 +30,7 @@ import {
   signedKeyPairResponseSchema,
   updateConnectionRequestSchema,
   updateConnectionRetentionRequestSchema,
+  projectFilterQuerySchema,
 } from "@netrics/contracts";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Database } from "@netrics/database";
@@ -276,6 +277,7 @@ export function registerConnectionRoutes(
           schema: routeSchema({
             summary: "List connections",
             tags: ["connections"],
+            querystring: projectFilterQuerySchema,
             response: connectionListResponseSchema,
             errors: [403, 404],
           }),
@@ -288,8 +290,12 @@ export function registerConnectionRoutes(
           if (!can(access.role, "connections:view")) {
             return sendError(reply, 403, "forbidden");
           }
+          const filter = projectFilterQuerySchema.safeParse(request.query);
+          if (!filter.success) {
+            return sendError(reply, 400, "invalid_request");
+          }
           return connectionListResponseSchema.parse({
-            connections: await connections.list(access),
+            connections: await connections.list(access, filter.data),
           });
         },
       );

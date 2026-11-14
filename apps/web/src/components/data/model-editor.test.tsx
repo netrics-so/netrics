@@ -80,6 +80,7 @@ const draft = (measures: SemanticModelDefinition["measures"]): ModelDraft => ({
   id: "00000000-0000-4000-8000-000000000001",
   name: "Sales model",
   definition: definition(measures),
+  projectId: null,
   version: 1,
   publishedVersion: null,
   updatedAt: "2026-11-01T00:00:00.000Z",

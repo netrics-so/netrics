@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { Db } from "./context.js";
 import { withUserContext, withWorkspace } from "./context.js";
@@ -101,6 +101,11 @@ export interface MembershipInfo {
   workspaceId: string;
   workspaceName: string;
   role: string;
+  /**
+   * The effective active project: the stored one, or null ("All") while the
+   * stored project is archived. The stored choice is kept, so unarchiving
+   * the project brings it back.
+   */
   activeProjectId: string | null;
 }
 
@@ -126,7 +131,7 @@ export async function listMembershipsForUser(
   );
   const result: MembershipInfo[] = [];
   for (const membership of memberships) {
-    const workspaceName = await withWorkspace(
+    const resolved = await withWorkspace(
       db,
       { workspaceId: membership.workspaceId, userId },
       async (tx) => {
@@ -134,11 +139,34 @@ export async function listMembershipsForUser(
           .select({ name: schema.workspaces.name })
           .from(schema.workspaces)
           .where(eq(schema.workspaces.id, membership.workspaceId));
-        return rows[0]?.name;
+        const workspaceName = rows[0]?.name;
+        if (workspaceName === undefined || membership.activeProjectId === null)
+          return { workspaceName, activeProjectId: null };
+        const projects = await tx
+          .select({ archivedAt: schema.projects.archivedAt })
+          .from(schema.projects)
+          .where(
+            and(
+              eq(schema.projects.id, membership.activeProjectId),
+              eq(schema.projects.workspaceId, membership.workspaceId),
+            ),
+          );
+        const project = projects[0];
+        return {
+          workspaceName,
+          activeProjectId:
+            project === undefined || project.archivedAt !== null
+              ? null
+              : membership.activeProjectId,
+        };
       },
     );
-    if (workspaceName !== undefined) {
-      result.push({ ...membership, workspaceName });
+    if (resolved.workspaceName !== undefined) {
+      result.push({
+        ...membership,
+        workspaceName: resolved.workspaceName,
+        activeProjectId: resolved.activeProjectId,
+      });
     }
   }
   return result;

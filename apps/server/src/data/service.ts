@@ -44,6 +44,8 @@ import {
 import {
   withWorkspace,
   schema,
+  findProject,
+  projectFilterSql,
   ingestDatasetPage,
   listObservationCatalog,
   readObservationDataset,
@@ -57,6 +59,7 @@ import {
   SessionLockTimeoutError,
   withSessionAdvisoryLock,
   type Database,
+  type ProjectFilter,
   type Transaction,
 } from "@netrics/database";
 
@@ -189,6 +192,7 @@ function preparationView(row: typeof schema.dataPreparations.$inferSelect) {
     id: row.id,
     name: row.name,
     graph: preparationGraphSchema.parse(row.graph),
+    projectId: row.projectId,
     version: row.version,
     publishedVersion: row.publishedVersion,
     restoredFromVersion: row.restoredFromVersion,
@@ -200,6 +204,7 @@ function modelView(row: typeof schema.dataModels.$inferSelect) {
     id: row.id,
     name: row.name,
     definition: semanticModelDefinitionSchema.parse(row.definition),
+    projectId: row.projectId,
     version: row.version,
     publishedVersion: row.publishedVersion,
     restoredFromVersion: row.restoredFromVersion,
@@ -1059,7 +1064,7 @@ export function createDataService(
       target,
       metadata,
     });
-  const listSources = (actor: DataActor) =>
+  const listSources = (actor: DataActor, filter: ProjectFilter = {}) =>
     run(actor, async (tx, now) => {
       const items: SourceView[] = [];
       const roots = await tx
@@ -1214,7 +1219,13 @@ export function createDataService(
           });
       void now;
       return {
-        sources: items,
+        sources: await filterSourcesByProject(
+          tx,
+          actor.workspaceId,
+          items,
+          new Map(prepared.map(({ parent }) => [parent.id, parent.projectId])),
+          filter,
+        ),
         ...(legacyCatalog.truncated ? { truncated: true } : {}),
       };
     });
@@ -1238,6 +1249,21 @@ export function createDataService(
     return row;
   };
 
+  /**
+   * A project a data item may be assigned to: one of this workspace's
+   * unarchived projects. Unknown, another workspace's and archived projects
+   * answer alike (no existence oracle).
+   */
+  const assignableProject = async (
+    tx: Transaction,
+    workspaceId: string,
+    projectId: string,
+  ) => {
+    const project = await findProject(tx, workspaceId, projectId);
+    if (!project || project.archivedAt !== null) fail("project_not_found", 404);
+    return project.id;
+  };
+
   const executeGraph = async (
     tx: Transaction,
     workspaceId: string,
@@ -1258,8 +1284,61 @@ export function createDataService(
     const output = executePreparation(graph, inputs, loader.budget);
     return { loader, output };
   };
+  /**
+   * Moves a preparation or model to a project, or to none (#572). Metadata
+   * only: version, publishedVersion and updatedAt stay, so no draft is
+   * created and published dashboards and screens show the same data.
+   */
+  const setProject = (
+    actor: DataActor,
+    kind: "preparation" | "model",
+    id: string,
+    projectId: string | null,
+  ) =>
+    run(actor, async (tx) => {
+      const current =
+        kind === "preparation"
+          ? await findPreparation(tx, actor.workspaceId, id, true)
+          : await findDataModel(tx, actor.workspaceId, id, true);
+      // The current project needs no check, so a no-op move to a project
+      // archived since still answers 200.
+      const target =
+        projectId === null || projectId === current.projectId
+          ? projectId
+          : await assignableProject(tx, actor.workspaceId, projectId);
+      if (current.projectId !== target)
+        await audit(tx, actor, `data.${kind}_project_changed`, id, {
+          from: current.projectId,
+          to: target,
+        });
+      if (kind === "preparation") {
+        const [row] = await tx
+          .update(schema.dataPreparations)
+          .set({ projectId: target })
+          .where(
+            and(
+              eq(schema.dataPreparations.workspaceId, actor.workspaceId),
+              eq(schema.dataPreparations.id, id),
+            ),
+          )
+          .returning();
+        return { preparation: preparationView(row!) };
+      }
+      const [row] = await tx
+        .update(schema.dataModels)
+        .set({ projectId: target })
+        .where(
+          and(
+            eq(schema.dataModels.workspaceId, actor.workspaceId),
+            eq(schema.dataModels.id, id),
+          ),
+        )
+        .returning();
+      return { model: modelView(row!) };
+    });
   return {
     listSources,
+    setProject,
     previewModel: (
       actor: DataActor,
       definition: SemanticModelDefinition,
@@ -1669,13 +1748,22 @@ export function createDataService(
           generationId: result.generationId,
         };
       }),
-    listPreparations: (actor: DataActor) =>
+    listPreparations: (actor: DataActor, filter: ProjectFilter = {}) =>
       run(actor, async (tx) => ({
         preparations: (
           await tx
             .select()
             .from(schema.dataPreparations)
-            .where(eq(schema.dataPreparations.workspaceId, actor.workspaceId))
+            .where(
+              and(
+                eq(schema.dataPreparations.workspaceId, actor.workspaceId),
+                projectFilterSql(
+                  schema.dataPreparations.projectId,
+                  actor.workspaceId,
+                  filter,
+                ),
+              ),
+            )
             .orderBy(asc(schema.dataPreparations.name))
         ).map(preparationView),
       })),
@@ -1808,6 +1896,8 @@ export function createDataService(
         graph: PreparationGraph;
         version?: number;
         adoptLatestInputs?: boolean;
+        /** Honoured on create only; a draft save never moves a project. */
+        projectId?: string | null | undefined;
       },
       id?: string,
     ) =>
@@ -1846,10 +1936,14 @@ export function createDataService(
           .where(eq(schema.dataPreparations.workspaceId, actor.workspaceId));
         if (exceedsDataPolicy(count.length + 1, policyFor(tx).maxPreparations))
           fail("data_preparation_limit", 413);
+        const projectId = input.projectId
+          ? await assignableProject(tx, actor.workspaceId, input.projectId)
+          : null;
         const [row] = await tx
           .insert(schema.dataPreparations)
           .values({
             workspaceId: actor.workspaceId,
+            projectId,
             name: input.name,
             graph,
             updatedAt: now,
@@ -1979,13 +2073,22 @@ export function createDataService(
         await audit(tx, actor, "data.preparation_published", id);
         return { preparation: preparationView(updated!) };
       }),
-    listModels: (actor: DataActor) =>
+    listModels: (actor: DataActor, filter: ProjectFilter = {}) =>
       run(actor, async (tx) => ({
         models: (
           await tx
             .select()
             .from(schema.dataModels)
-            .where(eq(schema.dataModels.workspaceId, actor.workspaceId))
+            .where(
+              and(
+                eq(schema.dataModels.workspaceId, actor.workspaceId),
+                projectFilterSql(
+                  schema.dataModels.projectId,
+                  actor.workspaceId,
+                  filter,
+                ),
+              ),
+            )
             .orderBy(asc(schema.dataModels.name))
         ).map(modelView),
       })),
@@ -2111,6 +2214,8 @@ export function createDataService(
         definition: SemanticModelDefinition;
         version?: number;
         adoptLatestInputs?: boolean;
+        /** Honoured on create only; a draft save never moves a project. */
+        projectId?: string | null | undefined;
       },
       id?: string,
     ) =>
@@ -2146,10 +2251,14 @@ export function createDataService(
           .where(eq(schema.dataModels.workspaceId, actor.workspaceId));
         if (exceedsDataPolicy(count.length + 1, policyFor(tx).maxModels))
           fail("data_model_limit", 413);
+        const projectId = input.projectId
+          ? await assignableProject(tx, actor.workspaceId, input.projectId)
+          : null;
         const [row] = await tx
           .insert(schema.dataModels)
           .values({
             workspaceId: actor.workspaceId,
+            projectId,
             name: input.name,
             definition,
             updatedAt: now,
@@ -2285,6 +2394,57 @@ export function createDataService(
       }
     },
   };
+}
+
+/**
+ * Narrows the source list to a project (#572). A source follows its
+ * connection's project, a prepared output its preparation's; manual and
+ * other sources count as unassigned.
+ */
+async function filterSourcesByProject(
+  tx: Transaction,
+  workspaceId: string,
+  items: SourceView[],
+  preparationProjects: Map<string, string | null>,
+  filter: ProjectFilter,
+): Promise<SourceView[]> {
+  if (filter.project === undefined) return items;
+  const connections = await tx
+    .select({
+      id: schema.connections.id,
+      projectId: schema.connections.projectId,
+    })
+    .from(schema.connections)
+    .where(eq(schema.connections.workspaceId, workspaceId));
+  const connectionProjects = new Map(
+    connections.map((row) => [row.id, row.projectId]),
+  );
+  const visible =
+    filter.project === "all"
+      ? new Set(
+          (
+            await tx
+              .select({ id: schema.projects.id })
+              .from(schema.projects)
+              .where(
+                and(
+                  eq(schema.projects.workspaceId, workspaceId),
+                  isNull(schema.projects.archivedAt),
+                ),
+              )
+          ).map((row) => row.id),
+        )
+      : new Set([filter.project]);
+  const unassignedVisible =
+    filter.project === "all" || filter.unassigned === "include";
+  return items.filter((item) => {
+    const projectId = item.id.startsWith("prepared:")
+      ? (preparationProjects.get(item.id.split(":")[1]!) ?? null)
+      : item.connectionId
+        ? (connectionProjects.get(item.connectionId) ?? null)
+        : null;
+    return projectId === null ? unassignedVisible : visible.has(projectId);
+  });
 }
 
 async function findDataModel(

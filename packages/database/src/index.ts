@@ -384,6 +384,7 @@ export {
   renameProject,
   updateWorkspace,
   setActiveProject,
+  setProjectArchived,
   updateMembershipRole,
 } from "./workspaces.js";
 export type {
@@ -394,6 +395,9 @@ export type {
   Project,
   Workspace,
 } from "./workspaces.js";
+
+export { projectFilterSql } from "./project-filter.js";
+export type { ProjectFilter } from "./project-filter.js";
 
 export type Database = ReturnType<typeof createDatabase>;
 

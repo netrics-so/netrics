@@ -799,6 +799,175 @@ describe("active project selection", () => {
   });
 });
 
+describe("archived projects", () => {
+  const post = (path: string, cookie: string) =>
+    call(world.app, {
+      method: "POST",
+      url: `/v1/workspaces/${w1Id}${path}`,
+      cookie,
+    });
+  const patch = (path: string, cookie: string, payload: unknown) =>
+    call(world.app, {
+      method: "PATCH",
+      url: `/v1/workspaces/${w1Id}${path}`,
+      cookie,
+      payload,
+    });
+  const activeOf = async (cookie: string) =>
+    workspaceListResponseSchema
+      .parse(
+        (
+          await call(world.app, {
+            method: "GET",
+            url: "/v1/workspaces",
+            cookie,
+          })
+        ).json(),
+      )
+      .workspaces.find((w) => w.id === w1Id)?.activeProjectId;
+  const newProject = async (name: string) =>
+    projectResponseSchema.parse(
+      (await createProject(cookies.owner, w1Id, name)).json(),
+    ).project.id;
+  const auditActions = async () =>
+    auditEventListResponseSchema
+      .parse(
+        (
+          await call(world.app, {
+            method: "GET",
+            url: `/v1/workspaces/${w1Id}/audit-events`,
+            cookie: cookies.owner,
+          })
+        ).json(),
+      )
+      .events.map((e) => ({
+        action: e.action,
+        target: e.target,
+        metadata: e.metadata,
+      }));
+
+  it("archives and unarchives a project; editors may, viewers may not", async () => {
+    const p = await newProject("Archivable");
+    expectError(
+      await post(`/projects/${p}/archive`, cookies.viewer),
+      403,
+      "forbidden",
+    );
+    const archived = projectResponseSchema.parse(
+      (await post(`/projects/${p}/archive`, cookies.editor)).json(),
+    );
+    expect(archived.project.archivedAt).not.toBeNull();
+    // Idempotent: archiving again keeps the first archivedAt.
+    const again = projectResponseSchema.parse(
+      (await post(`/projects/${p}/archive`, cookies.editor)).json(),
+    );
+    expect(again.project.archivedAt).toBe(archived.project.archivedAt);
+    // Archived projects stay in the list; clients filter.
+    const listed = projectListResponseSchema.parse(
+      (
+        await call(world.app, {
+          method: "GET",
+          url: `/v1/workspaces/${w1Id}/projects`,
+          cookie: cookies.viewer,
+        })
+      ).json(),
+    );
+    expect(listed.projects.find((x) => x.id === p)?.archivedAt).toBe(
+      archived.project.archivedAt,
+    );
+    const unarchived = await post(`/projects/${p}/unarchive`, cookies.editor);
+    expect(unarchived.statusCode).toBe(200);
+    expect(
+      projectResponseSchema.parse(unarchived.json()).project.archivedAt,
+    ).toBeNull();
+    expectError(
+      await post(`/projects/${crypto.randomUUID()}/archive`, cookies.editor),
+      404,
+      "project_not_found",
+    );
+    expectError(
+      await post(`/projects/nope/unarchive`, cookies.editor),
+      404,
+      "project_not_found",
+    );
+    const events = await auditActions();
+    expect(events).toContainEqual({
+      action: "project.archived",
+      target: p,
+      metadata: { name: "Archivable" },
+    });
+    expect(events).toContainEqual({
+      action: "project.unarchived",
+      target: p,
+      metadata: { name: "Archivable" },
+    });
+    // Only state flips are audited: the repeated archive above and an
+    // unarchive of an unarchived project write nothing.
+    expect(
+      (await post(`/projects/${p}/unarchive`, cookies.editor)).statusCode,
+    ).toBe(200);
+    const flips = (await auditActions()).filter((e) => e.target === p);
+    expect(flips.map((e) => e.action)).toEqual([
+      "project.unarchived",
+      "project.archived",
+      "project.created",
+    ]);
+  });
+
+  it("falls back to All while the active project is archived and restores it after", async () => {
+    const p = await newProject("Active then archived");
+    expect(
+      (await patch("/active-project", cookies.owner, { projectId: p }))
+        .statusCode,
+    ).toBe(200);
+    await post(`/projects/${p}/archive`, cookies.owner);
+    expect(await activeOf(cookies.owner)).toBeNull();
+    await post(`/projects/${p}/unarchive`, cookies.owner);
+    expect(await activeOf(cookies.owner)).toBe(p);
+    await patch("/active-project", cookies.owner, { projectId: null });
+  });
+
+  it("refuses an archived project as active project", async () => {
+    const archived = await newProject("Already archived");
+    await post(`/projects/${archived}/archive`, cookies.owner);
+    expectError(
+      await patch("/active-project", cookies.owner, { projectId: archived }),
+      409,
+      "project_archived",
+    );
+    expect(await activeOf(cookies.owner)).toBeNull();
+  });
+
+  it("hard delete is unchanged", async () => {
+    const p = await newProject("Deleted");
+    const [dashboard] = await world.admin`
+      insert into dashboards (workspace_id, project_id, name)
+      values (${w1Id}, ${p}, 'In deleted') returning id`;
+    const [model] = await world.admin`
+      insert into data_models (workspace_id, project_id, name, definition)
+      values (${w1Id}, ${p}, 'Model in deleted', ${world.admin.json({})})
+      returning id`;
+    await post(`/projects/${p}/archive`, cookies.owner);
+    const deleted = await call(world.app, {
+      method: "DELETE",
+      url: `/v1/workspaces/${w1Id}/projects/${p}`,
+      cookie: cookies.owner,
+    });
+    expect(deleted.statusCode).toBe(204);
+    const [d] = await world.admin`
+      select project_id from dashboards where id = ${dashboard!.id as string}`;
+    const [m] = await world.admin`
+      select project_id from data_models where id = ${model!.id as string}`;
+    expect(d!.project_id).toBeNull();
+    expect(m!.project_id).toBeNull();
+    expect(await auditActions()).toContainEqual({
+      action: "project.deleted",
+      target: p,
+      metadata: { name: "Deleted" },
+    });
+  });
+});
+
 describe("last owner protection", () => {
   it("the sole owner cannot leave or be demoted", async () => {
     expectError(

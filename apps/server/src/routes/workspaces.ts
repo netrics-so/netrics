@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
@@ -37,6 +37,7 @@ import {
   renameProject,
   updateWorkspace,
   setActiveProject,
+  setProjectArchived,
   updateMembershipRole,
   withWorkspace,
   type Database,
@@ -93,6 +94,7 @@ function toProject(project: Project) {
   return {
     id: project.id,
     name: project.name,
+    archivedAt: project.archivedAt?.toISOString() ?? null,
     createdAt: project.createdAt.toISOString(),
   };
 }
@@ -107,6 +109,56 @@ export function registerWorkspaceRoutes(
     (scope, _opts, done) => {
       // onRequest: authentication precedes body validation.
       scope.addHook("onRequest", requireSession);
+
+      // Archive and unarchive (#572): a reversible metadata change, gated
+      // like rename. Archiving an archived project keeps its first
+      // archivedAt; unarchiving an active project keeps it unarchived.
+      const setArchived = async (
+        request: FastifyRequest,
+        reply: FastifyReply,
+        archived: boolean,
+      ) => {
+        const access = await resolveAccess(deps.db, request, reply);
+        if (!access) {
+          return;
+        }
+        const params = projectParamsSchema.safeParse(request.params);
+        if (!params.success) {
+          return sendError(reply, 404, "project_not_found");
+        }
+        if (!can(access.role, "projects:rename")) {
+          return sendError(reply, 403, "forbidden");
+        }
+        const project = await withWorkspace(
+          deps.db,
+          { workspaceId: access.workspaceId, userId: access.callerId },
+          async (tx) => {
+            const updated = await setProjectArchived(tx, {
+              workspaceId: access.workspaceId,
+              projectId: params.data.projectId,
+              archived,
+              now: new Date(),
+            });
+            if (!updated) {
+              return null;
+            }
+            // Only a state flip is audited; a repeated call changes nothing.
+            if (updated.changed)
+              await insertAuditEvent(tx, {
+                workspaceId: access.workspaceId,
+                actorUserId: access.callerId,
+                action: archived ? "project.archived" : "project.unarchived",
+                target: updated.id,
+                metadata: { name: updated.name },
+              });
+            return updated;
+          },
+        );
+        if (!project) {
+          return sendError(reply, 404, "project_not_found");
+        }
+        return projectResponseSchema.parse({ project: toProject(project) });
+      };
 
       scope.post(
         "/workspaces",
@@ -575,7 +627,7 @@ export function registerWorkspaceRoutes(
             tags: ["projects"],
             body: setActiveProjectRequestSchema,
             response: activeProjectResponseSchema,
-            errors: [404],
+            errors: [404, 409],
           }),
         },
         async (request, reply) => {
@@ -601,6 +653,12 @@ export function registerWorkspaceRoutes(
                 );
                 if (!project) {
                   sendError(reply, 404, "project_not_found");
+                  return false;
+                }
+                // An archived project cannot become the active one; the
+                // caller unarchives it first.
+                if (project.archivedAt !== null) {
+                  sendError(reply, 409, "project_archived");
                   return false;
                 }
               }
@@ -752,6 +810,32 @@ export function registerWorkspaceRoutes(
           }
           return projectResponseSchema.parse({ project: toProject(project) });
         },
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/projects/:projectId/archive",
+        {
+          schema: routeSchema({
+            summary: "Archive a project",
+            tags: ["projects"],
+            response: projectResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        (request, reply) => setArchived(request, reply, true),
+      );
+
+      scope.post(
+        "/workspaces/:workspaceId/projects/:projectId/unarchive",
+        {
+          schema: routeSchema({
+            summary: "Unarchive a project",
+            tags: ["projects"],
+            response: projectResponseSchema,
+            errors: [403, 404],
+          }),
+        },
+        (request, reply) => setArchived(request, reply, false),
       );
 
       scope.delete(
