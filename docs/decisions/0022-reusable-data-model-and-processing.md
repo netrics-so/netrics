@@ -273,7 +273,8 @@ Draft changes support sample/historical preview and dependency impact. Publish
 an immutable model release that pins exact source schemas, preparation versions,
 relationships and measure versions. Build required prepared generations before
 atomically switching the active release. Failed builds keep the previous
-published result with explicit stale/error status. Rollback selects an older
+published result with explicit stale/error status (both sentences superseded,
+see [the addendum on lazy prepared results](#addendum-lazy-prepared-results-and-last-valid-fallback)). Rollback selects an older
 release only when its required data is still retained and authorized.
 
 Refresh jobs follow dependency order and rebuild affected partitions using
@@ -496,3 +497,26 @@ Decisions:
 
 The executor still loads whole published generations in memory. A future SQL
 push-down of date filters must widen the lower bound by the measure lookback.
+
+## Addendum: lazy prepared results and last-valid fallback
+
+Recorded 2026-11-14 with the [milestone 11 completion design](../milestones/11-completion-design.md).
+It replaces two sentences of §6, "Build required prepared generations before
+atomically switching the active release" and "Failed builds keep the previous
+published result with explicit stale/error status", with the behaviour the
+code has and the owner accepted.
+
+- Publishing a release does not build its prepared results first. They are
+  computed lazily, when a query first needs them, and cached per exact input
+  generations.
+- When a query's result cannot be computed because of a processing error or
+  an unavailable or changed source (not an SQL failure), the engine falls
+  back to the last valid result of the same release and the same query,
+  marked stale: the result carries `stale: true`, the failure's `error` code
+  and the warning `using_last_valid_source_snapshot`. The fallback reads the
+  input generations that result used, re-authorized, within the workspace's
+  snapshot policy and expiry. A query without a published release has no
+  fallback: the failure is returned as is.
+- A filter combination never queried before has no last valid result: after
+  a failure it shows an error rather than stale data.
+- Building prepared generations before switching a release is not planned.

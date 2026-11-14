@@ -14,6 +14,9 @@ in [ADR 0022](../decisions/0022-reusable-data-model-and-processing.md) is
 accepted. This plan expands the previous derived-metrics milestone; none of
 the gates below is recorded as complete. Keep this filename for existing links.
 
+The remaining work to close the gates is designed in
+[11-completion-design.md](./11-completion-design.md) (2026-11-14).
+
 ## Dependencies
 
 - Existing ingestion, tenancy and jobs (milestones 02–03)
@@ -151,7 +154,8 @@ implementation work; this plan does not create or complete issue records.
 
 ## GitHub tracking
 
-- Umbrella: [#439](https://github.com/netrics-so/netrics/issues/439)
+- Umbrella: [#439](https://github.com/netrics-so/netrics/issues/439). Stays
+  open until all gates and the owner's acceptance pass.
 - 11A: [#440](https://github.com/netrics-so/netrics/issues/440)
 - 11B: [#441](https://github.com/netrics-so/netrics/issues/441)
   - Cooperative sync continuations across configurable page budgets:

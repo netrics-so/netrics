@@ -108,7 +108,7 @@ team could parallelize independent connectors after milestone 07.
 
 ## Current status
 
-State on 2026-10-29.
+State on 2026-11-14.
 
 - Done: 00, 01, 02, 03, 03.1 (security hardening), 03.2 (sync and data
   layer), 03.3 (portable images and self-hosting; release `v0.1.0`), 04
@@ -155,9 +155,16 @@ State on 2026-10-29.
   five delivery gates for this expanded scope; implementation architecture
   and logical schema are proposed in
   [ADR 0022](../decisions/0022-reusable-data-model-and-processing.md).
-  Google Play ingestion and the overall store rating are not implemented.
+  Google Play ingestion and public listing ratings are implemented (#457,
+  #462). An overall cross-store rating is deliberately not computed.
   This takes priority over starting the later connector/community features;
   existing real-account/device/self-hosted acceptance gates remain open.
+- Milestone 11 ([ADR 0022](../decisions/0022-reusable-data-model-and-processing.md)):
+  11A is done (#440). 11B, 11D and 11E are built and tested; the
+  remaining engineering work for the gates #441–#444 is designed in
+  [the completion design](./11-completion-design.md). The umbrella #439
+  stays open until every gate and the owner's real-account acceptance
+  (hosted and self-hosted) pass.
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 
