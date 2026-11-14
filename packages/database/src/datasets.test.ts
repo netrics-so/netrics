@@ -196,24 +196,33 @@ describe("durable typed dataset ingestion", () => {
     },
   );
 
-  it("accepts more than the old 100-page refresh ceiling when policy permits", async () => {
-    const d = definition("many-pages", "snapshot");
-    let result;
-    for (let index = 0; index < 101; index++)
-      result = await ingest(
-        d,
-        page(d, {
-          pageKey: "p" + index,
-          previousPageKey: index ? "p" + (index - 1) : null,
-          records: [record("row" + index)],
-          complete: index === 100,
-        }),
-      );
-    expect(result?.generationId).toBeTruthy();
-    const [generation] =
-      await admin`select row_count from data_generations where id=${result!.generationId}`;
-    expect(generation!.row_count).toBe(101);
-  });
+  // One transaction per page, in sequence: about 10 ms a page alone and
+  // 35 ms under a full `pnpm test` run, close to vitest's 5 s default (#553).
+  // The budget follows the page count. A test that times out keeps running in
+  // the background and writes pages while later tests run, so it must finish.
+  const MANY_PAGES = 101;
+  it(
+    "accepts more than the old 100-page refresh ceiling when policy permits",
+    async () => {
+      const d = definition("many-pages", "snapshot");
+      let result;
+      for (let index = 0; index < MANY_PAGES; index++)
+        result = await ingest(
+          d,
+          page(d, {
+            pageKey: "p" + index,
+            previousPageKey: index ? "p" + (index - 1) : null,
+            records: [record("row" + index)],
+            complete: index === MANY_PAGES - 1,
+          }),
+        );
+      expect(result?.generationId).toBeTruthy();
+      const [generation] =
+        await admin`select row_count from data_generations where id=${result!.generationId}`;
+      expect(generation!.row_count).toBe(MANY_PAGES);
+    },
+    MANY_PAGES * 500,
+  );
   it("migrates populated prior databases without altering existing connections", async () => {
     expect(
       (await admin`select name from connections order by name`).map(
@@ -532,9 +541,13 @@ describe("durable typed dataset ingestion", () => {
     ).resolves.toMatchObject({ datasetId: fits.datasetId });
   });
   it("scopes the ingest statement timeout to the page and keeps one without a query timeout", async () => {
-    await admin.unsafe(`create table dataset_timeout_probe(timeout text)`);
+    // The probe sees every page any session writes, so it keeps the page's
+    // refresh and its order, and the test reads only its own dataset (#553).
     await admin.unsafe(
-      `create function dataset_timeout_probe() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into dataset_timeout_probe values (current_setting('statement_timeout')); return new; end $$`,
+      `create table dataset_timeout_probe(seq serial primary key, refresh_id uuid not null, timeout text not null)`,
+    );
+    await admin.unsafe(
+      `create function dataset_timeout_probe() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into dataset_timeout_probe(refresh_id, timeout) values (new.refresh_id, current_setting('statement_timeout')); return new; end $$`,
     );
     await admin.unsafe(
       `create trigger dataset_timeout_probe after insert on data_pages for each row execute function dataset_timeout_probe()`,
@@ -568,9 +581,9 @@ describe("durable typed dataset ingestion", () => {
         await run("rejected", 15_000, { previousPageKey: "missing" }),
       ).toEqual({ outcome: "dataset_page_out_of_order", timeout: "42s" });
       expect(
-        (await admin`select timeout from dataset_timeout_probe`).map(
-          (row) => row.timeout,
-        ),
+        (
+          await admin`select p.timeout from dataset_timeout_probe p join data_refreshes r on r.id=p.refresh_id join data_datasets s on s.id=r.dataset_id where s.workspace_id=${a} and s.key=${d.key} order by p.seq`
+        ).map((row) => row.timeout),
       ).toEqual(["15s", "5min"]);
     } finally {
       await admin.unsafe(

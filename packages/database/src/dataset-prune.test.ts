@@ -10,7 +10,11 @@ import * as auth from "./auth-schema.js";
 import { withWorkspace, type Db } from "./context.js";
 import { ingestDatasetPage } from "./datasets.js";
 import * as schema from "./schema.js";
-import { createTestDatabase, type TestDatabase } from "./test-db.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_DROP_TIMEOUT_MS,
+  type TestDatabase,
+} from "./test-db.js";
 
 // Dataset history pruning against policy and connection-retention changes
 // (#517). Both update data_records first and data_generations afterwards;
@@ -359,7 +363,7 @@ describe("prune on a large record table (#524)", () => {
   afterAll(async () => {
     await admin?.end({ timeout: 5 });
     await test?.drop();
-  });
+  }, TEST_DATABASE_DROP_TIMEOUT_MS);
 
   /** Adds records to the current generation and refreshes statistics. */
   async function addRecords(prefix: string, count: number, expired: boolean) {
@@ -498,7 +502,7 @@ describe("prune with many expired current generations (#531)", () => {
   afterAll(async () => {
     await admin?.end({ timeout: 5 });
     await test?.drop();
-  });
+  }, TEST_DATABASE_DROP_TIMEOUT_MS);
 
   type Call = { deleted: number; more: boolean; scans: number; blocks: number };
 

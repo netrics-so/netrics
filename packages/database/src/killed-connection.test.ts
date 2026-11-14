@@ -38,7 +38,7 @@ beforeAll(async () => {
   admin = postgres(testDb.adminUrl, { max: 1, onnotice: () => undefined });
   process.on("uncaughtException", onEscape);
   process.on("unhandledRejection", onEscape);
-});
+}, 60_000);
 
 afterAll(async () => {
   process.off("uncaughtException", onEscape);
@@ -226,10 +226,16 @@ describe("a PostgreSQL session killed while it is in use (#511)", () => {
     }
   });
 
-  it("keeps a process without error handlers running", async () => {
-    // The plain client in a process of its own, with no uncaughtException
-    // handler: on postgres.js 3.4.9 it exits with the TypeError.
-    const script = `
+  // A child node process takes about 3 s, alone or in a full `pnpm test` run,
+  // too close to vitest's 5 s default when the machine is busy (#553). The
+  // test gets the child's own limit plus room to start it and read its output.
+  const CHILD_TIMEOUT_MS = 20_000;
+  it(
+    "keeps a process without error handlers running",
+    async () => {
+      // The plain client in a process of its own, with no uncaughtException
+      // handler: on postgres.js 3.4.9 it exits with the TypeError.
+      const script = `
       import postgres from "postgres";
       const sql = postgres(process.env.APP_URL, { max: 1 });
       const admin = postgres(process.env.ADMIN_URL, { max: 1 });
@@ -250,25 +256,27 @@ describe("a PostgreSQL session killed while it is in use (#511)", () => {
       await admin.end({ timeout: 5 });
       console.log(JSON.stringify({ failure, one }));
     `;
-    const cwd = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-    const { stdout } = await promisify(execFile)(
-      process.execPath,
-      ["--input-type=module", "-e", script],
-      {
-        cwd,
-        env: {
-          ...process.env,
-          APP_URL: testDb.appUrl,
-          ADMIN_URL: testDb.adminUrl,
+      const cwd = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+      const { stdout } = await promisify(execFile)(
+        process.execPath,
+        ["--input-type=module", "-e", script],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            APP_URL: testDb.appUrl,
+            ADMIN_URL: testDb.adminUrl,
+          },
+          timeout: CHILD_TIMEOUT_MS,
         },
-        timeout: 20_000,
-      },
-    );
-    const result = JSON.parse(stdout.trim()) as {
-      failure: string;
-      one: number;
-    };
-    expect(LOST_CONNECTION).toContain(result.failure);
-    expect(result.one).toBe(1);
-  });
+      );
+      const result = JSON.parse(stdout.trim()) as {
+        failure: string;
+        one: number;
+      };
+      expect(LOST_CONNECTION).toContain(result.failure);
+      expect(result.one).toBe(1);
+    },
+    CHILD_TIMEOUT_MS + 10_000,
+  );
 });
