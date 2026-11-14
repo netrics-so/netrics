@@ -479,6 +479,82 @@ export const dataDe: Catalog<typeof dataEn> = {
       "Wähle Kennzahlen und prüfe diesen Entwurf vor der Veröffentlichung.",
     previewOutdated:
       "Der Entwurf wurde geändert. Prüfe ihn vor der Veröffentlichung erneut.",
+    builder: {
+      view: "Bearbeiten als",
+      visual: "Visuell",
+      all: "Alle treffen zu",
+      any: "Mindestens eine trifft zu",
+      join: "Bedingungen verknüpfen",
+      condition: "Bedingung {number}",
+      group: "Gruppe {number}",
+      addCondition: "Bedingung hinzufügen",
+      addGroup: "Gruppe hinzufügen",
+      remove: "Entfernen",
+      column: "Spalte",
+      measure: "Kennzahl",
+      operator: "Vergleich",
+      value: "Wert",
+      otherColumn: "Andere Spalte",
+      compareWith: "Vergleichen mit",
+      addValue: "Wert hinzufügen",
+      negated: "Trifft nicht zu",
+      operators: {
+        eq: "ist",
+        ne: "ist nicht",
+        lt: "ist kleiner als",
+        lte: "ist höchstens",
+        gt: "ist größer als",
+        gte: "ist mindestens",
+        in: "ist eines von",
+        contains: "enthält",
+        starts_with: "beginnt mit",
+        is_null: "ist leer",
+      },
+      kind: "Berechnung",
+      kinds: {
+        value: "Wert",
+        if: "Wenn … dann … sonst",
+        boolean: "Wahr, wenn",
+      },
+      operation: "Rechenart",
+      arithmetic: {
+        none: "Keine",
+        add: "plus",
+        subtract: "minus",
+        multiply: "mal",
+        divide: "geteilt durch",
+      },
+      result: "Ergebnis",
+      wrap: {
+        none: "Unverändert",
+        round: "Runden",
+        abs: "Betrag",
+        coalesce: "Wenn leer, verwende",
+      },
+      digits: "Nachkommastellen",
+      then: "Dann",
+      else: "Sonst",
+      true: "Wahr",
+      false: "Falsch",
+      currency: "Währung",
+      utc: "UTC",
+      missing: "Fehlende Spalte {id}",
+      invalidValue: "Gib einen gültigen Wert ein ({type}).",
+      notVisual: {
+        function:
+          "Diese Formel verwendet eine Funktion, die der visuelle Editor nicht darstellen kann. Bearbeite sie als Formel.",
+        nesting:
+          "Diese Formel verschachtelt Berechnungen tiefer, als der visuelle Editor darstellen kann. Bearbeite sie als Formel.",
+        operand:
+          "Diese Formel vergleicht links etwas anderes als eine Spalte. Bearbeite sie als Formel.",
+        literal:
+          "Diese Formel verwendet einen Wert, den der visuelle Editor nicht darstellen kann, etwa einen leeren Wert oder strukturierte Daten. Bearbeite sie als Formel.",
+        negation:
+          "Diese Formel verneint mehr als eine einzelne Bedingung. Bearbeite sie als Formel.",
+        arity:
+          "Diese Formel ruft eine Funktion mit einer ungewöhnlichen Anzahl von Argumenten auf. Bearbeite sie als Formel.",
+      },
+    },
     errors: {
       window:
         "Prüfe die gleitenden und vergleichenden Kennzahlen. Jede braucht eine Ausgangskennzahl, eine Datumsdimension mit dem Berichtsdatum des Anbieters und eine Länge im erlaubten Bereich.",

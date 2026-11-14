@@ -388,6 +388,100 @@
   max-width: 800px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+/* Visual expression builder (11C): rows of column, comparison and value. */
+.data-expression-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.data-builder-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.data-builder-heading > label,
+.data-builder-heading > .label {
+  font-size: var(--size-13);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.data-builder-views,
+.data-builder-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+.data-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.data-builder > .field {
+  max-width: 320px;
+}
+.data-builder-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.data-builder-row > .field {
+  min-width: 160px;
+}
+.data-builder-row > .check {
+  min-height: 36px;
+}
+.data-builder-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 12px 16px;
+  border-left: 3px solid var(--border);
+}
+.data-builder-group .data-form-actions {
+  margin-top: 0;
+}
+.data-builder-value {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.data-builder-value > .field {
+  max-width: 240px;
+}
+.data-builder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.data-builder-list legend {
+  margin-bottom: 4px;
+  font-size: var(--size-13);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.data-builder-list > button {
+  align-self: start;
+}
+.data-builder-currency {
+  width: 5em;
+  text-transform: uppercase;
+}
+.data-builder-switch[aria-checked="true"] {
+  background: var(--text);
+  color: var(--surface);
+}
 @media (min-width: 1400px) {
   .data-model-row:not(.data-model-row--dimension) {
     grid-template-columns: repeat(4, minmax(0, 1fr));
