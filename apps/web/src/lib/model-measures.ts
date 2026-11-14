@@ -185,3 +185,20 @@ export function changeMeasureSiblings(
         : {}),
     }));
 }
+
+/**
+ * Drops selected measures and grouped dimensions that the definition no
+ * longer has, so the preview never requests something an undo removed.
+ */
+export function keepModelSelection(
+  definition: SemanticModelDefinition,
+  measureIds: string[],
+  groupBy: string[],
+): { measureIds: string[]; groupBy: string[] } {
+  const measures = new Set(definition.measures.map((m) => m.id)),
+    dimensions = new Set(definition.dimensions.map((d) => d.id));
+  return {
+    measureIds: measureIds.filter((id) => measures.has(id)),
+    groupBy: groupBy.filter((id) => dimensions.has(id)),
+  };
+}

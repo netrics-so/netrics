@@ -3,6 +3,7 @@ import type { DataField, SemanticModelDefinition } from "@netrics/domain";
 import { dataErrorCodeKey } from "./data-errors";
 import {
   changeMeasureSiblings,
+  keepModelSelection,
   measureDependents,
   offsetPreset,
   rollingBaseOf,
@@ -356,5 +357,13 @@ describe("windowed measure editing", () => {
     expect(dataErrorCodeKey("aggregate_currency_mixed")).toBe("units");
     expect(dataErrorCodeKey("model_measure_cycle")).toBe("cycle");
     expect(dataErrorCodeKey("data_query_row_limit")).toBe("limit");
+  });
+});
+
+describe("keepModelSelection", () => {
+  it("drops selections the definition no longer has after undo", () => {
+    expect(
+      keepModelSelection(model, ["revenue", "gone"], ["app", "removed"]),
+    ).toEqual({ measureIds: ["revenue"], groupBy: ["app"] });
   });
 });
