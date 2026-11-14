@@ -32,6 +32,7 @@ import {
 import {
   createDataService,
   DataServiceError,
+  datasetStoreStatus,
   observationFields,
   type DataActor,
 } from "./service.js";
@@ -240,7 +241,7 @@ export function createCompareMeasureService(deps: {
           if (conflict && attempt < 2) continue;
           if (conflict) reject("version_conflict", 409);
           if (error instanceof DatasetStoreError)
-            reject(error.code, /quota|limit/.test(error.code) ? 413 : 400);
+            reject(error.code, datasetStoreStatus(error.code));
           throw error;
         }
       }

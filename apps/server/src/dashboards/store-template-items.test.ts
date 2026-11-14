@@ -198,52 +198,113 @@ describe("store-template items", () => {
     );
   });
 
-  it("merges a model's datasets: the template's, then the customer's own", () => {
-    expect(
-      mergeDatasets({
-        original: ["ref:a"],
-        current: ["mine", "ref:a", "ref:b"],
-        next: ["ref:c"],
-      }),
-    ).toEqual(["ref:c", "mine", "ref:b"]);
+  describe("model datasets after an update", () => {
     const key = "model:downloads";
-    const items: Items = new Map([
-      [`${key}#settings:datasets`, ["ref:c"]],
-      [`${key}#measure:t`, { id: "t", datasetId: "datasets[0]" }],
-      [`${key}#measure:mine`, { id: "mine", datasetId: "datasets[0]" }],
-      [`${key}#measure:a`, { id: "a", datasetId: "datasets[1]" }],
-      [`${key}#measure:old`, { id: "old", datasetId: "datasets[2]" }],
-    ]);
-    const lists = {
-      original: ["ref:a", "ref:z"],
-      current: ["mine", "ref:a", "ref:z"],
-      next: ["ref:c"],
+    type Lists = { original: string[]; current: string[]; next: string[] };
+    type Measures = Record<string, { slot: number; fromNext?: boolean }>;
+    /** Measures by id: the slot they read, and whether the value is the template's. */
+    const rebuild = (lists: Lists, measures: Measures) => {
+      const items: Items = new Map([
+        [`${key}#settings:datasets`, [...lists.next]],
+      ]);
+      for (const [id, measure] of Object.entries(measures))
+        items.set(`${key}#measure:${id}`, {
+          id,
+          datasetId: `datasets[${measure.slot}]`,
+        });
+      const definition = modelFromItems(
+        key,
+        items,
+        { current: null, next: null },
+        {},
+        {
+          datasets: lists,
+          fromNext: (itemRef) =>
+            measures[itemRef.split("#measure:")[1] ?? ""]?.fromNext ?? false,
+        },
+      );
+      return {
+        datasets: definition.datasets,
+        reads: Object.fromEntries(
+          definition.measures.map((m) => [
+            m.id,
+            (m as { datasetId?: string }).datasetId,
+          ]),
+        ),
+      };
     };
-    const ids = { a: "A", c: "C", z: "Z" };
-    // Each item's slot is read against the state its value came from;
-    // `old` reads a template dataset the new template no longer has.
-    const build = () =>
-      modelFromItems(key, items, { current: null, next: null }, ids, {
-        datasets: lists,
-        fromNext: (itemRef) => itemRef.endsWith("#measure:t"),
+    const refused = (lists: Lists, measures: Measures) => {
+      try {
+        rebuild(lists, measures);
+      } catch (error) {
+        expect(error).toBeInstanceOf(UnmergeableRecord);
+        return (error as UnmergeableRecord).refs;
+      }
+      throw new Error("expected the record to be refused");
+    };
+
+    it("keeps a customer value on its dataset when the template inserts one in front", () => {
+      expect(
+        rebuild(
+          { original: ["A", "B"], current: ["A", "B"], next: ["C", "A", "B"] },
+          { a: { slot: 0 }, b: { slot: 1 } },
+        ),
+      ).toEqual({ datasets: ["C", "A", "B"], reads: { a: "A", b: "B" } });
+    });
+
+    it("refuses a customer value on a dataset the template drops, keeps the others", () => {
+      const lists = { original: ["A", "B"], current: ["A", "B"], next: ["B"] };
+      expect(rebuild(lists, { b: { slot: 1 } })).toEqual({
+        datasets: ["B"],
+        reads: { b: "B" },
       });
-    expect(build).toThrow(UnmergeableRecord);
-    try {
-      build();
-    } catch (error) {
-      expect((error as UnmergeableRecord).refs).toEqual([`${key}#measure:old`]);
-    }
-    items.delete(`${key}#measure:old`);
-    const definition = build();
-    expect(definition.datasets).toEqual(["C", "mine"]);
-    expect(
-      Object.fromEntries(
-        definition.measures.map((m) => [
-          m.id,
-          (m as { datasetId?: string }).datasetId,
-        ]),
-      ),
-    ).toEqual({ t: "C", mine: "mine", a: "C" });
+      expect(refused(lists, { a: { slot: 0 }, b: { slot: 1 } })).toEqual([
+        `${key}#measure:a`,
+      ]);
+    });
+
+    it("keeps each customer value on its dataset when the template reorders them", () => {
+      expect(
+        rebuild(
+          { original: ["A", "B"], current: ["A", "B"], next: ["B", "A"] },
+          { a: { slot: 0 }, b: { slot: 1 } },
+        ),
+      ).toEqual({ datasets: ["B", "A"], reads: { a: "A", b: "B" } });
+    });
+
+    it("follows a true replacement (one source becomes an append tree)", () => {
+      expect(
+        rebuild(
+          { original: ["S"], current: ["S"], next: ["T"] },
+          { s: { slot: 0 }, t: { slot: 0, fromNext: true } },
+        ),
+      ).toEqual({ datasets: ["T"], reads: { s: "T", t: "T" } });
+    });
+
+    it("keeps the customer's own datasets after the template's, in their order", () => {
+      expect(
+        rebuild(
+          { original: ["A"], current: ["M", "A", "N"], next: ["C"] },
+          { m: { slot: 0 }, a: { slot: 1 }, n: { slot: 2 } },
+        ),
+      ).toEqual({
+        datasets: ["C", "M", "N"],
+        reads: { m: "M", a: "C", n: "N" },
+      });
+    });
+
+    it("leaves out a template dataset the customer removed unless a template value reads it", () => {
+      const lists = { original: ["A", "B"], current: ["A"], next: ["A", "B"] };
+      expect(rebuild(lists, { a: { slot: 0 } })).toEqual({
+        datasets: ["A"],
+        reads: { a: "A" },
+      });
+      expect(
+        rebuild(lists, { a: { slot: 0 }, t: { slot: 1, fromNext: true } }),
+      ).toEqual({ datasets: ["A", "B"], reads: { a: "A", t: "B" } });
+      expect(mergeDatasets(lists)).toEqual(["A"]);
+      expect(mergeDatasets(lists, ["B"])).toEqual(["A", "B"]);
+    });
   });
 
   it("keeps the customer's order and places template additions after their predecessor", () => {

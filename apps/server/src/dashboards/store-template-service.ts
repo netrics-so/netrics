@@ -26,7 +26,11 @@ import {
   type DataPolicy,
   type Locale,
 } from "@netrics/domain";
-import { createDataService, DataServiceError } from "../data/service.js";
+import {
+  createDataService,
+  DataServiceError,
+  datasetStoreStatus,
+} from "../data/service.js";
 import { createDashboardService } from "./service.js";
 import {
   storeTemplateCopy,
@@ -569,7 +573,7 @@ export function createStoreTemplateService(deps: {
           if (conflict && attempt < 2) continue;
           if (conflict) reject("version_conflict", 409);
           if (error instanceof DatasetStoreError)
-            reject(error.code, /quota|limit/.test(error.code) ? 413 : 400);
+            reject(error.code, datasetStoreStatus(error.code));
           throw error;
         }
       }

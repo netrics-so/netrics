@@ -322,12 +322,22 @@ const indexIn = (list: readonly unknown[], value: unknown) =>
 
 /**
  * A model's datasets after an update: the new template's datasets (app
- * scope), then the customer's own datasets (in neither the original nor the
- * new template) in the customer's order, so what reads them keeps working.
- * Values are symbolic, as in `settings:datasets`.
+ * scope), without those the customer removed (in the original, not in their
+ * model) unless a value taken from the new template reads one
+ * (`readByTemplate`); then the customer's own datasets (in neither the
+ * original nor the new template) in the customer's order, so what reads
+ * them keeps working. Values are symbolic, as in `settings:datasets`.
  */
-export function mergeDatasets(lists: DatasetLists): unknown[] {
-  const merged = [...lists.next];
+export function mergeDatasets(
+  lists: DatasetLists,
+  readByTemplate: readonly unknown[] = [],
+): unknown[] {
+  const merged = lists.next.filter(
+    (dataset) =>
+      indexIn(lists.original, dataset) === -1 ||
+      indexIn(lists.current, dataset) !== -1 ||
+      indexIn(readByTemplate, dataset) !== -1,
+  );
   for (const dataset of lists.current)
     if (
       indexIn(lists.original, dataset) === -1 &&
@@ -338,24 +348,36 @@ export function mergeDatasets(lists: DatasetLists): unknown[] {
 }
 
 /**
- * Where an item's `datasets[<index>]` points in the merged datasets, or -1.
- * A template value's slot is in the new template's list (which leads the
- * merged one); a customer value's slot is in the customer's list: their own
- * dataset stays theirs, a template dataset follows the template by position.
+ * The dataset an item's `datasets[<index>]` reads after the update, or
+ * undefined. A template value's slot is in the new template's list. A
+ * customer value's slot is in the customer's list and keeps reading the
+ * same dataset wherever the merged list has it; only a true replacement
+ * follows the template by position: the original dataset is gone from the
+ * new template, and the new template's dataset at its original position is
+ * one the original did not have (e.g. one source becomes an append tree).
+ * Anything else would silently re-point the value, so it does not resolve.
  */
 function slotOf(
   index: number,
   fromNext: boolean,
   lists: DatasetLists,
   merged: readonly unknown[],
-): number {
-  if (fromNext) return index < lists.next.length ? index : -1;
-  if (index >= lists.current.length) return -1;
-  const dataset = lists.current[index],
-    templateIndex = indexIn(lists.original, dataset);
-  if (templateIndex !== -1)
-    return templateIndex < lists.next.length ? templateIndex : -1;
-  return indexIn(merged, dataset);
+): unknown {
+  const list = fromNext ? lists.next : lists.current;
+  if (index >= list.length) return undefined;
+  const dataset = list[index];
+  if (indexIn(merged, dataset) !== -1) return dataset;
+  if (fromNext) return undefined;
+  const position = indexIn(lists.original, dataset);
+  if (
+    position !== -1 &&
+    position < lists.next.length &&
+    indexIn(lists.next, dataset) === -1 &&
+    indexIn(lists.original, lists.next[position]) === -1 &&
+    indexIn(merged, lists.next[position]) !== -1
+  )
+    return lists.next[position];
+  return undefined;
 }
 
 const SLOT = /^datasets\[(\d+)\]$/;
@@ -371,6 +393,17 @@ function unslot(value: unknown, slot: (index: number) => unknown): unknown {
       Object.entries(value).map(([name, entry]) => [name, unslot(entry, slot)]),
     );
   return value;
+}
+/** The slot indexes `datasets[<index>]` a value reads. */
+function slotsIn(value: unknown): number[] {
+  if (typeof value === "string") {
+    const match = SLOT.exec(value);
+    return match ? [Number(match[1])] : [];
+  }
+  if (Array.isArray(value)) return value.flatMap(slotsIn);
+  if (value !== null && typeof value === "object")
+    return Object.values(value).flatMap(slotsIn);
+  return [];
 }
 
 /**
@@ -394,24 +427,25 @@ export function modelFromItems(
     fromNext: (itemRef: string) => boolean;
   },
 ): SemanticModelDefinition {
-  const own =
-    (items.get(ref(key, "settings", "datasets")) as unknown[] | undefined) ??
-    [];
+  const datasetsRef = ref(key, "settings", "datasets");
+  const own = (items.get(datasetsRef) as unknown[] | undefined) ?? [];
   const lists = sources?.datasets ?? { original: own, current: own, next: own };
-  const merged = mergeDatasets(lists),
+  const fromNext = (itemRef: string) => sources?.fromNext(itemRef) ?? true;
+  // The datasets the new template's values read (the list itself aside).
+  const readByTemplate = [...items]
+    .filter(([itemRef]) => itemRef !== datasetsRef && fromNext(itemRef))
+    .flatMap(([, value]) => slotsIn(value))
+    .map((index) => lists.next[index]);
+  const merged = mergeDatasets(lists, readByTemplate),
     check = resolver(key);
   const resolve = (itemRef: string, value: unknown) =>
     check.resolve(itemRef, () =>
       desymbolize(
         unslot(value, (index) => {
-          const at = slotOf(
-            index,
-            sources?.fromNext(itemRef) ?? true,
-            lists,
-            merged,
-          );
-          if (at === -1) throw new UnresolvableReference(`datasets[${index}]`);
-          return merged[at];
+          const dataset = slotOf(index, fromNext(itemRef), lists, merged);
+          if (dataset === undefined)
+            throw new UnresolvableReference(`datasets[${index}]`);
+          return dataset;
         }),
         ids,
       ),
@@ -430,7 +464,7 @@ export function modelFromItems(
   };
   const definition = {
     version: 1 as const,
-    datasets: check.resolve(ref(key, "settings", "datasets"), () =>
+    datasets: check.resolve(datasetsRef, () =>
       desymbolize(merged, ids),
     ) as string[],
     relationships: byIndex(itemsOf(items, key, "relationship")).map(
@@ -441,6 +475,34 @@ export function modelFromItems(
   };
   check.done();
   return definition;
+}
+
+/**
+ * The item refs of a record that a validation issue path points at (e.g.
+ * `nodes.3.expression` → that step), or the path itself when no item does.
+ */
+export function itemRefOfPath(
+  key: StoreTemplateKey,
+  record: PreparationGraph | SemanticModelDefinition,
+  path: readonly PropertyKey[],
+): string {
+  const [part, index] = path;
+  const at = typeof index === "number" ? index : Number(index);
+  if ("nodes" in record) {
+    if (part === "nodes" && record.nodes[at])
+      return ref(key, "step", record.nodes[at].id);
+    if (part === "outputs" && Number.isInteger(at))
+      return ref(key, "output", String(at));
+  } else {
+    if (part === "measures" && record.measures[at])
+      return ref(key, "measure", record.measures[at].id);
+    if (part === "dimensions" && record.dimensions[at])
+      return ref(key, "dimension", record.dimensions[at].id);
+    if (part === "relationships" && Number.isInteger(at))
+      return ref(key, "relationship", String(at));
+    if (part === "datasets") return ref(key, "settings", "datasets");
+  }
+  return path.map(String).join(".");
 }
 
 export interface NormalizedDashboard {

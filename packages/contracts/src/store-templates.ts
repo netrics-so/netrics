@@ -119,12 +119,14 @@ export type StoreTemplateApplyRequest = z.infer<
 /**
  * `store_update_decision_missing` lists the items still without a choice;
  * `store_update_unmergeable` names the record (`key`) whose merged content
- * cannot be written and, when known, its items.
+ * cannot be written and, when known, its items; `paths` are the validation
+ * issue paths in that record when the merged content fails validation.
  */
 export const storeTemplateApplyErrorSchema = z.object({
   error: z.string().min(1),
   key: z.string().optional(),
   refs: z.array(z.string()).optional(),
+  paths: z.array(z.string()).optional(),
 });
 /**
  * The workspace's store-template installs and whether a newer template

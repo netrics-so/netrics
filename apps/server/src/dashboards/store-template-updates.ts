@@ -50,6 +50,7 @@ import {
   normalizeTemplateDashboard,
   preparationFromItems,
   preparationItems,
+  itemRefOfPath,
   recordKeyOf,
   UnmergeableRecord,
   type ItemRef,
@@ -113,6 +114,8 @@ export class StoreUpdateUnmergeable extends DataServiceError {
   constructor(
     readonly key: string,
     readonly refs: string[],
+    /** Validation issue paths in the merged record, when it failed one. */
+    readonly paths: string[] = [],
   ) {
     super("store_update_unmergeable", 409);
   }
@@ -652,8 +655,9 @@ export function createStoreTemplateUpdateService(deps: {
     if (!plan) reject("store_template_baseline_unavailable", 409);
     // The same plan applied twice (double click, two tabs) is stale first.
     if (plan.basis !== body.basis) reject("store_update_stale", 409);
-    // An earlier update's drafts are the customer's to publish (or discard)
-    // first: a new apply would build on them and lose track of them.
+    // An earlier update's drafts are the customer's to publish, or they
+    // close that update (closeUpdate) to leave them as ordinary drafts:
+    // a new apply would build on them and lose track of them.
     const open = await openUpdateOf(tx, actor.workspaceId, requestId);
     if (open && open.drafts.some((draft) => !draft.published))
       reject("store_update_open", 409);
@@ -702,7 +706,11 @@ export function createStoreTemplateUpdateService(deps: {
      * A merged record that resolves and validates, or 409
      * store_update_unmergeable naming the record and its items.
      */
-    const checked = <T>(key: string, build: () => T, valid: z.ZodType): T => {
+    const checked = <T extends PreparationGraph | SemanticModelDefinition>(
+      key: string,
+      build: () => T,
+      valid: z.ZodType,
+    ): T => {
       let built: T;
       try {
         built = build();
@@ -711,8 +719,20 @@ export function createStoreTemplateUpdateService(deps: {
           throw new StoreUpdateUnmergeable(key, error.refs);
         throw error;
       }
-      if (!valid.safeParse(built).success)
-        throw new StoreUpdateUnmergeable(key, []);
+      const parsed = valid.safeParse(built);
+      if (!parsed.success)
+        // The items the issues point at, so the review can show them.
+        throw new StoreUpdateUnmergeable(
+          key,
+          [
+            ...new Set(
+              parsed.error.issues.map((issue) =>
+                itemRefOfPath(key, built, issue.path),
+              ),
+            ),
+          ],
+          parsed.error.issues.map((issue) => issue.path.map(String).join(".")),
+        );
       return built;
     };
     for (const key of keys) {
@@ -950,6 +970,58 @@ export function createStoreTemplateUpdateService(deps: {
   }
 
   return {
+    /**
+     * Closes an install's update without touching its drafts: they stay
+     * ordinary drafts the customer edits, restores or publishes, and a new
+     * update can be applied. Idempotent: closing a closed update is a no-op.
+     */
+    closeUpdate(
+      actor: Actor,
+      requestId: string,
+      updateId: string,
+    ): Promise<void> {
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        async (tx) => {
+          // The install's lock: never half-way through an apply.
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + requestId}))`,
+          );
+          const [update] = await tx
+            .select({
+              id: schema.dataTemplateUpdates.id,
+              closedAt: schema.dataTemplateUpdates.closedAt,
+            })
+            .from(schema.dataTemplateUpdates)
+            .where(
+              and(
+                eq(schema.dataTemplateUpdates.workspaceId, actor.workspaceId),
+                eq(schema.dataTemplateUpdates.requestId, requestId),
+                eq(schema.dataTemplateUpdates.id, updateId),
+              ),
+            );
+          if (!update) reject("store_template_update_not_found", 404);
+          if (update.closedAt !== null) return;
+          await tx
+            .update(schema.dataTemplateUpdates)
+            .set({ closedAt: now() })
+            .where(
+              and(
+                eq(schema.dataTemplateUpdates.workspaceId, actor.workspaceId),
+                eq(schema.dataTemplateUpdates.id, updateId),
+              ),
+            );
+          await insertAuditEvent(tx, {
+            workspaceId: actor.workspaceId,
+            actorUserId: actor.callerId,
+            action: "store_template_update.closed",
+            target: updateId,
+            metadata: { requestId, updateId },
+          });
+        },
+      );
+    },
     /**
      * Applies an update the customer reviewed (`basis`) with a choice for
      * every conflict and proposed removal; one serializable transaction

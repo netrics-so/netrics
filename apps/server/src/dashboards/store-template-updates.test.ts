@@ -931,6 +931,89 @@ describe("applying a store-template update", { timeout: TIMEOUT_MS }, () => {
     expect(await writtenState(workspaceId, requestId)).toEqual(before);
   });
 
+  it("names the items a merged record fails validation on", async () => {
+    // A broken template: the downloads measure loses its name.
+    const broken: StoreTemplateDefinition = {
+      ...v2,
+      build(key, inputs, ids) {
+        const record = v2.build(key, inputs, ids);
+        if (record.kind !== "model" || key !== "model:downloads") return record;
+        const definition = structuredClone(record.definition);
+        definition.measures[0]!.name = "";
+        return { ...record, definition };
+      },
+    };
+    const { workspaceId, requestId } = await installIn(["google-play"]);
+    const plan = await updates(broken).plan(actor(workspaceId), requestId);
+    const before = await writtenState(workspaceId, requestId);
+    await expect(
+      updates(broken).apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: choices(plan, "template"),
+      }),
+    ).rejects.toMatchObject({
+      code: "store_update_unmergeable",
+      status: 409,
+      key: "model:downloads",
+      refs: ["model:downloads#measure:downloads"],
+      paths: ["measures.0.name"],
+    });
+    expect(await writtenState(workspaceId, requestId)).toEqual(before);
+  });
+
+  it("closes an update and leaves its drafts as ordinary drafts", async () => {
+    const { workspaceId, requestId } = await installIn(["google-play"]);
+    const first = await updates(v2).plan(actor(workspaceId), requestId);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: first.basis,
+      decisions: choices(first, "template"),
+    });
+    const drafts = await publishedState(workspaceId);
+    await updates(v2).closeUpdate(actor(workspaceId), requestId, update.id);
+    // Drafts untouched, the update closed (once: closing again is a no-op).
+    expect(await publishedState(workspaceId)).toEqual(drafts);
+    await updates(v2).closeUpdate(actor(workspaceId), requestId, update.id);
+    expect(
+      (await updates(v2).list(actor(workspaceId))).installs[0]!.openUpdate,
+    ).toBeNull();
+    const audit =
+      await owner`select target, metadata from audit_events where workspace_id=${workspaceId} and action='store_template_update.closed'`;
+    expect(audit.map((row) => row.target as string)).toEqual([update.id]);
+    // A new apply is allowed; it builds on the drafts as the customer's.
+    const again = await updates(v2).plan(actor(workspaceId), requestId);
+    const replaced = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: again.basis,
+      decisions: choices(again, "template"),
+    });
+    expect(replaced.id).not.toBe(update.id);
+    // Unknown updates, and an update of another install, are not found.
+    const other = await installIn(["google-play"]);
+    const otherPlan = await updates(v2).plan(
+      actor(other.workspaceId),
+      other.requestId,
+    );
+    const otherUpdate = await updates(v2).apply(
+      actor(other.workspaceId),
+      other.requestId,
+      { basis: otherPlan.basis, decisions: choices(otherPlan, "template") },
+    );
+    for (const [workspace, request, id] of [
+      [workspaceId, requestId, randomUUID()],
+      [workspaceId, requestId, otherUpdate.id],
+      [workspaceId, other.requestId, otherUpdate.id],
+    ] as const)
+      await expect(
+        updates(v2).closeUpdate(actor(workspace), request, id),
+      ).rejects.toMatchObject({
+        code: "store_template_update_not_found",
+        status: 404,
+      });
+    expect(
+      (await updates(v2).list(actor(other.workspaceId))).installs[0]!
+        .openUpdate!.id,
+    ).toBe(otherUpdate.id);
+  });
+
   it("waits for an open update's drafts before applying again", async () => {
     const { workspaceId, requestId } = await installIn(["google-play"]);
     const first = await updates(v2).plan(actor(workspaceId), requestId);
@@ -1724,6 +1807,39 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
       key: "model:downloads",
       refs: ["model:downloads#measure:on_ratings"],
     });
+  });
+
+  it("closes an update for editors only, within the workspace", async () => {
+    const [open] =
+      await owner`select id from data_template_updates where request_id=${install.requestId} and closed_at is null`;
+    const updateId = open!.id as string;
+    const close = (workspaceId: string, cookie: string, id = updateId) =>
+      updated.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/dashboard-templates/stores/installs/${install.requestId}/updates/${id}/close`,
+        headers: { cookie },
+      });
+    expect((await close(install.workspaceId, viewer)).statusCode).toBe(403);
+    expect((await close(install.workspaceId, stranger)).statusCode).toBe(404);
+    const elsewhere = await close(strangerWorkspace, stranger);
+    expect(elsewhere.statusCode).toBe(404);
+    expect(elsewhere.json()).toEqual({
+      error: "store_template_update_not_found",
+    });
+    for (const id of [randomUUID(), "not-a-uuid"])
+      expect((await close(install.workspaceId, editor, id)).statusCode).toBe(
+        404,
+      );
+    for (let attempt = 0; attempt < 2; attempt++)
+      expect((await close(install.workspaceId, editor)).statusCode).toBe(204);
+    const list = await updated.inject({
+      method: "GET",
+      url: `/v1/workspaces/${install.workspaceId}/dashboard-templates/stores/installs`,
+      headers: { cookie: viewer },
+    });
+    expect(
+      storeTemplateInstallListSchema.parse(list.json()).installs[0]!.openUpdate,
+    ).toBeNull();
   });
 
   it("answers another workspace's install like a random id when applying", async () => {
