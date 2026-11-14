@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  attributeDataError,
   compileRowExpression,
+  DataProcessingError,
   exactDecimal,
   ProcessingBudget,
   type DataExpression,
@@ -11,6 +13,7 @@ import {
   executePreparation,
   type DataTable,
   type PreparationGraph,
+  type PreparationNode,
 } from "./data-preparation.js";
 const lit = (type: DataField["type"], value: unknown): DataExpression => ({
   kind: "literal",
@@ -657,4 +660,89 @@ it("requires exact decimal or integer monetary literals", () => {
       [],
     ).evaluate({}).value,
   ).toBe("0.1");
+});
+describe("step attribution", () => {
+  const source = { id: "source", type: "source", datasetId: "orders" } as const;
+  const broken = {
+    id: "calc",
+    type: "calculate",
+    input: "source",
+    fieldId: "net",
+    name: "Net",
+    expression: call("add", field("missing"), lit("integer", 1)),
+  } as const;
+  const failure = (graph: PreparationGraph) => {
+    try {
+      executePreparation(graph, sources);
+    } catch (error) {
+      return error as DataProcessingError;
+    }
+    throw new Error("expected a failure");
+  };
+  const where = (e: DataProcessingError) => [e.code, e.fieldId, e.nodeId];
+  it("names the step and column whose work failed", () => {
+    expect(
+      where(
+        failure({ version: 1, nodes: [source, broken], outputs: ["calc"] }),
+      ),
+    ).toEqual(["expression_field_not_found", "missing", "calc"]);
+  });
+  it("keeps the innermost step when later steps consume the failure", () => {
+    const kept = {
+      id: "kept",
+      type: "filter",
+      input: "calc",
+      expression: lit("boolean", true),
+    } as const;
+    expect(
+      failure({ version: 1, nodes: [source, broken, kept], outputs: ["kept"] })
+        .nodeId,
+    ).toBe("calc");
+  });
+  it("attributes a missing input to the step that refers to it", () => {
+    const append: PreparationNode = {
+      id: "both",
+      type: "append",
+      inputs: ["source", "ghost"],
+    };
+    expect(
+      where(
+        failure({ version: 1, nodes: [source, append], outputs: ["both"] }),
+      ),
+    ).toEqual(["preparation_input_not_found", undefined, "both"]);
+  });
+  it("names a duplicated step and a source whose dataset is missing", () => {
+    expect(
+      failure({ version: 1, nodes: [source, source], outputs: ["source"] })
+        .nodeId,
+    ).toBe("source");
+    expect(
+      where(
+        failure({
+          version: 1,
+          nodes: [{ ...source, datasetId: "nowhere" }],
+          outputs: ["source"],
+        }),
+      ),
+    ).toEqual(["preparation_source_not_found", undefined, "source"]);
+  });
+  it("leaves graph-level failures without a step", () => {
+    const error = failure({ version: 1, nodes: [source], outputs: [] });
+    expect(error.code).toBe("preparation_graph_invalid");
+    expect(error.nodeId).toBeUndefined();
+  });
+  it("never re-attributes an already attributed error or foreign errors", () => {
+    const deep = new DataProcessingError("x", undefined, "inner");
+    expect(attributeDataError(deep, "outer")).toBe(deep);
+    const other = new Error("x");
+    expect(attributeDataError(other, "outer")).toBe(other);
+    expect(
+      (
+        attributeDataError(
+          new DataProcessingError("x", "f"),
+          "outer",
+        ) as DataProcessingError
+      ).nodeId,
+    ).toBe("outer");
+  });
 });

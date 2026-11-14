@@ -1,4 +1,5 @@
 import {
+  attributeDataError,
   compileRowExpression,
   compareDataValues,
   dataFail,
@@ -405,8 +406,12 @@ export function executePreparation(
     graph.outputs.length > 20
   )
     dataFail("preparation_graph_invalid");
-  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
-  if (nodes.size !== graph.nodes.length) dataFail("preparation_node_duplicate");
+  const nodes = new Map<string, PreparationNode>();
+  for (const node of graph.nodes) {
+    if (nodes.has(node.id))
+      dataFail("preparation_node_duplicate", undefined, node.id);
+    nodes.set(node.id, node);
+  }
   const done = new Map<string, DataTable>(),
     visiting = new Set<string>();
   let rejectedRows = 0;
@@ -416,6 +421,14 @@ export function executePreparation(
     const node = nodes.get(id);
     if (!node) return dataFail("preparation_input_not_found");
     if (visiting.has(id)) dataFail("preparation_cycle");
+    // A missing or cyclic input above is attributed by the consumer's wrapper.
+    try {
+      return executeNode(id, node);
+    } catch (error) {
+      throw attributeDataError(error, id);
+    }
+  };
+  const executeNode = (id: string, node: PreparationNode): DataTable => {
     visiting.add(id);
     budget.tick();
     let output: DataTable;
