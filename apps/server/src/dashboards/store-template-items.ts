@@ -170,6 +170,165 @@ export function modelItems(
   return items;
 }
 
+/**
+ * The inverse of symbolize: `ref:<key>` becomes the key's record id and
+ * `ref:<key>:<out>` `prepared:<id>:<out>`, with `ids` holding a real id for
+ * every key (new records created before their dependants). A whole key
+ * wins over key plus output, like an exact id wins in symbolize.
+ */
+export function desymbolize(
+  value: unknown,
+  ids: Readonly<Record<string, string>>,
+): unknown {
+  if (typeof value === "string") {
+    if (!value.startsWith("ref:")) return value;
+    const rest = value.slice("ref:".length);
+    if (Object.hasOwn(ids, rest)) return ids[rest]!;
+    const cut = rest.lastIndexOf(":"),
+      key = rest.slice(0, cut);
+    if (cut > 0 && Object.hasOwn(ids, key))
+      return `prepared:${ids[key]!}:${rest.slice(cut + 1)}`;
+    return value;
+  }
+  if (Array.isArray(value))
+    return value.map((entry) => desymbolize(entry, ids));
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([name, entry]) => [
+        name,
+        desymbolize(entry, ids),
+      ]),
+    );
+  return value;
+}
+
+/**
+ * The ids of `present` in order: the customer's order, with each id only
+ * the template has placed right after the id before it in the template's
+ * order (first when none is before it).
+ */
+export function mergeOrder(
+  current: readonly string[],
+  next: readonly string[],
+  present: ReadonlySet<string>,
+): string[] {
+  const order = current.filter((id) => present.has(id));
+  let previous: string | undefined;
+  for (const id of next) {
+    if (!present.has(id)) continue;
+    if (!order.includes(id))
+      order.splice(
+        previous === undefined ? 0 : order.indexOf(previous) + 1,
+        0,
+        id,
+      );
+    previous = id;
+  }
+  for (const id of present) if (!order.includes(id)) order.push(id);
+  return order;
+}
+
+/** The ids of one item kind of a record in `items`, with their values. */
+function itemsOf(items: Items, key: StoreTemplateKey, kind: ItemKind) {
+  const prefix = `${key}#${kind}:`;
+  return new Map(
+    [...items]
+      .filter(([itemRef]) => itemRef.startsWith(prefix))
+      .map(([itemRef, value]) => [itemRef.slice(prefix.length), value]),
+  );
+}
+const byIndex = (values: Map<string, unknown>) =>
+  [...values]
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([, value]) => value);
+
+/**
+ * A preparation graph from (merged) items, with real ids: steps in the
+ * current graph's order, template additions after their predecessor.
+ */
+export function preparationFromItems(
+  key: StoreTemplateKey,
+  items: Items,
+  order: { current: PreparationGraph | null; next: PreparationGraph | null },
+  ids: Readonly<Record<string, string>>,
+): PreparationGraph {
+  const steps = itemsOf(items, key, "step");
+  const nodes = mergeOrder(
+    order.current?.nodes.map((node) => node.id) ?? [],
+    order.next?.nodes.map((node) => node.id) ?? [],
+    new Set(steps.keys()),
+  ).map((id) => ({
+    id,
+    ...(desymbolize(steps.get(id), ids) as object),
+  }));
+  return {
+    version: 1,
+    nodes: nodes as PreparationGraph["nodes"],
+    outputs: byIndex(itemsOf(items, key, "output")) as string[],
+  };
+}
+
+/** Replaces each `datasets[<index>]` by that dataset (inverse of datasetSlots). */
+function unslot(value: unknown, datasets: readonly unknown[]): unknown {
+  if (typeof value === "string") {
+    const match = /^datasets\[(\d+)\]$/.exec(value);
+    return match && Number(match[1]) < datasets.length
+      ? datasets[Number(match[1])]
+      : value;
+  }
+  if (Array.isArray(value))
+    return value.map((entry) => unslot(entry, datasets));
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([name, entry]) => [
+        name,
+        unslot(entry, datasets),
+      ]),
+    );
+  return value;
+}
+
+/**
+ * A model definition from (merged) items, with real ids: measures and
+ * dimensions in the current definition's order, template additions after
+ * their predecessor; dataset slots point at the merged datasets.
+ */
+export function modelFromItems(
+  key: StoreTemplateKey,
+  items: Items,
+  order: {
+    current: SemanticModelDefinition | null;
+    next: SemanticModelDefinition | null;
+  },
+  ids: Readonly<Record<string, string>>,
+): SemanticModelDefinition {
+  const datasets =
+    (items.get(ref(key, "settings", "datasets")) as unknown[] | undefined) ??
+    [];
+  const resolve = (value: unknown) => desymbolize(unslot(value, datasets), ids);
+  const ordered = (kind: "measure" | "dimension") => {
+    const values = itemsOf(items, key, kind);
+    const ofKind = (def: SemanticModelDefinition | null) =>
+      (kind === "measure" ? def?.measures : def?.dimensions)?.map(
+        (entry) => entry.id,
+      ) ?? [];
+    return mergeOrder(
+      ofKind(order.current),
+      ofKind(order.next),
+      new Set(values.keys()),
+    ).map((id) => resolve(values.get(id)));
+  };
+  return {
+    version: 1,
+    datasets: desymbolize(datasets, ids) as string[],
+    relationships: byIndex(itemsOf(items, key, "relationship")).map(
+      resolve,
+    ) as SemanticModelDefinition["relationships"],
+    dimensions: ordered("dimension") as SemanticModelDefinition["dimensions"],
+    measures: ordered("measure") as SemanticModelDefinition["measures"],
+  };
+}
+
 export interface NormalizedDashboard {
   /** Dashboard-level settings without name, project, version, timestamps. */
   settings: Record<string, unknown>;

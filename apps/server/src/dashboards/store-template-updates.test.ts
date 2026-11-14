@@ -15,6 +15,7 @@ import {
   errorResponseSchema,
   meResponseSchema,
   storeTemplateInstallListSchema,
+  storeTemplateUpdateSchema,
   workspaceResponseSchema,
   type StoreTemplatePlan,
 } from "@netrics/contracts";
@@ -655,6 +656,594 @@ describe("store-template updates", { timeout: TIMEOUT_MS }, () => {
   });
 });
 
+type Decisions = {
+  ref: string;
+  choice: "template" | "customer" | "remove" | "keep";
+}[];
+/** A choice for every item the plan asks about. */
+const choices = (
+  plan: StoreTemplatePlan,
+  side: "template" | "customer",
+): Decisions =>
+  items(plan).flatMap((i): Decisions =>
+    i.outcome === "choose"
+      ? [{ ref: i.ref, choice: side }]
+      : i.outcome === "propose_removal"
+        ? [{ ref: i.ref, choice: side === "template" ? "remove" : "keep" }]
+        : [],
+  );
+/** Every stored row of a dashboard, its slides and widgets. */
+async function readDashboardData(dashboardId: string) {
+  const [dashboard] =
+    await owner`select to_jsonb(d.*) as row from dashboards d where id=${dashboardId}`;
+  const slides =
+    await owner`select to_jsonb(s.*) as row from dashboard_slides s where dashboard_id=${dashboardId} order by id`;
+  const widgets =
+    await owner`select to_jsonb(w.*) as row from dashboard_widgets w where dashboard_id=${dashboardId} order by id`;
+  return {
+    dashboard: dashboard!.row as unknown,
+    slides: slides.map((r) => r.row as unknown),
+    widgets: widgets.map((r) => r.row as unknown),
+  };
+}
+/** Version and published version of every preparation and model. */
+async function publishedState(workspaceId: string) {
+  const preparations =
+    await owner`select id, version, published_version from data_preparations where workspace_id=${workspaceId} order by id`;
+  const models =
+    await owner`select id, version, published_version from data_models where workspace_id=${workspaceId} order by id`;
+  return { preparations: [...preparations], models: [...models] };
+}
+async function preparationRow(id: string) {
+  const [row] =
+    await owner`select name, graph, version, published_version from data_preparations where id=${id}`;
+  return row as {
+    name: string;
+    graph: PreparationGraph;
+    version: number;
+    published_version: number | null;
+  };
+}
+async function recordOf(requestId: string, key: string) {
+  const [row] =
+    await owner`select * from data_template_records where request_id=${requestId} and key=${key}`;
+  return row;
+}
+const strings = (value: unknown): string[] =>
+  typeof value === "string"
+    ? [value]
+    : Array.isArray(value)
+      ? value.flatMap(strings)
+      : value !== null && typeof value === "object"
+        ? Object.values(value).flatMap(strings)
+        : [];
+/** Renames a step of a preparation as a draft (published when asked). */
+async function editStep(
+  workspaceId: string,
+  id: string,
+  step: string,
+  name: string,
+  publish: boolean,
+) {
+  const row = await preparationRow(id);
+  const graph = structuredClone(row.graph);
+  const node = graph.nodes.find((n) => n.id === step);
+  if (node?.type === "calculate") node.name = name;
+  const data = createDataService(db, () => new Date(now));
+  const saved = await data.savePreparation(
+    actor(workspaceId),
+    { name: row.name, graph, version: row.version },
+    id,
+  );
+  if (publish)
+    await data.publishPreparation(
+      actor(workspaceId),
+      id,
+      saved.preparation.version,
+    );
+}
+
+describe("applying a store-template update", { timeout: TIMEOUT_MS }, () => {
+  it("writes drafts only: dashboards and published queries stay as they were", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn([
+      "app-store-connect",
+      "google-play",
+    ]);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const dashboardBefore = await readDashboardData(installed.dashboardId);
+    const before = await publishedState(workspaceId);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    expect(storeTemplateUpdateSchema.parse(update)).toEqual(update);
+    expect(update).toMatchObject({ requestId, fromVersion: 1, toVersion: 2 });
+    expect(update.drafts.every((d) => !d.published)).toBe(true);
+    // The model and every source preparation the template changes.
+    expect(update.drafts.map((d) => d.key).sort()).toEqual(
+      [
+        "model:downloads",
+        ...connections.flatMap((c) =>
+          ["downloads", "proceeds", "ratings"].map(
+            (m) => `preparation:source:${c.id}:${m}`,
+          ),
+        ),
+      ].sort(),
+    );
+    expect(await readDashboardData(installed.dashboardId)).toEqual(
+      dashboardBefore,
+    );
+    const after = await publishedState(workspaceId);
+    // Published versions untouched; only drafts were added.
+    expect(after.models.map((m) => m.published_version)).toEqual(
+      before.models.map((m) => m.published_version),
+    );
+    expect(after.preparations.map((p) => p.published_version)).toEqual(
+      before.preparations.map((p) => p.published_version),
+    );
+    const data = createDataService(db, () => new Date(now));
+    const { model } = await data.getModel(
+      actor(workspaceId),
+      installed.models.downloads,
+    );
+    expect(model.version).toBeGreaterThan(model.publishedVersion!);
+    expect(model.definition.measures.map((m) => [m.id, m.name])).toEqual([
+      ["downloads", "Downloads (v2)"],
+      ["downloads_avg", "Downloads (v2)"],
+    ]);
+    const source = `preparation:source:${connections[0]!.id}:downloads`;
+    const sourceRecord = await recordOf(requestId, source);
+    const graph = (await preparationRow(sourceRecord!.record_id as string))
+      .graph;
+    expect(
+      graph.nodes.find((n) => n.id === "calculate_store_name"),
+    ).toMatchObject({ name: "Store name (v2)" });
+    // The draft's references are real ids again.
+    expect(strings(graph).filter((v) => /^(ref|new):/.test(v))).toEqual([]);
+    // The dashboard waits for the published data: no copy yet.
+    expect(update.dashboards).toEqual([
+      {
+        key: "dashboard:portfolio",
+        originalId: installed.dashboardId,
+        copyId: null,
+        swappedAt: null,
+        swappedBackAt: null,
+        ready: false,
+      },
+    ]);
+    // The install and its data records are at the new version; the
+    // dashboard record keeps its original until its copy exists.
+    const [install] =
+      await owner`select template_version from data_template_installs where request_id=${requestId}`;
+    expect(install!.template_version).toBe(2);
+    expect(sourceRecord).toMatchObject({ template_version: 2 });
+    expect(
+      (sourceRecord!.original as { graph: PreparationGraph }).graph.nodes.find(
+        (n) => n.id === "calculate_store_name",
+      ),
+    ).toMatchObject({ name: "Store name (v2)" });
+    expect(await recordOf(requestId, "dashboard:portfolio")).toMatchObject({
+      template_version: 1,
+    });
+    const [audit] =
+      await owner`select metadata from audit_events where workspace_id=${workspaceId} and action='data.store_template_update_applied'`;
+    expect(audit!.metadata).toEqual({
+      requestId,
+      fromVersion: 1,
+      toVersion: 2,
+    });
+    const { installs } = await updates(v2).list(actor(workspaceId));
+    expect(installs[0]!.openUpdate).toEqual(update);
+  });
+
+  it("keeps a customer-only measure and step change in the draft", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn([
+      "app-store-connect",
+    ]);
+    const definition = await modelDefinition(installed.models.downloads);
+    definition.measures.push({
+      ...definition.measures[0]!,
+      id: "custom_total",
+      name: "Our total",
+    });
+    const data = createDataService(db, () => new Date(now));
+    const { model: current } = await data.getModel(
+      actor(workspaceId),
+      installed.models.downloads,
+    );
+    const saved = await data.saveModel(
+      actor(workspaceId),
+      { name: current.name, definition, version: current.version },
+      installed.models.downloads,
+    );
+    await data.publishModel(
+      actor(workspaceId),
+      installed.models.downloads,
+      saved.model.version,
+    );
+    const source = `preparation:source:${connections[0]!.id}:downloads`;
+    const sourceId = (await recordOf(requestId, source))!.record_id as string;
+    await editStep(workspaceId, sourceId, "calculate_app_key", "Our key", true);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    const { model } = await data.getModel(
+      actor(workspaceId),
+      installed.models.downloads,
+    );
+    expect(model.definition.measures.map((m) => m.id)).toEqual([
+      // A template addition follows the item before it in the template.
+      "downloads",
+      "downloads_avg",
+      "custom_total",
+    ]);
+    const graph = (await preparationRow(sourceId)).graph;
+    expect(graph.nodes.find((n) => n.id === "calculate_app_key")).toMatchObject(
+      { name: "Our key" },
+    );
+    expect(
+      graph.nodes.find((n) => n.id === "calculate_store_name"),
+    ).toMatchObject({ name: "Store name (v2)" });
+  });
+
+  it("keeps an unpublished customer draft as the customer state", async () => {
+    const { workspaceId, requestId, connections } = await installIn([
+      "google-play",
+    ]);
+    const source = `preparation:source:${connections[0]!.id}:proceeds`;
+    const sourceId = (await recordOf(requestId, source))!.record_id as string;
+    await editStep(workspaceId, sourceId, "calculate_app_key", "Draft", false);
+    const drafted = await preparationRow(sourceId);
+    expect(drafted.version).toBeGreaterThan(drafted.published_version!);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    expect(
+      plan.records.find((r) => r.key === source)!.hasUnpublishedDraft,
+    ).toBe(true);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    const row = await preparationRow(sourceId);
+    expect(row.version).toBe(drafted.version + 1);
+    expect(row.published_version).toBe(drafted.published_version);
+    expect(
+      row.graph.nodes.find((n) => n.id === "calculate_app_key"),
+    ).toMatchObject({ name: "Draft" });
+    expect(
+      row.graph.nodes.find((n) => n.id === "calculate_store_name"),
+    ).toMatchObject({ name: "Store name (v2)" });
+    // Steps keep the draft's order.
+    expect(row.graph.nodes.map((n) => n.id)).toEqual(
+      drafted.graph.nodes.map((n) => n.id),
+    );
+    expect(update.drafts.find((d) => d.key === source)).toMatchObject({
+      recordId: sourceId,
+      version: row.version,
+      published: false,
+    });
+  });
+
+  it("applies the customer's choice per conflicting item", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn([
+      "app-store-connect",
+    ]);
+    const definition = await modelDefinition(installed.models.downloads);
+    definition.measures[0]!.name = "Our downloads";
+    await owner`update data_models set definition=${owner.json(definition as never)}, version=version+1
+      where id=${installed.models.downloads}`;
+    const source = `preparation:source:${connections[0]!.id}:downloads`;
+    const sourceId = (await recordOf(requestId, source))!.record_id as string;
+    await editStep(workspaceId, sourceId, "calculate_store_name", "Ours", true);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const measure = "model:downloads#measure:downloads",
+      step = `${source}#step:calculate_store_name`;
+    expect(item(plan, measure)?.outcome).toBe("choose");
+    expect(item(plan, step)?.outcome).toBe("choose");
+    await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: [
+        ...choices(plan, "template").filter((d) => d.ref !== measure),
+        { ref: measure, choice: "customer" },
+      ],
+    });
+    const after = await modelDefinition(installed.models.downloads);
+    expect(after.measures.find((m) => m.id === "downloads")!.name).toBe(
+      "Our downloads",
+    );
+    expect(after.measures.map((m) => m.id)).toContain("downloads_avg");
+    expect(
+      (await preparationRow(sourceId)).graph.nodes.find(
+        (n) => n.id === "calculate_store_name",
+      ),
+    ).toMatchObject({ name: "Store name (v2)" });
+  });
+
+  it("removes a part the template drops only when the customer says so", async () => {
+    // Version 2 also drops the country dimension of the downloads model.
+    const dropping: StoreTemplateDefinition = {
+      ...v2,
+      build(key, inputs, ids) {
+        const record = v2.build(key, inputs, ids);
+        if (record.kind !== "model" || key !== "model:downloads") return record;
+        const definition = structuredClone(record.definition);
+        definition.dimensions = definition.dimensions.filter(
+          (d) => d.id !== "country",
+        );
+        return { ...record, definition };
+      },
+    };
+    const country = "model:downloads#dimension:country";
+    for (const choice of ["remove", "keep"] as const) {
+      const { workspaceId, requestId, installed } = await installIn([
+        "google-play",
+      ]);
+      const plan = await updates(dropping).plan(actor(workspaceId), requestId);
+      expect(item(plan, country)?.outcome).toBe("propose_removal");
+      await updates(dropping).apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: [
+          ...choices(plan, "template").filter((d) => d.ref !== country),
+          { ref: country, choice },
+        ],
+      });
+      const dimensions = (
+        await modelDefinition(installed.models.downloads)
+      ).dimensions.map((d) => d.id);
+      if (choice === "remove") expect(dimensions).not.toContain("country");
+      else expect(dimensions).toContain("country");
+    }
+  });
+
+  it("refuses undecided conflicts and stale plans", async () => {
+    const { workspaceId, requestId } = await installIn(["google-play"]);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const missing = await updates(v2)
+      .apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: [],
+      })
+      .catch((error: unknown) => error);
+    expect(missing).toMatchObject({
+      code: "store_update_decision_missing",
+      status: 400,
+      refs: ["dashboard:portfolio#widget:ratings"],
+    });
+    // A choice that does not fit the item counts as missing.
+    await expect(
+      updates(v2).apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: [
+          { ref: "dashboard:portfolio#widget:ratings", choice: "template" },
+        ],
+      }),
+    ).rejects.toThrow("store_update_decision_missing");
+    const state = await publishedState(workspaceId);
+    expect(
+      (await updates(v2).list(actor(workspaceId))).installs[0]!.openUpdate,
+    ).toBeNull();
+    const full = { basis: plan.basis, decisions: choices(plan, "template") };
+    await expect(
+      updates(v2).apply(actor(workspaceId), requestId, {
+        ...full,
+        basis: "0".repeat(64),
+      }),
+    ).rejects.toThrow("store_update_stale");
+    expect(await publishedState(workspaceId)).toEqual(state);
+    await updates(v2).apply(actor(workspaceId), requestId, full);
+    const applied = await publishedState(workspaceId);
+    await expect(
+      updates(v2).apply(actor(workspaceId), requestId, full),
+    ).rejects.toThrow("store_update_stale");
+    // No second set of drafts, one update.
+    expect(await publishedState(workspaceId)).toEqual(applied);
+    const rows =
+      await owner`select id from data_template_updates where request_id=${requestId}`;
+    expect(rows).toHaveLength(1);
+    // Concurrent applies (double click, two tabs): one wins, one is stale.
+    const other = await installIn(["google-play"]);
+    const otherPlan = await updates(v2).plan(
+      actor(other.workspaceId),
+      other.requestId,
+    );
+    const body = {
+      basis: otherPlan.basis,
+      decisions: choices(otherPlan, "template"),
+    };
+    const results = await Promise.allSettled([
+      updates(v2).apply(actor(other.workspaceId), other.requestId, body),
+      updates(v2).apply(actor(other.workspaceId), other.requestId, body),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(
+      (results.find((r) => r.status === "rejected") as PromiseRejectedResult)
+        .reason,
+    ).toMatchObject({ code: "store_update_stale" });
+    // Up to date and unknown installs.
+    await expect(
+      updates().apply(actor(other.workspaceId), randomUUID(), body),
+    ).rejects.toThrow("store_template_not_found");
+    const fresh = await installIn(["google-play"]);
+    await expect(
+      updates().apply(actor(fresh.workspaceId), fresh.requestId, full),
+    ).rejects.toThrow("store_template_up_to_date");
+  });
+
+  it("publishes the drafts through the normal flow and marks the dashboard copy ready", async () => {
+    const { workspaceId, requestId } = await installIn(["app-store-connect"]);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    const data = createDataService(db, () => new Date(now));
+    const open = async () =>
+      (await updates(v2).list(actor(workspaceId))).installs[0]!.openUpdate!;
+    for (const [index, draft] of update.drafts.entries()) {
+      expect((await open()).dashboards[0]!.ready).toBe(false);
+      if (draft.kind === "preparation")
+        await data.publishPreparation(
+          actor(workspaceId),
+          draft.recordId,
+          draft.version,
+        );
+      else
+        await data.publishModel(
+          actor(workspaceId),
+          draft.recordId,
+          draft.version,
+        );
+      expect((await open()).drafts[index]!.published).toBe(true);
+    }
+    expect((await open()).dashboards[0]!.ready).toBe(true);
+  });
+
+  it("detaches records the template no longer builds and keeps them", async () => {
+    // Two connections; the install drops the second one (app scope).
+    const { workspaceId, requestId, connections } = await installIn([
+      "app-store-connect",
+      "google-play",
+    ]);
+    const gone = connections[1]!.id;
+    const edited = `preparation:source:${gone}:downloads`;
+    const editedId = (await recordOf(requestId, edited))!.record_id as string;
+    await editStep(workspaceId, editedId, "calculate_app_key", "Mine", true);
+    const editedGraph = (await preparationRow(editedId)).graph;
+    const [install] =
+      await owner`select inputs from data_template_installs where request_id=${requestId}`;
+    const inputs = install!.inputs as { connections: { id: string }[] };
+    inputs.connections = inputs.connections.filter((c) => c.id !== gone);
+    await owner`update data_template_installs set inputs=${owner.json(inputs as never)} where request_id=${requestId}`;
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    const detached =
+      await owner`select key, record_id from data_template_records
+        where request_id=${requestId} and detached_at is not null order by key`;
+    expect(detached.map((r) => r.key as string)).toEqual(
+      [
+        "preparation:append:downloads:0:0",
+        "preparation:append:proceeds:0:0",
+        "preparation:append:ratings:0:0",
+        `preparation:source:${gone}:downloads`,
+        `preparation:source:${gone}:proceeds`,
+        `preparation:source:${gone}:ratings`,
+      ].sort(),
+    );
+    // Nothing is deleted; the customer's edit is still there.
+    for (const row of detached)
+      expect(await preparationRow(row.record_id as string)).toBeTruthy();
+    expect((await preparationRow(editedId)).graph).toEqual(editedGraph);
+    // The models read the remaining source preparation, as a draft.
+    const kept = (await recordOf(
+      requestId,
+      `preparation:source:${connections[0]!.id}:downloads`,
+    ))!.record_id as string;
+    const model = update.drafts.find((d) => d.key === "model:downloads")!;
+    expect((await modelDefinition(model.recordId)).datasets).toEqual([
+      `prepared:${kept}:output`,
+    ]);
+  });
+
+  it("creates the records a new version or new app scope adds, unpublished", async () => {
+    const { workspaceId, requestId, installed } = await installIn([
+      "app-store-connect",
+    ]);
+    const [extra] = await withWorkspace(db, { workspaceId }, (tx) =>
+      tx
+        .insert(schema.connections)
+        .values({
+          workspaceId,
+          connectorId: "google-play",
+          name: "Play account",
+          setupPending: false,
+        })
+        .returning(),
+    );
+    const [install] =
+      await owner`select inputs from data_template_installs where request_id=${requestId}`;
+    const inputs = install!.inputs as { connections: unknown[] };
+    inputs.connections.push({
+      id: extra!.id,
+      name: "Play account",
+      connectorId: "google-play",
+      datasets: {
+        install_rows: randomUUID(),
+        earning_rows: randomUUID(),
+        store_ratings: randomUUID(),
+      },
+    });
+    await owner`update data_template_installs set inputs=${owner.json(inputs as never)} where request_id=${requestId}`;
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    const append = await recordOf(
+      requestId,
+      "preparation:append:downloads:0:0",
+    );
+    const source = await recordOf(
+      requestId,
+      `preparation:source:${extra!.id}:downloads`,
+    );
+    expect(append).toMatchObject({ kind: "preparation", template_version: 2 });
+    expect(source).toMatchObject({ kind: "preparation", template_version: 2 });
+    for (const record of [append!, source!]) {
+      const row = await preparationRow(record.record_id as string);
+      expect(row.published_version).toBeNull();
+      expect(strings(row.graph).filter((v) => /^(ref|new):/.test(v))).toEqual(
+        [],
+      );
+      expect(update.drafts.map((d) => d.recordId)).toContain(record.record_id);
+    }
+    // The new append reads the new source; the model reads the append.
+    expect(
+      strings((await preparationRow(append!.record_id as string)).graph),
+    ).toContain(`prepared:${source!.record_id as string}:output`);
+    const datasets = (await modelDefinition(installed.models.downloads))
+      .datasets;
+    expect(datasets).toHaveLength(1);
+    expect(datasets[0]).toMatch(
+      new RegExp(`^prepared:${append!.record_id as string}:`),
+    );
+    // After applying, the data has nothing left from the template.
+    const after = await updates(v2).plan(actor(workspaceId), requestId);
+    expect(
+      items(after).filter(
+        (i) => !i.ref.startsWith("dashboard:") && i.outcome !== "customer",
+      ),
+    ).toEqual([]);
+  });
+
+  it("applies to an install made before versions with the plan read before", async () => {
+    const { workspaceId, requestId } = await installIn([
+      "app-store-connect",
+      "google-play",
+    ]);
+    await makeLegacy(workspaceId, requestId);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    expect(update.drafts.length).toBeGreaterThan(0);
+    const [install] =
+      await owner`select inputs, template_version from data_template_installs where request_id=${requestId}`;
+    expect(install!.inputs).not.toBeNull();
+    expect(install!.template_version).toBe(2);
+    const legacy =
+      await owner`select key from data_template_records where request_id=${requestId} and key like 'legacy:%'`;
+    expect([...legacy]).toEqual([]);
+  });
+});
+
 describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
   let app: FastifyInstance;
   const signup = async (email: string) => {
@@ -675,6 +1264,7 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
     });
     return { cookie, id: meResponseSchema.parse(me.json()).user.id };
   };
+  let updated: FastifyInstance;
   let install: Awaited<ReturnType<typeof installIn>>;
   let editor: string,
     viewer: string,
@@ -693,6 +1283,14 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
         logger: pino({ level: "silent" }),
       }),
       checkDb: async () => true,
+    });
+    updated = await buildApp(config, {
+      db,
+      authService: createAuthService(config, db, {
+        logger: pino({ level: "silent" }),
+      }),
+      checkDb: async () => true,
+      storeTemplate: v2,
     });
     install = await installIn(["google-play"]);
     const users = {
@@ -720,7 +1318,21 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
   }, TEST_DATABASE_SETUP_TIMEOUT_MS);
   afterAll(async () => {
     await app?.close();
+    await updated?.close();
   });
+  const post = (
+    target: FastifyInstance,
+    workspaceId: string,
+    requestId: string,
+    cookie: string,
+    payload: unknown,
+  ) =>
+    target.inject({
+      method: "POST",
+      url: `/v1/workspaces/${workspaceId}/dashboard-templates/stores/installs/${requestId}/update`,
+      headers: { cookie },
+      payload: payload as object,
+    });
   const get = (workspaceId: string, path: string, cookie: string) =>
     app.inject({
       method: "GET",
@@ -770,6 +1382,107 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
     );
     expect(
       (await get(install.workspaceId, "/installs", stranger)).statusCode,
+    ).toBe(404);
+  });
+
+  it("applies an update for editors only, with the items still undecided", async () => {
+    const body = { basis: "0".repeat(64), decisions: [] };
+    for (const target of [app, updated])
+      expect(
+        (
+          await post(
+            target,
+            install.workspaceId,
+            install.requestId,
+            viewer,
+            body,
+          )
+        ).statusCode,
+      ).toBe(403);
+    const upToDate = await post(
+      app,
+      install.workspaceId,
+      install.requestId,
+      editor,
+      body,
+    );
+    expect(upToDate.statusCode).toBe(409);
+    expect(upToDate.json()).toEqual({ error: "store_template_up_to_date" });
+    const invalid = await post(
+      updated,
+      install.workspaceId,
+      install.requestId,
+      editor,
+      { basis: 1 },
+    );
+    expect(invalid.statusCode).toBe(400);
+    const stale = await post(
+      updated,
+      install.workspaceId,
+      install.requestId,
+      editor,
+      body,
+    );
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toEqual({ error: "store_update_stale" });
+    const planned = await updated.inject({
+      method: "GET",
+      url: `/v1/workspaces/${install.workspaceId}/dashboard-templates/stores/installs/${install.requestId}/update`,
+      headers: { cookie: editor },
+    });
+    const plan = planned.json() as StoreTemplatePlan;
+    const missing = await post(
+      updated,
+      install.workspaceId,
+      install.requestId,
+      editor,
+      { basis: plan.basis, decisions: [] },
+    );
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json()).toEqual({
+      error: "store_update_decision_missing",
+      refs: ["dashboard:portfolio#widget:ratings"],
+    });
+    const applied = await post(
+      updated,
+      install.workspaceId,
+      install.requestId,
+      editor,
+      { basis: plan.basis, decisions: choices(plan, "template") },
+    );
+    expect(applied.statusCode).toBe(200);
+    expect(applied.headers["cache-control"]).toBe("no-store");
+    const update = storeTemplateUpdateSchema.parse(applied.json());
+    expect(update.requestId).toBe(install.requestId);
+    const list = await updated.inject({
+      method: "GET",
+      url: `/v1/workspaces/${install.workspaceId}/dashboard-templates/stores/installs`,
+      headers: { cookie: viewer },
+    });
+    expect(
+      storeTemplateInstallListSchema.parse(list.json()).installs[0]!.openUpdate,
+    ).toEqual(update);
+  });
+
+  it("answers another workspace's install like a random id when applying", async () => {
+    for (const requestId of [install.requestId, randomUUID(), "not-a-uuid"]) {
+      const response = await post(
+        updated,
+        strangerWorkspace,
+        requestId,
+        stranger,
+        { basis: "0".repeat(64), decisions: [] },
+      );
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "store_template_not_found" });
+    }
+    expect(
+      (
+        await post(updated, install.workspaceId, install.requestId, stranger, {
+          basis: "0".repeat(64),
+          decisions: [],
+        })
+      ).statusCode,
     ).toBe(404);
   });
 });

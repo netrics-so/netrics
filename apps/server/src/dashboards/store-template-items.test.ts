@@ -3,11 +3,15 @@ import { describe, expect, it } from "vitest";
 import type { Dashboard } from "@netrics/database";
 import {
   dashboardItems,
+  desymbolize,
   isScopeItem,
+  mergeOrder,
+  modelFromItems,
   modelItems,
   normalizeDashboard,
   normalizeLegacyDashboard,
   normalizeTemplateDashboard,
+  preparationFromItems,
   preparationItems,
   withSlideKeys,
   type Items,
@@ -145,6 +149,59 @@ const dashboardOf = (records: ReturnType<typeof install>["records"]) =>
   > & { kind: "dashboard" };
 
 describe("store-template items", () => {
+  it("rebuilds every preparation and model from its items with real ids", () => {
+    const { items, ids, records } = install();
+    // A new record has only the template's order.
+    for (const record of records) {
+      if (record.kind === "preparation")
+        expect(
+          preparationFromItems(
+            record.key,
+            items,
+            { current: null, next: record.graph },
+            ids,
+          ),
+        ).toEqual(record.graph);
+      if (record.kind === "model")
+        expect(
+          modelFromItems(
+            record.key,
+            items,
+            { current: null, next: record.definition },
+            ids,
+          ),
+        ).toEqual(record.definition);
+    }
+  });
+
+  it("resolves symbolic references whose keys hold colons", () => {
+    const ids = {
+      "preparation:append:downloads:0:0": "a",
+      "preparation:source:c:downloads": "s",
+    };
+    expect(
+      desymbolize(
+        {
+          x: "ref:preparation:append:downloads:0:0:append_0_0",
+          y: ["ref:preparation:source:c:downloads"],
+          z: "ref:unknown",
+        },
+        ids,
+      ),
+    ).toEqual({ x: "prepared:a:append_0_0", y: ["s"], z: "ref:unknown" });
+  });
+
+  it("keeps the customer's order and places template additions after their predecessor", () => {
+    expect(
+      mergeOrder(
+        ["a", "mine", "b"],
+        ["new0", "a", "new1", "b"],
+        new Set(["a", "b", "mine", "new0", "new1"]),
+      ),
+    ).toEqual(["new0", "a", "new1", "mine", "b"]);
+    expect(mergeOrder(["a", "b"], ["b"], new Set(["b"]))).toEqual(["b"]);
+  });
+
   it("turns record ids into template keys so two installs compare equal", () => {
     const first = install(),
       second = install();
