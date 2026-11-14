@@ -14,6 +14,7 @@ import {
   workspaceResponseSchema,
   modelResponseSchema,
   modelQueryResponseSchema,
+  preparationPreviewResponseSchema,
 } from "@netrics/contracts";
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
@@ -312,6 +313,70 @@ describe("data API authorization and contract", () => {
         })
       ).statusCode,
     ).toBe(404);
+  });
+  it("previews preparation steps for editors without saving anything", async () => {
+    const graph = {
+      version: 1,
+      nodes: [
+        { id: "source", type: "source", datasetId },
+        {
+          id: "doubled",
+          type: "calculate",
+          input: "source",
+          fieldId: "doubled",
+          name: "Doubled",
+          expression: {
+            kind: "call",
+            fn: "multiply",
+            args: [
+              { kind: "field", fieldId: "amount" },
+              { kind: "literal", type: "integer", value: 2 },
+            ],
+          },
+        },
+      ],
+      outputs: ["doubled"],
+    };
+    const before = (await call("GET", "/preparations", editor)).json();
+    const preview = await call("POST", "/preparations/preview", editor, {
+      graph,
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    const body = preparationPreviewResponseSchema.parse(preview.json());
+    expect(body.outputs.doubled!.fields.map((f) => f.id)).toEqual([
+      "id",
+      "amount",
+      "doubled",
+    ]);
+    expect(body.outputs.doubled!.rows).toHaveLength(1);
+    expect((await call("GET", "/preparations", editor)).json()).toEqual(before);
+    expect(
+      (await call("POST", "/preparations/preview", undefined, { graph }))
+        .statusCode,
+    ).toBe(401);
+    expect(
+      (await call("POST", "/preparations/preview", viewer, { graph }))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (await call("POST", "/preparations/preview", stranger, { graph }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await call("POST", "/preparations/preview", editor, {
+          graph: { ...graph, outputs: [] },
+        })
+      ).json(),
+    ).toEqual({ error: "invalid_request" });
+    expect(
+      (
+        await call("POST", "/preparations/preview", editor, {
+          graph,
+          draft: { id: randomUUID(), version: 1 },
+        })
+      ).json(),
+    ).toEqual({ error: "data_preparation_not_found" });
   });
   it("previews an unsaved model without creating or changing a draft", async () => {
     const draft = modelResponseSchema.parse(
