@@ -1,0 +1,19 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "noEmit": true,
+    "rootDir": "..",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@netrics/domain": ["../packages/domain/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}

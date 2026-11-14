@@ -30,6 +30,11 @@ Tests need a PostgreSQL server they can create databases on:
 `NETRICS_TEST_ADMIN_URL=postgres://netrics:netrics@localhost:5433/postgres pnpm test`
 (`pnpm db:up` starts one on 5433).
 
+Browser journeys (Playwright, `e2e/`) run against a migrated database:
+`pnpm exec playwright install chromium` once (Chromium only), then `pnpm e2e`.
+It reuses a running `pnpm dev`, or starts the built API and web app
+(`pnpm build`) itself.
+
 ## Definition of done for a change
 
 1. Branch from `main`; one issue per PR, with `Closes #N` in the body.
@@ -41,9 +46,10 @@ Tests need a PostgreSQL server they can create databases on:
 4. Schema changes: a drizzle migration (`pnpm db:generate`; hand-edit when
    the generated order is unsafe), tried on data in the previous shape.
    Migrations only move forward, and production data must survive them.
-5. Check behaviour where it runs: a real browser for UI flows, built images
-   for deploy changes.
-6. Squash-merge after CI is green (`check`, `docker`, `migrations`,
+5. Check behaviour where it runs: a real browser for UI flows (`pnpm e2e`
+   covers the journeys in `e2e/`; extend it when a flow changes), built
+   images for deploy changes.
+6. Squash-merge after CI is green (`check`, `docker`, `e2e`, `migrations`,
    `selfhost`, `web-build-env`). A merge to `main` publishes images and
    deploys the hosted service; confirm the new commit on `/health/live`.
 

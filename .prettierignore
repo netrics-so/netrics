@@ -18,3 +18,6 @@ apps/netrics-tv/NetricsTVTouch/AppIcon.icon/
 packages/domain/test-vectors/
 # Generated demo payload of netrics TV (pnpm demo:tv)
 apps/netrics-tv/NetricsKit/Sources/NetricsUI/Resources/demo-dashboard.*.json
+# Playwright output (pnpm e2e)
+test-results/
+playwright-report/
