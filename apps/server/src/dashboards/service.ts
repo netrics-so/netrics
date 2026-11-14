@@ -1351,15 +1351,27 @@ async function validateDataBindings(
 async function isRollbackTarget(
   tx: Transaction,
   workspaceId: string,
-  dashboard: Dashboard,
+  dashboardId: string,
 ): Promise<boolean> {
-  if (!dashboard.archivedAt) return false;
+  // Locked first: a concurrent swap archiving or unarchiving it goes
+  // before or after this save or delete, never in between.
+  const [row] = await tx.execute(
+    sql`select archived_at from dashboards
+        where workspace_id = ${workspaceId} and id = ${dashboardId} for update`,
+  );
+  if (!row?.archived_at) return false;
+  // Only entries that can still swap back to it: not superseded, and the
+  // original while its copy is swapped in, or the copy after a swap back.
   const rows = await tx.execute(
     sql`select 1 from data_template_updates u,
           jsonb_array_elements(u.dashboards) entry
         where u.workspace_id = ${workspaceId}
-          and (entry ->> 'originalId' = ${dashboard.id}
-            or entry ->> 'copyId' = ${dashboard.id})
+          and coalesce(entry ->> 'superseded', 'false') <> 'true'
+          and ((entry ->> 'originalId' = ${dashboardId}
+                and entry ->> 'swappedAt' is not null
+                and entry ->> 'swappedBackAt' is null)
+            or (entry ->> 'copyId' = ${dashboardId}
+                and entry ->> 'swappedBackAt' is not null))
         limit 1`,
   );
   return rows.length > 0;
@@ -1804,7 +1816,7 @@ export function createDashboardService(deps: {
         if (!current) {
           return fail<DashboardView>(404, NOT_FOUND);
         }
-        if (await isRollbackTarget(tx, actor.workspaceId, current)) {
+        if (await isRollbackTarget(tx, actor.workspaceId, dashboardId)) {
           return fail<DashboardView>(409, "dashboard_archived");
         }
         if (
@@ -1997,7 +2009,7 @@ export function createDashboardService(deps: {
         if (!existing) {
           return fail<null>(404, NOT_FOUND);
         }
-        if (await isRollbackTarget(tx, actor.workspaceId, existing)) {
+        if (await isRollbackTarget(tx, actor.workspaceId, dashboardId)) {
           return fail<null>(409, "dashboard_archived");
         }
         await deleteDashboard(tx, actor.workspaceId, dashboardId);

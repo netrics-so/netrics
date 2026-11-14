@@ -224,4 +224,9 @@ export const storeTemplateDashboardErrorSchema = z.object({
  */
 export const storeTemplateCopyRequestSchema = z.strictObject({
   replace: z.boolean().optional(),
+  /**
+   * With `replace`: also when the copy was edited since it was made (409
+   * store_update_copy_edited otherwise); those edits are lost.
+   */
+  discardCopyEdits: z.boolean().optional(),
 });

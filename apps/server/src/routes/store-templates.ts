@@ -399,7 +399,10 @@ export function registerStoreTemplateRoutes(
                 access,
                 params.data.updateId,
                 params.data.key,
-                { replace: body.data?.replace === true },
+                {
+                  replace: body.data?.replace === true,
+                  discardCopyEdits: body.data?.discardCopyEdits === true,
+                },
               ),
             );
           } catch (error) {

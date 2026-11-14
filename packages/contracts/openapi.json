@@ -57785,6 +57785,9 @@
                 "properties": {
                   "replace": {
                     "type": "boolean"
+                  },
+                  "discardCopyEdits": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false

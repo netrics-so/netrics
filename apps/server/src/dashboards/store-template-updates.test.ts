@@ -2573,6 +2573,169 @@ describe(
         updates(v2).swap(actor(workspaceId), update.id, "dashboard:portfolio"),
       ).rejects.toThrow("store_update_superseded");
     });
+
+    it("never leaves a screen blank when it is assigned while the copy is replaced", async () => {
+      const { workspaceId, update } = await withCopy();
+      const devices = createDeviceService({ db, pairingUrl: "http://pair" });
+      let copyId = (await updates(v2).list(actor(workspaceId))).installs[0]!
+        .openUpdate!.dashboards[0]!.copyId!;
+      for (let round = 0; round < 3; round++) {
+        const screen = await screenOn(workspaceId, copyId);
+        await owner`update devices set dashboard_id=null where id=${screen}`;
+        const [assigned, replaced] = await Promise.allSettled([
+          devices.update({ workspaceId, userId }, screen, {
+            dashboardId: copyId,
+          }),
+          updates(v2).createCopy(
+            actor(workspaceId),
+            update.id,
+            "dashboard:portfolio",
+            { replace: true },
+          ),
+        ]);
+        const assignedOk =
+          assigned.status === "fulfilled" && assigned.value.ok === true;
+        if (replaced.status === "fulfilled") {
+          // The assignment waited for the replace and found no copy.
+          expect(assignedOk).toBe(false);
+          expect(assigned).toMatchObject({
+            status: "fulfilled",
+            value: { ok: false, status: 404, error: "dashboard_not_found" },
+          });
+          copyId = replaced.value.dashboards[0]!.copyId!;
+        } else {
+          // The assignment went first: the copy is in use and stays.
+          expect(replaced.reason).toMatchObject({
+            code: "store_update_copy_in_use",
+          });
+          expect(assignedOk).toBe(true);
+          expect((await deviceRow(screen)).dashboard_id).toBe(copyId);
+          await owner`update devices set revoked_at=now() where id=${screen}`;
+        }
+        expect((await deviceRow(screen)).dashboard_id).not.toBeNull();
+      }
+    });
+
+    it("keeps edits made in the copy unless the replace discards them", async () => {
+      const { workspaceId, update, copyId } = await withCopy();
+      await retitle(workspaceId, copyId, "Summary", "Our summary");
+      await expect(
+        updates(v2).createCopy(
+          actor(workspaceId),
+          update.id,
+          "dashboard:portfolio",
+          { replace: true },
+        ),
+      ).rejects.toThrow("store_update_copy_edited");
+      expect(titles(await readDashboard(workspaceId, copyId))).toContain(
+        "Our summary",
+      );
+      const replaced = await updates(v2).createCopy(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+        { replace: true, discardCopyEdits: true },
+      );
+      const fresh = replaced.dashboards[0]!.copyId!;
+      expect(fresh).not.toBe(copyId);
+      expect(titles(await readDashboard(workspaceId, fresh))).toContain(
+        "Summary",
+      );
+    });
+
+    it("answers a swap onto a deleted copy with copy_missing", async () => {
+      const { workspaceId, update, copyId } = await withCopy();
+      expect(
+        (await dashboardService().remove(actor(workspaceId), copyId)).ok,
+      ).toBe(true);
+      await expect(
+        updates(v2).swap(actor(workspaceId), update.id, "dashboard:portfolio"),
+      ).rejects.toThrow("store_update_copy_missing");
+    });
+
+    it("lets go of an archived original no update can swap back to any more", async () => {
+      const v3: StoreTemplateDefinition = {
+        ...fixture("remove", { slideName: "Portfolio v3" }),
+        version: 3,
+      };
+      const { workspaceId, requestId, installed, update } = await withCopy();
+      await updates(v2).swap(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      const firstCopy = (await recordOf(requestId, "dashboard:portfolio"))!
+        .record_id as string;
+      // Version 3 replaces the first copy in turn.
+      const plan = await updates(v3).plan(actor(workspaceId), requestId);
+      const second = await updates(v3).apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: choices(plan, "template"),
+      });
+      await publishDrafts(workspaceId, second);
+      await updates(v3).createCopy(
+        actor(workspaceId),
+        second.id,
+        "dashboard:portfolio",
+      );
+      await updates(v3).swap(
+        actor(workspaceId),
+        second.id,
+        "dashboard:portfolio",
+      );
+      // The first copy is the second update's rollback target.
+      expect(
+        await dashboardService().remove(actor(workspaceId), firstCopy),
+      ).toMatchObject({ ok: false, status: 409, error: "dashboard_archived" });
+      // The first update is superseded: its original is the customer's.
+      expect(
+        (
+          await dashboardService().remove(
+            actor(workspaceId),
+            installed.dashboardId,
+          )
+        ).ok,
+      ).toBe(true);
+    });
+
+    it("keeps the copy within the data widget limit", async () => {
+      // Version 2 that adds eight slides of six measure widgets each.
+      const crowded: StoreTemplateDefinition = {
+        ...v2,
+        build(key, inputs, ids) {
+          const record = v2.build(key, inputs, ids);
+          if (record.kind !== "dashboard") return record;
+          const request = structuredClone(record.request);
+          const base = request.slides![0]!.widgets[0]!;
+          const keys = [...record.widgetKeys];
+          for (let slide = 0; slide < 8; slide++) {
+            const widgets = [];
+            for (let at = 0; at < 6; at++) {
+              widgets.push({
+                ...base,
+                x: (at % 3) * 4,
+                y: Math.floor(at / 3) * 3,
+                w: 4,
+                h: 3,
+                title: `Extra ${slide}.${at}`,
+              });
+              keys.push(`widget:extra_${slide}_${at}`);
+            }
+            request.slides!.push({ name: `Extra ${slide}`, widgets } as never);
+          }
+          return { ...record, request, widgetKeys: keys };
+        },
+      };
+      const { workspaceId, update } = await appliedUpdate(crowded);
+      await publishDrafts(workspaceId, update);
+      await expect(
+        updates(crowded).createCopy(
+          actor(workspaceId),
+          update.id,
+          "dashboard:portfolio",
+        ),
+      ).rejects.toThrow("too_many_data_widgets");
+    });
   },
 );
 

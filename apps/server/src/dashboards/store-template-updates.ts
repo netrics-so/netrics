@@ -146,7 +146,12 @@ export class StoreUpdateReviewChanged extends DataServiceError {
  * value they were made on (`current`), so a later edit asks again.
  */
 type StoredDecision = Decision & { current?: string };
-/** A hash of an item's value in one state; absent items hash alike. */
+/**
+ * A hash of an item's value in one state; absent items hash alike. A
+ * widget's value includes its slide and position, so moving a widget the
+ * customer decided on asks for review again: by design, as the decision
+ * was made on the widget where it was.
+ */
 const valueHash = (value: unknown) =>
   createHash("sha256")
     .update(value === undefined ? "absent" : JSON.stringify(canonical(value)))
@@ -190,6 +195,8 @@ const storedDashboardsSchema = z.array(
     previousTemplateVersion: z.number().int().optional(),
     /** The original's version the copy was made from. */
     originalVersion: z.number().int().optional(),
+    /** The copy's version when it was made (edited in Studio since if not). */
+    copyVersion: z.number().int().optional(),
     /** A newer update of the install replaced this one: no more swaps. */
     superseded: z.boolean().optional(),
   }),
@@ -1142,7 +1149,7 @@ export function createStoreTemplateUpdateService(deps: {
     actor: Actor,
     updateId: string,
     key: string,
-    options: { replace?: boolean },
+    options: { replace?: boolean; discardCopyEdits?: boolean },
   ): Promise<StoreTemplateUpdate> {
     const { row, entries, entry } = await lockedEntry(
       tx,
@@ -1159,7 +1166,12 @@ export function createStoreTemplateUpdateService(deps: {
     if (row.closedAt !== null) reject("store_update_closed", 409);
     if (existing) {
       // Replacing (the original changed since): only a copy no screen
-      // shows and that is not swapped in.
+      // shows and that is not swapped in. Its row stays locked until it is
+      // deleted, so a screen assigned to it meanwhile (lockDashboardArchive
+      // takes a share lock) waits, then finds it gone.
+      await tx.execute(
+        sql`select id from dashboards where workspace_id = ${actor.workspaceId} and id = ${existing.id} for update`,
+      );
       const onScreens = await tx
         .select({ id: schema.devices.id })
         .from(schema.devices)
@@ -1176,6 +1188,13 @@ export function createStoreTemplateUpdateService(deps: {
         (entry.swappedAt !== null && entry.swappedBackAt === null)
       )
         reject("store_update_copy_in_use", 409);
+      // Edits made in the copy are the customer's: dropped only on request.
+      if (
+        entry.copyVersion !== undefined &&
+        existing.version !== entry.copyVersion &&
+        !options.discardCopyEdits
+      )
+        reject("store_update_copy_edited", 409);
     }
     // The copy shows published definitions only, never drafts.
     const view = await updateView(tx, actor.workspaceId, row);
@@ -1265,6 +1284,7 @@ export function createStoreTemplateUpdateService(deps: {
               copyId: copy.id,
               copyWidgetKeys: result.value.widgetKeys,
               originalVersion: record.version ?? undefined,
+              copyVersion: copy.version,
               // A fresh copy starts unswapped.
               swappedAt: null,
               swappedBackAt: null,
@@ -1470,6 +1490,13 @@ export function createStoreTemplateUpdateService(deps: {
       reject("store_update_stale", 409);
     if (!(await findDashboard(tx, actor.workspaceId, from)))
       reject("store_update_stale", 409);
+    if (!(await findDashboard(tx, actor.workspaceId, to)))
+      reject(
+        direction === "swap"
+          ? "store_update_copy_missing"
+          : "store_update_stale",
+        409,
+      );
     // The copy was made from the original as it was then: an original
     // edited since would lose those edits on the screens (replace the copy).
     if (direction === "swap" && entry.originalVersion !== undefined) {
@@ -1600,8 +1627,11 @@ export function createStoreTemplateUpdateService(deps: {
       actor: Actor,
       updateId: string,
       key: string,
-      /** `replace`: a fresh copy instead of an unswapped one no screen shows. */
-      options: { replace?: boolean } = {},
+      /**
+       * `replace`: a fresh copy instead of an unswapped one no screen shows;
+       * one edited since it was made only with `discardCopyEdits`.
+       */
+      options: { replace?: boolean; discardCopyEdits?: boolean } = {},
     ): Promise<StoreTemplateUpdate> {
       return withWorkspace(
         deps.db,
