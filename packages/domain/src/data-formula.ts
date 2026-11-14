@@ -1,10 +1,75 @@
 import {
   dataFail,
+  DataProcessingError,
   PROCESSING_LIMITS,
+  validateDataValue,
   type DataExpression,
   type DataFunction,
   type DataField,
+  type DataType,
 } from "./data-expression.js";
+
+/**
+ * Typed literal forms, e.g. `DATE("2026-01-31")`: each takes exactly one
+ * string and parses to a literal (not a call), so printed formulas read back
+ * as the same literal.
+ */
+export const FORMULA_LITERAL_FORMS = [
+  "DATE",
+  "TIMESTAMP",
+  "NUMBER",
+  "DECIMAL",
+  "JSON",
+] as const;
+type FormulaLiteralForm = (typeof FORMULA_LITERAL_FORMS)[number];
+const literalFormTypes: Record<FormulaLiteralForm, DataType> = {
+  DATE: "date",
+  TIMESTAMP: "timestamp",
+  NUMBER: "number",
+  DECIMAL: "decimal",
+  JSON: "json",
+};
+const numberText = /^-?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:e[+-]?[0-9]+)?$/i;
+const numericTypes: readonly DataType[] = ["integer", "number", "decimal"];
+
+function literalForm(form: FormulaLiteralForm, text: string): DataExpression {
+  const type = literalFormTypes[form];
+  try {
+    if (type === "number" && !numberText.test(text))
+      dataFail("formula_literal_invalid");
+    const value: unknown =
+      type === "number"
+        ? Number(text)
+        : type === "json"
+          ? (JSON.parse(text) as unknown)
+          : text;
+    validateDataValue(type, value, false);
+    return { kind: "literal", type, value };
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof DataProcessingError)
+      return dataFail("formula_literal_invalid");
+    throw error;
+  }
+}
+
+/** `-` before a plain numeric literal is part of the literal: `-5` is -5. */
+function negated(operand: DataExpression): DataExpression {
+  if (
+    operand.kind !== "literal" ||
+    !numericTypes.includes(operand.type) ||
+    operand.unit !== undefined ||
+    operand.value === null
+  )
+    return { kind: "call", fn: "negate", args: [operand] };
+  if (operand.type === "decimal") {
+    const text = String(operand.value);
+    return {
+      ...operand,
+      value: text.startsWith("-") ? text.slice(1) : "-" + text,
+    };
+  }
+  return { ...operand, value: 0 - Number(operand.value) };
+}
 
 export interface FormulaReference {
   id: string;
@@ -175,12 +240,21 @@ export function parseDataFormula(
     if (token.text === "(") {
       left = parse(0, depth + 1);
       expect(")");
-    } else if (token.text === "-" || token.text === "NOT") {
-      left = {
-        kind: "call",
-        fn: token.text === "-" ? "negate" : "not",
-        args: [parse(6, depth + 1)],
-      };
+    } else if (token.text === "-") {
+      left = negated(parse(6, depth + 1));
+    } else if (token.text === "NOT") {
+      left = { kind: "call", fn: "not", args: [parse(6, depth + 1)] };
+    } else if (
+      token.kind === "word" &&
+      (FORMULA_LITERAL_FORMS as readonly string[]).includes(token.text)
+    ) {
+      if (peek().text !== "(") dataFail("formula_literal_invalid");
+      take();
+      const text = take();
+      if (text.kind !== "string" || peek().text !== ")")
+        dataFail("formula_literal_invalid");
+      take();
+      left = literalForm(token.text as FormulaLiteralForm, text.text);
     } else if (token.kind === "reference") {
       const exact = references.find((ref) => ref.id === token.text),
         matches = references.filter(
@@ -328,16 +402,18 @@ export function formatDataFormula(
         : expression.type === "string"
           ? JSON.stringify(expression.value)
           : expression.type === "date" || expression.type === "timestamp"
-            ? "TO_" +
-              expression.type.toUpperCase() +
+            ? expression.type.toUpperCase() +
               "(" +
               JSON.stringify(expression.value) +
               ")"
             : expression.type === "json"
-              ? "TO_JSON(" +
-                JSON.stringify(JSON.stringify(expression.value)) +
-                ")"
-              : String(expression.value);
+              ? "JSON(" + JSON.stringify(JSON.stringify(expression.value)) + ")"
+              : expression.type === "number"
+                ? "NUMBER(" + JSON.stringify(String(expression.value)) + ")"
+                : expression.type === "decimal" &&
+                    !String(expression.value).includes(".")
+                  ? "DECIMAL(" + JSON.stringify(String(expression.value)) + ")"
+                  : String(expression.value);
   return expression.unit
     ? "UNIT(" +
         value +
