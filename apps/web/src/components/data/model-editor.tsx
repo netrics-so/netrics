@@ -179,6 +179,8 @@ export function ModelEditor({
     setMeasureIds(kept.measureIds);
     setGroupBy(kept.groupBy);
     setNotice(null);
+    setError(null);
+    setPreviewError(null);
   }
   function build() {
     return {
