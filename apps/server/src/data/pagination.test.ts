@@ -29,6 +29,11 @@ import {
   type DataModelQueryResult,
 } from "./service.js";
 
+// Several tests run rounds of fixtures and bursts of concurrent first pages:
+// up to ~3.5 s alone, and past vitest's 5 s default while other suites share
+// the database (#598). A test that times out keeps running and leaves locks
+// and sessions behind for the next one, so every test gets a real budget.
+const PAGINATION_BUDGET = { timeout: 60_000 };
 const NOW = new Date("2026-11-05T12:00:00Z");
 const query = { measureIds: ["amount"], groupBy: ["id"], limit: 1 };
 const definition = sourceDatasetSchema.parse({
@@ -152,7 +157,7 @@ async function fixture(nested = false, defaults: Partial<DataPolicy> = {}) {
   };
 }
 
-describe("immutable semantic result pagination", () => {
+describe("immutable semantic result pagination", PAGINATION_BUDGET, () => {
   it("retains the original release and complete source vector across corrections, new sessions and publication", async () => {
     const f = await fixture();
     const first = await f.read();
@@ -1706,7 +1711,7 @@ describe("immutable semantic result pagination", () => {
   });
 });
 
-describe("windowed measures over corrected history", () => {
+describe("windowed measures over corrected history", PAGINATION_BUDGET, () => {
   const daily = sourceDatasetSchema.parse({
     key: "daily_revenue",
     name: "Daily revenue",

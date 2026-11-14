@@ -56,6 +56,9 @@ import {
   insertAuditEvent,
   DatasetStoreError,
   hasSqlstate,
+  isSerializationFailure,
+  isTransactionHandle,
+  retryOnSerializationFailure,
   resolveDataPolicy,
   isPooledDatabase,
   processSessionLocks,
@@ -82,6 +85,29 @@ export class DataServiceError extends Error {
     super(code);
     this.name = "DataServiceError";
   }
+}
+/**
+ * A conflict of a transaction that composes the data service (store
+ * templates, compare measures): a serialization failure or deadlock, or the
+ * version_conflict the composed service answers for one.
+ */
+export function isDataConflict(error: unknown): boolean {
+  return (
+    isSerializationFailure(error) ||
+    (error instanceof DataServiceError && error.code === "version_conflict")
+  );
+}
+/**
+ * Retry policy for such transactions (#598): serialization failures with
+ * the full backoff; a version_conflict, which may also be a lasting one
+ * (the composed service answers it for stale versions too), as before only
+ * twice more.
+ */
+export function isRetryableDataConflict(
+  error: unknown,
+  index: number,
+): boolean {
+  return isSerializationFailure(error) || (index < 2 && isDataConflict(error));
 }
 /**
  * `error` without the step id it names. Step ids are local to one graph, so
@@ -665,18 +691,14 @@ export function createDataLoader(
                   lte(schema.dataPreparedGenerations.expiresAt, now),
                 ),
               );
-            const [usage] = await tx
-              .select({
-                bytes: sql<string>`coalesce(sum(${schema.dataPreparedGenerations.byteSize}),0)`,
-              })
-              .from(schema.dataPreparedGenerations)
-              .where(
-                eq(schema.dataPreparedGenerations.workspaceId, workspaceId),
-              );
+            const usage =
+              policy.maxPreparedBytes === null
+                ? undefined
+                : await preparedWorkspaceBytes(tx, workspaceId);
             if (
               !exceedsDataPolicy(byteSize, policy.maxPreparedGenerationBytes) &&
               !exceedsDataPolicy(
-                Number(usage?.bytes ?? 0) + byteSize,
+                (usage ?? 0) + byteSize,
                 policy.maxPreparedBytes,
               )
             ) {
@@ -1010,7 +1032,9 @@ export function createDataService(
   /**
    * Runs `fn` in a workspace transaction on `handle`, serializable unless
    * `isolationLevel` says otherwise, retrying serialization failures and
-   * deadlocks.
+   * deadlocks with jittered backoff (#598). On a transaction handle (a
+   * service composed into a caller's transaction) it runs once: the failure
+   * dooms the caller's transaction, whose own retry starts over.
    */
   const run = async <T>(
     actor: DataActor,
@@ -1018,48 +1042,46 @@ export function createDataService(
     handle: Pick<Database, "transaction"> = db,
     isolationLevel: "serializable" | "read committed" = "serializable",
   ): Promise<T> => {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        return await withWorkspace(
-          handle,
-          { workspaceId: actor.workspaceId, userId: actor.callerId },
-          async (tx) => {
-            const { policy } = await resolveDataPolicy(
-              tx,
-              actor.workspaceId,
-              defaults,
-            );
-            policies.set(tx, policy);
-            await tx.execute(
-              sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
-            );
-            return fn(tx, clock());
-          },
-          { isolationLevel },
-        );
-      } catch (error) {
-        if (
-          attempt < 2 &&
-          (hasSqlstate(error, "40001") || hasSqlstate(error, "40P01"))
-        )
-          continue;
-        if (
-          error instanceof DataServiceError ||
-          error instanceof DataProcessingError
-        )
-          throw error;
-        if (error instanceof DatasetStoreError)
-          fail(error.code, datasetStoreStatus(error.code));
-        if (
-          hasSqlstate(error, "40001") ||
-          hasSqlstate(error, "40P01") ||
-          hasSqlstate(error, "23505")
-        )
-          fail("version_conflict", 409);
-        fail("data_storage_failed", 503);
+    try {
+      return await retryOnSerializationFailure(
+        () =>
+          withWorkspace(
+            handle,
+            { workspaceId: actor.workspaceId, userId: actor.callerId },
+            async (tx) => {
+              const { policy } = await resolveDataPolicy(
+                tx,
+                actor.workspaceId,
+                defaults,
+              );
+              policies.set(tx, policy);
+              await tx.execute(
+                sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+              );
+              return fn(tx, clock());
+            },
+            { isolationLevel },
+          ),
+        isTransactionHandle(handle) ? { attempts: 1 } : {},
+      );
+    } catch (error) {
+      // Before the store's codes: an exhausted conflict is a conflict, also
+      // when the dataset store redacted it to dataset_storage_failed.
+      // A composed service leaves it to the caller's retry as it is.
+      if (isSerializationFailure(error)) {
+        if (isTransactionHandle(handle)) throw error;
+        fail("version_conflict", 409);
       }
+      if (
+        error instanceof DataServiceError ||
+        error instanceof DataProcessingError
+      )
+        throw error;
+      if (error instanceof DatasetStoreError)
+        fail(error.code, datasetStoreStatus(error.code));
+      if (hasSqlstate(error, "23505")) fail("version_conflict", 409);
+      return fail("data_storage_failed", 503);
     }
-    return fail("version_conflict", 409);
   };
   const audit = async (
     tx: Transaction,
@@ -2524,6 +2546,26 @@ async function findDataModel(
  * Internal query entry for authorized workspace transactions. Pinned paging
  * additionally requires a trusted principal identity, never a request field.
  */
+/**
+ * Bytes of a workspace's prepared-output cache, for its capacity check. No
+ * index leads with workspace_id, so this scans the whole table; in a
+ * serializable transaction that is a predicate lock on every workspace's
+ * entries, which each concurrent cache insert in any workspace conflicts
+ * with. The caller asks only when the policy sets a prepared-cache quota
+ * (none by default), instead of on every cache write (#598).
+ */
+async function preparedWorkspaceBytes(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<number> {
+  const [usage] = await tx
+    .select({
+      bytes: sql<string>`coalesce(sum(${schema.dataPreparedGenerations.byteSize}),0)`,
+    })
+    .from(schema.dataPreparedGenerations)
+    .where(eq(schema.dataPreparedGenerations.workspaceId, workspaceId));
+  return Number(usage?.bytes ?? 0);
+}
 /** Best-effort write to the last-valid snapshot cache. Read paths (dashboards,
  * devices) run under repeatable read without retries; concurrent readers of
  * the same query update the same row, and the loser's serialization failure is
