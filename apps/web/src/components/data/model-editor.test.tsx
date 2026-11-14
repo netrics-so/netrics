@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ModelMeasure, SemanticModelDefinition } from "@netrics/domain";
+import {
+  emptyVisualModel,
+  type ModelMeasure,
+  type SemanticModelDefinition,
+} from "@netrics/domain";
+import type { ExpressionDraft } from "@/lib/expression-draft";
 import { renderI18n } from "@/lib/i18n/test-render";
 import type { DataSource, ModelDraft } from "@/lib/data-api";
 import { ModelEditor, modelEditorState } from "./model-editor";
@@ -506,5 +511,25 @@ describe("model editor visual builder", () => {
         },
       }),
     ).not.toBe(modelEditorState("M", model, {}));
+  });
+
+  it("does not count switching an edited draft's view as a change", () => {
+    const model = definition([filtered]);
+    const rows: ExpressionDraft = {
+      view: "visual",
+      model: emptyVisualModel("condition"),
+      edited: true,
+    };
+    const text = "[App] = NULL";
+    expect(
+      modelEditorState("M", model, {
+        "revenue:filter": {
+          view: "formula",
+          text,
+          edited: true,
+          origin: { text, model: rows.model },
+        },
+      }),
+    ).toBe(modelEditorState("M", model, { "revenue:filter": rows }));
   });
 });

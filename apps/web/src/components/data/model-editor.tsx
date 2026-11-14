@@ -84,9 +84,20 @@ export function modelEditorState(
     name,
     definition,
     drafts: Object.fromEntries(
-      Object.entries(drafts).filter(([, draft]) => draft.edited),
+      Object.entries(drafts)
+        .filter(([, draft]) => draft.edited)
+        .map(([key, draft]) => [key, comparableDraft(draft)]),
     ),
   });
+}
+
+/** Formula text switched from rows and not typed in is still those rows. */
+function comparableDraft(draft: ExpressionDraft): ExpressionDraft {
+  return draft.view === "formula" &&
+    draft.origin &&
+    draft.text === draft.origin.text
+    ? { view: "visual", model: draft.origin.model, edited: draft.edited }
+    : draft;
 }
 
 /** Drafts of measures that no longer exist or no longer have that kind are dropped. */
