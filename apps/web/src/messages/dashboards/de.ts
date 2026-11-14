@@ -82,9 +82,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     meta: "{count, plural, =0 {Noch keine Dashboards} one {# Dashboard} other {# Dashboards}}",
     metaLive:
       "{count, plural, one {# Dashboard} other {# Dashboards}} · {live} live auf Bildschirmen",
-    projectFilter: "Projekt",
-    allProjects: "Alle Projekte",
-    noProject: "Kein Projekt",
+    activeProjectMeta: "In {project}",
     newDashboard: "Neues Dashboard",
     templates: "Mit einer Vorlage starten",
     template: {

@@ -1,6 +1,7 @@
 /**
  * The dashboards page (ADR 0018, design 3a; #304): cards with thumbnails,
- * the templates row and the project filter.
+ * the templates row and the projects section; lists follow the active
+ * project (#573).
  */
 export const dashboardsEn = {
   storeTemplate: {
@@ -79,9 +80,7 @@ export const dashboardsEn = {
     meta: "{count, plural, =0 {No dashboards yet} one {# dashboard} other {# dashboards}}",
     metaLive:
       "{count, plural, one {# dashboard} other {# dashboards}} · {live} live on screens",
-    projectFilter: "Project",
-    allProjects: "All projects",
-    noProject: "No project",
+    activeProjectMeta: "In {project}",
     newDashboard: "New dashboard",
     templates: "Start from a template",
     template: {

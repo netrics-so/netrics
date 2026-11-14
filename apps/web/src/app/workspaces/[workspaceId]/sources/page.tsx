@@ -10,9 +10,19 @@ import { HealthBadge } from "../health-badge";
 import "@/app/styles/sources.css";
 import { ConnectedStrip } from "@/components/sources/connected-strip";
 import { ConnectorCatalogue } from "@/components/sources/connector-catalogue";
-import { listConnections, listConnectors, listWorkspaces } from "@/lib/api";
+import {
+  listConnections,
+  listConnectors,
+  listProjects,
+  listWorkspaces,
+} from "@/lib/api";
 import { getLocale, getT } from "@/lib/i18n/server";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
+import {
+  activeProjectName,
+  navigationQuery,
+  projectScope,
+} from "@/lib/project-scope";
 import { relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 import { APPLE_ADS_PROVIDER, parseKeyRemoved } from "@/lib/signed-key";
@@ -48,6 +58,7 @@ export default async function SourcesPage({
   const locale = await getLocale();
   const t = await getT("workspace");
   const s = await getT("sources");
+  const dashboardsT = await getT("dashboardsPage");
 
   const { workspaces } = await listWorkspaces(cookieHeader);
   const membership = workspaces.find((w) => w.id === workspaceId);
@@ -55,10 +66,21 @@ export default async function SourcesPage({
     notFound();
   }
   const role = membership.role;
-  const [{ connections }, { connectors }] = await Promise.all([
-    listConnections(cookieHeader, workspaceId),
+  // The active project's connections (#573); the shell's source health
+  // stays workspace-wide.
+  const [{ connections }, { connectors }, { projects }] = await Promise.all([
+    listConnections(
+      cookieHeader,
+      workspaceId,
+      navigationQuery(projectScope(membership.activeProjectId, [])),
+    ),
     listConnectors(cookieHeader),
+    listProjects(cookieHeader, workspaceId),
   ]);
+  const projectName = activeProjectName(
+    projectScope(membership.activeProjectId, projects),
+    projects,
+  );
   const canCreate = can(role, "connections:create");
   // After deleting a connection with an uploaded key: where to revoke it.
   const removedKey = keyRemoved
@@ -76,7 +98,11 @@ export default async function SourcesPage({
       <header className="page-header">
         <div>
           <h1>{t("pages.sources")}</h1>
-          <p className="page-meta">{s("subtitle")}</p>
+          <p className="page-meta">
+            {projectName
+              ? `${s("subtitle")} · ${dashboardsT("activeProjectMeta", { project: projectName })}`
+              : s("subtitle")}
+          </p>
         </div>
         {canCreate ? (
           <div className="page-actions">

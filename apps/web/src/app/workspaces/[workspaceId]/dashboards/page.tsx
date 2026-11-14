@@ -8,6 +8,11 @@ import { CreateProjectForm } from "../create-project-form";
 import { DashboardsBrowser } from "./dashboards-browser";
 import { listDashboards, listProjects, listWorkspaces } from "@/lib/api";
 import { getLocale, getT } from "@/lib/i18n/server";
+import {
+  activeProjectName,
+  navigationQuery,
+  projectScope,
+} from "@/lib/project-scope";
 import { relativeTimeIn } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
 import { builtinThemeName } from "@/lib/theme-name";
@@ -40,10 +45,17 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
     notFound();
   }
   const role = membership.role;
+  // The server reads an archived active project back as null ("All").
   const [{ dashboards }, { projects }] = await Promise.all([
-    listDashboards(cookieHeader, workspaceId),
+    listDashboards(
+      cookieHeader,
+      workspaceId,
+      navigationQuery(projectScope(membership.activeProjectId, [])),
+    ),
     listProjects(cookieHeader, workspaceId),
   ]);
+  const scope = projectScope(membership.activeProjectId, projects);
+  const projectName = activeProjectName(scope, projects);
 
   const live = dashboards.filter((d) => d.screenCount > 0).length;
   const now = Date.now();
@@ -62,15 +74,19 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
       <DashboardsBrowser
         workspaceId={workspaceId}
         dashboards={cards}
-        projects={projects.map(({ id, name }) => ({ id, name }))}
+        projectId={scope.active}
+        projectName={projectName}
         canCreate={can(role, "dashboards:create")}
         canEdit={can(role, "dashboards:update")}
         title={t("pages.dashboards")}
-        meta={
+        meta={[
           live > 0
             ? page("metaLive", { count: dashboards.length, live })
-            : page("meta", { count: dashboards.length })
-        }
+            : page("meta", { count: dashboards.length }),
+          ...(projectName
+            ? [page("activeProjectMeta", { project: projectName })]
+            : []),
+        ].join(" · ")}
       />
 
       <details className="dashboards-projects">

@@ -19,6 +19,7 @@ import {
 } from "@/lib/app-nav";
 import { getT } from "@/lib/i18n/server";
 import { parseOAuthOutcome } from "@/lib/oauth-connection";
+import { navigationQuery, projectScope } from "@/lib/project-scope";
 import { requireSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -73,9 +74,11 @@ export default async function WorkspaceHomePage({
     notFound();
   }
   const role = membership.role;
+  // Dashboards and sources of the active project (#573).
+  const scoped = navigationQuery(projectScope(membership.activeProjectId, []));
   const [{ dashboards }, { connections }, devices] = await Promise.all([
-    listDashboards(cookieHeader, workspaceId),
-    listConnections(cookieHeader, workspaceId),
+    listDashboards(cookieHeader, workspaceId, scoped),
+    listConnections(cookieHeader, workspaceId, scoped),
     can(role, "devices:view")
       ? listDevices(cookieHeader, workspaceId).then((r) =>
           r.devices.filter((device) => device.revokedAt === null),

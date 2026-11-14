@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import type { DashboardListResponse } from "@netrics/contracts";
 import { BUILTIN_THEMES, DEFAULT_THEME_KEY } from "@netrics/domain";
@@ -24,33 +24,18 @@ const TEMPLATES: readonly Choice[] = ["overview", "brand", "blank"];
 /** The hash the home page's "New dashboard" links to. */
 export const NEW_DASHBOARD_HASH = "#new-dashboard";
 
-/** Filter value for dashboards without a project. */
-const NO_PROJECT = "none";
-
-/** Dashboards of one project, of none, or all (the filter's empty value). */
-export function filterByProject<T extends { projectId: string | null }>(
-  dashboards: readonly T[],
-  filter: string,
-): T[] {
-  if (filter === "") return [...dashboards];
-  return dashboards.filter((dashboard) =>
-    filter === NO_PROJECT
-      ? dashboard.projectId === null
-      : dashboard.projectId === filter,
-  );
-}
-
 /**
- * The dashboards page (ADR 0018, design 3a; #304): a project filter and
- * "New dashboard" in the header, a templates row, and cards with a
- * thumbnail of the first slide, where the dashboard is shown and its
- * theme. Templates and "New dashboard" open the create panel with that
- * choice made.
+ * The dashboards page (ADR 0018, design 3a; #304): "New dashboard" in the
+ * header, a templates row, and cards with a thumbnail of the first slide,
+ * where the dashboard is shown and its theme. Templates and "New
+ * dashboard" open the create panel with that choice made. The list is the
+ * active project's (#573), chosen in the app shell.
  */
 export function DashboardsBrowser({
   workspaceId,
   dashboards,
-  projects,
+  projectId = null,
+  projectName = null,
   canCreate,
   canEdit,
   title,
@@ -58,7 +43,10 @@ export function DashboardsBrowser({
 }: {
   workspaceId: string;
   dashboards: DashboardCardData[];
-  projects: Array<{ id: string; name: string }>;
+  /** The active project, where new blank dashboards start (#573). */
+  projectId?: string | null;
+  /** Its name, for the empty state; null under "All projects". */
+  projectName?: string | null;
   canCreate: boolean;
   canEdit: boolean;
   title: string;
@@ -66,8 +54,6 @@ export function DashboardsBrowser({
 }) {
   const t = useT("dashboardsPage");
   const stores = useT("storeTemplate");
-  const filterId = useId();
-  const [filter, setFilter] = useState("");
   const [creating, setCreating] = useState<{
     choice: Choice;
     key: number;
@@ -95,8 +81,6 @@ export function DashboardsBrowser({
   }, [creating]);
 
   const start = (choice: Choice) => setCreating({ choice, key: Date.now() });
-  const shown = filterByProject(dashboards, filter);
-  const hasNoProject = dashboards.some((d) => d.projectId === null);
 
   return (
     <>
@@ -106,28 +90,6 @@ export function DashboardsBrowser({
           <p className="page-meta">{meta}</p>
         </div>
         <div className="page-actions">
-          {projects.length > 0 ? (
-            <div className="dashboards-filter">
-              <label htmlFor={filterId} className="visually-hidden">
-                {t("projectFilter")}
-              </label>
-              <select
-                id={filterId}
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-              >
-                <option value="">{t("allProjects")}</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-                {hasNoProject ? (
-                  <option value={NO_PROJECT}>{t("noProject")}</option>
-                ) : null}
-              </select>
-            </div>
-          ) : null}
           {canCreate ? (
             <button
               type="button"
@@ -214,20 +176,21 @@ export function DashboardsBrowser({
             key={creating.key}
             workspaceId={workspaceId}
             initialChoice={creating.choice}
+            projectId={projectId}
           />
         </section>
       ) : null}
 
-      {dashboards.length === 0 ? (
+      {dashboards.length === 0 && projectName !== null ? (
+        <p className="dashboards-empty">{t("emptyFilter")}</p>
+      ) : dashboards.length === 0 ? (
         <div className="dashboards-empty">
           <h2>{t("empty.title")}</h2>
           <p>{canCreate ? t("empty.text") : t("empty.readOnly")}</p>
         </div>
-      ) : shown.length === 0 ? (
-        <p className="dashboards-empty">{t("emptyFilter")}</p>
       ) : (
         <ul className="dashboards-grid" aria-label={t("list")}>
-          {shown.map((dashboard) => (
+          {dashboards.map((dashboard) => (
             <DashboardCard
               key={dashboard.id}
               workspaceId={workspaceId}

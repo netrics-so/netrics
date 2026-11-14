@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import {
-  getDataWorkspace,
   previewData,
   readReference,
   type ReferenceTable,
@@ -10,7 +9,10 @@ import {
   type DataPreview,
   type PreparationDraft,
   type ModelDraft,
+  type DataSource,
 } from "@/lib/data-api";
+import { loadDataLists } from "@/lib/data-lists";
+import { projectScope, type ProjectScope } from "@/lib/project-scope";
 import { dataErrorKey, newDataId } from "@/lib/data-editing";
 import { useT, useLocale } from "@/lib/i18n/client";
 import { useLeaveGuard } from "@/components/studio-editor/use-leave-guard";
@@ -21,6 +23,7 @@ import { ReferenceEditor } from "./reference-editor";
 import { PreviewNotes } from "./preview-notes";
 
 type Section = "datasets" | "preparations" | "models";
+const ALL_PROJECTS = projectScope(null, []);
 type Editor = { key: string } & (
   | { kind: "preparation"; initial: PreparationDraft | null; sourceId?: string }
   | { kind: "model"; initial: ModelDraft | null }
@@ -29,20 +32,33 @@ type Editor = { key: string } & (
 export function DataWorkspace({
   workspaceId,
   initial,
+  initialPickerSources,
+  scope = ALL_PROJECTS,
+  projectName = null,
   openModelId,
 }: {
   workspaceId: string;
   initial: WorkspaceData;
+  /** Sources the editors offer; without it, the listed datasets. */
+  initialPickerSources?: DataSource[];
+  /** The user's active project (#573): lists follow it. */
+  scope?: ProjectScope;
+  /** Its name for the header; null under "All projects". */
+  projectName?: string | null;
   /** A model to open first (the Studio links here to publish one). */
   openModelId?: string;
 }) {
   const t = useT("data"),
+    dashboardsT = useT("dashboardsPage"),
     locale = useLocale(),
     searchId = useId(),
     sourceSelectId = useId();
   const linkedModel = openModelId
     ? initial.models.find((model) => model.id === openModelId)
     : undefined;
+  const [pickerSources, setPickerSources] = useState(
+    initialPickerSources ?? initial.sources,
+  );
   const [data, setData] = useState(initial),
     [section, setSection] = useState<Section>(
       linkedModel ? "models" : "datasets",
@@ -124,8 +140,12 @@ export function DataWorkspace({
   }
   async function refresh() {
     try {
-      const next = await getDataWorkspace(workspaceId);
+      const { data: next, pickerSources: sources } = await loadDataLists(
+        workspaceId,
+        scope,
+      );
       setData(next);
+      setPickerSources(sources);
       if (!selected && next.sources[0]) setSelected(next.sources[0].id);
     } catch (failure) {
       setError(t(`errors.${dataErrorKey(failure)}`));
@@ -162,7 +182,11 @@ export function DataWorkspace({
       <header className="page-header">
         <div>
           <h1>{t("title")}</h1>
-          <p className="page-meta">{t("subtitle")}</p>
+          <p className="page-meta">
+            {projectName
+              ? `${t("subtitle")} · ${dashboardsT("activeProjectMeta", { project: projectName })}`
+              : t("subtitle")}
+          </p>
         </div>
         {!editor ? (
           <div className="page-actions">
@@ -217,7 +241,8 @@ export function DataWorkspace({
         <PreparationEditor
           key={editor.key}
           workspaceId={workspaceId}
-          sources={data.sources}
+          sources={pickerSources}
+          projectId={scope.active}
           initial={editor.initial}
           sourceId={editor.sourceId}
           onSaved={preparationSaved}
@@ -228,7 +253,8 @@ export function DataWorkspace({
         <ModelEditor
           key={editor.key}
           workspaceId={workspaceId}
-          sources={data.sources}
+          sources={pickerSources}
+          projectId={scope.active}
           initial={editor.initial}
           onSaved={modelSaved}
           onClose={close}

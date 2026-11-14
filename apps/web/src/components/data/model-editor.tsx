@@ -67,6 +67,7 @@ export function ModelEditor({
   workspaceId,
   sources: sourceCatalog,
   initial,
+  projectId = null,
   onSaved,
   onClose,
   onDirty,
@@ -74,6 +75,8 @@ export function ModelEditor({
   workspaceId: string;
   sources: DataSource[];
   initial: ModelDraft | null;
+  /** The project a new model starts in (#573). */
+  projectId?: string | null;
   onSaved: (model: ModelDraft) => void;
   onClose: () => void;
   onDirty: (dirty: boolean) => void;
@@ -247,7 +250,7 @@ export function ModelEditor({
               {
                 name: name.trim(),
                 definition: model,
-                ...(record ? { version: record.version } : {}),
+                ...(record ? { version: record.version } : { projectId }),
               },
               record?.id,
             );

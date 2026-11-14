@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 import { DataWorkspace } from "@/components/data/data-workspace";
-import { getDataWorkspace } from "@/lib/data-api";
-import { listWorkspaces } from "@/lib/api";
+import { listProjects, listWorkspaces } from "@/lib/api";
+import { loadDataLists } from "@/lib/data-lists";
+import { activeProjectName, projectScope } from "@/lib/project-scope";
 import { requireSession } from "@/lib/session";
 import { getT } from "@/lib/i18n/server";
 import "@/app/styles/data.css";
@@ -25,12 +26,25 @@ export default async function DataPage({
   const { workspaces } = await listWorkspaces(cookieHeader);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !can(membership.role, "data:edit")) notFound();
-  const initial = await getDataWorkspace(workspaceId, cookieHeader);
+  // Lists follow the active project (#573); the server reads an archived
+  // one back as null ("All projects").
+  const [{ projects }, lists] = await Promise.all([
+    listProjects(cookieHeader, workspaceId),
+    loadDataLists(
+      workspaceId,
+      projectScope(membership.activeProjectId, []),
+      cookieHeader,
+    ),
+  ]);
+  const scope = projectScope(membership.activeProjectId, projects);
   // ?model=<id> opens that model, e.g. from the Studio to publish it (#508).
   return (
     <DataWorkspace
       workspaceId={workspaceId}
-      initial={initial}
+      initial={lists.data}
+      initialPickerSources={lists.pickerSources}
+      scope={scope}
+      projectName={activeProjectName(scope, projects)}
       {...(typeof model === "string" ? { openModelId: model } : {})}
     />
   );

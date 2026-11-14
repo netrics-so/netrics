@@ -63,6 +63,15 @@ export function projectChoices<
   );
 }
 
+/** The active project's name for page headers; null under "All projects". */
+export function activeProjectName(
+  scope: ProjectScope,
+  projects: ReadonlyArray<{ id: string; name: string }>,
+): string | null {
+  if (scope.active === null) return null;
+  return projects.find((project) => project.id === scope.active)?.name ?? null;
+}
+
 /** "?project=…&unassigned=include", or "" for the full list. */
 export function projectQueryString(query: ProjectFilterQuery | undefined) {
   const params = new URLSearchParams();
