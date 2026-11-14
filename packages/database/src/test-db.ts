@@ -22,11 +22,20 @@ import { DEV_ROLE_PASSWORDS, provisionRolePasswords } from "./roles.js";
 // collection time, so cleanup lives at module scope (this file is only ever
 // imported by *.test.ts files).
 const pendingDrops: Array<() => Promise<void>> = [];
+
+/**
+ * Budget for a hook that drops test databases. DROP DATABASE waits on the
+ * server, not on the test: it ends the database's sessions and syncs its
+ * files, which took over vitest's 10 s hook default when the full suite
+ * loaded the server and failed whole files that had passed (#553).
+ */
+export const TEST_DATABASE_DROP_TIMEOUT_MS = 120_000;
+
 afterAll(async () => {
   for (const drop of pendingDrops.splice(0)) {
     await drop();
   }
-});
+}, TEST_DATABASE_DROP_TIMEOUT_MS);
 
 function testServerUrl(): string {
   return (
