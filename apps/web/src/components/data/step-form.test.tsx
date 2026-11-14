@@ -41,7 +41,7 @@ describe("step form expressions", () => {
     });
     expect(html).toContain('aria-label="Condition 1"');
     expect(html).toMatch(
-      /<input id="[^"]+" type="text" inputMode="numeric" value="0"/,
+      /<input id="[^"]+" type="text" inputMode="decimal" value="0"/,
     );
     expect(html).not.toContain("<textarea");
   });

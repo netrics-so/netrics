@@ -146,7 +146,7 @@ describe("literal input", () => {
       type: "number" as const,
       value: 1e21,
     };
-    expect(literalDisplayType("decimal", integer, "en")).toBe("integer");
+    expect(literalDisplayType("decimal", integer, "en")).toBe("decimal");
     expect(literalDisplayType("number", number, "de")).toBe("number");
     // "1e+21" is no decimal text: the input keeps the literal's own type.
     expect(literalDisplayType("decimal", big, "en")).toBe("number");
@@ -202,14 +202,27 @@ describe("literal input", () => {
       value: 2,
     };
     expect(literalDisplayType("number", integer, "en")).toBe("number");
-    // Integer 0 reads as decimal "0", not as the number 0.
+    // Integer 0 reads as decimal text "0": the decimal input shows it, so
+    // the value can be edited to 0.5.
+    const zero = {
+      kind: "literal" as const,
+      type: "integer" as const,
+      value: 0,
+    };
+    expect(literalDisplayType("decimal", zero, "en")).toBe("decimal");
+    expect(literalEdit("decimal", "0.5", "", "en", zero)).toEqual({
+      kind: "literal",
+      type: "decimal",
+      value: "0.5",
+    });
+    // A number is no exact decimal: it keeps its own input.
     expect(
       literalDisplayType(
         "decimal",
-        { kind: "literal", type: "integer", value: 0 },
+        { kind: "literal", type: "number", value: 0.5 },
         "en",
       ),
-    ).toBe("integer");
+    ).toBe("number");
   });
 
   it("keeps a row's input type while its value is typed", () => {

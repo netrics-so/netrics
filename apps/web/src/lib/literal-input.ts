@@ -138,9 +138,13 @@ export function literalDisplayType(
     literalInputText(literal, locale),
     locale,
   );
-  return read && canonicalJson(read.value) === canonicalJson(literal.value)
-    ? columnType
-    : literal.type;
+  if (!read) return literal.type;
+  // An integer reads as the same decimal text ("0" for 0).
+  const same =
+    columnType === "decimal" && literal.type === "integer"
+      ? read.value === String(literal.value)
+      : canonicalJson(read.value) === canonicalJson(literal.value);
+  return same ? columnType : literal.type;
 }
 
 /**

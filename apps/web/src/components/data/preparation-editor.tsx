@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   DataField,
   PreparationGraph,
@@ -123,9 +123,9 @@ export function PreparationEditor({
     key: ReturnType<typeof dataErrorKey>;
   } | null>(null);
   const request = useRef(0);
-  const current = canonicalJson({ name, graph }),
+  const current = useMemo(() => canonicalJson({ name, graph }), [name, graph]),
     dirty = current !== savedState || (!record && graph.nodes.length > 0);
-  const graphSignature = canonicalJson(graph);
+  const graphSignature = useMemo(() => canonicalJson(graph), [graph]);
   const shownStepError = stepError?.graph === graphSignature ? stepError : null;
   /** Mark the failing step when the error names one in `failed`; otherwise show the banner. */
   function reportFailure(failure: unknown, failed: PreparationGraph) {
