@@ -6,6 +6,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   completeLegacyInstall,
+  v1PreparationKeys,
   type LegacyDashboardSnapshot,
 } from "./store-template-legacy.js";
 import {
@@ -240,5 +241,59 @@ describe("completing installs made before template versions", () => {
     expect(completeLegacyInstall({ ...germanFixture, snapshot: null })).toEqual(
       unavailable,
     );
+  });
+  it("refuses an append tree version 1 would not build for its sources", () => {
+    // A hand-edited extra round: a pass-through append over the downloads
+    // append of two sources, read by the model. Every preparation still
+    // parses and the model reads a top, but version 1 builds one round.
+    const fixture = legacyFixture([apple, google], "en");
+    const top = fixture.models.downloads.datasets[0]!;
+    const extra = { id: randomUUID(), graph: buildStoreAppend([top]) };
+    const tampered = {
+      ...fixture,
+      preparations: [...fixture.preparations, extra],
+      result: {
+        ...fixture.result,
+        preparationIds: [...fixture.result.preparationIds, extra.id],
+      },
+      models: {
+        ...fixture.models,
+        downloads: buildStoreModel(
+          "downloads",
+          `prepared:${extra.id}:${extra.graph.outputs[0]!}`,
+          "en",
+        ),
+      },
+    };
+    expect(completeLegacyInstall(fixture).ok).toBe(true);
+    expect(completeLegacyInstall(tampered)).toEqual({
+      ok: false,
+      code: "store_template_baseline_unavailable",
+    });
+  });
+  it("derives the keys of version 1 frozen, whatever the current template", () => {
+    for (const count of [1, 2, 80, 81, 6401]) {
+      const ids = Array.from({ length: count }, (_, index) => `c${index}`);
+      const inputs = {
+        name: "x",
+        locale: "en" as const,
+        projectId: null,
+        connections: ids.map((id) => ({
+          id,
+          name: id,
+          connectorId: "google-play" as const,
+          datasets: {},
+        })),
+        fixedProduct: null,
+        groups: null,
+      };
+      if (storeTemplate.version === 1)
+        expect(v1PreparationKeys(ids).sort()).toEqual(
+          storeTemplate
+            .keys(inputs)
+            .filter((key) => key.startsWith("preparation:"))
+            .sort(),
+        );
+    }
   });
 });
