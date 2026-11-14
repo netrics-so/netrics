@@ -177,6 +177,8 @@ export interface StudioConnection {
   setupPending?: boolean;
   /** The connector, where it matters (which connections have reviews). */
   connectorId?: string;
+  /** Its project, for the metric picker's project scope (#573). */
+  projectId?: string | null;
 }
 
 /** What live widgets read besides their own settings. */

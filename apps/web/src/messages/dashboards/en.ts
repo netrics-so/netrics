@@ -110,6 +110,15 @@ export const dashboardsEn = {
       summary: "Manage projects",
       count:
         "{count, plural, =0 {none yet} one {# project} other {# projects}}",
+      archive: "Archive",
+      unarchive: "Unarchive",
+      archived: "Archived",
+      archiveHint:
+        "Archived projects and their items are hidden from lists and pickers. Screens keep showing their dashboards.",
+      archiveNamed: "Archive {name}",
+      unarchiveNamed: "Unarchive {name}",
+      project: "Project",
+      noProject: "No project",
     },
   },
 } as const;

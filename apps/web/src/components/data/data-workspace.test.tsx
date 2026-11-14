@@ -48,7 +48,8 @@ describe("data lists follow the active project (#573)", () => {
       <DataWorkspace
         workspaceId="workspace"
         initial={{ sources: [], preparations: [], models: [] }}
-        projectName="Alpha"
+        projects={[{ id: A, name: "Alpha", archivedAt: null }]}
+        activeProjectId={A}
       />,
     );
     expect(html).toContain("In Alpha");

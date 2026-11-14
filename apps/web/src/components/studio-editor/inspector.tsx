@@ -18,6 +18,7 @@ import {
 import { webTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { builtinThemeName } from "@/lib/theme-name";
+import { ProjectSelect } from "@/components/project-select";
 
 import {
   type StudioAction,
@@ -100,7 +101,7 @@ export function DashboardSettingsPanel({
   themes: StudioThemes;
   /** The chosen theme's tokens before the brand accent. */
   baseTokens: ThemeTokens;
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; archivedAt: string | null }>;
   images: PickableImage[];
   problems: StudioProblem[];
   themesHref: string;
@@ -143,26 +144,12 @@ export function DashboardSettingsPanel({
           }
         />
       </div>
-      <div className="field">
-        <label htmlFor="dashboard-project">{t("project")}</label>
-        <select
-          id="dashboard-project"
-          value={document.projectId ?? ""}
-          onChange={(event) =>
-            dispatch({
-              type: "setProject",
-              projectId: event.target.value || null,
-            })
-          }
-        >
-          <option value="">{t("noProject")}</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <ProjectSelect
+        id="dashboard-project"
+        projects={projects}
+        value={document.projectId}
+        onChange={(projectId) => dispatch({ type: "setProject", projectId })}
+      />
 
       <fieldset>
         <legend>{t("look")}</legend>

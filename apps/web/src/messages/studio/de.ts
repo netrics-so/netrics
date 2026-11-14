@@ -171,8 +171,6 @@ export const studioDe: Catalog<typeof studioEn> = {
       problems: "Probleme",
       title: "Dashboard",
       name: "Name",
-      project: "Projekt",
-      noProject: "Kein Projekt",
       look: "Aussehen",
       theme: "Design",
       builtIn: "Mitgeliefert",

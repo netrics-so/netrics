@@ -1,8 +1,10 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  getDataSources,
   previewData,
+  setDataProject,
   readReference,
   type ReferenceTable,
   type DataWorkspace as WorkspaceData,
@@ -12,7 +14,13 @@ import {
   type DataSource,
 } from "@/lib/data-api";
 import { loadDataLists } from "@/lib/data-lists";
-import { projectScope, type ProjectScope } from "@/lib/project-scope";
+import {
+  editorSources,
+  missingSources,
+  referencedSourceIds,
+} from "@/lib/project-pickers";
+import { activeProjectName, projectScope } from "@/lib/project-scope";
+import { ProjectSelect } from "@/components/project-select";
 import { dataErrorKey, newDataId } from "@/lib/data-editing";
 import { useT, useLocale } from "@/lib/i18n/client";
 import { useLeaveGuard } from "@/components/studio-editor/use-leave-guard";
@@ -23,7 +31,10 @@ import { ReferenceEditor } from "./reference-editor";
 import { PreviewNotes } from "./preview-notes";
 
 type Section = "datasets" | "preparations" | "models";
-const ALL_PROJECTS = projectScope(null, []);
+type ProjectRef = { id: string; name: string; archivedAt: string | null };
+const NO_PROJECTS: ProjectRef[] = [];
+/** The saved item an editor shows, for its project select (#573). */
+type EditorRecord = { key: string; id: string; projectId: string | null };
 type Editor = { key: string } & (
   | { kind: "preparation"; initial: PreparationDraft | null; sourceId?: string }
   | { kind: "model"; initial: ModelDraft | null }
@@ -33,18 +44,18 @@ export function DataWorkspace({
   workspaceId,
   initial,
   initialPickerSources,
-  scope = ALL_PROJECTS,
-  projectName = null,
+  projects = NO_PROJECTS,
+  activeProjectId = null,
   openModelId,
 }: {
   workspaceId: string;
   initial: WorkspaceData;
   /** Sources the editors offer; without it, the listed datasets. */
   initialPickerSources?: DataSource[];
-  /** The user's active project (#573): lists follow it. */
-  scope?: ProjectScope;
-  /** Its name for the header; null under "All projects". */
-  projectName?: string | null;
+  /** The workspace's projects, archived ones included (#573). */
+  projects?: ProjectRef[];
+  /** The user's active project: lists follow it; null is "All". */
+  activeProjectId?: string | null;
   /** A model to open first (the Studio links here to publish one). */
   openModelId?: string;
 }) {
@@ -53,6 +64,11 @@ export function DataWorkspace({
     locale = useLocale(),
     searchId = useId(),
     sourceSelectId = useId();
+  const scope = useMemo(
+    () => projectScope(activeProjectId, projects),
+    [activeProjectId, projects],
+  );
+  const projectName = activeProjectName(scope, projects);
   const linkedModel = openModelId
     ? initial.models.find((model) => model.id === openModelId)
     : undefined;
@@ -69,6 +85,72 @@ export function DataWorkspace({
         : null,
     ),
     [dirty, setDirty] = useState(false);
+  // The item open in an editor, once saved: its project select (#573).
+  const [saved, setSaved] = useState<EditorRecord | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [movingProject, setMovingProject] = useState(false);
+  // Sources the open item reads that the picker scope leaves out (another
+  // or an archived project): kept so the editor still knows them.
+  const [allSources, setAllSources] = useState<DataSource[] | null>(null);
+  const referenced = useMemo(
+    () =>
+      referencedSourceIds(
+        editor?.kind === "preparation"
+          ? editor.initial?.graph
+          : editor?.kind === "model"
+            ? editor.initial?.definition
+            : null,
+      ),
+    [editor],
+  );
+  const needsAll = missingSources(pickerSources, referenced);
+  useEffect(() => {
+    if (!needsAll || allSources) return;
+    let alive = true;
+    getDataSources(workspaceId)
+      .then((sources) => {
+        if (alive) setAllSources(sources);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [needsAll, allSources, workspaceId]);
+  const editorSourceList = useMemo(
+    () => editorSources(pickerSources, allSources, referenced),
+    [pickerSources, allSources, referenced],
+  );
+  const editorRecord: EditorRecord | null =
+    editor && saved?.key === editor.key
+      ? saved
+      : editor &&
+          (editor.kind === "preparation" || editor.kind === "model") &&
+          editor.initial
+        ? {
+            key: editor.key,
+            id: editor.initial.id,
+            projectId: editor.initial.projectId,
+          }
+        : null;
+  async function moveToProject(projectId: string | null) {
+    if (!editor || !editorRecord) return;
+    if (editor.kind !== "preparation" && editor.kind !== "model") return;
+    setMovingProject(true);
+    setProjectError(null);
+    try {
+      const moved = await setDataProject(
+        workspaceId,
+        editor.kind === "preparation" ? "preparations" : "models",
+        editorRecord.id,
+        projectId,
+      );
+      setSaved({ ...editorRecord, projectId: moved.projectId });
+    } catch (failure) {
+      setProjectError(t(`errors.${dataErrorKey(failure)}`));
+    } finally {
+      setMovingProject(false);
+    }
+  }
   const [selected, setSelected] = useState(initial.sources[0]?.id ?? ""),
     [search, setSearch] = useState("");
   const [preview, setPreview] = useState<DataPreview | null>(null),
@@ -152,6 +234,8 @@ export function DataWorkspace({
     }
   }
   function preparationSaved(draft: PreparationDraft) {
+    if (editor)
+      setSaved({ key: editor.key, id: draft.id, projectId: draft.projectId });
     setData((value) => ({
       ...value,
       preparations: [
@@ -162,6 +246,8 @@ export function DataWorkspace({
     if (draft.publishedVersion) void refresh();
   }
   function modelSaved(model: ModelDraft) {
+    if (editor)
+      setSaved({ key: editor.key, id: model.id, projectId: model.projectId });
     setData((value) => ({
       ...value,
       models: [...value.models.filter((m) => m.id !== model.id), model],
@@ -237,11 +323,26 @@ export function DataWorkspace({
           {error}
         </p>
       ) : null}
+      {editorRecord && (projects.length > 0 || editorRecord.projectId) ? (
+        <div className="data-editor-project">
+          <ProjectSelect
+            projects={projects}
+            value={editorRecord.projectId}
+            disabled={movingProject}
+            onChange={(projectId) => void moveToProject(projectId)}
+          />
+          {projectError ? (
+            <p className="error" role="alert">
+              {projectError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {editor?.kind === "preparation" ? (
         <PreparationEditor
           key={editor.key}
           workspaceId={workspaceId}
-          sources={pickerSources}
+          sources={editorSourceList}
           projectId={scope.active}
           initial={editor.initial}
           sourceId={editor.sourceId}
@@ -253,7 +354,7 @@ export function DataWorkspace({
         <ModelEditor
           key={editor.key}
           workspaceId={workspaceId}
-          sources={pickerSources}
+          sources={editorSourceList}
           projectId={scope.active}
           initial={editor.initial}
           onSaved={modelSaved}

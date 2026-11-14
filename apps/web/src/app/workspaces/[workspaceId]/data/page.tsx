@@ -4,7 +4,7 @@ import { can } from "@netrics/domain";
 import { DataWorkspace } from "@/components/data/data-workspace";
 import { listProjects, listWorkspaces } from "@/lib/api";
 import { loadDataLists } from "@/lib/data-lists";
-import { activeProjectName, projectScope } from "@/lib/project-scope";
+import { projectScope } from "@/lib/project-scope";
 import { requireSession } from "@/lib/session";
 import { getT } from "@/lib/i18n/server";
 import "@/app/styles/data.css";
@@ -36,15 +36,18 @@ export default async function DataPage({
       cookieHeader,
     ),
   ]);
-  const scope = projectScope(membership.activeProjectId, projects);
   // ?model=<id> opens that model, e.g. from the Studio to publish it (#508).
   return (
     <DataWorkspace
       workspaceId={workspaceId}
       initial={lists.data}
       initialPickerSources={lists.pickerSources}
-      scope={scope}
-      projectName={activeProjectName(scope, projects)}
+      projects={projects.map(({ id, name, archivedAt }) => ({
+        id,
+        name,
+        archivedAt,
+      }))}
+      activeProjectId={membership.activeProjectId}
       {...(typeof model === "string" ? { openModelId: model } : {})}
     />
   );

@@ -17,6 +17,8 @@ import { DeviceControls } from "../device-controls";
 import { DeviceScope } from "../device-scope";
 import type { HeartbeatSummary } from "@/lib/device-heartbeat";
 import { useT } from "@/lib/i18n/client";
+import { pickableDashboards } from "@/lib/project-pickers";
+import { projectScope, type ProjectScope } from "@/lib/project-scope";
 import type { ScreenCounts, ScreenPreview } from "@/lib/screens";
 
 /** One screen as the page shows it; texts are worded on the server. */
@@ -73,11 +75,17 @@ function screenState(screen: ScreenItem): ScreenState {
   return screen.handheld ? "away" : "offline";
 }
 
+type ScreenDashboard = { id: string; name: string; projectId?: string | null };
+
 interface ScreensViewProps {
   workspaceId: string;
   screens: ScreenItem[];
   counts: ScreenCounts;
-  dashboards: Array<{ id: string; name: string }>;
+  /** Every dashboard; the assignment offers the active project's (#573). */
+  dashboards: ScreenDashboard[];
+  /** The workspace's projects and the user's active one (#573). */
+  projects?: ReadonlyArray<{ id: string; archivedAt: string | null }>;
+  activeProjectId?: string | null;
   /** Owners and admins: connect, change and revoke screens. */
   canManage: boolean;
   initialView?: ScreensViewMode;
@@ -94,6 +102,8 @@ export function ScreensView({
   screens,
   counts,
   dashboards,
+  projects = [],
+  activeProjectId = null,
   canManage,
   initialView = "cards",
   initialSelected = null,
@@ -218,6 +228,7 @@ export function ScreensView({
               screen={selected}
               workspaceId={workspaceId}
               dashboards={dashboards}
+              scope={projectScope(activeProjectId, projects)}
               canManage={canManage}
               onClose={() => setSelectedId(null)}
             />
@@ -414,7 +425,8 @@ interface ScreenPanelProps {
   id: string;
   screen: ScreenItem;
   workspaceId: string;
-  dashboards: Array<{ id: string; name: string }>;
+  dashboards: ScreenDashboard[];
+  scope: ProjectScope;
   canManage: boolean;
   onClose: () => void;
 }
@@ -426,6 +438,7 @@ function ScreenPanel({
   screen,
   workspaceId,
   dashboards,
+  scope,
   canManage,
   onClose,
 }: ScreenPanelProps) {
@@ -521,7 +534,14 @@ function ScreenPanel({
             workspaceId={workspaceId}
             device={{ ...device, scoped: device.scope !== null }}
             appleTv={screen.appleTv}
-            dashboards={dashboards}
+            dashboards={pickableDashboards(
+              dashboards.map((dashboard) => ({
+                ...dashboard,
+                projectId: dashboard.projectId ?? null,
+              })),
+              scope,
+              device.dashboardId,
+            )}
           />
           <DeviceScope
             key={`${device.id}:${JSON.stringify(device.scope)}:${device.dashboardId}`}

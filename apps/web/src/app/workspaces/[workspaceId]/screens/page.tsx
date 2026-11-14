@@ -8,6 +8,7 @@ import {
   getDashboard,
   listDashboards,
   listDevices,
+  listProjects,
   listThemes,
   listWorkspaces,
 } from "@/lib/api";
@@ -54,9 +55,12 @@ export default async function ScreensPage({ params }: ScreensPageProps) {
   if (!membership || !can(membership.role, "devices:view")) {
     notFound();
   }
-  const [{ devices: all }, { dashboards }] = await Promise.all([
+  // Every dashboard (#573): screens show theirs whatever the project; the
+  // assignment select narrows to the active project in the view.
+  const [{ devices: all }, { dashboards }, { projects }] = await Promise.all([
     listDevices(cookieHeader, workspaceId),
     listDashboards(cookieHeader, workspaceId),
+    listProjects(cookieHeader, workspaceId),
   ]);
 
   // The dashboards the screens show, each fetched once and in parallel,
@@ -150,7 +154,13 @@ export default async function ScreensPage({ params }: ScreensPageProps) {
       workspaceId={workspaceId}
       screens={screens}
       counts={countScreens(devices, now)}
-      dashboards={dashboards.map(({ id, name }) => ({ id, name }))}
+      dashboards={dashboards.map(({ id, name, projectId }) => ({
+        id,
+        name,
+        projectId,
+      }))}
+      projects={projects.map(({ id, archivedAt }) => ({ id, archivedAt }))}
+      activeProjectId={membership.activeProjectId}
       canManage={can(membership.role, "devices:manage")}
     />
   );

@@ -1,6 +1,12 @@
 "use client";
 import { DashboardDataProvider } from "@/components/studio/dashboard-data-provider";
 import { usePublishedModels } from "@/lib/use-published-models";
+import {
+  boundMetricKeys,
+  pickableMetrics,
+  referencedModelIds,
+} from "@/lib/project-pickers";
+import { pickerQuery, projectScope } from "@/lib/project-scope";
 import { SharedFilterEditor } from "./shared-filters";
 import { DashboardFilters } from "@/components/studio/shared-filters";
 
@@ -139,6 +145,7 @@ export function StudioEditor({
   themes,
   images: initialImages,
   projects,
+  activeProjectId = null,
   devices: initialDevices,
   dashboardNames,
   currency,
@@ -153,7 +160,10 @@ export function StudioEditor({
   connections: Record<string, StudioConnection>;
   themes: StudioThemes;
   images: WorkspaceImage[];
-  projects: Array<{ id: string; name: string }>;
+  /** The workspace's projects, archived ones included (#573). */
+  projects: Array<{ id: string; name: string; archivedAt: string | null }>;
+  /** The user's active project: pickers offer its items (#573). */
+  activeProjectId?: string | null;
   /** Active TVs, or null when the role cannot assign them. */
   devices: Device[] | null;
   /** Every dashboard of the workspace by id (what TVs show now). */
@@ -169,7 +179,33 @@ export function StudioEditor({
 }) {
   const locale = useLocale();
   const dataText = useT("data.dashboard");
-  const catalog = usePublishedModels(workspaceId);
+  const scope = useMemo(
+    () => projectScope(activeProjectId, projects),
+    [activeProjectId, projects],
+  );
+  const [state, dispatch] = useReducer(reducer, dashboard, (initial) =>
+    initialStudioState(initial, locale),
+  );
+  // Pickers offer the active project's and unassigned models and metrics,
+  // keeping what the draft binds already (#573).
+  const boundModels = useMemo(
+    () => referencedModelIds(state.draft),
+    [state.draft],
+  );
+  const catalog = usePublishedModels(workspaceId, {
+    query: pickerQuery(scope),
+    keep: boundModels,
+  });
+  const pickerMetrics = useMemo(
+    () =>
+      pickableMetrics(
+        metrics,
+        (connectionId) => connections[connectionId]?.projectId ?? null,
+        scope,
+        boundMetricKeys(state.draft),
+      ),
+    [metrics, connections, scope, state.draft],
+  );
   const [filterValues, setFilterValues] = useState<
     Record<string, import("@netrics/domain").DashboardFilterValue>
   >({});
@@ -180,9 +216,6 @@ export function StudioEditor({
   const router = useRouter();
   const [formulaDrafts, setFormulaDrafts] = useState<Record<string, string>>(
     {},
-  );
-  const [state, dispatch] = useReducer(reducer, dashboard, (initial) =>
-    initialStudioState(initial, locale),
   );
   // Readability per format of the saved version (ADR 0017 §6, #280).
   const [savedSlides, setSavedSlides] = useState(dashboard.slides);
@@ -869,7 +902,7 @@ export function StudioEditor({
                 models={catalog.models}
                 document={draft}
                 slide={slide}
-                metrics={metrics}
+                metrics={pickerMetrics}
                 imageIds={images.map((image) => image.id)}
                 goals={goals}
                 reviewConnectionIds={reviewConnectionIds(connections)}
@@ -1054,7 +1087,7 @@ export function StudioEditor({
                 models={catalog.models}
                 dataFilters={draft.settings.dataFilters ?? []}
                 workspaceId={workspaceId}
-                metrics={metrics}
+                metrics={pickerMetrics}
                 images={pickable}
                 imagesInUse={imagesInUse}
                 problems={widgetProblems}

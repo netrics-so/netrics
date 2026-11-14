@@ -6,6 +6,7 @@ import { can } from "@netrics/domain";
 import "@/app/styles/dashboards.css";
 import { CreateProjectForm } from "../create-project-form";
 import { DashboardsBrowser } from "./dashboards-browser";
+import { ProjectList } from "./project-list";
 import { listDashboards, listProjects, listWorkspaces } from "@/lib/api";
 import { getLocale, getT } from "@/lib/i18n/server";
 import {
@@ -101,11 +102,15 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
           {projects.length === 0 ? (
             <p className="muted">{t("noProjects")}</p>
           ) : (
-            <ul className="dashboards-project-list">
-              {projects.map((project) => (
-                <li key={project.id}>{project.name}</li>
-              ))}
-            </ul>
+            <ProjectList
+              workspaceId={workspaceId}
+              projects={projects.map(({ id, name, archivedAt }) => ({
+                id,
+                name,
+                archivedAt,
+              }))}
+              canArchive={can(role, "projects:rename")}
+            />
           )}
           {can(role, "projects:create") ? (
             <CreateProjectForm workspaceId={workspaceId} />

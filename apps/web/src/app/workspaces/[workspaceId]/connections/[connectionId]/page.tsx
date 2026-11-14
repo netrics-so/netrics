@@ -16,12 +16,14 @@ import { AppStoreReviewsPanel } from "./app-store-reviews-panel";
 import { AddAdAccountPanel } from "./add-ad-account-panel";
 import { SignedKeyPanel } from "./signed-key-panel";
 import { RetentionSettings } from "./retention-settings";
+import { ConnectionProject } from "./connection-project";
 import {
   getConnection,
   getConnectionRetention,
   getWorkspace,
   listConnectors,
   listObservations,
+  listProjects,
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
@@ -83,13 +85,19 @@ export default async function ConnectionDetailPage({
   const role = membership.role;
   const { connection, syncRuns } = detail;
 
-  const [{ connectors }, { observations }, { metrics }, retentionResult] =
-    await Promise.all([
-      listConnectors(cookieHeader),
-      listObservations(cookieHeader, workspaceId, connectionId, { limit: 100 }),
-      listWorkspaceMetrics(cookieHeader, workspaceId),
-      getConnectionRetention(cookieHeader, workspaceId, connectionId),
-    ]);
+  const [
+    { connectors },
+    { observations },
+    { metrics },
+    retentionResult,
+    { projects },
+  ] = await Promise.all([
+    listConnectors(cookieHeader),
+    listObservations(cookieHeader, workspaceId, connectionId, { limit: 100 }),
+    listWorkspaceMetrics(cookieHeader, workspaceId),
+    getConnectionRetention(cookieHeader, workspaceId, connectionId),
+    listProjects(cookieHeader, workspaceId),
+  ]);
   // Dataset retention (#492), for connectors that collect data tables.
   const retention =
     retentionResult && retentionResult.retention.datasets.length > 0
@@ -440,6 +448,18 @@ export default async function ConnectionDetailPage({
       {canUpdate && !connection.setupPending ? (
         <div className="card" id="edit-connection">
           <h2>{t("editConnection")}</h2>
+          {projects.length > 0 || connection.projectId !== null ? (
+            <ConnectionProject
+              workspaceId={workspaceId}
+              connectionId={connection.id}
+              projectId={connection.projectId}
+              projects={projects.map(({ id, name, archivedAt }) => ({
+                id,
+                name,
+                archivedAt,
+              }))}
+            />
+          ) : null}
           {searchConsole ? (
             <SearchConsoleSettings
               workspaceId={workspaceId}

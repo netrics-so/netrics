@@ -168,8 +168,6 @@ export const studioEn = {
       problems: "Problems",
       title: "Dashboard",
       name: "Name",
-      project: "Project",
-      noProject: "No project",
       look: "Look",
       theme: "Theme",
       builtIn: "Built-in",
