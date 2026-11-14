@@ -39,6 +39,7 @@ import {
   type PreparationGraph,
   type SemanticModelDefinition,
   type ModelQuery,
+  attributeDataError,
 } from "@netrics/domain";
 import {
   withWorkspace,
@@ -63,6 +64,8 @@ export class DataServiceError extends Error {
   constructor(
     public readonly code: string,
     public readonly status: 400 | 404 | 409 | 413 | 503 = 400,
+    /** Id of the preparation step (PreparationNode.id) whose work failed. */
+    public readonly nodeId?: string,
   ) {
     super(code);
     this.name = "DataServiceError";
@@ -1222,7 +1225,13 @@ export function createDataService(
     const inputs = new Map<string, DataTable>();
     for (const n of graph.nodes)
       if (n.type === "source")
-        inputs.set(n.datasetId, await loader.load(n.datasetId));
+        try {
+          inputs.set(n.datasetId, await loader.load(n.datasetId));
+        } catch (error) {
+          if (error instanceof DataServiceError && error.nodeId === undefined)
+            throw new DataServiceError(error.code, error.status, n.id);
+          throw attributeDataError(error, n.id);
+        }
     const output = executePreparation(graph, inputs, loader.budget);
     return { loader, output };
   };

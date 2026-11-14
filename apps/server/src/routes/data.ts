@@ -36,6 +36,19 @@ export function registerDataRoutes(
     ...(deps.now ? { now: deps.now } : {}),
     ...(deps.policy ? { policy: deps.policy } : {}),
   });
+  const sendDataError = (
+    reply: FastifyReply,
+    status: number,
+    code: string,
+    location: { fieldId?: string | undefined; nodeId?: string | undefined },
+  ) =>
+    reply.code(status).send(
+      contracts.dataErrorResponseSchema.parse({
+        error: code,
+        ...(location.fieldId ? { fieldId: location.fieldId } : {}),
+        ...(location.nodeId ? { nodeId: location.nodeId } : {}),
+      }),
+    );
   const execute = async (
     request: FastifyRequest,
     reply: FastifyReply,
@@ -49,9 +62,14 @@ export function registerDataRoutes(
       return await operation(access);
     } catch (error) {
       if (error instanceof DataServiceError)
-        return sendError(reply, error.status, error.code);
+        return sendDataError(reply, error.status, error.code, {
+          nodeId: error.nodeId,
+        });
       if (error instanceof DataProcessingError)
-        return sendError(reply, 400, error.code);
+        return sendDataError(reply, 400, error.code, {
+          fieldId: error.fieldId,
+          nodeId: error.nodeId,
+        });
       return sendError(reply, 503, "data_operation_failed");
     }
   };
@@ -70,6 +88,10 @@ export function registerDataRoutes(
       response,
       ...(body ? { body } : {}),
       errors: [400, 403, 404, 409, 413, 503],
+      errorSchemas: {
+        400: contracts.dataErrorResponseSchema,
+        404: contracts.dataErrorResponseSchema,
+      },
     });
   void app.register(
     (scope, _options, done) => {

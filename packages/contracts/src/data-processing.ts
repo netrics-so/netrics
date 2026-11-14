@@ -433,6 +433,20 @@ export const manualDatasetResponseSchema = z.object({
   generationId: z.uuid(),
 });
 
+/**
+ * Error body of the data routes: `errorResponseSchema` plus where a
+ * processing failure happened. `nodeId` is the preparation step whose work
+ * failed, `fieldId` the column. Each key is present only when known. (Spelled
+ * out here because importing `errorResponseSchema` from the index would be a
+ * module cycle.)
+ */
+export const dataErrorResponseSchema = z.object({
+  error: z.string().min(1),
+  fieldId: z.string().min(1).max(240).optional(),
+  nodeId: z.string().min(1).max(240).optional(),
+});
+export type DataErrorResponse = z.infer<typeof dataErrorResponseSchema>;
+
 export const preparationPreviewResponseSchema = z.object({
   outputs: z.record(
     z.string(),

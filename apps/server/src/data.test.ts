@@ -283,6 +283,71 @@ describe("data API authorization and contract", () => {
         .statusCode,
     ).toBe(200);
   });
+  it("attributes preview and publish failures to the failing step", async () => {
+    const graph = {
+      version: 1,
+      nodes: [
+        { id: "source", type: "source", datasetId },
+        {
+          id: "calc",
+          type: "calculate",
+          input: "source",
+          fieldId: "net",
+          name: "Net",
+          expression: { kind: "field", fieldId: "missing" },
+        },
+        {
+          id: "kept",
+          type: "filter",
+          input: "calc",
+          expression: { kind: "literal", type: "boolean", value: true },
+        },
+      ],
+      outputs: ["kept"],
+    };
+    const located = {
+      error: "expression_field_not_found",
+      fieldId: "missing",
+      nodeId: "calc",
+    };
+    const preview = await call("POST", "/preparations/preview", editor, {
+      graph,
+    });
+    expect([preview.statusCode, preview.json()]).toEqual([400, located]);
+    const gone = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [{ id: "source", type: "source", datasetId: randomUUID() }],
+        outputs: ["source"],
+      },
+    });
+    expect([gone.statusCode, gone.json()]).toEqual([
+      404,
+      { error: "data_source_not_found", nodeId: "source" },
+    ]);
+    const saved = await call("POST", "/preparations", editor, {
+      name: "Broken",
+      graph,
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const published = await call(
+      "POST",
+      `/preparations/${saved.json().preparation.id}/publish`,
+      editor,
+      { version: 1 },
+    );
+    expect([published.statusCode, published.json()]).toEqual([400, located]);
+    const conflict = await call(
+      "POST",
+      `/preparations/${saved.json().preparation.id}/publish`,
+      editor,
+      { version: 7 },
+    );
+    expect([conflict.statusCode, conflict.json()]).toEqual([
+      409,
+      { error: "version_conflict" },
+    ]);
+  });
   it("lets viewers query published results while keeping drafts, previews and formulas restricted", async () => {
     const response = await call("POST", `/models/${modelId}/query`, viewer, {
       measureIds: ["total"],
@@ -1888,8 +1953,8 @@ describe("rolling and period-offset model measures", () => {
       expect(refused.statusCode, refused.body).toBe(400);
     }
 
-    // Semantic rules surface as stable codes when publishing.
-    for (const [measures, code] of [
+    // Semantic rules surface as stable codes, with the measure, when publishing.
+    for (const [measures, body] of [
       [
         [
           {
@@ -1907,11 +1972,17 @@ describe("rolling and period-offset model measures", () => {
           },
           { ...rolling, baseMeasureId: "double" },
         ],
-        "model_window_base_aggregate_required",
+        {
+          error: "model_window_base_aggregate_required",
+          fieldId: "units_7d",
+        },
       ],
       [
         [{ ...rolling, timeDimensionId: "at" }],
-        "model_window_date_dimension_required",
+        {
+          error: "model_window_date_dimension_required",
+          fieldId: "units_7d",
+        },
       ],
       [
         [
@@ -1930,17 +2001,17 @@ describe("rolling and period-offset model measures", () => {
             offset: { unit: "day", length: 100 },
           },
         ],
-        "model_window_lookback_limit",
+        { error: "model_window_lookback_limit", fieldId: "too_far" },
       ],
       [
         [{ ...weekChange, id: "loop", baseMeasureId: "loop" }],
-        "model_measure_cycle",
+        { error: "model_measure_cycle" },
       ],
     ] as const) {
       const model = await create("Invalid windows", [...measures]);
       const refused = await publish(model);
       expect(refused.statusCode, refused.body).toBe(400);
-      expect(refused.json()).toEqual({ error: code });
+      expect(refused.json()).toEqual(body);
     }
   });
 
