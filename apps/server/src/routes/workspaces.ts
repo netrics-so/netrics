@@ -142,13 +142,15 @@ export function registerWorkspaceRoutes(
             if (!updated) {
               return null;
             }
-            await insertAuditEvent(tx, {
-              workspaceId: access.workspaceId,
-              actorUserId: access.callerId,
-              action: archived ? "project.archived" : "project.unarchived",
-              target: updated.id,
-              metadata: { name: updated.name },
-            });
+            // Only a state flip is audited; a repeated call changes nothing.
+            if (updated.changed)
+              await insertAuditEvent(tx, {
+                workspaceId: access.workspaceId,
+                actorUserId: access.callerId,
+                action: archived ? "project.archived" : "project.unarchived",
+                target: updated.id,
+                metadata: { name: updated.name },
+              });
             return updated;
           },
         );

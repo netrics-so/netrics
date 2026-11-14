@@ -45,10 +45,12 @@ interface World {
   B: string;
   ids: Set<string>;
   dashboardInA: string;
+  dashboards: Record<"A" | "B" | "none", string>;
+  connections: Record<"A" | "B" | "none", string>;
 }
 
 function call(
-  method: "GET" | "POST" | "PUT" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   url: string,
   options: { cookie?: string; token?: string; payload?: unknown } = {},
 ): Promise<InjectResponse> {
@@ -145,6 +147,7 @@ async function seed(cookie: string, name: string): Promise<World> {
   ids.add(datasetId);
 
   const models = {} as Record<keyof typeof NAMES, string>;
+  const connections = {} as Record<keyof typeof NAMES, string>;
   for (const key of ["A", "B", "none"] as const) {
     const projectId = projects[key];
     const preparation = (
@@ -217,6 +220,7 @@ async function seed(cookie: string, name: string): Promise<World> {
       values (${workspaceId}, ${projectId}, 'app-store-connect', ${NAMES[key]})
       returning id`;
     const connectionId = connection!.id as string;
+    connections[key] = connectionId;
     await admin`
       insert into connection_resources
         (connection_id, workspace_id, resource_id, name, kind)
@@ -263,7 +267,15 @@ async function seed(cookie: string, name: string): Promise<World> {
   }
 
   await ok(call("POST", `${ws}/projects/${B}/archive`, { cookie }));
-  return { workspaceId, A, B, ids, dashboardInA: dashboards.A };
+  return {
+    workspaceId,
+    A,
+    B,
+    ids,
+    dashboardInA: dashboards.A,
+    dashboards,
+    connections,
+  };
 }
 
 beforeAll(async () => {
@@ -494,5 +506,104 @@ describe("project navigation checks", () => {
         [],
       );
     }
+  });
+});
+
+// Archived projects take no new items: moving a dashboard or connection
+// into one answers like an unknown project, while items already there keep
+// saving. Runs on W2, which the checks above only read.
+describe("archived projects take no new dashboards or connections", () => {
+  const ws = () => `/v1/workspaces/${W2.workspaceId}`;
+  const dashboard = async (id: string) =>
+    (await ok(call("GET", `${ws()}/dashboards/${id}`, { cookie: stranger })))
+      .dashboard as {
+      id: string;
+      name: string;
+      version: number;
+      projectId: string | null;
+      settings: unknown;
+      slides: Array<Record<string, unknown>>;
+    };
+  const save = async (id: string, projectId: string | null) => {
+    const current = await dashboard(id);
+    return call("PUT", `${ws()}/dashboards/${id}`, {
+      cookie: stranger,
+      payload: {
+        name: current.name,
+        version: current.version,
+        projectId,
+        settings: current.settings,
+        slides: current.slides.map(
+          ({ position: _p, formatWarnings: _w, layouts: _l, ...slide }) =>
+            slide,
+        ),
+      },
+    });
+  };
+  const expectProjectNotFound = (response: InjectResponse) => {
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.json()).toEqual({ error: "project_not_found" });
+  };
+
+  it("refuses creating or moving a dashboard into an archived project", async () => {
+    expectProjectNotFound(
+      await call("POST", `${ws()}/dashboards`, {
+        cookie: stranger,
+        payload: { name: "New in B", projectId: W2.B },
+      }),
+    );
+    expectProjectNotFound(await save(W2.dashboards.none, W2.B));
+    expect((await dashboard(W2.dashboards.none)).projectId).toBeNull();
+  });
+
+  it("keeps saving a dashboard that is already in an archived project", async () => {
+    const saved = await save(W2.dashboards.B, W2.B);
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json().dashboard.projectId).toBe(W2.B);
+  });
+
+  it("duplicates a dashboard of an archived project as unassigned", async () => {
+    const copy = await ok(
+      call("POST", `${ws()}/dashboards/${W2.dashboards.B}/duplicate`, {
+        cookie: stranger,
+        payload: {},
+      }),
+    );
+    expect(copy.dashboard.projectId).toBeNull();
+    const kept = await ok(
+      call("POST", `${ws()}/dashboards/${W2.dashboards.A}/duplicate`, {
+        cookie: stranger,
+        payload: {},
+      }),
+    );
+    expect(kept.dashboard.projectId).toBe(W2.A);
+  });
+
+  it("refuses creating or moving a connection into an archived project", async () => {
+    expectProjectNotFound(
+      await call("POST", `${ws()}/connections`, {
+        cookie: stranger,
+        payload: {
+          connectorId: "demo",
+          name: "Demo in B",
+          config: { seed: 1, resources: 1 },
+          credentials: { token: "demo-token-1234" },
+          projectId: W2.B,
+        },
+      }),
+    );
+    expectProjectNotFound(
+      await call("PATCH", `${ws()}/connections/${W2.connections.none}`, {
+        cookie: stranger,
+        payload: { projectId: W2.B },
+      }),
+    );
+    const kept = await call(
+      "PATCH",
+      `${ws()}/connections/${W2.connections.B}`,
+      { cookie: stranger, payload: { projectId: W2.B, name: "in B" } },
+    );
+    expect(kept.statusCode, kept.body).toBe(200);
+    expect(kept.json().connection.projectId).toBe(W2.B);
   });
 });

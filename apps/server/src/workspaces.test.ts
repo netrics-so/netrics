@@ -901,6 +901,17 @@ describe("archived projects", () => {
       target: p,
       metadata: { name: "Archivable" },
     });
+    // Only state flips are audited: the repeated archive above and an
+    // unarchive of an unarchived project write nothing.
+    expect(
+      (await post(`/projects/${p}/unarchive`, cookies.editor)).statusCode,
+    ).toBe(200);
+    const flips = (await auditActions()).filter((e) => e.target === p);
+    expect(flips.map((e) => e.action)).toEqual([
+      "project.unarchived",
+      "project.archived",
+      "project.created",
+    ]);
   });
 
   it("falls back to All while the active project is archived and restores it after", async () => {

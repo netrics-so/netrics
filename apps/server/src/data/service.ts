@@ -1268,9 +1268,11 @@ export function createDataService(
         kind === "preparation"
           ? await findPreparation(tx, actor.workspaceId, id, true)
           : await findDataModel(tx, actor.workspaceId, id, true);
+      // The current project needs no check, so a no-op move to a project
+      // archived since still answers 200.
       const target =
-        projectId === null
-          ? null
+        projectId === null || projectId === current.projectId
+          ? projectId
           : await assignableProject(tx, actor.workspaceId, projectId);
       if (current.projectId !== target)
         await audit(tx, actor, `data.${kind}_project_changed`, id, {

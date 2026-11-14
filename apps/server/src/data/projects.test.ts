@@ -336,6 +336,42 @@ describe("a project on preparations and models", () => {
     ).toBeNull();
   });
 
+  it("accepts a no-op move to the current, since archived project", async () => {
+    const project = await call("POST", "/projects", owner, {
+      name: "Archived later",
+    });
+    const later = projectResponseSchema.parse(project.json()).project.id;
+    const model = await createModel("Stays put", later);
+    expect(
+      (await call("POST", `/projects/${later}/archive`, owner)).statusCode,
+    ).toBe(200);
+    const same = await call("PUT", `/data/models/${model.id}/project`, editor, {
+      projectId: later,
+    });
+    expect(same.statusCode, same.body).toBe(200);
+    expect(modelResponseSchema.parse(same.json()).model.projectId).toBe(later);
+    const events = auditEventListResponseSchema.parse(
+      (await call("GET", "/audit-events", owner)).json(),
+    ).events;
+    expect(
+      events.some(
+        (e) =>
+          e.action === "data.model_project_changed" && e.target === model.id,
+      ),
+    ).toBe(false);
+    // Moving away and back is a change, so it is refused.
+    await call("PUT", `/data/models/${model.id}/project`, editor, {
+      projectId: null,
+    });
+    expect(
+      (
+        await call("PUT", `/data/models/${model.id}/project`, editor, {
+          projectId: later,
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
+
   it("refuses viewers", async () => {
     const m = (await createModel("Viewer target")).id;
     for (const kind of ["models", "preparations"] as const)

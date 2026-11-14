@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
 import { createWorkspaceInTransaction } from "./context.js";
@@ -289,7 +289,9 @@ export async function renameProject(
 /**
  * Archives (archived_at = now) or unarchives (null) a project. Archiving an
  * archived project keeps its first archived_at. Null when the project is not
- * in this workspace.
+ * in this workspace; `changed` says whether this call flipped the state (the
+ * update only matches a project in the other state, so of two concurrent
+ * calls only one reports a change).
  */
 export async function setProjectArchived(
   tx: Transaction,
@@ -299,22 +301,23 @@ export async function setProjectArchived(
     archived: boolean;
     now: Date;
   },
-): Promise<Project | null> {
+): Promise<(Project & { changed: boolean }) | null> {
   const rows = await tx
     .update(schema.projects)
-    .set({
-      archivedAt: input.archived
-        ? sql`coalesce(${schema.projects.archivedAt}, ${input.now.toISOString()}::timestamptz)`
-        : null,
-    })
+    .set({ archivedAt: input.archived ? input.now : null })
     .where(
       and(
         eq(schema.projects.id, input.projectId),
         eq(schema.projects.workspaceId, input.workspaceId),
+        input.archived
+          ? isNull(schema.projects.archivedAt)
+          : isNotNull(schema.projects.archivedAt),
       ),
     )
     .returning();
-  return rows[0] ?? null;
+  if (rows[0]) return { ...rows[0], changed: true };
+  const current = await findProject(tx, input.workspaceId, input.projectId);
+  return current ? { ...current, changed: false } : null;
 }
 
 export async function deleteProject(

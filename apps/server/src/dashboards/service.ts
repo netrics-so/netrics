@@ -1167,12 +1167,20 @@ async function checkImages(
   return [...wanted].every((id) => found.has(id));
 }
 
+/**
+ * Whether a dashboard may be in `projectId`: none, the project it is in
+ * already (even if archived since, so saves keep working), or one of this
+ * workspace's unarchived projects (#572).
+ */
 async function checkProject(
   tx: Transaction,
   workspaceId: string,
   projectId: string | null | undefined,
+  currentProjectId: string | null = null,
 ): Promise<boolean> {
-  return !projectId || (await findProject(tx, workspaceId, projectId)) !== null;
+  if (!projectId || projectId === currentProjectId) return true;
+  const project = await findProject(tx, workspaceId, projectId);
+  return project !== null && project.archivedAt === null;
 }
 
 /** A stored compare widget's denominator, to copy it; else null. */
@@ -1471,12 +1479,19 @@ export function createDashboardService(deps: {
 
     replace(actor: Actor, dashboardId: string, body: ReplaceDashboardRequest) {
       return writeInWorkspace(actor, async (tx) => {
-        if (!(await checkProject(tx, actor.workspaceId, body.projectId))) {
-          return fail<DashboardView>(404, "project_not_found");
-        }
         const current = await findDashboard(tx, actor.workspaceId, dashboardId);
         if (!current) {
           return fail<DashboardView>(404, NOT_FOUND);
+        }
+        if (
+          !(await checkProject(
+            tx,
+            actor.workspaceId,
+            body.projectId,
+            current.projectId,
+          ))
+        ) {
+          return fail<DashboardView>(404, "project_not_found");
         }
         const primary = current.primaryFormat as ScreenFormat;
         let slides: Result<SlideInput[]>;
@@ -1613,9 +1628,16 @@ export function createDashboardService(deps: {
           return fail<DashboardView>(404, NOT_FOUND);
         }
         const name = body.name ?? `${source.name} (copy)`.slice(0, 100);
+        // A copy of an archived project's dashboard starts unassigned, so it
+        // shows up in navigation (#572).
+        const projectId =
+          source.projectId &&
+          (await checkProject(tx, actor.workspaceId, source.projectId))
+            ? source.projectId
+            : null;
         const copy = await insertDashboard(tx, actor.workspaceId, {
           name,
-          projectId: source.projectId,
+          projectId,
           settings: settingsOf(source),
           primaryFormat: source.primaryFormat,
           slides: source.slides.map((slide) => ({

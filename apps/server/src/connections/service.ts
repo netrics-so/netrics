@@ -1453,7 +1453,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.workspaceId,
           body.projectId,
         );
-        if (!project) {
+        // Archived projects take no new connections (#572).
+        if (!project || project.archivedAt !== null) {
           return fail(404, "project_not_found");
         }
       }
@@ -2195,12 +2196,14 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         else nextConfig.resourceSelection = selection;
       }
 
-      if (body.projectId) {
+      // Moving into an archived project is refused; a connection already in
+      // one keeps saving (#572).
+      if (body.projectId && body.projectId !== existing.row.projectId) {
         const projectId = body.projectId;
         const project = await inWorkspace(actor, (tx) =>
           findProject(tx, actor.workspaceId, projectId),
         );
-        if (!project) {
+        if (!project || project.archivedAt !== null) {
           return fail(404, "project_not_found");
         }
       }
