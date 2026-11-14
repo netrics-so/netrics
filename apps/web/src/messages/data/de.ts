@@ -480,6 +480,8 @@ export const dataDe: Catalog<typeof dataEn> = {
     previewOutdated:
       "Der Entwurf wurde geändert. Prüfe ihn vor der Veröffentlichung erneut.",
     builder: {
+      keepWhen: "Zeilen behalten, wenn",
+      newValue: "Wert der neuen Spalte",
       view: "Bearbeiten als",
       visual: "Visuell",
       all: "Alle treffen zu",

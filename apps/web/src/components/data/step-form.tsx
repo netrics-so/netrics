@@ -24,7 +24,12 @@ import {
   suggestAppendColumnMapping,
   buildAppendStep,
 } from "@/lib/preparation-editing";
+import {
+  resolveExpressionDraft,
+  type ExpressionDraft,
+} from "@/lib/expression-draft";
 import { useT } from "@/lib/i18n/client";
+import { ExpressionEditor } from "./expression-editor";
 import { AggregateFields, ColumnChecks, ColumnSelect } from "./fields";
 
 const operations = [
@@ -65,7 +70,6 @@ export function StepForm({
   const t = useT("data"),
     opId = useId(),
     nameId = useId(),
-    formulaId = useId(),
     otherId = useId();
   const [operation, setOperation] = useState<
     (typeof operations)[number] | "source"
@@ -93,11 +97,15 @@ export function StepForm({
   const [name, setName] = useState(
     initial?.type === "calculate" ? initial.name : "",
   );
-  const initialFormula =
-    initial && "expression" in initial
-      ? formatDataFormula(initial.expression, fields)
-      : "";
-  const [formula, setFormula] = useState(initialFormula);
+  const initialExpression =
+    initial && "expression" in initial ? initial.expression : undefined;
+  /** Only an edited (or switched) draft is kept; undefined = as stored. */
+  const [expressionDraft, setExpressionDraft] = useState<
+    ExpressionDraft | undefined
+  >();
+  const [expressionProblem, setExpressionProblem] = useState<
+    { code: string; fieldId?: string } | undefined
+  >();
   const [toType, setToType] = useState<DataType>(
     initial?.type === "cast" ? initial.to : "decimal",
   );
@@ -387,12 +395,22 @@ export function StepForm({
           to: toNull ? null : enteredValue(field.type, to, false),
         };
       } else if (operation === "filter" || operation === "calculate") {
-        const expression =
-          initial && "expression" in initial && formula === initialFormula
-            ? initial.expression
-            : parseDataFormula(formula, fields);
-        node =
-          operation === "filter"
+        const expression = resolveExpressionDraft(
+          expressionDraft,
+          initialExpression,
+          operation === "filter" ? "condition" : "calculation",
+          fields,
+        );
+        // Applied unchanged, the step stays the stored object (same key
+        // order), so the editor sees no change.
+        const unchanged =
+          expression === initialExpression &&
+          (initial?.type === "filter" ||
+            (initial?.type === "calculate" && initial.name === name.trim())) &&
+          initial.input === input;
+        node = unchanged
+          ? initial
+          : operation === "filter"
             ? { id, type: "filter", input, expression }
             : {
                 id,
@@ -454,6 +472,11 @@ export function StepForm({
         };
       await onApply([...added, node]);
     } catch (failure) {
+      setExpressionProblem(
+        failure instanceof DataProcessingError && failure.fieldId
+          ? { code: failure.code, fieldId: failure.fieldId }
+          : undefined,
+      );
       setError(t(`errors.${dataErrorKey(failure)}`));
     }
   }
@@ -468,6 +491,8 @@ export function StepForm({
             disabled={!!initial}
             onChange={(e) => {
               setOperation(e.target.value as typeof operation);
+              setExpressionDraft(undefined);
+              setExpressionProblem(undefined);
               setKeys(
                 e.target.value === "group" ? [] : fields.map((f) => f.id),
               );
@@ -601,45 +626,21 @@ export function StepForm({
           </div>
         ) : null}
         {operation === "filter" || operation === "calculate" ? (
-          <div className="field">
-            <label htmlFor={formulaId}>{t("formula")}</label>
-            <textarea
-              id={formulaId}
-              value={formula}
-              onChange={(e) => setFormula(e.target.value)}
-              required
-              rows={3}
-              maxLength={10000}
-              placeholder={t("formulaPlaceholder")}
-              aria-describedby={formulaId + "-help"}
-            />
-            <p id={formulaId + "-help"} className="help">
-              {t("formulaHelp")}
-            </p>
-            <div
-              className="data-reference-buttons"
-              aria-label={t("insertColumn")}
-            >
-              {fields.map((f) => (
-                <button
-                  type="button"
-                  key={f.id}
-                  onClick={() =>
-                    setFormula(
-                      (value) =>
-                        value +
-                        formatDataFormula(
-                          { kind: "field", fieldId: f.id },
-                          fields,
-                        ),
-                    )
-                  }
-                >
-                  {f.name}
-                </button>
-              ))}
-            </div>
-          </div>
+          <ExpressionEditor
+            key={operation}
+            label={t(
+              operation === "filter" ? "builder.keepWhen" : "builder.newValue",
+            )}
+            target={operation === "filter" ? "condition" : "calculation"}
+            fields={fields}
+            initial={initialExpression}
+            draft={expressionDraft}
+            onDraftChange={(next) => {
+              setExpressionDraft(next);
+              setExpressionProblem(undefined);
+            }}
+            problem={expressionProblem}
+          />
         ) : null}
         {operation === "cast" ? (
           <div className="data-form-grid">

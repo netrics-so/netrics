@@ -466,6 +466,8 @@ export const dataEn = {
     previewInitial: "Choose measures and preview this draft before publishing.",
     previewOutdated: "The draft changed. Preview it again before publishing.",
     builder: {
+      keepWhen: "Keep rows when",
+      newValue: "Value of the new column",
       view: "Edit as",
       visual: "Visual",
       all: "All of these are true",
