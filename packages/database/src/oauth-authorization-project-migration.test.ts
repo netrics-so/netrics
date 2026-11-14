@@ -72,9 +72,13 @@ describe("migration 0073 on OAuth authorizations", () => {
         await app.end({ timeout: 5 });
       }
       const [definer] = await owner`
-        select prosecdef from pg_proc
+        select prosecdef, proconfig,
+          has_function_privilege('netrics_app', oid, 'EXECUTE') as app_can_run
+        from pg_proc
         where proname = 'consume_oauth_authorization'`;
       expect(definer!.prosecdef).toBe(true);
+      expect(definer!.proconfig).toContain("search_path=public, pg_temp");
+      expect(definer!.app_can_run).toBe(true);
 
       // A project is stored for a new connection and cleared on delete.
       const [project] = await owner`

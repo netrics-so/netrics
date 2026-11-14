@@ -1557,13 +1557,6 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     });
   }
 
-  /**
-   * An existing connection of this workspace that can lend its stored
-   * signed key to new connections (#395): found with the workspace
-   * predicate (404 otherwise, as everywhere), of a connector that lists
-   * accounts to share a key with, and holding a signed key. The decrypted
-   * key stays in this process.
-   */
   /** The project if it still takes new connections (not archived), else null. */
   async function activeProjectOf(
     actor: Actor,
@@ -1578,6 +1571,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     return project && project.archivedAt === null ? project.id : null;
   }
 
+  /**
+   * An existing connection of this workspace that can lend its stored
+   * signed key to new connections (#395): found with the workspace
+   * predicate (404 otherwise, as everywhere), of a connector that lists
+   * accounts to share a key with, and holding a signed key. The decrypted
+   * key stays in this process.
+   */
   async function lendingConnection(
     actor: Actor,
     connectionId: string,
