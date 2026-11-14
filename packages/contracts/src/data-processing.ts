@@ -306,12 +306,20 @@ export const preparationInputSchema = z.strictObject({
   graph: preparationGraphSchema,
   version: z.number().int().positive().optional(),
   adoptLatestInputs: z.boolean().optional(),
+  /** The project a new item starts in; ignored when saving a draft. */
+  projectId: z.uuid().nullable().optional(),
 });
 export const modelInputSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
   definition: semanticModelDefinitionSchema,
   version: z.number().int().positive().optional(),
   adoptLatestInputs: z.boolean().optional(),
+  /** The project a new item starts in; ignored when saving a draft. */
+  projectId: z.uuid().nullable().optional(),
+});
+/** Moves a preparation or model to a project, or to none (null). */
+export const dataProjectRequestSchema = z.strictObject({
+  projectId: z.uuid().nullable(),
 });
 export const dataPublishRequestSchema = z.strictObject({
   version: z.number().int().positive(),
@@ -320,6 +328,7 @@ export const preparationViewSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   graph: preparationGraphSchema,
+  projectId: z.uuid().nullable(),
   version: z.number().int().positive(),
   publishedVersion: z.number().int().positive().nullable(),
   restoredFromVersion: z.number().int().positive().nullable().optional(),
@@ -335,6 +344,7 @@ export const modelViewSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   definition: semanticModelDefinitionSchema,
+  projectId: z.uuid().nullable(),
   version: z.number().int().positive(),
   publishedVersion: z.number().int().positive().nullable(),
   restoredFromVersion: z.number().int().positive().nullable().optional(),

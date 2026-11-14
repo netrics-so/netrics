@@ -43,6 +43,7 @@ import {
 import {
   withWorkspace,
   schema,
+  findProject,
   ingestDatasetPage,
   listObservationCatalog,
   readObservationDataset,
@@ -173,6 +174,7 @@ function preparationView(row: typeof schema.dataPreparations.$inferSelect) {
     id: row.id,
     name: row.name,
     graph: preparationGraphSchema.parse(row.graph),
+    projectId: row.projectId,
     version: row.version,
     publishedVersion: row.publishedVersion,
     restoredFromVersion: row.restoredFromVersion,
@@ -184,6 +186,7 @@ function modelView(row: typeof schema.dataModels.$inferSelect) {
     id: row.id,
     name: row.name,
     definition: semanticModelDefinitionSchema.parse(row.definition),
+    projectId: row.projectId,
     version: row.version,
     publishedVersion: row.publishedVersion,
     restoredFromVersion: row.restoredFromVersion,
@@ -1212,6 +1215,21 @@ export function createDataService(
     return row;
   };
 
+  /**
+   * A project a data item may be assigned to: one of this workspace's
+   * unarchived projects. Unknown, another workspace's and archived projects
+   * answer alike (no existence oracle).
+   */
+  const assignableProject = async (
+    tx: Transaction,
+    workspaceId: string,
+    projectId: string,
+  ) => {
+    const project = await findProject(tx, workspaceId, projectId);
+    if (!project || project.archivedAt !== null) fail("project_not_found", 404);
+    return project.id;
+  };
+
   const executeGraph = async (
     tx: Transaction,
     workspaceId: string,
@@ -1226,8 +1244,59 @@ export function createDataService(
     const output = executePreparation(graph, inputs, loader.budget);
     return { loader, output };
   };
+  /**
+   * Moves a preparation or model to a project, or to none (#572). Metadata
+   * only: version, publishedVersion and updatedAt stay, so no draft is
+   * created and published dashboards and screens show the same data.
+   */
+  const setProject = (
+    actor: DataActor,
+    kind: "preparation" | "model",
+    id: string,
+    projectId: string | null,
+  ) =>
+    run(actor, async (tx) => {
+      const current =
+        kind === "preparation"
+          ? await findPreparation(tx, actor.workspaceId, id, true)
+          : await findDataModel(tx, actor.workspaceId, id, true);
+      const target =
+        projectId === null
+          ? null
+          : await assignableProject(tx, actor.workspaceId, projectId);
+      if (current.projectId !== target)
+        await audit(tx, actor, `data.${kind}_project_changed`, id, {
+          from: current.projectId,
+          to: target,
+        });
+      if (kind === "preparation") {
+        const [row] = await tx
+          .update(schema.dataPreparations)
+          .set({ projectId: target })
+          .where(
+            and(
+              eq(schema.dataPreparations.workspaceId, actor.workspaceId),
+              eq(schema.dataPreparations.id, id),
+            ),
+          )
+          .returning();
+        return { preparation: preparationView(row!) };
+      }
+      const [row] = await tx
+        .update(schema.dataModels)
+        .set({ projectId: target })
+        .where(
+          and(
+            eq(schema.dataModels.workspaceId, actor.workspaceId),
+            eq(schema.dataModels.id, id),
+          ),
+        )
+        .returning();
+      return { model: modelView(row!) };
+    });
   return {
     listSources,
+    setProject,
     previewModel: (
       actor: DataActor,
       definition: SemanticModelDefinition,
@@ -1776,6 +1845,8 @@ export function createDataService(
         graph: PreparationGraph;
         version?: number;
         adoptLatestInputs?: boolean;
+        /** Honoured on create only; a draft save never moves a project. */
+        projectId?: string | null | undefined;
       },
       id?: string,
     ) =>
@@ -1814,10 +1885,14 @@ export function createDataService(
           .where(eq(schema.dataPreparations.workspaceId, actor.workspaceId));
         if (exceedsDataPolicy(count.length + 1, policyFor(tx).maxPreparations))
           fail("data_preparation_limit", 413);
+        const projectId = input.projectId
+          ? await assignableProject(tx, actor.workspaceId, input.projectId)
+          : null;
         const [row] = await tx
           .insert(schema.dataPreparations)
           .values({
             workspaceId: actor.workspaceId,
+            projectId,
             name: input.name,
             graph,
             updatedAt: now,
@@ -2079,6 +2154,8 @@ export function createDataService(
         definition: SemanticModelDefinition;
         version?: number;
         adoptLatestInputs?: boolean;
+        /** Honoured on create only; a draft save never moves a project. */
+        projectId?: string | null | undefined;
       },
       id?: string,
     ) =>
@@ -2114,10 +2191,14 @@ export function createDataService(
           .where(eq(schema.dataModels.workspaceId, actor.workspaceId));
         if (exceedsDataPolicy(count.length + 1, policyFor(tx).maxModels))
           fail("data_model_limit", 413);
+        const projectId = input.projectId
+          ? await assignableProject(tx, actor.workspaceId, input.projectId)
+          : null;
         const [row] = await tx
           .insert(schema.dataModels)
           .values({
             workspaceId: actor.workspaceId,
+            projectId,
             name: input.name,
             definition,
             updatedAt: now,

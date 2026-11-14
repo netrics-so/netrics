@@ -569,6 +569,34 @@ export function registerDataRoutes(
                 : service.modelHistory(actor, resourceId, input);
             }),
         );
+        scope.put(
+          `/workspaces/:workspaceId/data/${kind}/:id/project`,
+          {
+            schema: doc(
+              "Move to a project without creating a draft or changing publication",
+              kind === "preparations"
+                ? contracts.preparationResponseSchema
+                : contracts.modelResponseSchema,
+              contracts.dataProjectRequestSchema,
+            ),
+          },
+          (request, reply) =>
+            execute(request, reply, "data:edit", async (actor) => {
+              const resourceId = id(request, reply);
+              const input = parseBody(
+                contracts.dataProjectRequestSchema,
+                request,
+                reply,
+              );
+              if (!resourceId || !input) return;
+              return service.setProject(
+                actor,
+                kind === "preparations" ? "preparation" : "model",
+                resourceId,
+                input.projectId,
+              );
+            }),
+        );
         scope.post(
           `/workspaces/:workspaceId/data/${kind}/:id/restore`,
           {

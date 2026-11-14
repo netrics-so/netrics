@@ -34682,6 +34682,18 @@
                             ],
                             "additionalProperties": false
                           },
+                          "projectId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "version": {
                             "type": "integer",
                             "exclusiveMinimum": 0,
@@ -34721,6 +34733,7 @@
                           "id",
                           "name",
                           "graph",
+                          "projectId",
                           "version",
                           "publishedVersion",
                           "updatedAt"
@@ -35454,6 +35467,18 @@
                   },
                   "adoptLatestInputs": {
                     "type": "boolean"
+                  },
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -36043,6 +36068,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -36082,6 +36119,7 @@
                         "id",
                         "name",
                         "graph",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -37705,6 +37743,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -37744,6 +37794,7 @@
                         "id",
                         "name",
                         "graph",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -38476,6 +38527,18 @@
                   },
                   "adoptLatestInputs": {
                     "type": "boolean"
+                  },
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -39073,6 +39136,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -39112,6 +39187,7 @@
                         "id",
                         "name",
                         "graph",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -39890,6 +39966,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -39929,6 +40017,7 @@
                         "id",
                         "name",
                         "graph",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -40683,6 +40772,18 @@
                             ],
                             "additionalProperties": false
                           },
+                          "projectId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "version": {
                             "type": "integer",
                             "exclusiveMinimum": 0,
@@ -40722,6 +40823,7 @@
                           "id",
                           "name",
                           "definition",
+                          "projectId",
                           "version",
                           "publishedVersion",
                           "updatedAt"
@@ -41458,6 +41560,18 @@
                   },
                   "adoptLatestInputs": {
                     "type": "boolean"
+                  },
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -42050,6 +42164,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -42089,6 +42215,7 @@
                         "id",
                         "name",
                         "definition",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -43908,6 +44035,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -43947,6 +44086,7 @@
                         "id",
                         "name",
                         "definition",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -44682,6 +44822,18 @@
                   },
                   "adoptLatestInputs": {
                     "type": "boolean"
+                  },
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -45282,6 +45434,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -45321,6 +45485,7 @@
                         "id",
                         "name",
                         "definition",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -46102,6 +46267,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -46141,6 +46318,7 @@
                         "id",
                         "name",
                         "definition",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -48724,6 +48902,843 @@
         }
       }
     },
+    "/v1/workspaces/{workspaceId}/data/preparations/{id}/project": {
+      "put": {
+        "summary": "Move to a project without creating a draft or changing publication",
+        "tags": [
+          "data"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "projectId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preparation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "graph": {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "nodes": {
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "source"
+                                        ]
+                                      },
+                                      "datasetId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 240
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type",
+                                      "datasetId"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "select"
+                                        ]
+                                      },
+                                      "fields": {
+                                        "minItems": 1,
+                                        "maxItems": 100,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "input",
+                                      "type",
+                                      "fields"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rename"
+                                        ]
+                                      },
+                                      "names": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 100
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "input",
+                                      "type",
+                                      "names"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "filter"
+                                        ]
+                                      },
+                                      "expression": {
+                                        "$ref": "#/components/schemas/DataExpressionDepth16"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "input",
+                                      "type",
+                                      "expression"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "calculate"
+                                        ]
+                                      },
+                                      "fieldId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "expression": {
+                                        "$ref": "#/components/schemas/DataExpressionDepth16"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "input",
+                                      "type",
+                                      "fieldId",
+                                      "name",
+                                      "expression"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "cast"
+                                        ]
+                                      },
+                                      "fieldId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "to": {
+                                        "type": "string",
+                                        "enum": [
+                                          "string",
+                                          "boolean",
+                                          "integer",
+                                          "number",
+                                          "decimal",
+                                          "date",
+                                          "timestamp",
+                                          "json"
+                                        ]
+                                      },
+                                      "onError": {
+                                        "type": "string",
+                                        "enum": [
+                                          "reject",
+                                          "null"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "input",
+                                      "type",
+                                      "fieldId",
+                                      "to",
+                                      "onError"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "replace"
+                                        ]
+                                      },
+                                      "fieldId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "from": {},
+                                      "to": {}
+                                    },
+                                    "required": [
+                                      "id",
+                                      "input",
+                                      "type",
+                                      "fieldId",
+                                      "from",
+                                      "to"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "deduplicate"
+                                        ]
+                                      },
+                                      "keys": {
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "keep": {
+                                        "type": "string",
+                                        "enum": [
+                                          "first",
+                                          "last"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "input",
+                                      "type",
+                                      "keys",
+                                      "keep"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "append"
+                                        ]
+                                      },
+                                      "inputs": {
+                                        "minItems": 2,
+                                        "maxItems": 20,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "columnMappings": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type",
+                                      "inputs"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "join"
+                                        ]
+                                      },
+                                      "left": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "right": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "keys": {
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "left": {
+                                              "type": "string",
+                                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                            },
+                                            "right": {
+                                              "type": "string",
+                                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                            }
+                                          },
+                                          "required": [
+                                            "left",
+                                            "right"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                          "inner",
+                                          "left"
+                                        ]
+                                      },
+                                      "cardinality": {
+                                        "type": "string",
+                                        "enum": [
+                                          "many_to_one",
+                                          "one_to_one"
+                                        ]
+                                      },
+                                      "rightPrefix": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,49}$"
+                                      },
+                                      "rightNamePrefix": {
+                                        "type": "string",
+                                        "maxLength": 100
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type",
+                                      "left",
+                                      "right",
+                                      "keys",
+                                      "mode",
+                                      "cardinality",
+                                      "rightPrefix"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "input": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "group"
+                                        ]
+                                      },
+                                      "keys": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "aggregates": {
+                                        "minItems": 1,
+                                        "maxItems": 50,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                            },
+                                            "name": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 100
+                                            },
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "sum",
+                                                "count",
+                                                "distinct_count",
+                                                "avg",
+                                                "min",
+                                                "max",
+                                                "last",
+                                                "any",
+                                                "all"
+                                              ]
+                                            },
+                                            "fieldId": {
+                                              "type": "string",
+                                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                            },
+                                            "orderBy": {
+                                              "type": "string",
+                                              "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                            },
+                                            "filter": {
+                                              "$ref": "#/components/schemas/DataExpressionDepth16"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name",
+                                            "op"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "input",
+                                      "type",
+                                      "keys",
+                                      "aggregates"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              }
+                            },
+                            "outputs": {
+                              "minItems": 1,
+                              "maxItems": 20,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "nodes",
+                            "outputs"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "publishedVersion": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "restoredFromVersion": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "graph",
+                        "projectId",
+                        "version",
+                        "publishedVersion",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "preparation"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Request body too large"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Took too long; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Took too long; try again later"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspaceId}/data/preparations/{id}/restore": {
       "post": {
         "summary": "Restore a published definition to a new draft without changing publication",
@@ -49343,6 +50358,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -49382,6 +50409,7 @@
                         "id",
                         "name",
                         "graph",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
@@ -50139,6 +51167,846 @@
         }
       }
     },
+    "/v1/workspaces/{workspaceId}/data/models/{id}/project": {
+      "put": {
+        "summary": "Move to a project without creating a draft or changing publication",
+        "tags": [
+          "data"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "projectId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "definition": {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "datasets": {
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 240
+                              }
+                            },
+                            "relationships": {
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
+                                  "from": {
+                                    "type": "object",
+                                    "properties": {
+                                      "datasetId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 240
+                                      },
+                                      "fieldId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "datasetId",
+                                      "fieldId"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "to": {
+                                    "type": "object",
+                                    "properties": {
+                                      "datasetId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 240
+                                      },
+                                      "fieldId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "datasetId",
+                                      "fieldId"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "cardinality": {
+                                    "type": "string",
+                                    "enum": [
+                                      "many_to_one",
+                                      "one_to_one"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "from",
+                                  "to",
+                                  "cardinality"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "dimensions": {
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "datasetId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 240
+                                  },
+                                  "fieldId": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
+                                  "labelFieldId": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                  },
+                                  "timeAlignment": {
+                                    "type": "string",
+                                    "enum": [
+                                      "reporting_date",
+                                      "instant"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "datasetId",
+                                  "fieldId"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "measures": {
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "aggregate"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "datasetId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 240
+                                      },
+                                      "aggregate": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 100
+                                          },
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "sum",
+                                              "count",
+                                              "distinct_count",
+                                              "avg",
+                                              "min",
+                                              "max",
+                                              "last",
+                                              "any",
+                                              "all"
+                                            ]
+                                          },
+                                          "fieldId": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "orderBy": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                          },
+                                          "filter": {
+                                            "$ref": "#/components/schemas/DataExpressionDepth16"
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "name",
+                                          "op"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "datasetId",
+                                      "aggregate"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "formula"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "expression": {
+                                        "$ref": "#/components/schemas/DataExpressionDepth16"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "expression"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rolling"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "window": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "window"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "period_offset"
+                                        ]
+                                      },
+                                      "requiredDimensions": {
+                                        "maxItems": 10,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                        }
+                                      },
+                                      "baseMeasureId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "timeDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                                      },
+                                      "offset": {
+                                        "oneOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 366
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "week"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 53
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "month"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 12
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "year"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "unit": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "range"
+                                                ]
+                                              },
+                                              "length": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "unit",
+                                              "length"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ]
+                                      },
+                                      "output": {
+                                        "type": "string",
+                                        "enum": [
+                                          "value",
+                                          "change",
+                                          "percent_change"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "kind",
+                                      "baseMeasureId",
+                                      "timeDimensionId",
+                                      "offset",
+                                      "output"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "datasets",
+                            "relationships",
+                            "dimensions",
+                            "measures"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "publishedVersion": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "restoredFromVersion": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "definition",
+                        "projectId",
+                        "version",
+                        "publishedVersion",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "model"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Invalid request"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Request body too large"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Took too long; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Took too long; try again later"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspaceId}/data/models/{id}/restore": {
       "post": {
         "summary": "Restore a published definition to a new draft without changing publication",
@@ -50761,6 +52629,18 @@
                           ],
                           "additionalProperties": false
                         },
+                        "projectId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "version": {
                           "type": "integer",
                           "exclusiveMinimum": 0,
@@ -50800,6 +52680,7 @@
                         "id",
                         "name",
                         "definition",
+                        "projectId",
                         "version",
                         "publishedVersion",
                         "updatedAt"
