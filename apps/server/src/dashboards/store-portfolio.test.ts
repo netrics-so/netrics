@@ -12,17 +12,55 @@ import {
 import {
   buildStoreDashboard,
   buildStoreAppend,
+  buildStoreAppLabels,
+  buildStoreLabelled,
   buildStoreModel,
   buildStorePreparation,
+  type StoreTemplateVersion,
 } from "./store-portfolio.js";
 
 import { now, apple, google, inputs } from "./test-helpers.js";
+type Metric = "downloads" | "proceeds" | "ratings";
+/**
+ * A metric's data as the model reads it: both stores combined, and from
+ * version 3 with the app labels of all three metrics' data.
+ */
 function prepared(
-  metric: "downloads" | "proceeds" | "ratings",
-  templateVersion: 1 | 2 = 1,
+  metric: Metric,
+  templateVersion: StoreTemplateVersion = 1,
   locale: "en" | "de" = "en",
+  tables = inputs(),
 ): DataTable {
-  const tables = inputs();
+  if (templateVersion < 3)
+    return combined(metric, templateVersion, locale, tables);
+  const all = new Map(
+    (["downloads", "proceeds", "ratings"] as const).map((each) => [
+      each,
+      combined(each, templateVersion, locale, tables),
+    ]),
+  );
+  const labels = executePreparation(
+    preparationGraphSchema.parse(
+      buildStoreAppLabels(["downloads", "proceeds", "ratings"], locale),
+    ),
+    all,
+  ).outputs.labels!;
+  return executePreparation(
+    preparationGraphSchema.parse(
+      buildStoreLabelled(metric, "facts", "labels", locale),
+    ),
+    new Map([
+      ["facts", all.get(metric)!],
+      ["labels", labels],
+    ]),
+  ).outputs.labelled!;
+}
+function combined(
+  metric: Metric,
+  templateVersion: StoreTemplateVersion,
+  locale: "en" | "de",
+  tables: Map<string, DataTable>,
+): DataTable {
   const outputs = [apple, google].map(
     (source) =>
       executePreparation(
@@ -145,6 +183,142 @@ describe("editable store portfolio definitions", () => {
         },
       }).rows[0]?.measures.proceeds?.value,
     ).toBe("70");
+  });
+  it("leaves out rows without proceeds and names a missing currency in version 3 (#620)", () => {
+    const tables = inputs();
+    const sales = tables.get("apple-sales")!;
+    const row = (values: Record<string, unknown>) => ({
+      ...sales.rows[0]!,
+      ...values,
+    });
+    tables.set("apple-sales", {
+      ...sales,
+      rows: [
+        ...sales.rows,
+        // A currency with free units only: no proceeds in the period.
+        row({
+          product_type: "1F",
+          developer_proceeds_per_unit: "0",
+          currency: "JPY",
+        }),
+        // A report row without a currency (ISO 4217 "XXX").
+        row({
+          product_type: "IAY",
+          units: "1",
+          developer_proceeds_per_unit: "0.5",
+          currency: "XXX",
+        }),
+      ],
+    });
+    const rows = (version: StoreTemplateVersion) => {
+      const facts = new Map([
+        ["facts", prepared("proceeds", version, "en", tables)],
+      ]);
+      return querySemanticModel(
+        buildStoreModel("proceeds", "facts", "en", version),
+        facts,
+        { measureIds: ["proceeds"], groupBy: ["app", "currency"] },
+      ).rows.map((result) => [
+        result.dimensions.app,
+        result.dimensionLabels?.currency ?? result.dimensions.currency,
+        result.measures.proceeds?.value,
+      ]);
+    };
+    // Version 2 lists the free-units currency with 0 and "XXX".
+    expect(rows(2)).toContainEqual(["confirmed-product", "JPY", "0"]);
+    expect(rows(2)).toContainEqual(["confirmed-product", "XXX", "0.5"]);
+    expect(rows(3)).toEqual([
+      [google.id + ":__unmapped", "USD", "-1"],
+      [google.id + ":com.example.beta", "EUR", "70"],
+      ["confirmed-product", "USD", "6.2"],
+      ["confirmed-product", "No currency", "0.5"],
+    ]);
+  });
+  it("adds the store to apps of different stores that share a name in version 3 (#621)", () => {
+    const tables = inputs();
+    // The App Store app is not linked to a product and has the same name as
+    // an app on Google Play.
+    const mapping = tables.get("mapping")!;
+    tables.set("mapping", {
+      ...mapping,
+      rows: mapping.rows.filter((row) => row.app_key !== apple.id + ":a"),
+    });
+    tables.set(`resources:${apple.id}`, {
+      ...tables.get(`resources:${apple.id}`)!,
+      rows: [{ resource_id: "a", name: "Other app", kind: "iOS" }],
+    });
+    const labels = (version: StoreTemplateVersion, locale: "en" | "de") => {
+      const facts = new Map([
+        ["facts", prepared("downloads", version, locale, tables)],
+      ]);
+      const model = buildStoreModel("downloads", "facts", locale, version);
+      validateSemanticModel(model, facts, now);
+      return querySemanticModel(model, facts, {
+        measureIds: ["downloads"],
+        groupBy: ["app", "store"],
+      }).rows.map((row) => [row.dimensions.app, row.dimensionLabels?.app]);
+    };
+    expect(labels(2, "en")).toEqual([
+      [apple.id + ":a", "Other app"],
+      [google.id + ":com.example.beta", "Other app"],
+      ["confirmed-product", "Example app"],
+    ]);
+    // A product linked across stores keeps its name.
+    expect(labels(3, "en")).toEqual([
+      [apple.id + ":a", "Other app · Apple App Store"],
+      [google.id + ":com.example.beta", "Other app · Google Play"],
+      ["confirmed-product", "Example app"],
+    ]);
+    expect(labels(3, "de")).toEqual(labels(3, "en"));
+  });
+  it("gives an app the same label in every model, also where only one store has data for a metric (#621)", () => {
+    const tables = inputs();
+    const mapping = tables.get("mapping")!;
+    tables.set("mapping", {
+      ...mapping,
+      rows: mapping.rows.filter((row) => row.app_key !== apple.id + ":a"),
+    });
+    tables.set(`resources:${apple.id}`, {
+      ...tables.get(`resources:${apple.id}`)!,
+      rows: [{ resource_id: "a", name: "Other app", kind: "iOS" }],
+    });
+    // Proceeds: only the App Store app has any.
+    const earnings = tables.get("play-earnings")!;
+    tables.set("play-earnings", {
+      ...earnings,
+      rows: earnings.rows.filter((row) => row.app_id !== "com.example.beta"),
+    });
+    const queries: Record<Metric, { measureIds: string[]; groupBy: string[] }> =
+      {
+        downloads: { measureIds: ["downloads"], groupBy: ["app", "store"] },
+        proceeds: { measureIds: ["proceeds"], groupBy: ["app", "currency"] },
+        ratings: {
+          measureIds: ["rating"],
+          groupBy: ["app", "listing", "storefront"],
+        },
+      };
+    const labelsOf = (metric: Metric) => {
+      const facts = new Map([["facts", prepared(metric, 3, "en", tables)]]);
+      const model = buildStoreModel(metric, "facts", "en", 3);
+      validateSemanticModel(model, facts, now);
+      return Object.fromEntries(
+        querySemanticModel(model, facts, queries[metric]).rows.map((row) => [
+          row.dimensions.app,
+          row.dimensionLabels?.app,
+        ]),
+      );
+    };
+    const appleApp = apple.id + ":a",
+      betaApp = google.id + ":com.example.beta";
+    const proceeds = labelsOf("proceeds");
+    expect(proceeds[appleApp]).toBe("Other app · Apple App Store");
+    expect(proceeds[betaApp]).toBeUndefined();
+    for (const metric of ["downloads", "ratings"] as const) {
+      const labels = labelsOf(metric);
+      expect(labels[appleApp]).toBe("Other app · Apple App Store");
+      if (metric === "downloads")
+        expect(labels[betaApp]).toBe("Other app · Google Play");
+    }
   });
   it("keeps ratings per underlying listing even when the customer confirms one shared product", () => {
     const data = prepared("ratings"),

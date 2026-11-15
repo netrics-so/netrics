@@ -334,7 +334,8 @@ function metricOf(dataset: unknown): string | undefined {
   if (typeof dataset !== "string") return undefined;
   return (
     /^ref:preparation:source:[^:]+:([^:]+)/.exec(dataset)?.[1] ??
-    /^ref:preparation:append:([^:]+):/.exec(dataset)?.[1]
+    /^ref:preparation:append:([^:]+):/.exec(dataset)?.[1] ??
+    /^ref:preparation:labelled:([^:]+):/.exec(dataset)?.[1]
   );
 }
 
@@ -1011,8 +1012,20 @@ export function dashboardFromItems(
 }
 
 /**
+ * The preparations that combine the per-source data, regenerated from the
+ * app scope: appends and (version 3) the app labels and labelled data.
+ */
+export function isCombinePreparation(key: string): boolean {
+  return (
+    key.startsWith("preparation:append:") ||
+    key === "preparation:labels" ||
+    key.startsWith("preparation:labelled:")
+  );
+}
+
+/**
  * App-scope parts (Global Constraints): the new template's value, not a
- * conflict. Whole append preparations (except parts the customer edited,
+ * conflict. Whole combining preparations (appends, app labels) (except parts the customer edited,
  * which they decide on), a model's datasets and the app filter's fixed
  * value; the source preparations of a connection the install gained or lost
  * are scope too, which only comparing the states can tell
@@ -1021,7 +1034,7 @@ export function dashboardFromItems(
 export function isScopeItem(ref: ItemRef | string): boolean {
   const key = recordKeyOf(ref),
     item = ref.slice(ref.indexOf("#") + 1);
-  if (key.startsWith("preparation:append:")) return true;
+  if (isCombinePreparation(key)) return true;
   if (key.startsWith("model:") && item === "settings:datasets") return true;
   return key.startsWith("dashboard:") && item === "filter:app.fixedValue";
 }

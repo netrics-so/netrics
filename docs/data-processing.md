@@ -714,7 +714,17 @@ report freshness timestamps; retained report/reference generations determine tho
 Apple first-download units and Google daily user installs stay separated by store.
 Proceeds include signed refunds, fees and adjustments, with currencies kept apart:
 new installations declare currency as a required dimension of proceeds, as
-downloads require store.
+downloads require store. Since template version 3, the proceeds preparations
+leave out rows without proceeds (free units, empty report rows), so a currency
+without proceeds in the period has no row, and a row without a currency (ISO
+4217 `XXX`) is labelled "No currency" / "Ohne Währung". One "App labels"
+preparation reads the combined downloads, proceeds and ratings data (the
+selected apps that report anything) and gives each app one label: where apps
+of different stores share a display name, each app that lives in one store
+reads "Name · Store"; a product linked across stores keeps its name. Each
+metric's labelled preparation adds that label, and all three models and the
+app filter show it, so an app reads the same in every widget. Existing
+installs get version 3 through the template update.
 Ratings use the latest snapshot per listing and rating country; linking products
 never combines listing scores. Measures can declare required dimensions: group by
 those dimensions or fix each to a single value in a conjunctive filter. Formula

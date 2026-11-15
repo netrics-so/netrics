@@ -5,6 +5,7 @@ import {
   storeTemplate,
   storeTemplateInputsSchema,
   storeTemplateV1,
+  storeTemplateV2,
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
@@ -73,6 +74,7 @@ function buildAll(
 const VERSION_HASHES: Record<number, string> = {
   1: "44be27ea317c1faf154c41abfc16711e055ca8c47c6e6220918bba59c701aa24",
   2: "79726e4b4472c40243627181269daf6f08dcd991b7d1e415d2aba7bc51727aa3",
+  3: "35b7ebbb8aa9565e14028e81f602e5c44fc511a86a85631fbe03f71fa6e3b4f9",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -107,9 +109,15 @@ describe("versioned store template", () => {
       sha256(JSON.stringify(buildAll(fixtureInputs))),
     );
   });
+  it("keeps version 2 frozen after the template moves on", () => {
+    expect(storeTemplateV2.version).toBe(2);
+    expect(
+      sha256(JSON.stringify(buildAll(fixtureInputs, storeTemplateV2))),
+    ).toBe(VERSION_HASHES[2]);
+  });
   it("changes only the ratings preparations and model in version 2", () => {
     const v1 = buildAll(fixtureInputs, storeTemplateV1),
-      v2 = buildAll(fixtureInputs);
+      v2 = buildAll(fixtureInputs, storeTemplateV2);
     expect(v2.map((record) => record.key)).toEqual(
       v1.map((record) => record.key),
     );
@@ -126,12 +134,70 @@ describe("versioned store template", () => {
       "model:ratings",
     ]);
   });
+  it("adds the app label preparations in version 3 and changes proceeds sources and models, not the dashboard", () => {
+    const v2 = buildAll(fixtureInputs, storeTemplateV2),
+      v3 = buildAll(fixtureInputs);
+    const v2Keys = v2.map((record) => record.key);
+    const added = [
+      "preparation:labels",
+      "preparation:labelled:downloads",
+      "preparation:labelled:proceeds",
+      "preparation:labelled:ratings",
+    ];
+    // The label preparations come after the appends, before the models.
+    expect(v3.map((record) => record.key)).toEqual([
+      ...v2Keys.slice(0, v2Keys.indexOf("model:downloads")),
+      ...added,
+      ...v2Keys.slice(v2Keys.indexOf("model:downloads")),
+    ]);
+    const before = new Map(v2.map((record) => [record.key, record]));
+    const changed = v3
+      .filter(
+        (record) =>
+          before.has(record.key) &&
+          JSON.stringify(record) !== JSON.stringify(before.get(record.key)),
+      )
+      .map((record) => record.key);
+    // Proceeds drop rows without proceeds and name a missing currency; the
+    // models read the labelled data and its labels.
+    expect(changed).toEqual([
+      `preparation:source:${apple.id}:proceeds`,
+      `preparation:source:${google.id}:proceeds`,
+      "model:downloads",
+      "model:proceeds",
+      "model:ratings",
+    ]);
+    // One label preparation reads every metric's combined data; each model
+    // reads its metric's labelled data.
+    const labels = v3.find((record) => record.key === "preparation:labels");
+    expect(
+      labels?.kind === "preparation" &&
+        labels.graph.nodes.flatMap((node) =>
+          node.type === "source" ? [node.datasetId] : [],
+        ),
+    ).toEqual(
+      ["downloads", "proceeds", "ratings"].map(
+        (metric) =>
+          `prepared:${uuidFor(`preparation:append:${metric}:0:0`)}:append_0_0`,
+      ),
+    );
+    expect(v3.find((record) => record.key === "model:proceeds")).toMatchObject({
+      kind: "model",
+      definition: {
+        datasets: [
+          `prepared:${uuidFor("preparation:labelled:proceeds")}:labelled`,
+        ],
+      },
+    });
+  });
   it("keeps a single connection without an append preparation", () => {
     const single = { ...fixtureInputs, connections: [appleSource] };
     expect(storeTemplate.keys(single)).not.toContain(
       "preparation:append:downloads:0:0",
     );
-    const model = buildAll(single).find((r) => r.key === "model:downloads");
+    const model = buildAll(single, storeTemplateV2).find(
+      (r) => r.key === "model:downloads",
+    );
     expect(model).toMatchObject({
       kind: "model",
       definition: {
@@ -139,6 +205,14 @@ describe("versioned store template", () => {
           `prepared:${uuidFor(`preparation:source:${apple.id}:downloads`)}:output`,
         ],
       },
+    });
+    // Version 3: the labels read the source preparations directly.
+    const labels = buildAll(single).find((r) => r.key === "preparation:labels");
+    expect(
+      labels?.kind === "preparation" &&
+        labels.graph.nodes.find((node) => node.type === "source"),
+    ).toMatchObject({
+      datasetId: `prepared:${uuidFor(`preparation:source:${apple.id}:downloads`)}:output`,
     });
   });
   it("combines more than 80 sources in rounds, as the install always did", () => {
@@ -157,7 +231,7 @@ describe("versioned store template", () => {
       "preparation:append:downloads:0:1",
       "preparation:append:downloads:1:0",
     ]);
-    const records = buildAll(many);
+    const records = buildAll(many, storeTemplateV2);
     const top = records.find(
       (r) => r.key === "preparation:append:downloads:1:0",
     );
@@ -174,6 +248,14 @@ describe("versioned store template", () => {
           { id: "append_0_0" },
         ],
       },
+    });
+    // Version 3 labels from the last round's output.
+    const labels = buildAll(many).find((r) => r.key === "preparation:labels");
+    expect(
+      labels?.kind === "preparation" &&
+        labels.graph.nodes.find((node) => node.type === "source"),
+    ).toMatchObject({
+      datasetId: `prepared:${uuidFor("preparation:append:downloads:1:0")}:append_0_0`,
     });
   });
   it("records the dashboard's widget keys in reading order and accepts its inputs", () => {
