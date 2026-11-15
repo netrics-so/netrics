@@ -533,3 +533,21 @@ export {
   storeConnectorStage,
   connectorStageProvenance,
 } from "./connector-staging.js";
+export {
+  activeBackfillConnections,
+  AUTOMATIC_BACKFILL_RETRY_MS,
+  AUTOMATIC_BACKFILLS_PER_SET,
+  connectionBackfillState,
+  datasetVersions,
+  datasetsMissingBackfill,
+  deriveBackfilledDatasets,
+  intersectDatasetVersions,
+  lockHistoryReload,
+  lockWorkspaceBackfills,
+  markHistoryReloadRequested,
+  queueDatasetBackfill,
+} from "./dataset-backfill.js";
+export type {
+  DatasetBackfillOutcome,
+  DatasetVersions,
+} from "./dataset-backfill.js";

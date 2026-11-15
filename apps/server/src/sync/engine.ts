@@ -22,8 +22,11 @@ import {
 import {
   connectionResourcesDiscoveredAt,
   connectorStageProvenance,
+  datasetVersions,
   ingestAppReviews,
   ingestDatasetPage,
+  intersectDatasetVersions,
+  queueDatasetBackfill,
   DatasetStoreError,
   DatasetStageUnavailableError,
   resolveDataPolicy,
@@ -322,6 +325,7 @@ async function runSync(
       .select({
         cursor: schema.connectionState.cursor,
         backfillJobId: schema.connectionState.backfillJobId,
+        backfillJobDatasets: schema.connectionState.backfillJobDatasets,
         lastSuccessAt: schema.connectionState.lastSuccessAt,
         pollIntervalSeconds: schema.connectionState.pollIntervalSeconds,
       })
@@ -366,7 +370,30 @@ async function runSync(
    */
   const fresh = mode === "backfill" && state?.backfillJobId !== job.id;
   const startCursor = fresh ? null : (state?.cursor ?? null);
-  const backfillMarker = mode === "backfill" ? { backfillJobId: job.id } : {};
+  /**
+   * The datasets this backfill job reads (#617): taken when it starts, from
+   * the connector this worker runs; a resumed attempt keeps only those its
+   * own connector still declares at the same version (a deploy may have
+   * changed them between attempts). Stored next to the job's id with every
+   * checkpoint; its success records exactly these, never what a later
+   * worker declares but earlier pages never read.
+   */
+  const declaredNow = datasetVersions(
+    deps.registry.get(connection.connectorId)?.manifest.datasets,
+  );
+  const backfillDatasets =
+    mode !== "backfill"
+      ? null
+      : fresh
+        ? declaredNow
+        : intersectDatasetVersions(
+            state?.backfillJobDatasets ?? {},
+            declaredNow,
+          );
+  const backfillMarker =
+    mode === "backfill"
+      ? { backfillJobId: job.id, backfillJobDatasets: backfillDatasets }
+      : {};
 
   let window = computeWindow(
     mode,
@@ -398,6 +425,19 @@ async function runSync(
     }
     window = { from: new Date(saved.from), to: new Date(saved.to) };
   }
+  /**
+   * A succeeded backfill read the whole window into its datasets (#617):
+   * merged into the record the automatic backfill of added datasets
+   * compares against. Datasets it did not read keep their entry.
+   */
+  const backfillRecordInsert =
+    backfillDatasets !== null ? { backfilledDatasets: backfillDatasets } : {};
+  const backfillRecordSet =
+    backfillDatasets !== null
+      ? {
+          backfilledDatasets: sql`coalesce(${schema.connectionState.backfilledDatasets}, '{}'::jsonb) || ${JSON.stringify(backfillDatasets)}::jsonb`,
+        }
+      : {};
   const pollIntervalSeconds =
     state?.pollIntervalSeconds ??
     deps.registry.get(connection.connectorId)?.manifest
@@ -955,6 +995,7 @@ async function runSync(
           nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
           cursor: finalCursor,
           ...backfillMarker,
+          ...backfillRecordInsert,
           authState: "ok",
           authReason: null,
           consecutiveFailures: 0,
@@ -966,6 +1007,7 @@ async function runSync(
             nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
             cursor: finalCursor,
             ...backfillMarker,
+            ...backfillRecordSet,
             authState: "ok",
             authReason: null,
             consecutiveFailures: 0,
@@ -1009,6 +1051,43 @@ async function runSync(
     { mode, window: { from: iso(window.from), to: iso(window.to) } },
     "sync run succeeded",
   );
+
+  // #617: a connector update that adds a dataset (or changes one's schema
+  // version) leaves the connection's history of it to incremental runs.
+  // After a succeeded incremental run, queue one backfill for it. Best
+  // effort: a failure is logged and the next run asks again.
+  if (
+    mode === "incremental" &&
+    manifest.supportsBackfill &&
+    (manifest.datasets?.length ?? 0) > 0
+  ) {
+    try {
+      const outcome = await withWorkspace(appDb, { workspaceId }, (tx) =>
+        queueDatasetBackfill(tx, {
+          workspaceId,
+          connectionId,
+          connectorId: manifest.id,
+          declared: datasetVersions(manifest.datasets),
+        }),
+      );
+      if (outcome.queued) {
+        log.info(
+          { datasets: outcome.datasets, jobId: outcome.jobId },
+          "backfill queued for datasets without history",
+        );
+      } else if (outcome.reason === "workspace_busy") {
+        log.info(
+          { datasets: outcome.datasets },
+          "backfill for datasets without history waits for another backfill in the workspace",
+        );
+      }
+    } catch (error) {
+      log.warn(
+        { err: safeMessage(error) },
+        "datasets without history not checked",
+      );
+    }
+  }
 
   // Step 4 (#194): the names of the connection's resources (apps,
   // projects, properties), so a tile of one resource can show its name.

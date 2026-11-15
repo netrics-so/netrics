@@ -452,6 +452,36 @@ export const connectionState = pgTable(
     // auth_state needs_reauthorization.
     authReason: text("auth_reason"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    // The connector's datasets ({key: schema version}) that the last
+    // succeeded backfill read over the whole window (#617). A dataset the
+    // connector declares but this map lacks, or has at another version, was
+    // only filled by incremental runs: its history is incomplete. Null for
+    // connections from before #617; the sync engine derives it once.
+    backfilledDatasets: jsonb("backfilled_datasets").$type<
+      Record<string, number>
+    >(),
+    // The datasets the backfill job in backfill_job_id reads (#617), taken
+    // when it starts and narrowed to what every worker that resumed it
+    // declared: what its success records, never more than it read.
+    backfillJobDatasets: jsonb("backfill_job_datasets").$type<
+      Record<string, number>
+    >(),
+    // The datasets an automatic backfill was last queued for (#617), when,
+    // and how often for this set: a failed one is retried once after a day,
+    // not on every sync.
+    backfillRequestedDatasets: jsonb("backfill_requested_datasets").$type<
+      Record<string, number>
+    >(),
+    backfillRequestedAt: timestamp("backfill_requested_at", {
+      withTimezone: true,
+    }),
+    backfillRequestCount: integer("backfill_request_count")
+      .notNull()
+      .default(0),
+    // When a member last asked to reload the history (#617): rate limit.
+    historyReloadRequestedAt: timestamp("history_reload_requested_at", {
+      withTimezone: true,
+    }),
   },
   (table) => [
     check(

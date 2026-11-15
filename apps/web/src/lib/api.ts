@@ -120,6 +120,7 @@ import {
   createWorkspaceRequestSchema,
   deleteConnectionResponseSchema,
   enqueueSyncResponseSchema,
+  historyReloadResponseSchema,
   errorResponseSchema,
   healthLiveResponseSchema,
   healthReadyResponseSchema,
@@ -158,6 +159,7 @@ import {
   type CreateConnectionsRequest,
   type DeleteConnectionResponse,
   type EnqueueSyncResponse,
+  type HistoryReloadResponse,
   type HealthLiveResponse,
   type HealthReadyResponse,
   type InvitationListResponse,
@@ -991,6 +993,18 @@ export function triggerConnectionSync(
     enqueueSyncResponseSchema,
     "POST",
     `/v1/workspaces/${workspaceId}/connections/${connectionId}/sync`,
+  );
+}
+
+/** "Reload history" (#617): queues a backfill of the whole window. */
+export function requestHistoryReload(
+  workspaceId: string,
+  connectionId: string,
+): Promise<HistoryReloadResponse> {
+  return browserSend(
+    historyReloadResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/backfill`,
   );
 }
 

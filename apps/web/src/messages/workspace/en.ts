@@ -612,6 +612,22 @@ export const workspaceEn = {
         "netrics deletes its copy of the {name} key {keyId}. The key itself stays valid at {name} until you revoke it there.",
       apiKeys: "API keys",
     },
+    history: {
+      reload: "Reload history",
+      reloading: "Requesting…",
+      confirmTitle: "Reload the history of “{name}”?",
+      confirmBody:
+        "netrics reads the connector's whole history window again ({days, plural, one {# day} other {# days}}) and overwrites the stored days with what the provider answers now. Nothing is deleted. It can take a while; until it finishes, totals over longer periods may be incomplete.",
+      confirm: "Reload history",
+      queued: "History reload queued. It runs after the current sync.",
+      loading:
+        "History is still loading. Totals over longer periods may be incomplete until it finishes.",
+      incomplete:
+        "The history of {datasets} is incomplete: it was added by a connector update and has only been collected since then. Reload the history to fill it.",
+      incompleteReadOnly:
+        "The history of {datasets} is incomplete: it was added by a connector update and has only been collected since then.",
+      availableAgain: "History can be reloaded again {when}.",
+    },
     retention: {
       title: "Data retention",
       setupTitle: "Data retention",

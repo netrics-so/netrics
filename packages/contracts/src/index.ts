@@ -1069,9 +1069,46 @@ export const syncRunSchema = z.object({
 });
 export type SyncRun = z.infer<typeof syncRunSchema>;
 
+/**
+ * How long a member waits between two "Reload history" requests of one
+ * connection (#617): a reload reads the connector's whole backfill window
+ * again, which costs provider quota.
+ */
+export const HISTORY_RELOAD_INTERVAL_HOURS = 12;
+
+/**
+ * Whether a connection's history is complete (#617). A backfill reads the
+ * connector's whole window; until one has read a dataset, the dataset only
+ * holds what incremental runs collected, e.g. after a connector update
+ * added it, and its totals are partial.
+ */
+export const connectionHistorySchema = z.object({
+  /** The connector can read its history again (a backfill). */
+  supportsBackfill: z.boolean(),
+  /** How many days a backfill reads (the connector's window). */
+  backfillDays: z.number().int().nonnegative(),
+  /** A backfill of the connection is waiting ("queued") or running. */
+  backfill: z.enum(["idle", "queued", "running"]),
+  /**
+   * Datasets no backfill has read yet at their current schema version:
+   * their history is incomplete until one has. Empty when complete or not
+   * known yet.
+   */
+  incompleteDatasets: z.array(
+    z.object({ key: z.string().min(1), name: z.string().min(1) }),
+  ),
+  /**
+   * When "Reload history" can be requested again; null when it can be now
+   * (rate limit, HISTORY_RELOAD_INTERVAL_HOURS).
+   */
+  reloadAvailableAt: z.iso.datetime().nullable(),
+});
+export type ConnectionHistory = z.infer<typeof connectionHistorySchema>;
+
 export const connectionDetailResponseSchema = z.object({
   connection: connectionDetailSchema,
   syncRuns: z.array(syncRunSchema),
+  history: connectionHistorySchema,
 });
 export type ConnectionDetailResponse = z.infer<
   typeof connectionDetailResponseSchema
@@ -1120,6 +1157,13 @@ export const enqueueSyncResponseSchema = z.object({
   jobId: z.uuid(),
 });
 export type EnqueueSyncResponse = z.infer<typeof enqueueSyncResponseSchema>;
+
+/** A queued "Reload history" (#617): the backfill job and the next slot. */
+export const historyReloadResponseSchema = z.object({
+  jobId: z.uuid(),
+  reloadAvailableAt: z.iso.datetime(),
+});
+export type HistoryReloadResponse = z.infer<typeof historyReloadResponseSchema>;
 
 export const observationListQuerySchema = z.object({
   metricKey: z.string().min(1).optional(),

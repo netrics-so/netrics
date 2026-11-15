@@ -202,6 +202,14 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Eine Kachel filtert nach einer Dimension, die die Metrik nicht hat.",
     oauth_reauthorization_required:
       "Die Autorisierung beim Anbieter funktioniert nicht mehr. Verbinde sie auf der Seite der Verbindung neu.",
+    backfill_not_supported:
+      "Dieser Connector kann seinen Verlauf nicht noch einmal lesen.",
+    backfill_in_progress:
+      "Der Verlauf wird bereits geladen. Warte, bis das fertig ist.",
+    workspace_backfill_in_progress:
+      "Eine andere Verbindung dieses Workspaces lädt gerade ihren Verlauf. Versuch es noch einmal, wenn das fertig ist.",
+    history_reload_rate_limited:
+      "Der Verlauf dieser Verbindung wurde vor Kurzem neu geladen. Versuch es später noch einmal.",
     connection_setup_pending:
       "Schließ zuerst die Einrichtung dieser Verbindung ab.",
     connector_unavailable:

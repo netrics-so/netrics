@@ -25,7 +25,9 @@ import type {
 } from "@netrics/contracts";
 import {
   connectorDatasetRetention,
+  HISTORY_RELOAD_INTERVAL_HOURS,
   validateConnectionConfig,
+  type ConnectionHistory,
   type ConnectionRetentionChoice,
 } from "@netrics/contracts";
 import { retentionNamesDatasets } from "./retention.js";
@@ -48,6 +50,10 @@ import {
   type Locale,
 } from "@netrics/domain";
 import {
+  activeBackfillConnections,
+  connectionBackfillState,
+  datasetsMissingBackfill,
+  datasetVersions,
   deleteConnection as deleteConnectionRow,
   deleteConnectionAppReviews,
   enqueueJob,
@@ -57,6 +63,9 @@ import {
   finishConnectionSetup,
   findProject,
   findResourceNames,
+  lockHistoryReload,
+  lockWorkspaceBackfills,
+  markHistoryReloadRequested,
   hideAppReview,
   insertAuditEvent,
   insertConnection,
@@ -168,6 +177,11 @@ function ok<T>(value: T): Result<T> {
 function fail<T>(status: 400 | 404, error: string): Result<T> {
   return { ok: false, status, error };
 }
+
+/** A "Reload history" result: also busy (409) and rate limited (429). */
+export type HistoryReloadResult =
+  | Result<{ jobId: string; reloadAvailableAt: string }>
+  | { ok: false; status: 409 | 429; error: string };
 
 const NOT_FOUND = "connection_not_found";
 
@@ -492,6 +506,47 @@ function connectedAccounts(
     }
   }
   return connected;
+}
+
+/** When the next "Reload history" may be requested after one at `at`. */
+function reloadAvailableAt(at: Date | null): Date | null {
+  return at
+    ? new Date(at.getTime() + HISTORY_RELOAD_INTERVAL_HOURS * 60 * 60 * 1000)
+    : null;
+}
+
+/**
+ * The connection page's history status (#617): whether a backfill waits or
+ * runs, which datasets no backfill has read yet, and the reload slot.
+ */
+function historyView(
+  { row, state }: ConnectionWithState,
+  backfill: "idle" | "queued" | "running",
+  registry: ConnectorRegistry,
+  now: Date = new Date(),
+): ConnectionHistory {
+  const manifest = registry.get(row.connectorId)?.manifest;
+  const declared = datasetVersions(manifest?.datasets);
+  // Null: recorded by the first sync after #617; not known before.
+  const recorded = state?.backfilledDatasets ?? null;
+  const missing =
+    recorded && !row.setupPending && manifest?.supportsBackfill
+      ? datasetsMissingBackfill(declared, recorded)
+      : [];
+  const availableAt = reloadAvailableAt(
+    state?.historyReloadRequestedAt ?? null,
+  );
+  return {
+    supportsBackfill: manifest?.supportsBackfill === true,
+    backfillDays: manifest?.backfillDays ?? 0,
+    backfill,
+    incompleteDatasets: missing.map((key) => ({
+      key,
+      name: manifest?.datasets?.find((d) => d.key === key)?.name ?? key,
+    })),
+    reloadAvailableAt:
+      availableAt && availableAt > now ? availableAt.toISOString() : null,
+  };
 }
 
 export function createConnectionService(deps: ConnectionServiceDeps) {
@@ -2103,7 +2158,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.workspaceId,
           loaded.row,
         );
-        return { ...loaded, syncRuns, signedKey };
+        const backfill = await connectionBackfillState(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        return { ...loaded, syncRuns, signedKey, backfill };
       });
       if (!found) {
         return fail(404, NOT_FOUND);
@@ -2116,6 +2176,100 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.locale,
         ),
         syncRuns: found.syncRuns.map(presentSyncRun),
+        history: historyView(found, found.backfill, registry),
+      });
+    },
+
+    /**
+     * "Reload history" (#617): a member reads the connector's whole
+     * backfill window again, e.g. when totals look short. Same job as a
+     * config change queues; stored data stays and is overwritten window by
+     * window. Refused while a backfill of the connection, or of another
+     * connection of the workspace, waits or runs, and more often than
+     * once per HISTORY_RELOAD_INTERVAL_HOURS per connection (provider
+     * quotas). The state row is locked, so two clicks queue one backfill.
+     */
+    async requestHistoryReload(
+      actor: Actor,
+      connectionId: string,
+    ): Promise<HistoryReloadResult> {
+      type Reload = { jobId: string; reloadAvailableAt: string };
+      return inWorkspace(actor, async (tx): Promise<HistoryReloadResult> => {
+        const loaded = await findConnection(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        if (!loaded) {
+          return fail<Reload>(404, NOT_FOUND);
+        }
+        if (loaded.row.setupPending) {
+          return fail<Reload>(400, "connection_setup_pending");
+        }
+        const manifest = registry.get(loaded.row.connectorId)?.manifest;
+        if (!manifest?.supportsBackfill) {
+          return fail<Reload>(400, "backfill_not_supported");
+        }
+        if (loaded.state?.authState === "needs_reauthorization") {
+          return fail<Reload>(400, "oauth_reauthorization_required");
+        }
+        const state = await lockHistoryReload(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        if (!state) {
+          return fail<Reload>(400, "connection_setup_pending");
+        }
+        // One backfill per workspace at a time, as for the automatic ones:
+        // connections of a workspace often share a provider key and its
+        // rate limit (ADR 0014). Serialized across replicas.
+        await lockWorkspaceBackfills(tx, actor.workspaceId);
+        const active = await activeBackfillConnections(tx, actor.workspaceId);
+        if (active.includes(connectionId)) {
+          return { ok: false, status: 409, error: "backfill_in_progress" };
+        }
+        if (active.length > 0) {
+          return {
+            ok: false,
+            status: 409,
+            error: "workspace_backfill_in_progress",
+          };
+        }
+        const now = new Date();
+        const availableAt = reloadAvailableAt(state.requestedAt);
+        if (availableAt && availableAt > now) {
+          return {
+            ok: false,
+            status: 429,
+            error: "history_reload_rate_limited",
+          };
+        }
+        const jobId = await requestConnectionBackfill(tx, {
+          workspaceId: actor.workspaceId,
+          connectionId,
+        });
+        await markHistoryReloadRequested(tx, {
+          workspaceId: actor.workspaceId,
+          connectionId,
+          at: now,
+        });
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.backfill_requested",
+          target: connectionId,
+          metadata: {
+            connectorId: loaded.row.connectorId,
+            by: "member",
+            reason: "history_reload",
+            jobId,
+          },
+        });
+        return ok<Reload>({
+          jobId,
+          reloadAvailableAt: reloadAvailableAt(now)!.toISOString(),
+        });
       });
     },
 
