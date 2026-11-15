@@ -135,9 +135,13 @@ export async function installWithConnections(
           },
         },
       );
-    // Seeding only: parallel journeys' serializable installs can still
-    // conflict after the API's own retries (#604); the same request is
-    // idempotent. Any other refusal fails the journey.
+    // Seeding only. Installs no longer conflict with each other (they run
+    // one at a time, #604), but on a database this small an install still
+    // conflicts with the other journeys' serializable data transactions:
+    // every workspace's rows share the same heap and index pages. Right
+    // after the servers start, while every request is slow, that can outlast
+    // the API's retry budget (seen once in a run of 30 journeys). The
+    // same request is idempotent. Any other refusal fails the journey.
     const conflicted = async (answer: Awaited<ReturnType<typeof install>>) =>
       answer.status() === 409 &&
       ((await answer.json()) as { error?: string }).error ===
