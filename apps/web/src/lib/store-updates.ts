@@ -203,6 +203,87 @@ export function groupItems(record: PlanRecord) {
   };
 }
 
+/** What a record's change is about, in the customer's words. */
+export type ChangeTopic =
+  | "column"
+  | "step"
+  | "result"
+  | "measure"
+  | "dimension"
+  | "widget"
+  | "slide"
+  | "filter"
+  | "other";
+const TOPIC_ORDER: readonly ChangeTopic[] = [
+  "column",
+  "step",
+  "result",
+  "measure",
+  "dimension",
+  "widget",
+  "slide",
+  "filter",
+  "other",
+];
+const CHANGE_ORDER = ["added", "changed", "removed"] as const;
+/** A calculated column is what a customer sees of a calculate step. */
+export function changeTopic(item: PlanItem): ChangeTopic {
+  const { kind } = refParts(item.ref);
+  switch (kind) {
+    case "step":
+      return field(itemValue(item), "type") === "calculate" ? "column" : "step";
+    case "output":
+      return "result";
+    case "measure":
+    case "dimension":
+    case "widget":
+    case "slide":
+    case "filter":
+      return kind;
+    default:
+      return "other";
+  }
+}
+
+/**
+ * A record's changes in one line (#625): what the template brings, counted
+ * by topic and change ("3 new columns, 1 changed step"), and how many of
+ * the customer's own changes it keeps. The items stay behind a disclosure.
+ */
+export function recordChanges(record: PlanRecord): {
+  template: { topic: ChangeTopic; change: PlanItem["change"]; count: number }[];
+  kept: number;
+} {
+  const counts = new Map<string, number>();
+  for (const item of record.items)
+    if (item.outcome === "template") {
+      const key = `${changeTopic(item)}:${item.change}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  const template = TOPIC_ORDER.flatMap((topic) =>
+    CHANGE_ORDER.flatMap((change) => {
+      const count = counts.get(`${topic}:${change}`) ?? 0;
+      return count ? [{ topic, change, count }] : [];
+    }),
+  );
+  return {
+    template,
+    kept: record.items.filter((item) => item.outcome === "customer").length,
+  };
+}
+
+/**
+ * Lines that read the same, once each with how often they occur: two
+ * steps that both add "Rating country" are one line, "×2".
+ */
+export function distinctLines(
+  lines: readonly string[],
+): { text: string; count: number }[] {
+  const seen = new Map<string, number>();
+  for (const line of lines) seen.set(line, (seen.get(line) ?? 0) + 1);
+  return [...seen].map(([text, count]) => ({ text, count }));
+}
+
 /** Why a customer is asked about an item. */
 export type Why =
   | { kind: "removedDataset"; dataset: string | null }

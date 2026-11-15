@@ -34,10 +34,18 @@ import {
 let test: TestDatabase, db: Database, owner: Sql, holder: Sql, userId: string;
 const registry = createDefaultRegistry();
 /** The same template under a newer version: an update with no choices. */
+/** A newer version that renames the models' first measures. */
 const next: StoreTemplateDefinition = {
   version: storeTemplate.version + 1,
   keys: (inputs) => storeTemplate.keys(inputs),
-  build: (key, inputs, ids) => storeTemplate.build(key, inputs, ids),
+  build: (key, inputs, ids) => {
+    const record = storeTemplate.build(key, inputs, ids);
+    if (record.kind !== "model") return record;
+    const definition = structuredClone(record.definition);
+    const [measure] = definition.measures;
+    if (measure) measure.name = `${measure.name} (next)`;
+    return { ...record, definition };
+  },
 };
 
 beforeAll(async () => {

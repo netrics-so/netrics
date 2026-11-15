@@ -111,115 +111,119 @@ async function versionOneInstall() {
   return { workspaceId, requestId, apple, play };
 }
 
-describe("store template version 2: Play Console rating reports", () => {
-  it("offers version 1 installs the Play ratings change and applies it with the new sources", async () => {
-    const { workspaceId, requestId, apple, play } = await versionOneInstall();
-    const updates = createStoreTemplateUpdateService({
-      db,
-      registry,
-      now: () => new Date(now),
-    });
-    expect(storeTemplate.version).toBe(2);
-    const { installs } = await updates.list(actor(workspaceId));
-    expect(installs[0]).toMatchObject({
-      templateVersion: 1,
-      latestVersion: 2,
-      updateAvailable: true,
-      error: null,
-    });
-    const plan = await updates.plan(actor(workspaceId), requestId);
-    expect(storeTemplatePlanSchema.parse(plan)).toEqual(plan);
-    const ratings = `preparation:source:${play.id}:ratings`;
-    const changed = plan.records.filter((record) => record.items.length);
-    // Only the ratings records change; nothing asks the customer.
-    expect(changed.map((record) => record.key).sort()).toEqual(
-      [
-        `preparation:source:${apple.id}:ratings`,
-        ratings,
-        "model:ratings",
-      ].sort(),
-    );
-    expect(
-      changed.every((record) =>
-        record.items.every((item) => item.outcome === "template"),
-      ),
-    ).toBe(true);
-    // Reviewing registers nothing.
-    expect(
-      await owner`select 1 from data_datasets where connection_id=${play.id} and key='rating_rows'`,
-    ).toHaveLength(0);
+describe(
+  "store template version 2: Play Console rating reports",
+  { timeout: 30_000 },
+  () => {
+    it("offers version 1 installs the Play ratings change and applies it with the new sources", async () => {
+      const { workspaceId, requestId, apple, play } = await versionOneInstall();
+      const updates = createStoreTemplateUpdateService({
+        db,
+        registry,
+        now: () => new Date(now),
+      });
+      expect(storeTemplate.version).toBe(2);
+      const { installs } = await updates.list(actor(workspaceId));
+      expect(installs[0]).toMatchObject({
+        templateVersion: 1,
+        latestVersion: 2,
+        updateAvailable: true,
+        error: null,
+      });
+      const plan = await updates.plan(actor(workspaceId), requestId);
+      expect(storeTemplatePlanSchema.parse(plan)).toEqual(plan);
+      const ratings = `preparation:source:${play.id}:ratings`;
+      const changed = plan.records.filter((record) => record.items.length);
+      // Only the ratings records change; nothing asks the customer.
+      expect(changed.map((record) => record.key).sort()).toEqual(
+        [
+          `preparation:source:${apple.id}:ratings`,
+          ratings,
+          "model:ratings",
+        ].sort(),
+      );
+      expect(
+        changed.every((record) =>
+          record.items.every((item) => item.outcome === "template"),
+        ),
+      ).toBe(true);
+      // Reviewing registers nothing.
+      expect(
+        await owner`select 1 from data_datasets where connection_id=${play.id} and key='rating_rows'`,
+      ).toHaveLength(0);
 
-    const update = await updates.apply(actor(workspaceId), requestId, {
-      basis: plan.basis,
-      decisions: [],
-    });
-    expect(update).toMatchObject({ fromVersion: 1, toVersion: 2 });
-    const registered = Object.fromEntries(
-      (
-        await owner`select id, key from data_datasets where connection_id=${play.id}
-          and key in ('rating_rows', 'report_status')`
-      ).map((row) => [row.key as string, row.id as string]),
-    );
-    expect(Object.keys(registered).sort()).toEqual([
-      "rating_rows",
-      "report_status",
-    ]);
-    // The install now reads them, and the ratings draft is built on them.
-    const [install] =
-      await owner`select inputs, template_version from data_template_installs where request_id=${requestId}`;
-    expect(install!.template_version).toBe(2);
-    const inputs = install!.inputs as {
-      connections: { id: string; datasets: Record<string, string> }[];
-    };
-    expect(
-      inputs.connections.find((connection) => connection.id === play.id)!
-        .datasets,
-    ).toMatchObject(registered);
-    const [record] =
-      await owner`select record_id from data_template_records where request_id=${requestId} and key=${ratings}`;
-    const [preparation] =
-      await owner`select graph, version, published_version from data_preparations where id=${record!.record_id as string}`;
-    const graph = preparation!.graph as PreparationGraph;
-    expect(
-      graph.nodes
-        .filter((node) => node.type === "source")
-        .map((node) => node.type === "source" && node.datasetId),
-    ).toEqual(
-      expect.arrayContaining([
-        registered.rating_rows,
-        registered.report_status,
-      ]),
-    );
-    expect(JSON.stringify(graph)).not.toContain("pending:");
-    // A draft: the published listing-based version stays live until published.
-    expect(preparation!.version).toBeGreaterThan(
-      preparation!.published_version as number,
-    );
-    // The update stays open until its drafts are published and the
-    // dashboard copy is made, as every template update does.
-    expect(
-      (await updates.list(actor(workspaceId))).installs[0]!.openUpdate,
-    ).toMatchObject({ id: update.id, toVersion: 2 });
-  });
-  it("refuses an apply whose review is stale", async () => {
-    const { workspaceId, requestId } = await versionOneInstall();
-    const updates = createStoreTemplateUpdateService({
-      db,
-      registry,
-      now: () => new Date(now),
-    });
-    await expect(
-      updates.apply(actor(workspaceId), requestId, {
-        basis: "0".repeat(64),
+      const update = await updates.apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
         decisions: [],
-      }),
-    ).rejects.toThrow("store_update_stale");
-    expect(
-      await owner`select 1 from data_datasets where key='rating_rows'
+      });
+      expect(update).toMatchObject({ fromVersion: 1, toVersion: 2 });
+      const registered = Object.fromEntries(
+        (
+          await owner`select id, key from data_datasets where connection_id=${play.id}
+          and key in ('rating_rows', 'report_status')`
+        ).map((row) => [row.key as string, row.id as string]),
+      );
+      expect(Object.keys(registered).sort()).toEqual([
+        "rating_rows",
+        "report_status",
+      ]);
+      // The install now reads them, and the ratings draft is built on them.
+      const [install] =
+        await owner`select inputs, template_version from data_template_installs where request_id=${requestId}`;
+      expect(install!.template_version).toBe(2);
+      const inputs = install!.inputs as {
+        connections: { id: string; datasets: Record<string, string> }[];
+      };
+      expect(
+        inputs.connections.find((connection) => connection.id === play.id)!
+          .datasets,
+      ).toMatchObject(registered);
+      const [record] =
+        await owner`select record_id from data_template_records where request_id=${requestId} and key=${ratings}`;
+      const [preparation] =
+        await owner`select graph, version, published_version from data_preparations where id=${record!.record_id as string}`;
+      const graph = preparation!.graph as PreparationGraph;
+      expect(
+        graph.nodes
+          .filter((node) => node.type === "source")
+          .map((node) => node.type === "source" && node.datasetId),
+      ).toEqual(
+        expect.arrayContaining([
+          registered.rating_rows,
+          registered.report_status,
+        ]),
+      );
+      expect(JSON.stringify(graph)).not.toContain("pending:");
+      // A draft: the published listing-based version stays live until published.
+      expect(preparation!.version).toBeGreaterThan(
+        preparation!.published_version as number,
+      );
+      // The update stays open until its drafts are published and the
+      // dashboard copy is made, as every template update does.
+      expect(
+        (await updates.list(actor(workspaceId))).installs[0]!.openUpdate,
+      ).toMatchObject({ id: update.id, toVersion: 2 });
+    });
+    it("refuses an apply whose review is stale", async () => {
+      const { workspaceId, requestId } = await versionOneInstall();
+      const updates = createStoreTemplateUpdateService({
+        db,
+        registry,
+        now: () => new Date(now),
+      });
+      await expect(
+        updates.apply(actor(workspaceId), requestId, {
+          basis: "0".repeat(64),
+          decisions: [],
+        }),
+      ).rejects.toThrow("store_update_stale");
+      expect(
+        await owner`select 1 from data_datasets where key='rating_rows'
         and workspace_id=${workspaceId}`,
-    ).toHaveLength(0);
-  });
-});
+      ).toHaveLength(0);
+    });
+  },
+);
 
 /**
  * Synthetic reports of both stores, as their syncs deliver them after the
@@ -381,11 +385,13 @@ describe("publishing a two-store template update", { timeout: 30_000 }, () => {
       dashboards: [],
     });
     expect(finished.lastUpdate!.drafts.every((d) => d.published)).toBe(true);
+    // A version that changes something (one that changes nothing is no
+    // update to offer).
     const third = createStoreTemplateUpdateService({
       db,
       registry,
       now: () => new Date(now),
-      template: { ...storeTemplate, version: 3 },
+      template: contentOnly(false),
     });
     expect((await third.list(actor(workspaceId))).installs[0]).toMatchObject({
       updateAvailable: true,
@@ -589,4 +595,159 @@ describe("drafts published before their inputs", { timeout: 30_000 }, () => {
         expect(state.lastUpdate?.drafts.every((d) => d.published)).toBe(true);
       }
     });
+});
+
+describe("a finished update without dashboards", { timeout: 30_000 }, () => {
+  /**
+   * A current install with the content-only version 3 applied and every
+   * draft published in the listed order; `list` is never read in between.
+   */
+  async function finishedUpdate() {
+    const workspaceId = await createWorkspace(db, {
+      name: "Finished " + randomUUID().slice(0, 8),
+      ownerUserId: userId,
+    });
+    const connections = [];
+    for (const connectorId of ["app-store-connect", "google-play"] as const) {
+      const [connection] = await withWorkspace(db, { workspaceId }, (tx) =>
+        tx
+          .insert(schema.connections)
+          .values({
+            workspaceId,
+            connectorId,
+            name: connectorId,
+            setupPending: false,
+          })
+          .returning(),
+      );
+      connections.push(connection!);
+    }
+    const [apple, play] = connections as [
+      (typeof connections)[number],
+      (typeof connections)[number],
+    ];
+    const requestId = randomUUID();
+    await createStoreTemplateService({
+      db,
+      registry,
+      now: () => new Date(now),
+    }).install(actor(workspaceId), {
+      requestId,
+      name: "App portfolio",
+      connections: connections.map((c) => c.id),
+      groups: [],
+    });
+    await ingestReports(workspaceId, { apple, play });
+    const updates = createStoreTemplateUpdateService({
+      db,
+      registry,
+      now: () => new Date(now),
+      template: contentOnly(false),
+    });
+    const plan = await updates.plan(actor(workspaceId), requestId);
+    const update = await updates.apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: [],
+    });
+    expect(update.dashboards).toHaveLength(0);
+    const data = createDataService(db, () => new Date(now));
+    const user = { workspaceId, callerId: userId };
+    for (const draft of update.drafts)
+      if (draft.kind === "model")
+        await data.publishModel(user, draft.recordId, draft.version);
+      else await data.publishPreparation(user, draft.recordId, draft.version);
+    return { workspaceId, requestId, play, update, updates, data, user };
+  }
+  /** Publishes a source preparation again, renamed: an unrelated change. */
+  async function republishSource(
+    data: ReturnType<typeof createDataService>,
+    user: { workspaceId: string; callerId: string },
+    id: string,
+  ) {
+    const { preparation } = await data.getPreparation(user, id);
+    const { preparation: saved } = await data.savePreparation(
+      user,
+      {
+        name: preparation.name + " (renamed)",
+        graph: preparation.graph,
+        version: preparation.version,
+      },
+      id,
+    );
+    await data.publishPreparation(user, id, saved.version);
+  }
+
+  it("stays closed when one of its inputs is published again later (#626)", async () => {
+    const { workspaceId, requestId, play, update, updates, data, user } =
+      await finishedUpdate();
+    await republishSource(
+      data,
+      user,
+      update.drafts.find(
+        (draft) => draft.key === `preparation:source:${play.id}:ratings`,
+      )!.recordId,
+    );
+    const state = (await updates.list(actor(workspaceId))).installs[0]!;
+    expect(state.openUpdate).toBeNull();
+    expect(state.lastUpdate).toMatchObject({ id: update.id });
+    expect(
+      state.lastUpdate!.drafts.map((draft) => [draft.published, draft.stale]),
+    ).toEqual(update.drafts.map(() => [true, false]));
+    // Persisted: the update is closed, not only shown as done.
+    const [row] =
+      await owner`select closed_at from data_template_updates where id=${update.id}`;
+    expect(row!.closed_at).not.toBeNull();
+    // The next version applies; nothing is left open in the finished one.
+    const fourth = createStoreTemplateUpdateService({
+      db,
+      registry,
+      now: () => new Date(now),
+      template: {
+        version: 4,
+        keys: (inputs) => storeTemplate.keys(inputs),
+        build(key, inputs, ids) {
+          const record = contentOnly(false).build(key, inputs, ids);
+          return record.kind === "preparation" && key.endsWith(":ratings")
+            ? {
+                ...record,
+                graph: JSON.parse(
+                  JSON.stringify(record.graph).replace(
+                    '"value":"Available (v3)"',
+                    '"value":"Available (v4)"',
+                  ),
+                ) as PreparationGraph,
+              }
+            : record;
+        },
+      },
+    });
+    const next = await fourth.plan(actor(workspaceId), requestId);
+    await expect(
+      fourth.apply(actor(workspaceId), requestId, {
+        basis: next.basis,
+        decisions: [],
+      }),
+    ).resolves.toMatchObject({ fromVersion: 3, toVersion: 4 });
+  });
+
+  it("is not offered again when the new version has nothing left to change (#625)", async () => {
+    const { workspaceId, requestId, updates } = await finishedUpdate();
+    // The dashboard record keeps its version (the update did not change
+    // it), but applying again would change nothing.
+    const [install] = (await updates.list(actor(workspaceId))).installs;
+    expect(install).toMatchObject({
+      updateAvailable: false,
+      summary: null,
+      openUpdate: null,
+    });
+    await expect(updates.plan(actor(workspaceId), requestId)).rejects.toThrow(
+      "store_template_up_to_date",
+    );
+    await expect(
+      updates.apply(actor(workspaceId), requestId, {
+        basis: "anything",
+        decisions: [],
+      }),
+    ).rejects.toThrow("store_template_up_to_date");
+  });
 });

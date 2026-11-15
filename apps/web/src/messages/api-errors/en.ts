@@ -31,7 +31,7 @@ export const apiErrorsEn = {
     store_update_stale:
       "The update changed since you loaded it. Reload the review, check your choices and apply again.",
     store_update_open:
-      "An update of this dashboard is already in progress. Reload the page to continue it.",
+      "An earlier update of this dashboard still has drafts to publish. Reload the page to see them: publish them in data settings, or stop that update, then apply this one.",
     store_update_closed:
       "This update was stopped or has finished. Reload the page to review the current update.",
     store_update_superseded:

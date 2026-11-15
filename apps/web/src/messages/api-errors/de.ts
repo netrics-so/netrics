@@ -33,7 +33,7 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     store_update_stale:
       "Das Update hat sich geändert, seit du es geladen hast. Lade die Prüfung neu, prüf deine Entscheidungen und wende es erneut an.",
     store_update_open:
-      "Für dieses Dashboard läuft schon ein Update. Lade die Seite neu, um es fortzusetzen.",
+      "Ein früheres Update dieses Dashboards hat noch Entwürfe zum Veröffentlichen. Lade die Seite neu, um sie zu sehen: Veröffentliche sie in den Dateneinstellungen oder brich das frühere Update ab und wende dann dieses an.",
     store_update_closed:
       "Dieses Update wurde abgebrochen oder ist abgeschlossen. Lade die Seite neu, um das aktuelle Update zu prüfen.",
     store_update_superseded:

@@ -90,8 +90,10 @@ export const storeTemplateUpdateSchema = z.object({
        */
       published: z.boolean(),
       /**
-       * Published, but before (newer versions of) its inputs: it still reads
-       * their earlier versions. Publishing it again reads the current ones.
+       * Published, but before the update's versions of its inputs: it still
+       * reads their earlier versions. Publishing it again reads the current
+       * ones. A later publish of an input, after the update's version, never
+       * makes it stale.
        */
       stale: z.boolean(),
     }),

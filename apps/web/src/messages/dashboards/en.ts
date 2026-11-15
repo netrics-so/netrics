@@ -286,6 +286,84 @@ export const dashboardsEn = {
       review: "Review",
       widget: "Widget",
     },
+    changes: {
+      column: {
+        added: "{count, plural, one {# new column} other {# new columns}}",
+        changed:
+          "{count, plural, one {# changed column} other {# changed columns}}",
+        removed:
+          "{count, plural, one {# column removed} other {# columns removed}}",
+      },
+      step: {
+        added:
+          "{count, plural, one {# new processing step} other {# new processing steps}}",
+        changed:
+          "{count, plural, one {# changed processing step} other {# changed processing steps}}",
+        removed:
+          "{count, plural, one {# processing step removed} other {# processing steps removed}}",
+      },
+      result: {
+        added: "{count, plural, one {# new result} other {# new results}}",
+        changed:
+          "{count, plural, one {# changed result} other {# changed results}}",
+        removed:
+          "{count, plural, one {# result removed} other {# results removed}}",
+      },
+      measure: {
+        added: "{count, plural, one {# new measure} other {# new measures}}",
+        changed:
+          "{count, plural, one {# changed measure} other {# changed measures}}",
+        removed:
+          "{count, plural, one {# measure removed} other {# measures removed}}",
+      },
+      dimension: {
+        added:
+          "{count, plural, one {# new dimension} other {# new dimensions}}",
+        changed:
+          "{count, plural, one {# changed dimension} other {# changed dimensions}}",
+        removed:
+          "{count, plural, one {# dimension removed} other {# dimensions removed}}",
+      },
+      widget: {
+        added: "{count, plural, one {# new widget} other {# new widgets}}",
+        changed:
+          "{count, plural, one {# changed widget} other {# changed widgets}}",
+        removed:
+          "{count, plural, one {# widget removed} other {# widgets removed}}",
+      },
+      slide: {
+        added: "{count, plural, one {# new slide} other {# new slides}}",
+        changed:
+          "{count, plural, one {# changed slide} other {# changed slides}}",
+        removed:
+          "{count, plural, one {# slide removed} other {# slides removed}}",
+      },
+      filter: {
+        added:
+          "{count, plural, one {# new shared filter} other {# new shared filters}}",
+        changed:
+          "{count, plural, one {# changed shared filter} other {# changed shared filters}}",
+        removed:
+          "{count, plural, one {# shared filter removed} other {# shared filters removed}}",
+      },
+      other: {
+        added: "{count, plural, one {# other change} other {# other changes}}",
+        changed:
+          "{count, plural, one {# other change} other {# other changes}}",
+        removed:
+          "{count, plural, one {# other change} other {# other changes}}",
+      },
+      fromTemplate: "From the template: {changes}",
+      kept: "{count, plural, one {Your own change stays as it is.} other {Your # own changes stay as they are.}}",
+      details: "Show the changes in detail ({count})",
+      times: "×{count}",
+    },
+    confirm: {
+      cancel: "Cancel",
+      swapTitle: "Use the updated dashboard?",
+      swapBackTitle: "Switch back to your original?",
+      closeTitle: "Stop this update?",
+    },
     decided: "{done} of {total} decided",
     apply: "Apply as drafts",
     applying: "Applying…",

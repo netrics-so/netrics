@@ -4,6 +4,7 @@ import type {
   StoreTemplateUpdate,
 } from "@netrics/contracts";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ApiError } from "@/lib/api";
 import { webTranslator } from "@/lib/i18n/catalogs";
 import { renderI18n } from "@/lib/i18n/test-render";
@@ -355,6 +356,7 @@ const noActions = {
   swapBack: () => {},
   close: () => {},
   refresh: () => {},
+  ask: async () => true,
 };
 const screens = [
   { id: LOBBY, name: "Lobby", dashboardId: ORIGINAL, revokedAt: null },
@@ -731,26 +733,39 @@ describe("fix round 2 (#602 review)", () => {
     expect(swapConfirmation(de, "swapBack", null, "de")).not.toContain("0");
   });
 
-  it("moves nothing when the question is cancelled", () => {
+  it("moves nothing when the question is cancelled", async () => {
     const swap = vi.fn(),
       swapBack = vi.fn();
-    const actions = { ...noActions, swap, swapBack };
+    const cancel = vi.fn(async () => false);
     const copied = entry({ copyId: COPY });
-    const cancel = vi.fn(() => false);
-    expect(
-      confirmSwap("swap", copied, screens, en, "en", actions, cancel),
-    ).toBe(false);
-    expect(cancel).toHaveBeenCalledWith(
-      "Move 2 screens (Lobby and Kitchen) to the updated dashboard? The original is archived, and you can switch back.",
+    // Asked in the app's dialog (#625), never with window.confirm.
+    const actions = { ...noActions, swap, swapBack, ask: cancel };
+    await expect(
+      confirmSwap("swap", copied, screens, en, "en", actions),
+    ).resolves.toBe(false);
+    expect(cancel).toHaveBeenCalledWith({
+      title: "Use the updated dashboard?",
+      text: "Move 2 screens (Lobby and Kitchen) to the updated dashboard? The original is archived, and you can switch back.",
+      confirm: "Use it on my screens",
+      cancel: "Cancel",
+    });
+    await expect(
+      confirmSwap("swapBack", copied, null, en, "en", actions),
+    ).resolves.toBe(false);
+    expect(cancel).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: "Switch back to your original?",
+        confirm: "Switch back",
+      }),
     );
-    expect(
-      confirmSwap("swapBack", copied, null, en, "en", actions, cancel),
-    ).toBe(false);
     expect(swap).not.toHaveBeenCalled();
     expect(swapBack).not.toHaveBeenCalled();
-    expect(
-      confirmSwap("swap", copied, screens, en, "en", actions, () => true),
-    ).toBe(true);
+    await expect(
+      confirmSwap("swap", copied, screens, en, "en", {
+        ...actions,
+        ask: async () => true,
+      }),
+    ).resolves.toBe(true);
     expect(swap).toHaveBeenCalledWith("dashboard:portfolio");
   });
 
@@ -777,5 +792,92 @@ describe("fix round 2 (#602 review)", () => {
     expect(html).toContain(
       `href="/workspaces/${W}/dashboards/${COPY}">View the archived updated copy</a>`,
     );
+  });
+});
+
+describe("template update review in customer language (#625)", () => {
+  const steps = (
+    names: [string, string][],
+    outcome: "template" | "customer" = "template",
+  ) =>
+    names.map(([type, name], index) => ({
+      ref: `preparation:source:x:ratings#step:s${index}`,
+      change: "added" as const,
+      outcome,
+      next: { type, name },
+      current: outcome === "customer" ? { type, name } : undefined,
+    }));
+  const ratings: StoreTemplatePlan = {
+    ...plan,
+    records: [
+      {
+        key: "preparation:source:x:ratings",
+        kind: "preparation",
+        recordId: PREP,
+        name: "Ratings",
+        hasUnpublishedDraft: false,
+        items: [
+          ...steps([
+            ["calculate", "Rating country"],
+            ["calculate", "Rating country"],
+            ["calculate", "Store"],
+            ["filter", "Only rated"],
+          ]),
+          ...steps([["rename", "My names"]], "customer").map((item) => ({
+            ...item,
+            ref: item.ref + "_mine",
+          })),
+        ],
+      },
+    ],
+  };
+
+  it("summarises each record and keeps the item list behind a disclosure (en)", () => {
+    const html = review({ plan: ratings });
+    expect(html).toContain(
+      "From the template: 3 new columns and 1 new processing step",
+    );
+    expect(html).toContain("Your own change stays as it is.");
+    const details = html.slice(html.indexOf("<details"));
+    expect(details).toContain(
+      "<summary>Show the changes in detail (5)</summary>",
+    );
+    // A line that reads the same is listed once, with how often.
+    expect(
+      details.split("Calculate a column · Rating country · added").length - 1,
+    ).toBe(1);
+    expect(details).toContain("×2");
+    expect(html.indexOf("Calculate a column")).toBeGreaterThan(
+      html.indexOf("<details"),
+    );
+  });
+
+  it("summarises each record in German", () => {
+    const html = review({ plan: ratings }, "de");
+    expect(html).toContain(
+      "Aus der Vorlage: 3 neue Spalten und 1 neuer Verarbeitungsschritt",
+    );
+    expect(html).toContain("Deine eigene Änderung bleibt erhalten.");
+    expect(html).toContain("Änderungen im Detail anzeigen (5)");
+  });
+
+  it("asks in the app's dialog, with the question and both answers", () => {
+    const html = renderI18n(
+      <ConfirmDialog
+        question={{
+          title: "Stop this update?",
+          text: "Its data drafts stay as normal drafts.",
+          confirm: "Stop this update",
+          cancel: "Cancel",
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(html).toMatch(/^<dialog[^>]*class="studio-dialog confirm-dialog"/);
+    expect(html).toContain("<h2");
+    expect(html).toContain("Its data drafts stay as normal drafts.");
+    expect(html).toContain('class="primary">Stop this update</button>');
+    expect(html).toContain(">Cancel</button>");
   });
 });

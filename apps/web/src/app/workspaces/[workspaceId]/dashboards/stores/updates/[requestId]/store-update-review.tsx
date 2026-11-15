@@ -10,6 +10,7 @@ import type {
 } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
+import { useConfirmation, type Question } from "@/components/confirm-dialog";
 import { StoreUpdateSummary } from "@/components/store-update-summary";
 import {
   ApiError,
@@ -26,12 +27,14 @@ import type { WebTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
 import {
   applyReviewed,
+  distinctLines,
   groupItems,
   itemSubject,
   itemValue,
   missingDecisions,
   needsDecision,
   progressStep,
+  recordChanges,
   screensOn,
   stageOf,
   swapState,
@@ -97,6 +100,7 @@ export function StoreUpdateReview({
   }, [announcement]);
   const stage = stageOf(install);
   const requestId = install.requestId;
+  const confirmation = useConfirmation();
 
   async function reloadInstall() {
     const { installs } = await readStoreTemplateInstalls(workspaceId);
@@ -216,12 +220,23 @@ export function StoreUpdateReview({
         swapBackStoreTemplateDashboard(workspaceId, update!.id, key),
       ),
     close: () => {
-      if (!update || !window.confirm(t("progress.closeConfirm"))) return;
-      void act("", "close", () =>
-        closeStoreTemplateUpdate(workspaceId, requestId, update.id),
-      );
+      if (!update) return;
+      void confirmation
+        .ask({
+          title: t("confirm.closeTitle"),
+          text: t("progress.closeConfirm"),
+          confirm: t("progress.close"),
+          cancel: t("confirm.cancel"),
+        })
+        .then((confirmed) => {
+          if (confirmed)
+            void act("", "close", () =>
+              closeStoreTemplateUpdate(workspaceId, requestId, update.id),
+            );
+        });
     },
     refresh: () => void act("", "refresh", async () => {}),
+    ask: confirmation.ask,
   };
 
   if (stage === "unavailable")
@@ -229,6 +244,7 @@ export function StoreUpdateReview({
   if (stage === "upToDate") return <p className="notice">{t("upToDate")}</p>;
   return (
     <div className="store-update">
+      {confirmation.dialog}
       <p className="store-update-versions muted">
         {t("versions", {
           from: install.templateVersion,
@@ -454,6 +470,7 @@ function RecordReview({
   scope: boolean;
 }) {
   const t = useT("storeUpdate");
+  const describe = useDescribe();
   const groups = groupItems(record);
   const shown =
     groups.choose.length +
@@ -481,6 +498,7 @@ function RecordReview({
       {record.hasUnpublishedDraft ? (
         <p className="notice warning">{t("unpublishedDraft")}</p>
       ) : null}
+      <RecordSummary record={record} />
       {groups.choose.length ? (
         <ItemGroup title={t("groups.choose")}>
           {groups.choose.map((item) => (
@@ -515,26 +533,82 @@ function RecordReview({
           ))}
         </ItemGroup>
       ) : null}
-      {groups.template.length ? (
-        <ItemGroup title={t("groups.template")}>
-          {groups.template.map((item) => (
-            <li key={item.ref}>
-              <ItemText item={item} />{" "}
-              <span className="muted">· {t(`change.${item.change}`)}</span>
-            </li>
-          ))}
-        </ItemGroup>
-      ) : null}
-      {groups.customer.length ? (
-        <ItemGroup title={t("groups.customer")}>
-          {groups.customer.map((item) => (
-            <li key={item.ref}>
-              <ItemText item={item} />
-            </li>
-          ))}
-        </ItemGroup>
+      {groups.template.length + groups.customer.length ? (
+        <details className="store-update-details">
+          <summary>
+            {t("changes.details", {
+              count: groups.template.length + groups.customer.length,
+            })}
+          </summary>
+          {groups.template.length ? (
+            <ItemGroup title={t("groups.template")}>
+              <Lines
+                lines={groups.template.map(
+                  (item) =>
+                    `${describe(itemSubject(item.ref, itemValue(item)))} · ${t(`change.${item.change}`)}`,
+                )}
+              />
+            </ItemGroup>
+          ) : null}
+          {groups.customer.length ? (
+            <ItemGroup title={t("groups.customer")}>
+              <Lines
+                lines={groups.customer.map((item) =>
+                  describe(itemSubject(item.ref, itemValue(item))),
+                )}
+              />
+            </ItemGroup>
+          ) : null}
+        </details>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * What the template changes in a record, counted in the customer's words,
+ * and how many of the customer's own changes stay (#625).
+ */
+function RecordSummary({ record }: { record: PlanRecord }) {
+  const t = useT("storeUpdate"),
+    locale = useLocale();
+  const { template, kept } = recordChanges(record);
+  if (!template.length && !kept) return null;
+  const list = new Intl.ListFormat(locale, { type: "conjunction" });
+  return (
+    <>
+      {template.length ? (
+        <p className="store-update-record-summary">
+          {t("changes.fromTemplate", {
+            changes: list.format(
+              template.map(({ topic, change, count }) =>
+                t(`changes.${topic}.${change}`, { count }),
+              ),
+            ),
+          })}
+        </p>
+      ) : null}
+      {kept ? (
+        <p className="muted">{t("changes.kept", { count: kept })}</p>
+      ) : null}
+    </>
+  );
+}
+
+/** Item lines, each distinct one once, with how often it occurs. */
+function Lines({ lines }: { lines: string[] }) {
+  const t = useT("storeUpdate");
+  return (
+    <>
+      {distinctLines(lines).map(({ text, count }) => (
+        <li key={text}>
+          {text}
+          {count > 1 ? (
+            <span className="muted"> {t("changes.times", { count })}</span>
+          ) : null}
+        </li>
+      ))}
+    </>
   );
 }
 
@@ -818,22 +892,29 @@ export function swapConfirmation(
 }
 
 /**
- * Asks before screens move (swap, swap again, switch back) and moves them
- * only when the customer agrees. Answers whether it went ahead.
+ * Asks before screens move (swap, swap again, switch back), in the app's
+ * dialog, and moves them only when the customer agrees. Answers whether it
+ * went ahead.
  */
-export function confirmSwap(
+export async function confirmSwap(
   direction: "swap" | "swapBack",
   entry: UpdateDashboard,
   screens: Screen[] | null,
   t: WebTranslator<"storeUpdate">,
   locale: Locale,
-  actions: Pick<DashboardActions, "swap" | "swapBack">,
-  confirm: (question: string) => boolean = (question) =>
-    window.confirm(question),
-): boolean {
+  actions: Pick<DashboardActions, "swap" | "swapBack" | "ask">,
+): Promise<boolean> {
   const from = direction === "swap" ? entry.originalId : entry.copyId;
   const names = screens ? screensOn(screens, from) : null;
-  if (!confirm(swapConfirmation(t, direction, names, locale))) return false;
+  const confirmed = await actions.ask({
+    title: t(
+      direction === "swap" ? "confirm.swapTitle" : "confirm.swapBackTitle",
+    ),
+    text: swapConfirmation(t, direction, names, locale),
+    confirm: t(direction === "swap" ? "progress.swap" : "progress.switchBack"),
+    cancel: t("confirm.cancel"),
+  });
+  if (!confirmed) return false;
   if (direction === "swap") actions.swap(entry.key);
   else actions.swapBack(entry.key);
   return true;
@@ -855,6 +936,8 @@ type DashboardActions = {
   swapBack: (key: string) => void;
   close: () => void;
   refresh: () => void;
+  /** Asks a question in the app's dialog; true when confirmed. */
+  ask: (question: Question) => Promise<boolean>;
 };
 
 /** Steps 2–5 of an applied update, or of a previous one to swap again. */
@@ -1101,7 +1184,14 @@ export function DashboardSteps({
                 type="button"
                 disabled={busy}
                 onClick={() =>
-                  confirmSwap("swapBack", entry, screens, t, locale, actions)
+                  void confirmSwap(
+                    "swapBack",
+                    entry,
+                    screens,
+                    t,
+                    locale,
+                    actions,
+                  )
                 }
               >
                 {pending === `swapBack:${entry.key}`
@@ -1132,7 +1222,7 @@ export function DashboardSteps({
                 className="primary"
                 disabled={busy}
                 onClick={() =>
-                  confirmSwap("swap", entry, screens, t, locale, actions)
+                  void confirmSwap("swap", entry, screens, t, locale, actions)
                 }
               >
                 {pending === `swap:${entry.key}`

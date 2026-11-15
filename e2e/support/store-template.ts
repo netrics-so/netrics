@@ -198,10 +198,14 @@ export async function templateRecords(
  *
  * Older versions are what the records' `template_version` 0 says; the
  * install itself stays at the current version, as the schema requires.
+ *
+ * With `dashboard: false` only the measure differs: the dashboard record is
+ * older but the same as the template's, so the update changes data only.
  */
 export async function installWithUpdate(
   page: Page,
   workspaceId: string,
+  options: { dashboard?: boolean } = {},
 ): Promise<{ requestId: string; dashboardId: string; modelId: string }> {
   const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
   try {
@@ -266,6 +270,13 @@ export async function installWithUpdate(
       where workspace_id = ${workspaceId} and model_id = ${modelId}
         and version = ${model!.published_version}`;
 
+    if (options.dashboard === false) {
+      await sql`
+        update data_template_records set template_version = 0
+        where workspace_id = ${workspaceId} and request_id = ${requestId}
+          and key = 'dashboard:portfolio'`;
+      return { requestId, dashboardId, modelId };
+    }
     // The dashboard's widgets, as v0 titled them, and the customer's title.
     const [dashboardRecord] = await sql<
       {

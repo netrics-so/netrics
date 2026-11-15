@@ -4375,9 +4375,15 @@ a.health-badge:hover {
   font-weight: 600;
 }
 
-.publish-impact .actions {
+.publish-impact .actions,
+.confirm-dialog .actions {
   display: flex;
   gap: 8px;
+}
+
+.confirm-dialog h2 {
+  margin: 0 0 8px;
+  font-size: var(--size-15, 15px);
 }
 
 .assign-list {

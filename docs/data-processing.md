@@ -481,10 +481,15 @@ re-pins it.
 
 A store-template update therefore drafts, besides the records the template
 changes, every template preparation and model that reads a drafted
-preparation, listed after their inputs. A draft published before its inputs
-pins their earlier versions: the update shows it as "needs publishing again"
-(not published), its dashboard copy is not ready and an update without
-dashboards stays open until it is published again. A failed build
+preparation, listed after their inputs. A draft published before the
+update's versions of its inputs pins their earlier versions: the update shows
+it as "needs publishing again" (not published), its dashboard copy is not
+ready and an update without dashboards stays open until it is published
+again. Only the update's own versions count: once every draft is published
+after them, an update without dashboards is closed, and publishing one of
+its inputs again later (for any reason) never reopens it. An update whose
+plan changes nothing (only the customer's own changes, which it keeps) is
+not offered. A failed build
 leaves its previous publication active. A previously successful query can
 fall back to its complete retained source vector after a processing/schema
 failure, with `stale: true`, the error code and a warning. Fallback re-authorizes
