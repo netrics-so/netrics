@@ -295,6 +295,87 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       review: "Bewertung",
       widget: "Widget",
     },
+    changes: {
+      column: {
+        added: "{count, plural, one {# neue Spalte} other {# neue Spalten}}",
+        changed:
+          "{count, plural, one {# geänderte Spalte} other {# geänderte Spalten}}",
+        removed:
+          "{count, plural, one {# Spalte entfernt} other {# Spalten entfernt}}",
+      },
+      step: {
+        added:
+          "{count, plural, one {# neuer Verarbeitungsschritt} other {# neue Verarbeitungsschritte}}",
+        changed:
+          "{count, plural, one {# geänderter Verarbeitungsschritt} other {# geänderte Verarbeitungsschritte}}",
+        removed:
+          "{count, plural, one {# Verarbeitungsschritt entfernt} other {# Verarbeitungsschritte entfernt}}",
+      },
+      result: {
+        added:
+          "{count, plural, one {# neues Ergebnis} other {# neue Ergebnisse}}",
+        changed:
+          "{count, plural, one {# geändertes Ergebnis} other {# geänderte Ergebnisse}}",
+        removed:
+          "{count, plural, one {# Ergebnis entfernt} other {# Ergebnisse entfernt}}",
+      },
+      measure: {
+        added:
+          "{count, plural, one {# neue Kennzahl} other {# neue Kennzahlen}}",
+        changed:
+          "{count, plural, one {# geänderte Kennzahl} other {# geänderte Kennzahlen}}",
+        removed:
+          "{count, plural, one {# Kennzahl entfernt} other {# Kennzahlen entfernt}}",
+      },
+      dimension: {
+        added:
+          "{count, plural, one {# neue Dimension} other {# neue Dimensionen}}",
+        changed:
+          "{count, plural, one {# geänderte Dimension} other {# geänderte Dimensionen}}",
+        removed:
+          "{count, plural, one {# Dimension entfernt} other {# Dimensionen entfernt}}",
+      },
+      widget: {
+        added: "{count, plural, one {# neues Widget} other {# neue Widgets}}",
+        changed:
+          "{count, plural, one {# geändertes Widget} other {# geänderte Widgets}}",
+        removed:
+          "{count, plural, one {# Widget entfernt} other {# Widgets entfernt}}",
+      },
+      slide: {
+        added: "{count, plural, one {# neue Folie} other {# neue Folien}}",
+        changed:
+          "{count, plural, one {# geänderte Folie} other {# geänderte Folien}}",
+        removed:
+          "{count, plural, one {# Folie entfernt} other {# Folien entfernt}}",
+      },
+      filter: {
+        added:
+          "{count, plural, one {# neuer gemeinsamer Filter} other {# neue gemeinsame Filter}}",
+        changed:
+          "{count, plural, one {# geänderter gemeinsamer Filter} other {# geänderte gemeinsame Filter}}",
+        removed:
+          "{count, plural, one {# gemeinsamer Filter entfernt} other {# gemeinsame Filter entfernt}}",
+      },
+      other: {
+        added:
+          "{count, plural, one {# weitere Änderung} other {# weitere Änderungen}}",
+        changed:
+          "{count, plural, one {# weitere Änderung} other {# weitere Änderungen}}",
+        removed:
+          "{count, plural, one {# weitere Änderung} other {# weitere Änderungen}}",
+      },
+      fromTemplate: "Aus der Vorlage: {changes}",
+      kept: "{count, plural, one {Deine eigene Änderung bleibt erhalten.} other {Deine # eigenen Änderungen bleiben erhalten.}}",
+      details: "Änderungen im Detail anzeigen ({count})",
+      times: "×{count}",
+    },
+    confirm: {
+      cancel: "Abbrechen",
+      swapTitle: "Aktualisiertes Dashboard nutzen?",
+      swapBackTitle: "Zu deinem Original zurückwechseln?",
+      closeTitle: "Dieses Update abbrechen?",
+    },
     decided: "{done} von {total} entschieden",
     apply: "Als Entwürfe anwenden",
     applying: "Wird angewendet …",

@@ -288,6 +288,17 @@ const isUpdateAvailable = (
       record.templateVersion < latest,
   );
 
+/**
+ * Whether applying a plan changes anything. classify never lists unchanged
+ * items, but it lists the customer's own changes, which an apply keeps as
+ * they are: a plan of only those (a record left at an older version because
+ * the update did not touch it) is nothing to offer.
+ */
+const changesAnything = (records: readonly RecordPlan[]) =>
+  records.some((record) =>
+    record.items.some((item) => item.outcome !== "customer"),
+  );
+
 /** Plan records as the API shows them (classify never lists unchanged items). */
 const planRecords = (records: RecordPlan[]): StoreTemplatePlan["records"] =>
   records.map(({ version: _version, items, ...record }) => ({
@@ -769,11 +780,28 @@ export function createStoreTemplateUpdateService(deps: {
   }
 
   /**
+   * Whether an install has a template update to offer: a newer version
+   * than some of its records, whose plan changes something (or cannot be
+   * read, which the install then reports).
+   */
+  async function updateToOffer(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    install: InstallRow,
+    rows: RecordRow[],
+  ): Promise<boolean> {
+    if (!isUpdateAvailable(install, rows, template.version)) return false;
+    const computed = await planOrUnavailable(tx, workspaceId, requestId);
+    return computed === null || changesAnything(computed.records);
+  }
+
+  /**
    * The install's open update (none closed it yet), as the API shows it. An
    * update without dashboards is done once its drafts are published (a swap
-   * closes one with dashboards): it is the install's last update then, not
-   * an open one, so the next version's review is not hidden behind it. The
-   * next apply closes it.
+   * closes one with dashboards): it is closed then (#626), so it is the
+   * install's last update, the next version's review is not hidden behind
+   * it, and a later publish of its inputs never reopens it.
    */
   async function openUpdateOf(
     tx: Transaction,
@@ -792,10 +820,22 @@ export function createStoreTemplateUpdateService(deps: {
       );
     if (!row) return null;
     const view = await updateView(tx, workspaceId, row);
-    return view.dashboards.length === 0 &&
-      view.drafts.every((draft) => draft.published)
-      ? null
-      : view;
+    if (
+      view.dashboards.length > 0 ||
+      !view.drafts.every((draft) => draft.published)
+    )
+      return view;
+    await tx
+      .update(schema.dataTemplateUpdates)
+      .set({ closedAt: now() })
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.id, row.id),
+          isNull(schema.dataTemplateUpdates.closedAt),
+        ),
+      );
+    return null;
   }
   /**
    * The install's newest update, open or closed: what a swap back (or a
@@ -824,16 +864,21 @@ export function createStoreTemplateUpdateService(deps: {
     return row ? updateView(tx, workspaceId, row) : null;
   }
   /**
-   * Whether a published preparation version or model release reads the
-   * current published version of every preparation it pins (directly or
-   * through the preparations it reads).
+   * Whether a published preparation version or model release reads, for
+   * every preparation this update drafted that it pins (directly or through
+   * the preparations it reads), the update's version or a later one. Only
+   * the update's own versions count: publishing an input again later, for
+   * whatever reason, leaves what was published after the update's version
+   * of it done (#626).
    */
-  async function readsCurrentInputs(
+  async function readsUpdateInputs(
     tx: Transaction,
     workspaceId: string,
     kind: "preparation" | "model",
     id: string,
     version: number,
+    /** The update's preparation drafts: id → the version it drafted. */
+    drafted: ReadonlyMap<string, number>,
   ): Promise<boolean> {
     const [publication] =
       kind === "preparation"
@@ -859,34 +904,16 @@ export function createStoreTemplateUpdateService(deps: {
                 eq(schema.dataModelReleases.version, version),
               ),
             );
-    const pinned = Object.entries(
+    return Object.entries(
       (
         publication?.dependencies as
           { prepared?: Record<string, number> } | undefined
       )?.prepared ?? {},
-    ).filter(([prepared]) => prepared !== id);
-    if (!pinned.length) return true;
-    const published = new Map(
-      (
-        await tx
-          .select({
-            id: schema.dataPreparations.id,
-            publishedVersion: schema.dataPreparations.publishedVersion,
-          })
-          .from(schema.dataPreparations)
-          .where(
-            and(
-              eq(schema.dataPreparations.workspaceId, workspaceId),
-              inArray(
-                schema.dataPreparations.id,
-                pinned.map(([prepared]) => prepared),
-              ),
-            ),
-          )
-      ).map((row) => [row.id, row.publishedVersion]),
-    );
-    return pinned.every(
-      ([prepared, version]) => published.get(prepared) === version,
+    ).every(
+      ([prepared, pinned]) =>
+        prepared === id ||
+        !drafted.has(prepared) ||
+        pinned >= drafted.get(prepared)!,
     );
   }
   async function updateView(
@@ -921,6 +948,11 @@ export function createStoreTemplateUpdateService(deps: {
             ),
           ))
           current.set(record.id, record);
+    const drafted = new Map(
+      drafts
+        .filter((draft) => draft.kind === "preparation")
+        .map((draft) => [draft.recordId, draft.version]),
+    );
     const views = [];
     for (const draft of drafts) {
       const record = current.get(draft.recordId);
@@ -928,16 +960,18 @@ export function createStoreTemplateUpdateService(deps: {
       const released =
         record.publishedVersion !== null &&
         record.publishedVersion >= draft.version;
-      // Published before an input of it was (out of order): it pins that
-      // input's earlier version until it is published again.
+      // Published before the update's version of an input of it was (out
+      // of order): it pins that input's earlier version until it is
+      // published again.
       const stale =
         released &&
-        !(await readsCurrentInputs(
+        !(await readsUpdateInputs(
           tx,
           workspaceId,
           draft.kind,
           draft.recordId,
           record.publishedVersion!,
+          drafted,
         ));
       views.push({
         ...draft,
@@ -1119,7 +1153,7 @@ export function createStoreTemplateUpdateService(deps: {
     const rows = await recordRows(tx, actor.workspaceId, requestId);
     let plan: ComputedPlan | null;
     if (scope) {
-      if (isUpdateAvailable(install, rows, template.version))
+      if (await updateToOffer(tx, actor.workspaceId, requestId, install, rows))
         reject("store_template_update_available", 409);
       // The plan the customer reviewed: new connections' sources as they
       // were then (not registered yet), so the basis compares.
@@ -1161,6 +1195,8 @@ export function createStoreTemplateUpdateService(deps: {
         requestId,
       );
       if (!reviewed) reject("store_template_baseline_unavailable", 409);
+      if (!changesAnything(reviewed.records))
+        reject("store_template_up_to_date", 409);
       // The same plan applied twice (double click, two tabs) is stale first.
       if (reviewed.basis !== body.basis) reject("store_update_stale", 409);
       plan = await planOrUnavailable(
@@ -1507,7 +1543,7 @@ export function createStoreTemplateUpdateService(deps: {
         (record) =>
           record.kind === "dashboard" &&
           record.recordId !== null &&
-          record.items.length > 0,
+          changesAnything([record]),
       )
       .map((record) => ({
         key: record.key,
@@ -2283,7 +2319,9 @@ export function createStoreTemplateUpdateService(deps: {
           const install = await installRow(tx, actor.workspaceId, requestId);
           if (!install) reject("store_template_not_found", 404);
           const rows = await recordRows(tx, actor.workspaceId, requestId);
-          if (isUpdateAvailable(install, rows, template.version))
+          if (
+            await updateToOffer(tx, actor.workspaceId, requestId, install, rows)
+          )
             reject("store_template_update_available", 409);
           const computed = await planOrUnavailable(
             tx,
@@ -2384,18 +2422,17 @@ export function createStoreTemplateUpdateService(deps: {
               live
                 .filter((row) => row.kind === kind)
                 .map((row) => row.recordId);
-            const updateAvailable = isUpdateAvailable(
-              install,
-              rows,
-              template.version,
-            );
-            const computed = updateAvailable
+            const computed = isUpdateAvailable(install, rows, template.version)
               ? await planOrUnavailable(
                   tx,
                   actor.workspaceId,
                   install.requestId,
                 )
               : undefined;
+            // A plan that changes nothing is no update (#625).
+            const updateAvailable =
+              computed === null ||
+              (computed !== undefined && changesAnything(computed.records));
             const dashboardId = idsOf("dashboard")[0];
             const [dashboard] = dashboardId
               ? await tx
@@ -2420,7 +2457,7 @@ export function createStoreTemplateUpdateService(deps: {
               templateVersion: install.templateVersion,
               latestVersion: template.version,
               updateAvailable,
-              summary: computed?.summary ?? null,
+              summary: updateAvailable ? (computed?.summary ?? null) : null,
               error:
                 computed === null
                   ? "store_template_baseline_unavailable"
@@ -2455,6 +2492,8 @@ export function createStoreTemplateUpdateService(deps: {
             requestId,
           );
           if (!computed) reject("store_template_baseline_unavailable", 409);
+          if (!changesAnything(computed.records))
+            reject("store_template_up_to_date", 409);
           return {
             requestId,
             fromVersion: computed.install.templateVersion,
