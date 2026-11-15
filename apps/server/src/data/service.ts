@@ -527,30 +527,80 @@ export function createDataLoader(
      * catalog instead of refusing the pinned vector. Page continuations keep
      * the strict check. */
     currentResources?: boolean;
+    /**
+     * Loads shared with the other loaders of a batch (#668): source loads
+     * (not prepared outputs), replayed while their rows are unexpired, never
+     * for a pinned generation; and the preparation rows prepared outputs
+     * read. The batch keeps them current (see createDataService).
+     */
+    shared?: SharedLoads;
+    /**
+     * A loader of the same transaction whose loads this one starts with: a
+     * publication reads its new output through the inputs it just loaded
+     * instead of loading them again (#668).
+     */
+    seed?: LoaderState;
   } = {},
 ) {
-  const tables = new Map<string, DataTable>(),
+  const seed = options.seed;
+  const tables = new Map<string, DataTable>(seed?.tables),
     preparedSources = new Map<
       string,
       { graph: PreparationGraph; outputId: string }
-    >(),
-    views = new Map<string, SourceView>(),
+    >(seed?.preparedSources),
+    views = new Map<string, SourceView>(seed?.views),
     visiting = new Set<string>();
   const dependencies: Dependencies = {
     prepared: { ...(options.dependencies?.prepared ?? {}) },
   };
-  const generations: Record<string, string> = {};
-  const bindings: Record<string, DataField[]> = {};
-  const warnings = new Set<string>();
+  const generations: Record<string, string> = { ...seed?.generations };
+  const bindings: Record<string, DataField[]> = { ...seed?.bindings };
+  const warnings = new Set<string>(seed?.warnings);
   const policy = options.policy ?? { ...DEFAULT_DATA_POLICY };
   const budget = new ProcessingBudget(policy.queryOperations, {
     rows: policy.queryRows,
     outputBytes: policy.queryOutputBytes,
   });
+  const shareable = (id: string) =>
+    options.shared && !id.startsWith("prepared:") && !options.generations?.[id]
+      ? options.shared.sources
+      : undefined;
+  /**
+   * Records a source load for the other loaders of the batch, with the
+   * warnings of this source itself: not what the load added to this
+   * loader's set, which may already hold them from another source.
+   */
+  const share = (id: string, table: DataTable, historyIncomplete = false) =>
+    shareable(id)?.set(id, {
+      table,
+      view: views.get(id)!,
+      generationId: generations[id],
+      warnings: [
+        ...(table.pendingSources?.length ? ["data_source_pending"] : []),
+        ...(historyIncomplete ? ["retained_source_history_incomplete"] : []),
+      ],
+    });
   const load = async (id: string): Promise<DataTable> => {
     const cached = tables.get(id);
     if (cached) return cached;
     if (visiting.has(id) || visiting.size >= 20) fail("data_dependency_cycle");
+    const shared = shareable(id)?.get(id);
+    if (
+      shared &&
+      (!shared.table.pendingSources?.length ||
+        options.allowPendingSchemas ||
+        options.allowPendingResults) &&
+      (!shared.table.expiresAt || new Date(shared.table.expiresAt) > now)
+    ) {
+      validateDataTable(shared.table, budget);
+      shared.warnings.forEach((warning) => warnings.add(warning));
+      if (shared.generationId) generations[id] = shared.generationId;
+      views.set(id, shared.view);
+      bindings[id] = shared.table.fields;
+      tables.set(id, shared.table);
+      return shared.table;
+    }
+    let historyIncomplete = false;
     visiting.add(id);
     let result: DataTable;
     if (id.startsWith("prepared:")) {
@@ -559,35 +609,46 @@ export function createDataLoader(
         fail("data_source_not_found", 404);
       const preparationId = parts[1]!,
         output = parts[2]!;
-      const [parent] = await tx
-        .select()
-        .from(schema.dataPreparations)
-        .where(
-          and(
-            eq(schema.dataPreparations.workspaceId, workspaceId),
-            eq(schema.dataPreparations.id, preparationId),
-          ),
-        );
+      const [parent] = options.shared?.preparations.has(preparationId)
+        ? [options.shared.preparations.get(preparationId)!]
+        : await tx
+            .select()
+            .from(schema.dataPreparations)
+            .where(
+              and(
+                eq(schema.dataPreparations.workspaceId, workspaceId),
+                eq(schema.dataPreparations.id, preparationId),
+              ),
+            );
       if (!parent) fail("data_source_not_found", 404);
+      options.shared?.preparations.set(preparationId, parent);
       const override = options.overrides?.get(preparationId);
       const version =
         override?.version ??
         dependencies.prepared[preparationId] ??
         parent.publishedVersion;
       if (!version) fail("data_source_not_published", 409);
+      const versionKey = preparationId + ":" + version;
       const [published] = override
         ? []
-        : await tx
-            .select()
-            .from(schema.dataPreparationVersions)
-            .where(
-              and(
-                eq(schema.dataPreparationVersions.workspaceId, workspaceId),
-                eq(schema.dataPreparationVersions.preparationId, preparationId),
-                eq(schema.dataPreparationVersions.version, version),
-              ),
-            );
+        : options.shared?.versions.has(versionKey)
+          ? [options.shared.versions.get(versionKey)!]
+          : await tx
+              .select()
+              .from(schema.dataPreparationVersions)
+              .where(
+                and(
+                  eq(schema.dataPreparationVersions.workspaceId, workspaceId),
+                  eq(
+                    schema.dataPreparationVersions.preparationId,
+                    preparationId,
+                  ),
+                  eq(schema.dataPreparationVersions.version, version),
+                ),
+              );
       if (!override && !published) fail("data_source_not_found", 404);
+      // Versions are immutable (UPDATE is revoked).
+      if (published) options.shared?.versions.set(versionKey, published);
       const graph =
         override?.graph ?? preparationGraphSchema.parse(published!.graph);
       if (!graph.outputs.includes(output)) fail("data_source_not_found", 404);
@@ -894,6 +955,7 @@ export function createDataLoader(
         });
         visiting.delete(id);
         tables.set(id, pending);
+        share(id, pending);
         return pending;
       }
       if (generation.expiresAt !== null && generation.expiresAt <= now)
@@ -945,6 +1007,7 @@ export function createDataLoader(
       if (records.length !== generation.rowCount) {
         if (requested) fail("data_snapshot_expired", 409);
         warnings.add("retained_source_history_incomplete");
+        historyIncomplete = true;
       }
       const expiry = records.reduce<Date | null>((min, row) => {
         const policyExpiry =
@@ -986,6 +1049,7 @@ export function createDataLoader(
     bindings[id] = result.fields;
     visiting.delete(id);
     tables.set(id, result);
+    share(id, result, historyIncomplete);
     return result;
   };
   return {
@@ -999,6 +1063,33 @@ export function createDataLoader(
     warnings,
     budget,
   };
+}
+
+/** What a loader has loaded; a later loader can start with it. */
+interface LoaderState {
+  tables: ReadonlyMap<string, DataTable>;
+  preparedSources: ReadonlyMap<
+    string,
+    { graph: PreparationGraph; outputId: string }
+  >;
+  views: ReadonlyMap<string, SourceView>;
+  generations: Readonly<Record<string, string>>;
+  bindings: Readonly<Record<string, DataField[]>>;
+  warnings: ReadonlySet<string>;
+}
+/** Loads shared by the loaders of one batch (#668). */
+export interface SharedLoads {
+  sources: Map<
+    string,
+    {
+      table: DataTable;
+      view: SourceView;
+      generationId: string | undefined;
+      warnings: string[];
+    }
+  >;
+  preparations: Map<string, typeof schema.dataPreparations.$inferSelect>;
+  versions: Map<string, typeof schema.dataPreparationVersions.$inferSelect>;
 }
 
 /** The status of a dataset-store error: conflict 409, quota or limit 413. */
@@ -1016,19 +1107,39 @@ export function createDataService(
   defaults: DataPolicy = { ...DEFAULT_DATA_POLICY },
   /** In-memory queue for page-session admission; one per process by default. */
   pageAdmissions: SessionLockQueue = processSessionLocks,
+  options: {
+    /**
+     * Many calls composed into one caller transaction, for one actor (a
+     * template install, #668). `db` must be that transaction. The workspace
+     * context, data policy and statement timeout are set by the first call
+     * only, later calls run without a savepoint of their own (any failure
+     * fails the caller's transaction, as a conflict already does), and
+     * loaders share their source loads until a manual save changes a source.
+     */
+    batch?: boolean;
+  } = {},
 ) {
+  if (options.batch && !isTransactionHandle(db))
+    throw new Error("a batch data service runs in a caller's transaction");
   const policies = new WeakMap<Transaction, DataPolicy>();
   const policyFor = (tx: Transaction) => policies.get(tx)!;
+  let batch: { actor: DataActor; shared: SharedLoads } | undefined;
   const loadFor: typeof createDataLoader = (
     tx,
     workspaceId,
     now,
-    options = {},
+    loaderOptions = {},
   ) =>
     createDataLoader(tx, workspaceId, now, {
-      ...options,
+      ...loaderOptions,
+      ...(batch ? { shared: batch.shared } : {}),
       policy: policyFor(tx),
     });
+  /** Sources changed: later loads read them again. */
+  const sourcesChanged = () => batch?.shared.sources.clear();
+  /** A preparation row changed: later loads read it again. */
+  const preparationChanged = (id: string) =>
+    batch?.shared.preparations.delete(id);
   /**
    * Runs `fn` in a workspace transaction on `handle`, serializable unless
    * `isolationLevel` says otherwise, retrying serialization failures and
@@ -1042,7 +1153,42 @@ export function createDataService(
     handle: Pick<Database, "transaction"> = db,
     isolationLevel: "serializable" | "read committed" = "serializable",
   ): Promise<T> => {
+    if (
+      batch &&
+      (batch.actor.workspaceId !== actor.workspaceId ||
+        batch.actor.callerId !== actor.callerId)
+    )
+      throw new Error("a batch data service serves one actor");
     try {
+      if (options.batch && handle === db) {
+        const tx = db as Transaction;
+        if (!batch) {
+          await withWorkspace(
+            tx,
+            { workspaceId: actor.workspaceId, userId: actor.callerId },
+            async (context) => {
+              const { policy } = await resolveDataPolicy(
+                context,
+                actor.workspaceId,
+                defaults,
+              );
+              policies.set(tx, policy);
+              await context.execute(
+                sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+              );
+            },
+          );
+          batch = {
+            actor,
+            shared: {
+              sources: new Map(),
+              preparations: new Map(),
+              versions: new Map(),
+            },
+          };
+        }
+        return await fn(tx, clock());
+      }
       return await retryOnSerializationFailure(
         () =>
           withWorkspace(
@@ -1345,6 +1491,7 @@ export function createDataService(
           to: target,
         });
       if (kind === "preparation") {
+        preparationChanged(id);
         const [row] = await tx
           .update(schema.dataPreparations)
           .set({ projectId: target })
@@ -1633,6 +1780,7 @@ export function createDataService(
       input: z.infer<typeof manualDatasetPageInputSchema>,
     ) =>
       run(actor, async (tx, now) => {
+        sourcesChanged();
         const [dataset] = await tx
           .select()
           .from(schema.dataDatasets)
@@ -1749,6 +1897,7 @@ export function createDataService(
       datasetId?: string,
     ) =>
       run(actor, async (tx, now) => {
+        sourcesChanged();
         if (input.definition.mode !== "snapshot")
           fail("data_manual_snapshot_required");
         if (!datasetId) {
@@ -1943,6 +2092,7 @@ export function createDataService(
             dependencies: publication.dependencies as Dependencies,
           }),
         );
+        preparationChanged(id);
         const [updated] = await tx
           .update(schema.dataPreparations)
           .set({
@@ -1986,6 +2136,7 @@ export function createDataService(
             true,
           );
           if (input.version !== current.version) fail("version_conflict", 409);
+          preparationChanged(id);
           const [row] = await tx
             .update(schema.dataPreparations)
             .set({
@@ -2128,6 +2279,7 @@ export function createDataService(
             ) === stable(loader.dependencies.prepared)
           )
             return { preparation: preparationView(row) };
+          preparationChanged(id);
           const [bumped] = await tx
             .update(schema.dataPreparations)
             .set({ version: row.version + 1, updatedAt: now })
@@ -2160,14 +2312,18 @@ export function createDataService(
           dependencies: loader.dependencies,
           createdAt: now,
         });
+        // The new output through the inputs the graph just read: the same
+        // pinned versions, so loading them again would read the same rows.
         const publishedLoader = loadFor(tx, actor.workspaceId, now, {
           allowPendingSchemas: true,
           dependencies: {
             prepared: { ...loader.dependencies.prepared, [id]: row.version },
           },
+          seed: loader,
         });
         for (const output of graph.outputs)
           await publishedLoader.load("prepared:" + id + ":" + output);
+        preparationChanged(id);
         const [updated] = await tx
           .update(schema.dataPreparations)
           .set({ publishedVersion: row.version, updatedAt: now })

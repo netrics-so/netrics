@@ -167,8 +167,9 @@ describe("the store-template install lock (#604)", () => {
   }, 30_000);
 
   it("waits its turn behind an install that runs longer than a few seconds (#660)", async () => {
-    // An install is ~1,100 statements in one transaction: ~0.7 s on CI,
-    // 3-7.5 s against a local Docker Postgres. Before #660 a waiter gave up
+    // An install was ~1,100 statements in one transaction (~320 since
+    // #668): ~0.7 s on CI, 3-7.5 s against a busy local Docker Postgres,
+    // and a slow database can still take longer. Before #660 a waiter gave up
     // after 2 s, queued again at the back twice, and answered 409
     // version_conflict after ~6 s while the install ahead still ran.
     const w = await workspace();

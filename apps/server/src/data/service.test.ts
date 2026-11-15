@@ -1213,3 +1213,236 @@ it("adopts changed preparations only through an explicit fresh model publication
   await service.publishModel(actor, model.id, fresh.version);
   expect((await current()).rows[0]!.measures.total!.value).toBe("3.3");
 });
+
+describe("a batch data service (#668)", () => {
+  const scaled = (datasetId: string, factor: string): PreparationGraph => ({
+    version: 1,
+    nodes: [
+      { id: "input", type: "source", datasetId },
+      {
+        id: "output",
+        type: "calculate",
+        input: "input",
+        fieldId: "scaled",
+        name: "Scaled",
+        expression: {
+          kind: "call",
+          fn: "multiply",
+          args: [
+            f("amount"),
+            { kind: "literal", type: "decimal", value: factor },
+          ],
+        },
+      },
+    ],
+    outputs: ["output"],
+  });
+  const amounts = (rows: Record<string, unknown>[]) =>
+    rows.map((row) => row.scaled);
+
+  it("reads sources and preparations again after this batch changed them", async () => {
+    const values = await withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      async (tx) => {
+        const batch = createDataService(tx, () => NOW, undefined, undefined, {
+          batch: true,
+        });
+        const sourceDefinition = definition("batch_source", [
+          { id: "id", type: "string" },
+          { id: "amount", type: "decimal" },
+          { id: "currency", type: "string" },
+        ]);
+        const source = await batch.saveManual(actor, {
+          definition: sourceDefinition,
+          records: [{ values: { id: "one", amount: "1.00", currency: "EUR" } }],
+        });
+        const first = (
+          await batch.savePreparation(actor, {
+            name: "Doubled",
+            graph: scaled(source.datasetId, "2"),
+          })
+        ).preparation;
+        await batch.publishPreparation(actor, first.id, first.version);
+        const output = "prepared:" + first.id + ":output";
+        const before = amounts((await batch.preview(actor, output)).rows);
+        // A manual save in the batch: later loads read the new rows.
+        await batch.saveManual(
+          actor,
+          {
+            definition: sourceDefinition,
+            records: [
+              { values: { id: "one", amount: "5.00", currency: "EUR" } },
+            ],
+            generationId: source.generationId,
+          },
+          source.datasetId,
+        );
+        const second = (
+          await batch.savePreparation(actor, {
+            name: "Tripled",
+            graph: scaled(source.datasetId, "3"),
+          })
+        ).preparation;
+        await batch.publishPreparation(actor, second.id, second.version);
+        const changedSource = amounts(
+          (await batch.preview(actor, "prepared:" + second.id + ":output"))
+            .rows,
+        );
+        // A new version of a preparation the batch read: later loads read it.
+        const saved = (
+          await batch.savePreparation(
+            actor,
+            {
+              name: "Doubled",
+              graph: scaled(source.datasetId, "4"),
+              version: first.version,
+            },
+            first.id,
+          )
+        ).preparation;
+        await batch.publishPreparation(actor, first.id, saved.version);
+        const republished = amounts((await batch.preview(actor, output)).rows);
+        return { before, changedSource, republished };
+      },
+      { isolationLevel: "serializable" },
+    );
+    expect(values).toEqual({
+      before: ["2"],
+      changedSource: ["15"],
+      republished: ["20"],
+    });
+  });
+
+  /** Two sources whose first report is still incomplete: no generation. */
+  async function pendingSources(prefix: string) {
+    const [connection] =
+      await admin`select id from connections where workspace_id=${actor.workspaceId} limit 1`;
+    const ids: string[] = [];
+    for (const key of [prefix + "_a", prefix + "_b"]) {
+      const result = await withWorkspace(
+        db,
+        { workspaceId: actor.workspaceId },
+        (tx) =>
+          ingestDatasetPage(tx, {
+            workspaceId: actor.workspaceId,
+            connectionId: connection!.id as string,
+            definition: { ...salesDefinition, key },
+            page: {
+              datasetKey: key,
+              schemaVersion: 1,
+              refreshKey: "first-report",
+              pageKey: "p1",
+              previousPageKey: null,
+              complete: false,
+              records: [
+                {
+                  values: {
+                    id: "o1",
+                    app: "a",
+                    amount: "1.00",
+                    currency: "EUR",
+                  },
+                },
+              ],
+            },
+            now: NOW,
+          }),
+      );
+      expect(result.generationId).toBeNull();
+      ids.push(result.datasetId);
+    }
+    return ids as [string, string];
+  }
+  /** Two manual sources that lost a retained record: incomplete history. */
+  async function incompleteSources(prefix: string) {
+    const ids: string[] = [];
+    for (const key of [prefix + "_a", prefix + "_b"]) {
+      const saved = await service.saveManual(actor, {
+        definition: { ...salesDefinition, key },
+        records: [
+          { values: { id: "s1", app: "a", amount: "1.00", currency: "EUR" } },
+          { values: { id: "s2", app: "a", amount: "2.00", currency: "EUR" } },
+        ],
+      });
+      await admin`delete from data_records
+        where generation_id=${saved.generationId} and record_key = (
+          select min(record_key) from data_records
+          where generation_id=${saved.generationId})`;
+      ids.push(saved.datasetId);
+    }
+    return ids as [string, string];
+  }
+  const sourcesGraph = (ids: string[]): PreparationGraph => ({
+    version: 1,
+    nodes: ids.map((datasetId, index) => ({
+      id: "input" + index,
+      type: "source" as const,
+      datasetId,
+    })),
+    outputs: ids.map((_, index) => "input" + index),
+  });
+  /**
+   * One batch reads two sources with the same warning, then only the
+   * second: the replayed second source still carries its own warning.
+   */
+  const batchReads = (ids: [string, string]) =>
+    withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      async (tx) => {
+        const batch = createDataService(tx, () => NOW, undefined, undefined, {
+          batch: true,
+        });
+        await batch.previewPreparation(actor, sourcesGraph(ids));
+        const preview = await batch.previewPreparation(
+          actor,
+          sourcesGraph([ids[1]]),
+        );
+        const saved = (
+          await batch.savePreparation(actor, {
+            name: "Second source only",
+            graph: sourcesGraph([ids[1]]),
+          })
+        ).preparation;
+        await batch.publishPreparation(actor, saved.id, saved.version);
+        return { preview, preparationId: saved.id };
+      },
+      { isolationLevel: "serializable" },
+    );
+
+  it("keeps a pending source's warning when another pending source was read first", async () => {
+    const { preview, preparationId } = await batchReads(
+      await pendingSources("batch_pending"),
+    );
+    expect(preview.warnings).toContain("data_source_pending");
+    expect(preview.outputs.input0?.rows).toEqual([]);
+    // No prepared output is cached from the empty table of a pending source.
+    const [cached] =
+      await admin`select count(*)::int as n from data_prepared_generations where preparation_id=${preparationId}`;
+    expect(cached!.n).toBe(0);
+  });
+
+  it("keeps a source's incomplete-history warning when another such source was read first", async () => {
+    const { preview } = await batchReads(
+      await incompleteSources("batch_incomplete"),
+    );
+    expect(preview.warnings).toContain("retained_source_history_incomplete");
+    expect(preview.outputs.input0?.rows).toHaveLength(1);
+  });
+
+  it("runs only in a caller's transaction, for one actor", async () => {
+    expect(() =>
+      createDataService(db, () => NOW, undefined, undefined, { batch: true }),
+    ).toThrow("a batch data service runs in a caller's transaction");
+    await expect(
+      withWorkspace(db, { workspaceId: actor.workspaceId }, async (tx) => {
+        const batch = createDataService(tx, () => NOW, undefined, undefined, {
+          batch: true,
+        });
+        await batch.listPreparations(actor);
+        await batch.listPreparations(other);
+      }),
+    ).rejects.toThrow("a batch data service serves one actor");
+  });
+});
