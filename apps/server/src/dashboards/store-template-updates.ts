@@ -768,7 +768,13 @@ export function createStoreTemplateUpdateService(deps: {
     }
   }
 
-  /** The install's open update (none closed it yet), as the API shows it. */
+  /**
+   * The install's open update (none closed it yet), as the API shows it. An
+   * update without dashboards is done once its drafts are published (a swap
+   * closes one with dashboards): it is the install's last update then, not
+   * an open one, so the next version's review is not hidden behind it. The
+   * next apply closes it.
+   */
   async function openUpdateOf(
     tx: Transaction,
     workspaceId: string,
@@ -784,7 +790,12 @@ export function createStoreTemplateUpdateService(deps: {
           isNull(schema.dataTemplateUpdates.closedAt),
         ),
       );
-    return row ? updateView(tx, workspaceId, row) : null;
+    if (!row) return null;
+    const view = await updateView(tx, workspaceId, row);
+    return view.dashboards.length === 0 &&
+      view.drafts.every((draft) => draft.published)
+      ? null
+      : view;
   }
   /**
    * The install's newest update, open or closed: what a swap back (or a
@@ -1167,6 +1178,22 @@ export function createStoreTemplateUpdateService(deps: {
         );
       return built;
     };
+    /**
+     * Preparations this update drafts or creates. A published preparation or
+     * model keeps the input versions it was published with, so one that
+     * reads them gets a draft too, even with unchanged content: publishing
+     * it (after its inputs, the order drafts are listed in) reads their new
+     * versions. Keys come in dependency order (sources, appends, models).
+     */
+    const drafted = new Set<string>();
+    const readsDrafted = (datasetIds: string[]) =>
+      datasetIds.some(
+        (id) => id.startsWith("prepared:") && drafted.has(id.split(":")[1]!),
+      );
+    const sourcesOf = (graph: PreparationGraph) =>
+      graph.nodes.flatMap((node) =>
+        node.type === "source" ? [node.datasetId] : [],
+      );
     for (const key of keys) {
       const next = plan.next.get(key)!;
       if (next.kind === "dashboard") continue;
@@ -1200,6 +1227,7 @@ export function createStoreTemplateUpdateService(deps: {
               : null;
         if (!saved || record.kind === "dashboard") continue;
         ids[key] = saved.id;
+        if (record.kind === "preparation") drafted.add(saved.id);
         drafts.push({
           key,
           kind: record.kind,
@@ -1235,12 +1263,14 @@ export function createStoreTemplateUpdateService(deps: {
             ),
           preparationGraphSchema,
         );
-        if (same(graph, current.graph)) continue;
+        if (same(graph, current.graph) && !readsDrafted(sourcesOf(graph)))
+          continue;
         const { preparation } = await data.savePreparation(
           actor,
           { name: current.name, graph, version: current.version },
           current.id,
         );
+        drafted.add(preparation.id);
         drafts.push({
           key,
           kind: "preparation",
@@ -1272,7 +1302,11 @@ export function createStoreTemplateUpdateService(deps: {
             ),
           semanticModelDefinitionSchema,
         );
-        if (same(definition, current.definition)) continue;
+        if (
+          same(definition, current.definition) &&
+          !readsDrafted(definition.datasets)
+        )
+          continue;
         const { model } = await data.saveModel(
           actor,
           { name: current.name, definition, version: current.version },

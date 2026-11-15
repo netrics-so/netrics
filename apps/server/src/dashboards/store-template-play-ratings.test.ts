@@ -4,6 +4,8 @@ import {
   createDatabase,
   createRawSqlClient,
   createWorkspace,
+  ingestDatasetPage,
+  upsertConnectionResources,
   schema,
   withWorkspace,
   type Database,
@@ -12,6 +14,7 @@ import {
 import type { PreparationGraph } from "@netrics/domain";
 import { storeTemplatePlanSchema } from "@netrics/contracts";
 import { createDefaultRegistry } from "../connectors.js";
+import { createDataService } from "../data/service.js";
 import {
   createTestDatabase,
   TEST_DATABASE_SETUP_TIMEOUT_MS,
@@ -20,7 +23,7 @@ import {
 import { createStoreTemplateService } from "./store-template-service.js";
 import { createStoreTemplateUpdateService } from "./store-template-updates.js";
 import { storeTemplate, storeTemplateV1 } from "./store-template.js";
-import { now } from "./test-helpers.js";
+import { apple as appleFixture, google, inputs, now } from "./test-helpers.js";
 
 /**
  * Template version 2 (Play Console rating reports): an install of version 1
@@ -211,5 +214,227 @@ describe("store template version 2: Play Console rating reports", () => {
       await owner`select 1 from data_datasets where key='rating_rows'
         and workspace_id=${workspaceId}`,
     ).toHaveLength(0);
+  });
+});
+
+/**
+ * Synthetic reports of both stores, as their syncs deliver them after the
+ * upgrade (the fixture tables of test-helpers, per connection).
+ */
+async function ingestReports(
+  workspaceId: string,
+  connections: { apple: { id: string }; play: { id: string } },
+) {
+  const fixtures = inputs();
+  for (const [connection, fixture] of [
+    [connections.apple, appleFixture],
+    [connections.play, google],
+  ] as const) {
+    const manifest = registry.get(fixture.connectorId)!.manifest;
+    for (const [key, fixtureId] of Object.entries(fixture.datasets)) {
+      const definition = manifest.datasets!.find((d) => d.key === key)!;
+      await withWorkspace(db, { workspaceId }, (tx) =>
+        ingestDatasetPage(tx, {
+          workspaceId,
+          connectionId: connection.id,
+          definition,
+          page: {
+            datasetKey: key,
+            schemaVersion: definition.version,
+            refreshKey: "first-report",
+            pageKey: "page-1",
+            previousPageKey: null,
+            complete: true,
+            ...(definition.mode === "replace_window"
+              ? {
+                  window: {
+                    from: "2026-10-01",
+                    toExclusive: "2026-11-01",
+                    partition: {},
+                  },
+                }
+              : {}),
+            records: fixtures.get(fixtureId)!.rows.map((values, index) => ({
+              values: {
+                ...values,
+                ...(Object.hasOwn(values, "row_id")
+                  ? { row_id: String(index) }
+                  : {}),
+              },
+            })),
+          },
+          now: new Date(now),
+        }),
+      );
+    }
+    const names = fixtures.get(`resources:${fixture.id}`)!.rows;
+    await withWorkspace(db, { workspaceId }, (tx) =>
+      upsertConnectionResources(tx, {
+        workspaceId,
+        connectionId: connection.id,
+        resources: names.map((row) => ({
+          id: row.resource_id as string,
+          name: row.name as string,
+          kind: row.kind as string,
+        })),
+        now: new Date(now),
+      }),
+    );
+  }
+}
+
+describe("publishing a two-store template update", { timeout: 30_000 }, () => {
+  it("previews and publishes the ratings model after the drafts are published in their listed order", async () => {
+    const { workspaceId, requestId, apple, play } = await versionOneInstall();
+    await ingestReports(workspaceId, { apple, play });
+    const updates = createStoreTemplateUpdateService({
+      db,
+      registry,
+      now: () => new Date(now),
+    });
+    const plan = await updates.plan(actor(workspaceId), requestId);
+    const update = await updates.apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: [],
+    });
+    // The combined ratings preparation reads both changed sources: it gets
+    // a draft too, listed after them, so publishing it reads their new
+    // versions (a published preparation keeps the input versions it was
+    // published with).
+    const keys = update.drafts.map((draft) => draft.key);
+    expect(keys.slice(0, 2).sort()).toEqual(
+      [
+        `preparation:source:${apple.id}:ratings`,
+        `preparation:source:${play.id}:ratings`,
+      ].sort(),
+    );
+    expect(keys.slice(2)).toEqual([
+      "preparation:append:ratings:0:0",
+      "model:ratings",
+    ]);
+    const data = createDataService(db, () => new Date(now));
+    const user = { workspaceId, callerId: userId };
+    for (const draft of update.drafts)
+      if (draft.kind === "preparation")
+        await data.publishPreparation(user, draft.recordId, draft.version);
+    const modelDraft = update.drafts.find((draft) => draft.kind === "model")!;
+    const { model } = await data.getModel(user, modelDraft.recordId);
+    const query = {
+      measureIds: ["rating", "rating_count", "availability"],
+      groupBy: ["listing", "storefront"],
+    };
+    const rows = (result: {
+      rows: Awaited<ReturnType<typeof data.previewModel>>["rows"];
+    }) =>
+      result.rows
+        .map((row) => [
+          row.dimensions.listing,
+          row.dimensions.storefront,
+          row.dimensionLabels?.storefront,
+          row.measures.rating?.value,
+          row.measures.rating_count?.value,
+          row.measures.availability?.value,
+        ])
+        .filter((row) =>
+          [`${apple.id}:a`, `${play.id}:com.example.alpha`].includes(
+            row[0] as string,
+          ),
+        )
+        .sort();
+    const expected = [
+      // Apple: its storefront code, rating and count.
+      [`${apple.id}:a`, "US", "US", "4.5", 100, "Available"],
+      // Play: the report's Total Average Rating, all countries, no count.
+      [
+        `${play.id}:com.example.alpha`,
+        "ALL",
+        "All countries",
+        "4.3333",
+        null,
+        "Available",
+      ],
+    ].sort();
+    expect(
+      rows(
+        await data.previewModel(user, model.definition, query, {
+          id: model.id,
+          version: model.version,
+        }),
+      ),
+    ).toEqual(expected);
+    // A draft is still unpublished: the update is open.
+    expect(
+      (await updates.list(actor(workspaceId))).installs[0]!.openUpdate,
+    ).toMatchObject({ id: update.id });
+    await data.publishModel(user, model.id, model.version);
+    expect(rows(await data.query(user, model.id, query))).toEqual(expected);
+    // Everything is published and the update has no dashboards: it is done,
+    // so the next version's review is not hidden behind it.
+    const finished = (await updates.list(actor(workspaceId))).installs[0]!;
+    expect(finished.openUpdate).toBeNull();
+    expect(finished.lastUpdate).toMatchObject({
+      id: update.id,
+      dashboards: [],
+    });
+    expect(finished.lastUpdate!.drafts.every((d) => d.published)).toBe(true);
+    const third = createStoreTemplateUpdateService({
+      db,
+      registry,
+      now: () => new Date(now),
+      template: { ...storeTemplate, version: 3 },
+    });
+    expect((await third.list(actor(workspaceId))).installs[0]).toMatchObject({
+      updateAvailable: true,
+      openUpdate: null,
+    });
+    const next = await third.plan(actor(workspaceId), requestId);
+    expect(next).toMatchObject({ fromVersion: 2, toVersion: 3 });
+  });
+  it("recovers when the combined preparation was published before its inputs: publishing it again reads them", async () => {
+    const { workspaceId, requestId, apple, play } = await versionOneInstall();
+    await ingestReports(workspaceId, { apple, play });
+    const updates = createStoreTemplateUpdateService({
+      db,
+      registry,
+      now: () => new Date(now),
+    });
+    const plan = await updates.plan(actor(workspaceId), requestId);
+    const update = await updates.apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: [],
+    });
+    const data = createDataService(db, () => new Date(now));
+    const user = { workspaceId, callerId: userId };
+    const append = update.drafts.find(
+      (draft) => draft.key === "preparation:append:ratings:0:0",
+    )!;
+    // Out of order (as an update applied before this fix was left): the
+    // combined preparation first, still reading the sources' old versions.
+    await data.publishPreparation(user, append.recordId, append.version);
+    for (const draft of update.drafts)
+      if (draft.kind === "preparation" && draft !== append)
+        await data.publishPreparation(user, draft.recordId, draft.version);
+    const { model } = await data.getModel(
+      user,
+      update.drafts.find((draft) => draft.kind === "model")!.recordId,
+    );
+    const preview = () =>
+      data.previewModel(
+        user,
+        model.definition,
+        { measureIds: ["rating"], groupBy: ["listing", "storefront"] },
+        { id: model.id, version: model.version },
+      );
+    await expect(preview()).rejects.toThrow("model_dimension_label_invalid");
+    // Publishing the combined preparation again reads the new sources.
+    const { preparation } = await data.getPreparation(user, append.recordId);
+    await data.publishPreparation(user, append.recordId, preparation.version);
+    const rows = (await preview()).rows;
+    expect(
+      rows.find(
+        (row) => row.dimensions.listing === `${play.id}:com.example.alpha`,
+      )?.measures.rating?.value,
+    ).toBe("4.3333");
+    await data.publishModel(user, model.id, model.version);
   });
 });

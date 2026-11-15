@@ -2076,9 +2076,15 @@ export function createDataService(
       }),
     publishPreparation: (actor: DataActor, id: string, expected: number) =>
       run(actor, async (tx, now) => {
-        const row = await findPreparation(tx, actor.workspaceId, id, true);
+        let row = await findPreparation(tx, actor.workspaceId, id, true);
         if (row.version !== expected) fail("version_conflict", 409);
-        if (row.publishedVersion === expected)
+        // Publishing the published version again: a published preparation
+        // keeps the versions of the preparations it reads, so when those were
+        // published since, this publishes the same graph as a new version
+        // reading their current versions. Otherwise (or for a restored
+        // version, which keeps its inputs on purpose) nothing changes.
+        const republish = row.publishedVersion === expected;
+        if (republish && row.restoredFromVersion)
           return { preparation: preparationView(row) };
         const restored = row.restoredFromVersion
           ? await preparationPublication(
@@ -2109,6 +2115,33 @@ export function createDataService(
           )
         )
           fail("data_dependency_cycle");
+        if (republish) {
+          const publication = await preparationPublication(
+            tx,
+            actor.workspaceId,
+            id,
+            expected,
+          );
+          if (
+            stable(
+              (publication.dependencies as Dependencies | null)?.prepared ?? {},
+            ) === stable(loader.dependencies.prepared)
+          )
+            return { preparation: preparationView(row) };
+          const [bumped] = await tx
+            .update(schema.dataPreparations)
+            .set({ version: row.version + 1, updatedAt: now })
+            .where(
+              and(
+                eq(schema.dataPreparations.workspaceId, actor.workspaceId),
+                eq(schema.dataPreparations.id, id),
+                eq(schema.dataPreparations.version, row.version),
+              ),
+            )
+            .returning();
+          if (!bumped) fail("version_conflict", 409);
+          row = bumped;
+        }
         await tx.insert(schema.dataPreparationVersions).values({
           preparationId: id,
           workspaceId: actor.workspaceId,

@@ -468,7 +468,15 @@ provenance; late corrections invalidate them automatically on the next read.
 
 Published models pin preparation definition versions while reading newer
 compatible source generations. Editing drafts cannot change live queries.
-Republishing a model adopts newer preparation definitions. A failed build
+Republishing a model adopts newer preparation definitions it reads directly.
+A published preparation pins the preparations it reads in the same way, and a
+model reading it inherits those pins: publishing such a preparation again,
+even unchanged, adopts their newer published versions as a new version (and
+changes nothing when they are current), and a model then adopts them when it is
+republished. A store-template update therefore drafts, besides the records the
+template changes, every template preparation and model that reads a drafted
+preparation, listed after their inputs so publishing the drafts in that order
+carries the change through. A failed build
 leaves its previous publication active. A previously successful query can
 fall back to its complete retained source vector after a processing/schema
 failure, with `stale: true`, the error code and a warning. Fallback re-authorizes
