@@ -99,6 +99,24 @@ jobs:
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
+      # Only the commit that set package.json to X.Y.Z reports X.Y.Z; later
+      # main builds report X.Y.Z+<commit> (scripts/release/version.ts).
+      # Tagging one of those would ship images that call themselves a main
+      # build.
+      - name: Check the images report this version
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          for image in server web; do
+            built=$(docker buildx imagetools inspect --raw "$IMAGE_PREFIX/$image:$GITHUB_SHA" |
+              jq -r '.annotations["org.opencontainers.image.version"] // ""')
+            if [ "$built" != "$VERSION" ]; then
+              echo "::error::The $image image of $GITHUB_SHA reports version '$built', not $VERSION. Tag the commit that set package.json to $VERSION."
+              exit 1
+            fi
+          done
+
       - name: Verify and tag images
         env:
           VERSION: ${{ steps.tag.outputs.version }}

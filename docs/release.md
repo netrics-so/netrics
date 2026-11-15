@@ -13,24 +13,28 @@ does (see `docs/architecture.md`, "Application release").
    format, lint, typecheck, unit/integration tests, build, and database
    migrations against a throwaway PostgreSQL (including a re-apply idempotency
    check).
-3. **Build once, per platform.** The server and web images are
-   each built exactly once per platform, natively (`linux/amd64` on
-   `ubuntu-24.04`, `linux/arm64` on `ubuntu-24.04-arm`, no QEMU), with
+3. **Build once, per platform.** The server and web images are each built
+   exactly once per platform, natively (`linux/amd64` on `ubuntu-24.04`,
+   `linux/arm64` on `ubuntu-24.04-arm`, no QEMU), with
    `docker/build-push-action` and the GHA layer cache, and pushed by digest.
    The publish job joins each pair into a multi-arch index tagged with the
-   immutable commit SHA: `ghcr.io/netrics-so/{server,web}:<sha>`. The
-   release version (root `package.json` `version`) and commit SHA are baked in
-   as build args (`APP_VERSION` / `GIT_SHA`; `NEXT_PUBLIC_*` for web), so the
-   running API reports them on `/health/live` and `/health/ready`, and the web
-   reports them on `/healthz` (`{"status":"ok","version":…,"commit":…}`) and
-   displays them on its status page. Nothing environment-specific is baked
-   into any image: the web image reads `NETRICS_API_URL` at request time, so
-   the same image runs against any API. Self-hosters run these images. The
-   hosted service runs the server image and, per ADR 0013, builds the web
-   frontend on Vercel from the same commit and lockfile with no
-   environment-specific build inputs (one source, same commit; checked by
-   the web build guard below). Until that cut-over (#161) the hosted web
-   still runs the web image on Railway.
+   immutable commit SHA: `ghcr.io/netrics-so/{server,web}:<sha>`. The build
+   version and commit SHA are baked in as build args (`APP_VERSION` /
+   `GIT_SHA`; `NEXT_PUBLIC_*` for web), so the running API reports them on
+   `/health/live` and `/health/ready`, and the web reports them on `/healthz`
+   (`{"status":"ok","version":…,"commit":…}`) and displays them on its status
+   page. The build version (`scripts/release/version.ts`) is the root
+   `package.json` `version`, `X.Y.Z`, for the commit that changed it, the one
+   a version tag goes on. Every later `main` commit reports `X.Y.Z+<commit>`
+   (its first 12 characters), so a `main` build never looks like the release
+   it follows (#646). The dispatch below carries the same value as `release`.
+   Nothing environment-specific is baked into any image: the web image reads
+   `NETRICS_API_URL` at request time, so the same image runs against any API.
+   Self-hosters run these images. The hosted service runs the server image
+   and, per ADR 0013, builds the web frontend on Vercel from the same commit
+   and lockfile with no environment-specific build inputs (one source, same
+   commit; checked by the web build guard below). Until that cut-over (#161)
+   the hosted web still runs the web image on Railway.
 4. **Record digests.** The index digest of each image
    (`ghcr.io/netrics-so/server@sha256:…`) goes to the job summary and to the
    dispatch below. Runtimes resolve the platform they need from the index.
@@ -123,14 +127,18 @@ rebuilds.
 1. Bump `version` in the root `package.json` in a pull request (for
    example `0.2.0`) and merge it. The release run for that commit bakes the
    version into the images.
-2. Tag that merge commit and push the tag:
+2. Tag that merge commit and push the tag. A version tag must go on the
+   commit that changes the root `package.json` version: only its images
+   report the plain `X.Y.Z`, and `promote.yml` refuses any other commit.
    `git tag -a v0.2.0 <sha> -m v0.2.0 && git push origin v0.2.0`.
 3. `.github/workflows/promote.yml` checks that the tag is `vX.Y.Z`, matches
    `package.json`, and points at a `main` commit. It waits for that commit's
-   release run to publish, verifies the signature and the SBOM attestation
-   against the `release.yml@refs/heads/main` identity, adds image tags to
-   the existing index digests, and creates a GitHub release listing the
-   digests. The image tags are:
+   release run to publish, checks that the images report `X.Y.Z` (so the tag
+   is on the commit that set the version, not a later one), verifies the
+   signature and the SBOM attestation against the
+   `release.yml@refs/heads/main` identity, adds image tags to the existing
+   index digests, and creates a GitHub release listing the digests. The image
+   tags are:
    - `X.Y.Z`, immutable by convention;
    - `X.Y`, which follows the newest patch of that minor (it never moves
      back to an older patch).

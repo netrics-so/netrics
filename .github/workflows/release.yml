@@ -43,15 +43,29 @@ jobs:
     env:
       # Integration tests create and migrate scratch databases on this server.
       NETRICS_TEST_ADMIN_URL: postgres://netrics:netrics@localhost:5432/postgres
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The parent commit tells a release commit from a later main
+          # build (scripts/release/version.ts).
+          fetch-depth: 2
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: pnpm
+      # X.Y.Z for the commit that sets the package.json version (the one a
+      # release tag goes on), X.Y.Z+<commit> for every later main build.
+      - name: Determine the build version
+        id: version
+        run: |
+          set -euo pipefail
+          version=$(node scripts/release/version.ts)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build version: $version"
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
@@ -114,10 +128,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Determine release version
-        id: meta
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GHCR
@@ -138,14 +148,14 @@ jobs:
           # The server reads APP_VERSION/GIT_SHA, web reads the
           # NEXT_PUBLIC_ pair; each Dockerfile ignores the other.
           build-args: |
-            APP_VERSION=${{ steps.meta.outputs.version }}
+            APP_VERSION=${{ needs.verify.outputs.version }}
             GIT_SHA=${{ github.sha }}
-            NEXT_PUBLIC_APP_VERSION=${{ steps.meta.outputs.version }}
+            NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.version }}
             NEXT_PUBLIC_GIT_SHA=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
             org.opencontainers.image.licenses=AGPL-3.0-only
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
@@ -167,7 +177,7 @@ jobs:
   # Assembles each multi-arch index, tags it with the commit SHA, signs it
   # (index and platform manifests) and attests an SPDX SBOM per platform.
   publish:
-    needs: build
+    needs: [verify, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -210,9 +220,10 @@ jobs:
           # Package-to-file ownership edges multiply the SBOM size without
           # adding packages; Rekor rejects entries above ~23 MiB.
           SYFT_RELATIONSHIPS_PACKAGE_FILE_OWNERSHIP: "false"
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
           set -euo pipefail
-          version=$(node -p "require('./package.json').version")
+          version="$VERSION"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           mkdir -p sbom
           {

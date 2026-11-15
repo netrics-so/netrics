@@ -145,6 +145,9 @@ services:
   # Files are named netrics-<version>-<commit>-<time>.dump after the release
   # that last migrated the database (schema_info, written by migrate), read
   # at dump time, so they stay right across upgrades.
+  # Dumps hold all data, so only their owner may read them: ./backups is made
+  # mode 700, and each dump mode 600 and owned by whoever owns ./backups
+  # (install.sh creates it as the installing user).
   backup:
     profiles: ["backup"]
     image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
@@ -156,6 +159,17 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        # New dumps are mode 600 through the umask alone. Handing them and the
+        # folder to the owner of ./backups is best effort: some mounts (NFS
+        # root_squash, SMB, user namespaces) refuse it, and a backup must not
+        # be lost over that.
+        umask 077
+        chmod 700 /backups ||
+          echo "backup: warning: could not make ./backups mode 700; restrict it on the host" >&2
+        owner=$$(stat -c %u:%g /backups)
+        # Dumps written before this were readable by every user on the host.
+        find /backups -name 'netrics-*.dump' -exec chmod 600 {} + ||
+          echo "backup: warning: could not make older dumps mode 600" >&2
         while true; do
           release=$$(psql -h postgres -U netrics -d netrics -Atc "select coalesce(max(value) filter (where key = 'netrics_version'), 'unknown') || '-' || coalesce(left(max(value) filter (where key = 'netrics_commit'), 12), 'unknown') from schema_info" | sed 's/[^A-Za-z0-9._-]/_/g')
           label=$$(printf '%s' "$${BACKUP_LABEL:-}" | sed 's/[^A-Za-z0-9._-]/_/g')
@@ -163,6 +177,8 @@ services:
           # Written under a temporary name and renamed only when complete:
           # a failed dump never looks like a backup.
           if pg_dump -h postgres -U netrics -d netrics -Fc -f "$$file.partial"; then
+            chown "$$owner" "$$file.partial" ||
+              echo "backup: warning: could not give the dump to $$owner (owner of ./backups); it stays mode 600, owned by the container's root" >&2
             mv "$$file.partial" "$$file" && echo "backup: $$file"
           else
             rm -f "$$file.partial"

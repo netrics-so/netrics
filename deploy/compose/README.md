@@ -15,19 +15,19 @@ license key is needed.
 
 ## Install
 
-Pick a release from the
-[releases page](https://github.com/netrics-so/netrics/releases) and check out
-its tag:
+Take the newest release from the
+[releases page](https://github.com/netrics-so/netrics/releases/latest) and
+check out its tag. Replace `vX.Y.Z` with it, for example `v0.2.0`:
 
 ```sh
-git clone --branch v0.1.0 https://github.com/netrics-so/netrics.git
+git clone --branch vX.Y.Z https://github.com/netrics-so/netrics.git
 cd netrics/deploy/compose
 ./install.sh --domain netrics.example.com
 docker compose up -d
 ```
 
 `install.sh` writes `.env` with mode 600. It pins the image version to the
-checked-out release (tag `v0.1.0` gives `NETRICS_VERSION=0.1.0`) and
+checked-out release (tag `vX.Y.Z` gives `NETRICS_VERSION=X.Y.Z`) and
 generates every secret:
 
 - database password
@@ -35,6 +35,9 @@ generates every secret:
 - session secret
 - credential encryption key
 - one-time setup token
+
+It also names the Compose project `netrics-selfhost` (`COMPOSE_PROJECT_NAME`
+in `.env`, see "Project name") and creates `backups/`, readable only by you.
 
 Then open `https://netrics.example.com/setup` and enter the setup token the
 installer printed. That creates the owner account, which is also the
@@ -44,6 +47,24 @@ invitations.
 **Back up `.env` right away** (password manager or offline).
 `APP_ENCRYPTION_KEY` protects every stored connection credential and cannot
 be recovered.
+
+### Try it locally
+
+To try netrics on your own machine, without a DNS name, install for
+`localhost`:
+
+```sh
+./install.sh --domain localhost
+docker compose up -d
+```
+
+Then open `https://localhost/setup`. Caddy signs the certificate for
+`localhost` with its own local certificate authority, which the browser does
+not know: it warns once, and you accept the warning to continue. If ports
+80 or 443 are taken, add `--http-port 8080 --https-port 8443` and open
+`https://localhost:8443/setup`. This is for trying it out; a server needs a
+real DNS name. To remove the trial, with its data, run
+`docker compose down --volumes` in this folder.
 
 ### Email
 
@@ -195,8 +216,28 @@ default), for example behind a proxy that rate-limits itself.
 
 If the host already serves 443, install with `--https-port 8443`. This sets
 `NETRICS_HTTPS_PORT` and `NETRICS_PUBLIC_URL`. If port 80 is taken as well,
-set `NETRICS_HTTP_PORT`. A certificate for a public domain then needs
-Caddy's DNS challenge or your own proxy in front.
+add `--http-port 8080` (`NETRICS_HTTP_PORT`). A certificate for a public
+domain then needs Caddy's DNS challenge or your own proxy in front.
+
+### Project name
+
+Docker Compose names containers and volumes after the project:
+`netrics-selfhost-postgres-1`, and the volume `netrics-selfhost_pgdata`
+holds the database. `install.sh` sets the project name `netrics-selfhost` in
+`.env` (`COMPOSE_PROJECT_NAME`); `--name` picks another. Every `docker
+compose` command in this folder reads it from `.env`, so no `-p` is needed.
+A second installation on the same host needs its own folder, name and ports,
+for example `./install.sh --domain other.example.com --name netrics-other
+--http-port 8080 --https-port 8443`.
+
+Installations made with 0.2.0 or older have no `COMPOSE_PROJECT_NAME` in
+`.env`. Compose then names the project after the folder, `compose`, and the
+database volume is `compose_pgdata`. Keep it that way: do not add
+`COMPOSE_PROJECT_NAME` to such an `.env`, because a new name means new,
+empty volumes (the data stays in the old ones). `docker volume ls` shows
+which volumes you have. `install.sh --force` in such a folder keeps the old
+name when it finds the folder's `<name>_pgdata` volume, and warns if
+`--name` asks for another.
 
 ## What runs
 
@@ -211,13 +252,23 @@ Caddy's DNS challenge or your own proxy in front.
 | `caddy`     | HTTPS termination; the only published ports                                                         |
 | `backup`    | Optional nightly `pg_dump` into `./backups`, 14 days kept (`docker compose --profile backup up -d`) |
 
+## Which version runs
+
+`https://<your domain>/healthz` reports the web app's `version` and
+`commit`; the `migrate` log (`docker compose logs migrate`) and the API's
+`/health/live` report the same for the server. A release reports its
+version, `0.2.0`. Images of any other `main` commit report the version they
+build on plus the commit: `0.2.0+0123456789ab` is a `main` build after
+0.2.0, not the release. (Images up to the 0.2.0 release and the `main` builds
+after it reported only the version; there the `commit` tells them apart.)
+
 ## Upgrade
 
 1. Read the release notes of every release in between.
 2. Back up (see below).
 3. Check out the new release so `compose.yml` matches it:
-   `git fetch --tags && git checkout v0.2.0`.
-4. Set `NETRICS_VERSION` in `.env` to the new release (`0.2.0`).
+   `git fetch --tags && git checkout vX.Y.Z`.
+4. Set `NETRICS_VERSION` in `.env` to the new release (`X.Y.Z`).
 5. Run `docker compose pull && docker compose up -d`. With nightly backups
    enabled, run `docker compose --profile backup up -d` instead, so the
    backup service is updated too.
@@ -255,10 +306,31 @@ docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
 ```
 
 It dumps the database as it is, also when `migrate` fails; only `postgres`
-has to be running. Dumps are named `netrics-<version>-<commit>-<time>.dump`. `migrate` records
-the version and commit of the running release in the database on every
-start, the backup service reads them when it dumps, and the dump carries
-them too.
+has to be running. Dumps are named `netrics-<version>-<commit>-<time>.dump`.
+`migrate` records the version and commit of the running release in the
+database on every start, the backup service reads them when it dumps, and
+the dump carries them too.
+
+A dump holds all data of the installation: accounts, workspaces and the
+encrypted connection credentials. The backup service keeps `backups/` at
+mode 700 and every dump at mode 600, owned by the owner of `backups/`, so
+other users on the host cannot read them. Copy them off the host (another
+machine or storage only you can read), and keep them apart from `.env`: the
+dump and `APP_ENCRYPTION_KEY` together open the stored credentials.
+
+Some storage refuses to change owners or modes, for example NFS with
+`root_squash` or SMB shares. The backup is kept there all the same, mode
+600 and owned by the container's `root`, and the service logs a warning
+(`docker compose logs backup`). Restrict the folder on the host then.
+
+On installations made with 0.2.0 or older, Docker created `backups/` as
+`root`, so the dumps belong to `root` too. Give the folder to the user who
+runs `docker compose` once, then take a backup as above (it also makes older
+dumps mode 600):
+
+```sh
+sudo chown -R "$(id -u):$(id -g)" backups
+```
 
 **Restore a dump with the release that wrote it**, then upgrade as described
 above. A newer schema has tables and columns the dump does not know: they
@@ -270,12 +342,15 @@ dump that is already in the `postgres` container (see below):
 docker compose exec postgres pg_restore --data-only --table=schema_info -f - /tmp/restore.dump
 ```
 
-The `netrics_version` row is the version. Set `NETRICS_VERSION` in `.env`
-to it, and check out that release as for an upgrade. If the `netrics_commit`
-row is not that release's commit (`git rev-list -n 1 v<version>`), the
-installation ran a commit of `main`: set `NETRICS_VERSION` to the full
-commit instead. Dumps named `netrics-<time>.dump`, without these rows, come
-from 0.2.0 or older. Count their migrations:
+The `netrics_version` row is the version. Set `NETRICS_VERSION` in `.env` to
+it, and check out that release as for an upgrade. A version with a commit,
+such as `0.2.0+0123456789ab`, means the installation ran a commit of `main`:
+set `NETRICS_VERSION` to the full commit of the `netrics_commit` row
+instead, and check out that commit. Dumps written by 0.2.0 or a `main` build
+after it carry only the version: if their `netrics_commit` row is not that
+release's commit (`git rev-list -n 1 v<version>`), the same applies. Dumps
+named `netrics-<time>.dump`, without these rows, come from 0.2.0 or older.
+Count their migrations:
 
 ```sh
 docker compose exec postgres pg_restore --data-only --table=__drizzle_migrations -f - /tmp/restore.dump | grep -c '^[0-9]'
@@ -344,13 +419,14 @@ credentials, which need `APP_ENCRYPTION_KEY`.
 The images are signed and carry an SPDX SBOM attestation, made by the
 release workflow on `main`. Check an image with
 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3 or
-later (cosign 2 needs `--new-bundle-format` for releases after 0.1.0):
+later (cosign 2 needs `--new-bundle-format` for releases after 0.1.0).
+Replace `X.Y.Z` with the release you install:
 
 ```sh
 cosign verify-attestation --type spdxjson \
   --certificate-identity https://github.com/netrics-so/netrics/.github/workflows/release.yml@refs/heads/main \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/netrics-so/server:0.1.0 > /dev/null && echo verified
+  ghcr.io/netrics-so/server:X.Y.Z > /dev/null && echo verified
 ```
 
 ## Operations

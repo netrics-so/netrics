@@ -33,6 +33,8 @@ export default defineConfig({
       "apps/web/src/**/*.test.tsx",
       // netrics TV's release script (#434).
       "apps/netrics-tv/scripts/*.test.ts",
+      // The version a main build reports (#646).
+      "scripts/release/*.test.ts",
       "packages/*/src/**/*.test.ts",
       "*.test.ts",
     ],
