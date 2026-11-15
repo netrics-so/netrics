@@ -139,3 +139,20 @@ export async function readDashboardValue(
   const cell = Object.values(widget!.result!.rows[0]!.measures)[0];
   return cell?.value;
 }
+
+/**
+ * A model draft saved through the endpoint the model editor uses, as a store
+ * template leaves one behind. Answers the model ID.
+ */
+export async function createModel(
+  page: Page,
+  workspaceId: string,
+  input: { name: string; definition: SemanticModelDefinition },
+): Promise<string> {
+  const response = await page.request.post(
+    `/v1/workspaces/${workspaceId}/data/models`,
+    { headers: { origin: ORIGIN }, data: input },
+  );
+  expect(response.status(), await response.text()).toBe(200);
+  return ((await response.json()) as { model: { id: string } }).model.id;
+}

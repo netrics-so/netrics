@@ -13,6 +13,8 @@ import {
   DataProcessingError,
   emptyVisualModel,
   formulaMeasureFields,
+  missingModelMeasureScope,
+  modelMeasureScope,
   parseDataFormula,
   probeModelMeasures,
   type DataExpression,
@@ -48,6 +50,7 @@ import {
   timeDimensionCandidates,
   toWindowedMeasure,
   windowBaseCandidates,
+  withMeasureScope,
 } from "@/lib/model-measures";
 import {
   ModelPreviewTable,
@@ -248,7 +251,16 @@ export function ModelEditor({
   const [measureIds, setMeasureIds] = useState(
     initial?.definition.measures.map((m) => m.id) ?? [],
   );
-  const [groupBy, setGroupBy] = useState<string[]>([]),
+  // Scoped measures (e.g. per store) preview grouped by their scope.
+  const [groupBy, setGroupBy] = useState<string[]>(() =>
+      initial
+        ? withMeasureScope(
+            initial.definition,
+            initial.definition.measures.map((m) => m.id),
+            [],
+          )
+        : [],
+    ),
     [filterText, setFilterText] = useState("");
   const [result, setResult] = useState<ModelResult | null>(null),
     [previewState, setPreviewState] = useState("");
@@ -274,6 +286,23 @@ export function ModelEditor({
     queryState = canonicalJson({ measureIds, groupBy, filterText });
   const dirty = current !== savedState,
     fresh = previewState === current + queryState;
+  // The required dimensions the chosen preview neither groups by nor filters
+  // to one value: the server refuses such a preview (and so publishing).
+  const missingScope = useMemo(() => {
+    let filter: DataExpression | undefined;
+    try {
+      filter = filterText.trim()
+        ? parseDataFormula(filterText, definition.dimensions)
+        : undefined;
+    } catch {
+      filter = undefined;
+    }
+    return missingModelMeasureScope(definition, {
+      measureIds,
+      groupBy,
+      ...(filter ? { filter } : {}),
+    });
+  }, [definition, measureIds, groupBy, filterText]);
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -424,8 +453,14 @@ export function ModelEditor({
       }),
     };
   }
-  async function preview() {
+  /** `grouping` previews with another grouping, which the editor then shows. */
+  async function preview(grouping = groupBy) {
     if (inputMetadata.loading || inputMetadata.error || !valid()) return;
+    const ranWith = canonicalJson({
+      measureIds,
+      groupBy: grouping,
+      filterText,
+    });
     setBusy("preview");
     setError(null);
     setPreviewError(null);
@@ -440,16 +475,23 @@ export function ModelEditor({
         model,
         {
           measureIds,
-          groupBy,
+          groupBy: grouping,
           ...(filter ? { filter } : {}),
         },
         record ? { id: record.id, version: record.version } : undefined,
       );
       setResult(next);
-      setPreviewed({ model, measureIds, groupBy });
-      setPreviewState(current + queryState);
+      setPreviewed({ model, measureIds, groupBy: grouping });
+      setPreviewState(current + ranWith);
     } catch (failure) {
-      setPreviewError(t(`errors.${dataErrorKey(failure)}`));
+      const key = dataErrorKey(failure);
+      // A missing scope is explained, with its fix, by the scope hint
+      // (shown while the grouping the preview ran with stays chosen).
+      setPreviewError(
+        key === "scope" && grouping === groupBy && missingScope.length
+          ? null
+          : t(`errors.${key}`),
+      );
       setResult(null);
     } finally {
       setBusy(null);
@@ -548,8 +590,9 @@ export function ModelEditor({
       );
       setExpressionProblem(null);
       setSavedState(modelEditorState(next.name, next.definition, {}));
-      setMeasureIds(next.definition.measures.map((measure) => measure.id));
-      setGroupBy([]);
+      const ids = next.definition.measures.map((measure) => measure.id);
+      setMeasureIds(ids);
+      setGroupBy(withMeasureScope(next.definition, ids, []));
       setFilterText("");
       setResult(null);
       setPreviewState("");
@@ -1246,8 +1289,8 @@ export function ModelEditor({
                           measure.requiredDimensions?.includes(dimension.id) ??
                           false
                         }
-                        onChange={(event) =>
-                          changeMeasure(measure.id, {
+                        onChange={(event) => {
+                          const next: ModelMeasure = {
                             ...measure,
                             requiredDimensions: event.target.checked
                               ? [
@@ -1257,8 +1300,27 @@ export function ModelEditor({
                               : (measure.requiredDimensions ?? []).filter(
                                   (id) => id !== dimension.id,
                                 ),
-                          })
-                        }
+                          };
+                          changeMeasure(measure.id, next);
+                          // Required now: the preview groups by it too.
+                          if (
+                            event.target.checked &&
+                            modelMeasureScope(
+                              {
+                                ...definition,
+                                measures: definition.measures.map((m) =>
+                                  m.id === measure.id ? next : m,
+                                ),
+                              },
+                              measureIds,
+                            ).includes(dimension.id)
+                          )
+                            setGroupBy((ids) =>
+                              ids.includes(dimension.id)
+                                ? ids
+                                : [...ids, dimension.id],
+                            );
+                        }}
                       />
                       {dimension.name}
                     </label>
@@ -1414,7 +1476,13 @@ export function ModelEditor({
               label={t("queryMeasures")}
               fields={measureFields}
               value={measureIds}
-              onChange={setMeasureIds}
+              onChange={(ids) => {
+                const added = ids.filter((id) => !measureIds.includes(id));
+                setMeasureIds(ids);
+                setGroupBy((current) =>
+                  withMeasureScope(definition, added, current),
+                );
+              }}
             />
             <ColumnChecks
               label={t("groupBy")}
@@ -1438,6 +1506,19 @@ export function ModelEditor({
             {t("sharedFilterHelp")}
           </p>
         </div>
+        {missingScope.length && measureIds.length ? (
+          <PreviewScopeHint
+            dimensions={missingScope.map(
+              (id) => definition.dimensions.find((d) => d.id === id)!.name,
+            )}
+            disabled={!!busy || inputMetadata.loading || !!inputMetadata.error}
+            onFix={() => {
+              const next = [...groupBy, ...missingScope];
+              setGroupBy(next);
+              void preview(next);
+            }}
+          />
+        ) : null}
         {previewError ? (
           <p role="alert" className="error">
             {previewError}
@@ -1455,5 +1536,31 @@ export function ModelEditor({
         ) : null}
       </section>
     </section>
+  );
+}
+
+/**
+ * Beside the preview: the chosen grouping leaves out dimensions the measures
+ * keep separate, so it cannot preview or publish. One click groups by them
+ * and previews.
+ */
+export function PreviewScopeHint({
+  dimensions,
+  disabled = false,
+  onFix,
+}: {
+  dimensions: string[];
+  disabled?: boolean;
+  onFix: () => void;
+}) {
+  const t = useT("data"),
+    names = dimensions.join(", ");
+  return (
+    <div className="notice data-preview-scope" role="status">
+      <p>{t("previewScope", { dimensions: names })}</p>
+      <button type="button" disabled={disabled} onClick={onFix}>
+        {t("previewScopeFix", { dimensions: names })}
+      </button>
+    </div>
   );
 }

@@ -14,6 +14,7 @@ import {
   ModelEditor,
   modelEditorState,
   modelImpact,
+  PreviewScopeHint,
 } from "./model-editor";
 
 const source: DataSource = {
@@ -635,5 +636,41 @@ describe("model editor publish confirmation", () => {
         />,
       ),
     ).not.toContain("<dialog");
+  });
+});
+
+describe("model editor preview scope", () => {
+  /** Whether the preview's "Show results by" checkbox for a dimension is on. */
+  const grouped = (html: string, name: string) => {
+    const preview = html.slice(html.indexOf('class="data-model-preview"'));
+    const group = preview.slice(
+      preview.indexOf("<legend>Show results by</legend>"),
+    );
+    const label = group.slice(0, group.indexOf(`${name}</label>`));
+    return /<input[^>]*checked=""[^>]*\/?>$/.test(label);
+  };
+  it("groups a scoped measure's preview by its required dimension from the start", () => {
+    const html = render([{ ...revenue, requiredDimensions: ["app"] }]);
+    expect(grouped(html, "App dimension")).toBe(true);
+    expect(grouped(html, "Reporting day")).toBe(false);
+    expect(html).not.toContain("data-preview-scope");
+  });
+  it("starts ungrouped when no measure needs a scope", () => {
+    expect(grouped(render([revenue]), "App dimension")).toBe(false);
+  });
+  it("explains a missing scope and offers the grouping as one click, en and de", () => {
+    const en = renderI18n(
+      <PreviewScopeHint dimensions={["Store"]} onFix={() => {}} />,
+    );
+    expect(en).toContain("Your measures keep Store separate");
+    expect(en).toContain(">Group by Store to preview</button>");
+    const de = renderI18n(
+      <PreviewScopeHint dimensions={["Store", "Land"]} onFix={() => {}} />,
+      "de",
+    );
+    expect(de).toContain("Deine Kennzahlen halten Store, Land getrennt");
+    expect(de).toContain(
+      ">Nach Store, Land gruppieren und Vorschau zeigen</button>",
+    );
   });
 });

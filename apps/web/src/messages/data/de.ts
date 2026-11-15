@@ -508,6 +508,9 @@ export const dataDe: Catalog<typeof dataEn> = {
       "Wähle Kennzahlen und prüfe diesen Entwurf vor der Veröffentlichung.",
     previewOutdated:
       "Der Entwurf wurde geändert. Prüfe ihn vor der Veröffentlichung erneut.",
+    previewScope:
+      "Deine Kennzahlen halten {dimensions} getrennt. Zeige die Ergebnisse nach {dimensions} an oder filtere auf einen Wert, um diesen Entwurf zu prüfen und zu veröffentlichen.",
+    previewScopeFix: "Nach {dimensions} gruppieren und Vorschau zeigen",
     builder: {
       keepWhen: "Zeilen behalten, wenn",
       newValue: "Wert der neuen Spalte",

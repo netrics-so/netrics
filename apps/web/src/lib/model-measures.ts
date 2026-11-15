@@ -1,6 +1,7 @@
 import {
   MODEL_WINDOW_LIMITS,
   measureDependencies,
+  modelMeasureScope,
   type DataField,
   type ModelMeasure,
   type ModelOffsetUnit,
@@ -201,4 +202,20 @@ export function keepModelSelection(
     measureIds: measureIds.filter((id) => measures.has(id)),
     groupBy: groupBy.filter((id) => dimensions.has(id)),
   };
+}
+
+/**
+ * The preview grouping with the dimensions these measures require added
+ * after the user's own, so a scoped measure previews (and publishes) without
+ * the user having to guess the grouping. Unchanged when nothing is missing.
+ */
+export function withMeasureScope(
+  definition: SemanticModelDefinition,
+  measureIds: readonly string[],
+  groupBy: string[],
+): string[] {
+  const missing = modelMeasureScope(definition, measureIds).filter(
+    (id) => !groupBy.includes(id),
+  );
+  return missing.length ? [...groupBy, ...missing] : groupBy;
 }

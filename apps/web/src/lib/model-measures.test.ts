@@ -4,6 +4,7 @@ import { dataErrorCodeKey } from "./data-errors";
 import {
   changeMeasureSiblings,
   keepModelSelection,
+  withMeasureScope,
   measureDependents,
   offsetPreset,
   rollingBaseOf,
@@ -365,5 +366,28 @@ describe("keepModelSelection", () => {
     expect(
       keepModelSelection(model, ["revenue", "gone"], ["app", "removed"]),
     ).toEqual({ measureIds: ["revenue"], groupBy: ["app"] });
+  });
+});
+
+describe("withMeasureScope", () => {
+  const scoped: SemanticModelDefinition = {
+    ...model,
+    measures: model.measures.map((measure) =>
+      measure.id === "revenue"
+        ? { ...measure, requiredDimensions: ["app"] }
+        : measure,
+    ),
+  };
+  it("adds the grouping the selected measures require, after the user's own", () => {
+    expect(withMeasureScope(scoped, ["revenue"], [])).toEqual(["app"]);
+    expect(withMeasureScope(scoped, ["revenue"], ["day"])).toEqual([
+      "day",
+      "app",
+    ]);
+  });
+  it("changes nothing when the grouping already covers the scope", () => {
+    const groupBy = ["app"];
+    expect(withMeasureScope(scoped, ["revenue"], groupBy)).toBe(groupBy);
+    expect(withMeasureScope(model, ["revenue"], [])).toEqual([]);
   });
 });
