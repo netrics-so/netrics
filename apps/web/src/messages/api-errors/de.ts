@@ -206,6 +206,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Dieser Connector kann seinen Verlauf nicht noch einmal lesen.",
     backfill_in_progress:
       "Der Verlauf wird bereits geladen. Warte, bis das fertig ist.",
+    workspace_backfill_in_progress:
+      "Eine andere Verbindung dieses Workspaces lädt gerade ihren Verlauf. Versuch es noch einmal, wenn das fertig ist.",
     history_reload_rate_limited:
       "Der Verlauf dieser Verbindung wurde vor Kurzem neu geladen. Versuch es später noch einmal.",
     connection_setup_pending:

@@ -460,11 +460,24 @@ export const connectionState = pgTable(
     backfilledDatasets: jsonb("backfilled_datasets").$type<
       Record<string, number>
     >(),
-    // The datasets an automatic backfill was last queued for (#617), so a
-    // failed one is not queued again on every sync.
+    // The datasets the backfill job in backfill_job_id reads (#617), taken
+    // when it starts and narrowed to what every worker that resumed it
+    // declared: what its success records, never more than it read.
+    backfillJobDatasets: jsonb("backfill_job_datasets").$type<
+      Record<string, number>
+    >(),
+    // The datasets an automatic backfill was last queued for (#617), when,
+    // and how often for this set: a failed one is retried once after a day,
+    // not on every sync.
     backfillRequestedDatasets: jsonb("backfill_requested_datasets").$type<
       Record<string, number>
     >(),
+    backfillRequestedAt: timestamp("backfill_requested_at", {
+      withTimezone: true,
+    }),
+    backfillRequestCount: integer("backfill_request_count")
+      .notNull()
+      .default(0),
     // When a member last asked to reload the history (#617): rate limit.
     historyReloadRequestedAt: timestamp("history_reload_requested_at", {
       withTimezone: true,

@@ -15,6 +15,7 @@ import {
   createDatabase,
   createRawSqlClient,
   createWorkspace,
+  queueDatasetBackfill,
   schema,
   withWorkspace,
   type Database,
@@ -115,6 +116,25 @@ function growingConnector(release: 1 | 2 | 3): Connector {
     },
     async sync(_context, request: SyncRequest) {
       const day = request.to.slice(0, 10);
+      // A paged backfill: page 1 (observations only) checkpoints; the
+      // final page may fail, like a worker stopped by a deploy.
+      if (paged && request.mode === "backfill" && !request.cursor) {
+        return {
+          observations: [
+            {
+              metricKey: "growing.units",
+              sourceTimestamp: `${request.from.slice(0, 10)}T00:00:00.000Z`,
+              value: 1,
+              dimensions: { resource: "app" },
+            },
+          ],
+          nextCursor: "page-2",
+          done: false,
+        };
+      }
+      if (paged && failFinalPage) {
+        throw new Error("worker stopped (test)");
+      }
       return {
         observations: [
           {
@@ -151,6 +171,11 @@ function registryAt(release: 1 | 2 | 3): ConnectorRegistry {
   registry.register(growingConnector(release));
   return registry;
 }
+
+/** Backfills read two pages (#617 resume tests). */
+let paged = false;
+/** The final page of a paged backfill fails. */
+let failFinalPage = false;
 
 let testDb: TestDatabase;
 let appDb: Database;
@@ -252,6 +277,14 @@ async function storedRows(connectionId: string): Promise<string[]> {
     where d.connection_id = ${connectionId}
     order by 1`;
   return rows.map((row) => row.id);
+}
+
+async function newWorkspace(): Promise<string> {
+  const [user] = await appDb
+    .insert(schema.users)
+    .values({ email: `busy-${randomUUID()}@example.com`, displayName: "B" })
+    .returning({ id: schema.users.id });
+  return createWorkspace(appDb, { name: "Busy", ownerUserId: user!.id });
 }
 
 beforeAll(async () => {
@@ -357,26 +390,147 @@ describe("backfill of datasets a connector update adds (#617)", () => {
     });
   });
 
-  it("does not queue the same datasets again after their backfill failed", async () => {
+  it("retries a failed automatic backfill once after a day, then leaves it to Reload history", async () => {
     const connectionId = await seedConnection();
     await run(1, "connection.backfill", connectionId);
     await run(2, "connection.sync", connectionId);
-    const [job] = await backfillJobs(connectionId);
-    await owner`update jobs set status = 'dead' where id = ${job!.id}`;
+    const dead = async () => {
+      await owner`
+        update jobs set status = 'dead'
+        where connection_id = ${connectionId} and kind = 'connection.backfill'
+          and status = 'pending'`;
+    };
+    const aDayLater = async () => {
+      await owner`
+        update connection_state
+        set backfill_requested_at = backfill_requested_at - interval '25 hours'
+        where connection_id = ${connectionId}`;
+    };
+    await dead();
+    // The next runs: no hot loop.
+    await run(2, "connection.sync", connectionId);
     await run(2, "connection.sync", connectionId);
     expect(await backfillJobs(connectionId)).toHaveLength(1);
-    expect(await auditEvents(connectionId)).toHaveLength(1);
+
+    // A day later: one retry, audited as such.
+    await aDayLater();
+    await run(2, "connection.sync", connectionId);
+    await run(2, "connection.sync", connectionId);
+    expect(await backfillJobs(connectionId)).toHaveLength(2);
+    const events = await auditEvents(connectionId);
+    expect(events).toHaveLength(2);
+    expect(events[1]!.metadata).toMatchObject({
+      reason: "dataset_added",
+      datasets: ["rows"],
+      retry: true,
+    });
+
+    // That one fails too: no more automatic backfills of this set.
+    await dead();
+    await aDayLater();
+    await run(2, "connection.sync", connectionId);
+    expect(await backfillJobs(connectionId)).toHaveLength(2);
+    expect(await auditEvents(connectionId)).toHaveLength(2);
+  });
+
+  describe("a backfill resumed across a deploy", () => {
+    afterAll(() => {
+      paged = false;
+      failFinalPage = false;
+    });
+
+    /**
+     * Page 1 of a backfill job on `started`, then the final page fails;
+     * the same job resumes on `resumed` and succeeds.
+     */
+    async function resumedBackfill(
+      connectionId: string,
+      started: 1 | 2,
+      resumed: 1 | 2,
+    ) {
+      paged = true;
+      const jobId = randomUUID();
+      failFinalPage = true;
+      await expect(
+        run(started, "connection.backfill", connectionId, jobId),
+      ).rejects.toThrow();
+      failFinalPage = false;
+      await run(resumed, "connection.backfill", connectionId, jobId);
+      paged = false;
+    }
+
+    it("does not record a dataset the pages before the deploy never read", async () => {
+      const connectionId = await seedConnection();
+      await resumedBackfill(connectionId, 1, 2);
+      // The job started on 0.1.0: "rows" was not read over the window.
+      expect((await state(connectionId)).backfilled_datasets).toEqual({});
+      // So the next incremental run asks for it.
+      await run(2, "connection.sync", connectionId);
+      expect(await backfillJobs(connectionId)).toHaveLength(1);
+      expect((await auditEvents(connectionId))[0]!.metadata).toMatchObject({
+        reason: "dataset_added",
+        datasets: ["rows"],
+      });
+    });
+
+    it("does not record a dataset the worker that finished does not declare", async () => {
+      const connectionId = await seedConnection();
+      await resumedBackfill(connectionId, 2, 1);
+      expect((await state(connectionId)).backfilled_datasets).toEqual({});
+    });
+
+    it("records the datasets when every worker declared them", async () => {
+      const connectionId = await seedConnection();
+      await resumedBackfill(connectionId, 2, 2);
+      expect((await state(connectionId)).backfilled_datasets).toEqual({
+        rows: 1,
+      });
+    });
+
+    it("keeps what an earlier backfill recorded for datasets it did not read", async () => {
+      const connectionId = await seedConnection();
+      await owner`
+        update connection_state set backfilled_datasets = ${owner.json({ rows: 1, other: 3 })}
+        where connection_id = ${connectionId}`;
+      await resumedBackfill(connectionId, 1, 2);
+      expect((await state(connectionId)).backfilled_datasets).toEqual({
+        rows: 1,
+        other: 3,
+      });
+    });
+  });
+
+  it("queues one backfill per workspace for concurrent checks (replicas)", async () => {
+    const busy = await newWorkspace();
+    const connections = [
+      await seedConnection(busy),
+      await seedConnection(busy),
+      await seedConnection(busy),
+    ];
+    await owner`
+      update connection_state set backfilled_datasets = '{}'::jsonb
+      where workspace_id = ${busy}`;
+    const outcomes = await Promise.all(
+      connections.map((connectionId) =>
+        withWorkspace(appDb, { workspaceId: busy }, (tx) =>
+          queueDatasetBackfill(tx, {
+            workspaceId: busy,
+            connectionId,
+            connectorId: CONNECTOR,
+            declared: { rows: 1 },
+          }),
+        ),
+      ),
+    );
+    expect(outcomes.filter((outcome) => outcome.queued)).toHaveLength(1);
+    const [row] = await owner<{ count: number }[]>`
+      select count(*)::int as count from jobs
+      where workspace_id = ${busy} and kind = 'connection.backfill'`;
+    expect(row!.count).toBe(1);
   });
 
   it("queues at most one automatic backfill per workspace at a time", async () => {
-    const [user] = await appDb
-      .insert(schema.users)
-      .values({ email: `busy-${randomUUID()}@example.com`, displayName: "B" })
-      .returning({ id: schema.users.id });
-    const busy = await createWorkspace(appDb, {
-      name: "Busy",
-      ownerUserId: user!.id,
-    });
+    const busy = await newWorkspace();
     const first = await seedConnection(busy);
     const second = await seedConnection(busy);
     for (const id of [first, second]) {
@@ -396,6 +550,11 @@ describe("backfill of datasets a connector update adds (#617)", () => {
 
   describe("connections from before #617 (nothing recorded)", () => {
     async function legacy(): Promise<string> {
+      // Earlier tests' backfills would hold the workspace's one slot.
+      await owner`
+        update jobs set status = 'succeeded'
+        where workspace_id = ${workspaceId} and kind = 'connection.backfill'
+          and status in ('pending', 'continuing', 'running')`;
       const connectionId = await seedConnection();
       // 0.2.0's incremental runs registered "rows" and stored some days.
       await run(2, "connection.sync", connectionId);
@@ -419,6 +578,15 @@ describe("backfill of datasets a connector update adds (#617)", () => {
         backfilled_datasets: {},
         backfill_requested_datasets: { rows: 1 },
       });
+    });
+
+    it("does not count a backfill segment that handed over to a continuation", async () => {
+      const connectionId = await legacy();
+      await owner`
+        insert into sync_runs (workspace_id, connection_id, mode, requested_from, requested_to, attempt, status, started_at, finished_at)
+        values (${workspaceId}, ${connectionId}, 'backfill', now() - interval '90 days', now(), 1, 'continued', now(), now() + interval '1 minute')`;
+      await run(2, "connection.sync", connectionId);
+      expect(await backfillJobs(connectionId)).toHaveLength(1);
     });
 
     it("records a dataset a later backfill read, and queues nothing", async () => {

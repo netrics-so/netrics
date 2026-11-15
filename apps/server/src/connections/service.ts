@@ -50,6 +50,7 @@ import {
   type Locale,
 } from "@netrics/domain";
 import {
+  activeBackfillConnections,
   connectionBackfillState,
   datasetsMissingBackfill,
   datasetVersions,
@@ -63,6 +64,7 @@ import {
   findProject,
   findResourceNames,
   lockHistoryReload,
+  lockWorkspaceBackfills,
   markHistoryReloadRequested,
   hideAppReview,
   insertAuditEvent,
@@ -2182,7 +2184,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
      * "Reload history" (#617): a member reads the connector's whole
      * backfill window again, e.g. when totals look short. Same job as a
      * config change queues; stored data stays and is overwritten window by
-     * window. Refused while a backfill waits or runs, and more often than
+     * window. Refused while a backfill of the connection, or of another
+     * connection of the workspace, waits or runs, and more often than
      * once per HISTORY_RELOAD_INTERVAL_HOURS per connection (provider
      * quotas). The state row is locked, so two clicks queue one backfill.
      */
@@ -2218,14 +2221,20 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!state) {
           return fail<Reload>(400, "connection_setup_pending");
         }
-        if (
-          (await connectionBackfillState(
-            tx,
-            actor.workspaceId,
-            connectionId,
-          )) !== "idle"
-        ) {
+        // One backfill per workspace at a time, as for the automatic ones:
+        // connections of a workspace often share a provider key and its
+        // rate limit (ADR 0014). Serialized across replicas.
+        await lockWorkspaceBackfills(tx, actor.workspaceId);
+        const active = await activeBackfillConnections(tx, actor.workspaceId);
+        if (active.includes(connectionId)) {
           return { ok: false, status: 409, error: "backfill_in_progress" };
+        }
+        if (active.length > 0) {
+          return {
+            ok: false,
+            status: 409,
+            error: "workspace_backfill_in_progress",
+          };
         }
         const now = new Date();
         const availableAt = reloadAvailableAt(state.requestedAt);

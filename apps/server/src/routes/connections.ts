@@ -819,7 +819,8 @@ export function registerConnectionRoutes(
 
       // "Reload history" (#617): reads the connector's whole backfill
       // window again. Same capability as "Sync now"; refused while a
-      // backfill waits or runs (409) and more often than once per
+      // backfill of the connection or of another connection of the
+      // workspace waits or runs (409), and more often than once per
       // HISTORY_RELOAD_INTERVAL_HOURS per connection (429).
       scope.post(
         "/workspaces/:workspaceId/connections/:connectionId/backfill",

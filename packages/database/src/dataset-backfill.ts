@@ -1,4 +1,4 @@
-import { and, eq, inArray, max } from "drizzle-orm";
+import { and, eq, inArray, max, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import { insertAuditEvent } from "./workspaces.js";
@@ -73,6 +73,10 @@ export async function connectionBackfillState(
  * Sync runs are pruned after 90 days (each connection's latest is kept),
  * so a connection whose last backfill is older counts its stored datasets as
  * not backfilled: one backfill too many rather than a silent gap.
+ *
+ * Only a whole job writes a "succeeded" backfill run: a segment that hands
+ * over to a continuation writes "continued", a failed attempt "failed"
+ * (sync engine), so the latest succeeded run is the end of a completed job.
  */
 export async function deriveBackfilledDatasets(
   tx: Transaction,
@@ -139,6 +143,59 @@ export async function deriveBackfilledDatasets(
   return covered;
 }
 
+/**
+ * Automatic backfills of one set of datasets (#617): the first, and one
+ * retry once AUTOMATIC_BACKFILL_RETRY_MS has passed, e.g. after the first
+ * failed or ran on a worker that did not declare the datasets yet. After
+ * that, only "Reload history" (or the operator) queues another.
+ */
+export const AUTOMATIC_BACKFILLS_PER_SET = 2;
+export const AUTOMATIC_BACKFILL_RETRY_MS = 24 * 60 * 60 * 1000;
+
+/** The entries of `a` that `b` declares at the same version. */
+export function intersectDatasetVersions(
+  a: DatasetVersions,
+  b: DatasetVersions,
+): DatasetVersions {
+  return Object.fromEntries(
+    Object.entries(a).filter(([key, version]) => b[key] === version),
+  );
+}
+
+/**
+ * Serializes the decision to queue a backfill within a workspace (#617):
+ * the one-backfill-per-workspace rule holds across API and worker
+ * replicas. Transaction-scoped; the caller's transaction must read the
+ * jobs after taking it (read committed, the withWorkspace() default).
+ * Callers lock their connection_state row first, then this.
+ */
+export async function lockWorkspaceBackfills(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 617))`,
+  );
+}
+
+/** Connections of the workspace with a backfill waiting or running. */
+export async function activeBackfillConnections(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<string[]> {
+  const rows = await tx
+    .select({ connectionId: schema.jobs.connectionId })
+    .from(schema.jobs)
+    .where(
+      and(
+        eq(schema.jobs.workspaceId, workspaceId),
+        eq(schema.jobs.kind, "connection.backfill"),
+        inArray(schema.jobs.status, [...ACTIVE_BACKFILL]),
+      ),
+    );
+  return rows.flatMap((row) => (row.connectionId ? [row.connectionId] : []));
+}
+
 export type DatasetBackfillOutcome =
   | { queued: true; jobId: string; datasets: string[] }
   | {
@@ -156,20 +213,23 @@ export type DatasetBackfillOutcome =
  * After a succeeded incremental run: queues one backfill when the connector
  * declares datasets the connection's backfills have not read (#617).
  *
- * - The state row is locked, so concurrent callers decide one at a time.
+ * - The state row is locked, then the workspace's backfill lock, so
+ *   concurrent callers (also on other replicas) decide one at a time.
  * - Nothing is queued while a backfill of the connection waits or runs: it
- *   records the current datasets when it succeeds.
- * - The datasets an automatic backfill was queued for are recorded, and the
- *   same set is not queued again: a backfill that keeps failing is not
- *   retried on every sync (the connection page offers "Reload history").
- * - At most one backfill per workspace at a time is queued this way
+ *   records what it read when it succeeds.
+ * - At most one backfill per workspace waits or runs because of this
  *   (`workspace_busy`): connections of a workspace often share one
  *   provider key and its rate limit (ADR 0014), and a connector update
  *   reaches every connection at once. The next incremental run asks again.
+ *   Provider quotas shared across workspaces are not covered.
+ * - The datasets queued for are recorded with the time and a count. The
+ *   same set is queued again once, a day later (the first backfill failed,
+ *   or ran on a worker without them), then no more: no retry on every
+ *   sync. The connection page offers "Reload history".
  *
  * Audited as connection.backfill_requested without an actor, with the
  * reason `dataset_added` (a dataset the record lacks) or `dataset_changed`
- * (recorded at another schema version).
+ * (recorded at another schema version), and `retry` for the second.
  */
 export async function queueDatasetBackfill(
   tx: Transaction,
@@ -178,21 +238,24 @@ export async function queueDatasetBackfill(
     connectionId: string;
     connectorId: string;
     declared: DatasetVersions;
+    now?: Date;
   },
 ): Promise<DatasetBackfillOutcome> {
   const { workspaceId, connectionId, connectorId, declared } = input;
+  const now = input.now ?? new Date();
+  const scope = and(
+    eq(schema.connectionState.workspaceId, workspaceId),
+    eq(schema.connectionState.connectionId, connectionId),
+  );
   const [state] = await tx
     .select({
       backfilled: schema.connectionState.backfilledDatasets,
       requested: schema.connectionState.backfillRequestedDatasets,
+      requestedAt: schema.connectionState.backfillRequestedAt,
+      requestCount: schema.connectionState.backfillRequestCount,
     })
     .from(schema.connectionState)
-    .where(
-      and(
-        eq(schema.connectionState.workspaceId, workspaceId),
-        eq(schema.connectionState.connectionId, connectionId),
-      ),
-    )
+    .where(scope)
     .for("update");
   if (!state) return { queued: false, reason: "no_state", datasets: [] };
   let backfilled = state.backfilled;
@@ -205,32 +268,26 @@ export async function queueDatasetBackfill(
     await tx
       .update(schema.connectionState)
       .set({ backfilledDatasets: backfilled })
-      .where(
-        and(
-          eq(schema.connectionState.workspaceId, workspaceId),
-          eq(schema.connectionState.connectionId, connectionId),
-        ),
-      );
+      .where(scope);
   }
   const missing = datasetsMissingBackfill(declared, backfilled);
   if (missing.length === 0) {
     return { queued: false, reason: "complete", datasets: [] };
   }
   const requested = state.requested ?? {};
-  if (missing.every((key) => requested[key] === declared[key])) {
+  const retry = missing.every((key) => requested[key] === declared[key]);
+  if (
+    retry &&
+    (state.requestCount >= AUTOMATIC_BACKFILLS_PER_SET ||
+      (state.requestedAt !== null &&
+        now.getTime() - state.requestedAt.getTime() <
+          AUTOMATIC_BACKFILL_RETRY_MS))
+  ) {
     return { queued: false, reason: "already_requested", datasets: missing };
   }
-  const active = await tx
-    .select({ connectionId: schema.jobs.connectionId })
-    .from(schema.jobs)
-    .where(
-      and(
-        eq(schema.jobs.workspaceId, workspaceId),
-        eq(schema.jobs.kind, "connection.backfill"),
-        inArray(schema.jobs.status, [...ACTIVE_BACKFILL]),
-      ),
-    );
-  if (active.some((row) => row.connectionId === connectionId)) {
+  await lockWorkspaceBackfills(tx, workspaceId);
+  const active = await activeBackfillConnections(tx, workspaceId);
+  if (active.includes(connectionId)) {
     return { queued: false, reason: "backfill_active", datasets: missing };
   }
   if (active.length > 0) {
@@ -242,13 +299,12 @@ export async function queueDatasetBackfill(
   });
   await tx
     .update(schema.connectionState)
-    .set({ backfillRequestedDatasets: declared })
-    .where(
-      and(
-        eq(schema.connectionState.workspaceId, workspaceId),
-        eq(schema.connectionState.connectionId, connectionId),
-      ),
-    );
+    .set({
+      backfillRequestedDatasets: declared,
+      backfillRequestedAt: now,
+      backfillRequestCount: retry ? state.requestCount + 1 : 1,
+    })
+    .where(scope);
   const changed = missing.some((key) => backfilled[key] !== undefined);
   await insertAuditEvent(tx, {
     workspaceId,
@@ -261,6 +317,7 @@ export async function queueDatasetBackfill(
       reason: changed ? "dataset_changed" : "dataset_added",
       datasets: missing,
       jobId,
+      ...(retry ? { retry: true } : {}),
     },
   });
   return { queued: true, jobId, datasets: missing };

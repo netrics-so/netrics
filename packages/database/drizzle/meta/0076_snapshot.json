@@ -1,5 +1,5 @@
 {
-  "id": "2686e235-ce44-42d4-8fbd-7e3aad74339e",
+  "id": "19f0411d-6b97-46de-af7d-902ff2fcebb2",
   "prevId": "2b478d94-6c31-480c-b57e-d960778f8f3f",
   "version": "7",
   "dialect": "postgresql",
@@ -706,11 +706,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "backfill_job_datasets": {
+          "name": "backfill_job_datasets",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "backfill_requested_datasets": {
           "name": "backfill_requested_datasets",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
+        },
+        "backfill_requested_at": {
+          "name": "backfill_requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "backfill_request_count": {
+          "name": "backfill_request_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "history_reload_requested_at": {
           "name": "history_reload_requested_at",

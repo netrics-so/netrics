@@ -155,11 +155,15 @@ async function detail(connectionId: string) {
   return connectionDetailResponseSchema.parse(response.json());
 }
 
-/** Finishes every waiting backfill of the connection (no worker runs). */
-async function finishBackfills(connectionId: string) {
+/**
+ * Finishes every waiting backfill (no worker runs): the connection's, and
+ * those of earlier tests in the workspace, which would hold the workspace's
+ * one backfill slot.
+ */
+async function finishBackfills() {
   await admin`
     update jobs set status = 'succeeded'
-    where connection_id = ${connectionId} and kind = 'connection.backfill'
+    where kind = 'connection.backfill'
       and status in ('pending', 'continuing', 'running')`;
 }
 
@@ -257,7 +261,7 @@ describe("reload history (#617)", () => {
     expect(busy.statusCode, busy.body).toBe(409);
     expect(busy.json()).toEqual({ error: "backfill_in_progress" });
 
-    await finishBackfills(connectionId);
+    await finishBackfills();
     expect((await detail(connectionId)).history.backfill).toBe("idle");
 
     const before = Date.now();
@@ -289,9 +293,9 @@ describe("reload history (#617)", () => {
 
   it("allows one reload per connection per interval", async () => {
     const connectionId = await createConnection(CONNECTOR);
-    await finishBackfills(connectionId);
+    await finishBackfills();
     expect((await reload(connectionId)).statusCode).toBe(200);
-    await finishBackfills(connectionId);
+    await finishBackfills();
 
     const limited = await reload(connectionId);
     expect(limited.statusCode, limited.body).toBe(429);
@@ -301,10 +305,11 @@ describe("reload history (#617)", () => {
 
     // Another connection has its own slot.
     const other = await createConnection(CONNECTOR);
-    await finishBackfills(other);
+    await finishBackfills();
     expect((await reload(other)).statusCode).toBe(200);
 
     // Once the interval has passed, the next reload is accepted.
+    await finishBackfills();
     await admin`
       update connection_state
       set history_reload_requested_at = now() - make_interval(hours => ${HISTORY_RELOAD_INTERVAL_HOURS + 1})
@@ -313,9 +318,37 @@ describe("reload history (#617)", () => {
     expect((await reload(connectionId)).statusCode).toBe(200);
   });
 
+  it("is refused while another connection of the workspace backfills", async () => {
+    const first = await createConnection(CONNECTOR);
+    const second = await createConnection(CONNECTOR);
+    await finishBackfills();
+    expect((await reload(first)).statusCode).toBe(200);
+    const busy = await reload(second);
+    expect(busy.statusCode, busy.body).toBe(409);
+    expect(busy.json()).toEqual({ error: "workspace_backfill_in_progress" });
+    expect(await pendingBackfills(second)).toEqual([]);
+    expect(await reloadEvents(second)).toHaveLength(0);
+    // Not rate limited by the refusal: it works once the first is done.
+    await finishBackfills();
+    expect((await reload(second)).statusCode).toBe(200);
+  });
+
+  it("queues one backfill for two concurrent requests to two connections of a workspace", async () => {
+    const first = await createConnection(CONNECTOR);
+    const second = await createConnection(CONNECTOR);
+    await finishBackfills();
+    const answers = await Promise.all([reload(first), reload(second)]);
+    expect(answers.map((a) => a.statusCode).sort()).toEqual([200, 409]);
+    const queued =
+      (await pendingBackfills(first)).length +
+      (await pendingBackfills(second)).length;
+    expect(queued).toBe(1);
+    await finishBackfills();
+  });
+
   it("queues one backfill for two concurrent requests", async () => {
     const connectionId = await createConnection(CONNECTOR);
-    await finishBackfills(connectionId);
+    await finishBackfills();
     const answers = await Promise.all([
       reload(connectionId),
       reload(connectionId),
@@ -328,7 +361,7 @@ describe("reload history (#617)", () => {
 
   it("needs connections:update: editors may, viewers may not", async () => {
     const connectionId = await createConnection(CONNECTOR);
-    await finishBackfills(connectionId);
+    await finishBackfills();
     const denied = await reload(connectionId, viewer);
     expect(denied.statusCode, denied.body).toBe(403);
     expect(await pendingBackfills(connectionId)).toEqual([]);
@@ -337,7 +370,7 @@ describe("reload history (#617)", () => {
 
   it("keeps workspaces apart", async () => {
     const connectionId = await createConnection(CONNECTOR);
-    await finishBackfills(connectionId);
+    await finishBackfills();
     // A non-member of the workspace: it does not exist for them.
     expect((await reload(connectionId, stranger)).statusCode).toBe(404);
     // The connection through the stranger's own workspace: not found.
@@ -349,7 +382,7 @@ describe("reload history (#617)", () => {
 
   it("is refused for a connector without backfills", async () => {
     const connectionId = await createConnection(NO_BACKFILL);
-    await finishBackfills(connectionId);
+    await finishBackfills();
     expect((await detail(connectionId)).history.supportsBackfill).toBe(false);
     const refused = await reload(connectionId);
     expect(refused.statusCode, refused.body).toBe(400);
@@ -359,7 +392,7 @@ describe("reload history (#617)", () => {
 
   it("names the datasets whose history no backfill has read", async () => {
     const connectionId = await createConnection(CONNECTOR);
-    await finishBackfills(connectionId);
+    await finishBackfills();
     // Not recorded yet (a connection from before #617): nothing claimed.
     expect((await detail(connectionId)).history.incompleteDatasets).toEqual([]);
     // Recorded at an older schema version, as after a connector update.

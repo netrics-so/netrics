@@ -192,6 +192,8 @@ export const apiErrorsEn = {
     backfill_not_supported: "This connector cannot read its history again.",
     backfill_in_progress:
       "The history is already loading. Wait until it has finished.",
+    workspace_backfill_in_progress:
+      "Another connection of this workspace is loading its history. Try again when it has finished.",
     history_reload_rate_limited:
       "The history of this connection was reloaded recently. Try again later.",
     connection_setup_pending: "Finish setting up this connection first.",

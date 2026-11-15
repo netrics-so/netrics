@@ -25,6 +25,7 @@ import {
   datasetVersions,
   ingestAppReviews,
   ingestDatasetPage,
+  intersectDatasetVersions,
   queueDatasetBackfill,
   DatasetStoreError,
   DatasetStageUnavailableError,
@@ -324,6 +325,7 @@ async function runSync(
       .select({
         cursor: schema.connectionState.cursor,
         backfillJobId: schema.connectionState.backfillJobId,
+        backfillJobDatasets: schema.connectionState.backfillJobDatasets,
         lastSuccessAt: schema.connectionState.lastSuccessAt,
         pollIntervalSeconds: schema.connectionState.pollIntervalSeconds,
       })
@@ -368,7 +370,30 @@ async function runSync(
    */
   const fresh = mode === "backfill" && state?.backfillJobId !== job.id;
   const startCursor = fresh ? null : (state?.cursor ?? null);
-  const backfillMarker = mode === "backfill" ? { backfillJobId: job.id } : {};
+  /**
+   * The datasets this backfill job reads (#617): taken when it starts, from
+   * the connector this worker runs; a resumed attempt keeps only those its
+   * own connector still declares at the same version (a deploy may have
+   * changed them between attempts). Stored next to the job's id with every
+   * checkpoint; its success records exactly these, never what a later
+   * worker declares but earlier pages never read.
+   */
+  const declaredNow = datasetVersions(
+    deps.registry.get(connection.connectorId)?.manifest.datasets,
+  );
+  const backfillDatasets =
+    mode !== "backfill"
+      ? null
+      : fresh
+        ? declaredNow
+        : intersectDatasetVersions(
+            state?.backfillJobDatasets ?? {},
+            declaredNow,
+          );
+  const backfillMarker =
+    mode === "backfill"
+      ? { backfillJobId: job.id, backfillJobDatasets: backfillDatasets }
+      : {};
 
   let window = computeWindow(
     mode,
@@ -401,16 +426,16 @@ async function runSync(
     window = { from: new Date(saved.from), to: new Date(saved.to) };
   }
   /**
-   * A succeeded backfill read the whole window into every dataset the
-   * connector declares now (#617): the record the automatic backfill of
-   * added datasets compares against.
+   * A succeeded backfill read the whole window into its datasets (#617):
+   * merged into the record the automatic backfill of added datasets
+   * compares against. Datasets it did not read keep their entry.
    */
-  const backfillRecord =
-    mode === "backfill"
+  const backfillRecordInsert =
+    backfillDatasets !== null ? { backfilledDatasets: backfillDatasets } : {};
+  const backfillRecordSet =
+    backfillDatasets !== null
       ? {
-          backfilledDatasets: datasetVersions(
-            deps.registry.get(connection.connectorId)?.manifest.datasets,
-          ),
+          backfilledDatasets: sql`coalesce(${schema.connectionState.backfilledDatasets}, '{}'::jsonb) || ${JSON.stringify(backfillDatasets)}::jsonb`,
         }
       : {};
   const pollIntervalSeconds =
@@ -970,7 +995,7 @@ async function runSync(
           nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
           cursor: finalCursor,
           ...backfillMarker,
-          ...backfillRecord,
+          ...backfillRecordInsert,
           authState: "ok",
           authReason: null,
           consecutiveFailures: 0,
@@ -982,7 +1007,7 @@ async function runSync(
             nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
             cursor: finalCursor,
             ...backfillMarker,
-            ...backfillRecord,
+            ...backfillRecordSet,
             authState: "ok",
             authReason: null,
             consecutiveFailures: 0,

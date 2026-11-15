@@ -63,13 +63,18 @@ describe("the dataset backfill marker migration", () => {
     await testDb.migrate();
     const [row] = await owner`
       select cursor, last_success_at, backfilled_datasets,
-        backfill_requested_datasets, history_reload_requested_at
+        backfill_job_datasets, backfill_requested_datasets,
+        backfill_requested_at, backfill_request_count,
+        history_reload_requested_at
       from connection_state where connection_id = ${connectionId}`;
     expect(row).toEqual({
       cursor: "cursor-1",
       last_success_at: new Date("2026-11-01T00:00:00Z"),
       backfilled_datasets: null,
+      backfill_job_datasets: null,
       backfill_requested_datasets: null,
+      backfill_requested_at: null,
+      backfill_request_count: 0,
       history_reload_requested_at: null,
     });
   });
