@@ -218,7 +218,9 @@ Caddy's DNS challenge or your own proxy in front.
 3. Check out the new release so `compose.yml` matches it:
    `git fetch --tags && git checkout v0.2.0`.
 4. Set `NETRICS_VERSION` in `.env` to the new release (`0.2.0`).
-5. Run `docker compose pull && docker compose up -d`.
+5. Run `docker compose pull && docker compose up -d`. With nightly backups
+   enabled, run `docker compose --profile backup up -d` instead, so the
+   backup service is updated too.
 
 Versions are image tags: `0.2.0` never changes, and `0.2` follows the newest
 `0.2.x` patch. Pin the full version and upgrade deliberately. Only the newest
@@ -245,29 +247,52 @@ the database with the backup taken before it, at the previous
 
 ## Backup and restore
 
-With the backup profile running, dumps land in `./backups`, named
-`netrics-<version>-<time>.dump` after the `NETRICS_VERSION` that wrote them.
-For a manual dump, keep the version in the name the same way:
+With the backup profile running, a dump lands in `./backups` every night.
+To take one now:
 
 ```sh
-version=$(sed -n 's/^NETRICS_VERSION=//p' .env)
-docker compose exec -T postgres pg_dump -U netrics -d netrics -Fc > "netrics-$version.dump"
+docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
 ```
 
-**Restore a dump with the version it was taken with.** Set `NETRICS_VERSION`
-in `.env` to the version in its file name (and check out that release, as
-for an upgrade), restore, and only then upgrade as described above. A newer
-schema has tables and columns the dump does not know: they survive the
-restore, the restored migration journal is older, and the next `migrate`
-fails running those migrations again.
+It dumps the database as it is, also when `migrate` fails; only `postgres`
+has to be running. Dumps are named `netrics-<version>-<commit>-<time>.dump`. `migrate` records
+the version and commit of the running release in the database on every
+start, the backup service reads them when it dumps, and the dump carries
+them too.
 
-To restore into a fresh installation with the **same `.env`**:
+**Restore a dump with the release that wrote it**, then upgrade as described
+above. A newer schema has tables and columns the dump does not know: they
+survive the restore, the restored migration journal is older, and the next
+`migrate` fails running those migrations again. To read the release from a
+dump that is already in the `postgres` container (see below):
+
+```sh
+docker compose exec postgres pg_restore --data-only --table=schema_info -f - /tmp/restore.dump
+```
+
+The `netrics_version` row is the version. Set `NETRICS_VERSION` in `.env`
+to it, and check out that release as for an upgrade. If the `netrics_commit`
+row is not that release's commit (`git rev-list -n 1 v<version>`), the
+installation ran a commit of `main`: set `NETRICS_VERSION` to the full
+commit instead. Dumps named `netrics-<time>.dump`, without these rows, come
+from 0.2.0 or older. Count their migrations:
+
+```sh
+docker compose exec postgres pg_restore --data-only --table=__drizzle_migrations -f - /tmp/restore.dump | grep -c '^[0-9]'
+```
+
+70 migrations is 0.2.0, 15 is 0.1.0.
+
+### Into a fresh installation
+
+Use the **same `.env`**. Replace `netrics-….dump` with your file:
 
 ```sh
 docker compose up -d postgres
+docker compose cp backups/netrics-….dump postgres:/tmp/restore.dump
+# read the release from the dump (above) and set NETRICS_VERSION
 docker compose run --rm migrate
-docker compose cp netrics.dump postgres:/tmp/netrics.dump
-docker compose exec postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/netrics.dump
+docker compose exec postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/restore.dump
 docker compose up -d
 ```
 
@@ -281,19 +306,29 @@ If you restored without that step, the next `migrate` stops with "The
 application roles lack their privileges". It has created the roles by then:
 run the `pg_restore` command again, then `docker compose up -d`.
 
-To replace the database of an existing installation, for example to go back
-after an upgrade, stop the application, set `NETRICS_VERSION` to the dump's
-version, and restore into an empty database. Its roles already exist on this
-server:
+### Replacing the database of an installation
+
+This is also how to go back after an upgrade.
+
+> [!WARNING]
+> This deletes the installation's current database. Take a dump of it
+> first and keep it until the restored installation works.
 
 ```sh
-docker compose stop api worker scheduler web caddy
+docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
+docker compose stop api worker scheduler web caddy backup
+docker compose cp backups/netrics-….dump postgres:/tmp/restore.dump
+docker compose exec postgres pg_restore --list /tmp/restore.dump > /dev/null && echo "dump readable"
+# read the release from the dump (above) and set NETRICS_VERSION
 docker compose exec postgres dropdb -U netrics --force netrics
 docker compose exec postgres createdb -U netrics netrics
-docker compose cp netrics.dump postgres:/tmp/netrics.dump
-docker compose exec postgres pg_restore -U netrics -d netrics /tmp/netrics.dump
+docker compose exec postgres pg_restore -U netrics -d netrics /tmp/restore.dump
 docker compose up -d
 ```
+
+Go on to `dropdb` only when `pg_restore --list` printed "dump readable".
+The roles already exist on this server, so the restore into the empty
+database keeps their privileges.
 
 A dump without its `.env` restores everything except stored connection
 credentials, which need `APP_ENCRYPTION_KEY`.

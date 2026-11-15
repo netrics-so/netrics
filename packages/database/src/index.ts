@@ -144,10 +144,14 @@ export type {
   RefreshOutcome,
 } from "./devices.js";
 export {
+  INSTALLED_COMMIT_KEY,
+  INSTALLED_VERSION_KEY,
   consumeSetupToken,
   countUsers,
   findInstallationSetup,
+  findInstalledVersion,
   issueSetupToken,
+  recordInstalledVersion,
   recordSetupOwner,
 } from "./installation.js";
 export {

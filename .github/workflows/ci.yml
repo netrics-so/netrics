@@ -340,16 +340,20 @@ jobs:
           sleep 10
           # A quiet source: nothing writes between the dump and the count.
           docker compose stop api worker scheduler web caddy
-          docker compose exec -T postgres pg_dump -U netrics -d netrics -Fc > netrics.dump
+          # The backup service names the dump after the release migrate
+          # recorded (README "Backup and restore").
+          docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
+          dump=$(ls backups/netrics-0.0.0-dev-dev-*.dump)
           source=$(counts docker compose)
           # README "Backup and restore", into a second installation with the
           # same .env (its own volumes and ports).
           export NETRICS_HTTP_PORT=8080 NETRICS_HTTPS_PORT=8443
           r() { docker compose -p restore "$@"; }
           r up -d --wait postgres
+          r cp "$dump" postgres:/tmp/restore.dump
+          r exec -T postgres pg_restore --data-only --table=schema_info -f - /tmp/restore.dump | grep -P '^netrics_version\t0\.0\.0-dev\t'
           r run --rm migrate
-          r cp netrics.dump postgres:/tmp/netrics.dump
-          r exec -T postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/netrics.dump
+          r exec -T postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/restore.dump
           restored=$(counts r)
           r up -d
           healthy=no

@@ -137,10 +137,13 @@ services:
     depends_on:
       - web
 
-  # Optional nightly database dump into ./backups (14 days kept), named
-  # after the version that wrote it; restore with that version (README).
-  # Enable with:
+  # Optional nightly database dump into ./backups (14 days kept):
   #   docker compose --profile backup up -d
+  # One dump now (README, "Backup and restore"):
+  #   docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
+  # Files are named netrics-<version>-<commit>-<time>.dump after the release
+  # that last migrated the database (schema_info, written by migrate), read
+  # at dump time, so they stay right across upgrades.
   backup:
     profiles: ["backup"]
     image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
@@ -153,14 +156,18 @@ services:
     command:
       - |
         while true; do
-          file=/backups/netrics-${NETRICS_VERSION}-$$(date -u +%Y%m%dT%H%M%SZ).dump
-          pg_dump -h postgres -U netrics -d netrics -Fc -f "$$file" && echo "backup: $$file"
+          release=$$(psql -h postgres -U netrics -d netrics -Atc "select coalesce(max(value) filter (where key = 'netrics_version'), 'unknown') || '-' || coalesce(left(max(value) filter (where key = 'netrics_commit'), 12), 'unknown') from schema_info" | sed 's/[^A-Za-z0-9._-]/_/g')
+          file=/backups/netrics-$${release:-unknown}-$$(date -u +%Y%m%dT%H%M%SZ).dump
+          pg_dump -h postgres -U netrics -d netrics -Fc -f "$$file" && echo "backup: $$file" || exit 1
           find /backups -name 'netrics-*.dump' -mtime +14 -delete
+          [ -z "$${BACKUP_ONCE:-}" ] || exit 0
           sleep 86400
         done
+    # Dumps start after migrate, so they never see a half-migrated database
+    # and always carry the running release.
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

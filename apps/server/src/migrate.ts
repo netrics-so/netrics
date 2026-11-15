@@ -2,6 +2,7 @@ import { createDefaultRegistry } from "./connectors.js";
 import {
   createDatabase,
   findRolesWithDefaultPasswords,
+  recordInstalledVersion,
   runMigrations,
 } from "@netrics/database";
 
@@ -34,6 +35,11 @@ try {
       ownerDb,
       createDefaultRegistry({ nodeEnv: config.nodeEnv }),
     );
+    // Backups name and carry the release that wrote them (#642).
+    await recordInstalledVersion(ownerDb, {
+      version: config.version,
+      commit: config.commit,
+    });
   } finally {
     await ownerDb.$client.end({ timeout: 5 }).catch(() => undefined);
   }
