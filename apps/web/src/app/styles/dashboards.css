@@ -521,6 +521,113 @@
   }
 }
 
+/* The update page of a store-template install (11E). */
+.store-update {
+  max-width: 880px;
+}
+
+.store-update-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--size-13);
+}
+
+.store-update-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.store-update-step--current {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.store-update-step--done {
+  color: var(--accent-text);
+}
+
+.store-update-step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 12px;
+}
+
+.store-update-record h3,
+.store-update-stage h2 {
+  margin: 0 0 8px;
+  font-size: var(--size-13-5);
+}
+
+.store-update-kind {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.store-update-group h4 {
+  margin: 12px 0 4px;
+  font-size: var(--size-13);
+}
+
+.store-update-group ul,
+.store-update-drafts {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.store-update-decision {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+
+.store-update-decision p {
+  margin: 4px 0;
+}
+
+.store-update-values {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.store-update-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.store-update-state {
+  color: var(--warning-text);
+}
+
+.store-update-state--done {
+  color: var(--accent-text);
+}
+
+.store-update-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.store-update-apply {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
 /* Archived originals of store-template updates (11E): apart from the grid. */
 .dashboards-archived {
   margin-top: 24px;

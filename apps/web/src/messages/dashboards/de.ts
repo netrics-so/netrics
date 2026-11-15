@@ -216,6 +216,11 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     templateValue: "Vorlage: {text}",
     yourValue: "Deine: {text}",
     absent: "entfernt",
+    change: {
+      added: "hinzugefügt",
+      changed: "geändert",
+      removed: "entfernt",
+    },
     why: {
       both: "Du und die Vorlage habt das beide geändert.",
       templateRemoved: "Die Vorlage hat das entfernt; du hattest es geändert.",

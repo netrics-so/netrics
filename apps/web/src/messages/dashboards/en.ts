@@ -212,6 +212,7 @@ export const dashboardsEn = {
     templateValue: "Template: {text}",
     yourValue: "Yours: {text}",
     absent: "removed",
+    change: { added: "added", changed: "changed", removed: "removed" },
     why: {
       both: "You and the template both changed this.",
       templateRemoved: "The template removed this; you had changed it.",

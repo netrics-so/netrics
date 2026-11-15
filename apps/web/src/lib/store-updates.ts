@@ -342,17 +342,16 @@ export function screensOn(
     .map((device) => device.name);
 }
 
-/** The step of the progress an applied update is at (1-based, 1–5). */
+/**
+ * The step an applied update is at: 2 publish the drafts, 3 create the
+ * copy, 5 swap (comparing, 4, is done once a copy exists), 6 all done.
+ */
 export function progressStep(update: StoreTemplateUpdate): number {
   if (update.drafts.some((draft) => !draft.published)) return 2;
   if (update.dashboards.some((entry) => entry.copyId === null)) return 3;
-  if (
-    update.dashboards.some(
-      (entry) => entry.swappedAt === null || entry.swappedBackAt !== null,
-    )
-  )
-    return 4;
-  return 5;
+  if (update.dashboards.some((entry) => swapState(entry) !== "swapped"))
+    return 5;
+  return 6;
 }
 
 /**
