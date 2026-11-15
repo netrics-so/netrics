@@ -352,12 +352,14 @@ jobs:
           r exec -T postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/netrics.dump
           restored=$(counts r)
           r up -d
+          healthy=no
           for i in $(seq 1 60); do
             state=$(r ps --format '{{.Service}}={{.Health}}' | tr '\n' ' ')
-            case "$state" in *api=healthy*web=healthy*) break ;; esac
+            case "$state" in *api=healthy*web=healthy*) healthy=yes; break ;; esac
             sleep 3
           done
-          r ps
+          r ps -a
+          test "$healthy" = yes || { echo "restored installation not healthy after 3 minutes: $state"; exit 1; }
           test "$source" = "$restored" || { echo "row counts differ"; echo "source:   $source"; echo "restored: $restored"; exit 1; }
           # The restored session works against the restored data (RLS as
           # netrics_app): the workspace and its demo dashboard are there.
@@ -366,7 +368,9 @@ jobs:
       - name: Logs on failure
         if: failure()
         working-directory: deploy/compose
-        run: docker compose logs --tail 100
+        run: |
+          docker compose logs --tail 100
+          docker compose -p restore logs --tail 100
 
   # Release signing only runs on main (release.yml, promote.yml), so a cosign
   # or cosign-installer update would otherwise first meet it in a release.

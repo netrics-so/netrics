@@ -137,7 +137,9 @@ services:
     depends_on:
       - web
 
-  # Optional nightly database dump into ./backups (14 days kept):
+  # Optional nightly database dump into ./backups (14 days kept), named
+  # after the version that wrote it; restore with that version (README).
+  # Enable with:
   #   docker compose --profile backup up -d
   backup:
     profiles: ["backup"]
@@ -151,7 +153,7 @@ services:
     command:
       - |
         while true; do
-          file=/backups/netrics-$$(date -u +%Y%m%dT%H%M%SZ).dump
+          file=/backups/netrics-${NETRICS_VERSION}-$$(date -u +%Y%m%dT%H%M%SZ).dump
           pg_dump -h postgres -U netrics -d netrics -Fc -f "$$file" && echo "backup: $$file"
           find /backups -name 'netrics-*.dump' -mtime +14 -delete
           sleep 86400

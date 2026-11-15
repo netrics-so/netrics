@@ -230,26 +230,36 @@ first; they start once `migrate` has succeeded. Pulling in step 5 before
 
 If `migrate` fails, the app services stay stopped (`docker compose ps`
 shows them as `Created`); `docker compose logs migrate` says why. Either fix
-the cause and run `docker compose up -d` again, or go back: restore the
-backup taken before the upgrade, set the previous `NETRICS_VERSION` and run
-`docker compose up -d`. The schema migrations of an upgrade run in one
+the cause and run `docker compose up -d` again, or go back: replace the
+database with the backup taken before the upgrade, at the previous
+`NETRICS_VERSION` (see "Backup and restore"). The schema migrations of an upgrade run in one
 transaction, so when one of them failed the database is unchanged and the
 previous release starts without the restore. `migrate` also sets role
 passwords and syncs the connector catalog after they commit, though, so
 skip the restore only when the log shows a schema migration failed. Please
 report the failure with the log.
 
-Migrations only move forward. To go back after a successful upgrade, restore
-the backup taken before it and set the previous `NETRICS_VERSION`.
+Migrations only move forward. To go back after a successful upgrade, replace
+the database with the backup taken before it, at the previous
+`NETRICS_VERSION` (see "Backup and restore").
 
 ## Backup and restore
 
-With the backup profile running, dumps land in `./backups`. For a manual
-dump:
+With the backup profile running, dumps land in `./backups`, named
+`netrics-<version>-<time>.dump` after the `NETRICS_VERSION` that wrote them.
+For a manual dump, keep the version in the name the same way:
 
 ```sh
-docker compose exec -T postgres pg_dump -U netrics -d netrics -Fc > netrics.dump
+version=$(sed -n 's/^NETRICS_VERSION=//p' .env)
+docker compose exec -T postgres pg_dump -U netrics -d netrics -Fc > "netrics-$version.dump"
 ```
+
+**Restore a dump with the version it was taken with.** Set `NETRICS_VERSION`
+in `.env` to the version in its file name (and check out that release, as
+for an upgrade), restore, and only then upgrade as described above. A newer
+schema has tables and columns the dump does not know: they survive the
+restore, the restored migration journal is older, and the next `migrate`
+fails running those migrations again.
 
 To restore into a fresh installation with the **same `.env`**:
 
@@ -271,13 +281,17 @@ If you restored without that step, the next `migrate` stops with "The
 application roles lack their privileges". It has created the roles by then:
 run the `pg_restore` command again, then `docker compose up -d`.
 
-To restore into an installation that is running, stop the application
-first, then restore and start it again:
+To replace the database of an existing installation, for example to go back
+after an upgrade, stop the application, set `NETRICS_VERSION` to the dump's
+version, and restore into an empty database. Its roles already exist on this
+server:
 
 ```sh
 docker compose stop api worker scheduler web caddy
+docker compose exec postgres dropdb -U netrics --force netrics
+docker compose exec postgres createdb -U netrics netrics
 docker compose cp netrics.dump postgres:/tmp/netrics.dump
-docker compose exec postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/netrics.dump
+docker compose exec postgres pg_restore -U netrics -d netrics /tmp/netrics.dump
 docker compose up -d
 ```
 

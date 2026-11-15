@@ -132,16 +132,18 @@ export class ApplicationRoleGrantsMissingError extends Error {
 }
 
 /**
- * Fails when the application roles hold none of the privileges migrations
- * grant them. Restoring a dump while the roles are missing drops all of
- * them at once, so a few anchors detect it; the application would otherwise
- * start and fail on every query.
+ * Fails when any of a few anchor privileges that migrations grant the
+ * application roles is missing. Restoring a dump while the roles are missing
+ * drops all of their grants and policies at once, which these anchors
+ * detect; the application would otherwise start and fail on every query.
  */
 export async function assertApplicationRoleGrants(
   sql: postgres.Sql,
 ): Promise<void> {
   const [row] = await sql<
     {
+      app_connect: boolean;
+      scheduler_connect: boolean;
       app_tables: boolean;
       app_auth: boolean;
       app_policies: boolean;
@@ -149,6 +151,8 @@ export async function assertApplicationRoleGrants(
     }[]
   >`
     select
+      has_database_privilege('netrics_app', current_database(), 'CONNECT') as app_connect,
+      has_database_privilege('netrics_scheduler', current_database(), 'CONNECT') as scheduler_connect,
       has_table_privilege('netrics_app', 'public.workspaces', 'SELECT') as app_tables,
       has_schema_privilege('netrics_app', 'auth', 'USAGE') as app_auth,
       exists (
@@ -157,6 +161,12 @@ export async function assertApplicationRoleGrants(
       has_table_privilege('netrics_scheduler', 'public.jobs', 'SELECT') as scheduler_tables
   `;
   const missing: string[] = [];
+  if (!row!.app_connect) {
+    missing.push("netrics_app cannot connect to this database");
+  }
+  if (!row!.scheduler_connect) {
+    missing.push("netrics_scheduler cannot connect to this database");
+  }
   if (!row!.app_tables) {
     missing.push("netrics_app cannot read public.workspaces");
   }
