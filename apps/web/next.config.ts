@@ -39,6 +39,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  // `next dev` would otherwise write apps/web/AGENTS.md when it detects a
+  // coding agent; the repository's CLAUDE.md is the guide for agents.
+  agentRules: false,
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
