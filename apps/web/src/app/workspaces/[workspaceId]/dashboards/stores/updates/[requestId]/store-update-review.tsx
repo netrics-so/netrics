@@ -681,13 +681,14 @@ function useDescribe() {
 /** A step that succeeded, announced to the customer. */
 type Announcement = "applied" | "copy" | "swap" | "swapBack" | "close";
 
+/** Always present, so screen readers announce the text once it is filled. */
 function StatusLine({ announcement }: { announcement: Announcement | null }) {
   const t = useT("storeUpdate");
-  return announcement ? (
-    <p className="notice" role="status">
-      {t(`done.${announcement}`)}
+  return (
+    <p className={announcement ? "notice" : "visually-hidden"} role="status">
+      {announcement ? t(`done.${announcement}`) : ""}
     </p>
-  ) : null;
+  );
 }
 
 /**
@@ -697,9 +698,16 @@ function StatusLine({ announcement }: { announcement: Announcement | null }) {
 export function swapConfirmation(
   t: WebTranslator<"storeUpdate">,
   direction: "swap" | "swapBack",
-  names: readonly string[],
+  /** Null when the screens cannot be listed (the role cannot see them). */
+  names: readonly string[] | null,
   locale: Locale,
 ): string {
+  if (names === null)
+    return t(
+      direction === "swap"
+        ? "progress.confirmSwapUnknown"
+        : "progress.confirmSwapBackUnknown",
+    );
   return t(
     direction === "swap" ? "progress.confirmSwap" : "progress.confirmSwapBack",
     {
@@ -709,6 +717,28 @@ export function swapConfirmation(
       ),
     },
   );
+}
+
+/**
+ * Asks before screens move (swap, swap again, switch back) and moves them
+ * only when the customer agrees. Answers whether it went ahead.
+ */
+export function confirmSwap(
+  direction: "swap" | "swapBack",
+  entry: UpdateDashboard,
+  screens: Screen[] | null,
+  t: WebTranslator<"storeUpdate">,
+  locale: Locale,
+  actions: Pick<DashboardActions, "swap" | "swapBack">,
+  confirm: (question: string) => boolean = (question) =>
+    window.confirm(question),
+): boolean {
+  const from = direction === "swap" ? entry.originalId : entry.copyId;
+  const names = screens ? screensOn(screens, from) : null;
+  if (!confirm(swapConfirmation(t, direction, names, locale))) return false;
+  if (direction === "swap") actions.swap(entry.key);
+  else actions.swapBack(entry.key);
+  return true;
 }
 
 type Problem = {
@@ -939,9 +969,16 @@ export function DashboardSteps({
           <>
             <p className="muted">{t("progress.compareHint")}</p>
             <p className="store-update-links">
-              <Link href={`${base}/${entry.copyId}/studio`}>
-                {t("progress.openCopy")}
-              </Link>
+              {state === "swappedBack" ? (
+                // Archived since the switch back: read-only, not the Studio.
+                <Link href={`${base}/${entry.copyId}`}>
+                  {t("progress.viewArchivedCopy")}
+                </Link>
+              ) : (
+                <Link href={`${base}/${entry.copyId}/studio`}>
+                  {t("progress.openCopy")}
+                </Link>
+              )}
               <Link href={`${base}/${entry.originalId}`}>
                 {t("progress.openOriginal")}
               </Link>
@@ -963,19 +1000,9 @@ export function DashboardSteps({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      swapConfirmation(
-                        t,
-                        "swapBack",
-                        screens ? screensOn(screens, entry.copyId) : [],
-                        locale,
-                      ),
-                    )
-                  )
-                    actions.swapBack(entry.key);
-                }}
+                onClick={() =>
+                  confirmSwap("swapBack", entry, screens, t, locale, actions)
+                }
               >
                 {pending === `swapBack:${entry.key}`
                   ? t("progress.switchingBack")
@@ -1004,12 +1031,9 @@ export function DashboardSteps({
                 type="button"
                 className="primary"
                 disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(swapConfirmation(t, "swap", moving, locale))
-                  )
-                    actions.swap(entry.key);
-                }}
+                onClick={() =>
+                  confirmSwap("swap", entry, screens, t, locale, actions)
+                }
               >
                 {pending === `swap:${entry.key}`
                   ? t("progress.swapping")

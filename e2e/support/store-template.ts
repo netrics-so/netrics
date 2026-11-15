@@ -82,7 +82,7 @@ export async function pairScreen(
   };
   return async () => {
     const response = await page.request.get(
-      `${API}/v1/device/dashboard?schema=2`,
+      `${API}/v1/device/dashboard?schema=3`,
       { headers: { authorization: `Bearer ${credentials.accessToken}` } },
     );
     expect(response.status(), await response.text()).toBe(200);

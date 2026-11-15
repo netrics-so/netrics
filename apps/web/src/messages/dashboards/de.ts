@@ -130,6 +130,8 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     studioAvailable: "Die Vorlage hat ein Update für dieses Dashboard.",
     studioCopy:
       "Das ist die aktualisierte Kopie. Vergleiche sie mit dem Original und nutze sie dann auf deinen Bildschirmen.",
+    studioArchivedCopy:
+      "Diese aktualisierte Kopie ist archiviert, weil du zurückgewechselt hast. Nutze sie über die Update-Seite wieder.",
     studioArchived:
       "Archiviert, solange die aktualisierte Kopie auf deinen Bildschirmen läuft. Wechsle zurück, um es wieder zu nutzen und zu bearbeiten.",
     review: "Update prüfen",
@@ -287,6 +289,11 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
         "Update abgebrochen. Seine Entwürfe bleiben als normale Entwürfe erhalten.",
     },
     progress: {
+      confirmSwapUnknown:
+        "Alle Bildschirme, die das Original zeigen, auf das aktualisierte Dashboard verschieben? Das Original wird archiviert, und du kannst zurückwechseln.",
+      confirmSwapBackUnknown:
+        "Alle Bildschirme, die die aktualisierte Kopie zeigen, zurück auf dein Original verschieben? Die aktualisierte Kopie wird archiviert, und du kannst sie wieder nutzen.",
+      viewArchivedCopy: "Archivierte aktualisierte Kopie ansehen",
       confirmSwap:
         "{count, plural, =0 {Das aktualisierte Dashboard nutzen? Noch kein Bildschirm zeigt das Original.} one {# Bildschirm ({screens}) auf das aktualisierte Dashboard verschieben?} other {# Bildschirme ({screens}) auf das aktualisierte Dashboard verschieben?}} Das Original wird archiviert, und du kannst zurückwechseln.",
       confirmSwapBack:

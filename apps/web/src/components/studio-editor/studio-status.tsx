@@ -45,7 +45,7 @@ export function StoreUpdateNote({
   kind,
   href,
 }: {
-  kind: "available" | "copy" | "archived";
+  kind: "available" | "copy" | "archived" | "archivedCopy";
   href: string;
 }) {
   const t = useT("storeUpdate");
@@ -57,7 +57,9 @@ export function StoreUpdateNote({
             ? "studioAvailable"
             : kind === "copy"
               ? "studioCopy"
-              : "studioArchived",
+              : kind === "archived"
+                ? "studioArchived"
+                : "studioArchivedCopy",
         )}
       </span>{" "}
       <Link href={href}>

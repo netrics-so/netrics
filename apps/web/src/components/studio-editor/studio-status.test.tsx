@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 
-import { studioViewOnlyPath } from "@/lib/store-updates";
+import { studioUpdateNote, studioViewOnlyPath } from "@/lib/store-updates";
 
 import { freeCells } from "./editor-canvas";
 import {
@@ -108,6 +108,57 @@ describe("store-template updates in the Studio (11E)", () => {
       expect(html).toContain(`href="${href}">${link}</a>`);
     },
   );
+
+  it("tells an archived copy from an archived original", () => {
+    const install = {
+      requestId: REQUEST,
+      name: "App portfolio",
+      templateVersion: 2,
+      latestVersion: 2,
+      updateAvailable: true,
+      summary: null,
+      error: null,
+      dashboardIds: ["original"],
+      modelIds: [],
+      preparationIds: [],
+      openUpdate: null,
+      lastUpdate: {
+        id: "00000000-0000-4000-8000-0000000000e1",
+        requestId: REQUEST,
+        fromVersion: 1,
+        toVersion: 2,
+        createdAt: "2026-11-14T10:00:00.000Z",
+        drafts: [],
+        dashboards: [
+          {
+            key: "dashboard:portfolio",
+            originalId: "original",
+            copyId: "copy",
+            swappedAt: "2026-11-14T11:00:00.000Z",
+            swappedBackAt: "2026-11-14T12:00:00.000Z",
+            ready: false,
+          },
+        ],
+      },
+    };
+    const archivedAt = "2026-11-14T12:00:00.000Z";
+    expect(studioUpdateNote([install], { id: "copy", archivedAt })).toEqual({
+      kind: "archivedCopy",
+      requestId: REQUEST,
+    });
+    expect(studioUpdateNote([install], { id: "original", archivedAt })).toEqual(
+      { kind: "archived", requestId: REQUEST },
+    );
+    const copy = renderI18n(
+      <StoreUpdateNote kind="archivedCopy" href={href} />,
+    );
+    expect(copy).toContain(
+      "This updated copy is archived because you switched back. Swap it in again from the update page.",
+    );
+    expect(
+      renderI18n(<StoreUpdateNote kind="archivedCopy" href={href} />, "de"),
+    ).toContain("Diese aktualisierte Kopie ist archiviert");
+  });
 
   it("keeps an archived original out of the Studio: it opens read-only", () => {
     const dashboard = { id: "d1", archivedAt: null };

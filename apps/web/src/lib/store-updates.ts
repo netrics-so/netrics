@@ -356,17 +356,29 @@ export function progressStep(update: StoreTemplateUpdate): number {
 
 /**
  * What the Studio says about a dashboard of a store-template install: an
- * update is available, it is an update's copy not yet on the screens, or it
- * is an archived original (read-only until switched back).
+ * update is available, it is an update's copy not yet on the screens, it
+ * is an archived original (read-only until switched back), or a copy
+ * archived by switching back.
  */
 export function studioUpdateNote(
   installs: readonly StoreInstall[],
   dashboard: { id: string; archivedAt: string | null },
-): { kind: "available" | "copy" | "archived"; requestId: string } | null {
+): {
+  kind: "available" | "copy" | "archived" | "archivedCopy";
+  requestId: string;
+} | null {
   const update = updateOfDashboard(installs, dashboard.id);
   if (dashboard.archivedAt !== null)
     return update
-      ? { kind: "archived", requestId: update.install.requestId }
+      ? {
+          // The original while the copy is on the screens, or the copy
+          // after switching back.
+          kind:
+            update.entry.originalId === dashboard.id
+              ? "archived"
+              : "archivedCopy",
+          requestId: update.install.requestId,
+        }
       : null;
   if (
     update &&

@@ -184,7 +184,7 @@ export function StudioEditor({
   canPublishData?: boolean;
   /** A store-template update concerning this dashboard (11E), and its page. */
   storeUpdate?: {
-    kind: "available" | "copy" | "archived";
+    kind: "available" | "copy" | "archived" | "archivedCopy";
     href: string;
   } | null;
 }) {

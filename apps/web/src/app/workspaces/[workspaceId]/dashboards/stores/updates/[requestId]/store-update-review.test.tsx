@@ -17,6 +17,7 @@ import {
   ProgressView,
   ReviewView,
   StoreUpdateReview,
+  confirmSwap,
   swapConfirmation,
 } from "./store-update-review";
 
@@ -680,6 +681,72 @@ describe("fix round 1 (#602 review)", () => {
     const alert = html.slice(html.indexOf("can’t be made with these widgets"));
     expect(alert.slice(0, alert.indexOf("</section>"))).toContain(
       "Stop this update</button>",
+    );
+  });
+});
+
+describe("fix round 2 (#602 review)", () => {
+  const en = webTranslator("en", "storeUpdate"),
+    de = webTranslator("de", "storeUpdate");
+
+  it("asks without a count when the screens cannot be listed (en, de)", () => {
+    expect(swapConfirmation(en, "swap", null, "en")).toBe(
+      "Move every screen that shows the original to the updated dashboard? The original is archived, and you can switch back.",
+    );
+    expect(swapConfirmation(en, "swapBack", null, "en")).toBe(
+      "Move every screen that shows the updated copy back to your original? The updated copy is archived, and you can use it again.",
+    );
+    expect(swapConfirmation(de, "swap", null, "de")).toBe(
+      "Alle Bildschirme, die das Original zeigen, auf das aktualisierte Dashboard verschieben? Das Original wird archiviert, und du kannst zurückwechseln.",
+    );
+    expect(swapConfirmation(de, "swapBack", null, "de")).not.toContain("0");
+  });
+
+  it("moves nothing when the question is cancelled", () => {
+    const swap = vi.fn(),
+      swapBack = vi.fn();
+    const actions = { ...noActions, swap, swapBack };
+    const copied = entry({ copyId: COPY });
+    const cancel = vi.fn(() => false);
+    expect(
+      confirmSwap("swap", copied, screens, en, "en", actions, cancel),
+    ).toBe(false);
+    expect(cancel).toHaveBeenCalledWith(
+      "Move 2 screens (Lobby and Kitchen) to the updated dashboard? The original is archived, and you can switch back.",
+    );
+    expect(
+      confirmSwap("swapBack", copied, null, en, "en", actions, cancel),
+    ).toBe(false);
+    expect(swap).not.toHaveBeenCalled();
+    expect(swapBack).not.toHaveBeenCalled();
+    expect(
+      confirmSwap("swap", copied, screens, en, "en", actions, () => true),
+    ).toBe(true);
+    expect(swap).toHaveBeenCalledWith("dashboard:portfolio");
+  });
+
+  it("keeps an empty status line ready before anything succeeded", () => {
+    expect(progress()).toMatch(/<p[^>]*role="status"[^>]*><\/p>/);
+  });
+
+  it("links an archived copy read-only after switching back", () => {
+    const html = progress({
+      update: applied({
+        drafts: [],
+        dashboards: [
+          entry({
+            copyId: COPY,
+            swappedAt: "2026-11-14T11:00:00.000Z",
+            swappedBackAt: "2026-11-14T12:00:00.000Z",
+          }),
+        ],
+      }),
+      previous: true,
+      closable: false,
+    });
+    expect(html).not.toContain(`/dashboards/${COPY}/studio`);
+    expect(html).toContain(
+      `href="/workspaces/${W}/dashboards/${COPY}">View the archived updated copy</a>`,
     );
   });
 });

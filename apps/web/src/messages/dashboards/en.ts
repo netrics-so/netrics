@@ -127,6 +127,8 @@ export const dashboardsEn = {
     studioAvailable: "The template has an update for this dashboard.",
     studioCopy:
       "This is the updated copy. Compare it with the original, then use it on your screens.",
+    studioArchivedCopy:
+      "This updated copy is archived because you switched back. Swap it in again from the update page.",
     studioArchived:
       "Archived while its updated copy is on your screens. Switch back to use and edit it again.",
     review: "Review the update",
@@ -276,6 +278,11 @@ export const dashboardsEn = {
       close: "Update stopped. Its drafts stay as normal drafts.",
     },
     progress: {
+      confirmSwapUnknown:
+        "Move every screen that shows the original to the updated dashboard? The original is archived, and you can switch back.",
+      confirmSwapBackUnknown:
+        "Move every screen that shows the updated copy back to your original? The updated copy is archived, and you can use it again.",
+      viewArchivedCopy: "View the archived updated copy",
       confirmSwap:
         "{count, plural, =0 {Use the updated dashboard? No screen shows the original yet.} one {Move # screen ({screens}) to the updated dashboard?} other {Move # screens ({screens}) to the updated dashboard?}} The original is archived, and you can switch back.",
       confirmSwapBack:

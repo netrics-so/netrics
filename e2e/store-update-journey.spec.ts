@@ -249,4 +249,13 @@ test("a customer reviews and applies a store-template update", async ({
   };
   expect(dashboards.map((d) => d.id)).toContain(dashboardId);
   expect(dashboards.map((d) => d.id)).not.toContain(copyId);
+  // The archived copy is read-only too, and says why.
+  await expect(
+    page.getByRole("link", { name: u.progress.viewArchivedCopy }),
+  ).toHaveAttribute("href", `/workspaces/${workspaceId}/dashboards/${copyId}`);
+  await page.goto(`/workspaces/${workspaceId}/dashboards/${copyId}/studio`);
+  await expect(page).toHaveURL(
+    `/workspaces/${workspaceId}/dashboards/${copyId}`,
+  );
+  await expect(page.getByText(u.studioArchivedCopy)).toBeVisible();
 });
