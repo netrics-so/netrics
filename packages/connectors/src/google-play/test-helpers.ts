@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, gunzipSync, gzipSync } from "node:zlib";
 
 import type {
   ConnectorFetchInit,
@@ -44,6 +44,9 @@ export interface FakeReportObject {
   generation: string;
   updated: string;
   size: string;
+  /** "gzip" for an object stored compressed, as Play Console stores some. */
+  contentEncoding?: string;
+  /** The stored bytes (compressed when contentEncoding is gzip). */
   bytes: Uint8Array;
 }
 export function fakePlay(
@@ -78,6 +81,29 @@ export function fakePlay(
       updated,
       size: String(bytes.byteLength),
     });
+  /**
+   * Stores `bytes` gzip-compressed with Content-Encoding: gzip. Media reads
+   * then behave as Cloud Storage and runtime.fetch do together: the body is
+   * the decompressed report, Range is ignored (200, whole object), the listed
+   * size is the compressed size, and x-goog-stored-* describe the stored
+   * bytes.
+   */
+  const putGzip = (
+    name: string,
+    bytes: Uint8Array,
+    generation = "1",
+    updated = "2026-11-04T12:00:00.000Z",
+  ) => {
+    const stored = new Uint8Array(gzipSync(bytes));
+    objects.set(name, {
+      name,
+      bytes: stored,
+      generation,
+      updated,
+      size: String(stored.byteLength),
+      contentEncoding: "gzip",
+    });
+  };
   put(
     `stats/installs/installs_${ALPHA}_202610_country.csv`,
     fixtureBytes("installs-alpha.csv"),
@@ -141,6 +167,18 @@ export function fakePlay(
       }
       const base = `/storage/v1/b/${TEST_BUCKET}/o`;
       if (!url.pathname.startsWith(base)) return jsonResponse(404, {});
+      // Cloud Storage returns only the requested fields; contentEncoding is
+      // the one a client can forget to ask for.
+      const fields = url.searchParams.get("fields");
+      const project = ({
+        bytes: _bytes,
+        contentEncoding,
+        ...metadata
+      }: FakeReportObject) =>
+        contentEncoding !== undefined &&
+        (fields === null || fields.includes("contentEncoding"))
+          ? { ...metadata, contentEncoding }
+          : metadata;
       const prefix = url.searchParams.get("prefix");
       if (prefix !== null) {
         const status = privateStatus.get(prefix);
@@ -154,7 +192,7 @@ export function fakePlay(
         const all = [...objects.values()]
           .filter((object) => object.name.startsWith(prefix))
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(({ bytes: _bytes, ...metadata }) => metadata);
+          .map(project);
         return jsonResponse(200, {
           items: all.slice(offset, offset + size),
           ...(offset + size < all.length
@@ -169,9 +207,18 @@ export function fakePlay(
       const object = objects.get(name);
       if (!object || object.generation !== url.searchParams.get("generation"))
         return jsonResponse(404, {});
-      if (url.searchParams.get("alt") !== "media") {
-        const { bytes: _bytes, ...metadata } = object;
-        return jsonResponse(200, metadata);
+      if (url.searchParams.get("alt") !== "media")
+        return jsonResponse(200, project(object));
+      if (object.contentEncoding === "gzip") {
+        const body = new Uint8Array(gunzipSync(object.bytes));
+        if (body.byteLength > (options.maxResponseBytes ?? Infinity))
+          throw new Error("egress denied: response exceeds the fetch limit");
+        mediaBytes.push(body.byteLength);
+        return byteResponse(200, body, "text/csv", {
+          "x-goog-generation": object.generation,
+          "x-goog-stored-content-encoding": "gzip",
+          "x-goog-stored-content-length": object.size,
+        });
       }
       const range = init?.headers?.range;
       const match = range ? /^bytes=(\d+)-(\d+)$/.exec(range) : null;
@@ -188,6 +235,8 @@ export function fakePlay(
       mediaBytes.push(body.byteLength);
       return byteResponse(match ? 206 : 200, body, "application/octet-stream", {
         "x-goog-generation": object.generation,
+        "x-goog-stored-content-encoding": "identity",
+        "x-goog-stored-content-length": object.size,
         ...(match
           ? {
               "content-range": `bytes ${start}-${end}/${object.bytes.byteLength}`,
@@ -243,6 +292,7 @@ export function fakePlay(
     mediaBytes,
     objects,
     put,
+    putGzip,
     apps,
     privateStatus,
     publicStatus,

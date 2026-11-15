@@ -13,6 +13,7 @@ import {
   reportDecimal,
   reportZip,
   reportZipStream,
+  ReportTooLargeError,
   type ByteSink,
   type ReportSource,
 } from "./tabular.js";
@@ -332,13 +333,7 @@ export async function readInstallReport(
 
 /** Largest piece of a plain report pushed through the parser at once. */
 export const REPORT_READ_BYTES = 1024 * 1024;
-export class ReportTooLargeError extends Error {
-  constructor() {
-    super(
-      `Google Play report exceeds the ${REPORT_MAX_BYTES / 1024 / 1024} MiB read limit`,
-    );
-  }
-}
+export { ReportTooLargeError };
 /** Refuse an oversized object before any of its body is transferred. */
 function reportSize(source: ReportSource): void {
   if (source.size > REPORT_MAX_BYTES) throw new ReportTooLargeError();

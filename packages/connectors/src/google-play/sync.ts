@@ -36,7 +36,7 @@ import {
   type StagedPart,
 } from "./partitions.js";
 import { listingSnapshot, type ListingSnapshot } from "./ratings.js";
-import type { ReportSource } from "./tabular.js";
+import { ReportTooLargeError, type ReportSource } from "./tabular.js";
 
 const PREFIX = "google-play-data:";
 /** Staged pages one turn emits at most, within one page's worth of bytes. */
@@ -307,8 +307,13 @@ async function readReport(
   if (frame.availability !== "available") return false;
   // Report bodies are read in bounded ranges while they are parsed; a failed
   // provider read keeps its own meaning instead of reading as a bad report.
-  const download = (object: ReportObject): ReportSource => {
-    const source = client.source(object);
+  const download = async (object: ReportObject): Promise<ReportSource> => {
+    let source: ReportSource;
+    try {
+      source = await client.source(object);
+    } catch (error) {
+      throw new ReportDownloadError(error);
+    }
     return {
       size: source.size,
       async read(offset, length) {
@@ -329,7 +334,7 @@ async function readReport(
         );
       const object = frame.objects[0]!;
       await readInstallReport(
-        download(object),
+        await download(object),
         task.appId!,
         task.month,
         object.name,
@@ -341,7 +346,7 @@ async function readReport(
       const wanted = selected ? new Set(apps) : undefined;
       for (const object of frame.objects) {
         const parsed = await readEarningsReport(
-          download(object),
+          await download(object),
           task.month,
           object.name,
           object.generation,
@@ -365,6 +370,8 @@ async function readReport(
         frame.availability = "permission_missing";
       else if (cause instanceof PlayReportError && cause.status === 404)
         frame.availability = "not_published";
+      else if (cause instanceof ReportTooLargeError)
+        frame.availability = "invalid_report";
       else throw cause;
     } else if (error instanceof StagingRefusedError) throw error;
     else frame.availability = "invalid_report";

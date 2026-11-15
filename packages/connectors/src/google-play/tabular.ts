@@ -4,6 +4,14 @@ import { createInflateRaw, inflateRawSync } from "node:zlib";
 
 /** Largest report object read, and the inflated output budget per archive. */
 export const REPORT_MAX_BYTES = 64 * 1024 * 1024;
+export class ReportTooLargeError extends Error {
+  constructor(
+    message = `Google Play report exceeds the ${REPORT_MAX_BYTES / 1024 / 1024} MiB read limit`,
+  ) {
+    super(message);
+    this.name = "ReportTooLargeError";
+  }
+}
 
 /** A pinned report object read by byte offset, in bounded pieces. */
 export interface ReportSource {

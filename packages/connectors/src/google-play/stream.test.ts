@@ -579,7 +579,7 @@ describe("range-bounded report transfer", () => {
     const object = fake.objects.get("earnings/earnings_202609.zip")!;
     const client = createPlayReportsClient(context, fake.runtime);
     await expect(client.bytes(object)).rejects.toThrow("fetch limit");
-    const source = client.source(object);
+    const source = await client.source(object);
     expect(source.size).toBe(bytes.length);
     expect(
       Buffer.from(await source.read(REPORT_RANGE_BYTES - 3, 10)).equals(
@@ -616,7 +616,7 @@ describe("range-bounded report transfer", () => {
     const fake = fakePlay();
     const object = fake.objects.get("earnings/earnings_202610.zip")!;
     const client = createPlayReportsClient(context, fake.runtime);
-    await client.source(object).read(0, 22);
+    await (await client.source(object)).read(0, 22);
     expect(
       fake.calls
         .filter((call) => call.url.searchParams.get("alt") === "media")
@@ -644,7 +644,7 @@ describe("range-bounded report transfer", () => {
             : response;
         },
       });
-      await expect(altered.source(large).read(0, 1)).rejects.toThrow(
+      await expect((await altered.source(large)).read(0, 1)).rejects.toThrow(
         "while it was read",
       );
     }

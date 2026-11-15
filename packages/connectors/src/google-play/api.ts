@@ -4,7 +4,11 @@ import type {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
-import type { ReportSource } from "./tabular.js";
+import {
+  REPORT_MAX_BYTES,
+  ReportTooLargeError,
+  type ReportSource,
+} from "./tabular.js";
 
 export const STORAGE_HOST = "storage.googleapis.com";
 export const STORAGE_SCOPE =
@@ -16,9 +20,24 @@ const objectSchema = z.object({
   name: z.string().min(1),
   generation: z.string().regex(/^\d+$/),
   updated: z.iso.datetime(),
+  /** Bytes as stored: for a gzip-encoded object, the compressed size. */
   size: z.string().regex(/^\d+$/),
+  /**
+   * Play Console stores some reports with Content-Encoding: gzip. Such an
+   * object reaches connector code decompressed (runtime.fetch decodes gzip,
+   * and Cloud Storage transcodes for clients that do not accept it), so its
+   * body length is not `size`, and Range headers are ignored for it.
+   */
+  contentEncoding: z.string().optional(),
 });
 export type ReportObject = z.infer<typeof objectSchema>;
+const OBJECT_FIELDS = "name,generation,updated,size,contentEncoding";
+/** Whether the object is served decompressed and only whole. */
+export function gzipEncoded(object: ReportObject): boolean {
+  return (object.contentEncoding ?? "")
+    .split(",")
+    .some((coding) => coding.trim().toLowerCase() === "gzip");
+}
 const listSchema = z.object({
   items: z.array(objectSchema).optional(),
   nextPageToken: z.string().min(1).optional(),
@@ -57,7 +76,7 @@ export function bucketName(config: Readonly<Record<string, unknown>>): string {
     );
   if (!match)
     throw new Error(
-      "Paste the Google Cloud Storage report URI from Play Console, beginning with gs://pubsite_prod_rev_.",
+      "Paste the Google Cloud Storage report URI from Play Console, beginning with gs://pubsite_prod_.",
     );
   return match[1]!;
 }
@@ -139,9 +158,37 @@ export function createPlayReportsClient(
     return bytes;
   };
   const whole = async (object: ReportObject): Promise<Uint8Array> => {
-    const response = await get(media(object), "*/*");
+    let response: Awaited<ReturnType<typeof get>>;
+    try {
+      response = await get(media(object), "*/*");
+    } catch (error) {
+      // runtime.fetch bounds the body it hands over, decompressed included.
+      if (
+        gzipEncoded(object) &&
+        error instanceof Error &&
+        /^egress denied: response exceeds\b/.test(error.message)
+      )
+        throw new ReportTooLargeError(
+          "Google Play report exceeds the read limit once decompressed",
+        );
+      throw error;
+    }
     pinned(object, response);
     const bytes = response.bytes();
+    const stored = response.headers["x-goog-stored-content-encoding"];
+    if (
+      gzipEncoded(object) &&
+      (stored === undefined || stored.trim().toLowerCase() === "gzip")
+    ) {
+      // The body is the decompressed report, so its length cannot be checked
+      // against the stored size; the stored length still must match, and the
+      // generation pin above ties the body to the listed object.
+      const storedLength = response.headers["x-goog-stored-content-length"];
+      if (storedLength !== undefined && storedLength !== object.size)
+        throw resized();
+      if (bytes.byteLength > REPORT_MAX_BYTES) throw new ReportTooLargeError();
+      return bytes;
+    }
     if (BigInt(bytes.byteLength) !== BigInt(object.size)) throw resized();
     return bytes;
   };
@@ -150,7 +197,7 @@ export function createPlayReportsClient(
       const url = new URL(base);
       url.searchParams.set("prefix", prefix);
       url.searchParams.set("maxResults", "1");
-      url.searchParams.set("fields", "items(name,generation,updated,size)");
+      url.searchParams.set("fields", `items(${OBJECT_FIELDS})`);
       const page = listSchema.parse((await get(url)).json());
       const object = page.items?.[0];
       if (object && !object.name.startsWith(prefix))
@@ -167,10 +214,7 @@ export function createPlayReportsClient(
         const url = new URL(base);
         url.searchParams.set("prefix", prefix);
         url.searchParams.set("maxResults", "1000");
-        url.searchParams.set(
-          "fields",
-          "items(name,generation,updated,size),nextPageToken",
-        );
+        url.searchParams.set("fields", `items(${OBJECT_FIELDS}),nextPageToken`);
         if (next) {
           if (visited.has(next))
             throw new Error("Google Play report listing repeated a page.");
@@ -202,7 +246,7 @@ export function createPlayReportsClient(
     async validate(object: ReportObject): Promise<void> {
       const url = new URL(base + "/" + encodeURIComponent(object.name));
       url.searchParams.set("generation", object.generation);
-      url.searchParams.set("fields", "name,generation,updated,size");
+      url.searchParams.set("fields", OBJECT_FIELDS);
       const current = objectSchema.parse((await get(url)).json());
       if (
         current.name !== object.name ||
@@ -217,9 +261,29 @@ export function createPlayReportsClient(
     /**
      * Random access to the pinned generation. An object of at most one range
      * is fetched whole, as `bytes` does; a larger one is read in aligned
-     * ranges, and only the most recently fetched range is kept.
+     * ranges, and only the most recently fetched range is kept. A
+     * gzip-encoded object cannot be read by range and its decompressed size
+     * is only known once read, so it is fetched whole (bounded by the fetch
+     * limit) and served from memory.
      */
-    source(object: ReportObject): ReportSource {
+    async source(object: ReportObject): Promise<ReportSource> {
+      if (gzipEncoded(object)) {
+        const bytes = await whole(object);
+        return {
+          size: bytes.byteLength,
+          async read(offset, length) {
+            if (
+              !Number.isSafeInteger(offset) ||
+              !Number.isSafeInteger(length) ||
+              offset < 0 ||
+              length < 0 ||
+              offset + length > bytes.byteLength
+            )
+              throw new Error("Google Play report read is outside the object");
+            return bytes.slice(offset, offset + length);
+          },
+        };
+      }
       const size = Number(object.size);
       let block: { start: number; bytes: Uint8Array } | undefined;
       const load = async (index: number) => {
