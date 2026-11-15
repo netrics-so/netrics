@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { compileRowExpression } from "./data-expression.js";
 import {
   dashboardModelQuery,
+  formatDataDate,
+  MEASURE_UNIT_FRACTION_DIGITS,
+  roundDecimalText,
   measureInteractionDimension,
   measureInteractionSelected,
   measureInteractionValue,
@@ -438,5 +441,43 @@ describe("declared chart-to-filter interactions", () => {
         "0",
       ),
     ).toBe(false);
+  });
+});
+
+describe("display formatting (#619)", () => {
+  it("shows a calendar day in the locale's date format, the same day in every time zone", () => {
+    expect(formatDataDate("2026-01-07", "date", "de")).toBe("07.01.2026");
+    expect(formatDataDate("2026-01-07", "date", "en")).toBe("Jan 7, 2026");
+    expect(formatDataDate("2026-01-07", "date", "de", "Pacific/Honolulu")).toBe(
+      "07.01.2026",
+    );
+  });
+  it("shows a timestamp with its time in the given zone", () => {
+    expect(
+      formatDataDate("2026-01-07T09:15:00.000Z", "timestamp", "de", "UTC"),
+    ).toBe("07.01.2026, 09:15");
+    expect(
+      formatDataDate("2026-01-07T09:15:00.000Z", "timestamp", "en", "UTC"),
+    ).toBe("Jan 7, 2026, 9:15 AM");
+  });
+  it("leaves values that are no date to the caller", () => {
+    expect(formatDataDate("soon", "date", "en")).toBeNull();
+    expect(formatDataDate("2026-02-30", "date", "en")).toBeNull();
+    expect(formatDataDate(42, "timestamp", "en")).toBeNull();
+    expect(formatDataDate("2026-01-07", "string", "en")).toBeNull();
+  });
+  it("rounds decimal text half away from zero without floating point", () => {
+    expect(roundDecimalText("4.2857", 2)).toBe("4.29");
+    expect(roundDecimalText("4.66667", 2)).toBe("4.67");
+    expect(roundDecimalText("4.5", 2)).toBe("4.5");
+    expect(roundDecimalText("4.995", 2)).toBe("5");
+    expect(roundDecimalText("4.10", 2)).toBe("4.1");
+    expect(roundDecimalText("-0.004", 2)).toBe("0");
+    expect(roundDecimalText("-1.005", 2)).toBe("-1.01");
+    expect(roundDecimalText("9007199254740993.125", 2)).toBe(
+      "9007199254740993.13",
+    );
+    expect(roundDecimalText("12", 2)).toBe("12");
+    expect(MEASURE_UNIT_FRACTION_DIGITS.stars).toBe(2);
   });
 });

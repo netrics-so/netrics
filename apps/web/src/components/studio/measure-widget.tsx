@@ -12,6 +12,9 @@ import { formatPercentChange } from "@/lib/format-metric";
 import {
   currencyExponent,
   displayMeasureAmount,
+  formatDataDate,
+  MEASURE_UNIT_FRACTION_DIGITS,
+  roundDecimalText,
   measureInteractionDimension,
   measureInteractionSelected,
   measureInteractionValue,
@@ -45,6 +48,11 @@ export function formatMeasureCell(
   value = displayMeasureAmount(value, unit, currency);
   if (value === null || value === undefined) return "—";
   if (type === "boolean") return value ? yes : no;
+  // Days and timestamps as people read them; the viewer's time zone for times.
+  const date = formatDataDate(value, type, locale);
+  if (date !== null) return date;
+  // A unit with a display precision (ratings) is rounded; the value stays exact.
+  const fractionDigits = unit ? MEASURE_UNIT_FRACTION_DIGITS[unit] : undefined;
   // Decimal strings must never pass through Number, including beyond IEEE-754 precision.
   let text: string;
   if (
@@ -53,7 +61,10 @@ export function formatMeasureCell(
     (type === "decimal" || currency) &&
     /^-?\d+(?:\.\d+)?$/.test(String(value))
   ) {
-    const raw = String(value);
+    const raw =
+      fractionDigits === undefined
+        ? String(value)
+        : roundDecimalText(String(value), fractionDigits);
     const negative = raw.startsWith("-");
     const [whole = "0", fraction = ""] = (negative ? raw.slice(1) : raw).split(
       ".",
@@ -70,9 +81,9 @@ export function formatMeasureCell(
   } else
     text =
       typeof value === "number"
-        ? new Intl.NumberFormat(locale, { maximumFractionDigits: 18 }).format(
-            value,
-          )
+        ? new Intl.NumberFormat(locale, {
+            maximumFractionDigits: fractionDigits ?? 18,
+          }).format(value)
         : String(value);
   return currency
     ? `${text} ${currency}`
@@ -217,19 +228,11 @@ export function MeasureWidgetView({
     ...Object.fromEntries(
       widget.binding.measureIds.map((id) => [
         `measure.${id}`,
-        percentChange.has(id)
-          ? cellText(id, row.measures[id])
-          : row.measures[id]?.currency
-            ? format(
-                row.measures[id]?.value,
-                row.measures[id]!.type,
-                row.measures[id]?.currency,
-                row.measures[id]?.unit,
-              )
-            : (row.measures[id]?.value ?? null),
+        cellText(id, row.measures[id]),
       ]),
     ),
   }));
+  const groupType = widget.binding.groupBy.length ? fields[0]!.type : "string";
   const chartRows = rows.map((row) => ({
     dimension: row.dimensions[widget.binding.groupBy[0]!],
     label: row.dimensionLabels?.[widget.binding.groupBy[0]!],
@@ -311,12 +314,15 @@ export function MeasureWidgetView({
             <tbody>
               {tableRows.map((row, index) => (
                 <tr key={index}>
-                  {fields.map((field) => (
+                  {fields.map((field, column) => (
                     <td key={field.id}>
                       {choice(
                         field.id,
                         rows[index]!.dimensions[field.id] ?? null,
-                        format(row[field.id], field.type),
+                        // Measure cells are already shown text (units, rounding).
+                        column >= widget.binding.groupBy.length
+                          ? String(row[field.id])
+                          : format(row[field.id], field.type),
                       )}
                     </td>
                   ))}
@@ -333,7 +339,7 @@ export function MeasureWidgetView({
                 {choice(
                   widget.binding.groupBy[0]!,
                   dimension ?? null,
-                  label ?? String(dimension ?? "—"),
+                  label ?? format(dimension, groupType),
                 )}
               </span>
               <div className="sw-measure-track">
@@ -371,7 +377,7 @@ export function MeasureWidgetView({
                   {choice(
                     widget.binding.groupBy[0]!,
                     dimension ?? null,
-                    String(dimension ?? "—"),
+                    format(dimension, groupType),
                   )}
                 </span>
                 <span>{cellText(widget.binding.measureIds[0]!, cell)}</span>

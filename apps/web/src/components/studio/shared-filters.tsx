@@ -1,12 +1,22 @@
 "use client";
 import { useCallback, useEffect, useId, useState } from "react";
-import type {
-  DashboardDataFilter,
-  DashboardFilterValue,
+import {
+  formatDataDate,
+  type DashboardDataFilter,
+  type DashboardFilterValue,
 } from "@netrics/domain";
 import { loadDimensionValues } from "@/lib/dashboard-data-api";
 import { enteredValue } from "@/lib/data-editing";
-import { useT } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
+
+/** A filter value as shown: days and timestamps in the locale's format. */
+export function filterValueText(
+  filter: Pick<DashboardDataFilter, "type">,
+  value: unknown,
+  locale: string,
+): string {
+  return formatDataDate(value, filter.type, locale) ?? String(value);
+}
 export function DashboardFilterInput({
   filter,
   workspaceId,
@@ -24,6 +34,7 @@ export function DashboardFilterInput({
 }) {
   const id = useId(),
     t = useT("data.dashboard"),
+    locale = useLocale(),
     [text, setText] = useState(""),
     [error, setError] = useState(false);
   const [browse, setBrowse] = useState(initialBrowse),
@@ -202,7 +213,7 @@ export function DashboardFilterInput({
                           ? t("unmatched")
                           : typeof raw === "boolean"
                             ? t(raw ? "yes" : "no")
-                            : String(raw))}
+                            : filterValueText(filter, raw, locale))}
                     </button>
                   </li>
                 ))}
@@ -242,7 +253,10 @@ export function DashboardFilterInput({
               })
             }
             aria-label={t("removeValue", {
-              value: raw === null ? t("unmatched") : String(raw),
+              value:
+                raw === null
+                  ? t("unmatched")
+                  : filterValueText(filter, raw, locale),
             })}
           >
             {labelCache[JSON.stringify(raw)] ||
@@ -250,7 +264,7 @@ export function DashboardFilterInput({
                 ? t("unmatched")
                 : typeof raw === "boolean"
                   ? t(raw ? "yes" : "no")
-                  : String(raw))}{" "}
+                  : filterValueText(filter, raw, locale))}{" "}
             ×
           </button>
         ))}
@@ -344,6 +358,7 @@ function CompactFilter({
   onChange: (value: DashboardFilterValue) => void;
 }) {
   const t = useT("data.dashboard"),
+    locale = useLocale(),
     id = useId(),
     [open, setOpen] = useState(false),
     [left, setLeft] = useState(0);
@@ -401,7 +416,7 @@ function CompactFilter({
     value === null
       ? t("allValues")
       : value.kind === "range"
-        ? `${String(value.from ?? "…")} – ${String(value.to ?? "…")}`
+        ? `${value.from == null ? "…" : filterValueText(filter, value.from, locale)} – ${value.to == null ? "…" : filterValueText(filter, value.to, locale)}`
         : value.values.length
           ? value.values
               .map(
@@ -411,7 +426,7 @@ function CompactFilter({
                     ? t("unmatched")
                     : typeof value === "boolean"
                       ? t(value ? "yes" : "no")
-                      : String(value)),
+                      : filterValueText(filter, value, locale)),
               )
               .join(", ")
           : t("allValues");

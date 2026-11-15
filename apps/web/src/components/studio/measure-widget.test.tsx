@@ -47,6 +47,86 @@ describe("semantic value display", () => {
   });
 });
 
+describe("locale dates and rounded ratings (#619)", () => {
+  it("formats days and timestamps for the locale instead of ISO text", () => {
+    expect(format("2026-01-07", "date", undefined, "de")).toBe("07.01.2026");
+    expect(format("2026-01-07", "date", undefined, "en")).toBe("Jan 7, 2026");
+    const at = new Intl.DateTimeFormat("de", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date("2026-01-07T09:15:00.000Z"));
+    expect(
+      format("2026-01-07T09:15:00.000Z", "timestamp", undefined, "de"),
+    ).toBe(at);
+    expect(at).not.toContain("T09");
+  });
+  it("rounds ratings to two decimals without touching other decimals", () => {
+    expect(format("4.2857", "decimal", undefined, "de", "stars")).toBe(
+      "4,29 ★",
+    );
+    expect(format("4.66667", "decimal", undefined, "en", "stars")).toBe(
+      "4.67 ★",
+    );
+    expect(format(4.2857, "number", undefined, "en", "stars")).toBe("4.29 ★");
+    expect(format("4.2857", "decimal", undefined, "en")).toBe("4.2857");
+  });
+  it("shows a rating table with units, rounding and locale days in en and de", () => {
+    const props: Parameters<typeof MeasureWidgetView>[0] = {
+      widget: {
+        title: null,
+        options: { view: "table", limit: 20 },
+        binding: { measureIds: ["rating", "checked"], groupBy: ["day"] },
+      },
+      data: {
+        widgetId: "00000000-0000-4000-8000-000000000001",
+        status: "ok",
+        error: null,
+        exclusions: [],
+        metadata: {
+          modelId: "00000000-0000-4000-8000-000000000002",
+          modelName: "Ratings",
+          measures: [
+            { id: "rating", name: "Rating" },
+            { id: "checked", name: "Checked at" },
+          ],
+          dimensions: [{ id: "day", name: "Day", type: "date" }],
+        },
+        result: {
+          releaseId: null,
+          rows: [
+            {
+              dimensions: { day: "2026-01-07" },
+              measures: {
+                rating: {
+                  value: "4.2857",
+                  type: "decimal",
+                  unit: "stars",
+                  status: "ok",
+                },
+                checked: { value: "2026-01-06", type: "date", status: "ok" },
+              },
+            },
+          ],
+          warnings: [],
+          operations: 1,
+          provenance: [],
+          appliedFilter: null,
+          groupBy: [],
+        },
+      } as unknown as DashboardWidgetData,
+    };
+    const de = renderI18n(<MeasureWidgetView {...props} />, "de");
+    expect(de).toContain("4,29 ★");
+    expect(de).toContain("07.01.2026");
+    expect(de).toContain("06.01.2026");
+    expect(de).not.toContain("4,2857");
+    expect(de).not.toContain("2026-01-0");
+    const en = renderI18n(<MeasureWidgetView {...props} />);
+    expect(en).toContain("4.29 ★");
+    expect(en).toContain("Jan 6, 2026");
+  });
+});
+
 describe("percent change measures", () => {
   const data = (
     view: "value" | "table",
