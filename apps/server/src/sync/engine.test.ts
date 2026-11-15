@@ -23,6 +23,7 @@ import {
   createWorkspace,
   enqueueJob,
   schema,
+  SERIALIZATION_RETRY_DEFAULTS,
   withWorkspace,
   type Database,
   type Job,
@@ -204,6 +205,43 @@ const datasetFaultConnector: Connector = {
         },
       ],
       done: true,
+    };
+  },
+};
+
+/**
+ * Two dataset pages, a checkpointed one and the final one (#604); counts its
+ * provider calls, which a retried ingestion transaction must not repeat.
+ */
+let conflictSyncCalls = 0;
+const conflictConnector: Connector = {
+  manifest: {
+    ...testManifest("dataset-conflicts", "dataset-conflicts.hits"),
+    datasets: [flakyDataset],
+  },
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync(_context: ConnectionContext, request: SyncRequest) {
+    conflictSyncCalls += 1;
+    const first = !request.cursor;
+    return {
+      observations: [],
+      datasetPages: [
+        {
+          datasetKey: "events",
+          schemaVersion: 1,
+          refreshKey: "conflict-refresh",
+          pageKey: first ? "p1" : "p2",
+          previousPageKey: first ? null : "p1",
+          complete: !first,
+          records: [{ values: { id: first ? "one" : "two", amount: "1.00" } }],
+        },
+      ],
+      ...(first ? { nextCursor: "page-2", done: false } : { done: true }),
     };
   },
 };
@@ -592,6 +630,7 @@ beforeAll(async () => {
   registry.register(revisingConnector);
   registry.register(namingConnector);
   registry.register(datasetFaultConnector);
+  registry.register(conflictConnector);
   activityProbe = createRawSqlClient(testDb.adminUrl, { max: 1 });
 
   // Explicit catalog sync (production does this at process startup).
@@ -640,6 +679,7 @@ describe("catalog sync", () => {
       "app-store-connect",
       "apple-ads",
       "broken",
+      "dataset-conflicts",
       "dataset-faults",
       "demo",
       "endless",
@@ -1057,6 +1097,124 @@ describe("dataset storage failures", () => {
     });
     expect(String(runs[0]!.error_message)).toContain("dataset_workspace_quota");
   });
+});
+
+describe("dataset ingestion conflicts (#604)", () => {
+  // A trigger raises serialization_failure (40001) for the first
+  // `fail_first` page inserts of this block's workspace, as a rival
+  // transaction would; the dataset store redacts it to
+  // dataset_storage_failed. A sequence counts attempts (a rollback does
+  // not reset it).
+  let workspaceId: string;
+  /** The next `count` inserts (of `pageKey` only, if given) fail. */
+  const failFirst = async (count: number, pageKey: string | null = null) => {
+    await activityProbe!`update engine_conflict_state set fail_first = ${count}, page_key = ${pageKey}`;
+    await activityProbe!`alter sequence engine_conflict_attempts restart`;
+  };
+  const attempts = async () => {
+    const [row] = await activityProbe!<{ n: number }[]>`
+      select case when is_called then last_value else 0 end::int as n
+      from engine_conflict_attempts`;
+    return row!.n;
+  };
+  const pages = async (connectionId: string) =>
+    (
+      await activityProbe!<{ page_key: string }[]>`
+        select p.page_key from data_pages p
+        join data_refreshes r on r.id = p.refresh_id
+        join data_datasets d on d.id = r.dataset_id
+        where d.connection_id = ${connectionId} order by p.page_key`
+    ).map((row) => row.page_key);
+
+  beforeAll(async () => {
+    const [user] = await appDb
+      .insert(schema.users)
+      .values({ email: "engine-c@example.com", displayName: "Owner C" })
+      .returning({ id: schema.users.id });
+    workspaceId = await createWorkspace(appDb, {
+      name: "Engine C",
+      ownerUserId: user!.id,
+    });
+    await activityProbe!.unsafe(`
+      create sequence engine_conflict_attempts;
+      create table engine_conflict_state (fail_first int not null, page_key text);
+      insert into engine_conflict_state values (0, null);
+      create function engine_conflict_fail() returns trigger
+      language plpgsql security definer as $$
+      declare s engine_conflict_state;
+      begin
+        select * into s from engine_conflict_state;
+        if (s.page_key is null or new.page_key = s.page_key)
+          and nextval('engine_conflict_attempts') <= s.fail_first then
+          raise exception 'could not serialize access (test)' using errcode = '40001';
+        end if;
+        return new;
+      end $$;
+      create trigger engine_conflict_fail before insert on data_pages
+      for each row when (new.workspace_id = '${workspaceId}')
+      execute function engine_conflict_fail();`);
+  });
+
+  it("retries a conflicting page transaction without fetching the page again", async () => {
+    // Before #604: the first conflict failed the job (dataset_storage_failed)
+    // and the next attempt fetched every page again.
+    const connectionId = await seedConnection(workspaceId, "dataset-conflicts");
+    conflictSyncCalls = 0;
+    // Three failures in the checkpoint of page 1, then page 1 commits; page
+    // 2 commits on the first try.
+    await failFirst(3);
+    await runAttempt("connection.sync", workspaceId, connectionId, 1);
+    expect(await attempts()).toBe(5);
+    expect(conflictSyncCalls).toBe(2);
+    expect(await pages(connectionId)).toEqual(["p1", "p2"]);
+    const runs = await syncRunsFor(workspaceId, connectionId);
+    expect(runs.map((run) => run.status)).toEqual(["succeeded"]);
+  });
+
+  it("retries the final transaction too", async () => {
+    const connectionId = await seedConnection(workspaceId, "dataset-conflicts");
+    conflictSyncCalls = 0;
+    // Page 1 commits; the final page fails twice, then commits.
+    await failFirst(2, "p2");
+    await runAttempt("connection.sync", workspaceId, connectionId, 1);
+    expect(await attempts()).toBe(3);
+    expect(conflictSyncCalls).toBe(2);
+    expect(await pages(connectionId)).toEqual(["p1", "p2"]);
+  });
+
+  it(
+    "an exhausted conflict still fails the job as a transient storage failure",
+    async () => {
+      const connectionId = await seedConnection(
+        workspaceId,
+        "dataset-conflicts",
+      );
+      conflictSyncCalls = 0;
+      await failFirst(1_000);
+      const error = await runAttempt(
+        "connection.sync",
+        workspaceId,
+        connectionId,
+        1,
+      ).catch((caught: unknown) => caught);
+      const tried = await attempts();
+      await failFirst(0);
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(NonRetryableJobError);
+      expect((error as Error).message).toBe("dataset_storage_failed");
+      expect(tried).toBeGreaterThan(3);
+      expect(tried).toBeLessThanOrEqual(SERIALIZATION_RETRY_DEFAULTS.attempts);
+      // One provider call: the retries reused page 1.
+      expect(conflictSyncCalls).toBe(1);
+      const runs = await syncRunsFor(workspaceId, connectionId);
+      expect(runs[0]).toMatchObject({
+        status: "failed",
+        error_class: "transient",
+        error_message: "dataset_storage_failed",
+      });
+    },
+    SERIALIZATION_RETRY_DEFAULTS.budgetMs + 20_000,
+  );
 });
 
 describe("page-wise ingest (#145)", () => {

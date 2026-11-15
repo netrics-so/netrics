@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   createDashboardRequestSchema,
@@ -17,7 +17,9 @@ import {
   insertAuditEvent,
   retryOnSerializationFailure,
   DatasetStoreError,
+  hasSqlstate,
   type Database,
+  type TableLocks,
   type Transaction,
 } from "@netrics/database";
 import {
@@ -49,6 +51,39 @@ import {
   STORE_TEMPLATE_ID,
   storeTemplateInputsSchema,
 } from "./store-template.js";
+
+/**
+ * Installs run one at a time, across workspaces (#604). An install is one
+ * serializable transaction of ~25 tables that reads before it writes
+ * (dataset keys, schema versions, generations, refreshes, install ids).
+ * Until those tables are large, every workspace's rows share their heap
+ * relation (the planner picks sequential scans, which lock the whole
+ * relation) or a single index leaf page, so any two concurrent installs read
+ * what the other writes and SSI cancels all but one of them. Measured: of 4
+ * (8) concurrent installs in different workspaces, exactly one committed
+ * per round, so the last needed 4 (8) full attempts and the jittered retries
+ * could run out of budget under load (409 version_conflict).
+ *
+ * The lock is taken before the snapshot: a lock taken after it (an advisory
+ * lock in a SELECT) still leaves the waiter's snapshot older than the
+ * holder's commit, and SSI cancels it anyway. SHARE UPDATE EXCLUSIVE
+ * conflicts with itself (and VACUUM/ANALYZE of the table), not with reads or
+ * writes: update operations (apply, close, swap, legacy completion) and
+ * cascading deletes never wait for a running install, so an install cannot
+ * stall another tenant's update or deadlock with one through the locks those
+ * hold (the install's advisory lock, the workspace ingestion lock 440). A
+ * wait longer than INSTALL_LOCK_TIMEOUT_MS fails with 55P03; the install
+ * retries that twice, then answers 409 version_conflict. The lock replaces
+ * the per-request advisory lock, which installs no longer need.
+ */
+export const INSTALL_LOCK_TIMEOUT_MS = 2_000;
+export const INSTALL_LOCK = {
+  tables: [schema.dataTemplateInstalls],
+  mode: "share update exclusive",
+  timeoutMs: INSTALL_LOCK_TIMEOUT_MS,
+} satisfies TableLocks;
+/** lock_not_available: the install lock was not granted in time. */
+const isLockTimeout = (error: unknown) => hasSqlstate(error, "55P03");
 
 type Actor = { workspaceId: string; callerId: string; locale: Locale };
 const appKey = (app: { connectionId: string; appId: string }) =>
@@ -345,9 +380,6 @@ export function createStoreTemplateService(deps: {
               deps.db,
               { workspaceId: actor.workspaceId, userId: actor.callerId },
               async (tx) => {
-                await tx.execute(
-                  sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + input.requestId}))`,
-                );
                 const [installed] = await tx
                   .select()
                   .from(schema.dataTemplateInstalls)
@@ -620,14 +652,17 @@ export function createStoreTemplateService(deps: {
                 });
                 return result;
               },
-              { isolationLevel: "serializable" },
+              { isolationLevel: "serializable", lockTables: INSTALL_LOCK },
             ),
           {
-            retryable: isRetryableDataConflict,
+            retryable: (error, index) =>
+              isRetryableDataConflict(error, index) ||
+              (index < 2 && isLockTimeout(error)),
           },
         );
       } catch (error) {
-        if (isDataConflict(error)) reject("version_conflict", 409);
+        if (isDataConflict(error) || isLockTimeout(error))
+          reject("version_conflict", 409);
         if (error instanceof DatasetStoreError)
           reject(error.code, datasetStoreStatus(error.code));
         throw error;

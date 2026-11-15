@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+import type { PgTable } from "drizzle-orm/pg-core";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 
@@ -36,11 +37,30 @@ export async function withWorkspace<T>(
   options?: {
     isolationLevel?: "read committed" | "repeatable read" | "serializable";
     accessMode?: "read only" | "read write";
+    /**
+     * Table locks taken first, before set_config (a SELECT) takes the
+     * snapshot of a repeatable read or serializable transaction: a lock
+     * taken after the snapshot still leaves the transaction overlapping the
+     * one it waited for, so SSI sees them as concurrent. A lock not granted
+     * within `timeoutMs` fails with 55P03 (lock_not_available); the timeout
+     * covers only the lock, not the rest of the transaction.
+     */
+    lockTables?: TableLocks;
   },
 ): Promise<T> {
   const workspaceId = uuidSchema.parse(ctx.workspaceId);
   const userId = ctx.userId ? uuidSchema.parse(ctx.userId) : undefined;
+  const { lockTables, isolationLevel, accessMode } = options ?? {};
+  // drizzle sends a config without values as an invalid bare SET TRANSACTION.
+  const config =
+    isolationLevel || accessMode
+      ? {
+          ...(isolationLevel ? { isolationLevel } : {}),
+          ...(accessMode ? { accessMode } : {}),
+        }
+      : undefined;
   return db.transaction(async (tx) => {
+    if (lockTables) await lockTablesFirst(tx, lockTables);
     await tx.execute(
       sql`select set_config('app.workspace_id', ${workspaceId}, true)`,
     );
@@ -48,7 +68,40 @@ export async function withWorkspace<T>(
       await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
     }
     return fn(tx);
-  }, options);
+  }, config);
+}
+
+/** Lock modes withWorkspace takes before the snapshot. */
+export type TableLockMode = "share update exclusive" | "share row exclusive";
+
+export interface TableLocks {
+  tables: PgTable[];
+  mode: TableLockMode;
+  /** Upper bound of the wait for the locks (lock_timeout). */
+  timeoutMs?: number;
+}
+
+const TABLE_LOCK_MODES: Record<TableLockMode, SQL> = {
+  "share update exclusive": sql.raw("share update exclusive"),
+  "share row exclusive": sql.raw("share row exclusive"),
+};
+
+/** SET and LOCK are utility statements: neither takes a snapshot. */
+async function lockTablesFirst(tx: Transaction, locks: TableLocks) {
+  const timeout = locks.timeoutMs;
+  if (timeout !== undefined) {
+    if (!Number.isInteger(timeout) || timeout <= 0)
+      throw new Error("lock timeout must be a positive integer");
+    await tx.execute(sql.raw(`set local lock_timeout = '${timeout}ms'`));
+  }
+  await tx.execute(
+    sql`lock table ${sql.join(
+      locks.tables.map((table) => sql`${table}`),
+      sql`, `,
+    )} in ${TABLE_LOCK_MODES[locks.mode]} mode`,
+  );
+  if (timeout !== undefined)
+    await tx.execute(sql`set local lock_timeout to default`);
 }
 
 /**

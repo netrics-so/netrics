@@ -1395,7 +1395,12 @@ export function createStoreTemplateUpdateService(deps: {
     return updateView(tx, actor.workspaceId, update!);
   }
 
-  /** The install's lock (store-template-service.ts). */
+  /**
+   * The install's lock: orders the update operations on one install. The
+   * install itself takes a SHARE UPDATE EXCLUSIVE table lock instead
+   * (INSTALL_LOCK in store-template-service.ts), which never blocks these
+   * operations' reads or writes.
+   */
   async function lockInstall(
     tx: Transaction,
     workspaceId: string,
@@ -2023,7 +2028,7 @@ export function createStoreTemplateUpdateService(deps: {
               deps.db,
               { workspaceId: actor.workspaceId, userId: actor.callerId },
               async (tx) => {
-                // The install's lock (store-template-service.ts).
+                // The install's lock (lockInstall).
                 await tx.execute(
                   sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + requestId}))`,
                 );
