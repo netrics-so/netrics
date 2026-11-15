@@ -10,12 +10,11 @@ export default defineConfig({
   testDir: "e2e",
   // vitest's include never matches e2e/, and these never run under vitest.
   testMatch: "**/*.spec.ts",
-  // One test at a time: the API's serializable data transactions retry a
-  // bounded number of times, and on a database this small (sequential
-  // scans) concurrent journeys in separate workspaces can still exhaust
-  // those retries and fail with version_conflict.
-  // TODO(#598): go back to parallel workers once the API retries enough.
-  workers: 1,
+  // Journeys run in parallel, each in its own workspace. On a database this
+  // small their serializable data transactions still conflict now and then
+  // (shared index pages, sequential scans); the API retries those with
+  // backoff (#598).
+  workers: 4,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: process.env.CI

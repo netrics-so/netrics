@@ -175,6 +175,13 @@ test("a customer builds and publishes without code", async ({
     name: `${t.calculate} Germany`,
   });
   const applyChanges = page.getByRole("button", { name: t.applyStepChanges });
+  // While the applied step previews, its button reads "Preparing preview…"
+  // and the form is still open (unsaved, so leaving asks to confirm). The
+  // step is applied once the form, here its literal field, is gone (#598).
+  const applied = async () => {
+    await expect(applyChanges).not.toBeVisible();
+    await expect(page.getByRole("textbox", { name: b.literal })).toHaveCount(0);
+  };
   for (const switchViews of [false, true]) {
     await germanyStep.click();
     await expect(germanyStep).toHaveAttribute("aria-current", "step");
@@ -196,7 +203,7 @@ test("a customer builds and publishes without code", async ({
       );
     }
     await applyChanges.click();
-    await expect(applyChanges).not.toBeVisible();
+    await applied();
     await expect(preview.getByRole("row")).toHaveCount(
       expected.appendedRows + 1,
     );
@@ -243,7 +250,7 @@ test("a customer builds and publishes without code", async ({
   );
   await page.getByRole("radio", { name: b.visual }).check();
   await applyChanges.click();
-  await expect(applyChanges).not.toBeVisible();
+  await applied();
   await expect(page.getByText(t.changed)).toHaveCount(0);
   await expect(saveDraft).toBeDisabled();
   const reapplied = await readPreparation(page, workspaceId, preparationName);

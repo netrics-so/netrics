@@ -312,6 +312,14 @@ export {
   withOAuthGrantLocks,
 } from "./oauth.js";
 export {
+  isSerializationFailure,
+  isTransactionHandle,
+  retryOnSerializationFailure,
+  SERIALIZATION_RETRY_DEFAULTS,
+  SERIALIZATION_RETRY_SQLSTATES,
+  type SerializationRetryOptions,
+} from "./serialization-retry.js";
+export {
   isPooledDatabase,
   processSessionLocks,
   SessionLockQueue,

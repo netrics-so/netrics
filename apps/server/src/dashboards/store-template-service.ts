@@ -15,7 +15,7 @@ import {
   registerSourceDataset,
   resolveDataPolicy,
   insertAuditEvent,
-  hasSqlstate,
+  retryOnSerializationFailure,
   DatasetStoreError,
   type Database,
   type Transaction,
@@ -30,6 +30,8 @@ import {
   createDataService,
   DataServiceError,
   datasetStoreStatus,
+  isDataConflict,
+  isRetryableDataConflict,
 } from "../data/service.js";
 import { createDashboardService } from "./service.js";
 import {
@@ -236,348 +238,350 @@ export function createStoreTemplateService(deps: {
       const hash = createHash("sha256")
         .update(JSON.stringify(input))
         .digest("hex");
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          return await withWorkspace(
-            deps.db,
-            { workspaceId: actor.workspaceId, userId: actor.callerId },
-            async (tx) => {
-              await tx.execute(
-                sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + input.requestId}))`,
-              );
-              const [installed] = await tx
-                .select()
-                .from(schema.dataTemplateInstalls)
-                .where(
-                  and(
-                    eq(
-                      schema.dataTemplateInstalls.workspaceId,
-                      actor.workspaceId,
-                    ),
-                    eq(schema.dataTemplateInstalls.requestId, input.requestId),
-                  ),
+      try {
+        return await retryOnSerializationFailure(
+          () =>
+            withWorkspace(
+              deps.db,
+              { workspaceId: actor.workspaceId, userId: actor.callerId },
+              async (tx) => {
+                await tx.execute(
+                  sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + input.requestId}))`,
                 );
-              if (installed) {
-                if (installed.requestHash !== hash)
-                  reject("store_template_request_reused", 409);
-                const result = storeTemplateResultSchema.parse(
-                  installed.result,
-                );
-                const [dashboard] = await tx
-                  .select({ id: schema.dashboards.id })
-                  .from(schema.dashboards)
+                const [installed] = await tx
+                  .select()
+                  .from(schema.dataTemplateInstalls)
                   .where(
                     and(
-                      eq(schema.dashboards.workspaceId, actor.workspaceId),
-                      eq(schema.dashboards.id, result.dashboardId),
+                      eq(
+                        schema.dataTemplateInstalls.workspaceId,
+                        actor.workspaceId,
+                      ),
+                      eq(
+                        schema.dataTemplateInstalls.requestId,
+                        input.requestId,
+                      ),
                     ),
                   );
-                if (!dashboard) reject("store_template_removed", 409);
-                return result;
-              }
-              const rows = await tx
-                .select()
-                .from(schema.connections)
-                .where(
-                  and(
-                    eq(schema.connections.workspaceId, actor.workspaceId),
-                    inArray(schema.connections.id, input.connections),
-                  ),
-                )
-                .orderBy(asc(schema.connections.id));
-              if (rows.length !== input.connections.length)
-                reject("connection_not_found", 404);
-              const sources: StoreTemplateSource[] = [];
-              for (const row of rows) {
-                if (row.setupPending) reject("connection_setup_pending", 409);
-                if (
-                  row.connectorId !== "app-store-connect" &&
-                  row.connectorId !== "google-play"
-                )
-                  reject("store_connector_required");
-                const registered = deps.registry.get(row.connectorId);
-                if (!registered) reject("connector_unavailable", 503);
-                const needed =
-                  row.connectorId === "app-store-connect"
-                    ? ["sales_rows", "store_ratings"]
-                    : ["install_rows", "earning_rows", "store_ratings"];
-                const datasets: Record<string, string> = {};
-                for (const key of needed) {
-                  const definition = registered.manifest.datasets?.find(
-                    (dataset) => dataset.key === key,
+                if (installed) {
+                  if (installed.requestHash !== hash)
+                    reject("store_template_request_reused", 409);
+                  const result = storeTemplateResultSchema.parse(
+                    installed.result,
                   );
-                  if (!definition)
-                    reject("store_source_schema_unavailable", 503);
-                  datasets[key] = (
-                    await registerSourceDataset(tx, {
-                      workspaceId: actor.workspaceId,
-                      connectionId: row.id,
-                      definition,
-                      policyDefaults: defaults,
-                    })
-                  ).id;
+                  const [dashboard] = await tx
+                    .select({ id: schema.dashboards.id })
+                    .from(schema.dashboards)
+                    .where(
+                      and(
+                        eq(schema.dashboards.workspaceId, actor.workspaceId),
+                        eq(schema.dashboards.id, result.dashboardId),
+                      ),
+                    );
+                  if (!dashboard) reject("store_template_removed", 409);
+                  return result;
                 }
-                sources.push({
-                  id: row.id,
-                  name: row.name,
-                  connectorId: row.connectorId,
-                  datasets,
-                });
-              }
-              const data = createDataService(tx, now, defaults),
-                t = storeTemplateCopy(actor.locale);
-              const mappingRows = input.groups.flatMap((group) =>
-                group.apps.map((app) => ({
-                  values: {
-                    app_key: appKey(app),
-                    product_id: "product:" + group.id,
-                  },
-                })),
-              );
-              const productRows = input.groups.map((group) => ({
-                values: {
-                  product_id: "product:" + group.id,
-                  product_name: group.name,
-                },
-              }));
-              for (const source of sources)
-                productRows.push({
-                  values: {
-                    product_id: source.id + ":__unmapped",
-                    product_name: `${t.unallocated} · ${source.name}`.slice(
-                      0,
-                      100,
-                    ),
-                  },
-                });
-              const products = await data.saveManual(actor, {
-                definition: sourceDatasetSchema.parse({
-                  key: "store_products_" + input.requestId,
-                  name: t.products,
-                  version: 1,
-                  mode: "snapshot",
-                  grain: "One canonical name per confirmed product identity",
-                  keyFields: ["product_id"],
-                  retentionDays: null,
-                  fields: [
-                    {
-                      id: "product_id",
-                      name: "Product ID",
-                      type: "string",
-                      nullable: false,
-                      classification: "internal",
-                    },
-                    {
-                      id: "product_name",
-                      name: t.app,
-                      type: "string",
-                      nullable: false,
-                      classification: "internal",
-                    },
-                  ],
-                }),
-                records: productRows,
-              });
-              const mapping = await data.saveManual(actor, {
-                definition: sourceDatasetSchema.parse({
-                  key: "store_mapping_" + input.requestId,
-                  name: t.mapping,
-                  version: 1,
-                  mode: "snapshot",
-                  grain:
-                    "One confirmed product mapping per source app; unmapped apps retain their source identity",
-                  keyFields: ["app_key"],
-                  retentionDays: null,
-                  fields: ["app_key", "product_id"].map((id) => ({
-                    id,
-                    name: id,
-                    type: "string",
-                    nullable: false,
-                    classification: "internal",
-                  })),
-                }),
-                records: mappingRows,
-              });
-              const scoped = input.appScope
-                ? input.groups.find((group) =>
-                    group.apps.some(
-                      (app) => appKey(app) === appKey(input.appScope!),
+                const rows = await tx
+                  .select()
+                  .from(schema.connections)
+                  .where(
+                    and(
+                      eq(schema.connections.workspaceId, actor.workspaceId),
+                      inArray(schema.connections.id, input.connections),
                     ),
                   )
-                : undefined;
-              const inputs: StoreTemplateInputs = {
-                name: input.name,
-                locale: actor.locale,
-                projectId: input.projectId ?? null,
-                connections: sources,
-                fixedProduct: input.appScope
-                  ? scoped
-                    ? "product:" + scoped.id
-                    : appKey(input.appScope)
-                  : null,
-                groups: input.groups,
-              };
-              const ids = {
-                "dataset:mapping": mapping.datasetId,
-                "dataset:products": products.datasetId,
-              } as StoreTemplateIds;
-              const preparationIds: string[] = [],
-                models = {} as Record<StoreMetric, string>,
-                built: StoreTemplateRecord[] = [];
-              let dashboardId: string | undefined;
-              for (const key of template.keys(inputs)) {
-                const record = template.build(key, inputs, ids);
-                built.push(record);
-                if (record.kind === "preparation") {
-                  const saved = await data.savePreparation(actor, {
-                    name: record.name,
-                    graph: record.graph,
-                    projectId: input.projectId,
-                  });
-                  await data.publishPreparation(
-                    actor,
-                    saved.preparation.id,
-                    saved.preparation.version,
-                  );
-                  preparationIds.push(saved.preparation.id);
-                  ids[key] = saved.preparation.id;
-                } else if (record.kind === "model") {
-                  const model = await data.saveModel(actor, {
-                    name: record.name,
-                    definition: record.definition,
-                    projectId: input.projectId,
-                  });
-                  await data.publishModel(
-                    actor,
-                    model.model.id,
-                    model.model.version,
-                  );
-                  models[key.slice("model:".length) as StoreMetric] =
-                    model.model.id;
-                  ids[key] = model.model.id;
-                } else {
-                  const dashboard = await createDashboardService({
-                    db: tx,
-                  }).create(
-                    actor,
-                    createDashboardRequestSchema.parse({
-                      ...record.request,
-                      projectId: input.projectId,
-                    }),
-                  );
-                  if (!dashboard.ok)
-                    reject(
-                      dashboard.error,
-                      dashboard.status as 400 | 404 | 409 | 413 | 503,
+                  .orderBy(asc(schema.connections.id));
+                if (rows.length !== input.connections.length)
+                  reject("connection_not_found", 404);
+                const sources: StoreTemplateSource[] = [];
+                for (const row of rows) {
+                  if (row.setupPending) reject("connection_setup_pending", 409);
+                  if (
+                    row.connectorId !== "app-store-connect" &&
+                    row.connectorId !== "google-play"
+                  )
+                    reject("store_connector_required");
+                  const registered = deps.registry.get(row.connectorId);
+                  if (!registered) reject("connector_unavailable", 503);
+                  const needed =
+                    row.connectorId === "app-store-connect"
+                      ? ["sales_rows", "store_ratings"]
+                      : ["install_rows", "earning_rows", "store_ratings"];
+                  const datasets: Record<string, string> = {};
+                  for (const key of needed) {
+                    const definition = registered.manifest.datasets?.find(
+                      (dataset) => dataset.key === key,
                     );
-                  dashboardId = dashboard.value.id;
-                  ids[key] = dashboard.value.id;
+                    if (!definition)
+                      reject("store_source_schema_unavailable", 503);
+                    datasets[key] = (
+                      await registerSourceDataset(tx, {
+                        workspaceId: actor.workspaceId,
+                        connectionId: row.id,
+                        definition,
+                        policyDefaults: defaults,
+                      })
+                    ).id;
+                  }
+                  sources.push({
+                    id: row.id,
+                    name: row.name,
+                    connectorId: row.connectorId,
+                    datasets,
+                  });
                 }
-              }
-              if (!dashboardId)
-                throw new Error("store template without dashboard");
-              const result: StoreTemplateResult = {
-                dashboardId,
-                mappingDatasetId: mapping.datasetId,
-                productDatasetId: products.datasetId,
-                models,
-                preparationIds,
-              };
-              await tx.insert(schema.dataTemplateInstalls).values({
-                workspaceId: actor.workspaceId,
-                requestId: input.requestId,
-                requestHash: hash,
-                result,
-                templateId: STORE_TEMPLATE_ID,
-                templateVersion: template.version,
-                inputs: storeTemplateInputsSchema.parse(inputs),
-                createdAt: now(),
-                updatedAt: now(),
-              });
-              const dashboardRecord = built.find(
-                (record) => record.kind === "dashboard",
-              )!;
-              const dashboardWidgetKeys = await installedWidgetKeys(
-                tx,
-                actor.workspaceId,
-                dashboardId,
-                dashboardRecord.kind === "dashboard"
-                  ? dashboardRecord.widgetKeys
-                  : [],
-              );
-              const recordRows: (typeof schema.dataTemplateRecords.$inferInsert)[] =
-                [
-                  ...built.map((record) => ({
-                    workspaceId: actor.workspaceId,
-                    requestId: input.requestId,
-                    key: record.key,
-                    kind: record.kind,
-                    recordId: ids[record.key]!,
-                    templateVersion: template.version,
-                    original:
-                      record.kind === "preparation"
-                        ? { graph: record.graph }
-                        : record.kind === "model"
-                          ? { definition: record.definition }
-                          : // The widget keys in the request's reading
-                            // order: a jsonb `widgetKeys` map loses order.
-                            {
-                              request: record.request,
-                              widgetKeys: record.widgetKeys,
-                            },
-                    widgetKeys:
-                      record.kind === "dashboard" ? dashboardWidgetKeys : null,
+                const data = createDataService(tx, now, defaults),
+                  t = storeTemplateCopy(actor.locale);
+                const mappingRows = input.groups.flatMap((group) =>
+                  group.apps.map((app) => ({
+                    values: {
+                      app_key: appKey(app),
+                      product_id: "product:" + group.id,
+                    },
                   })),
-                  ...(["dataset:mapping", "dataset:products"] as const).map(
-                    (key) => ({
+                );
+                const productRows = input.groups.map((group) => ({
+                  values: {
+                    product_id: "product:" + group.id,
+                    product_name: group.name,
+                  },
+                }));
+                for (const source of sources)
+                  productRows.push({
+                    values: {
+                      product_id: source.id + ":__unmapped",
+                      product_name: `${t.unallocated} · ${source.name}`.slice(
+                        0,
+                        100,
+                      ),
+                    },
+                  });
+                const products = await data.saveManual(actor, {
+                  definition: sourceDatasetSchema.parse({
+                    key: "store_products_" + input.requestId,
+                    name: t.products,
+                    version: 1,
+                    mode: "snapshot",
+                    grain: "One canonical name per confirmed product identity",
+                    keyFields: ["product_id"],
+                    retentionDays: null,
+                    fields: [
+                      {
+                        id: "product_id",
+                        name: "Product ID",
+                        type: "string",
+                        nullable: false,
+                        classification: "internal",
+                      },
+                      {
+                        id: "product_name",
+                        name: t.app,
+                        type: "string",
+                        nullable: false,
+                        classification: "internal",
+                      },
+                    ],
+                  }),
+                  records: productRows,
+                });
+                const mapping = await data.saveManual(actor, {
+                  definition: sourceDatasetSchema.parse({
+                    key: "store_mapping_" + input.requestId,
+                    name: t.mapping,
+                    version: 1,
+                    mode: "snapshot",
+                    grain:
+                      "One confirmed product mapping per source app; unmapped apps retain their source identity",
+                    keyFields: ["app_key"],
+                    retentionDays: null,
+                    fields: ["app_key", "product_id"].map((id) => ({
+                      id,
+                      name: id,
+                      type: "string",
+                      nullable: false,
+                      classification: "internal",
+                    })),
+                  }),
+                  records: mappingRows,
+                });
+                const scoped = input.appScope
+                  ? input.groups.find((group) =>
+                      group.apps.some(
+                        (app) => appKey(app) === appKey(input.appScope!),
+                      ),
+                    )
+                  : undefined;
+                const inputs: StoreTemplateInputs = {
+                  name: input.name,
+                  locale: actor.locale,
+                  projectId: input.projectId ?? null,
+                  connections: sources,
+                  fixedProduct: input.appScope
+                    ? scoped
+                      ? "product:" + scoped.id
+                      : appKey(input.appScope)
+                    : null,
+                  groups: input.groups,
+                };
+                const ids = {
+                  "dataset:mapping": mapping.datasetId,
+                  "dataset:products": products.datasetId,
+                } as StoreTemplateIds;
+                const preparationIds: string[] = [],
+                  models = {} as Record<StoreMetric, string>,
+                  built: StoreTemplateRecord[] = [];
+                let dashboardId: string | undefined;
+                for (const key of template.keys(inputs)) {
+                  const record = template.build(key, inputs, ids);
+                  built.push(record);
+                  if (record.kind === "preparation") {
+                    const saved = await data.savePreparation(actor, {
+                      name: record.name,
+                      graph: record.graph,
+                      projectId: input.projectId,
+                    });
+                    await data.publishPreparation(
+                      actor,
+                      saved.preparation.id,
+                      saved.preparation.version,
+                    );
+                    preparationIds.push(saved.preparation.id);
+                    ids[key] = saved.preparation.id;
+                  } else if (record.kind === "model") {
+                    const model = await data.saveModel(actor, {
+                      name: record.name,
+                      definition: record.definition,
+                      projectId: input.projectId,
+                    });
+                    await data.publishModel(
+                      actor,
+                      model.model.id,
+                      model.model.version,
+                    );
+                    models[key.slice("model:".length) as StoreMetric] =
+                      model.model.id;
+                    ids[key] = model.model.id;
+                  } else {
+                    const dashboard = await createDashboardService({
+                      db: tx,
+                    }).create(
+                      actor,
+                      createDashboardRequestSchema.parse({
+                        ...record.request,
+                        projectId: input.projectId,
+                      }),
+                    );
+                    if (!dashboard.ok)
+                      reject(
+                        dashboard.error,
+                        dashboard.status as 400 | 404 | 409 | 413 | 503,
+                      );
+                    dashboardId = dashboard.value.id;
+                    ids[key] = dashboard.value.id;
+                  }
+                }
+                if (!dashboardId)
+                  throw new Error("store template without dashboard");
+                const result: StoreTemplateResult = {
+                  dashboardId,
+                  mappingDatasetId: mapping.datasetId,
+                  productDatasetId: products.datasetId,
+                  models,
+                  preparationIds,
+                };
+                await tx.insert(schema.dataTemplateInstalls).values({
+                  workspaceId: actor.workspaceId,
+                  requestId: input.requestId,
+                  requestHash: hash,
+                  result,
+                  templateId: STORE_TEMPLATE_ID,
+                  templateVersion: template.version,
+                  inputs: storeTemplateInputsSchema.parse(inputs),
+                  createdAt: now(),
+                  updatedAt: now(),
+                });
+                const dashboardRecord = built.find(
+                  (record) => record.kind === "dashboard",
+                )!;
+                const dashboardWidgetKeys = await installedWidgetKeys(
+                  tx,
+                  actor.workspaceId,
+                  dashboardId,
+                  dashboardRecord.kind === "dashboard"
+                    ? dashboardRecord.widgetKeys
+                    : [],
+                );
+                const recordRows: (typeof schema.dataTemplateRecords.$inferInsert)[] =
+                  [
+                    ...built.map((record) => ({
                       workspaceId: actor.workspaceId,
                       requestId: input.requestId,
-                      key,
-                      kind: "dataset",
-                      recordId: ids[key],
+                      key: record.key,
+                      kind: record.kind,
+                      recordId: ids[record.key]!,
                       templateVersion: template.version,
-                      original: null,
-                      widgetKeys: null,
-                    }),
-                  ),
-                ];
-              // Chunked: Postgres takes at most 65,535 parameters a statement.
-              for (
-                let offset = 0;
-                offset < recordRows.length;
-                offset += recordChunk
-              )
-                await tx
-                  .insert(schema.dataTemplateRecords)
-                  .values(recordRows.slice(offset, offset + recordChunk));
-              await insertAuditEvent(tx, {
-                workspaceId: actor.workspaceId,
-                actorUserId: actor.callerId,
-                action: "data.store_template_installed",
-                target: dashboardId,
-                metadata: {
-                  requestId: input.requestId,
-                  mappingDatasetId: mapping.datasetId,
-                },
-              });
-              return result;
-            },
-            { isolationLevel: "serializable" },
-          );
-        } catch (error) {
-          const conflict =
-            hasSqlstate(error, "40001") ||
-            hasSqlstate(error, "40P01") ||
-            (error instanceof DataServiceError &&
-              error.code === "version_conflict");
-          if (conflict && attempt < 2) continue;
-          if (conflict) reject("version_conflict", 409);
-          if (error instanceof DatasetStoreError)
-            reject(error.code, datasetStoreStatus(error.code));
-          throw error;
-        }
+                      original:
+                        record.kind === "preparation"
+                          ? { graph: record.graph }
+                          : record.kind === "model"
+                            ? { definition: record.definition }
+                            : // The widget keys in the request's reading
+                              // order: a jsonb `widgetKeys` map loses order.
+                              {
+                                request: record.request,
+                                widgetKeys: record.widgetKeys,
+                              },
+                      widgetKeys:
+                        record.kind === "dashboard"
+                          ? dashboardWidgetKeys
+                          : null,
+                    })),
+                    ...(["dataset:mapping", "dataset:products"] as const).map(
+                      (key) => ({
+                        workspaceId: actor.workspaceId,
+                        requestId: input.requestId,
+                        key,
+                        kind: "dataset",
+                        recordId: ids[key],
+                        templateVersion: template.version,
+                        original: null,
+                        widgetKeys: null,
+                      }),
+                    ),
+                  ];
+                // Chunked: Postgres takes at most 65,535 parameters a statement.
+                for (
+                  let offset = 0;
+                  offset < recordRows.length;
+                  offset += recordChunk
+                )
+                  await tx
+                    .insert(schema.dataTemplateRecords)
+                    .values(recordRows.slice(offset, offset + recordChunk));
+                await insertAuditEvent(tx, {
+                  workspaceId: actor.workspaceId,
+                  actorUserId: actor.callerId,
+                  action: "data.store_template_installed",
+                  target: dashboardId,
+                  metadata: {
+                    requestId: input.requestId,
+                    mappingDatasetId: mapping.datasetId,
+                  },
+                });
+                return result;
+              },
+              { isolationLevel: "serializable" },
+            ),
+          {
+            retryable: isRetryableDataConflict,
+          },
+        );
+      } catch (error) {
+        if (isDataConflict(error)) reject("version_conflict", 409);
+        if (error instanceof DatasetStoreError)
+          reject(error.code, datasetStoreStatus(error.code));
+        throw error;
       }
-      return reject("version_conflict", 409);
     },
   };
 }

@@ -6,8 +6,8 @@ import type {
 import { compareMeasureRequestSchema } from "@netrics/contracts";
 import {
   findConnectionMetric,
-  hasSqlstate,
   listObservationDatasets,
+  retryOnSerializationFailure,
   withWorkspace,
   DatasetStoreError,
   type Database,
@@ -33,6 +33,8 @@ import {
   createDataService,
   DataServiceError,
   datasetStoreStatus,
+  isDataConflict,
+  isRetryableDataConflict,
   observationFields,
   type DataActor,
 } from "./service.js";
@@ -194,58 +196,55 @@ export function createCompareMeasureService(deps: {
       request: CompareMeasureRequest,
     ): Promise<CompareMeasureResponse> {
       const input = compareMeasureRequestSchema.parse(request);
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          return await withWorkspace(
-            deps.db,
-            { workspaceId: actor.workspaceId, userId: actor.callerId },
-            async (tx) => {
-              const { compiled } = await compileRequest(
-                tx,
-                actor.workspaceId,
-                input,
-                actor.locale,
-              );
-              const data = createDataService(tx, now, defaults);
-              const saved = await data.savePreparation(actor, {
-                name: input.name,
-                graph: compiled.preparation,
-              });
-              await data.publishPreparation(
-                actor,
-                saved.preparation.id,
-                saved.preparation.version,
-              );
-              const datasetId = `prepared:${saved.preparation.id}:${COMPARE_PREPARATION_OUTPUT}`;
-              const model = await data.saveModel(actor, {
-                name: input.name,
-                definition: compiled.model(datasetId),
-              });
-              return {
-                preparationId: saved.preparation.id,
-                datasetId,
-                modelId: model.model.id,
-                modelVersion: model.model.version,
-                dateDimensionId: COMPARE_DATE_DIMENSION,
-                measures: { ...COMPARE_MEASURE_IDS },
-              };
-            },
-            { isolationLevel: "serializable" },
-          );
-        } catch (error) {
-          const conflict =
-            hasSqlstate(error, "40001") ||
-            hasSqlstate(error, "40P01") ||
-            (error instanceof DataServiceError &&
-              error.code === "version_conflict");
-          if (conflict && attempt < 2) continue;
-          if (conflict) reject("version_conflict", 409);
-          if (error instanceof DatasetStoreError)
-            reject(error.code, datasetStoreStatus(error.code));
-          throw error;
-        }
+      try {
+        return await retryOnSerializationFailure(
+          () =>
+            withWorkspace(
+              deps.db,
+              { workspaceId: actor.workspaceId, userId: actor.callerId },
+              async (tx) => {
+                const { compiled } = await compileRequest(
+                  tx,
+                  actor.workspaceId,
+                  input,
+                  actor.locale,
+                );
+                const data = createDataService(tx, now, defaults);
+                const saved = await data.savePreparation(actor, {
+                  name: input.name,
+                  graph: compiled.preparation,
+                });
+                await data.publishPreparation(
+                  actor,
+                  saved.preparation.id,
+                  saved.preparation.version,
+                );
+                const datasetId = `prepared:${saved.preparation.id}:${COMPARE_PREPARATION_OUTPUT}`;
+                const model = await data.saveModel(actor, {
+                  name: input.name,
+                  definition: compiled.model(datasetId),
+                });
+                return {
+                  preparationId: saved.preparation.id,
+                  datasetId,
+                  modelId: model.model.id,
+                  modelVersion: model.model.version,
+                  dateDimensionId: COMPARE_DATE_DIMENSION,
+                  measures: { ...COMPARE_MEASURE_IDS },
+                };
+              },
+              { isolationLevel: "serializable" },
+            ),
+          {
+            retryable: isRetryableDataConflict,
+          },
+        );
+      } catch (error) {
+        if (isDataConflict(error)) reject("version_conflict", 409);
+        if (error instanceof DatasetStoreError)
+          reject(error.code, datasetStoreStatus(error.code));
+        throw error;
       }
-      return reject("version_conflict", 409);
     },
   };
 }

@@ -15,8 +15,8 @@ import {
   DatasetStoreError,
   deleteDashboard,
   findDashboard,
-  hasSqlstate,
   insertAuditEvent,
+  retryOnSerializationFailure,
   schema,
   withWorkspace,
   type Database,
@@ -33,6 +33,8 @@ import {
   createDataService,
   DataServiceError,
   datasetStoreStatus,
+  isDataConflict,
+  isRetryableDataConflict,
 } from "../data/service.js";
 import { createUpdatedDashboardCopy, DashboardCopyUnfit } from "./service.js";
 import { storeTemplateCopy } from "./store-portfolio.js";
@@ -1702,37 +1704,32 @@ export function createStoreTemplateUpdateService(deps: {
       requestId: string,
       body: StoreTemplateApplyRequest,
     ): Promise<StoreTemplateUpdate> {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          return await withWorkspace(
-            deps.db,
-            { workspaceId: actor.workspaceId, userId: actor.callerId },
-            async (tx) => {
-              // The install's lock (store-template-service.ts).
-              await tx.execute(
-                sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + requestId}))`,
-              );
-              return writeUpdate(tx, actor, requestId, body);
-            },
-            { isolationLevel: "serializable" },
+      try {
+        return await retryOnSerializationFailure(
+          () =>
+            withWorkspace(
+              deps.db,
+              { workspaceId: actor.workspaceId, userId: actor.callerId },
+              async (tx) => {
+                // The install's lock (store-template-service.ts).
+                await tx.execute(
+                  sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + requestId}))`,
+                );
+                return writeUpdate(tx, actor, requestId, body);
+              },
+              { isolationLevel: "serializable" },
+            ),
+          { retryable: isRetryableDataConflict },
+        );
+      } catch (error) {
+        if (isDataConflict(error)) reject("version_conflict", 409);
+        if (error instanceof DatasetStoreError)
+          throw new DataServiceError(
+            error.code,
+            datasetStoreStatus(error.code),
           );
-        } catch (error) {
-          const conflict =
-            hasSqlstate(error, "40001") ||
-            hasSqlstate(error, "40P01") ||
-            (error instanceof DataServiceError &&
-              error.code === "version_conflict");
-          if (conflict && attempt < 2) continue;
-          if (conflict) reject("version_conflict", 409);
-          if (error instanceof DatasetStoreError)
-            throw new DataServiceError(
-              error.code,
-              datasetStoreStatus(error.code),
-            );
-          throw error;
-        }
+        throw error;
       }
-      return reject("version_conflict", 409);
     },
     list(actor: Actor): Promise<StoreTemplateInstallList> {
       return withWorkspace(

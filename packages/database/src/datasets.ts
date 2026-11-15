@@ -11,7 +11,8 @@ import {
   type DatasetPage,
   type SourceDatasetDefinition,
 } from "@netrics/contracts";
-import type { Db, Transaction } from "./context.js";
+import { hasSqlstate, type Db, type Transaction } from "./context.js";
+import { SERIALIZATION_RETRY_SQLSTATES } from "./serialization-retry.js";
 import {
   datasetGenerationRowLimit,
   exceedsDataPolicy,
@@ -31,9 +32,25 @@ import {
 } from "./schema.js";
 
 export class DatasetStoreError extends Error {
-  constructor(public readonly code: string) {
-    super(code);
+  constructor(
+    public readonly code: string,
+    options?: { cause?: Error },
+  ) {
+    super(code, options);
     this.name = "DatasetStoreError";
+  }
+}
+
+/**
+ * Only the SQLSTATE of a redacted driver error: no message, SQL or
+ * parameters. It lets a caller's retry see a serialization failure or
+ * deadlock behind dataset_storage_failed (#598); before, such a conflict
+ * was retried nowhere and answered as a storage failure.
+ */
+class RedactedSqlstate extends Error {
+  constructor(public readonly code: string) {
+    super("SQLSTATE " + code);
+    this.name = "RedactedSqlstate";
   }
 }
 const fail = (code: string): never => {
@@ -693,7 +710,13 @@ export async function ingestDatasetPage(
   } catch (error) {
     failed = true;
     if (error instanceof DatasetStoreError) throw error;
-    throw new DatasetStoreError("dataset_storage_failed");
+    const sqlstate = SERIALIZATION_RETRY_SQLSTATES.find((code) =>
+      hasSqlstate(error, code),
+    );
+    throw new DatasetStoreError(
+      "dataset_storage_failed",
+      sqlstate ? { cause: new RedactedSqlstate(sqlstate) } : undefined,
+    );
   } finally {
     if (scope.previousTimeout !== undefined) {
       const reset = tx.execute(
