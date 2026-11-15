@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   formatDataDate,
   type DashboardDataFilter,
@@ -49,7 +49,17 @@ export function DashboardFilterInput({
     [choicesError, setChoicesError] = useState(false),
     [choicesLoading, setChoicesLoading] = useState(false);
   const [labelCache, setLabelCache] = useState<Record<string, string>>({});
+  const searchRef = useRef<HTMLInputElement>(null),
+    focusSearch = useRef(false);
   const mapping = filter.mappings[0];
+  // "Browse values" only expands the list (#624); focus then moves to its
+  // search field, since the button that had it is gone.
+  useEffect(() => {
+    if (browse && focusSearch.current) {
+      focusSearch.current = false;
+      searchRef.current?.focus();
+    }
+  }, [browse]);
   useEffect(() => {
     setLabelCache({});
   }, [mapping?.modelId, mapping?.dimensionId]);
@@ -158,18 +168,24 @@ export function DashboardFilterInput({
     <div className="dashboard-filter-values">
       {workspaceId && mapping ? (
         <div className="dashboard-filter-browser">
-          <button
-            type="button"
-            aria-expanded={browse}
-            aria-controls={`${id}-choices`}
-            onClick={() => setBrowse((open) => !open)}
-          >
-            {t("browseValues")}
-          </button>
+          {browse ? null : (
+            <button
+              type="button"
+              aria-expanded={false}
+              aria-controls={`${id}-choices`}
+              onClick={() => {
+                focusSearch.current = true;
+                setBrowse(true);
+              }}
+            >
+              {t("browseValues")}
+            </button>
+          )}
           {browse ? (
             <div id={`${id}-choices`}>
               <label htmlFor={`${id}-search`}>{t("searchValues")}</label>
               <input
+                ref={searchRef}
                 id={`${id}-search`}
                 type="search"
                 value={search}
@@ -350,18 +366,51 @@ function CompactFilter({
   filter,
   value,
   workspaceId,
+  open,
+  onOpenChange,
   onChange,
 }: {
   filter: DashboardDataFilter;
   value: DashboardFilterValue;
   workspaceId?: string;
+  /** One popover at a time (#624): the filter bar owns which is open. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onChange: (value: DashboardFilterValue) => void;
 }) {
   const t = useT("data.dashboard"),
     locale = useLocale(),
     id = useId(),
-    [open, setOpen] = useState(false),
     [left, setLeft] = useState(0);
+  const controlRef = useRef<HTMLDivElement>(null),
+    triggerRef = useRef<HTMLButtonElement>(null),
+    popoverRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(
+    (restoreFocus: boolean) => {
+      onOpenChange(false);
+      if (restoreFocus) triggerRef.current?.focus();
+    },
+    [onOpenChange],
+  );
+  // A press anywhere outside the control closes the popover, also where
+  // pressing does not move focus (Safari buttons, plain page areas).
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!controlRef.current?.contains(event.target as Node)) close(false);
+    };
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
+  }, [open, close]);
+  // Opening moves focus into the popover, to its first control.
+  useEffect(() => {
+    if (open)
+      popoverRef.current
+        ?.querySelector<HTMLElement>(
+          "input:not([disabled]), select:not([disabled]), button:not([disabled])",
+        )
+        ?.focus();
+  }, [open]);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const receiveLabels = useCallback(
     (next: Record<string, string>) =>
@@ -432,22 +481,25 @@ function CompactFilter({
           : t("allValues");
   return (
     <div
+      ref={controlRef}
       className="dashboard-filter-control"
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          setOpen(false);
+        if (event.key === "Escape" && open) {
+          close(true);
           event.stopPropagation();
         }
       }}
       onBlur={(event) => {
         if (
+          open &&
           event.relatedTarget &&
           !event.currentTarget.contains(event.relatedTarget as Node)
         )
-          setOpen(false);
+          close(false);
       }}
     >
       <button
+        ref={triggerRef}
         type="button"
         className="dashboard-filter-trigger"
         aria-expanded={open}
@@ -464,7 +516,7 @@ function CompactFilter({
                 20,
             ),
           );
-          setOpen((open) => !open);
+          onOpenChange(!open);
         }}
       >
         <span>{filter.name}</span>
@@ -483,6 +535,7 @@ function CompactFilter({
       </button>
       {open ? (
         <div
+          ref={popoverRef}
           id={id}
           className="dashboard-filter-popover"
           style={{ left }}
@@ -500,11 +553,7 @@ function CompactFilter({
           {filter.fixedValue ? (
             <p className="help">{t("fixedScopeActive")}</p>
           ) : null}
-          <button
-            type="button"
-            className="primary"
-            onClick={() => setOpen(false)}
-          >
+          <button type="button" className="primary" onClick={() => close(true)}>
             {t("done")}
           </button>
         </div>
@@ -523,7 +572,8 @@ export function DashboardFilters({
   values: Record<string, DashboardFilterValue>;
   onChange: (value: Record<string, DashboardFilterValue>) => void;
 }) {
-  const t = useT("data.dashboard");
+  const t = useT("data.dashboard"),
+    [openId, setOpenId] = useState<string | null>(null);
   return filters.length ? (
     <section
       className="dashboard-shared-filters"
@@ -535,6 +585,12 @@ export function DashboardFilters({
             key={filter.id + JSON.stringify(filter.mappings[0])}
             filter={filter}
             workspaceId={workspaceId}
+            open={openId === filter.id}
+            onOpenChange={(open) =>
+              setOpenId((current) =>
+                open ? filter.id : current === filter.id ? null : current,
+              )
+            }
             value={
               Object.hasOwn(values, filter.id)
                 ? values[filter.id]!
