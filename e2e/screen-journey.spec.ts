@@ -172,7 +172,19 @@ test("a paired browser screen plays offline and changes only on publish or swap"
       await poll();
       await expect(original, because).toBeVisible();
     };
-    page.on("dialog", (dialog) => void dialog.accept());
+    // Swaps ask in the app's dialog (#625); a native one fails the journey.
+    page.on("dialog", (dialog) => {
+      throw new Error(`native dialog: ${dialog.message()}`);
+    });
+    /** Answers the app's question with `confirm`. */
+    const confirmIn = async (confirm: string) => {
+      const question = page.getByRole("dialog");
+      await expect(question).toBeVisible();
+      await question
+        .getByRole("button", { name: confirm, exact: true })
+        .click();
+      await expect(question).toBeHidden();
+    };
     const updatePath = `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`;
     await page.goto(updatePath);
     await expect(
@@ -242,6 +254,7 @@ test("a paired browser screen plays offline and changes only on publish or swap"
 
     // The swap moves the screen to the copy at its next poll.
     await page.getByRole("button", { name: u.progress.swap }).click();
+    await confirmIn(u.progress.swap);
     await expect(
       page.getByRole("status").filter({ hasText: u.done.swap }),
     ).toBeVisible();
@@ -251,6 +264,7 @@ test("a paired browser screen plays offline and changes only on publish or swap"
 
     // And the swap back returns it.
     await page.getByRole("button", { name: u.progress.switchBack }).click();
+    await confirmIn(u.progress.switchBack);
     await expect(
       page.getByRole("status").filter({ hasText: u.done.swapBack }),
     ).toBeVisible();
