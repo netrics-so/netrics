@@ -169,6 +169,26 @@ describe("gzip-encoded report objects", () => {
     ).toMatchObject({ availability: "invalid_report" });
   });
 
+  it("checks access to a gzip report over the read limit without downloading it", async () => {
+    const fake = fakePlay({ maxResponseBytes: FETCH_LIMIT });
+    fake.putGzip(
+      INSTALLS[0]!,
+      new TextEncoder().encode("x\n".repeat(FETCH_LIMIT / 2 + 1)),
+    );
+    fake.objects.delete(INSTALLS[1]!);
+    const connector = createGooglePlayConnector({ now: () => TEST_NOW });
+    expect(await connector.check(context, fake.runtime)).toEqual({ ok: true });
+    expect(
+      media(fake).some((call) => call.url.pathname.includes("installs")),
+    ).toBe(false);
+    // The metadata read needs the same object permission as the download.
+    fake.privateStatus.set(INSTALLS[0]!, 403);
+    expect(await connector.check(context, fake.runtime)).toMatchObject({
+      ok: true,
+      message: expect.stringContaining("app statistics access"),
+    });
+  });
+
   it("checks access and syncs install rows identical to identity-encoded reports", async () => {
     const connector = createGooglePlayConnector({ now: () => TEST_NOW });
     const gzip = gzipPlay();

@@ -17,6 +17,7 @@ import {
   accessibleApps,
   bucketName,
   createPlayReportsClient,
+  gzipEncoded,
   manualPackages,
   PlayReportError,
   REPORTING_HOST,
@@ -49,7 +50,7 @@ const de: ManifestTranslation = {
     reportBucket: {
       title: "Berichts-URI",
       description:
-        "Kopiere in der Play Console unter Kontoverwaltung → Play-App-Berichte die Google-Cloud-Storage-URI, die mit gs://pubsite_prod_ beginnt. Du brauchst Zugriff auf die Statistik- und Finanzberichte.",
+        "Kopiere in der Play Console unter Kontoverwaltung → Play-App-Berichte die Google-Cloud-Storage-URI, die mit gs://pubsite_prod_ beginnt (ältere Konten: gs://pubsite_prod_rev_). Du brauchst Zugriff auf die Statistik- und Finanzberichte.",
     },
     ratingStorefront: {
       title: "Land für Bewertungen",
@@ -231,9 +232,11 @@ export function createGooglePlayConnector(
         try {
           const object = await client.sample(prefix);
           // Reading the first range proves object access without transferring
-          // a large report whole (a gzip-encoded report is read whole: Cloud
-          // Storage serves it only that way).
-          if (object) await (await client.source(object)).read(0, 0);
+          // a large report whole. A gzip-encoded report can only be read
+          // whole, so its metadata is read instead: that needs the same object
+          // permission and transfers no report body.
+          if (object && gzipEncoded(object)) await client.validate(object);
+          else if (object) await (await client.source(object)).read(0, 0);
           return true;
         } catch (error) {
           if (error instanceof PlayReportError && error.status === 403)
