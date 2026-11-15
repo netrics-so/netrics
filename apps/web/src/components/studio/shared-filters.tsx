@@ -1,5 +1,13 @@
 "use client";
-import { useCallback, useEffect, useId, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   formatDataDate,
   type DashboardDataFilter,
@@ -49,7 +57,17 @@ export function DashboardFilterInput({
     [choicesError, setChoicesError] = useState(false),
     [choicesLoading, setChoicesLoading] = useState(false);
   const [labelCache, setLabelCache] = useState<Record<string, string>>({});
+  const searchRef = useRef<HTMLInputElement>(null),
+    focusSearch = useRef(false);
   const mapping = filter.mappings[0];
+  // "Browse values" only expands the list (#624); focus then moves to its
+  // search field, since the button that had it is gone.
+  useEffect(() => {
+    if (browse && focusSearch.current) {
+      focusSearch.current = false;
+      searchRef.current?.focus();
+    }
+  }, [browse]);
   useEffect(() => {
     setLabelCache({});
   }, [mapping?.modelId, mapping?.dimensionId]);
@@ -158,18 +176,24 @@ export function DashboardFilterInput({
     <div className="dashboard-filter-values">
       {workspaceId && mapping ? (
         <div className="dashboard-filter-browser">
-          <button
-            type="button"
-            aria-expanded={browse}
-            aria-controls={`${id}-choices`}
-            onClick={() => setBrowse((open) => !open)}
-          >
-            {t("browseValues")}
-          </button>
+          {browse ? null : (
+            <button
+              type="button"
+              aria-expanded={false}
+              aria-controls={`${id}-choices`}
+              onClick={() => {
+                focusSearch.current = true;
+                setBrowse(true);
+              }}
+            >
+              {t("browseValues")}
+            </button>
+          )}
           {browse ? (
             <div id={`${id}-choices`}>
               <label htmlFor={`${id}-search`}>{t("searchValues")}</label>
               <input
+                ref={searchRef}
                 id={`${id}-search`}
                 type="search"
                 value={search}
@@ -350,18 +374,68 @@ function CompactFilter({
   filter,
   value,
   workspaceId,
+  open,
+  onOpenChange,
+  sheet,
   onChange,
 }: {
   filter: DashboardDataFilter;
   value: DashboardFilterValue;
   workspaceId?: string;
+  /** One popover at a time (#624): the filter bar owns which is open. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /**
+   * Where the popover opens as a full-width sheet in the page flow, below
+   * the filter bar, when the bar wraps or is narrow: anchored under its
+   * trigger it would cover the triggers of the next row (#624).
+   */
+  sheet: HTMLElement | null;
   onChange: (value: DashboardFilterValue) => void;
 }) {
   const t = useT("data.dashboard"),
     locale = useLocale(),
     id = useId(),
-    [open, setOpen] = useState(false),
     [left, setLeft] = useState(0);
+  const controlRef = useRef<HTMLDivElement>(null),
+    triggerRef = useRef<HTMLButtonElement>(null),
+    popoverRef = useRef<HTMLDivElement>(null);
+  const close = useCallback(
+    (restoreFocus: boolean) => {
+      onOpenChange(false);
+      if (restoreFocus) triggerRef.current?.focus();
+    },
+    [onOpenChange],
+  );
+  // A press anywhere outside the control closes the popover, also where
+  // pressing does not move focus (Safari buttons, plain page areas).
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !controlRef.current?.contains(target) &&
+        !popoverRef.current?.contains(target)
+      )
+        close(false);
+    };
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
+  }, [open, close]);
+  // Opening moves focus into the popover: to its first control, or, on
+  // touch screens, to the popover itself, so that no on-screen keyboard
+  // covers the values.
+  useEffect(() => {
+    const popover = popoverRef.current;
+    if (!open || !popover) return;
+    if (window.matchMedia?.("(pointer: coarse)").matches) popover.focus();
+    else
+      popover
+        .querySelector<HTMLElement>(
+          "input:not([disabled]), select:not([disabled]), button:not([disabled])",
+        )
+        ?.focus();
+  }, [open, sheet]);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const receiveLabels = useCallback(
     (next: Record<string, string>) =>
@@ -432,22 +506,26 @@ function CompactFilter({
           : t("allValues");
   return (
     <div
+      ref={controlRef}
       className="dashboard-filter-control"
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          setOpen(false);
+        if (event.key === "Escape" && open) {
+          close(true);
           event.stopPropagation();
         }
       }}
       onBlur={(event) => {
         if (
+          open &&
           event.relatedTarget &&
-          !event.currentTarget.contains(event.relatedTarget as Node)
+          !event.currentTarget.contains(event.relatedTarget as Node) &&
+          !popoverRef.current?.contains(event.relatedTarget as Node)
         )
-          setOpen(false);
+          close(false);
       }}
     >
       <button
+        ref={triggerRef}
         type="button"
         className="dashboard-filter-trigger"
         aria-expanded={open}
@@ -464,7 +542,7 @@ function CompactFilter({
                 20,
             ),
           );
-          setOpen((open) => !open);
+          onOpenChange(!open);
         }}
       >
         <span>{filter.name}</span>
@@ -482,35 +560,53 @@ function CompactFilter({
         </svg>
       </button>
       {open ? (
-        <div
-          id={id}
-          className="dashboard-filter-popover"
-          style={{ left }}
-          role="group"
-          aria-label={filter.name}
-        >
-          <DashboardFilterInput
-            initialBrowse
-            workspaceId={workspaceId}
-            filter={filter}
-            value={value}
-            onChange={onChange}
-            onLabels={receiveLabels}
-          />
-          {filter.fixedValue ? (
-            <p className="help">{t("fixedScopeActive")}</p>
-          ) : null}
-          <button
-            type="button"
-            className="primary"
-            onClick={() => setOpen(false)}
+        <Sheet target={sheet}>
+          <div
+            ref={popoverRef}
+            id={id}
+            className={
+              sheet
+                ? "dashboard-filter-popover dashboard-filter-sheet"
+                : "dashboard-filter-popover"
+            }
+            style={sheet ? undefined : { left }}
+            role="group"
+            aria-label={filter.name}
+            tabIndex={-1}
           >
-            {t("done")}
-          </button>
-        </div>
+            <DashboardFilterInput
+              initialBrowse
+              workspaceId={workspaceId}
+              filter={filter}
+              value={value}
+              onChange={onChange}
+              onLabels={receiveLabels}
+            />
+            {filter.fixedValue ? (
+              <p className="help">{t("fixedScopeActive")}</p>
+            ) : null}
+            <button
+              type="button"
+              className="primary"
+              onClick={() => close(true)}
+            >
+              {t("done")}
+            </button>
+          </div>
+        </Sheet>
       ) : null}
     </div>
   );
+}
+/** Children in `target` (a portal) when given, else in place. */
+function Sheet({
+  target,
+  children,
+}: {
+  target: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return target ? createPortal(children, target) : <>{children}</>;
 }
 export function DashboardFilters({
   workspaceId,
@@ -523,30 +619,78 @@ export function DashboardFilters({
   values: Record<string, DashboardFilterValue>;
   onChange: (value: Record<string, DashboardFilterValue>) => void;
 }) {
-  const t = useT("data.dashboard");
+  const t = useT("data.dashboard"),
+    // The open popover, by the same key as its control: a filter whose
+    // mapping changes mounts anew, closed.
+    [openKey, setOpenKey] = useState<string | null>(null);
+  const barRef = useRef<HTMLElement>(null),
+    [sheet, setSheet] = useState<HTMLDivElement | null>(null),
+    [stacked, setStacked] = useState(false);
+  // Popovers anchor under their trigger only while the triggers and the
+  // reset button share one row; otherwise they open as a sheet below the
+  // bar, pushing the dashboard down, and never cover another trigger.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const measure = () => {
+      const boxes = Array.from(
+        bar.querySelectorAll<HTMLElement>(
+          ".dashboard-filter-trigger, .dashboard-filter-reset",
+        ),
+        (element) => element.getBoundingClientRect(),
+      );
+      // Wrapped: some control starts below where another one ends.
+      const lowestTop = Math.max(...boxes.map((box) => box.top)),
+        highestBottom = Math.min(...boxes.map((box) => box.bottom));
+      setStacked(
+        bar.clientWidth < 480 ||
+          (boxes.length > 1 && lowestTop >= highestBottom - 1),
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [filters.length]);
   return filters.length ? (
     <section
+      ref={barRef}
       className="dashboard-shared-filters"
       aria-label={t("sharedFilters")}
     >
       <div className="dashboard-filter-controls">
-        {filters.map((filter) => (
-          <CompactFilter
-            key={filter.id + JSON.stringify(filter.mappings[0])}
-            filter={filter}
-            workspaceId={workspaceId}
-            value={
-              Object.hasOwn(values, filter.id)
-                ? values[filter.id]!
-                : filter.defaultValue
-            }
-            onChange={(value) => onChange({ ...values, [filter.id]: value })}
-          />
-        ))}
+        {filters.map((filter) => {
+          const key = filter.id + JSON.stringify(filter.mappings[0]);
+          return (
+            <CompactFilter
+              key={key}
+              filter={filter}
+              workspaceId={workspaceId}
+              open={openKey === key}
+              sheet={stacked ? sheet : null}
+              onOpenChange={(open) =>
+                setOpenKey((current) =>
+                  open ? key : current === key ? null : current,
+                )
+              }
+              value={
+                Object.hasOwn(values, filter.id)
+                  ? values[filter.id]!
+                  : filter.defaultValue
+              }
+              onChange={(value) => onChange({ ...values, [filter.id]: value })}
+            />
+          );
+        })}
       </div>
-      <button type="button" onClick={() => onChange({})}>
+      <button
+        type="button"
+        className="dashboard-filter-reset"
+        onClick={() => onChange({})}
+      >
         {t("resetFilters")}
       </button>
+      <div ref={setSheet} className="dashboard-filter-sheet-slot" />
     </section>
   ) : null;
 }
