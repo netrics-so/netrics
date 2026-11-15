@@ -13,11 +13,12 @@ import {
 /**
  * Concurrent store-template installs in different workspaces (#604). A
  * serialization failure is never retried here, so a conflict between
- * installs fails the test instead of being retried away; only the
- * install's own retry of a lock wait that timed out (55P03) stays, since
- * under a loaded test run four queued installs can outlast one wait.
- * Before #604, of 4 concurrent installs exactly one committed (the others:
- * 40001, answered 409 version_conflict once the retries ran out under load).
+ * installs fails the test instead of being retried away. Before #604, of 4
+ * concurrent installs exactly one committed (the others: 40001, answered
+ * 409 version_conflict once the retries ran out under load). Before #660,
+ * the third and fourth answered 409 whenever one install took longer than
+ * the 2 s lock wait (55P03, as on every run against a local Docker
+ * Postgres).
  */
 vi.mock("@netrics/database", async (original) => {
   const actual = await original<typeof import("@netrics/database")>();
@@ -103,5 +104,5 @@ describe("concurrent store-template installs (#604)", () => {
     const [row] = await owner<{ n: number }[]>`
         select count(distinct workspace_id)::int as n from data_template_installs`;
     expect(row!.n).toBe(WORKSPACES);
-  }, 60_000); // 12 installs of ~0.3-1 s each, one at a time.
+  }, 240_000); // 12 installs one at a time: ~0.7 s each on CI, 3-7.5 s locally.
 });

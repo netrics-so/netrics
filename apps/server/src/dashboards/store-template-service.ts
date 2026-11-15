@@ -71,12 +71,22 @@ import {
  * writes: update operations (apply, close, swap, legacy completion) and
  * cascading deletes never wait for a running install, so an install cannot
  * stall another tenant's update or deadlock with one through the locks those
- * hold (the install's advisory lock, the workspace ingestion lock 440). A
- * wait longer than INSTALL_LOCK_TIMEOUT_MS fails with 55P03; the install
- * retries that twice, then answers 409 version_conflict. The lock replaces
- * the per-request advisory lock, which installs no longer need.
+ * hold (the install's advisory lock, the workspace ingestion lock 440). The
+ * lock replaces the per-request advisory lock, which installs no longer need.
+ *
+ * An install waits for the lock once, in the lock's FIFO queue (#660). An
+ * install is ~1,100 statements, each a round trip: ~0.7 s on CI, 3-7.5 s
+ * against a local Docker Postgres, 6-13 s there while other suites run.
+ * The wait used to be 2 s, retried twice:
+ * every waiter behind an install longer than 2 s gave up together, queued
+ * again at the back, and the third and later installs answered 409
+ * version_conflict after ~6 s (never a serialization failure between
+ * installs). One wait of INSTALL_LOCK_TIMEOUT_MS keeps the waiter's place
+ * and covers a queue of a few slow installs; past it the install fails
+ * with 55P03 and answers 409 version_conflict. A waiting install holds a
+ * pooled connection for the wait.
  */
-export const INSTALL_LOCK_TIMEOUT_MS = 2_000;
+export const INSTALL_LOCK_TIMEOUT_MS = 60_000;
 export const INSTALL_LOCK = {
   tables: [schema.dataTemplateInstalls],
   mode: "share update exclusive",
@@ -316,11 +326,17 @@ export function createStoreTemplateService(deps: {
   template?: StoreTemplateDefinition;
   /** Template records per insert statement; tests pass small values. */
   recordChunk?: number;
+  /** The wait for the install lock; tests pass small values. */
+  installLockTimeoutMs?: number;
 }) {
   const now = deps.now ?? (() => new Date()),
     defaults = deps.policy ?? DEFAULT_DATA_POLICY,
     template = deps.template ?? storeTemplate,
-    recordChunk = deps.recordChunk ?? 1000;
+    recordChunk = deps.recordChunk ?? 1000,
+    installLock: TableLocks = {
+      ...INSTALL_LOCK,
+      timeoutMs: deps.installLockTimeoutMs ?? INSTALL_LOCK.timeoutMs,
+    };
   return {
     options(actor: Actor): Promise<StoreTemplateOptions> {
       return withWorkspace(
@@ -687,13 +703,11 @@ export function createStoreTemplateService(deps: {
                 });
                 return result;
               },
-              { isolationLevel: "serializable", lockTables: INSTALL_LOCK },
+              { isolationLevel: "serializable", lockTables: installLock },
             ),
-          {
-            retryable: (error, index) =>
-              isRetryableDataConflict(error, index) ||
-              (index < 2 && isLockTimeout(error)),
-          },
+          // A lock timeout is not retried: the retry would queue behind
+          // installs that came later and wait the whole timeout again.
+          { retryable: isRetryableDataConflict },
         );
       } catch (error) {
         if (isDataConflict(error) || isLockTimeout(error))
