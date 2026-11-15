@@ -55790,6 +55790,9 @@
                                         },
                                         "published": {
                                           "type": "boolean"
+                                        },
+                                        "stale": {
+                                          "type": "boolean"
                                         }
                                       },
                                       "required": [
@@ -55798,7 +55801,8 @@
                                         "recordId",
                                         "name",
                                         "version",
-                                        "published"
+                                        "published",
+                                        "stale"
                                       ],
                                       "additionalProperties": false
                                     }
@@ -55944,6 +55948,9 @@
                                         },
                                         "published": {
                                           "type": "boolean"
+                                        },
+                                        "stale": {
+                                          "type": "boolean"
                                         }
                                       },
                                       "required": [
@@ -55952,7 +55959,8 @@
                                         "recordId",
                                         "name",
                                         "version",
-                                        "published"
+                                        "published",
+                                        "stale"
                                       ],
                                       "additionalProperties": false
                                     }
@@ -56659,6 +56667,9 @@
                           },
                           "published": {
                             "type": "boolean"
+                          },
+                          "stale": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -56667,7 +56678,8 @@
                           "recordId",
                           "name",
                           "version",
-                          "published"
+                          "published",
+                          "stale"
                         ],
                         "additionalProperties": false
                       }
@@ -57299,6 +57311,9 @@
                           },
                           "published": {
                             "type": "boolean"
+                          },
+                          "stale": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -57307,7 +57322,8 @@
                           "recordId",
                           "name",
                           "version",
-                          "published"
+                          "published",
+                          "stale"
                         ],
                         "additionalProperties": false
                       }
@@ -58233,6 +58249,9 @@
                           },
                           "published": {
                             "type": "boolean"
+                          },
+                          "stale": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -58241,7 +58260,8 @@
                           "recordId",
                           "name",
                           "version",
-                          "published"
+                          "published",
+                          "stale"
                         ],
                         "additionalProperties": false
                       }
@@ -58666,6 +58686,9 @@
                           },
                           "published": {
                             "type": "boolean"
+                          },
+                          "stale": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -58674,7 +58697,8 @@
                           "recordId",
                           "name",
                           "version",
-                          "published"
+                          "published",
+                          "stale"
                         ],
                         "additionalProperties": false
                       }
@@ -59118,6 +59142,9 @@
                           },
                           "published": {
                             "type": "boolean"
+                          },
+                          "stale": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -59126,7 +59153,8 @@
                           "recordId",
                           "name",
                           "version",
-                          "published"
+                          "published",
+                          "stale"
                         ],
                         "additionalProperties": false
                       }

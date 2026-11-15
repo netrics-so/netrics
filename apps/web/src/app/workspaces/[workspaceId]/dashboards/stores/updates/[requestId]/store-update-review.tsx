@@ -926,7 +926,9 @@ export function ProgressView({
                     >
                       {draft.published
                         ? t("progress.published")
-                        : t("progress.draft")}
+                        : draft.stale
+                          ? t("progress.stale")
+                          : t("progress.draft")}
                     </span>{" "}
                     {draft.published ? null : (
                       <Link

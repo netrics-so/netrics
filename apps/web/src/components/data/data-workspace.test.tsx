@@ -187,6 +187,7 @@ describe("store-template updates in data settings (11E)", () => {
                     name: "App downloads",
                     version: 2,
                     published: false,
+                    stale: false,
                   },
                 ],
                 dashboards: [],

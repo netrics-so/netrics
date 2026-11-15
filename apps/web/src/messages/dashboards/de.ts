@@ -325,10 +325,12 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       confirmSwapBack:
         "{count, plural, =0 {Zu deinem Original zurückwechseln?} one {# Bildschirm ({screens}) zurück auf dein Original verschieben?} other {# Bildschirme ({screens}) zurück auf dein Original verschieben?}} Die aktualisierte Kopie wird archiviert, und du kannst sie wieder nutzen.",
       publishIntro:
-        "Öffne jeden Entwurf in den Dateneinstellungen, sieh dir die Vorschau an und veröffentliche ihn dort. Vor dem Veröffentlichen siehst du, was davon abhängt.",
+        "Öffne jeden Entwurf in den Dateneinstellungen, sieh dir die Vorschau an und veröffentliche ihn dort, in der angezeigten Reihenfolge: Jeder liest die Entwürfe darüber. Vor dem Veröffentlichen siehst du, was davon abhängt.",
       noDrafts: "Dieses Update ändert keine Daten.",
       published: "Veröffentlicht",
       draft: "Entwurf, noch nicht veröffentlicht",
+      stale:
+        "Erneut veröffentlichen: Er wurde vor den Entwürfen darüber veröffentlicht und liest noch deren frühere Versionen",
       openDraft: "In den Dateneinstellungen öffnen",
       checkAgain: "Erneut prüfen",
       copyWaiting:

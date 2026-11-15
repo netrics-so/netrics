@@ -314,10 +314,12 @@ export const dashboardsEn = {
       confirmSwapBack:
         "{count, plural, =0 {Switch back to your original?} one {Move # screen ({screens}) back to your original?} other {Move # screens ({screens}) back to your original?}} The updated copy is archived, and you can use it again.",
       publishIntro:
-        "Open each draft in data settings, preview it and publish it there. Before publishing, you see what depends on it.",
+        "Open each draft in data settings, preview it and publish it there, in the order listed: each one reads the drafts above it. Before publishing, you see what depends on it.",
       noDrafts: "This update changes no data.",
       published: "Published",
       draft: "Draft, not published yet",
+      stale:
+        "Needs publishing again: it was published before the drafts above it and still reads their earlier versions",
       openDraft: "Open in data settings",
       checkAgain: "Check again",
       copyWaiting:

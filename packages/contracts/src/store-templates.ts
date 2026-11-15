@@ -84,7 +84,16 @@ export const storeTemplateUpdateSchema = z.object({
       recordId: z.uuid(),
       name: z.string(),
       version: z.number().int(),
+      /**
+       * Published, reading the current published versions of its inputs.
+       * False while `stale`.
+       */
       published: z.boolean(),
+      /**
+       * Published, but before (newer versions of) its inputs: it still reads
+       * their earlier versions. Publishing it again reads the current ones.
+       */
+      stale: z.boolean(),
     }),
   ),
   dashboards: z.array(

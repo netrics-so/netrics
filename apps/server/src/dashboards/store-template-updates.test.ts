@@ -1214,10 +1214,16 @@ describe("applying a store-template update", { timeout: TIMEOUT_MS }, () => {
     expect(storeTemplateUpdateSchema.parse(update)).toEqual(update);
     expect(update).toMatchObject({ requestId, fromVersion: 1, toVersion: 2 });
     expect(update.drafts.every((d) => !d.published)).toBe(true);
-    // The model and every source preparation the template changes.
+    // The model and every source preparation the template changes, and
+    // what reads them unchanged (appends, models): a published record keeps
+    // the input versions it was published with, so publishing its draft
+    // after the inputs reads their new versions.
     expect(update.drafts.map((d) => d.key).sort()).toEqual(
       [
-        "model:downloads",
+        ...["downloads", "proceeds", "ratings"].flatMap((m) => [
+          `model:${m}`,
+          `preparation:append:${m}:0:0`,
+        ]),
         ...connections.flatMap((c) =>
           ["downloads", "proceeds", "ratings"].map(
             (m) => `preparation:source:${c.id}:${m}`,
@@ -1225,6 +1231,16 @@ describe("applying a store-template update", { timeout: TIMEOUT_MS }, () => {
         ),
       ].sort(),
     );
+    // Listed in the order to publish them: inputs before what reads them.
+    const order = update.drafts.map((d) => d.key);
+    for (const m of ["downloads", "proceeds", "ratings"]) {
+      const append = order.indexOf(`preparation:append:${m}:0:0`);
+      for (const c of connections)
+        expect(order.indexOf(`preparation:source:${c.id}:${m}`)).toBeLessThan(
+          append,
+        );
+      expect(append).toBeLessThan(order.indexOf(`model:${m}`));
+    }
     expect(await readDashboardData(installed.dashboardId)).toEqual(
       dashboardBefore,
     );
