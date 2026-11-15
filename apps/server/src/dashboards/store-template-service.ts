@@ -75,8 +75,10 @@ import {
  * lock replaces the per-request advisory lock, which installs no longer need.
  *
  * An install waits for the lock once, in the lock's FIFO queue (#660). An
- * install is ~1,100 statements, each a round trip: ~0.7 s on CI, 3-7.5 s
+ * install was ~1,100 statements, each a round trip: ~0.7 s on CI, 3-7.5 s
  * against a local Docker Postgres, 6-13 s there while other suites run.
+ * Since #668 it is ~320 (one batch data service whose loaders share their
+ * source loads; store-template-install-queries.test.ts keeps it there).
  * The wait used to be 2 s, retried twice:
  * every waiter behind an install longer than 2 s gave up together, queued
  * again at the back, and the third and later installs answered 409
@@ -85,6 +87,11 @@ import {
  * and covers a queue of a few slow installs; past it the install fails
  * with 55P03 and answers 409 version_conflict. A waiting install holds a
  * pooled connection for the wait.
+ *
+ * The lock stays global, not per workspace or template (#668): the
+ * conflicts it prevents are between installs in different workspaces, whose
+ * reads of small shared relations SSI cannot tell apart (see above). A
+ * narrower lock would let them run together and cancel each other again.
  */
 export const INSTALL_LOCK_TIMEOUT_MS = 60_000;
 export const INSTALL_LOCK = {
@@ -471,7 +478,10 @@ export function createStoreTemplateService(deps: {
                   input.connections,
                   { register: true },
                 );
-                const data = createDataService(tx, now, defaults),
+                // One batch service for the whole install (#668).
+                const data = createDataService(tx, now, defaults, undefined, {
+                    batch: true,
+                  }),
                   t = storeTemplateCopy(actor.locale);
                 const mappingRows = input.groups.flatMap((group) =>
                   group.apps.map((app) => ({

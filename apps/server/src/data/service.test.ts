@@ -1213,3 +1213,119 @@ it("adopts changed preparations only through an explicit fresh model publication
   await service.publishModel(actor, model.id, fresh.version);
   expect((await current()).rows[0]!.measures.total!.value).toBe("3.3");
 });
+
+describe("a batch data service (#668)", () => {
+  const scaled = (datasetId: string, factor: string): PreparationGraph => ({
+    version: 1,
+    nodes: [
+      { id: "input", type: "source", datasetId },
+      {
+        id: "output",
+        type: "calculate",
+        input: "input",
+        fieldId: "scaled",
+        name: "Scaled",
+        expression: {
+          kind: "call",
+          fn: "multiply",
+          args: [
+            f("amount"),
+            { kind: "literal", type: "decimal", value: factor },
+          ],
+        },
+      },
+    ],
+    outputs: ["output"],
+  });
+  const amounts = (rows: Record<string, unknown>[]) =>
+    rows.map((row) => row.scaled);
+
+  it("reads sources and preparations again after this batch changed them", async () => {
+    const values = await withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      async (tx) => {
+        const batch = createDataService(tx, () => NOW, undefined, undefined, {
+          batch: true,
+        });
+        const sourceDefinition = definition("batch_source", [
+          { id: "id", type: "string" },
+          { id: "amount", type: "decimal" },
+          { id: "currency", type: "string" },
+        ]);
+        const source = await batch.saveManual(actor, {
+          definition: sourceDefinition,
+          records: [{ values: { id: "one", amount: "1.00", currency: "EUR" } }],
+        });
+        const first = (
+          await batch.savePreparation(actor, {
+            name: "Doubled",
+            graph: scaled(source.datasetId, "2"),
+          })
+        ).preparation;
+        await batch.publishPreparation(actor, first.id, first.version);
+        const output = "prepared:" + first.id + ":output";
+        const before = amounts((await batch.preview(actor, output)).rows);
+        // A manual save in the batch: later loads read the new rows.
+        await batch.saveManual(
+          actor,
+          {
+            definition: sourceDefinition,
+            records: [
+              { values: { id: "one", amount: "5.00", currency: "EUR" } },
+            ],
+            generationId: source.generationId,
+          },
+          source.datasetId,
+        );
+        const second = (
+          await batch.savePreparation(actor, {
+            name: "Tripled",
+            graph: scaled(source.datasetId, "3"),
+          })
+        ).preparation;
+        await batch.publishPreparation(actor, second.id, second.version);
+        const changedSource = amounts(
+          (await batch.preview(actor, "prepared:" + second.id + ":output"))
+            .rows,
+        );
+        // A new version of a preparation the batch read: later loads read it.
+        const saved = (
+          await batch.savePreparation(
+            actor,
+            {
+              name: "Doubled",
+              graph: scaled(source.datasetId, "4"),
+              version: first.version,
+            },
+            first.id,
+          )
+        ).preparation;
+        await batch.publishPreparation(actor, first.id, saved.version);
+        const republished = amounts((await batch.preview(actor, output)).rows);
+        return { before, changedSource, republished };
+      },
+      { isolationLevel: "serializable" },
+    );
+    expect(values).toEqual({
+      before: ["2"],
+      changedSource: ["15"],
+      republished: ["20"],
+    });
+  });
+
+  it("runs only in a caller's transaction, for one actor", async () => {
+    expect(() =>
+      createDataService(db, () => NOW, undefined, undefined, { batch: true }),
+    ).toThrow("a batch data service runs in a caller's transaction");
+    await expect(
+      withWorkspace(db, { workspaceId: actor.workspaceId }, async (tx) => {
+        const batch = createDataService(tx, () => NOW, undefined, undefined, {
+          batch: true,
+        });
+        await batch.listPreparations(actor);
+        await batch.listPreparations(other);
+      }),
+    ).rejects.toThrow("a batch data service serves one actor");
+  });
+});

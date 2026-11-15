@@ -104,5 +104,5 @@ describe("concurrent store-template installs (#604)", () => {
     const [row] = await owner<{ n: number }[]>`
         select count(distinct workspace_id)::int as n from data_template_installs`;
     expect(row!.n).toBe(WORKSPACES);
-  }, 240_000); // 12 installs one at a time: ~0.7 s each on CI, 3-7.5 s locally.
+  }, 240_000); // 12 installs one at a time: ~0.3 s each locally (~1-1.5 s before #668).
 });
