@@ -114,7 +114,7 @@ struct MeasureWidgetView: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 GridRow {
                     ForEach(groupBy, id: \.self) {
-                        Text(row.dimensionLabels?[$0] ?? row.dimensions[$0]?.text(language: env.language) ?? "—")
+                        Text(data.dimensionText(row, dimension: $0, language: env.language))
                     }
                     ForEach(measureIds, id: \.self) {
                         Text(data.text(row.measures[$0], measure: $0, language: env.language)).monospacedDigit()
@@ -142,7 +142,7 @@ struct MeasureWidgetView: View {
                 let cell = id.flatMap { row.measures[$0] }
                 HStack {
                     Text(
-                        groupBy.map { row.dimensionLabels?[$0] ?? row.dimensions[$0]?.text(language: env.language) ?? "—" }.joined(
+                        groupBy.map { data.dimensionText(row, dimension: $0, language: env.language) }.joined(
                             separator: " · "))
                     GeometryReader { box in
                         if let value = cell?.value.chartNumber {
