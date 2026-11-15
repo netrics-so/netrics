@@ -14,6 +14,7 @@ import {
   resolveColumns,
 } from "./datasets.js";
 import { createGooglePlayConnector, googlePlayManifest } from "./index.js";
+import { REPORT_READER } from "./sync.js";
 import { ReportFormatError } from "./tabular.js";
 import {
   ALPHA,
@@ -282,7 +283,7 @@ describe("Play report availability reasons and re-reading (#611)", () => {
       { availability: "available", reason: null },
     ]);
     expect(upgraded.cursor).toBe(
-      `google-play-done:2:${new Date(TEST_NOW).toISOString()}`,
+      `google-play-done:${REPORT_READER}:${new Date(TEST_NOW).toISOString()}`,
     );
 
     // A finished sync of this reader revisits recent months only.
@@ -314,7 +315,7 @@ describe("Play report availability reasons and re-reading (#611)", () => {
         "base64url",
       ).toString("utf8"),
     ) as Record<string, unknown>;
-    expect(checkpoint.reader).toBe(2);
+    expect(checkpoint.reader).toBe(REPORT_READER);
     delete checkpoint.reader;
     const readerOne =
       "google-play-data:" +

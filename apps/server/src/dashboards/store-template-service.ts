@@ -193,6 +193,70 @@ export function unmappedProductRow(
 }
 
 /**
+ * The source datasets the store template reads per connector. Google Play's
+ * rating report rows and report availability are read since template
+ * version 2 (Play Console rating reports).
+ */
+export const STORE_SOURCE_DATASETS: Record<StoreConnectorId, string[]> = {
+  "app-store-connect": ["sales_rows", "store_ratings"],
+  "google-play": [
+    "install_rows",
+    "earning_rows",
+    "store_ratings",
+    "rating_rows",
+    "report_status",
+  ],
+};
+
+/**
+ * The dataset id of each of `keys` (default: every dataset the template reads
+ * for the connector): registered now with `register`, otherwise the
+ * registered id or a `pending:` placeholder.
+ */
+export async function storeSourceDatasets(
+  tx: Transaction,
+  deps: { registry: ConnectorRegistry; policy: DataPolicy },
+  workspaceId: string,
+  row: { id: string; connectorId: StoreConnectorId },
+  options: { register: boolean },
+  keys: string[] = STORE_SOURCE_DATASETS[row.connectorId],
+): Promise<Record<string, string>> {
+  const registered = deps.registry.get(row.connectorId);
+  if (!registered) reject("connector_unavailable", 503);
+  const datasets: Record<string, string> = {};
+  for (const key of keys) {
+    const definition = registered.manifest.datasets?.find(
+      (dataset) => dataset.key === key,
+    );
+    if (!definition) reject("store_source_schema_unavailable", 503);
+    if (options.register) {
+      datasets[key] = (
+        await registerSourceDataset(tx, {
+          workspaceId,
+          connectionId: row.id,
+          definition,
+          policyDefaults: deps.policy,
+        })
+      ).id;
+      continue;
+    }
+    const [existing] = await tx
+      .select({ id: schema.dataDatasets.id })
+      .from(schema.dataDatasets)
+      .where(
+        and(
+          eq(schema.dataDatasets.workspaceId, workspaceId),
+          eq(schema.dataDatasets.connectionId, row.id),
+          eq(schema.dataDatasets.kind, "source"),
+          eq(schema.dataDatasets.key, definition.key),
+        ),
+      );
+    datasets[key] = existing?.id ?? `pending:${row.id}:${key}`;
+  }
+  return datasets;
+}
+
+/**
  * The store sources of `connectionIds` (all of the workspace, set up, of a
  * store connector), each with the source datasets the template reads.
  * `register` registers those datasets; without it (a read-only plan) a
@@ -226,42 +290,13 @@ export async function storeTemplateSources(
       row.connectorId !== "google-play"
     )
       reject("store_connector_required");
-    const registered = deps.registry.get(row.connectorId);
-    if (!registered) reject("connector_unavailable", 503);
-    const needed =
-      row.connectorId === "app-store-connect"
-        ? ["sales_rows", "store_ratings"]
-        : ["install_rows", "earning_rows", "store_ratings"];
-    const datasets: Record<string, string> = {};
-    for (const key of needed) {
-      const definition = registered.manifest.datasets?.find(
-        (dataset) => dataset.key === key,
-      );
-      if (!definition) reject("store_source_schema_unavailable", 503);
-      if (options.register) {
-        datasets[key] = (
-          await registerSourceDataset(tx, {
-            workspaceId,
-            connectionId: row.id,
-            definition,
-            policyDefaults: deps.policy,
-          })
-        ).id;
-        continue;
-      }
-      const [existing] = await tx
-        .select({ id: schema.dataDatasets.id })
-        .from(schema.dataDatasets)
-        .where(
-          and(
-            eq(schema.dataDatasets.workspaceId, workspaceId),
-            eq(schema.dataDatasets.connectionId, row.id),
-            eq(schema.dataDatasets.kind, "source"),
-            eq(schema.dataDatasets.key, definition.key),
-          ),
-        );
-      datasets[key] = existing?.id ?? `pending:${row.id}:${key}`;
-    }
+    const datasets = await storeSourceDatasets(
+      tx,
+      deps,
+      workspaceId,
+      { id: row.id, connectorId: row.connectorId },
+      options,
+    );
     sources.push({
       id: row.id,
       name: row.name,

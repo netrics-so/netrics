@@ -55,6 +55,10 @@ export const storeTemplateCopy = (locale: Locale) =>
         unrated: "Noch keine Bewertungen",
         notListed: "Nicht im gewählten Land gelistet",
         unavailable: "Derzeit nicht verfügbar",
+        noRatingReport: "Noch kein Bewertungsbericht",
+        noRatingAccess: "Kein Zugriff auf Bewertungsberichte",
+        unreadableRatingReport: "Bewertungsbericht nicht lesbar",
+        allCountries: "Alle Länder",
         unallocated: "Nicht zugeordnete Berichtszeilen",
         noCurrency: "Dieser Wert ist kein Geldbetrag.",
         noCountry:
@@ -86,6 +90,10 @@ export const storeTemplateCopy = (locale: Locale) =>
         unrated: "No ratings yet",
         notListed: "Not listed in this country",
         unavailable: "Temporarily unavailable",
+        noRatingReport: "No rating report yet",
+        noRatingAccess: "No access to rating reports",
+        unreadableRatingReport: "Rating report could not be read",
+        allCountries: "All countries",
         unallocated: "Unallocated report rows",
         noCurrency: "This value is not a monetary amount.",
         noCountry:
@@ -94,16 +102,259 @@ export const storeTemplateCopy = (locale: Locale) =>
           "This measure uses the install or sale country rather than the listing country.",
       };
 
-/** Inspectable ordinary preparation steps; no store logic enters query execution. */
+const nullOf = (type: "string" | "integer" | "decimal", unit?: string) =>
+  ({
+    kind: "literal",
+    type,
+    value: null,
+    ...(unit ? { unit } : {}),
+  }) as DataExpression;
+/** A source dataset of the connection; a placeholder until it is registered. */
+const sourceDataset = (source: StoreTemplateSource, key: string) =>
+  source.datasets[key] ?? `pending:${source.id}:${key}`;
+
+/**
+ * Google Play ratings since template version 2: the latest Total Average
+ * Rating of Play Console's rating reports per app, as of its report day
+ * (Play reports no rating count). An app without a rated report day gets one
+ * row saying why, from its rating report availability: no ratings yet, no
+ * report yet, no access, or an unreadable report. Output: the columns the
+ * listing snapshot had, ending in node `raw`.
+ */
+function playRatingReportNodes(
+  source: StoreTemplateSource,
+  t: ReturnType<typeof storeTemplateCopy>,
+): PreparationNode[] {
+  const columns = [
+    "app_id",
+    "day",
+    "captured_at",
+    "rating",
+    "rating_count",
+    "availability",
+    "storefront",
+    "app_name",
+  ];
+  const calc = (
+    id: string,
+    input: string,
+    fieldId: string,
+    name: string,
+    expression: DataExpression,
+  ): PreparationNode => ({
+    id,
+    type: "calculate",
+    input,
+    fieldId,
+    name,
+    expression,
+  });
+  return [
+    {
+      id: "report_rows",
+      type: "source",
+      datasetId: sourceDataset(source, "rating_rows"),
+    },
+    {
+      id: "rated_rows",
+      type: "filter",
+      input: "report_rows",
+      expression: call("not", call("is_null", field("total_average_rating"))),
+    },
+    calc(
+      "report_checked",
+      "rated_rows",
+      "captured_at",
+      t.checked,
+      call("to_timestamp", field("day")),
+    ),
+    calc(
+      "report_rating",
+      "report_checked",
+      "rating",
+      t.rating,
+      field("total_average_rating"),
+    ),
+    calc(
+      "report_count",
+      "report_rating",
+      "rating_count",
+      t.ratingCount,
+      nullOf("integer"),
+    ),
+    calc(
+      "report_availability",
+      "report_count",
+      "availability",
+      t.availability,
+      text("available"),
+    ),
+    calc(
+      "report_storefront",
+      "report_availability",
+      "storefront",
+      t.storefront,
+      text(t.allCountries),
+    ),
+    calc(
+      "report_name",
+      "report_storefront",
+      "app_name",
+      t.app,
+      nullOf("string"),
+    ),
+    {
+      id: "report_ratings",
+      type: "select",
+      input: "report_name",
+      fields: columns,
+    },
+    {
+      id: "rated_apps",
+      type: "group",
+      input: "rated_rows",
+      keys: ["app_id"],
+      aggregates: [{ id: "days", name: "Rated days", op: "count" }],
+    },
+    {
+      id: "status_rows",
+      type: "source",
+      datasetId: sourceDataset(source, "report_status"),
+    },
+    {
+      id: "rating_status",
+      type: "filter",
+      input: "status_rows",
+      expression: call("eq", field("report_type"), text("ratings")),
+    },
+    {
+      id: "status_by_app",
+      type: "group",
+      input: "rating_status",
+      keys: ["app_id"],
+      aggregates: [
+        {
+          id: "latest",
+          name: t.availability,
+          op: "last",
+          fieldId: "availability",
+          orderBy: "report_month",
+        },
+        {
+          id: "reported",
+          name: "Available reports",
+          op: "count",
+          filter: call("eq", field("availability"), text("available")),
+        },
+        {
+          id: "checked_at",
+          name: t.checked,
+          op: "max",
+          fieldId: "captured_at",
+        },
+      ],
+    },
+    {
+      id: "join_rated",
+      type: "join",
+      left: "status_by_app",
+      right: "rated_apps",
+      keys: [{ left: "app_id", right: "app_id" }],
+      mode: "left",
+      cardinality: "many_to_one",
+      rightPrefix: "rated.",
+    },
+    {
+      id: "without_rating",
+      type: "filter",
+      input: "join_rated",
+      expression: call("is_null", field("rated.days")),
+    },
+    calc(
+      "status_checked",
+      "without_rating",
+      "captured_at",
+      t.checked,
+      field("checked_at"),
+    ),
+    calc(
+      "status_day",
+      "status_checked",
+      "day",
+      t.day,
+      call("to_date", field("checked_at")),
+    ),
+    calc(
+      "status_rating",
+      "status_day",
+      "rating",
+      t.rating,
+      nullOf("decimal", "stars"),
+    ),
+    calc(
+      "status_count",
+      "status_rating",
+      "rating_count",
+      t.ratingCount,
+      nullOf("integer"),
+    ),
+    // Reports were published but no day has a rating: no ratings yet.
+    calc(
+      "status_availability",
+      "status_count",
+      "availability",
+      t.availability,
+      call(
+        "if",
+        call("gt", field("reported"), {
+          kind: "literal",
+          type: "integer",
+          value: 0,
+        }),
+        text("unrated"),
+        field("latest"),
+      ),
+    ),
+    calc(
+      "status_storefront",
+      "status_availability",
+      "storefront",
+      t.storefront,
+      text(t.allCountries),
+    ),
+    calc(
+      "status_name",
+      "status_storefront",
+      "app_name",
+      t.app,
+      nullOf("string"),
+    ),
+    {
+      id: "status_ratings",
+      type: "select",
+      input: "status_name",
+      fields: columns,
+    },
+    { id: "raw", type: "append", inputs: ["report_ratings", "status_ratings"] },
+  ];
+}
+
+/**
+ * Inspectable ordinary preparation steps; no store logic enters query
+ * execution. `templateVersion` is the store template version that builds it:
+ * version 2 reads Google Play ratings from Play Console rating reports.
+ */
 export function buildStorePreparation(
   source: StoreTemplateSource,
   metric: StoreMetric,
   mappingId: string,
   productDatasetId: string,
   locale: Locale,
+  templateVersion: 1 | 2 = 1,
 ): PreparationGraph {
   const t = storeTemplateCopy(locale),
     apple = source.connectorId === "app-store-connect";
+  const playReports = !apple && metric === "ratings" && templateVersion >= 2;
   const dataset =
     source.datasets[
       metric === "ratings"
@@ -115,7 +366,9 @@ export function buildStorePreparation(
             : "earning_rows"
     ]!;
   const nodes: PreparationNode[] = [
-    { id: "raw", type: "source", datasetId: dataset },
+    ...(playReports
+      ? playRatingReportNodes(source, t)
+      : [{ id: "raw", type: "source" as const, datasetId: dataset }]),
     {
       id: "resource_names",
       type: "source",
@@ -276,12 +529,27 @@ export function buildStorePreparation(
           "if",
           call("eq", field("availability"), text("unrated")),
           text(t.unrated),
-          call(
-            "if",
-            call("eq", field("availability"), text("not_listed")),
-            text(t.notListed),
-            text(t.unavailable),
-          ),
+          playReports
+            ? [
+                ["not_published", t.noRatingReport],
+                ["permission_missing", t.noRatingAccess],
+                ["invalid_report", t.unreadableRatingReport],
+              ].reduceRight<DataExpression>(
+                (otherwise, [value, label]) =>
+                  call(
+                    "if",
+                    call("eq", field("availability"), text(value!)),
+                    text(label!),
+                    otherwise,
+                  ),
+                text(t.unavailable),
+              )
+            : call(
+                "if",
+                call("eq", field("availability"), text("not_listed")),
+                text(t.notListed),
+                text(t.unavailable),
+              ),
         ),
       ),
     );

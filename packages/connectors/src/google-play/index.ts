@@ -30,6 +30,7 @@ import {
   earningsDataset,
   installDataset,
   listingRatingDataset,
+  ratingReportDataset,
   reportStatusDataset,
 } from "./datasets.js";
 import {
@@ -49,7 +50,7 @@ import {
 const de: ManifestTranslation = {
   name: "Google Play",
   description:
-    "Installationsberichte, genaue Erlöszeilen einschließlich Gebühren und Rückerstattungen sowie Bewertungen aus dem öffentlichen Play-Store-Eintrag deiner Apps. Ein Google-Konto verbindet mehrere Apps.",
+    "Installationsberichte, genaue Erlöszeilen einschließlich Gebühren und Rückerstattungen sowie die Bewertung aus den Bewertungsberichten der Play Console. App-Name und Symbol kommen aus dem öffentlichen Play-Store-Eintrag. Ein Google-Konto verbindet mehrere Apps.",
   resourceNoun: { singular: "App", plural: "Apps" },
   config: {
     reportBucket: {
@@ -58,9 +59,9 @@ const de: ManifestTranslation = {
         "Kopiere in der Play Console unter Kontoverwaltung → Play-App-Berichte die Google-Cloud-Storage-URI, die mit gs://pubsite_prod_ beginnt (ältere Konten: gs://pubsite_prod_rev_). Du brauchst Zugriff auf die Statistik- und Finanzberichte.",
     },
     ratingStorefront: {
-      title: "Land für Bewertungen",
+      title: "Land des Store-Eintrags",
       description:
-        "Ländercode aus zwei Buchstaben, zum Beispiel DE oder US. Standard: US. Die Bewertungen stammen aus dem öffentlichen Play-Store-Eintrag für dieses Land und den Standard-Gerätetyp, nicht aus einer Google-API.",
+        "Ländercode aus zwei Buchstaben, zum Beispiel DE oder US. Standard: US. Aus dem öffentlichen Play-Store-Eintrag für dieses Land kommen App-Name und Symbol. Die Bewertung kommt aus den Bewertungsberichten der Play Console (alle Länder) und hängt nicht von diesem Land ab.",
     },
     ratingLanguage: {
       title: "Sprache der Store-Seite",
@@ -87,7 +88,7 @@ export const googlePlayManifest: ConnectorManifest = {
   brandColor: "#34a853",
   name: "Google Play",
   description:
-    "Install reports, exact earnings lines including fees and refunds, and ratings from the public Play Store listing of your apps. Connect several apps with one Google account.",
+    "Install reports, exact earnings lines including fees and refunds, and the rating from Play Console rating reports. App names and artwork come from the public Play Store listing. Connect several apps with one Google account.",
   url: "https://play.google.com/console/",
   docsUrl:
     "https://github.com/netrics-so/netrics/blob/main/docs/connectors/google-play.md",
@@ -109,9 +110,9 @@ export const googlePlayManifest: ConnectorManifest = {
       },
       ratingStorefront: {
         type: "string",
-        title: "Rating country",
+        title: "Listing country",
         description:
-          "Two-letter country code, for example US or DE. Defaults to US. Ratings come from the public Play Store listing for this country and its default form factor, not from a Google API.",
+          "Two-letter country code, for example US or DE. Defaults to US. App names and artwork come from the public Play Store listing for this country. The rating comes from Play Console rating reports (all countries) and does not depend on this country.",
         default: "US",
       },
       ratingLanguage: {
@@ -141,6 +142,7 @@ export const googlePlayManifest: ConnectorManifest = {
     installDataset,
     earningsDataset,
     listingRatingDataset,
+    ratingReportDataset,
     reportStatusDataset,
   ],
   metrics: [],

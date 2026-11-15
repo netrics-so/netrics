@@ -17,13 +17,24 @@ import {
 } from "./store-portfolio.js";
 
 import { now, apple, google, inputs } from "./test-helpers.js";
-function prepared(metric: "downloads" | "proceeds" | "ratings"): DataTable {
+function prepared(
+  metric: "downloads" | "proceeds" | "ratings",
+  templateVersion: 1 | 2 = 1,
+  locale: "en" | "de" = "en",
+): DataTable {
   const tables = inputs();
   const outputs = [apple, google].map(
     (source) =>
       executePreparation(
         preparationGraphSchema.parse(
-          buildStorePreparation(source, metric, "mapping", "products", "en"),
+          buildStorePreparation(
+            source,
+            metric,
+            "mapping",
+            "products",
+            locale,
+            templateVersion,
+          ),
         ),
         tables,
       ).outputs.output!,
@@ -160,6 +171,79 @@ describe("editable store portfolio definitions", () => {
     ).toEqual([
       ["Apple Example · Apple App Store", "4.5", 100, "Available"],
       ["Android Example · Google Play", "4.1", 50, "Available"],
+    ]);
+  });
+  it("takes Google Play ratings from the latest rating report day in version 2, with a reason where there is none", () => {
+    const model = buildStoreModel("ratings", "facts", "en"),
+      tables = new Map([["facts", prepared("ratings", 2)]]);
+    validateSemanticModel(model, tables, now);
+    const result = querySemanticModel(model, tables, {
+      measureIds: ["rating", "rating_count", "checked", "availability"],
+      groupBy: ["listing", "storefront"],
+    });
+    expect(
+      result.rows.map((row) => [
+        row.dimensionLabels?.listing,
+        row.dimensions.storefront,
+        row.measures.rating?.value,
+        row.measures.rating_count?.value,
+        row.measures.checked?.value,
+        row.measures.availability?.value,
+      ]),
+    ).toEqual(
+      expect.arrayContaining([
+        ["Apple Example · Apple App Store", "US", "4.5", 100, now, "Available"],
+        // The report's Total Average Rating as of its latest day; Google's
+        // report has no rating count. The listing's 4.1 is not used.
+        [
+          "Android Example · Google Play",
+          "All countries",
+          "4.3333",
+          null,
+          "2026-10-04T00:00:00Z",
+          "Available",
+        ],
+        [
+          "Other app · Google Play",
+          "All countries",
+          null,
+          null,
+          now,
+          "No ratings yet",
+        ],
+        [
+          "Third app · Google Play",
+          "All countries",
+          null,
+          null,
+          now,
+          "No rating report yet",
+        ],
+        [
+          "Fourth app · Google Play",
+          "All countries",
+          null,
+          null,
+          now,
+          "Rating report could not be read",
+        ],
+      ]),
+    );
+    expect(result.rows).toHaveLength(5);
+    // German labels.
+    const de = querySemanticModel(
+      buildStoreModel("ratings", "facts", "de"),
+      new Map([["facts", prepared("ratings", 2, "de")]]),
+      { measureIds: ["availability"], groupBy: ["listing", "storefront"] },
+    );
+    expect(
+      de.rows.map((row) => row.measures.availability?.value).sort(),
+    ).toEqual([
+      "Bewertungsbericht nicht lesbar",
+      "Noch kein Bewertungsbericht",
+      "Noch keine Bewertungen",
+      "Verfügbar",
+      "Verfügbar",
     ]);
   });
   it("creates normal editable widgets with compatible filters and a fixed per-app scope", () => {

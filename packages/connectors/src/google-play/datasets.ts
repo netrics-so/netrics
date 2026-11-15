@@ -95,6 +95,40 @@ export const earningsDataset: SourceDatasetDefinition = {
     }),
   ],
 };
+/**
+ * Play Console's monthly rating report (`stats/ratings/ratings_<package>_<yyyyMM>_overview.csv`):
+ * the rating Play Console shows, per app and day. The report has no rating
+ * count, so none is recorded. Rows are keyed on app and day; a month read
+ * again replaces that app's month.
+ */
+export const ratingReportDataset: SourceDatasetDefinition = {
+  key: "rating_rows",
+  name: "Google Play rating report rows",
+  version: 1,
+  mode: "replace_window",
+  keyFields: ["app_id", "day"],
+  reportingField: "day",
+  reportingTimeZone: "America/Los_Angeles",
+  grain: "One rating overview report row per app and reporting day",
+  retentionDays: null,
+  fields: [
+    field("app_id", "Android package name", "string"),
+    field("day", "Reporting day (Pacific)", "date"),
+    // 0.0 in the report means no new ratings that day: recorded as null.
+    field("daily_average_rating", "Daily average rating", "decimal", {
+      nullable: true,
+      unit: "stars",
+    }),
+    // The rating Play Console displays; null until the app has ratings.
+    field("total_average_rating", "Total average rating", "decimal", {
+      nullable: true,
+      unit: "stars",
+    }),
+    field("report_file", "Report object", "string"),
+    field("object_generation", "Object generation", "string"),
+    field("provider_fields", "Original provider columns", "json"),
+  ],
+};
 export const listingRatingDataset: SourceDatasetDefinition = {
   key: "store_ratings",
   name: "Google Play listing rating snapshots",
@@ -390,8 +424,20 @@ export async function readInstallReport(
   emit: RowSink,
   drain?: Drain,
 ): Promise<void> {
+  await readCsvReport(
+    source,
+    installSink(appId, reportMonth, name, generation, emit),
+    drain,
+  );
+}
+
+/** Pushes a plain CSV report through `sink` in bounded pieces. */
+async function readCsvReport(
+  source: ReportSource,
+  sink: ByteSink,
+  drain?: Drain,
+): Promise<void> {
   reportSize(source);
-  const sink = installSink(appId, reportMonth, name, generation, emit);
   // Even an empty object is requested, so access and generation still verify.
   let at = 0;
   do {
@@ -402,6 +448,111 @@ export async function readInstallReport(
   } while (at < source.size);
   sink.end();
   await drain?.();
+}
+
+/** Columns a rating overview report must have, by their canonical names. */
+const RATING_COLUMNS = [
+  "Date",
+  "Package Name",
+  "Daily Average Rating",
+  "Total Average Rating",
+] as const;
+/**
+ * A rating between 1 and 5 stars, exact. Play Console writes 0.0 (or leaves
+ * the cell empty) when there is no rating: that is null, never zero stars.
+ */
+function stars(raw: string): string | null {
+  const value = reportDecimal(raw, true);
+  if (value === null || Number(value) === 0) return null;
+  if (value.startsWith("-") || Number(value) < 1 || Number(value) > 5)
+    throw new ReportFormatError(
+      "invalid_value",
+      "Google Play rating report has a rating outside 1 to 5 stars",
+    );
+  return value;
+}
+
+/** Typed rows from one rating overview report, pushed as bytes. */
+function ratingSink(
+  appId: string,
+  reportMonth: string,
+  name: string,
+  generation: string,
+  emit: RowSink,
+): ByteSink {
+  const days = new Set<string>();
+  let column: Record<(typeof RATING_COLUMNS)[number], string>;
+  return reportCsv(
+    (headers) => (column = resolveColumns(headers, RATING_COLUMNS)),
+    (original) => {
+      const day = date(original[column.Date]!);
+      if (
+        original[column["Package Name"]]!.trim() !== appId ||
+        day.slice(0, 7) !== reportMonth.slice(0, 7)
+      )
+        throw new ReportFormatError(
+          "scope_mismatch",
+          "Google Play rating report has a row outside its app/month scope",
+        );
+      if (days.has(day))
+        throw new ReportFormatError(
+          "duplicate_days",
+          "Google Play rating report has two rows for one day",
+        );
+      days.add(day);
+      emit(appId, {
+        values: {
+          app_id: appId,
+          day,
+          daily_average_rating: stars(
+            original[column["Daily Average Rating"]]!,
+          ),
+          total_average_rating: stars(
+            original[column["Total Average Rating"]]!,
+          ),
+          report_file: name,
+          object_generation: generation,
+          provider_fields: original,
+        },
+      });
+    },
+  );
+}
+
+export function ratingRows(
+  bytes: Uint8Array,
+  appId: string,
+  reportMonth: string,
+  name: string,
+  generation: string,
+): DatasetRecord[] {
+  const rows: DatasetRecord[] = [];
+  const sink = ratingSink(appId, reportMonth, name, generation, (_, row) =>
+    rows.push(row),
+  );
+  sink.push(bytes);
+  sink.end();
+  return rows;
+}
+
+/**
+ * Parses a rating overview report piece by piece, as readInstallReport does
+ * for install reports.
+ */
+export async function readRatingReport(
+  source: ReportSource,
+  appId: string,
+  reportMonth: string,
+  name: string,
+  generation: string,
+  emit: RowSink,
+  drain?: Drain,
+): Promise<void> {
+  await readCsvReport(
+    source,
+    ratingSink(appId, reportMonth, name, generation, emit),
+    drain,
+  );
 }
 
 /** Largest piece of a plain report pushed through the parser at once. */

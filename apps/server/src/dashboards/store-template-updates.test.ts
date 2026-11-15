@@ -48,12 +48,19 @@ import {
   normalizeTemplateDashboard,
 } from "./store-template-items.js";
 import {
-  storeTemplate,
+  storeTemplateV1,
   type StoreTemplateDefinition,
   type StoreTemplateRecord,
 } from "./store-template.js";
 import { now } from "./test-helpers.js";
 
+/**
+ * The update mechanism is exercised from version 1 (installs and the
+ * services' "current" template here) to a fixture version 2; the real
+ * version 2 (Play Console rating reports) is covered in
+ * store-template-play-ratings.test.ts.
+ */
+const storeTemplate = storeTemplateV1;
 /**
  * Version 2 of the store template, as a fixture: renames the downloads
  * measure and adds `downloads_avg`, renames the store-name step of every
@@ -128,7 +135,7 @@ const updates = (template?: StoreTemplateDefinition, policy?: DataPolicy) =>
     db,
     registry,
     now: () => new Date(now),
-    ...(template ? { template } : {}),
+    template: template ?? storeTemplateV1,
     ...(policy ? { policy } : {}),
   });
 const item = (plan: StoreTemplatePlan, ref: string) =>
@@ -165,6 +172,7 @@ async function installIn(
     db,
     registry,
     now: () => new Date(now),
+    template: storeTemplateV1,
   }).install(actor(workspaceId), {
     requestId,
     name: "App portfolio",
@@ -2781,6 +2789,7 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
         logger: pino({ level: "silent" }),
       }),
       checkDb: async () => true,
+      storeTemplate: storeTemplateV1,
     });
     updated = await buildApp(config, {
       db,
@@ -3386,6 +3395,8 @@ describe("changing the apps of an install", { timeout: TIMEOUT_MS }, () => {
     expect(datasets.map((d) => d.key as string)).toEqual([
       "earning_rows",
       "install_rows",
+      "rating_rows",
+      "report_status",
       "store_ratings",
     ]);
     const [install] =
@@ -3671,6 +3682,7 @@ describe("changing the apps of an install", { timeout: TIMEOUT_MS }, () => {
       db,
       registry,
       now: () => new Date(now),
+      template: storeTemplateV1,
     }).install(actor(workspaceId), {
       requestId,
       name: "App portfolio",

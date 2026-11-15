@@ -87,6 +87,8 @@ import {
   storeTemplateInputsSchema,
 } from "./store-template.js";
 import {
+  STORE_SOURCE_DATASETS,
+  storeSourceDatasets,
   storeTemplateSources,
   unmappedProductRow,
 } from "./store-template-service.js";
@@ -339,6 +341,71 @@ export function createStoreTemplateUpdateService(deps: {
   }
 
   /**
+   * The install's inputs with every source dataset the template reads: a
+   * newer version can read datasets an install made before did not (version
+   * 2: Google Play rating reports and report availability). Missing ones are
+   * registered with `register`, otherwise their id or a `pending:`
+   * placeholder; a connection that no longer exists is left as it is.
+   */
+  async function withSourceDatasets(
+    tx: Transaction,
+    workspaceId: string,
+    inputs: StoreTemplateInputs,
+    register: boolean,
+  ): Promise<StoreTemplateInputs> {
+    const lacking = inputs.connections.filter((connection) =>
+      STORE_SOURCE_DATASETS[connection.connectorId].some(
+        (key) => connection.datasets[key] === undefined,
+      ),
+    );
+    if (!lacking.length) return inputs;
+    const existing = new Set(
+      (
+        await tx
+          .select({ id: schema.connections.id })
+          .from(schema.connections)
+          .where(
+            and(
+              eq(schema.connections.workspaceId, workspaceId),
+              inArray(
+                schema.connections.id,
+                lacking.map((connection) => connection.id),
+              ),
+            ),
+          )
+      ).map((row) => row.id),
+    );
+    const connections = [];
+    for (const connection of inputs.connections) {
+      const missing = STORE_SOURCE_DATASETS[connection.connectorId].filter(
+        (key) => connection.datasets[key] === undefined,
+      );
+      connections.push(
+        missing.length && existing.has(connection.id)
+          ? {
+              ...connection,
+              datasets: {
+                ...connection.datasets,
+                ...(await storeSourceDatasets(
+                  tx,
+                  {
+                    registry: deps.registry,
+                    policy: deps.policy ?? DEFAULT_DATA_POLICY,
+                  },
+                  workspaceId,
+                  connection,
+                  { register },
+                  missing,
+                )),
+              },
+            }
+          : connection,
+      );
+    }
+    return { ...inputs, connections };
+  }
+
+  /**
    * The three-way plan of one install against `template`; null when its
    * baseline cannot be read (store_template_baseline_unavailable).
    */
@@ -351,6 +418,8 @@ export function createStoreTemplateUpdateService(deps: {
      * from these inputs instead of the stored ones (scopeInputs).
      */
     scope?: { inputs: StoreTemplateInputs },
+    /** Register source datasets the stored inputs lack (applying). */
+    register = false,
   ): Promise<ComputedPlan | null> {
     // Read-only: an install made before versions is completed in memory
     // (keys renamed, inputs derived); applying an update writes it.
@@ -361,7 +430,9 @@ export function createStoreTemplateUpdateService(deps: {
     );
     if (!completion.ok) return null;
     const install = (await installRow(tx, workspaceId, requestId))!;
-    const inputs = scope?.inputs ?? completion.inputs;
+    const inputs =
+      scope?.inputs ??
+      (await withSourceDatasets(tx, workspaceId, completion.inputs, register));
     let rows = (await recordRows(tx, workspaceId, requestId)).map((row) => {
       if (!completion.pending) return row;
       const key = completion.keys[row.key] ?? row.key;
@@ -687,9 +758,10 @@ export function createStoreTemplateUpdateService(deps: {
     workspaceId: string,
     requestId: string,
     scope?: { inputs: StoreTemplateInputs },
+    register = false,
   ) {
     try {
-      return await computePlan(tx, workspaceId, requestId, scope);
+      return await computePlan(tx, workspaceId, requestId, scope, register);
     } catch (error) {
       if (error instanceof BaselineUnavailable) return null;
       throw error;
@@ -992,11 +1064,25 @@ export function createStoreTemplateUpdateService(deps: {
     } else {
       if (!isUpdateAvailable(install, rows, template.version))
         reject("store_template_up_to_date", 409);
-      plan = await planOrUnavailable(tx, actor.workspaceId, requestId);
+      // The plan the customer reviewed: source datasets the new version
+      // reads as they were then (perhaps not registered yet).
+      const reviewed = await planOrUnavailable(
+        tx,
+        actor.workspaceId,
+        requestId,
+      );
+      if (!reviewed) reject("store_template_baseline_unavailable", 409);
+      // The same plan applied twice (double click, two tabs) is stale first.
+      if (reviewed.basis !== body.basis) reject("store_update_stale", 409);
+      plan = await planOrUnavailable(
+        tx,
+        actor.workspaceId,
+        requestId,
+        undefined,
+        true,
+      );
     }
     if (!plan) reject("store_template_baseline_unavailable", 409);
-    // The same plan applied twice (double click, two tabs) is stale first.
-    if (!scope && plan.basis !== body.basis) reject("store_update_stale", 409);
     // An earlier update's drafts are the customer's to publish, or they
     // close that update (closeUpdate) to leave them as ordinary drafts:
     // a new apply would build on them and lose track of them.
@@ -1293,10 +1379,9 @@ export function createStoreTemplateUpdateService(deps: {
       .set({
         templateVersion: template.version,
         updatedAt: at,
-        // What the install is built from from now on (scope change).
-        ...(scope
-          ? { inputs: storeTemplateInputsSchema.parse(plan.inputs) }
-          : {}),
+        // What the install is built from from now on: a scope change, or
+        // source datasets a newer version reads.
+        inputs: storeTemplateInputsSchema.parse(plan.inputs),
       })
       .where(
         and(

@@ -12,8 +12,8 @@ This connector supplies datasets, rather than legacy observation metrics.
 2. Copy your private report bucket URI from the Play Console report downloads
    into Report URI. Both `gs://pubsite_prod_rev_…` and `gs://pubsite_prod_…`
    bucket names are accepted; a pasted path is ignored.
-3. Choose the rating country (US by default). Advanced settings include listing
-   language, an optional earliest import date, and package names for apps not
+3. Choose the listing country (US by default), used for app names and
+   artwork. Advanced settings include listing language, an optional earliest import date, and package names for apps not
    automatically discovered.
 4. Choose **Check access and find apps**. This uses the stored authorization;
    it does not save settings or import reports. Partial financial/statistics
@@ -35,7 +35,8 @@ are never cached across connections.
 | --------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `install_rows`  | App/day/country, daily user and device installs, original columns                                                    | Sum the chosen install field over a reporting period                     |
 | `earning_rows`  | Signed merchant amount/currency, transaction type/day, billing report month, original columns                        | Sum all signed merchant amounts by app and currency                      |
-| `store_ratings` | From the public Play Store listing: app/country/language/default form factor/day snapshot, score/count, availability | Latest scoped score and count per app                                    |
+| `rating_rows`   | From Play Console rating overview reports: app/day, daily average rating, total average rating, original columns     | Latest total average rating per app (the rating Play Console shows)      |
+| `store_ratings` | From the public Play Store listing: app/country/language/default form factor/day snapshot, score/count, availability | App names and artwork; the listing's own score where Google shows one    |
 | `report_status` | App/report type/month, availability, checked time, object names, unmapped row count and invalid-report reason        | Distinguish missing, inaccessible and invalid reports from zero activity |
 
 Provider reporting details are described in Google's
@@ -53,17 +54,44 @@ unmapped count. Blank install values remain null, not zero. Aggregates with
 some missing inputs expose a partial status; an explicit preparation filter
 can deliberately exclude those inputs.
 
-**Source: the public Play Store listing.** Ratings use its structured data, without authentication,
-for the configured country/language and its default form factor. This is a
-best-effort public presentation source, **not a documented aggregate-rating
-API**. An incomplete listing is recorded as such; a site change, blocking
-response or failed lookup records nothing, so a snapshot collected earlier the
-same day is kept (rows from earlier versions may say `temporarily_unavailable`).
-There is no fallback to written-review averages or a different
-country. Historical snapshots start when connected. Scores cannot be added or
-averaged across apps, days or stores into an overall store score. Google's
+**Ratings source: Play Console rating reports.** Play Console writes a monthly
+rating report per app into the same bucket as the install reports
+(`stats/ratings/ratings_<package>_<yyyyMM>_overview.csv`, UTF-16 with BOM,
+columns `Date`, `Package Name`, `Daily Average Rating`, `Total Average Rating`).
+Only the `overview` dimension is read; the per-country, device, version and
+language files are not. `Total Average Rating` is the rating Play Console
+displays, to four decimals (Play Console rounds it to three); `Daily Average Rating` is the
+average of that day's new ratings. Play Console writes `0.0` on days without new
+ratings and for an app without ratings: both are recorded as null, never as zero
+stars. The report has **no rating count**, and none is derived or estimated, so
+the rating count stays empty for Google Play. Reports lag a few days behind, and
+monthly files exist from the month an app started reporting. Rows are keyed on
+app and day; a month read again replaces that app's month. Rating report
+availability is recorded in `report_status` with `report_type` `ratings`, like
+installs and earnings (`not_published`, `permission_missing`, `invalid_report`
+with its reason). Reading statistics reports needs the same Play Console
+permission as install reports.
+
+The store portfolio template (version 2) shows, per Google Play app, the latest
+total average rating as of the latest report day (the "Checked at" value is
+that day), for all countries, with an empty rating count. An app without a
+rated day shows why: no ratings yet, no rating report yet, no access to rating
+reports, or a report that could not be read. Installs of version 1 are offered
+this change as a template update; nothing changes before it is applied and its
+drafts are published. Scores are never added or averaged across apps, days or
+stores. Google's
 [rating explanation](https://support.google.com/googleplay/android-developer/answer/138230?hl=en)
 describes how the published rating differs from a lifetime average.
+
+**Public Play Store listing: names and artwork.** The connector still reads the
+listing's structured data, without authentication, for the configured
+country/language and its default form factor, and keeps a daily snapshot in
+`store_ratings`. It supplies app names and artwork. Its score and count are
+recorded where Google shows them, but small apps often have none on the public
+page, so the template no longer uses them. This is a best-effort public
+presentation source, **not a documented API**: an incomplete listing is recorded
+as such; a site change, blocking response or failed lookup records nothing, so a
+snapshot collected earlier the same day is kept.
 
 ## Refresh, correction and retention
 
@@ -79,10 +107,13 @@ Report headers are matched by name, ignoring case and repeated whitespace
 (Play Console has delivered both `Package Name` and `Package name`); original
 columns keep the delivered names. An `invalid_report` status carries a short
 `reason` code, such as `missing_columns:Package Name`, `scope_mismatch`,
-`encoding`, `malformed_csv`, `invalid_value`, `archive` or `too_large`, and
+`encoding`, `malformed_csv`, `invalid_value`, `duplicate_days`, `archive` or
+`too_large`, and
 never row values. When a connector update can read reports an earlier version
-refused, the next scheduled sync reads the whole import window again once,
-as a backfill does, so those months are not left invalid.
+refused, or reads a new kind of report, the next scheduled sync reads the
+whole import window again once, as a backfill does, so those months are not
+left invalid or missing. Reading rating reports was such an update: existing
+connections import a year of ratings on their next sync.
 
 The connector declares its rows as kept until deleted. Earnings original
 columns may contain order identifiers and postal data, so that JSON field is

@@ -62,7 +62,7 @@ export const dashboardsEn = {
     proceedsDefinition:
       "Apple: units × developer proceeds per unit. Google: all signed merchant amounts, including fees, refunds and adjustments. Currencies stay separate.",
     ratingsDefinition:
-      "Latest captured score and count for each store listing and country. Scores are never averaged across apps or stores. Google Play ratings come from the public Play Store listing; they are best-effort and may be unavailable.",
+      "Latest score for each store listing and country, never averaged across apps or stores. Apple: score and count captured from the App Store for your storefront. Google Play: the rating from Play Console rating reports (all countries), as of the latest report day; the report has no rating count. The public Play Store listing only provides app names and artwork.",
     missingDefinition:
       "Reports can arrive late. Known values remain visible as partial; pending and missing values are not zero. Unallocated account rows remain separate from apps.",
     create: "Create editable dashboard",

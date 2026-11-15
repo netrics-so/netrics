@@ -27,7 +27,12 @@ import {
  * content hash in `store-template.test.ts` guards this).
  */
 export const STORE_TEMPLATE_ID = "store_portfolio";
-export const STORE_TEMPLATE_VERSION = 1;
+/**
+ * 2: Google Play ratings come from Play Console rating reports (latest Total
+ * Average Rating per app, no rating count) instead of the public listing.
+ */
+export const STORE_TEMPLATE_VERSION = 2;
+type StoreTemplateVersion = 1 | 2;
 
 export const storeMetrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
 
@@ -159,8 +164,14 @@ function roundInputs(
   return level;
 }
 
-export const storeTemplate: StoreTemplateDefinition = {
-  version: STORE_TEMPLATE_VERSION,
+/**
+ * The definition of one template version. Versions 1 and 2 build the same
+ * records except the Google Play ratings preparation.
+ */
+const defineStoreTemplate = (
+  version: StoreTemplateVersion,
+): StoreTemplateDefinition => ({
+  version,
   keys(inputs) {
     const keys: StoreTemplateKey[] = [];
     for (const connection of inputs.connections)
@@ -195,6 +206,7 @@ export const storeTemplate: StoreTemplateDefinition = {
             ids["dataset:mapping"],
             ids["dataset:products"],
             inputs.locale,
+            version,
           ),
         };
     }
@@ -254,13 +266,15 @@ export const storeTemplate: StoreTemplateDefinition = {
     }
     throw new Error(`unknown store template key ${key}`);
   },
-};
+});
+
+export const storeTemplate: StoreTemplateDefinition = defineStoreTemplate(
+  STORE_TEMPLATE_VERSION,
+);
 
 /**
  * Version 1, which built every install made before versions (the baseline)
- * and every install whose dashboard original lacks its widget keys. While
- * the template is at version 1 this is the template itself; a newer version
- * must leave a frozen copy of version 1 here (`store-template.test.ts`
- * fails until it does).
+ * and every install whose dashboard original lacks its widget keys. It stays
+ * frozen (`store-template.test.ts` checks its content hash).
  */
-export const storeTemplateV1: StoreTemplateDefinition = storeTemplate;
+export const storeTemplateV1: StoreTemplateDefinition = defineStoreTemplate(1);

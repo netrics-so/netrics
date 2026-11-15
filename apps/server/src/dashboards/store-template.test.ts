@@ -72,12 +72,13 @@ function buildAll(
  */
 const VERSION_HASHES: Record<number, string> = {
   1: "44be27ea317c1faf154c41abfc16711e055ca8c47c6e6220918bba59c701aa24",
+  2: "fb33afea57cf6a1fde4b98700b7ea5385256abe28647fb7a235ae90471930337",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
 describe("versioned store template", () => {
   it("builds version 1 exactly as the install did before versions existed", () => {
-    const records = buildAll(fixtureInputs);
+    const records = buildAll(fixtureInputs, storeTemplateV1);
     expect(records.map((r) => r.key)).toEqual([
       `preparation:source:${apple.id}:downloads`,
       `preparation:source:${apple.id}:proceeds`,
@@ -105,6 +106,19 @@ describe("versioned store template", () => {
     expect(VERSION_HASHES[STORE_TEMPLATE_VERSION]).toBe(
       sha256(JSON.stringify(buildAll(fixtureInputs))),
     );
+  });
+  it("changes only the Google Play ratings preparation in version 2", () => {
+    const v1 = buildAll(fixtureInputs, storeTemplateV1),
+      v2 = buildAll(fixtureInputs);
+    expect(v2.map((record) => record.key)).toEqual(
+      v1.map((record) => record.key),
+    );
+    const changed = v2
+      .filter(
+        (record, index) => JSON.stringify(record) !== JSON.stringify(v1[index]),
+      )
+      .map((record) => record.key);
+    expect(changed).toEqual([`preparation:source:${google.id}:ratings`]);
   });
   it("keeps a single connection without an append preparation", () => {
     const single = { ...fixtureInputs, connections: [appleSource] };
@@ -255,7 +269,7 @@ describe("version 1 against the install before versions", () => {
       };
       const expected = preVersionInstall(inputs);
       // The old loop created per metric its appends and then its model.
-      const keys = storeTemplate.keys(inputs);
+      const keys = storeTemplateV1.keys(inputs);
       const metricOf = (key: string) =>
         key.startsWith("model:") ? key.split(":")[1] : key.split(":")[2];
       const oldOrder = [
@@ -276,7 +290,7 @@ describe("version 1 against the install before versions", () => {
         ids[key] = uuidFor(`created:${index}`);
       });
       for (const key of keys) {
-        const record = storeTemplate.build(key, inputs, ids);
+        const record = storeTemplateV1.build(key, inputs, ids);
         const content =
           record.kind === "preparation"
             ? record.graph

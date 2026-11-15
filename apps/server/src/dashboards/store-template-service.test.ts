@@ -328,10 +328,33 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
     expect(result.pendingSources).toBeUndefined();
     expect(result.receivedAt).toBe(now);
     const ratings = await data.query(actor(), installed.models.ratings, {
-      measureIds: ["rating"],
+      measureIds: ["rating", "rating_count", "availability"],
       groupBy: ["listing", "storefront"],
     });
-    expect(ratings.rows).toHaveLength(2);
+    // Apple's listing, and every Play app from its rating reports (#613).
+    expect(
+      ratings.rows
+        .map((row) => [
+          row.dimensions.listing,
+          row.measures.rating?.value,
+          row.measures.rating_count?.value,
+          row.measures.availability?.value,
+        ])
+        .sort(),
+    ).toEqual(
+      [
+        [apple.id + ":a", "4.5", 100, "Available"],
+        [google.id + ":com.example.alpha", "4.3333", null, "Available"],
+        [google.id + ":com.example.beta", null, null, "No ratings yet"],
+        [
+          google.id + ":com.example.delta",
+          null,
+          null,
+          "Rating report could not be read",
+        ],
+        [google.id + ":com.example.gamma", null, null, "No rating report yet"],
+      ].sort(),
+    );
     await expect(
       data.query(actor(), installed.models.ratings, {
         measureIds: ["rating"],

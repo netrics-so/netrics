@@ -20,6 +20,8 @@ export const google: StoreTemplateSource = {
     install_rows: "play-installs",
     earning_rows: "play-earnings",
     store_ratings: "play-ratings",
+    rating_rows: "play-rating-reports",
+    report_status: "play-report-status",
   },
 };
 function records(
@@ -118,6 +120,8 @@ export function inputs(): Map<string, DataTable> {
         [
           ["com.example.alpha", "Android Example"],
           ["com.example.beta", "Other app"],
+          ["com.example.gamma", "Third app"],
+          ["com.example.delta", "Fourth app"],
         ],
         "Android",
       ),
@@ -225,6 +229,53 @@ export function inputs(): Map<string, DataTable> {
           availability: "available",
         },
       ]),
+    ],
+    // Play Console rating overview reports (template version 2). Alpha's
+    // latest report day is the 4th; beta has reports but no rating yet.
+    [
+      "play-rating-reports",
+      records(definition("google", "rating_rows"), [
+        ...[
+          ["2026-10-02", "4.0", "4.2"],
+          ["2026-10-03", null, "4.25"],
+          ["2026-10-04", "5.0", "4.3333"],
+        ].map(([day, daily, total]) => ({
+          app_id: "com.example.alpha",
+          day,
+          daily_average_rating: daily,
+          total_average_rating: total,
+        })),
+        {
+          app_id: "com.example.beta",
+          day: "2026-10-04",
+          daily_average_rating: null,
+          total_average_rating: null,
+        },
+      ]),
+    ],
+    [
+      "play-report-status",
+      records(
+        definition("google", "report_status"),
+        [
+          ["com.example.alpha", "ratings", "2026-10-01", "available"],
+          ["com.example.alpha", "ratings", "2026-11-01", "not_published"],
+          ["com.example.beta", "ratings", "2026-10-01", "available"],
+          ["com.example.beta", "ratings", "2026-11-01", "not_published"],
+          ["com.example.gamma", "ratings", "2026-10-01", "not_published"],
+          ["com.example.gamma", "ratings", "2026-11-01", "not_published"],
+          // An installs row of an app without rating rows changes nothing.
+          ["com.example.gamma", "installs", "2026-11-01", "invalid_report"],
+          ["com.example.delta", "ratings", "2026-10-01", "permission_missing"],
+          ["com.example.delta", "ratings", "2026-11-01", "invalid_report"],
+        ].map(([app_id, report_type, report_month, availability]) => ({
+          app_id,
+          report_type,
+          report_month,
+          availability,
+          object_names: [],
+        })),
+      ),
     ],
   ]);
 }
