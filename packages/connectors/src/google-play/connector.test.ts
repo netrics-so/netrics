@@ -17,6 +17,7 @@ import {
 } from "./api.js";
 import { createGooglePlayConnector, googlePlayManifest } from "./index.js";
 import { listingFacts, listingSnapshot } from "./ratings.js";
+import { REPORT_READER } from "./sync.js";
 import {
   ALPHA,
   BETA,
@@ -93,7 +94,13 @@ describe("Google Play account connector", () => {
   it("declares model-ready datasets and host-managed read-only Google authorization", () => {
     expect(() => assertManifestCompatible(googlePlayManifest)).not.toThrow();
     expect(googlePlayManifest.metrics).toEqual([]);
-    expect(googlePlayManifest.datasets).toHaveLength(4);
+    expect(googlePlayManifest.datasets!.map((dataset) => dataset.key)).toEqual([
+      "install_rows",
+      "earning_rows",
+      "store_ratings",
+      "rating_rows",
+      "report_status",
+    ]);
     expect(googlePlayManifest.authStrategies).toEqual([
       {
         strategy: "oauth2",
@@ -203,18 +210,28 @@ describe("Google Play account connector", () => {
 });
 
 describe("public listing scope and availability", () => {
-  it("names the public Play Store listing as the ratings source in both languages", () => {
+  it("names Play Console rating reports as the rating source and the listing for name and artwork, in both languages", () => {
     const config = googlePlayManifest.configSchema.properties as Record<
       string,
       { description: string }
     >;
+    const de = googlePlayManifest.translations!.de!;
     expect(config.ratingStorefront!.description).toContain(
       "public Play Store listing",
     );
-    expect(
-      googlePlayManifest.translations!.de!.config!.ratingStorefront!
-        .description,
-    ).toContain("öffentlichen Play-Store-Eintrag");
+    expect(config.ratingStorefront!.description).toContain(
+      "The rating comes from Play Console rating reports",
+    );
+    expect(googlePlayManifest.description).toContain(
+      "rating from Play Console rating reports",
+    );
+    expect(de.config!.ratingStorefront!.description).toContain(
+      "öffentlichen Play-Store-Eintrag",
+    );
+    expect(de.config!.ratingStorefront!.description).toContain(
+      "Die Bewertung kommt aus den Bewertungsberichten der Play Console",
+    );
+    expect(de.description).toContain("Bewertungsberichten der Play Console");
   });
 
   it("keeps country, language and form factor explicit; zero ratings remain distinct from a missing listing", async () => {
@@ -339,12 +356,20 @@ describe("complete report ingestion", () => {
     const status = all
       .filter((page) => page.datasetKey === "report_status")
       .flatMap((page) => page.records.map((row) => row.values));
+    const reports = status.filter((row) => row.report_type !== "ratings");
     expect(
-      status.filter((row) => row.availability === "not_published"),
+      reports.filter((row) => row.availability === "not_published"),
     ).toHaveLength(4);
     expect(
-      status.filter((row) => row.availability === "available"),
+      reports.filter((row) => row.availability === "available"),
     ).toHaveLength(4);
+    // Without rating reports, each app and recent month says so (no zero rating).
+    expect(
+      status
+        .filter((row) => row.report_type === "ratings")
+        .map((row) => row.availability),
+    ).toEqual(Array(4).fill("not_published"));
+    expect(all.some((page) => page.datasetKey === "rating_rows")).toBe(false);
     expect(
       all
         .filter((page) =>
@@ -354,7 +379,7 @@ describe("complete report ingestion", () => {
     ).toBe(true);
     expect(pages.at(-1)).toMatchObject({
       done: true,
-      nextCursor: `google-play-done:2:${request.to}`,
+      nextCursor: `google-play-done:${REPORT_READER}:${request.to}`,
     });
     expect(JSON.stringify(pages)).not.toContain("synthetic-access-token");
   });

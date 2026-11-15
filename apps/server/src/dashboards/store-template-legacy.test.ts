@@ -17,7 +17,7 @@ import {
   type StoreMetric,
   type StoreTemplateSource,
 } from "./store-portfolio.js";
-import { storeTemplate } from "./store-template.js";
+import { storeTemplateV1 } from "./store-template.js";
 import { apple, google } from "./test-helpers.js";
 
 const metrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
@@ -132,7 +132,16 @@ describe("completing installs made before template versions", () => {
         groups: null,
         connections: [
           { id: apple.id, name: apple.name, datasets: apple.datasets },
-          { id: google.id, name: google.name, datasets: google.datasets },
+          {
+            id: google.id,
+            name: google.name,
+            // The datasets version 1 read; newer ones are added by updates.
+            datasets: {
+              install_rows: google.datasets.install_rows,
+              earning_rows: google.datasets.earning_rows,
+              store_ratings: google.datasets.store_ratings,
+            },
+          },
         ],
       },
     });
@@ -156,7 +165,8 @@ describe("completing installs made before template versions", () => {
       ...metrics.map((metric) => `model:${metric}`),
       "dashboard:portfolio",
     ].sort();
-    expect(keys).toEqual(storeTemplate.keys(done.inputs).sort());
+    // Installs made before versions were all made by version 1.
+    expect(keys).toEqual(storeTemplateV1.keys(done.inputs).sort());
     // Each preparation got the key of the record the template builds.
     const ids: Record<string, string> = {
       "dataset:mapping": germanFixture.result.mappingDatasetId,
@@ -165,7 +175,7 @@ describe("completing installs made before template versions", () => {
     for (const [legacy, key] of Object.entries(done.keys))
       ids[key] = legacy.slice("legacy:".length);
     for (const { id, graph } of germanFixture.preparations) {
-      const built = storeTemplate.build(
+      const built = storeTemplateV1.build(
         done.keys[`legacy:${id}`]!,
         done.inputs,
         ids as never,
@@ -288,13 +298,12 @@ describe("completing installs made before template versions", () => {
         fixedProduct: null,
         groups: null,
       };
-      if (storeTemplate.version === 1)
-        expect(v1PreparationKeys(ids).sort()).toEqual(
-          storeTemplate
-            .keys(inputs)
-            .filter((key) => key.startsWith("preparation:"))
-            .sort(),
-        );
+      expect(v1PreparationKeys(ids).sort()).toEqual(
+        storeTemplateV1
+          .keys(inputs)
+          .filter((key) => key.startsWith("preparation:"))
+          .sort(),
+      );
     }
   });
 });

@@ -22,8 +22,10 @@ import {
   earningsDataset,
   installDataset,
   listingRatingDataset,
+  ratingReportDataset,
   readEarningsReport,
   readInstallReport,
+  readRatingReport,
   reportStatusDataset,
   type Drain,
   type RowSink,
@@ -48,9 +50,10 @@ const PREFIX = "google-play-data:";
  * refused (invalid_report) can now be read: the first incremental sync after
  * the upgrade then reads the whole import window again instead of only recent
  * months, so those reports are not skipped forever. 2: report headers match
- * case- and whitespace-insensitively (#611).
+ * case- and whitespace-insensitively (#611). 3: Play Console rating overview
+ * reports are read, so a year of ratings is imported once.
  */
-export const REPORT_READER = 2;
+export const REPORT_READER = 3;
 /** Default import window, in days, of a first import and a reader catch-up. */
 export const HISTORY_DAYS = 365;
 /**
@@ -65,7 +68,7 @@ function finished(to: string): string {
 const STAGED_TURN_PAGES = 16;
 const taskSchema = z.object({
   key: z.string(),
-  kind: z.enum(["installs", "earnings"]),
+  kind: z.enum(["installs", "earnings", "ratings"]),
   month: z.iso.date(),
   appId: z.string().optional(),
 });
@@ -98,8 +101,10 @@ type State = z.infer<typeof stateSchema>;
 interface Catalog {
   installs: ReportObject[];
   earnings: ReportObject[];
+  ratings: ReportObject[];
   installPermission: boolean;
   earningsPermission: boolean;
+  ratingsPermission: boolean;
 }
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -183,6 +188,13 @@ function nameMonth(raw: string): string | undefined {
 }
 const INSTALL_FILE = /^stats\/installs\/installs_(.+)_(\d{6})_country\.csv$/;
 const EARNING_FILE = /^earnings\/earnings_(\d{6})(?:[^/]*)\.zip$/;
+/** Only the overview dimension: the rating Play Console shows for the app. */
+const RATING_FILE = /^stats\/ratings\/ratings_(.+)_(\d{6})_overview\.csv$/;
+const FILES: Record<Task["kind"], RegExp> = {
+  installs: INSTALL_FILE,
+  earnings: EARNING_FILE,
+  ratings: RATING_FILE,
+};
 
 export async function reportCatalog(
   client: PlayReportsClient,
@@ -196,15 +208,19 @@ export async function reportCatalog(
       throw error;
     }
   };
-  const [installs, earnings] = await Promise.all([
+  const [installs, earnings, ratings] = await Promise.all([
     read("stats/installs/"),
     read("earnings/"),
+    read("stats/ratings/"),
   ]);
   return {
     installs: installs.objects,
     earnings: earnings.objects,
+    // Only overview reports are read; other dimensions are not listed on.
+    ratings: ratings.objects.filter((object) => RATING_FILE.test(object.name)),
     installPermission: installs.permission,
     earningsPermission: earnings.permission,
+    ratingsPermission: ratings.permission,
   };
 }
 export function reportedPackages(objects: ReportObject[]): string[] {
@@ -224,9 +240,15 @@ function tasksFor(state: State, apps: string[], catalog: Catalog): Task[] {
     previous = priorMonth(current),
     earliest = monthOf(state.from);
   const dirtySince = Date.parse(state.since) - 7 * 86_400_000;
-  for (const object of [...catalog.installs, ...catalog.earnings]) {
+  for (const object of [
+    ...catalog.installs,
+    ...catalog.earnings,
+    ...catalog.ratings,
+  ]) {
     const match =
-      INSTALL_FILE.exec(object.name) ?? EARNING_FILE.exec(object.name);
+      INSTALL_FILE.exec(object.name) ??
+      EARNING_FILE.exec(object.name) ??
+      RATING_FILE.exec(object.name);
     const rawMonth = match?.[match.length - 1];
     if (!rawMonth) continue;
     const month = nameMonth(rawMonth);
@@ -257,6 +279,13 @@ function tasksFor(state: State, apps: string[], catalog: Catalog): Task[] {
         appId,
       });
     tasks.push({ key: `${order}:1`, kind: "earnings", month });
+    for (const appId of apps)
+      tasks.push({
+        key: `${order}:2:${appId}`,
+        kind: "ratings",
+        month,
+        appId,
+      });
   }
   return tasks.sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -310,33 +339,37 @@ const stagedFrameSchema = z.object({
 });
 type StagedFrame = z.input<typeof stagedFrameSchema>;
 function frameObjects(task: Task, catalog: Catalog): ReportObject[] {
-  return (task.kind === "installs" ? catalog.installs : catalog.earnings)
+  return catalog[task.kind]
     .filter((object) => {
-      const match =
-        task.kind === "installs"
-          ? INSTALL_FILE.exec(object.name)
-          : EARNING_FILE.exec(object.name);
+      const match = FILES[task.kind].exec(object.name);
       return !!(
         match &&
         nameMonth(match[match.length - 1]!) === task.month &&
-        (task.kind !== "installs" || match[1] === task.appId)
+        (task.kind === "earnings" || match[1] === task.appId)
       );
     })
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
+const DEFINITIONS: Record<Task["kind"], SourceDatasetDefinition> = {
+  installs: installDataset,
+  earnings: earningsDataset,
+  ratings: ratingReportDataset,
+};
 function baseFrame(task: Task, apps: string[], catalog: Catalog): Frame {
   const objects = frameObjects(task, catalog);
   const frame: Frame = {
-    definition: task.kind === "installs" ? installDataset : earningsDataset,
-    apps: task.kind === "installs" ? [task.appId!] : [...apps],
+    definition: DEFINITIONS[task.kind],
+    apps: task.kind === "earnings" ? [...apps] : [task.appId!],
     availability: "available",
     objects,
     unmapped: 0,
   };
   if (
-    !(task.kind === "installs"
-      ? catalog.installPermission
-      : catalog.earningsPermission)
+    !{
+      installs: catalog.installPermission,
+      earnings: catalog.earningsPermission,
+      ratings: catalog.ratingsPermission,
+    }[task.kind]
   )
     frame.availability = "permission_missing";
   else if (objects.length === 0) frame.availability = "not_published";
@@ -386,14 +419,14 @@ async function readReport(
   };
   const seen = new Set<string>();
   try {
-    if (task.kind === "installs") {
+    if (task.kind !== "earnings") {
       if (frame.objects.length !== 1)
         throw new ReportFormatError(
           "duplicate_reports",
-          "Google Play returned duplicate country install reports",
+          "Google Play returned duplicate per-app reports for one month",
         );
       const object = frame.objects[0]!;
-      await readInstallReport(
+      await (task.kind === "installs" ? readInstallReport : readRatingReport)(
         await download(object),
         task.appId!,
         task.month,
@@ -863,7 +896,7 @@ export async function syncPlayReports(
   const dataPage = (records: DatasetRecord[], last: boolean) => {
     const page: DatasetPage = {
       datasetKey: frame.definition.key,
-      schemaVersion: 1,
+      schemaVersion: frame.definition.version,
       refreshKey: state.refresh,
       pageKey: String(offset),
       previousPageKey: previous,

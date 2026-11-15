@@ -20,6 +20,8 @@ export const google: StoreTemplateSource = {
     install_rows: "play-installs",
     earning_rows: "play-earnings",
     store_ratings: "play-ratings",
+    rating_rows: "play-rating-reports",
+    report_status: "play-report-status",
   },
 };
 function records(
@@ -118,6 +120,14 @@ export function inputs(): Map<string, DataTable> {
         [
           ["com.example.alpha", "Android Example"],
           ["com.example.beta", "Other app"],
+          ["com.example.gamma", "Third app"],
+          ["com.example.delta", "Fourth app"],
+          ["com.example.epsilon", "Fifth app"],
+          // Selected and synced once, before rating reports were read.
+          ["com.example.zeta", "Sixth app"],
+          // Discovered for the account but not selected: never reported.
+          ["com.example.eta", "Unselected app"],
+          ["com.example.theta", "Seventh app"],
         ],
         "Android",
       ),
@@ -225,6 +235,73 @@ export function inputs(): Map<string, DataTable> {
           availability: "available",
         },
       ]),
+    ],
+    // Play Console rating overview reports (template version 2). Alpha's
+    // latest report day is the 4th; beta has reports but no rating yet.
+    [
+      "play-rating-reports",
+      records(definition("google", "rating_rows"), [
+        ...[
+          ["2026-10-02", "4.0", "4.2"],
+          ["2026-10-03", null, "4.25"],
+          ["2026-10-04", "5.0", "4.3333"],
+        ].map(([day, daily, total]) => ({
+          app_id: "com.example.alpha",
+          day,
+          daily_average_rating: daily,
+          total_average_rating: total,
+        })),
+        {
+          app_id: "com.example.beta",
+          day: "2026-10-04",
+          daily_average_rating: null,
+          total_average_rating: null,
+        },
+        // Rated in October; October's report later could not be read again
+        // (its rows stay) and November is not published yet.
+        {
+          app_id: "com.example.theta",
+          day: "2026-10-20",
+          daily_average_rating: "4.0",
+          total_average_rating: "3.5",
+        },
+        // Rated up to October; November's report cannot be read.
+        {
+          app_id: "com.example.epsilon",
+          day: "2026-10-31",
+          daily_average_rating: "3.0",
+          total_average_rating: "3.75",
+        },
+      ]),
+    ],
+    [
+      "play-report-status",
+      records(
+        definition("google", "report_status"),
+        [
+          ["com.example.alpha", "ratings", "2026-10-01", "available"],
+          ["com.example.alpha", "ratings", "2026-11-01", "not_published"],
+          ["com.example.beta", "ratings", "2026-10-01", "available"],
+          ["com.example.beta", "ratings", "2026-11-01", "not_published"],
+          ["com.example.gamma", "ratings", "2026-10-01", "not_published"],
+          ["com.example.gamma", "ratings", "2026-11-01", "not_published"],
+          // An installs row of an app without rating rows changes nothing.
+          ["com.example.gamma", "installs", "2026-11-01", "invalid_report"],
+          ["com.example.delta", "ratings", "2026-10-01", "permission_missing"],
+          ["com.example.delta", "ratings", "2026-11-01", "invalid_report"],
+          ["com.example.epsilon", "ratings", "2026-10-01", "available"],
+          ["com.example.epsilon", "ratings", "2026-11-01", "invalid_report"],
+          ["com.example.theta", "ratings", "2026-10-01", "invalid_report"],
+          ["com.example.theta", "ratings", "2026-11-01", "not_published"],
+          ["com.example.zeta", "installs", "2026-11-01", "not_published"],
+        ].map(([app_id, report_type, report_month, availability]) => ({
+          app_id,
+          report_type,
+          report_month,
+          availability,
+          object_names: [],
+        })),
+      ),
     ],
   ]);
 }

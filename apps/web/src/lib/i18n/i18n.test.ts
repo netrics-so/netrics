@@ -7,13 +7,20 @@ import { instanceDefaultLocale, requestLocale } from "./locale";
 import { EN_AREAS, en } from "@/messages/en";
 
 describe("web catalogs", () => {
-  it("names the public Play Store listing as the source of Google Play ratings", () => {
+  it("names Play Console rating reports as the source of Google Play ratings, the listing only for names and artwork", () => {
     expect(en.storeTemplate.ratingsDefinition).toContain(
-      "public Play Store listing",
+      "rating from Play Console rating reports",
     );
-    expect(WEB_CATALOGS.de.storeTemplate.ratingsDefinition).toContain(
-      "öffentlichen Play-Store-Eintrag",
+    expect(en.storeTemplate.ratingsDefinition).toContain(
+      "the report has no rating count",
     );
+    expect(en.storeTemplate.ratingsDefinition).toContain(
+      "public Play Store listing only provides app names and artwork",
+    );
+    const de = WEB_CATALOGS.de.storeTemplate.ratingsDefinition;
+    expect(de).toContain("Bewertungsberichten der Play Console");
+    expect(de).toContain("keine Anzahl");
+    expect(de).toContain("öffentliche Play-Store-Eintrag liefert nur");
   });
 
   it.each(SUPPORTED_LOCALES.filter((locale) => locale !== "en"))(

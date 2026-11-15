@@ -55,6 +55,10 @@ export const storeTemplateCopy = (locale: Locale) =>
         unrated: "Noch keine Bewertungen",
         notListed: "Nicht im gewählten Land gelistet",
         unavailable: "Derzeit nicht verfügbar",
+        noRatingReport: "Noch kein Bewertungsbericht",
+        noRatingAccess: "Kein Zugriff auf Bewertungsberichte",
+        unreadableRatingReport: "Bewertungsbericht nicht lesbar",
+        allCountries: "Alle Länder",
         unallocated: "Nicht zugeordnete Berichtszeilen",
         noCurrency: "Dieser Wert ist kein Geldbetrag.",
         noCountry:
@@ -86,6 +90,10 @@ export const storeTemplateCopy = (locale: Locale) =>
         unrated: "No ratings yet",
         notListed: "Not listed in this country",
         unavailable: "Temporarily unavailable",
+        noRatingReport: "No rating report yet",
+        noRatingAccess: "No access to rating reports",
+        unreadableRatingReport: "Rating report could not be read",
+        allCountries: "All countries",
         unallocated: "Unallocated report rows",
         noCurrency: "This value is not a monetary amount.",
         noCountry:
@@ -94,16 +102,305 @@ export const storeTemplateCopy = (locale: Locale) =>
           "This measure uses the install or sale country rather than the listing country.",
       };
 
-/** Inspectable ordinary preparation steps; no store logic enters query execution. */
+const nullOf = (type: "string" | "integer" | "decimal", unit?: string) =>
+  ({
+    kind: "literal",
+    type,
+    value: null,
+    ...(unit ? { unit } : {}),
+  }) as DataExpression;
+/** A source dataset of the connection; a placeholder until it is registered. */
+const sourceDataset = (source: StoreTemplateSource, key: string) =>
+  source.datasets[key] ?? `pending:${source.id}:${key}`;
+
+/** The storefront value of a Play Console rating report: every country. */
+export const ALL_STOREFRONTS = "ALL";
+
+/**
+ * Google Play ratings since template version 2, from Play Console's rating
+ * reports. Per rated report day: the Total Average Rating (Play reports no
+ * rating count), its report day as the "as of" day, and "available" unless
+ * the app's latest rating report month could not be read or accessed (the
+ * last value stays, with that reason; a month not published yet is the
+ * normal report lag). Every other app the connection reads (install or
+ * rating report status) gets one row saying why there is no rating: no
+ * ratings yet, no report yet, no access, or an unreadable report.
+ * `captured_at` only orders rows (the latest report day wins). Output: the
+ * listing snapshot's columns plus `storefront_name`, ending in node `raw`.
+ */
+function playRatingReportNodes(
+  source: StoreTemplateSource,
+  t: ReturnType<typeof storeTemplateCopy>,
+): PreparationNode[] {
+  const columns = [
+    "app_id",
+    "day",
+    "captured_at",
+    "rating",
+    "rating_count",
+    "availability",
+    "storefront",
+    "storefront_name",
+    "app_name",
+  ];
+  const nodes: PreparationNode[] = [];
+  let current = "";
+  const step = (node: PreparationNode) => {
+    nodes.push(node);
+    current = node.id;
+  };
+  const calc = (
+    id: string,
+    fieldId: string,
+    name: string,
+    expression: DataExpression,
+  ) =>
+    step({ id, type: "calculate", input: current, fieldId, name, expression });
+  const eq = (fieldId: string, value: string) =>
+    call("eq", field(fieldId), text(value));
+  const common = (prefix: string) => {
+    calc(`${prefix}_count`, "rating_count", t.ratingCount, nullOf("integer"));
+    calc(
+      `${prefix}_storefront`,
+      "storefront",
+      t.storefront,
+      text(ALL_STOREFRONTS),
+    );
+    calc(
+      `${prefix}_storefront_name`,
+      "storefront_name",
+      t.storefront,
+      text(t.allCountries),
+    );
+    calc(`${prefix}_name`, "app_name", t.app, nullOf("string"));
+    step({
+      id: `${prefix}_ratings`,
+      type: "select",
+      input: current,
+      fields: columns,
+    });
+  };
+
+  // Rating report availability per app: its latest month, whether any
+  // month was published, and when it was last checked.
+  step({
+    id: "status_rows",
+    type: "source",
+    datasetId: sourceDataset(source, "report_status"),
+  });
+  step({
+    id: "rating_status",
+    type: "filter",
+    input: current,
+    expression: eq("report_type", "ratings"),
+  });
+  step({
+    id: "status_by_app",
+    type: "group",
+    input: current,
+    keys: ["app_id"],
+    aggregates: [
+      {
+        id: "latest",
+        name: t.availability,
+        op: "last",
+        fieldId: "availability",
+        orderBy: "report_month",
+      },
+      // The reason a rating may be missing or outdated: the latest month
+      // that is not merely unpublished (a new month is the normal lag and
+      // must not hide that the month before could not be read).
+      {
+        id: "reason",
+        name: t.availability,
+        op: "last",
+        fieldId: "availability",
+        orderBy: "report_month",
+        filter: call("ne", field("availability"), text("not_published")),
+      },
+      {
+        id: "reported",
+        name: "Available reports",
+        op: "count",
+        filter: eq("availability", "available"),
+      },
+      { id: "checked_at", name: t.checked, op: "max", fieldId: "captured_at" },
+    ],
+  });
+
+  // Rated report days.
+  step({
+    id: "report_rows",
+    type: "source",
+    datasetId: sourceDataset(source, "rating_rows"),
+  });
+  step({
+    id: "rated_rows",
+    type: "filter",
+    input: current,
+    expression: call("not", call("is_null", field("total_average_rating"))),
+  });
+  step({
+    id: "report_status",
+    type: "join",
+    left: "rated_rows",
+    right: "status_by_app",
+    keys: [{ left: "app_id", right: "app_id" }],
+    mode: "left",
+    cardinality: "many_to_one",
+    rightPrefix: "status.",
+  });
+  calc(
+    "report_order",
+    "captured_at",
+    t.checked,
+    call("to_timestamp", field("day")),
+  );
+  calc("report_rating", "rating", t.rating, field("total_average_rating"));
+  calc(
+    "report_availability",
+    "availability",
+    t.availability,
+    call(
+      "if",
+      eq("status.reason", "permission_missing"),
+      text("permission_missing"),
+      call(
+        "if",
+        eq("status.reason", "invalid_report"),
+        text("invalid_report"),
+        text("available"),
+      ),
+    ),
+  );
+  common("report");
+
+  // Every other app the connection reads: install report status is written
+  // for each selected app from its first sync (discovered apps that are not
+  // selected have none), and rating report status for each rated one.
+  step({
+    id: "install_status",
+    type: "filter",
+    input: "status_rows",
+    expression: eq("report_type", "installs"),
+  });
+  step({
+    id: "install_apps",
+    type: "select",
+    input: current,
+    fields: ["app_id"],
+  });
+  step({
+    id: "status_apps",
+    type: "select",
+    input: "status_by_app",
+    fields: ["app_id"],
+  });
+  step({
+    id: "known_apps_all",
+    type: "append",
+    inputs: ["install_apps", "status_apps"],
+  });
+  step({
+    id: "known_apps",
+    type: "deduplicate",
+    input: current,
+    keys: ["app_id"],
+    keep: "first",
+  });
+  step({
+    id: "rated_apps",
+    type: "group",
+    input: "rated_rows",
+    keys: ["app_id"],
+    aggregates: [{ id: "days", name: "Rated days", op: "count" }],
+  });
+  step({
+    id: "known_status",
+    type: "join",
+    left: "known_apps",
+    right: "status_by_app",
+    keys: [{ left: "app_id", right: "app_id" }],
+    mode: "left",
+    cardinality: "many_to_one",
+    rightPrefix: "status.",
+  });
+  step({
+    id: "known_rated",
+    type: "join",
+    left: current,
+    right: "rated_apps",
+    keys: [{ left: "app_id", right: "app_id" }],
+    mode: "left",
+    cardinality: "many_to_one",
+    rightPrefix: "rated.",
+  });
+  step({
+    id: "without_rating",
+    type: "filter",
+    input: current,
+    expression: call("is_null", field("rated.days")),
+  });
+  // Ordering only: an app never checked has this one row.
+  calc(
+    "status_order",
+    "captured_at",
+    t.checked,
+    call("coalesce", field("status.checked_at"), {
+      kind: "literal",
+      type: "timestamp",
+      value: "1970-01-01T00:00:00.000Z",
+    }),
+  );
+  calc("status_day", "day", t.day, call("to_date", field("status.checked_at")));
+  calc("status_rating", "rating", t.rating, nullOf("decimal", "stars"));
+  // Published reports without a rated day: no ratings yet. A selected app
+  // without rating report status yet: no report yet.
+  calc(
+    "status_availability",
+    "availability",
+    t.availability,
+    call(
+      "if",
+      call("is_null", field("status.latest")),
+      text("not_published"),
+      call(
+        "if",
+        call("gt", field("status.reported"), {
+          kind: "literal",
+          type: "integer",
+          value: 0,
+        }),
+        text("unrated"),
+        call("coalesce", field("status.reason"), field("status.latest")),
+      ),
+    ),
+  );
+  common("status");
+  nodes.push({
+    id: "raw",
+    type: "append",
+    inputs: ["report_ratings", "status_ratings"],
+  });
+  return nodes;
+}
+
+/**
+ * Inspectable ordinary preparation steps; no store logic enters query
+ * execution. `templateVersion` is the store template version that builds it:
+ * version 2 reads Google Play ratings from Play Console rating reports.
+ */
 export function buildStorePreparation(
   source: StoreTemplateSource,
   metric: StoreMetric,
   mappingId: string,
   productDatasetId: string,
   locale: Locale,
+  templateVersion: 1 | 2 = 1,
 ): PreparationGraph {
   const t = storeTemplateCopy(locale),
     apple = source.connectorId === "app-store-connect";
+  const playReports = !apple && metric === "ratings" && templateVersion >= 2;
   const dataset =
     source.datasets[
       metric === "ratings"
@@ -115,7 +412,9 @@ export function buildStorePreparation(
             : "earning_rows"
     ]!;
   const nodes: PreparationNode[] = [
-    { id: "raw", type: "source", datasetId: dataset },
+    ...(playReports
+      ? playRatingReportNodes(source, t)
+      : [{ id: "raw", type: "source" as const, datasetId: dataset }]),
     {
       id: "resource_names",
       type: "source",
@@ -276,18 +575,38 @@ export function buildStorePreparation(
           "if",
           call("eq", field("availability"), text("unrated")),
           text(t.unrated),
-          call(
-            "if",
-            call("eq", field("availability"), text("not_listed")),
-            text(t.notListed),
-            text(t.unavailable),
-          ),
+          playReports
+            ? [
+                ["not_published", t.noRatingReport],
+                ["permission_missing", t.noRatingAccess],
+                ["invalid_report", t.unreadableRatingReport],
+              ].reduceRight<DataExpression>(
+                (otherwise, [value, label]) =>
+                  call(
+                    "if",
+                    call("eq", field("availability"), text(value!)),
+                    text(label!),
+                    otherwise,
+                  ),
+                text(t.unavailable),
+              )
+            : call(
+                "if",
+                call("eq", field("availability"), text("not_listed")),
+                text(t.notListed),
+                text(t.unavailable),
+              ),
         ),
       ),
     );
+    // Version 2: the storefront has a display name, so a storefront value
+    // can stay the same in every language (Play reports: "ALL").
+    if (templateVersion >= 2 && apple)
+      calculate("storefront_name", t.storefront, field("storefront"));
     columns.push(
       "listing_name",
       "storefront",
+      ...(templateVersion >= 2 ? ["storefront_name"] : []),
       "captured_at",
       "rating",
       "rating_count",
@@ -325,10 +644,17 @@ export function buildStoreAppend(inputs: string[]): PreparationGraph {
   return { version: 1, nodes, outputs: [level[0]!] };
 }
 
+/**
+ * The model of one metric. Version 2 ratings: the storefront dimension has a
+ * display name, and "Checked at" is the as-of day (a date: a Play report day
+ * reads the same in every viewer time zone); rows are still ordered by
+ * their capture time.
+ */
 export function buildStoreModel(
   metric: StoreMetric,
   datasetId: string,
   locale: Locale,
+  templateVersion: 1 | 2 = 1,
 ): SemanticModelDefinition {
   const t = storeTemplateCopy(locale);
   const dimensions: ModelDimension[] = [
@@ -421,7 +747,13 @@ export function buildStoreModel(
       fieldId: "app_key",
       labelFieldId: "listing_name",
     },
-    { id: "storefront", name: t.storefront, datasetId, fieldId: "storefront" },
+    {
+      id: "storefront",
+      name: t.storefront,
+      datasetId,
+      fieldId: "storefront",
+      ...(templateVersion >= 2 ? { labelFieldId: "storefront_name" } : {}),
+    },
   );
   return {
     version: 1,
@@ -431,7 +763,7 @@ export function buildStoreModel(
     measures: [
       ["rating", t.rating, "rating"],
       ["rating_count", t.ratingCount, "rating_count"],
-      ["checked", t.checked, "captured_at"],
+      ["checked", t.checked, templateVersion >= 2 ? "day" : "captured_at"],
       ["availability", t.availability, "availability_label"],
     ].map(([id, name, fieldId]) => ({
       id: id!,
