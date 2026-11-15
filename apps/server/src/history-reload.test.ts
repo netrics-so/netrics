@@ -401,14 +401,28 @@ describe("reload history (#617)", () => {
       update connection_state set backfilled_datasets = '{}'::jsonb
       where connection_id = ${connectionId}`;
     expect((await detail(connectionId)).history.incompleteDatasets).toEqual([]);
-    await admin`
+    const [dataset] = await admin<{ id: string; workspace_id: string }[]>`
       insert into data_datasets (workspace_id, connection_id, kind, key, name)
       select workspace_id, id, 'source', 'sales', 'Sales rows'
-      from connections where id = ${connectionId}`;
+      from connections where id = ${connectionId}
+      returning id, workspace_id`;
+    await admin`
+      insert into data_schema_versions (dataset_id, workspace_id, version, definition)
+      values (${dataset!.id}, ${dataset!.workspace_id}, 2, '{}'::jsonb)`;
+    const generation = (sequence: number, rows: number) => admin`
+      insert into data_generations (dataset_id, workspace_id, schema_version,
+        refresh_key, source_started_at, sequence, row_count)
+      values (${dataset!.id}, ${dataset!.workspace_id}, 2, ${`r${sequence}`},
+        now(), ${sequence}, ${rows})`;
     // Recorded at an older schema version, as after a connector update.
     await admin`
       update connection_state set backfilled_datasets = ${admin.json({ sales: 1 })}
       where connection_id = ${connectionId}`;
+    // Received and empty (#666): still no history to fill.
+    await generation(1, 0);
+    expect((await detail(connectionId)).history.incompleteDatasets).toEqual([]);
+    // Once it holds rows, its history is incomplete.
+    await generation(2, 3);
     expect((await detail(connectionId)).history.incompleteDatasets).toEqual([
       { key: "sales", name: "Sales rows" },
     ]);
