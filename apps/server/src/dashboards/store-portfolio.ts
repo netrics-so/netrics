@@ -12,6 +12,8 @@ import type { CreateDashboardRequest } from "@netrics/contracts";
 
 export type StoreConnectorId = "app-store-connect" | "google-play";
 export type StoreMetric = "downloads" | "proceeds" | "ratings";
+/** The store template versions this module builds (see store-template.ts). */
+export type StoreTemplateVersion = 1 | 2 | 3;
 export interface StoreTemplateSource {
   id: string;
   name: string;
@@ -61,6 +63,13 @@ export const storeTemplateCopy = (locale: Locale) =>
         allCountries: "Alle Länder",
         unallocated: "Nicht zugeordnete Berichtszeilen",
         noCurrency: "Dieser Wert ist kein Geldbetrag.",
+        appLabel: "App (mit Store bei gleichem Namen)",
+        appStores: "Stores der App",
+        appsWithName: "Apps mit diesem Namen",
+        rows: "Zeilen",
+        appLabels: "App-Bezeichnungen",
+        currencyName: "Währungsname",
+        withoutCurrency: "Ohne Währung",
         noCountry:
           "Bewertungen verwenden das Bewertungsland, nicht das Installations- oder Verkaufsland.",
         noStorefront:
@@ -96,11 +105,26 @@ export const storeTemplateCopy = (locale: Locale) =>
         allCountries: "All countries",
         unallocated: "Unallocated report rows",
         noCurrency: "This value is not a monetary amount.",
+        appLabel: "App (with store where names repeat)",
+        appStores: "Stores of the app",
+        appsWithName: "Apps with this name",
+        rows: "Rows",
+        appLabels: "App labels",
+        currencyName: "Currency name",
+        withoutCurrency: "No currency",
         noCountry:
           "Ratings use the listing country rather than the install or sale country.",
         noStorefront:
           "This measure uses the install or sale country rather than the listing country.",
       };
+
+const decimal = (value: string): DataExpression => ({
+  kind: "literal",
+  type: "decimal",
+  value,
+});
+/** The ISO 4217 code App Store sales rows carry when they have no currency. */
+const NO_CURRENCY = "XXX";
 
 const nullOf = (type: "string" | "integer" | "decimal", unit?: string) =>
   ({
@@ -396,7 +420,7 @@ export function buildStorePreparation(
   mappingId: string,
   productDatasetId: string,
   locale: Locale,
-  templateVersion: 1 | 2 = 1,
+  templateVersion: StoreTemplateVersion = 1,
 ): PreparationGraph {
   const t = storeTemplateCopy(locale),
     apple = source.connectorId === "app-store-connect";
@@ -506,14 +530,6 @@ export function buildStorePreparation(
     t.store,
     text(apple ? "Apple App Store" : "Google Play"),
   );
-  const columns = [
-    "app_key",
-    "product_id",
-    "product_name",
-    "store",
-    "store_name",
-    "day",
-  ];
   if (metric === "downloads") {
     if (apple) {
       nodes.push({
@@ -537,7 +553,6 @@ export function buildStorePreparation(
       t.downloads,
       call("to_decimal", field(apple ? "units" : "daily_user_installs")),
     );
-    columns.push("country", "downloads");
   } else if (metric === "proceeds") {
     if (!apple) calculate("day", t.day, field("transaction_day"));
     calculate(
@@ -547,7 +562,36 @@ export function buildStorePreparation(
         ? call("multiply", field("units"), field("developer_proceeds_per_unit"))
         : field("merchant_amount"),
     );
-    columns.push("country", "amount", "amount.currency");
+    if (templateVersion >= 3) {
+      // Version 3 (#620): rows without proceeds (free units, empty report
+      // rows) are left out, so a currency without proceeds in the period
+      // has no row; a remaining row without a currency (ISO "XXX") is named.
+      nodes.push({
+        id: "paid_rows",
+        type: "filter",
+        input: current,
+        expression: call(
+          "ne",
+          call("coalesce", field("amount"), decimal("0")),
+          decimal("0"),
+        ),
+      });
+      current = "paid_rows";
+      calculate(
+        "currency_name",
+        t.currencyName,
+        call(
+          "if",
+          call(
+            "eq",
+            call("coalesce", field("amount.currency"), text("")),
+            text(NO_CURRENCY),
+          ),
+          text(t.withoutCurrency),
+          field("amount.currency"),
+        ),
+      );
+    }
   } else {
     calculate(
       "listing_name",
@@ -603,6 +647,38 @@ export function buildStorePreparation(
     // can stay the same in every language (Play reports: "ALL").
     if (templateVersion >= 2 && apple)
       calculate("storefront_name", t.storefront, field("storefront"));
+  }
+  nodes.push({
+    id: "output",
+    type: "select",
+    input: current,
+    fields: storeOutputColumns(metric, templateVersion),
+  });
+  return { version: 1, nodes, outputs: ["output"] };
+}
+
+/** The columns of a store preparation's output, the same for both stores. */
+export function storeOutputColumns(
+  metric: StoreMetric,
+  templateVersion: StoreTemplateVersion,
+): string[] {
+  const columns = [
+    "app_key",
+    "product_id",
+    "product_name",
+    "store",
+    "store_name",
+    "day",
+  ];
+  if (metric === "downloads") columns.push("country", "downloads");
+  else if (metric === "proceeds")
+    columns.push(
+      "country",
+      "amount",
+      "amount.currency",
+      ...(templateVersion >= 3 ? ["currency_name"] : []),
+    );
+  else
     columns.push(
       "listing_name",
       "storefront",
@@ -612,9 +688,7 @@ export function buildStorePreparation(
       "rating_count",
       "availability_label",
     );
-  }
-  nodes.push({ id: "output", type: "select", input: current, fields: columns });
-  return { version: 1, nodes, outputs: ["output"] };
+  return columns;
 }
 
 /** Up to 80 sources per graph; callers compose further graphs without an account-count ceiling. */
@@ -644,6 +718,190 @@ export function buildStoreAppend(inputs: string[]): PreparationGraph {
   return { version: 1, nodes, outputs: [level[0]!] };
 }
 
+const integer = (value: number): DataExpression => ({
+  kind: "literal",
+  type: "integer",
+  value,
+});
+
+/**
+ * Version 3 (#621): one display label per app, shared by all three models,
+ * from the apps in `inputs` (the template passes the combined downloads
+ * data only, so the proceeds and ratings sources never hold up or fail the
+ * downloads model; an app without downloads keeps its name in every model).
+ * Where apps of different stores share a display name, the label of each
+ * app that lives in one store says which ("Example App · Google Play"); a
+ * product the customer linked across stores keeps its name. Output
+ * `labels`: product_id, product_label.
+ */
+export function buildStoreAppLabels(
+  inputs: string[],
+  locale: Locale,
+): PreparationGraph {
+  const t = storeTemplateCopy(locale);
+  const appColumns = ["product_id", "product_name", "store", "store_name"];
+  const nodes: PreparationNode[] = [];
+  // Each metric's apps first (a few rows each), then the union.
+  inputs.forEach((datasetId, index) => {
+    nodes.push(
+      { id: `facts_${index}`, type: "source", datasetId },
+      {
+        id: `apps_${index}`,
+        type: "group",
+        input: `facts_${index}`,
+        keys: appColumns,
+        aggregates: [{ id: "rows", name: t.rows, op: "count" }],
+      },
+      {
+        id: `app_columns_${index}`,
+        type: "select",
+        input: `apps_${index}`,
+        fields: appColumns,
+      },
+    );
+  });
+  const apps = inputs.length === 1 ? "app_columns_0" : "apps";
+  if (inputs.length > 1)
+    nodes.push({
+      id: "apps",
+      type: "append",
+      inputs: inputs.map((_, index) => `app_columns_${index}`),
+    });
+  nodes.push(
+    {
+      id: "app_stores",
+      type: "group",
+      input: apps,
+      keys: ["product_id"],
+      aggregates: [
+        {
+          id: "stores",
+          name: t.appStores,
+          op: "distinct_count",
+          fieldId: "store",
+        },
+      ],
+    },
+    {
+      id: "one_per_app",
+      type: "deduplicate",
+      input: apps,
+      keys: ["product_id"],
+      keep: "first",
+    },
+    {
+      id: "apps_by_name",
+      type: "group",
+      input: "one_per_app",
+      keys: ["product_name"],
+      aggregates: [{ id: "apps", name: t.appsWithName, op: "count" }],
+    },
+    {
+      id: "join_app_stores",
+      type: "join",
+      left: "one_per_app",
+      right: "app_stores",
+      keys: [{ left: "product_id", right: "product_id" }],
+      mode: "left",
+      cardinality: "many_to_one",
+      rightPrefix: "app_stores.",
+    },
+    {
+      id: "join_apps_by_name",
+      type: "join",
+      left: "join_app_stores",
+      right: "apps_by_name",
+      keys: [{ left: "product_name", right: "product_name" }],
+      mode: "left",
+      cardinality: "many_to_one",
+      rightPrefix: "apps_by_name.",
+    },
+    {
+      id: "calculate_product_label",
+      type: "calculate",
+      input: "join_apps_by_name",
+      fieldId: "product_label",
+      name: t.appLabel,
+      expression: call(
+        "if",
+        call(
+          "and",
+          call(
+            "gt",
+            call("coalesce", field("apps_by_name.apps"), integer(1)),
+            integer(1),
+          ),
+          call(
+            "eq",
+            call("coalesce", field("app_stores.stores"), integer(0)),
+            integer(1),
+          ),
+        ),
+        call("concat", field("product_name"), text(" · "), field("store_name")),
+        field("product_name"),
+      ),
+    },
+    {
+      id: "labels",
+      type: "select",
+      input: "calculate_product_label",
+      fields: ["product_id", "product_label"],
+    },
+  );
+  return { version: 1, nodes, outputs: ["labels"] };
+}
+
+/**
+ * Version 3: one metric's combined data with the app label of
+ * `buildStoreAppLabels` (the app's name where it has none). Output
+ * `labelled`: the store columns plus product_label.
+ */
+export function buildStoreLabelled(
+  metric: StoreMetric,
+  factsId: string,
+  labelsId: string,
+  locale: Locale,
+): PreparationGraph {
+  const t = storeTemplateCopy(locale);
+  const columns = storeOutputColumns(metric, 3);
+  return {
+    version: 1,
+    nodes: [
+      { id: "facts", type: "source", datasetId: factsId },
+      { id: "labels", type: "source", datasetId: labelsId },
+      {
+        id: "join_labels",
+        type: "join",
+        left: "facts",
+        right: "labels",
+        keys: [{ left: "product_id", right: "product_id" }],
+        mode: "left",
+        cardinality: "many_to_one",
+        rightPrefix: "app.",
+      },
+      {
+        id: "calculate_product_label",
+        type: "calculate",
+        input: "join_labels",
+        fieldId: "product_label",
+        name: t.appLabel,
+        expression: call(
+          "coalesce",
+          field("app.product_label"),
+          field("product_name"),
+        ),
+      },
+      {
+        id: "labelled",
+        type: "select",
+        input: "calculate_product_label",
+        fields: [...columns.slice(0, 3), "product_label", ...columns.slice(3)],
+      },
+    ],
+    outputs: ["labelled"],
+  };
+}
+
 /**
  * The model of one metric. Version 2 ratings: the storefront dimension has a
  * display name, and "Checked at" is the as-of day (a date: a Play report day
@@ -654,7 +912,7 @@ export function buildStoreModel(
   metric: StoreMetric,
   datasetId: string,
   locale: Locale,
-  templateVersion: 1 | 2 = 1,
+  templateVersion: StoreTemplateVersion = 1,
 ): SemanticModelDefinition {
   const t = storeTemplateCopy(locale);
   const dimensions: ModelDimension[] = [
@@ -663,7 +921,7 @@ export function buildStoreModel(
       name: t.app,
       datasetId,
       fieldId: "product_id",
-      labelFieldId: "product_name",
+      labelFieldId: templateVersion >= 3 ? "product_label" : "product_name",
     },
     {
       id: "store",
@@ -715,6 +973,7 @@ export function buildStoreModel(
       name: t.currency,
       datasetId,
       fieldId: "amount.currency",
+      ...(templateVersion >= 3 ? { labelFieldId: "currency_name" } : {}),
     });
     return {
       version: 1,

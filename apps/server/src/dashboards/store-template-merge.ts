@@ -1,4 +1,5 @@
 import {
+  isCombinePreparation,
   isScopeItem,
   itemKindOf,
   mergeDatasets,
@@ -210,8 +211,7 @@ export function classify(
       if (same(c, n)) continue;
       // An append preparation is regenerated from the app scope, but a part
       // the customer edited stays theirs until they pick the template's.
-      const edited =
-        recordKeyOf(ref).startsWith("preparation:append:") && !same(c, o);
+      const edited = isCombinePreparation(recordKeyOf(ref)) && !same(c, o);
       plan.push({
         ref,
         change:

@@ -109,7 +109,8 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
     installed = await service().install(actor(), input);
     expect(await count("dashboards")).toBe(1);
     expect(await count("data_models")).toBe(3);
-    expect(await count("data_preparations")).toBe(9);
+    // Sources, appends and (version 3) the app labels and labelled data.
+    expect(await count("data_preparations")).toBe(6 + 3 + 1 + 3);
     expect(await count("data_template_installs")).toBe(1);
     const [data] =
       await owner`select count(*)::int as count from data_generations g join data_datasets d on d.id=g.dataset_id where d.workspace_id=${workspaceId} and d.kind='source'`;
@@ -121,6 +122,8 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
       { measureIds: ["downloads"], groupBy: ["app", "store"] },
     );
     expect(result.rows).toEqual([]);
+    // The app labels read the downloads data only: the downloads model
+    // waits for its own two sources, not proceeds' or ratings'.
     expect(result.pendingSources).toHaveLength(2);
     const choices = await withWorkspace(db, { workspaceId }, (tx) =>
       dashboardDimensionValues(
@@ -152,7 +155,7 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
     });
     const records =
       await owner`select key, kind, record_id, template_version, original, widget_keys from data_template_records where workspace_id=${workspaceId} order by key`;
-    expect(records).toHaveLength(6 + 3 + 3 + 1 + 2);
+    expect(records).toHaveLength(6 + 3 + 4 + 3 + 1 + 2);
     expect(records.map((r) => r.key)).toContain(
       `preparation:source:${apple.id}:downloads`,
     );
@@ -684,7 +687,7 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
       db,
       registry,
       now: () => new Date(now),
-      // 15 records: 4 statements, the last one partly filled.
+      // 19 records: 5 statements, the last one partly filled.
       recordChunk: 4,
     });
     const requestId = randomUUID();
@@ -694,7 +697,7 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
     );
     const records =
       await owner`select key, record_id from data_template_records where workspace_id=${workspace} and request_id=${requestId}`;
-    expect(records).toHaveLength(6 + 3 + 3 + 1 + 2);
+    expect(records).toHaveLength(6 + 3 + 4 + 3 + 1 + 2);
     expect(new Set(records.map((r) => r.key)).size).toBe(records.length);
     expect(
       records.find((r) => r.key === "dashboard:portfolio")!.record_id,

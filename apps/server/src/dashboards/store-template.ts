@@ -11,13 +11,16 @@ import {
   type StoreTemplateRequest,
 } from "@netrics/contracts";
 import {
+  buildStoreAppLabels,
   buildStoreAppend,
+  buildStoreLabelled,
   buildStoreDashboardTemplate,
   buildStoreModel,
   buildStorePreparation,
   storeTemplateCopy,
   type StoreConnectorId,
   type StoreMetric,
+  type StoreTemplateVersion,
 } from "./store-portfolio.js";
 
 /**
@@ -31,8 +34,14 @@ export const STORE_TEMPLATE_ID = "store_portfolio";
  * 2: Google Play ratings come from Play Console rating reports (latest Total
  * Average Rating per app, no rating count) instead of the public listing.
  */
-export const STORE_TEMPLATE_VERSION = 2;
-type StoreTemplateVersion = 1 | 2;
+/**
+ * 3: proceeds leave out rows without proceeds and name a missing currency
+ * (#620); one app label for all three models, from the downloads data, adds
+ * the store where apps of different stores share a name (#621):
+ * `preparation:labels` and a `preparation:labelled:<metric>` per metric,
+ * which the models read.
+ */
+export const STORE_TEMPLATE_VERSION = 3;
 
 export const storeMetrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
 
@@ -71,6 +80,7 @@ export interface StoreTemplateInputs {
  * Version 1 grammar: `preparation:source:<connectionId>:<metric>`,
  * `preparation:append:<metric>:<round>:<index>`, `model:<metric>`,
  * `dashboard:portfolio`; plus `dataset:mapping` and `dataset:products`.
+ * Version 3 adds `preparation:labels` and `preparation:labelled:<metric>`.
  */
 export type StoreTemplateKey = string;
 export type StoreTemplateIds = Record<StoreTemplateKey, string> & {
@@ -114,6 +124,9 @@ const APPEND_WIDTH = 80;
 
 export const sourceKey = (connectionId: string, metric: StoreMetric) =>
   `preparation:source:${connectionId}:${metric}`;
+export const LABELS_KEY = "preparation:labels";
+export const labelledKey = (metric: StoreMetric) =>
+  `preparation:labelled:${metric}`;
 export const appendKey = (metric: StoreMetric, round: number, index: number) =>
   `preparation:append:${metric}:${round}:${index}`;
 
@@ -166,7 +179,9 @@ function roundInputs(
 
 /**
  * The definition of one template version. Versions 1 and 2 build the same
- * records except the Google Play ratings preparation.
+ * records except the Google Play ratings preparation. Version 3 changes the
+ * proceeds sources and the models and adds the label preparations; the
+ * dashboard stays.
  */
 const defineStoreTemplate = (
   version: StoreTemplateVersion,
@@ -183,6 +198,10 @@ const defineStoreTemplate = (
         for (let index = 0; index < count; index++)
           keys.push(appendKey(metric, round, index));
       });
+    if (version >= 3) {
+      keys.push(LABELS_KEY);
+      for (const metric of storeMetrics) keys.push(labelledKey(metric));
+    }
     for (const metric of storeMetrics) keys.push(`model:${metric}`);
     keys.push("dashboard:portfolio");
     return keys;
@@ -236,19 +255,57 @@ const defineStoreTemplate = (
         };
       }
     }
-    if (parts[0] === "model" && isMetric(parts[1]) && parts.length === 2) {
-      const metric = parts[1];
-      const [datasetId] = roundInputs(
+    /** The single combined data of a metric (before labels). */
+    const combined = (metric: StoreMetric) =>
+      roundInputs(
         metric,
         appendRounds(inputs.connections.length).length,
         inputs,
         ids,
-      );
+      )[0]!;
+    if (version >= 3 && key === LABELS_KEY)
+      return {
+        kind: "preparation",
+        key,
+        name: `${inputs.name} · ${t.appLabels}`.slice(0, 100),
+        graph: buildStoreAppLabels(
+          // Downloads only: a pending or failing proceeds or ratings
+          // source must not hold up or fail the other models.
+          [combined("downloads")],
+          inputs.locale,
+        ),
+      };
+    if (
+      version >= 3 &&
+      parts[0] === "preparation" &&
+      parts[1] === "labelled" &&
+      isMetric(parts[2]) &&
+      parts.length === 3
+    ) {
+      const metric = parts[2];
+      return {
+        kind: "preparation",
+        key,
+        name: `${t[metric]} · ${t.appLabels}`.slice(0, 100),
+        graph: buildStoreLabelled(
+          metric,
+          combined(metric),
+          `prepared:${idOf(ids, LABELS_KEY)}:labels`,
+          inputs.locale,
+        ),
+      };
+    }
+    if (parts[0] === "model" && isMetric(parts[1]) && parts.length === 2) {
+      const metric = parts[1];
+      const datasetId =
+        version >= 3
+          ? `prepared:${idOf(ids, labelledKey(metric))}:labelled`
+          : combined(metric);
       return {
         kind: "model",
         key,
         name: `${inputs.name} · ${t[metric]}`.slice(0, 100),
-        definition: buildStoreModel(metric, datasetId!, inputs.locale, version),
+        definition: buildStoreModel(metric, datasetId, inputs.locale, version),
       };
     }
     if (key === "dashboard:portfolio") {
@@ -278,3 +335,5 @@ export const storeTemplate: StoreTemplateDefinition = defineStoreTemplate(
  * frozen (`store-template.test.ts` checks its content hash).
  */
 export const storeTemplateV1: StoreTemplateDefinition = defineStoreTemplate(1);
+/** Version 2, frozen like version 1 (`store-template.test.ts`). */
+export const storeTemplateV2: StoreTemplateDefinition = defineStoreTemplate(2);

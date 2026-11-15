@@ -15,6 +15,7 @@ import type { PreparationGraph } from "@netrics/domain";
 import { storeTemplatePlanSchema } from "@netrics/contracts";
 import { createDefaultRegistry } from "../connectors.js";
 import { createDataService } from "../data/service.js";
+import { dashboardDimensionValues } from "./data.js";
 import {
   createTestDatabase,
   TEST_DATABASE_SETUP_TIMEOUT_MS,
@@ -23,7 +24,9 @@ import {
 import { createStoreTemplateService } from "./store-template-service.js";
 import { createStoreTemplateUpdateService } from "./store-template-updates.js";
 import {
-  storeTemplate,
+  // Version 2 is what this suite covers up to its last describe, which
+  // covers version 3 (the current one).
+  storeTemplateV2 as storeTemplate,
   storeTemplateV1,
   type StoreTemplateDefinition,
 } from "./store-template.js";
@@ -121,6 +124,7 @@ describe(
         db,
         registry,
         now: () => new Date(now),
+        template: storeTemplate,
       });
       expect(storeTemplate.version).toBe(2);
       const { installs } = await updates.list(actor(workspaceId));
@@ -210,6 +214,7 @@ describe(
         db,
         registry,
         now: () => new Date(now),
+        template: storeTemplate,
       });
       await expect(
         updates.apply(actor(workspaceId), requestId, {
@@ -232,6 +237,10 @@ describe(
 async function ingestReports(
   workspaceId: string,
   connections: { apple: { id: string }; play: { id: string } },
+  /** App names to use instead of the fixture's, by connection and app id. */
+  rename: Record<string, Record<string, string>> = {},
+  /** Source datasets (by key) left without any report, i.e. pending. */
+  skip: string[] = [],
 ) {
   const fixtures = inputs();
   for (const [connection, fixture] of [
@@ -240,6 +249,7 @@ async function ingestReports(
   ] as const) {
     const manifest = registry.get(fixture.connectorId)!.manifest;
     for (const [key, fixtureId] of Object.entries(fixture.datasets)) {
+      if (skip.includes(`${fixture.connectorId}:${key}`)) continue;
       const definition = manifest.datasets!.find((d) => d.key === key)!;
       await withWorkspace(db, { workspaceId }, (tx) =>
         ingestDatasetPage(tx, {
@@ -282,7 +292,9 @@ async function ingestReports(
         connectionId: connection.id,
         resources: names.map((row) => ({
           id: row.resource_id as string,
-          name: row.name as string,
+          name:
+            rename[connection.id]?.[row.resource_id as string] ??
+            (row.name as string),
           kind: row.kind as string,
         })),
         now: new Date(now),
@@ -299,6 +311,7 @@ describe("publishing a two-store template update", { timeout: 30_000 }, () => {
       db,
       registry,
       now: () => new Date(now),
+      template: storeTemplate,
     });
     const plan = await updates.plan(actor(workspaceId), requestId);
     const update = await updates.apply(actor(workspaceId), requestId, {
@@ -407,6 +420,7 @@ describe("publishing a two-store template update", { timeout: 30_000 }, () => {
       db,
       registry,
       now: () => new Date(now),
+      template: storeTemplate,
     });
     const plan = await updates.plan(actor(workspaceId), requestId);
     const update = await updates.apply(actor(workspaceId), requestId, {
@@ -456,7 +470,7 @@ describe("publishing a two-store template update", { timeout: 30_000 }, () => {
  */
 function contentOnly(retitle: boolean): StoreTemplateDefinition {
   return {
-    version: 3,
+    version: storeTemplate.version + 1,
     keys: (inputs) => storeTemplate.keys(inputs),
     build(key, inputs, ids) {
       const record = storeTemplate.build(key, inputs, ids);
@@ -510,6 +524,7 @@ describe("drafts published before their inputs", { timeout: 30_000 }, () => {
         db,
         registry,
         now: () => new Date(now),
+        template: storeTemplate,
       }).install(actor(workspaceId), {
         requestId,
         name: "App portfolio",
@@ -631,6 +646,7 @@ describe("a finished update without dashboards", { timeout: 30_000 }, () => {
       db,
       registry,
       now: () => new Date(now),
+      template: storeTemplate,
     }).install(actor(workspaceId), {
       requestId,
       name: "App portfolio",
@@ -703,7 +719,7 @@ describe("a finished update without dashboards", { timeout: 30_000 }, () => {
       registry,
       now: () => new Date(now),
       template: {
-        version: 4,
+        version: storeTemplate.version + 2,
         keys: (inputs) => storeTemplate.keys(inputs),
         build(key, inputs, ids) {
           const record = contentOnly(false).build(key, inputs, ids);
@@ -751,3 +767,225 @@ describe("a finished update without dashboards", { timeout: 30_000 }, () => {
     ).rejects.toThrow("store_template_up_to_date");
   });
 });
+
+describe(
+  "store template version 3: proceeds and app labels (#620, #621)",
+  { timeout: 30_000 },
+  () => {
+    it("offers version 2 installs the change as a template update, not silently", async () => {
+      const workspaceId = await createWorkspace(db, {
+        name: "Labels " + randomUUID().slice(0, 8),
+        ownerUserId: userId,
+      });
+      const connections = [];
+      for (const connectorId of ["app-store-connect", "google-play"] as const) {
+        const [connection] = await withWorkspace(db, { workspaceId }, (tx) =>
+          tx
+            .insert(schema.connections)
+            .values({
+              workspaceId,
+              connectorId,
+              name: connectorId,
+              setupPending: false,
+            })
+            .returning(),
+        );
+        connections.push(connection!);
+      }
+      const requestId = randomUUID();
+      await createStoreTemplateService({
+        db,
+        registry,
+        now: () => new Date(now),
+        template: storeTemplate,
+      }).install(actor(workspaceId), {
+        requestId,
+        name: "App portfolio",
+        connections: connections.map((c) => c.id),
+        groups: [],
+      });
+      // The current template is version 3; the install keeps version 2.
+      const updates = createStoreTemplateUpdateService({
+        db,
+        registry,
+        now: () => new Date(now),
+      });
+      const { installs } = await updates.list(actor(workspaceId));
+      expect(installs[0]).toMatchObject({
+        templateVersion: 2,
+        latestVersion: 3,
+        updateAvailable: true,
+        error: null,
+      });
+      const recordKeys = async () =>
+        (
+          await owner`select key from data_template_records
+            where request_id=${requestId} and detached_at is null`
+        ).map((row) => row.key as string);
+      expect(await recordKeys()).not.toContain("preparation:labels");
+
+      const plan = await updates.plan(actor(workspaceId), requestId);
+      const changed = plan.records
+        .filter((record) => record.items.length)
+        .map((record) => record.key);
+      // The proceeds sources, the new label preparations and the models
+      // change; the dashboard does not.
+      expect(changed).toEqual(
+        expect.arrayContaining([
+          `preparation:source:${connections[0]!.id}:proceeds`,
+          `preparation:source:${connections[1]!.id}:proceeds`,
+          "preparation:labels",
+          "preparation:labelled:proceeds",
+          "model:proceeds",
+          "model:downloads",
+          "model:ratings",
+        ]),
+      );
+      expect(changed).not.toContain("dashboard:portfolio");
+      const update = await updates.apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: [],
+      });
+      expect(update).toMatchObject({ fromVersion: 2, toVersion: 3 });
+      expect(await recordKeys()).toEqual(
+        expect.arrayContaining([
+          "preparation:labels",
+          "preparation:labelled:downloads",
+          "preparation:labelled:proceeds",
+          "preparation:labelled:ratings",
+        ]),
+      );
+      // Drafts: the published version 2 stays live until published.
+      const [draft] =
+        await owner`select p.graph, p.version, p.published_version from data_preparations p
+        join data_template_records r on r.record_id = p.id
+        where r.request_id=${requestId}
+        and r.key = ${`preparation:source:${connections[0]!.id}:proceeds`}`;
+      expect(JSON.stringify(draft!.graph)).toContain("paid_rows");
+      expect(draft!.version).toBeGreaterThan(
+        draft!.published_version as number,
+      );
+
+      // Published in the listed order, every model and the app filter give
+      // each app the same label; same-name apps of the two stores say which.
+      const [apple, play] = connections;
+      await ingestReports(
+        workspaceId,
+        { apple: apple!, play: play! },
+        {
+          [apple!.id]: { a: "Other app" },
+          [play!.id]: { "com.example.beta": "Other app" },
+        },
+      );
+      const data = createDataService(db, () => new Date(now));
+      const user = { workspaceId, callerId: userId };
+      for (const kind of ["preparation", "model"] as const)
+        for (const each of update.drafts)
+          if (each.kind === kind && kind === "preparation")
+            await data.publishPreparation(user, each.recordId, each.version);
+          else if (each.kind === kind)
+            await data.publishModel(user, each.recordId, each.version);
+      const models = Object.fromEntries(
+        (
+          await owner`select key, record_id from data_template_records
+            where request_id=${requestId} and key like 'model:%'`
+        ).map((row) => [row.key as string, row.record_id as string]),
+      );
+      const groupBy: Record<string, [string, string[]]> = {
+        "model:downloads": ["downloads", ["app", "store"]],
+        "model:proceeds": ["proceeds", ["app", "currency"]],
+        "model:ratings": ["rating", ["app", "listing", "storefront"]],
+      };
+      const appleApp = `${apple!.id}:a`,
+        playApp = `${play!.id}:com.example.beta`;
+      const expected = {
+        [appleApp]: "Other app · Apple App Store",
+        [playApp]: "Other app · Google Play",
+      };
+      for (const [key, [measure, dimensions]] of Object.entries(groupBy)) {
+        const result = await data.query(user, models[key]!, {
+          measureIds: [measure],
+          groupBy: dimensions,
+        });
+        const labels = Object.fromEntries(
+          result.rows
+            .filter((row) => String(row.dimensions.app) in expected)
+            .map((row) => [row.dimensions.app, row.dimensionLabels?.app]),
+        );
+        expect(labels, key).toEqual(expected);
+      }
+      const filter = await withWorkspace(db, { workspaceId }, (tx) =>
+        dashboardDimensionValues(
+          tx,
+          workspaceId,
+          models["model:downloads"]!,
+          "app",
+          { search: "", offset: 0, limit: 50 },
+          new Date(now),
+        ),
+      );
+      expect(
+        Object.fromEntries(
+          filter.values
+            .map((value, index) => [value, filter.labels?.[index]])
+            .filter(([value]) => String(value) in expected),
+        ),
+      ).toEqual(expected);
+    });
+    it("keeps the downloads model fresh while a proceeds source is still pending", async () => {
+      const workspaceId = await createWorkspace(db, {
+        name: "Pending " + randomUUID().slice(0, 8),
+        ownerUserId: userId,
+      });
+      const connections = [];
+      for (const connectorId of ["app-store-connect", "google-play"] as const) {
+        const [connection] = await withWorkspace(db, { workspaceId }, (tx) =>
+          tx
+            .insert(schema.connections)
+            .values({
+              workspaceId,
+              connectorId,
+              name: connectorId,
+              setupPending: false,
+            })
+            .returning(),
+        );
+        connections.push(connection!);
+      }
+      const installed = await createStoreTemplateService({
+        db,
+        registry,
+        now: () => new Date(now),
+      }).install(actor(workspaceId), {
+        requestId: randomUUID(),
+        name: "App portfolio",
+        connections: connections.map((c) => c.id),
+        groups: [],
+      });
+      // Every report but Google Play's earnings.
+      await ingestReports(
+        workspaceId,
+        { apple: connections[0]!, play: connections[1]! },
+        {},
+        ["google-play:earning_rows"],
+      );
+      const data = createDataService(db, () => new Date(now));
+      const user = { workspaceId, callerId: userId };
+      const downloads = await data.query(user, installed.models.downloads, {
+        measureIds: ["downloads"],
+        groupBy: ["app", "store"],
+      });
+      // Not held up by the pending proceeds source: complete, with its
+      // received time (the condition for query snapshots too).
+      expect(downloads.pendingSources ?? []).toEqual([]);
+      expect(downloads.receivedAt).not.toBeNull();
+      expect(downloads.rows.length).toBeGreaterThan(0);
+      const proceeds = await data.query(user, installed.models.proceeds, {
+        measureIds: ["proceeds"],
+        groupBy: ["app", "currency"],
+      });
+      expect(proceeds.pendingSources?.length).toBeGreaterThan(0);
+      expect(proceeds.receivedAt).toBeNull();
+    });
+  },
+);
