@@ -132,11 +132,13 @@ test("a customer reviews and applies a store-template update", async ({
     .click();
   await expect(page).toHaveURL(/\/data\?model=/);
   // The normal flow: preview the draft, then publish it. Store measures
-  // keep stores separate, so the preview groups by every dimension.
+  // keep stores separate; the editor already groups the preview by Store,
+  // and only by Store (#603), so nothing needs choosing.
   const groupBy = page.getByRole("group", { name: data.groupBy });
-  await expect(groupBy.getByRole("checkbox").first()).toBeVisible();
-  for (const dimension of await groupBy.getByRole("checkbox").all())
-    await dimension.check();
+  await expect(
+    groupBy.getByRole("checkbox", { name: "Store", exact: true }),
+  ).toBeChecked();
+  await expect(groupBy.getByRole("checkbox", { checked: true })).toHaveCount(1);
   await page
     .getByRole("region", { name: data.preview, exact: true })
     .getByRole("button", { name: data.preview, exact: true })

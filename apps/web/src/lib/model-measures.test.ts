@@ -4,6 +4,8 @@ import { dataErrorCodeKey } from "./data-errors";
 import {
   changeMeasureSiblings,
   keepModelSelection,
+  previewFailureKey,
+  withMeasureScope,
   measureDependents,
   offsetPreset,
   rollingBaseOf,
@@ -365,5 +367,60 @@ describe("keepModelSelection", () => {
     expect(
       keepModelSelection(model, ["revenue", "gone"], ["app", "removed"]),
     ).toEqual({ measureIds: ["revenue"], groupBy: ["app"] });
+  });
+});
+
+describe("withMeasureScope", () => {
+  const scoped: SemanticModelDefinition = {
+    ...model,
+    measures: model.measures.map((measure) =>
+      measure.id === "revenue"
+        ? { ...measure, requiredDimensions: ["app"] }
+        : measure,
+    ),
+  };
+  it("adds the grouping the selected measures require, after the user's own", () => {
+    expect(withMeasureScope(scoped, ["revenue"], [])).toEqual(["app"]);
+    expect(withMeasureScope(scoped, ["revenue"], ["day"])).toEqual([
+      "day",
+      "app",
+    ]);
+  });
+  it("changes nothing when the grouping already covers the scope", () => {
+    const groupBy = ["app"];
+    expect(withMeasureScope(scoped, ["revenue"], groupBy)).toBe(groupBy);
+    expect(withMeasureScope(model, ["revenue"], [])).toEqual([]);
+  });
+});
+
+describe("withMeasureScope for windows", () => {
+  it("groups a rolling measure by its date", () => {
+    const rolling: SemanticModelDefinition = {
+      ...model,
+      measures: [
+        ...model.measures,
+        {
+          id: "revenue7",
+          name: "Revenue, 7 days",
+          kind: "rolling",
+          baseMeasureId: "revenue",
+          timeDimensionId: "day",
+          window: { unit: "day", length: 7 },
+        },
+      ],
+    };
+    expect(withMeasureScope(rolling, ["revenue7"], [])).toEqual(["day"]);
+  });
+});
+
+describe("previewFailureKey", () => {
+  it("leaves scope refusals to the hint only while the hint is shown", () => {
+    expect(previewFailureKey("scope", true)).toBeNull();
+    expect(previewFailureKey("windowGrouping", true)).toBeNull();
+    // No hint (e.g. the filter fixes the scope only as the editor reads it):
+    // the server's refusal is shown.
+    expect(previewFailureKey("scope", false)).toBe("scope");
+    expect(previewFailureKey("windowGrouping", false)).toBe("windowGrouping");
+    expect(previewFailureKey("formula", true)).toBe("formula");
   });
 });

@@ -388,6 +388,17 @@
   border-top: 1px solid var(--border);
   padding-top: 24px;
 }
+.data-preview-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 12px 0;
+}
+.data-preview-scope p {
+  flex: 1 1 280px;
+  margin: 0;
+}
 .data-import {
   margin: 24px 0;
 }

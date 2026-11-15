@@ -13,6 +13,9 @@ import {
   DataProcessingError,
   emptyVisualModel,
   formulaMeasureFields,
+  missingModelMeasureScope,
+  modelMeasureDateScope,
+  modelMeasureScope,
   parseDataFormula,
   probeModelMeasures,
   type DataExpression,
@@ -43,11 +46,13 @@ import {
   changeMeasureSiblings,
   isWindowedMeasure,
   keepModelSelection,
+  previewFailureKey,
   measureDependents,
   rollingBaseOf,
   timeDimensionCandidates,
   toWindowedMeasure,
   windowBaseCandidates,
+  withMeasureScope,
 } from "@/lib/model-measures";
 import {
   ModelPreviewTable,
@@ -207,7 +212,8 @@ export function ModelEditor({
 }) {
   const t = useT("data"),
     nameId = useId(),
-    filterId = useId();
+    filterId = useId(),
+    scopeHintId = useId();
   const fieldsRef = useRef<HTMLFieldSetElement>(null);
   const valid = () => {
     const input = fieldsRef.current?.querySelector<
@@ -248,7 +254,16 @@ export function ModelEditor({
   const [measureIds, setMeasureIds] = useState(
     initial?.definition.measures.map((m) => m.id) ?? [],
   );
-  const [groupBy, setGroupBy] = useState<string[]>([]),
+  // Scoped measures (e.g. per store) preview grouped by their scope.
+  const [groupBy, setGroupBy] = useState<string[]>(() =>
+      initial
+        ? withMeasureScope(
+            initial.definition,
+            initial.definition.measures.map((m) => m.id),
+            [],
+          )
+        : [],
+    ),
     [filterText, setFilterText] = useState("");
   const [result, setResult] = useState<ModelResult | null>(null),
     [previewState, setPreviewState] = useState("");
@@ -274,6 +289,27 @@ export function ModelEditor({
     queryState = canonicalJson({ measureIds, groupBy, filterText });
   const dirty = current !== savedState,
     fresh = previewState === current + queryState;
+  // The required dimensions the chosen preview neither groups by nor filters
+  // to one value: the server refuses such a preview (and so publishing).
+  const missingScope = useMemo(() => {
+    let filter: DataExpression | undefined;
+    try {
+      filter = filterText.trim()
+        ? parseDataFormula(filterText, definition.dimensions)
+        : undefined;
+    } catch {
+      filter = undefined;
+    }
+    return missingModelMeasureScope(definition, {
+      measureIds,
+      groupBy,
+      ...(filter ? { filter } : {}),
+    });
+  }, [definition, measureIds, groupBy, filterText]);
+  const scopeHintShown = missingScope.length > 0 && measureIds.length > 0;
+  const dateScope = modelMeasureDateScope(definition, measureIds);
+  const dimensionName = (id: string) =>
+    definition.dimensions.find((d) => d.id === id)?.name ?? id;
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -424,8 +460,14 @@ export function ModelEditor({
       }),
     };
   }
-  async function preview() {
+  /** `grouping` previews with another grouping, which the editor then shows. */
+  async function preview(grouping = groupBy) {
     if (inputMetadata.loading || inputMetadata.error || !valid()) return;
+    const ranWith = canonicalJson({
+      measureIds,
+      groupBy: grouping,
+      filterText,
+    });
     setBusy("preview");
     setError(null);
     setPreviewError(null);
@@ -440,16 +482,22 @@ export function ModelEditor({
         model,
         {
           measureIds,
-          groupBy,
+          groupBy: grouping,
           ...(filter ? { filter } : {}),
         },
         record ? { id: record.id, version: record.version } : undefined,
       );
       setResult(next);
-      setPreviewed({ model, measureIds, groupBy });
-      setPreviewState(current + queryState);
+      setPreviewed({ model, measureIds, groupBy: grouping });
+      setPreviewState(current + ranWith);
     } catch (failure) {
-      setPreviewError(t(`errors.${dataErrorKey(failure)}`));
+      // A missing scope is explained, with its fix, by the scope hint while
+      // it is shown for the grouping the preview ran with.
+      const key = previewFailureKey(
+        dataErrorKey(failure),
+        scopeHintShown && grouping === groupBy,
+      );
+      setPreviewError(key ? t(`errors.${key}`) : null);
       setResult(null);
     } finally {
       setBusy(null);
@@ -548,8 +596,9 @@ export function ModelEditor({
       );
       setExpressionProblem(null);
       setSavedState(modelEditorState(next.name, next.definition, {}));
-      setMeasureIds(next.definition.measures.map((measure) => measure.id));
-      setGroupBy([]);
+      const ids = next.definition.measures.map((measure) => measure.id);
+      setMeasureIds(ids);
+      setGroupBy(withMeasureScope(next.definition, ids, []));
       setFilterText("");
       setResult(null);
       setPreviewState("");
@@ -579,6 +628,7 @@ export function ModelEditor({
       ],
     });
     setMeasureIds((ids) => [...ids, id]);
+    setGroupBy((current) => withMeasureScope(definition, [id], current));
   }
   const timeDimensions = timeDimensionCandidates(definition, fieldsFor);
   const dependents = (id: string) => measureDependents(definition, id);
@@ -595,14 +645,20 @@ export function ModelEditor({
       newDataId,
     );
     const at = definition.measures.findIndex((m) => m.id === measure.id) + 1;
-    change({
-      measures: [
-        ...definition.measures.slice(0, at),
-        ...added,
-        ...definition.measures.slice(at),
-      ],
-    });
+    const measures = [
+      ...definition.measures.slice(0, at),
+      ...added,
+      ...definition.measures.slice(at),
+    ];
+    change({ measures });
     setMeasureIds((ids) => [...ids, ...added.map((m) => m.id)]);
+    setGroupBy((current) =>
+      withMeasureScope(
+        { ...definition, measures },
+        added.map((m) => m.id),
+        current,
+      ),
+    );
   }
   const dimensionFields: DataField[] = definition.dimensions.map((d) => ({
     ...(fieldsFor(d.datasetId).find((f) => f.id === d.fieldId) ?? {
@@ -1246,8 +1302,8 @@ export function ModelEditor({
                           measure.requiredDimensions?.includes(dimension.id) ??
                           false
                         }
-                        onChange={(event) =>
-                          changeMeasure(measure.id, {
+                        onChange={(event) => {
+                          const next: ModelMeasure = {
                             ...measure,
                             requiredDimensions: event.target.checked
                               ? [
@@ -1257,8 +1313,27 @@ export function ModelEditor({
                               : (measure.requiredDimensions ?? []).filter(
                                   (id) => id !== dimension.id,
                                 ),
-                          })
-                        }
+                          };
+                          changeMeasure(measure.id, next);
+                          // Required now: the preview groups by it too.
+                          if (
+                            event.target.checked &&
+                            modelMeasureScope(
+                              {
+                                ...definition,
+                                measures: definition.measures.map((m) =>
+                                  m.id === measure.id ? next : m,
+                                ),
+                              },
+                              measureIds,
+                            ).includes(dimension.id)
+                          )
+                            setGroupBy((ids) =>
+                              ids.includes(dimension.id)
+                                ? ids
+                                : [...ids, dimension.id],
+                            );
+                        }}
                       />
                       {dimension.name}
                     </label>
@@ -1401,6 +1476,7 @@ export function ModelEditor({
               !!inputMetadata.error ||
               !measureIds.length
             }
+            aria-describedby={scopeHintShown ? scopeHintId : undefined}
             onClick={() => void preview()}
           >
             {t(busy === "preview" ? "previewing" : "preview")}
@@ -1414,7 +1490,13 @@ export function ModelEditor({
               label={t("queryMeasures")}
               fields={measureFields}
               value={measureIds}
-              onChange={setMeasureIds}
+              onChange={(ids) => {
+                const added = ids.filter((id) => !measureIds.includes(id));
+                setMeasureIds(ids);
+                setGroupBy((current) =>
+                  withMeasureScope(definition, added, current),
+                );
+              }}
             />
             <ColumnChecks
               label={t("groupBy")}
@@ -1438,6 +1520,23 @@ export function ModelEditor({
             {t("sharedFilterHelp")}
           </p>
         </div>
+        {scopeHintShown ? (
+          <PreviewScopeHint
+            id={scopeHintId}
+            dimensions={missingScope
+              .filter((id) => !dateScope.includes(id))
+              .map(dimensionName)}
+            dates={missingScope
+              .filter((id) => dateScope.includes(id))
+              .map(dimensionName)}
+            disabled={!!busy || inputMetadata.loading || !!inputMetadata.error}
+            onFix={() => {
+              const next = [...groupBy, ...missingScope];
+              setGroupBy(next);
+              void preview(next);
+            }}
+          />
+        ) : null}
         {previewError ? (
           <p role="alert" className="error">
             {previewError}
@@ -1455,5 +1554,42 @@ export function ModelEditor({
         ) : null}
       </section>
     </section>
+  );
+}
+
+/**
+ * Beside the preview: the chosen grouping leaves out dimensions the measures
+ * keep separate (`dimensions`) or the date a window is computed per
+ * (`dates`), so it cannot preview or publish. One click groups by them all
+ * and previews. `id` describes the Preview button.
+ */
+export function PreviewScopeHint({
+  id,
+  dimensions,
+  dates,
+  disabled = false,
+  onFix,
+}: {
+  id: string;
+  dimensions: string[];
+  dates: string[];
+  disabled?: boolean;
+  onFix: () => void;
+}) {
+  const t = useT("data");
+  return (
+    <div className="notice data-preview-scope" role="status" id={id}>
+      {dimensions.length ? (
+        <p>{t("previewScope", { dimensions: dimensions.join(", ") })}</p>
+      ) : null}
+      {dates.length ? (
+        <p>{t("previewScopeDate", { dimensions: dates.join(", ") })}</p>
+      ) : null}
+      <button type="button" disabled={disabled} onClick={onFix}>
+        {t("previewScopeFix", {
+          dimensions: [...dimensions, ...dates].join(", "),
+        })}
+      </button>
+    </div>
   );
 }

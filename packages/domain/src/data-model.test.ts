@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   formulaMeasureFields,
+  measureRequiredDimensions,
+  missingModelMeasureScope,
+  modelMeasureScope,
   probeModelMeasures,
   querySemanticModel,
   type SemanticModelDefinition,
@@ -599,6 +602,72 @@ describe("required measure dimensions", () => {
         ],
       }),
     ).toThrow("model_measure_scope_required");
+  });
+  it("names the grouping a query needs, through formulas and window bases", () => {
+    expect(modelMeasureScope(guarded, ["total-downloads"])).toEqual(["app"]);
+    expect(modelMeasureScope(guarded, ["apple-downloads"])).toEqual(["app"]);
+    expect(modelMeasureScope(model, ["total-downloads"])).toEqual([]);
+    const windowed: SemanticModelDefinition = {
+      ...guarded,
+      measures: [
+        ...guarded.measures,
+        {
+          id: "rolling",
+          name: "Rolling",
+          kind: "rolling",
+          baseMeasureId: "apple-downloads",
+          timeDimensionId: "day",
+          window: { unit: "day", length: 7 },
+        },
+        {
+          id: "both",
+          name: "Both",
+          requiredDimensions: ["country", "unknown"],
+          kind: "formula",
+          expression: field("rolling"),
+        },
+      ],
+    };
+    // Ordered as the model lists its dimensions; unknown ids are left to the query.
+    expect(modelMeasureScope(windowed, ["both", "missing"])).toEqual([
+      "app",
+      "country",
+    ]);
+  });
+  it("agrees with the catalog's required dimensions that Studio binds with", () => {
+    for (const ids of [
+      ["apple-downloads"],
+      ["total-downloads"],
+      ["play-downloads"],
+    ])
+      expect(new Set(modelMeasureScope(guarded, ids))).toEqual(
+        new Set(measureRequiredDimensions(guarded, ids)),
+      );
+  });
+  it("leaves out what the query groups by or fixes to one value, like the query does", () => {
+    const appA: DataExpression = {
+      kind: "call",
+      fn: "eq",
+      args: [field("app"), literal("App A")],
+    };
+    const ask = (groupBy: string[], filter?: DataExpression) =>
+      missingModelMeasureScope(guarded, {
+        measureIds: ["total-downloads"],
+        groupBy,
+        ...(filter ? { filter } : {}),
+      });
+    expect(ask([])).toEqual(["app"]);
+    expect(ask(["country"])).toEqual(["app"]);
+    expect(ask(["app"])).toEqual([]);
+    expect(ask([], appA)).toEqual([]);
+    expect(ask([], { kind: "call", fn: "or", args: [appA, appA] })).toEqual([
+      "app",
+    ]);
+    // Every query the helper accepts runs; every one it refuses fails on scope.
+    expect(() => query(appA)).not.toThrow();
+    expect(() => query(undefined, ["country"])).toThrow(
+      "model_measure_scope_required",
+    );
   });
 });
 

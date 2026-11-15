@@ -1,6 +1,7 @@
 import {
   MODEL_WINDOW_LIMITS,
   measureDependencies,
+  modelMeasureScope,
   type DataField,
   type ModelMeasure,
   type ModelOffsetUnit,
@@ -201,4 +202,34 @@ export function keepModelSelection(
     measureIds: measureIds.filter((id) => measures.has(id)),
     groupBy: groupBy.filter((id) => dimensions.has(id)),
   };
+}
+
+/**
+ * The preview grouping with the dimensions these measures require added
+ * after the user's own, so a scoped measure previews (and publishes) without
+ * the user having to guess the grouping. Unchanged when nothing is missing.
+ */
+export function withMeasureScope(
+  definition: SemanticModelDefinition,
+  measureIds: readonly string[],
+  groupBy: string[],
+): string[] {
+  const missing = modelMeasureScope(definition, measureIds).filter(
+    (id) => !groupBy.includes(id),
+  );
+  return missing.length ? [...groupBy, ...missing] : groupBy;
+}
+
+/**
+ * The error to show for a failed preview: none for a missing scope while the
+ * scope hint beside the preview explains it, so the refusal is never hidden
+ * when no hint is shown.
+ */
+export function previewFailureKey<K extends string>(
+  key: K,
+  hintShown: boolean,
+): K | null {
+  return hintShown && (key === "scope" || key === "windowGrouping")
+    ? null
+    : key;
 }
