@@ -6,6 +6,8 @@ import {
   CreateDashboardForm,
   blankDashboardRequest,
 } from "../create-dashboard-form";
+import type { StoreInstall } from "@/lib/store-updates";
+
 import { thumbnailFrame } from "./dashboard-thumbnail";
 import {
   DashboardsBrowser,
@@ -173,6 +175,135 @@ describe("dashboards page (#304)", () => {
     expect(html).toContain('data-format="9x16"');
     // 6 columns × 14 rows: a 3 × 2 widget at the origin.
     expect(html).toContain("left:0%;top:0%;width:50%;height:14.28");
+  });
+});
+
+const REQUEST = "00000000-0000-4000-8000-0000000000f1";
+const ARCHIVED = "00000000-0000-4000-8000-000000000020";
+const COPY = "00000000-0000-4000-8000-000000000021";
+const summary = {
+  measures: { added: 1, changed: 2, removed: 0 },
+  steps: { added: 0, changed: 3, removed: 0 },
+  widgets: { added: 0, changed: 0, removed: 1 },
+  conflicts: 1,
+  removals: 0,
+};
+function install(overrides: Partial<StoreInstall> = {}): StoreInstall {
+  return {
+    requestId: REQUEST,
+    name: "App portfolio",
+    templateVersion: 1,
+    latestVersion: 2,
+    updateAvailable: true,
+    summary,
+    error: null,
+    dashboardIds: [card().id],
+    modelIds: [],
+    preparationIds: [],
+    openUpdate: null,
+    lastUpdate: null,
+    ...overrides,
+  };
+}
+
+describe("store-template updates on the dashboards page (11E)", () => {
+  it.each([
+    ["en", "Update available"],
+    ["de", "Update verfügbar"],
+  ] as const)(
+    "marks the template's dashboards with update available (%s)",
+    (locale, badge) => {
+      const html = render(
+        {
+          dashboards: [
+            card(),
+            card({ id: "00000000-0000-4000-8000-000000000011", name: "Own" }),
+          ],
+          storeInstalls: [install()],
+        },
+        locale,
+      );
+      expect(html.match(/class="dash-chip dash-chip--update"/g)).toHaveLength(
+        1,
+      );
+      expect(html).toContain(`>${badge}<`);
+      expect(html).toContain(
+        `href="/workspaces/${WORKSPACE}/dashboards/stores/updates/${REQUEST}"`,
+      );
+    },
+  );
+
+  it("shows no badge without an update or when updates are unavailable", () => {
+    for (const storeInstalls of [
+      [install({ updateAvailable: false, summary: null })],
+      [
+        install({
+          summary: null,
+          error: "store_template_baseline_unavailable",
+        }),
+      ],
+    ])
+      expect(render({ storeInstalls })).not.toContain("dash-chip--update");
+  });
+
+  it("shows archived dashboards only in the archived section", () => {
+    const original = card({
+      id: ARCHIVED,
+      name: "App portfolio (original)",
+      archivedAt: "2026-11-14T10:00:00.000Z",
+      screenCount: 0,
+    });
+    const html = render({
+      dashboards: [card()],
+      archived: [original],
+      storeInstalls: [
+        install({
+          updateAvailable: false,
+          summary: null,
+          dashboardIds: [COPY],
+          lastUpdate: {
+            id: "00000000-0000-4000-8000-0000000000e1",
+            requestId: REQUEST,
+            fromVersion: 1,
+            toVersion: 2,
+            createdAt: "2026-11-14T09:00:00.000Z",
+            drafts: [],
+            dashboards: [
+              {
+                key: "dashboard:portfolio",
+                originalId: ARCHIVED,
+                copyId: COPY,
+                swappedAt: "2026-11-14T10:00:00.000Z",
+                swappedBackAt: null,
+                ready: false,
+              },
+            ],
+          },
+        }),
+      ],
+    });
+    // The grid has the live dashboard only.
+    const grid = html.slice(
+      html.indexOf('class="dashboards-grid"'),
+      html.indexOf("dashboards-archived"),
+    );
+    expect(grid).not.toContain("App portfolio (original)");
+    expect(grid.match(/class="dash-card"/g)).toHaveLength(1);
+    // A collapsed section lists the original, read-only, with the way back.
+    expect(html).toMatch(/<details class="dashboards-archived">/);
+    expect(html).toContain("Archived");
+    expect(html).toContain("App portfolio (original)");
+    expect(html).toContain(
+      `href="/workspaces/${WORKSPACE}/dashboards/stores/updates/${REQUEST}">Switch back`,
+    );
+    const archivedPart = html.slice(html.indexOf("dashboards-archived"));
+    expect(archivedPart).not.toContain("/studio");
+    expect(render({ dashboards: [card()] })).not.toContain(
+      "dashboards-archived",
+    );
+    expect(
+      render({ dashboards: [card()], archived: [original] }, "de"),
+    ).toContain("Archiviert");
   });
 });
 

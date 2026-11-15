@@ -234,6 +234,17 @@
   margin: 8px 0 0;
 }
 
+/* A store-template update concerning this dashboard (11E). */
+.studio-update-note {
+  margin: 12px 20px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-control);
+  background: var(--warning-wash);
+  color: var(--warning-text);
+  font-size: var(--size-13);
+}
+
 /* ─── Body: rail | stage | inspector ──────────────────────────────────── */
 
 .studio-body {

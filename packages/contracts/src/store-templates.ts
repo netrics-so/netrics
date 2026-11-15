@@ -147,6 +147,12 @@ export const storeTemplateInstallListSchema = z.object({
       modelIds: z.array(z.uuid()),
       preparationIds: z.array(z.uuid()),
       openUpdate: storeTemplateUpdateSchema.nullable(),
+      /**
+       * The install's newest update, open or closed (the open one when
+       * there is one): a closed update's dashboards can still be swapped
+       * back, and swapped again after a swap back.
+       */
+      lastUpdate: storeTemplateUpdateSchema.nullable(),
     }),
   ),
 });

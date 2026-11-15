@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { SCREEN_FORMATS, type ScreenFormat } from "@netrics/domain";
@@ -32,6 +33,37 @@ export function LiveIndicator({ screens }: { screens: readonly string[] }) {
       <span className="studio-live-dot" aria-hidden="true" />
       <span className="studio-live-text">{text}</span>
     </span>
+  );
+}
+
+/**
+ * A store-template update concerning this dashboard (11E): one is
+ * available, this is the updated copy to compare, or this is the archived
+ * original (read-only until switched back). Links to the update.
+ */
+export function StoreUpdateNote({
+  kind,
+  href,
+}: {
+  kind: "available" | "copy" | "archived";
+  href: string;
+}) {
+  const t = useT("storeUpdate");
+  return (
+    <p className="studio-update-note" role="status">
+      <span>
+        {t(
+          kind === "available"
+            ? "studioAvailable"
+            : kind === "copy"
+              ? "studioCopy"
+              : "studioArchived",
+        )}
+      </span>{" "}
+      <Link href={href}>
+        {t(kind === "available" ? "review" : "openUpdate")}
+      </Link>
+    </p>
   );
 }
 

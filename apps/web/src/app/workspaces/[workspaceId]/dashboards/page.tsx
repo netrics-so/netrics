@@ -7,7 +7,12 @@ import "@/app/styles/dashboards.css";
 import { CreateProjectForm } from "../create-project-form";
 import { DashboardsBrowser } from "./dashboards-browser";
 import { ProjectList } from "./project-list";
-import { listDashboards, listProjects, listWorkspaces } from "@/lib/api";
+import {
+  listDashboards,
+  listProjects,
+  listStoreTemplateInstalls,
+  listWorkspaces,
+} from "@/lib/api";
 import { getLocale, getT } from "@/lib/i18n/server";
 import {
   activeProjectName,
@@ -47,20 +52,27 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
   }
   const role = membership.role;
   // The server reads an archived active project back as null ("All").
-  const [{ dashboards }, { projects }] = await Promise.all([
-    listDashboards(
-      cookieHeader,
-      workspaceId,
-      navigationQuery(projectScope(membership.activeProjectId, [])),
-    ),
-    listProjects(cookieHeader, workspaceId),
-  ]);
+  // Archived originals (11E) come along for their own section.
+  const [{ dashboards: listed }, { projects }, storeInstalls] =
+    await Promise.all([
+      listDashboards(cookieHeader, workspaceId, {
+        ...navigationQuery(projectScope(membership.activeProjectId, [])),
+        archived: "include",
+      }),
+      listProjects(cookieHeader, workspaceId),
+      // Updates are an extra: the page works without them.
+      listStoreTemplateInstalls(cookieHeader, workspaceId).then(
+        ({ installs }) => installs,
+        () => [],
+      ),
+    ]);
+  const dashboards = listed.filter((d) => d.archivedAt === null);
   const scope = projectScope(membership.activeProjectId, projects);
   const projectName = activeProjectName(scope, projects);
 
   const live = dashboards.filter((d) => d.screenCount > 0).length;
   const now = Date.now();
-  const cards = dashboards.map((dashboard) => ({
+  const card = (dashboard: (typeof listed)[number]) => ({
     ...dashboard,
     updatedLabel: page("updated", {
       time: relativeTimeIn(dashboard.updatedAt, locale, now) ?? "",
@@ -68,13 +80,17 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
     themeLabel: dashboard.theme.builtin
       ? builtinThemeName(dashboard.theme.builtin, locale)
       : dashboard.theme.name,
-  }));
+  });
+  const cards = dashboards.map(card);
+  const archived = listed.filter((d) => d.archivedAt !== null).map(card);
 
   return (
     <div className="area-page dashboards-page">
       <DashboardsBrowser
         workspaceId={workspaceId}
         dashboards={cards}
+        archived={archived}
+        storeInstalls={storeInstalls}
         projectId={scope.active}
         projectName={projectName}
         canCreate={can(role, "dashboards:create")}

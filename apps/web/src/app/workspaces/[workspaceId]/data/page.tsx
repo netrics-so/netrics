@@ -19,10 +19,13 @@ export default async function DataPage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ model?: string | string[] }>;
+  searchParams: Promise<{
+    model?: string | string[];
+    preparation?: string | string[];
+  }>;
 }) {
   const { workspaceId } = await params,
-    { model } = await searchParams,
+    { model, preparation } = await searchParams,
     { cookieHeader } = await requireSession();
   const { workspaces } = await listWorkspaces(cookieHeader);
   const membership = workspaces.find((w) => w.id === workspaceId);
@@ -58,6 +61,9 @@ export default async function DataPage({
       activeProjectId={membership.activeProjectId}
       {...(typeof model === "string" ? { openModelId: model } : {})}
       {...(openModel ? { openModel } : {})}
+      {...(typeof preparation === "string"
+        ? { openPreparationId: preparation }
+        : {})}
     />
   );
 }

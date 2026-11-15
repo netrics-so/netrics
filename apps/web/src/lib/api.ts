@@ -1,12 +1,22 @@
 import { dataErrorCodeKey } from "./data-errors";
 import { projectQueryString } from "./project-scope";
-import { ZodError, type ZodType } from "zod";
+import { ZodError, type ZodType, type z } from "zod";
 
 import {
   IMAGE_NAME_HEADER,
+  storeTemplateApplyRequestSchema,
+  storeTemplateCopyRequestSchema,
+  storeTemplateDashboardErrorSchema,
+  storeTemplateInstallListSchema,
   storeTemplateOptionsSchema,
+  storeTemplatePlanSchema,
   storeTemplateRequestSchema,
   storeTemplateResultSchema,
+  storeTemplateUpdateSchema,
+  type StoreTemplateApplyRequest,
+  type StoreTemplateInstallList,
+  type StoreTemplatePlan,
+  type StoreTemplateUpdate,
   type StoreTemplateRequest,
   type StoreTemplateOptions,
   type StoreTemplateResult,
@@ -208,7 +218,7 @@ export class ApiError extends Error {
      * failing preparation step and column).
      */
     public readonly details: Omit<
-      ThemeErrorResponse & DataErrorResponse,
+      ThemeErrorResponse & DataErrorResponse & StoreTemplateErrorDetails,
       "error"
     > = {},
   ) {
@@ -216,6 +226,16 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+/**
+ * What store-template update errors carry (11E): the record and items that
+ * cannot be merged, the fresh plan records of a changed dashboard, and the
+ * screens whose fixed scope a swap cannot keep.
+ */
+type StoreTemplateErrorDetails = Omit<
+  z.infer<typeof storeTemplateDashboardErrorSchema>,
+  "error"
+>;
 
 /** API error codes that share one message. */
 const API_ERROR_ALIASES: Readonly<Record<string, ApiErrorKey>> = {
@@ -272,9 +292,9 @@ async function readErrorCode(response: Response): Promise<string> {
   }
 }
 
-const detailedErrorResponseSchema = themeErrorResponseSchema.extend(
-  dataErrorResponseSchema.shape,
-);
+const detailedErrorResponseSchema = themeErrorResponseSchema
+  .extend(dataErrorResponseSchema.shape)
+  .extend(storeTemplateDashboardErrorSchema.shape);
 
 async function readError(response: Response): Promise<ApiError> {
   try {
@@ -978,7 +998,7 @@ export function triggerConnectionSync(
 export function listDashboards(
   cookieHeader: string,
   workspaceId: string,
-  query?: ProjectFilterQuery,
+  query?: ProjectFilterQuery & { archived?: "include" },
 ): Promise<DashboardListResponse> {
   return serverGet(
     dashboardListResponseSchema,
@@ -1518,5 +1538,114 @@ export function installStoreTemplate(
     "POST",
     `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
     storeTemplateRequestSchema.parse(input),
+  );
+}
+
+// ─── Store-template updates (11E) ─────────────────────────────────────────
+
+const storesPath = (workspaceId: string) =>
+  `/v1/workspaces/${workspaceId}/dashboard-templates/stores`;
+
+/** The workspace's store-template installs and their updates (server). */
+export function listStoreTemplateInstalls(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<StoreTemplateInstallList> {
+  return serverGet(
+    storeTemplateInstallListSchema,
+    cookieHeader,
+    `${storesPath(workspaceId)}/installs`,
+  );
+}
+/** The same list in the browser, to reload it after a change. */
+export function readStoreTemplateInstalls(
+  workspaceId: string,
+): Promise<StoreTemplateInstallList> {
+  return browserSend(
+    storeTemplateInstallListSchema,
+    "GET",
+    `${storesPath(workspaceId)}/installs`,
+  );
+}
+/** The three-way plan of an install's update, item by item. */
+export function getStoreTemplatePlan(
+  workspaceId: string,
+  requestId: string,
+): Promise<StoreTemplatePlan> {
+  return browserSend(
+    storeTemplatePlanSchema,
+    "GET",
+    `${storesPath(workspaceId)}/installs/${requestId}/update`,
+  );
+}
+/**
+ * Applies a reviewed plan as data drafts; 409 store_update_stale when the
+ * plan changed since it was loaded.
+ */
+export function applyStoreTemplateUpdate(
+  workspaceId: string,
+  requestId: string,
+  body: StoreTemplateApplyRequest,
+): Promise<StoreTemplateUpdate> {
+  return browserSend(
+    storeTemplateUpdateSchema,
+    "POST",
+    `${storesPath(workspaceId)}/installs/${requestId}/update`,
+    storeTemplateApplyRequestSchema.parse(body),
+  );
+}
+/** Closes an applied update; its drafts stay as ordinary drafts. */
+export async function closeStoreTemplateUpdate(
+  workspaceId: string,
+  requestId: string,
+  updateId: string,
+): Promise<void> {
+  const path = `${storesPath(workspaceId)}/installs/${requestId}/updates/${updateId}/close`;
+  const response = await fetch(path, { method: "POST" });
+  if (!response.ok) throw await readError(response);
+}
+const updateDashboardPath = (
+  workspaceId: string,
+  updateId: string,
+  key: string,
+  action: "copy" | "swap" | "swap-back",
+) =>
+  `${storesPath(workspaceId)}/updates/${updateId}/dashboards/${encodeURIComponent(key)}/${action}`;
+/** Creates the updated dashboard copy, unassigned from screens. */
+export function createStoreTemplateCopy(
+  workspaceId: string,
+  updateId: string,
+  key: string,
+  options: { replace?: boolean; discardCopyEdits?: boolean } = {},
+): Promise<StoreTemplateUpdate> {
+  return browserSend(
+    storeTemplateUpdateSchema,
+    "POST",
+    updateDashboardPath(workspaceId, updateId, key, "copy"),
+    storeTemplateCopyRequestSchema.parse(options),
+  );
+}
+/** Puts the copy on every screen of the original; archives the original. */
+export function swapStoreTemplateDashboard(
+  workspaceId: string,
+  updateId: string,
+  key: string,
+): Promise<StoreTemplateUpdate> {
+  return browserSend(
+    storeTemplateUpdateSchema,
+    "POST",
+    updateDashboardPath(workspaceId, updateId, key, "swap"),
+  );
+}
+/** Puts the archived original back on the copy's screens. */
+export function swapBackStoreTemplateDashboard(
+  workspaceId: string,
+  updateId: string,
+  key: string,
+): Promise<StoreTemplateUpdate> {
+  return browserSend(
+    storeTemplateUpdateSchema,
+    "POST",
+    updateDashboardPath(workspaceId, updateId, key, "swap-back"),
   );
 }

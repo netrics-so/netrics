@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import { renderI18n } from "@/lib/i18n/test-render";
 
 import { freeCells } from "./editor-canvas";
-import { CanvasHead, LiveIndicator, StatusLine } from "./studio-status";
+import {
+  CanvasHead,
+  LiveIndicator,
+  StatusLine,
+  StoreUpdateNote,
+} from "./studio-status";
 
 describe("studio status (design 3b)", () => {
   it("names the screens the dashboard is live on", () => {
@@ -77,5 +82,39 @@ describe("studio status (design 3b)", () => {
       { x: 2, y: 1 },
     ]);
     expect(freeCells([], 12, 8)).toHaveLength(96);
+  });
+});
+
+describe("store-template updates in the Studio (11E)", () => {
+  const REQUEST = "00000000-0000-4000-8000-0000000000f1";
+  const href = `/workspaces/w/dashboards/stores/updates/${REQUEST}`;
+  it.each([
+    [
+      "en",
+      "The template has an update for this dashboard.",
+      "Review the update",
+    ],
+    ["de", "Die Vorlage hat ein Update für dieses Dashboard.", "Update prüfen"],
+  ] as const)(
+    "says an update is available and links to it (%s)",
+    (locale, text, link) => {
+      const html = renderI18n(
+        <StoreUpdateNote kind="available" href={href} />,
+        locale,
+      );
+      expect(html).toContain(text);
+      expect(html).toContain(`href="${href}">${link}</a>`);
+    },
+  );
+
+  it("marks the updated copy and an archived original", () => {
+    expect(renderI18n(<StoreUpdateNote kind="copy" href={href} />)).toContain(
+      "This is the updated copy.",
+    );
+    const archived = renderI18n(
+      <StoreUpdateNote kind="archived" href={href} />,
+    );
+    expect(archived).toContain("Archived while its updated copy");
+    expect(archived).toContain(">Open the update</a>");
   });
 });

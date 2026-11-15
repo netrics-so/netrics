@@ -16,6 +16,44 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Wähle Verbindungen zu App Store Connect oder Google Play.",
     store_source_schema_unavailable:
       "Diese Connector-Version stellt die für die Vorlage benötigten Datensätze nicht bereit.",
+    store_template_baseline_unavailable:
+      "Für dieses Dashboard sind keine Updates verfügbar: Es wurde eingerichtet, bevor Vorlagen Versionen hatten, und eine seiner Store-Verbindungen wurde seitdem gelöscht. Das Dashboard funktioniert weiter wie bisher.",
+    store_template_up_to_date:
+      "Dieses Dashboard ist schon auf dem neuesten Stand.",
+    store_template_not_found:
+      "Diese Vorlagen-Einrichtung gibt es nicht mehr. Geh zurück zu deinen Dashboards.",
+    store_template_update_not_found:
+      "Dieses Update gibt es nicht mehr. Lade die Seite neu, um den Stand des Dashboards zu sehen.",
+    store_update_decision_missing:
+      "Triff für jeden Eintrag unter „Deine Entscheidung“ und „Zum Entfernen vorgeschlagen“ eine Wahl und wende es dann erneut an.",
+    store_update_stale:
+      "Das Update hat sich geändert, seit du es geladen hast. Lade die Prüfung neu, prüf deine Entscheidungen und wende es erneut an.",
+    store_update_open:
+      "Für dieses Dashboard läuft schon ein Update. Lade die Seite neu, um es fortzusetzen.",
+    store_update_closed:
+      "Dieses Update wurde abgebrochen oder ist abgeschlossen. Lade die Seite neu, um das aktuelle Update zu prüfen.",
+    store_update_superseded:
+      "Ein neueres Update hat dieses ersetzt. Lade die Seite neu und mach mit dem neueren Update weiter.",
+    store_update_drafts_unpublished:
+      "Veröffentliche zuerst die Datenentwürfe des Updates in den Dateneinstellungen und erstelle dann das aktualisierte Dashboard.",
+    store_update_review_changed:
+      "Dein Dashboard hat sich geändert, seit du das Update geprüft hast. Brich dieses Update ab und prüf es erneut.",
+    store_update_copy_exists:
+      "Das aktualisierte Dashboard gibt es schon. Öffne es im Studio oder lade die Seite neu.",
+    store_update_copy_missing:
+      "Das aktualisierte Dashboard wurde gelöscht. Erstelle es erneut und nutze es dann auf deinen Bildschirmen.",
+    store_update_copy_in_use:
+      "Das aktualisierte Dashboard läuft auf Bildschirmen und kann deshalb nicht neu erstellt werden. Wechsle zuerst zurück.",
+    store_update_copy_edited:
+      "Du hast die aktualisierte Kopie bearbeitet. Wenn du sie neu erstellst, gehen diese Änderungen verloren: Wähle „Meine Änderungen verwerfen“, um fortzufahren.",
+    store_update_original_changed:
+      "Dein Original wurde bearbeitet, nachdem die aktualisierte Kopie erstellt wurde. Erstelle die Kopie erneut, damit sie diese Änderungen enthält.",
+    store_update_not_swapped:
+      "Das aktualisierte Dashboard läuft nicht auf deinen Bildschirmen, es gibt also nichts zurückzuwechseln. Lade die Seite neu.",
+    store_update_unmergeable:
+      "Das Update lässt sich mit einigen deiner Änderungen nicht zusammenführen. Behalte für die genannten Einträge deine Version und versuch es dann erneut.",
+    dashboard_archived:
+      "Dieses Dashboard ist archiviert, solange seine aktualisierte Kopie auf deinen Bildschirmen läuft. Wechsle auf seiner Update-Seite zurück, um es wieder zu nutzen oder zu bearbeiten.",
 
     last_owner:
       "Der letzte Inhaber eines Workspaces kann weder herabgestuft noch entfernt werden.",
@@ -93,7 +131,7 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     widget_too_small: "Ein Widget ist kleiner, als sein Typ erlaubt.",
     widgets_overlap: "Zwei Widgets auf einer Folie überlappen sich.",
     too_many_data_widgets:
-      "Ein Dashboard zeigt höchstens 48 Widgets mit Daten.",
+      "Ein Dashboard zeigt höchstens 48 Widgets mit Daten. Entferne einige und versuch es dann erneut.",
     unknown_resource:
       "Ein Widget zeigt eine App oder ein Projekt, das seine Verbindung nicht mehr hat.",
     image_not_found:

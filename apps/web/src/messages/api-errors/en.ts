@@ -15,6 +15,43 @@ export const apiErrorsEn = {
       "Choose App Store Connect or Google Play connections.",
     store_source_schema_unavailable:
       "This connector version does not provide the datasets this template needs.",
+    store_template_baseline_unavailable:
+      "Updates aren’t available for this dashboard: it was set up before templates had versions, and a store connection it used was deleted since. The dashboard keeps working as it is.",
+    store_template_up_to_date: "This dashboard is already up to date.",
+    store_template_not_found:
+      "This template setup no longer exists. Go back to your dashboards.",
+    store_template_update_not_found:
+      "This update no longer exists. Reload the page to see where the dashboard stands.",
+    store_update_decision_missing:
+      "Make a choice for every item under “Your choice” and “Proposed for removal”, then apply again.",
+    store_update_stale:
+      "The update changed since you loaded it. Reload the review, check your choices and apply again.",
+    store_update_open:
+      "An update of this dashboard is already in progress. Reload the page to continue it.",
+    store_update_closed:
+      "This update was stopped or has finished. Reload the page to review the current update.",
+    store_update_superseded:
+      "A newer update replaced this one. Reload the page and continue with the newer update.",
+    store_update_drafts_unpublished:
+      "Publish the update’s data drafts in data settings first, then create the updated dashboard.",
+    store_update_review_changed:
+      "Your dashboard changed since you reviewed the update. Stop this update and review it again.",
+    store_update_copy_exists:
+      "The updated dashboard already exists. Open it in Studio, or reload the page.",
+    store_update_copy_missing:
+      "The updated dashboard was deleted. Create it again, then use it on your screens.",
+    store_update_copy_in_use:
+      "The updated dashboard is on screens, so it can’t be made again. Switch back first.",
+    store_update_copy_edited:
+      "You edited the updated copy. Creating it again discards those edits: choose “Discard my edits” to go ahead.",
+    store_update_original_changed:
+      "Your original dashboard was edited after the updated copy was made. Create the copy again so it includes those edits.",
+    store_update_not_swapped:
+      "The updated dashboard isn’t on your screens, so there is nothing to switch back. Reload the page.",
+    store_update_unmergeable:
+      "The update can’t be combined with some of your changes. Keep your version of the named items, then try again.",
+    dashboard_archived:
+      "This dashboard is archived while its updated copy is on your screens. Switch back on its update page to use or edit it again.",
 
     last_owner: "The last owner of a workspace cannot be demoted or removed.",
     membership_exists: "That person is already a member of this workspace.",
@@ -83,7 +120,8 @@ export const apiErrorsEn = {
       "A slide has two custom layouts for the same format. Reload the dashboard.",
     widget_too_small: "A widget is smaller than its type allows.",
     widgets_overlap: "Two widgets on a slide overlap.",
-    too_many_data_widgets: "A dashboard shows at most 48 data widgets.",
+    too_many_data_widgets:
+      "A dashboard shows at most 48 data widgets. Remove some, then try again.",
     unknown_resource:
       "A widget shows an app or project its connection no longer has.",
     image_not_found: "An image this dashboard uses no longer exists.",

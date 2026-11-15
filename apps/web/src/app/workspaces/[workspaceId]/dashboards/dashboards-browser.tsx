@@ -7,6 +7,12 @@ import type { DashboardListResponse } from "@netrics/contracts";
 import { BUILTIN_THEMES, DEFAULT_THEME_KEY } from "@netrics/domain";
 
 import { useT } from "@/lib/i18n/client";
+import {
+  installWithUpdate,
+  storeUpdatePath,
+  updateOfDashboard,
+  type StoreInstall,
+} from "@/lib/store-updates";
 
 import { CreateDashboardForm, type Choice } from "../create-dashboard-form";
 import { DashboardThumbnail } from "./dashboard-thumbnail";
@@ -40,9 +46,21 @@ export function DashboardsBrowser({
   canEdit,
   title,
   meta,
+  storeInstalls = [],
+  archived = [],
 }: {
   workspaceId: string;
   dashboards: DashboardCardData[];
+  /**
+   * Store-template installs (11E): their dashboards say "Update available"
+   * and link to the update.
+   */
+  storeInstalls?: readonly StoreInstall[];
+  /**
+   * Archived originals (11E), kept while an updated copy is on their
+   * screens: listed apart from the grid, read-only, with the way back.
+   */
+  archived?: readonly DashboardCardData[];
   /** The active project, where new blank dashboards start (#573). */
   projectId?: string | null;
   /** Its name, for the empty state; null under "All projects". */
@@ -54,6 +72,7 @@ export function DashboardsBrowser({
 }) {
   const t = useT("dashboardsPage");
   const stores = useT("storeTemplate");
+  const updates = useT("storeUpdate");
   const [creating, setCreating] = useState<{
     choice: Choice;
     key: number;
@@ -196,10 +215,46 @@ export function DashboardsBrowser({
               workspaceId={workspaceId}
               dashboard={dashboard}
               canEdit={canEdit}
+              updateRequestId={
+                installWithUpdate(storeInstalls, dashboard.id)?.requestId
+              }
             />
           ))}
         </ul>
       )}
+
+      {archived.length > 0 ? (
+        <details className="dashboards-archived">
+          <summary>
+            <span>{updates("archived")}</span>
+            <span className="dashboards-projects-count">{archived.length}</span>
+          </summary>
+          <p className="muted">{updates("archivedHint")}</p>
+          <ul className="dashboards-archived-list">
+            {archived.map((dashboard) => {
+              const update = updateOfDashboard(storeInstalls, dashboard.id);
+              return (
+                <li key={dashboard.id}>
+                  <span className="dashboards-archived-name">
+                    {dashboard.name}
+                  </span>
+                  <span className="muted">{dashboard.updatedLabel}</span>
+                  {update ? (
+                    <Link
+                      href={storeUpdatePath(
+                        workspaceId,
+                        update.install.requestId,
+                      )}
+                    >
+                      {updates("switchBackLink")}
+                    </Link>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      ) : null}
     </>
   );
 }
@@ -208,12 +263,16 @@ export function DashboardCard({
   workspaceId,
   dashboard,
   canEdit,
+  updateRequestId,
 }: {
   workspaceId: string;
   dashboard: DashboardCardData;
   canEdit: boolean;
+  /** The store-template install with an update for it (11E). */
+  updateRequestId?: string | undefined;
 }) {
   const t = useT("dashboardsPage");
+  const updates = useT("storeUpdate");
   const href = `/workspaces/${workspaceId}/dashboards/${dashboard.id}`;
   return (
     <li className="dash-card">
@@ -247,6 +306,15 @@ export function DashboardCard({
           >
             {dashboard.themeLabel}
           </span>
+          {updateRequestId ? (
+            <Link
+              className="dash-chip dash-chip--update"
+              href={storeUpdatePath(workspaceId, updateRequestId)}
+              aria-label={updates("badgeNamed", { name: dashboard.name })}
+            >
+              {updates("badge")}
+            </Link>
+          ) : null}
         </span>
         {canEdit ? (
           <Link

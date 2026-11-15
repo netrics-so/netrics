@@ -372,6 +372,16 @@
   text-overflow: ellipsis;
 }
 
+.dash-chip--update {
+  background: var(--warning-tint);
+  color: var(--warning-text);
+  text-decoration: none;
+}
+
+.dash-chip--update:hover {
+  text-decoration: underline;
+}
+
 .dash-card-studio {
   position: relative;
   z-index: 1;
@@ -509,4 +519,46 @@
   .dash-card {
     transition: none;
   }
+}
+
+/* Archived originals of store-template updates (11E): apart from the grid. */
+.dashboards-archived {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.dashboards-archived summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: var(--size-13);
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.dashboards-archived > p {
+  margin: 0 16px 8px;
+}
+
+.dashboards-archived-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0 16px 16px;
+  list-style: none;
+}
+
+.dashboards-archived-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.dashboards-archived-name {
+  font-weight: 600;
 }

@@ -29,6 +29,8 @@ import { PreparationEditor } from "./preparation-editor";
 import { ModelEditor } from "./model-editor";
 import { ReferenceEditor } from "./reference-editor";
 import { PreviewNotes } from "./preview-notes";
+import { StoreUpdateSummary } from "@/components/store-update-summary";
+import { dataUpdates, storeUpdatePath } from "@/lib/store-updates";
 
 type Section = "datasets" | "preparations" | "models";
 type ProjectRef = { id: string; name: string; archivedAt: string | null };
@@ -48,6 +50,8 @@ export function DataWorkspace({
   activeProjectId = null,
   openModelId,
   openModel,
+  openPreparationId,
+  initialSection,
 }: {
   workspaceId: string;
   initial: WorkspaceData;
@@ -61,9 +65,14 @@ export function DataWorkspace({
   openModelId?: string;
   /** That model when the navigation list leaves it out (#573). */
   openModel?: ModelDraft;
+  /** A preparation to open first (a store-template update links here). */
+  openPreparationId?: string;
+  /** The tab shown first when no editor opens. */
+  initialSection?: Section;
 }) {
   const t = useT("data"),
     dashboardsT = useT("dashboardsPage"),
+    updateT = useT("storeUpdate"),
     locale = useLocale(),
     searchId = useId(),
     sourceSelectId = useId();
@@ -77,17 +86,31 @@ export function DataWorkspace({
     ? (initial.models.find((model) => model.id === openModelId) ??
       (openModel?.id === openModelId ? openModel : undefined))
     : undefined;
+  const linkedPreparation =
+    !linkedModel && openPreparationId
+      ? initial.preparations.find((p) => p.id === openPreparationId)
+      : undefined;
   const [pickerSources, setPickerSources] = useState(
     initialPickerSources ?? initial.sources,
   );
   const [data, setData] = useState(initial),
     [section, setSection] = useState<Section>(
-      linkedModel ? "models" : "datasets",
+      linkedModel
+        ? "models"
+        : linkedPreparation
+          ? "preparations"
+          : (initialSection ?? "datasets"),
     );
   const [editor, setEditor] = useState<Editor | null>(() =>
       linkedModel
         ? { kind: "model", initial: linkedModel, key: newDataId() }
-        : null,
+        : linkedPreparation
+          ? {
+              kind: "preparation",
+              initial: linkedPreparation,
+              key: newDataId(),
+            }
+          : null,
     ),
     [dirty, setDirty] = useState(false);
   // The item open in an editor, once saved: its project select (#573).
@@ -260,6 +283,20 @@ export function DataWorkspace({
       models: [...value.models.filter((m) => m.id !== model.id), model],
     }));
   }
+  // A store-template update (11E): offered, or waiting on its drafts.
+  const updates = dataUpdates(data.storeUpdates ?? initial.storeUpdates ?? []);
+  const updateMark = (id: string) => {
+    const install = updates.marked.get(id);
+    return install ? (
+      <Link
+        className="data-update-mark"
+        href={storeUpdatePath(workspaceId, install.requestId)}
+        title={updateT("dataBanner", { name: install.name })}
+      >
+        {updateT("dataMark")}
+      </Link>
+    ) : null;
+  };
   const counts = {
     datasets: data.sources.length,
     preparations: data.preparations.length,
@@ -307,6 +344,30 @@ export function DataWorkspace({
           </div>
         ) : null}
       </header>
+      {updates.offered.map((install) => {
+        const waiting = install.openUpdate?.drafts.filter(
+          (draft) => !draft.published,
+        ).length;
+        return (
+          <section
+            key={install.requestId}
+            className="notice warning data-update-banner"
+            aria-label={updateT("dataBanner", { name: install.name })}
+          >
+            <strong>{updateT("dataBanner", { name: install.name })}</strong>{" "}
+            {install.openUpdate ? (
+              waiting ? (
+                <span>{updateT("dataProgress", { count: waiting })}</span>
+              ) : null
+            ) : install.summary ? (
+              <StoreUpdateSummary summary={install.summary} />
+            ) : null}{" "}
+            <Link href={storeUpdatePath(workspaceId, install.requestId)}>
+              {updateT(install.openUpdate ? "openUpdate" : "review")}
+            </Link>
+          </section>
+        );
+      })}
       <nav className="data-tabs" aria-label={t("title")}>
         {(["datasets", "preparations", "models"] as const).map((key) => (
           <button
@@ -565,7 +626,8 @@ export function DataWorkspace({
                           }
                         >
                           {preparation.name}
-                        </button>
+                        </button>{" "}
+                        {updateMark(preparation.id)}
                       </td>
                       <td>
                         {preparation.publishedVersion
@@ -614,7 +676,8 @@ export function DataWorkspace({
                           }
                         >
                           {model.name}
-                        </button>
+                        </button>{" "}
+                        {updateMark(model.id)}
                       </td>
                       <td>
                         {model.publishedVersion
