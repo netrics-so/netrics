@@ -440,6 +440,147 @@ test("a customer builds and publishes without code", async ({
 });
 
 /**
+ * The step form opens where it was asked for (#628): with a sample wider
+ * than the screen and a hundred rows, "Add a step" opens the form above the
+ * sample, in view and focused, and nothing scrolls sideways with the wide
+ * table. On a desktop screen and on a phone, in English and in German.
+ */
+test("the step form opens beside the steps, not below a wide sample", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = labels(locale);
+  const exact = { exact: true } as const;
+  const columns = Array.from({ length: 14 }, (_, index) => index + 1);
+  const wide = {
+    name: "Wide sample",
+    key: "wide_sample",
+    fields: [
+      { id: "id", name: "Id", type: "string" as const, nullable: false },
+      ...columns.map((column) => ({
+        id: `c${column}`,
+        name: `Column ${column}`,
+        type: "string" as const,
+        nullable: false,
+      })),
+    ],
+    rows: Array.from({ length: 120 }, (_, row) => ({
+      id: `row-${String(row).padStart(3, "0")}`,
+      ...Object.fromEntries(
+        columns.map((column) => [
+          `c${column}`,
+          `a fairly long value ${row}-${column}`,
+        ]),
+      ),
+    })),
+  };
+
+  const { workspaceId } = await startWorkspace(page, locale);
+  await seedReferenceTable(page, workspaceId, wide);
+
+  await page.goto(`/workspaces/${workspaceId}/data`);
+  await page
+    .getByRole("complementary")
+    .getByRole("button", { name: wide.name })
+    .click();
+  await page.getByRole("button", { name: t.prepare }).click();
+  const preview = page.getByRole("table");
+  await expect(preview.getByRole("row")).toHaveCount(101);
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.getByRole("button", { name: t.addStep }).click();
+    // In view without scrolling, and above the sample, not after its rows.
+    const operation = page.getByRole("combobox", { name: t.operation });
+    await expect(operation).toBeInViewport();
+    const form = (await page.locator("form.data-step-form").boundingBox())!;
+    const table = (await preview.boundingBox())!;
+    expect(form.y).toBeLessThan(table.y);
+    // Within the screen's width: the wide table scrolls on its own.
+    expect(form.x).toBeGreaterThanOrEqual(0);
+    expect(form.x + form.width).toBeLessThanOrEqual(viewport.width);
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    // A named panel that takes focus, so keyboard users land in the form.
+    const panel = page.getByRole("region", { name: t.addStep, ...exact });
+    await expect(panel).toBeFocused();
+    await expect(panel).toBeInViewport();
+    await expect(
+      panel.getByRole("combobox", { name: t.operation }),
+    ).toBeVisible();
+
+    await panel.getByRole("button", { name: t.cancel, ...exact }).click();
+    await expect(panel).toHaveCount(0);
+    // Focus goes back to the button that opened the form.
+    await expect(page.getByRole("button", { name: t.addStep })).toBeFocused();
+  }
+
+  // A step whose check fails (#643): the form stays open, in view and with
+  // focus in it, and the step is marked failed. On a desktop screen.
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const steps = page.locator(".data-step-list > li");
+  const failed = steps.filter({ hasText: t.stepStatus.failed });
+  const onError = page.getByRole("combobox", { name: t.onError });
+  const focusIn = (region: Locator) =>
+    expect
+      .poll(() => region.evaluate((el) => el.contains(document.activeElement)))
+      .toBe(true);
+  const staysInView = async (region: Locator) => {
+    await expect(region).toBeInViewport();
+    await focusIn(region);
+    expect((await region.boundingBox())!.y).toBeLessThan(
+      (await preview.boundingBox())!.y,
+    );
+  };
+  const adding = page.getByRole("region", { name: t.addStep, ...exact });
+  await page.getByRole("button", { name: t.addStep }).click();
+  await adding
+    .getByRole("combobox", { name: t.operation })
+    .selectOption({ label: t.cast });
+  await adding
+    .getByRole("combobox", { name: t.field, ...exact })
+    .selectOption({ label: "Column 1" });
+  await adding
+    .getByRole("combobox", { name: t.type, ...exact })
+    .selectOption({ label: t.types.decimal });
+  await onError.selectOption({ label: t.reject });
+  await adding.getByRole("button", { name: t.applyStep }).click();
+  await expect(failed).toHaveCount(1);
+  await staysInView(adding);
+
+  // Empty values for what does not convert: it applies, the form closes and
+  // focus is back on "Add a step".
+  await onError.selectOption({ label: t.useNull });
+  await adding.getByRole("button", { name: t.applyStep }).click();
+  await expect(adding).toHaveCount(0);
+  await expect(failed).toHaveCount(0);
+  await expect(page.getByRole("button", { name: t.addStep })).toBeFocused();
+
+  // The edit form opens in the same place; a failing change keeps it open.
+  await steps.nth(1).getByRole("button").click();
+  await page.getByRole("button", { name: t.editStep }).click();
+  const editing = page.getByRole("region", { name: t.editStep, ...exact });
+  await expect(editing).toBeFocused();
+  await staysInView(editing);
+  await onError.selectOption({ label: t.reject });
+  await editing.getByRole("button", { name: t.applyStepChanges }).click();
+  await expect(failed).toHaveCount(1);
+  await staysInView(editing);
+  await editing.getByRole("button", { name: t.cancel, ...exact }).click();
+  await expect(editing).toHaveCount(0);
+  await expect(failed).toHaveCount(0);
+  await expect(page.getByRole("button", { name: t.editStep })).toBeFocused();
+});
+
+/**
  * Publishes a saved draft. The impact confirmation must open (a saved draft
  * always has a record to check); `check` inspects it, then it is accepted.
  */
