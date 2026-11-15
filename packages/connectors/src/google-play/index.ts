@@ -49,7 +49,7 @@ const de: ManifestTranslation = {
     reportBucket: {
       title: "Berichts-URI",
       description:
-        "Kopiere in der Play Console unter Kontoverwaltung → Play-App-Berichte die Google-Cloud-Storage-URI, die mit gs://pubsite_prod_rev_ beginnt. Du brauchst Zugriff auf die Statistik- und Finanzberichte.",
+        "Kopiere in der Play Console unter Kontoverwaltung → Play-App-Berichte die Google-Cloud-Storage-URI, die mit gs://pubsite_prod_ beginnt. Du brauchst Zugriff auf die Statistik- und Finanzberichte.",
     },
     ratingStorefront: {
       title: "Land für Bewertungen",
@@ -99,7 +99,7 @@ export const googlePlayManifest: ConnectorManifest = {
         type: "string",
         title: "Report URI",
         description:
-          "In Play Console, open Manage account → Play apps reports and copy the Google Cloud Storage URI beginning with gs://pubsite_prod_rev_. Your account needs access to statistics and financial reports.",
+          "In Play Console, open Manage account → Play apps reports and copy the Google Cloud Storage URI beginning with gs://pubsite_prod_ (older accounts: gs://pubsite_prod_rev_). Your account needs access to statistics and financial reports.",
       },
       ratingStorefront: {
         type: "string",
@@ -231,8 +231,9 @@ export function createGooglePlayConnector(
         try {
           const object = await client.sample(prefix);
           // Reading the first range proves object access without transferring
-          // a large report whole.
-          if (object) await client.source(object).read(0, 0);
+          // a large report whole (a gzip-encoded report is read whole: Cloud
+          // Storage serves it only that way).
+          if (object) await (await client.source(object)).read(0, 0);
           return true;
         } catch (error) {
           if (error instanceof PlayReportError && error.status === 403)
