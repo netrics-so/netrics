@@ -6,23 +6,33 @@ import {
   createWorkspace,
   schema,
   type Database,
+  type SerializationRetryOptions,
   type Sql,
 } from "@netrics/database";
 
 /**
- * Concurrent store-template installs in different workspaces (#604). Every
- * install here gets one attempt: the serialization retry is replaced by a
- * single call, so a conflict between installs fails the test instead of
- * being retried away. Before #604, of 4 concurrent installs exactly one
- * committed (the others: 40001, answered 409 version_conflict once the
- * retries ran out under load).
+ * Concurrent store-template installs in different workspaces (#604). A
+ * serialization failure is never retried here, so a conflict between
+ * installs fails the test instead of being retried away; only the
+ * install's own retry of a lock wait that timed out (55P03) stays, since
+ * under a loaded test run four queued installs can outlast one wait.
+ * Before #604, of 4 concurrent installs exactly one committed (the others:
+ * 40001, answered 409 version_conflict once the retries ran out under load).
  */
 vi.mock("@netrics/database", async (original) => {
   const actual = await original<typeof import("@netrics/database")>();
   return {
     ...actual,
-    retryOnSerializationFailure: <T>(attempt: (index: number) => Promise<T>) =>
-      attempt(0),
+    retryOnSerializationFailure: <T>(
+      attempt: (index: number) => Promise<T>,
+      options: SerializationRetryOptions = {},
+    ) =>
+      actual.retryOnSerializationFailure(attempt, {
+        ...options,
+        retryable: (error, index) =>
+          !actual.isSerializationFailure(error) &&
+          (options.retryable?.(error, index) ?? false),
+      }),
   };
 });
 

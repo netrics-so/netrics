@@ -25,6 +25,8 @@ export {
 } from "./context.js";
 export type {
   Db,
+  TableLockMode,
+  TableLocks,
   Transaction,
   UserContext,
   WorkspaceContext,

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   createDashboardRequestSchema,
@@ -17,7 +17,9 @@ import {
   insertAuditEvent,
   retryOnSerializationFailure,
   DatasetStoreError,
+  hasSqlstate,
   type Database,
+  type TableLocks,
   type Transaction,
 } from "@netrics/database";
 import {
@@ -64,12 +66,24 @@ import {
  *
  * The lock is taken before the snapshot: a lock taken after it (an advisory
  * lock in a SELECT) still leaves the waiter's snapshot older than the
- * holder's commit, and SSI cancels it anyway. SHARE ROW EXCLUSIVE conflicts
- * with itself and with writes to data_template_installs (an update's apply
- * waits for a running install), not with reads. It also replaces the
- * per-request advisory lock, which installs no longer need.
+ * holder's commit, and SSI cancels it anyway. SHARE UPDATE EXCLUSIVE
+ * conflicts with itself (and VACUUM/ANALYZE of the table), not with reads or
+ * writes: update operations (apply, close, swap, legacy completion) and
+ * cascading deletes never wait for a running install, so an install cannot
+ * stall another tenant's update or deadlock with one through the locks those
+ * hold (the install's advisory lock, the workspace ingestion lock 440). A
+ * wait longer than INSTALL_LOCK_TIMEOUT_MS fails with 55P03; the install
+ * retries that twice, then answers 409 version_conflict. The lock replaces
+ * the per-request advisory lock, which installs no longer need.
  */
-const INSTALL_LOCK = sql`lock table data_template_installs in share row exclusive mode`;
+export const INSTALL_LOCK_TIMEOUT_MS = 2_000;
+export const INSTALL_LOCK = {
+  tables: [schema.dataTemplateInstalls],
+  mode: "share update exclusive",
+  timeoutMs: INSTALL_LOCK_TIMEOUT_MS,
+} satisfies TableLocks;
+/** lock_not_available: the install lock was not granted in time. */
+const isLockTimeout = (error: unknown) => hasSqlstate(error, "55P03");
 
 type Actor = { workspaceId: string; callerId: string; locale: Locale };
 const appKey = (app: { connectionId: string; appId: string }) =>
@@ -638,14 +652,17 @@ export function createStoreTemplateService(deps: {
                 });
                 return result;
               },
-              { isolationLevel: "serializable", beforeSnapshot: INSTALL_LOCK },
+              { isolationLevel: "serializable", lockTables: INSTALL_LOCK },
             ),
           {
-            retryable: isRetryableDataConflict,
+            retryable: (error, index) =>
+              isRetryableDataConflict(error, index) ||
+              (index < 2 && isLockTimeout(error)),
           },
         );
       } catch (error) {
-        if (isDataConflict(error)) reject("version_conflict", 409);
+        if (isDataConflict(error) || isLockTimeout(error))
+          reject("version_conflict", 409);
         if (error instanceof DatasetStoreError)
           reject(error.code, datasetStoreStatus(error.code));
         throw error;

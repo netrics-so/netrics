@@ -1397,8 +1397,9 @@ export function createStoreTemplateUpdateService(deps: {
 
   /**
    * The install's lock: orders the update operations on one install. The
-   * install itself takes a table lock instead (INSTALL_LOCK in
-   * store-template-service.ts), which waits for these operations' writes.
+   * install itself takes a SHARE UPDATE EXCLUSIVE table lock instead
+   * (INSTALL_LOCK in store-template-service.ts), which never blocks these
+   * operations' reads or writes.
    */
   async function lockInstall(
     tx: Transaction,

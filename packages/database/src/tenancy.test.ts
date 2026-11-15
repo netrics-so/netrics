@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -428,5 +428,46 @@ describe("workspace-creation abuse guard", () => {
         expect(inD.map((m) => [m.userId, m.role])).toEqual([[u3, "owner"]]);
       },
     );
+  });
+});
+
+describe("withWorkspace transaction options", () => {
+  it("sends no bare SET TRANSACTION for options without values", async () => {
+    const isolation = await withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      async (tx) =>
+        (
+          await tx.execute<{ level: string }>(
+            sql`select current_setting('transaction_isolation') as level`,
+          )
+        )[0]!.level,
+      { isolationLevel: undefined, accessMode: undefined },
+    );
+    expect(isolation).toBe("read committed");
+  });
+
+  it("takes table locks first, with the timeout bounding only the lock", async () => {
+    const result = await withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      async (tx) =>
+        (
+          await tx.execute<{ mode: string; timeout: string }>(
+            sql`select (select mode from pg_locks where pid = pg_backend_pid()
+                  and relation = 'data_template_installs'::regclass) as mode,
+                current_setting('lock_timeout') as timeout`,
+          )
+        )[0]!,
+      {
+        isolationLevel: "serializable",
+        lockTables: {
+          tables: [schema.dataTemplateInstalls],
+          mode: "share update exclusive",
+          timeoutMs: 1_000,
+        },
+      },
+    );
+    expect(result).toEqual({ mode: "ShareUpdateExclusiveLock", timeout: "0" });
   });
 });
