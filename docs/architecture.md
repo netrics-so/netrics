@@ -485,6 +485,51 @@ new credentials and reauthorization queue none: the next sync continues from
 the cursor. Observations collected under an earlier config stay (their series
 identity is their dimensions); they are not deleted.
 
+A connector update can add a dataset or change a dataset's schema version
+(#617). An existing connection would then fill that dataset only from
+incremental runs, starting a few days before the deploy. To prevent this, the
+backfill and sync jobs work as follows.
+
+**Recording.** A succeeded backfill records the datasets it read, as
+`{key: version}` in `connection_state.backfilled_datasets`.
+
+**Detection.** Detection lives in the sync engine, not in a startup sweep. The
+worker is the only process that has both the connector registry and the
+connection, and the scheduler role cannot read `connections`. After each
+succeeded incremental run, the engine compares the record with the datasets
+the running connector declares. A dataset that is missing from the record, or
+recorded at another version, gets one `connection.backfill`. It is audited as
+`connection.backfill_requested` with `by: "system"` and the reason
+`dataset_added` or `dataset_changed`.
+
+**Idempotency.** The check takes a row lock on the state row. It queues nothing
+while a backfill of the connection waits or runs. It records the datasets it
+queued for (`backfill_requested_datasets`), so restarts, replicas and a
+backfill that keeps failing never queue the same datasets twice.
+
+**Pacing.** A deploy reaches every connection at once, so the checks spread
+over each connection's own poll interval. At most one automatic backfill per
+workspace waits or runs at a time, because connections in a workspace often
+share a provider key and its hourly limit (ADR 0014). The others ask again on
+their next run.
+
+**Connections from before #617.** These have no record yet, and the first check
+derives one. A stored dataset counts as read if a succeeded backfill run
+finished after its schema version was registered. If no backfill run is
+retained, it counts as not read. A dataset that has never been stored counts as
+read.
+
+**Stored data.** Backfills keep stored data and replace or upsert it window by
+window, as before.
+
+**Visibility.** The connection page says when the history is still loading. It
+names the datasets whose history is incomplete.
+
+**Reload history.** Members with `connections:update` can press "Reload
+history" (`POST …/connections/{id}/backfill`). It is audited with the member,
+refused while a backfill waits or runs, and limited to once per connection per
+12 hours (`HISTORY_RELOAD_INTERVAL_HOURS`).
+
 Partition observations by time when necessary. Index workspace, metric, series,
 and timestamp query paths. Retention and rollups run as ordinary maintenance
 jobs until TimescaleDB or another analytical store becomes justified.

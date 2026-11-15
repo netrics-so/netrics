@@ -21,6 +21,7 @@ import {
   createDatabase,
   createRawSqlClient,
   createWorkspace,
+  datasetVersions,
   enqueueJob,
   schema,
   SERIALIZATION_RETRY_DEFAULTS,
@@ -558,6 +559,11 @@ async function seedConnection(
       connectionId: connection!.id,
       workspaceId,
       pollIntervalSeconds: 300,
+      // As after the connection's first backfill: its incremental runs
+      // queue no backfill for datasets (#617; dataset-backfill.test.ts).
+      backfilledDatasets: datasetVersions(
+        registry.get(connectorId)?.manifest.datasets,
+      ),
     });
     return connection!.id;
   });

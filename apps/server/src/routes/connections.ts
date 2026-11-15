@@ -21,6 +21,7 @@ import {
   enableAppStoreAnalyticsRequestSchema,
   enableAppStoreAnalyticsResponseSchema,
   enqueueSyncResponseSchema,
+  historyReloadResponseSchema,
   latestReviewRequestSchema,
   latestReviewResponseSchema,
   observationListQuerySchema,
@@ -813,6 +814,43 @@ export function registerConnectionRoutes(
             return;
           }
           return enqueueSyncResponseSchema.parse({ jobId });
+        },
+      );
+
+      // "Reload history" (#617): reads the connector's whole backfill
+      // window again. Same capability as "Sync now"; refused while a
+      // backfill waits or runs (409) and more often than once per
+      // HISTORY_RELOAD_INTERVAL_HOURS per connection (429).
+      scope.post(
+        "/workspaces/:workspaceId/connections/:connectionId/backfill",
+        {
+          schema: routeSchema({
+            summary: "Reload a connection's history (backfill)",
+            tags: ["connections"],
+            response: historyReloadResponseSchema,
+            errors: [400, 403, 404, 409, 429],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "connections:update")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const params = connectionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            return sendError(reply, 404, "connection_not_found");
+          }
+          const result = await connections.requestHistoryReload(
+            access,
+            params.data.connectionId,
+          );
+          if (!result.ok) {
+            return sendError(reply, result.status, result.error);
+          }
+          return historyReloadResponseSchema.parse(result.value);
         },
       );
 

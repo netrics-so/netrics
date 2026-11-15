@@ -527,6 +527,23 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "netrics löscht seine Kopie des Schlüssels {keyId} für {name}. Der Schlüssel selbst bleibt bei {name} gültig, bis du ihn dort widerrufst.",
       apiKeys: "API-Schlüssel",
     },
+    history: {
+      reload: "Verlauf neu laden",
+      reloading: "Wird angefordert…",
+      confirmTitle: "Verlauf von „{name}“ neu laden?",
+      confirmBody:
+        "netrics liest den ganzen Verlaufszeitraum des Connectors noch einmal ({days, plural, one {# Tag} other {# Tage}}) und überschreibt die gespeicherten Tage mit dem, was der Anbieter jetzt liefert. Nichts wird gelöscht. Das kann eine Weile dauern; bis es fertig ist, können Summen über längere Zeiträume unvollständig sein.",
+      confirm: "Verlauf neu laden",
+      queued:
+        "Neuladen des Verlaufs eingeplant. Es läuft nach der aktuellen Synchronisierung.",
+      loading:
+        "Der Verlauf wird noch geladen. Bis er fertig ist, können Summen über längere Zeiträume unvollständig sein.",
+      incomplete:
+        "Der Verlauf von {datasets} ist unvollständig: Die Daten kamen mit einem Connector-Update dazu und werden erst seitdem gesammelt. Lade den Verlauf neu, um ihn zu füllen.",
+      incompleteReadOnly:
+        "Der Verlauf von {datasets} ist unvollständig: Die Daten kamen mit einem Connector-Update dazu und werden erst seitdem gesammelt.",
+      availableAgain: "Der Verlauf kann {when} wieder neu geladen werden.",
+    },
     retention: {
       title: "Datenaufbewahrung",
       setupTitle: "Datenaufbewahrung",

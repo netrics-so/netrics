@@ -10,6 +10,7 @@ import { ReconnectBanner } from "../reconnect-banner";
 import { StoreConnectionSettings } from "../store-connection-settings";
 import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
+import { HistoryReload } from "./history-reload";
 import { EditConnectionForm } from "./edit-connection-form";
 import { AppStoreAnalyticsPanel } from "./app-store-analytics-panel";
 import { AppStoreReviewsPanel } from "./app-store-reviews-panel";
@@ -37,7 +38,7 @@ import { observationBreakdown } from "@/lib/format-metric";
 import { formatReportingDay } from "@/lib/app-store-analytics";
 import { intervalLabel, relativeTime } from "@/lib/relative-time";
 import { requireSession } from "@/lib/session";
-import { appleAdsConnectionAccount } from "@/lib/apple-ads";
+import { appleAdsConnectionAccount, listNames } from "@/lib/apple-ads";
 import {
   APP_STORE_CONNECT_CONNECTOR_ID,
   APP_STORE_CONNECT_DOCS_URL,
@@ -72,6 +73,7 @@ export default async function ConnectionDetailPage({
   const ads = await getT("connections.appleAds");
   const health = await getT("health");
   const retentionT = await getT("connections.retention");
+  const historyT = await getT("connections.history");
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
     listWorkspaces(cookieHeader),
@@ -83,7 +85,7 @@ export default async function ConnectionDetailPage({
     notFound();
   }
   const role = membership.role;
-  const { connection, syncRuns } = detail;
+  const { connection, syncRuns, history } = detail;
 
   const [
     { connectors },
@@ -139,6 +141,19 @@ export default async function ConnectionDetailPage({
     ? appleAdsConnectionAccount(connection.config)
     : null;
   const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
+  // History status (#617): a backfill waits or runs, or datasets that no
+  // backfill has read yet (added by a connector update) hold partial history.
+  const historyLoading =
+    !connection.setupPending && history.backfill !== "idle";
+  const incompleteNames = listNames(
+    history.incompleteDatasets.map((dataset) => dataset.name),
+    locale,
+  );
+  const canReloadHistory =
+    canUpdate &&
+    history.supportsBackfill &&
+    !connection.setupPending &&
+    !needsReconnect;
 
   return (
     <>
@@ -194,6 +209,18 @@ export default async function ConnectionDetailPage({
           returnPath={returnPath}
         />
       )}
+
+      {historyLoading ? (
+        <div className="notice page-alert" role="status">
+          {historyT("loading")}
+        </div>
+      ) : history.incompleteDatasets.length > 0 ? (
+        <div className="notice page-alert" role="status">
+          {canReloadHistory
+            ? historyT("incomplete", { datasets: incompleteNames })
+            : historyT("incompleteReadOnly", { datasets: incompleteNames })}
+        </div>
+      ) : null}
 
       {authFailed ? (
         <div className="error page-alert" role="alert">
@@ -313,6 +340,14 @@ export default async function ConnectionDetailPage({
           canUpdate={canUpdate}
           canDelete={can(role, "connections:delete")}
         />
+        {canReloadHistory ? (
+          <HistoryReload
+            workspaceId={workspaceId}
+            connectionId={connection.id}
+            connectionName={connection.name}
+            history={history}
+          />
+        ) : null}
       </div>
 
       {keyStrategy ? (

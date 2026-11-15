@@ -22,8 +22,10 @@ import {
 import {
   connectionResourcesDiscoveredAt,
   connectorStageProvenance,
+  datasetVersions,
   ingestAppReviews,
   ingestDatasetPage,
+  queueDatasetBackfill,
   DatasetStoreError,
   DatasetStageUnavailableError,
   resolveDataPolicy,
@@ -398,6 +400,19 @@ async function runSync(
     }
     window = { from: new Date(saved.from), to: new Date(saved.to) };
   }
+  /**
+   * A succeeded backfill read the whole window into every dataset the
+   * connector declares now (#617): the record the automatic backfill of
+   * added datasets compares against.
+   */
+  const backfillRecord =
+    mode === "backfill"
+      ? {
+          backfilledDatasets: datasetVersions(
+            deps.registry.get(connection.connectorId)?.manifest.datasets,
+          ),
+        }
+      : {};
   const pollIntervalSeconds =
     state?.pollIntervalSeconds ??
     deps.registry.get(connection.connectorId)?.manifest
@@ -955,6 +970,7 @@ async function runSync(
           nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
           cursor: finalCursor,
           ...backfillMarker,
+          ...backfillRecord,
           authState: "ok",
           authReason: null,
           consecutiveFailures: 0,
@@ -966,6 +982,7 @@ async function runSync(
             nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
             cursor: finalCursor,
             ...backfillMarker,
+            ...backfillRecord,
             authState: "ok",
             authReason: null,
             consecutiveFailures: 0,
@@ -1009,6 +1026,43 @@ async function runSync(
     { mode, window: { from: iso(window.from), to: iso(window.to) } },
     "sync run succeeded",
   );
+
+  // #617: a connector update that adds a dataset (or changes one's schema
+  // version) leaves the connection's history of it to incremental runs.
+  // After a succeeded incremental run, queue one backfill for it. Best
+  // effort: a failure is logged and the next run asks again.
+  if (
+    mode === "incremental" &&
+    manifest.supportsBackfill &&
+    (manifest.datasets?.length ?? 0) > 0
+  ) {
+    try {
+      const outcome = await withWorkspace(appDb, { workspaceId }, (tx) =>
+        queueDatasetBackfill(tx, {
+          workspaceId,
+          connectionId,
+          connectorId: manifest.id,
+          declared: datasetVersions(manifest.datasets),
+        }),
+      );
+      if (outcome.queued) {
+        log.info(
+          { datasets: outcome.datasets, jobId: outcome.jobId },
+          "backfill queued for datasets without history",
+        );
+      } else if (outcome.reason === "workspace_busy") {
+        log.info(
+          { datasets: outcome.datasets },
+          "backfill for datasets without history waits for another backfill in the workspace",
+        );
+      }
+    } catch (error) {
+      log.warn(
+        { err: safeMessage(error) },
+        "datasets without history not checked",
+      );
+    }
+  }
 
   // Step 4 (#194): the names of the connection's resources (apps,
   // projects, properties), so a tile of one resource can show its name.

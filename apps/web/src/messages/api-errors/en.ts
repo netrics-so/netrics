@@ -189,6 +189,11 @@ export const apiErrorsEn = {
       "A tile filters on a dimension the metric does not have.",
     oauth_reauthorization_required:
       "The authorization at the provider stopped working. Reconnect it from the connection page.",
+    backfill_not_supported: "This connector cannot read its history again.",
+    backfill_in_progress:
+      "The history is already loading. Wait until it has finished.",
+    history_reload_rate_limited:
+      "The history of this connection was reloaded recently. Try again later.",
     connection_setup_pending: "Finish setting up this connection first.",
     connector_unavailable: "This connector is not available on this instance.",
     connection_busy:
