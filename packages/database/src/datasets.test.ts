@@ -19,6 +19,7 @@ import {
   ingestDatasetPage,
   previewDataset,
   pruneDatasetHistory,
+  receiveEmptySourceDataset,
   replayDatasetRefresh,
   listObservationDatasets,
   readObservationDataset,
@@ -344,6 +345,73 @@ describe("durable typed dataset ingestion", () => {
       "later",
       "new",
     ]);
+  });
+  it("stores a checked dataset without rows as received and empty, never replacing stored rows (#666)", async () => {
+    const d = definition("checked", "replace_window");
+    const receive = (at: Date) =>
+      withWorkspace(db, { workspaceId: a }, (tx) =>
+        receiveEmptySourceDataset(tx, {
+          workspaceId: a,
+          connectionId: ca,
+          definition: d,
+          now: at,
+        }),
+      );
+    const generations = (datasetId: string) =>
+      admin`select row_count, created_at from data_generations
+        where dataset_id=${datasetId} order by sequence`;
+    // Never seen before: registered with an empty first generation.
+    const first = await receive(now);
+    expect(first).not.toBeNull();
+    expect(await preview(first!.datasetId)).toMatchObject({
+      generation: { id: first!.generationId, rowCount: 0 },
+      rows: [],
+    });
+    // Checked again while still empty: a newer empty generation, so the
+    // refresh time follows the checks.
+    const later = new Date(now.getTime() + 60_000);
+    const second = await receive(later);
+    expect(second?.generationId).not.toBe(first!.generationId);
+    expect(
+      (await generations(first!.datasetId)).map((row) => row.row_count),
+    ).toEqual([0, 0]);
+    // Rows arrive for one month; a later check stores nothing and keeps them.
+    await ingest(
+      d,
+      page(d, {
+        refreshKey: "rows",
+        window: {
+          from: "2026-10-01",
+          toExclusive: "2026-11-01",
+          partition: {},
+        },
+        records: [record("kept", "1.00", "2026-10-02")],
+      }),
+      a,
+      ca,
+      later,
+    );
+    expect(await receive(new Date(later.getTime() + 60_000))).toBeNull();
+    expect(
+      (await preview(first!.datasetId))?.rows.map((row) => row.id),
+    ).toEqual(["kept"]);
+    expect(await generations(first!.datasetId)).toHaveLength(3);
+    // A dataset whose history was published and is gone is not
+    // reinterpreted as empty.
+    const lost = definition("checked-lost", "upsert");
+    const { datasetId } = await ingest(lost, page(lost));
+    await admin`delete from data_generations where dataset_id=${datasetId}`;
+    expect(
+      await withWorkspace(db, { workspaceId: a }, (tx) =>
+        receiveEmptySourceDataset(tx, {
+          workspaceId: a,
+          connectionId: ca,
+          definition: lost,
+          now,
+        }),
+      ),
+    ).toBeNull();
+    expect(await generations(datasetId)).toHaveLength(0);
   });
   it("does not multiply append events and refuses conflicting identities", async () => {
     const d = definition("events", "append");

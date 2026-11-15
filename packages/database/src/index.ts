@@ -518,7 +518,10 @@ export {
   previewDataset,
   DatasetStoreError,
 } from "./datasets.js";
-export { registerSourceDataset } from "./datasets.js";
+export {
+  receiveEmptySourceDataset,
+  registerSourceDataset,
+} from "./datasets.js";
 export type { IngestDatasetPageInput } from "./datasets.js";
 export {
   connectionDatasetRetentionDays,

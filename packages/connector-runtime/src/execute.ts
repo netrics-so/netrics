@@ -194,6 +194,14 @@ function validateSyncResult(
     throw new ContractViolationError(
       "Final sync page contains an incomplete dataset refresh",
     );
+  // A dataset counts as checked only once the whole run is (#666).
+  if (!result.done && result.receivedDatasets?.length)
+    throw new ContractViolationError(
+      "Received datasets on a sync page that is not final",
+    );
+  for (const key of result.receivedDatasets ?? [])
+    if (!manifest.datasets?.some((dataset) => dataset.key === key))
+      throw new ContractViolationError("Undeclared source dataset");
   const metrics = new Map(
     manifest.metrics.map((metric) => [metric.key, metric]),
   );

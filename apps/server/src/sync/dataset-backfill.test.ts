@@ -17,6 +17,7 @@ import {
   createWorkspace,
   queueDatasetBackfill,
   schema,
+  storedDatasetsMissingBackfill,
   withWorkspace,
   type Database,
   type Job,
@@ -144,6 +145,10 @@ function growingConnector(release: 1 | 2 | 3): Connector {
             dimensions: { resource: "app" },
           },
         ],
+        // A run without rows that checked everything (#666).
+        ...(withholdRows && declareReceived && datasets.length
+          ? { receivedDatasets: datasets.map((dataset) => dataset.key) }
+          : {}),
         datasetPages: (withholdRows ? [] : datasets).map((dataset) => ({
           datasetKey: dataset.key,
           schemaVersion: dataset.version,
@@ -178,6 +183,8 @@ let paged = false;
 let failFinalPage = false;
 /** Runs write no dataset page, like a provider without rows yet (#634). */
 let withholdRows = false;
+/** Runs without rows declare the dataset received and empty (#666). */
+let declareReceived = false;
 
 let testDb: TestDatabase;
 let appDb: Database;
@@ -446,6 +453,7 @@ describe("backfill of datasets a connector update adds (#617)", () => {
   describe("a dataset the connection has not stored (#634)", () => {
     afterAll(async () => {
       withholdRows = false;
+      declareReceived = false;
       await settleBackfills();
     });
 
@@ -478,6 +486,43 @@ describe("backfill of datasets a connector update adds (#617)", () => {
       await run(2, "connection.sync", connectionId);
       expect(await backfillJobs(connectionId)).toEqual([]);
       withholdRows = false;
+      await run(2, "connection.sync", connectionId);
+      await run(2, "connection.sync", connectionId);
+      expect(await backfillJobs(connectionId)).toHaveLength(1);
+      expect((await auditEvents(connectionId))[0]!.metadata).toMatchObject({
+        reason: "dataset_added",
+        datasets: ["rows"],
+      });
+    });
+    it("queues nothing for a dataset declared received and empty, then one backfill once rows arrive (#666)", async () => {
+      await settleBackfills();
+      const connectionId = await seedConnection();
+      await run(1, "connection.backfill", connectionId);
+      withholdRows = true;
+      declareReceived = true;
+      await run(2, "connection.sync", connectionId);
+      await run(2, "connection.sync", connectionId);
+      // Stored as received and empty: a dataset row and an empty generation.
+      expect(
+        await owner`select g.row_count from data_generations g
+          join data_datasets d on d.id = g.dataset_id
+          where d.connection_id = ${connectionId}`,
+      ).not.toHaveLength(0);
+      expect(await storedRows(connectionId)).toEqual([]);
+      // No history to fill: no backfill, and nothing shown as incomplete.
+      expect(await backfillJobs(connectionId)).toEqual([]);
+      expect(
+        await withWorkspace(appDb, { workspaceId }, (tx) =>
+          storedDatasetsMissingBackfill(tx, {
+            workspaceId,
+            connectionId,
+            declared: { rows: 1 },
+            backfilled: {},
+          }),
+        ),
+      ).toEqual([]);
+      withholdRows = false;
+      declareReceived = false;
       await run(2, "connection.sync", connectionId);
       await run(2, "connection.sync", connectionId);
       expect(await backfillJobs(connectionId)).toHaveLength(1);
@@ -565,11 +610,20 @@ describe("backfill of datasets a connector update adds (#617)", () => {
     await owner`
       update connection_state set backfilled_datasets = '{}'::jsonb
       where workspace_id = ${busy}`;
-    // Each stores "rows" (#634: a dataset never stored queues nothing).
+    // Each stores "rows" (#634: a dataset never stored queues nothing; #666:
+    // stored means a generation with rows).
     for (const connectionId of connections) {
-      await owner`
+      const [dataset] = await owner<{ id: string }[]>`
         insert into data_datasets (workspace_id, connection_id, kind, key, name)
-        values (${busy}, ${connectionId}, 'source', 'rows', 'Report rows')`;
+        values (${busy}, ${connectionId}, 'source', 'rows', 'Report rows')
+        returning id`;
+      await owner`
+        insert into data_schema_versions (dataset_id, workspace_id, version, definition)
+        values (${dataset!.id}, ${busy}, 1, '{}'::jsonb)`;
+      await owner`
+        insert into data_generations (dataset_id, workspace_id, schema_version,
+          refresh_key, source_started_at, sequence, row_count)
+        values (${dataset!.id}, ${busy}, 1, 'r1', now(), 1, 1)`;
     }
     const outcomes = await Promise.all(
       connections.map((connectionId) =>

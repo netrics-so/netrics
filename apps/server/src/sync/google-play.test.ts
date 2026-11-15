@@ -66,7 +66,9 @@ let actor: DataActor,
   connectionId: string,
   installsId: string,
   earningsId: string,
-  earningModelId: string;
+  earningModelId: string,
+  ratingsId: string,
+  ratingModelId: string;
 let clockMs = TEST_NOW;
 let service: ReturnType<typeof createDataService>;
 const logs: string[] = [],
@@ -271,9 +273,16 @@ describe("Google Play through OAuth, worker, datasets and models", () => {
       attempts: 0,
     });
     const { sources } = await service.listSources(actor);
+    // The fixture account has no rating reports: its rating rows are
+    // received and empty after the full sync, not pending (#666).
     expect(sources.filter((source) => source.kind === "source")).toHaveLength(
-      4,
+      5,
     );
+    expect(
+      sources.find(
+        (source) => source.name === "Google Play rating report rows",
+      ),
+    ).toMatchObject({ rowCount: 0 });
     expect(sources.some((source) => source.kind === "resources")).toBe(true);
     installsId = sources.find(
       (source) => source.name === "Google Play install report rows",
@@ -505,6 +514,119 @@ describe("Google Play through OAuth, worker, datasets and models", () => {
       expect(state).toMatchObject({ authState: "ok", consecutiveFailures: 0 });
     } finally {
       await setSelection([ALPHA, BETA]);
+    }
+  });
+  it("an account without rating reports gets a fresh, complete ratings model with snapshots (#666)", async () => {
+    const { sources } = await service.listSources(actor);
+    ratingsId = sources.find(
+      (source) => source.name === "Google Play rating report rows",
+    )!.id;
+    const saved = await service.saveModel(actor, {
+      name: "Play ratings",
+      definition: {
+        version: 1,
+        datasets: [ratingsId],
+        relationships: [],
+        dimensions: [
+          { id: "app", name: "App", datasetId: ratingsId, fieldId: "app_id" },
+        ],
+        measures: [
+          {
+            id: "rating",
+            name: "Rating",
+            kind: "aggregate",
+            datasetId: ratingsId,
+            aggregate: {
+              id: "rating",
+              name: "Rating",
+              op: "max",
+              fieldId: "total_average_rating",
+            },
+          },
+        ],
+      },
+    });
+    ratingModelId = saved.model.id;
+    await service.publishModel(actor, ratingModelId, 1);
+    const ratings = await service.query(actor, ratingModelId, {
+      measureIds: ["rating"],
+      groupBy: ["app"],
+    });
+    expect(ratings.pendingSources ?? []).toEqual([]);
+    expect(ratings.warnings).not.toContain("data_source_pending");
+    expect(ratings.receivedAt).not.toBeNull();
+    expect(ratings.rows).toEqual([]);
+    const snapshots = await withWorkspace(
+      appDb,
+      { workspaceId: actor.workspaceId },
+      (tx) =>
+        tx
+          .select()
+          .from(schema.dataModelQuerySnapshots)
+          .where(
+            eq(schema.dataModelQuerySnapshots.workspaceId, actor.workspaceId),
+          ),
+    );
+    expect(snapshots.length).toBeGreaterThan(0);
+    // The next sync checks again: the refresh time follows it.
+    clockMs += 60_000;
+    expect(await runJob("connection.sync")).toMatchObject({
+      status: "succeeded",
+    });
+    const again = await service.query(actor, ratingModelId, {
+      measureIds: ["rating"],
+      groupBy: ["app"],
+    });
+    expect(Date.parse(again.receivedAt!)).toBeGreaterThan(
+      Date.parse(ratings.receivedAt!),
+    );
+  });
+  it("keeps stored ratings, installs and earnings when the ratings permission is lost later (#666)", async () => {
+    fake.put(
+      `stats/ratings/ratings_${ALPHA}_202610_overview.csv`,
+      fixtureBytes("ratings-alpha-overview.csv"),
+    );
+    clockMs += 60_000;
+    expect(await runJob("connection.sync")).toMatchObject({
+      status: "succeeded",
+    });
+    const rated = await service.preview(actor, ratingsId);
+    expect(rated.rows).toHaveLength(4);
+    const counts = async () =>
+      Object.fromEntries(
+        (await service.listSources(actor)).sources.map((source) => [
+          source.id,
+          source.rowCount,
+        ]),
+      );
+    const before = await counts();
+    fake.privateStatus.set("stats/ratings/", 403);
+    try {
+      clockMs += 60_000;
+      expect(await runJob("connection.sync")).toMatchObject({
+        status: "succeeded",
+      });
+      expect((await service.preview(actor, ratingsId)).rows).toEqual(
+        rated.rows,
+      );
+      const after = await counts();
+      for (const id of [ratingsId, installsId, earningsId])
+        expect(after[id], id).toBe(before[id]);
+      const ratings = await service.query(actor, ratingModelId, {
+        measureIds: ["rating"],
+        groupBy: ["app"],
+      });
+      expect(ratings.pendingSources ?? []).toEqual([]);
+      expect(ratings.rows).toEqual([
+        expect.objectContaining({
+          dimensions: { app: ALPHA },
+          measures: {
+            rating: expect.objectContaining({ value: "4.0714" }),
+          },
+        }),
+      ]);
+    } finally {
+      fake.privateStatus.delete("stats/ratings/");
     }
   });
   it("pauses revoked authorization without deleting retained history or logging credentials", async () => {

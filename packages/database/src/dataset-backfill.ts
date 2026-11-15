@@ -1,4 +1,4 @@
-import { and, eq, inArray, max, sql } from "drizzle-orm";
+import { and, eq, exists, gt, inArray, max, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import { insertAuditEvent } from "./workspaces.js";
@@ -34,11 +34,13 @@ export function datasetsMissingBackfill(
 }
 
 /**
- * Which of the datasets the connection has stored (#634): a source dataset
- * is registered (data_datasets) by the first page written to it. A dataset
- * it has never stored has no history to fill or to show as incomplete yet,
- * e.g. one the provider has no rows for so far, or one the connection does
- * not write at all (an optional report that is turned off).
+ * Which of the datasets the connection has stored rows in (#634): a source
+ * dataset is registered (data_datasets) by the first page written to it, and
+ * counts once one of its generations holds a row. A dataset without rows has
+ * no history to fill or to show as incomplete yet, e.g. one the provider has
+ * no rows for so far, one a sync declared received and empty (#666), or one
+ * the connection does not write at all (an optional report that is turned
+ * off).
  */
 async function storedSourceDatasets(
   tx: Transaction,
@@ -55,6 +57,18 @@ async function storedSourceDatasets(
         eq(schema.dataDatasets.connectionId, connectionId),
         eq(schema.dataDatasets.kind, "source"),
         inArray(schema.dataDatasets.key, keys),
+        exists(
+          tx
+            .select({ one: sql`1` })
+            .from(schema.dataGenerations)
+            .where(
+              and(
+                eq(schema.dataGenerations.workspaceId, workspaceId),
+                eq(schema.dataGenerations.datasetId, schema.dataDatasets.id),
+                gt(schema.dataGenerations.rowCount, 0),
+              ),
+            ),
+        ),
       ),
     );
   return new Set(rows.map((row) => row.key));

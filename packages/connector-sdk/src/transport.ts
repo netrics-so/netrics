@@ -129,6 +129,17 @@ export const syncResultSchema = z.object({
   /** Optional (SDK 0.2.8): the spans this page read completely. */
   reviewWindows: z.array(reviewWindowSchema).optional(),
   /**
+   * Optional (SDK 0.2.12), on a done result only: keys of declared source
+   * datasets this run checked completely, whether or not it found rows. One
+   * that has never stored a generation then counts as received and empty
+   * instead of pending: the host stores an empty first generation. Stored
+   * rows are never replaced by it (#666).
+   */
+  receivedDatasets: z
+    .array(z.string().min(1).max(200))
+    .max(DATASET_LIMITS.datasets)
+    .optional(),
+  /**
    * Where the next request continues. The host commits each page with its
    * cursor as a checkpoint, so a cursor returned with done=false may come
    * back in a later run (after a failure) with a later `to`.

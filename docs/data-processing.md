@@ -156,6 +156,18 @@ the same steps. Stage pages are stored gzip-compressed, and the stage limit and
 `maxConnectorStagingBytes` count the stored compressed bytes. See
 [ADR 0024](./decisions/0024-streaming-connector-staging.md).
 
+SDK 0.2.12 adds optional `receivedDatasets` to a final (`done`) sync result:
+the declared source datasets the run checked completely, with or without rows.
+One that has no rows stored is then received and empty instead of pending: the
+host stores an empty generation, again on each such run so its refresh time
+follows the checks. It never replaces stored rows, and a dataset whose history
+was published and is gone stays `data_source_history_unavailable`. Google Play
+declares its rating rows, which exist only for months with a readable rating
+report, so an account without any no longer keeps the ratings model pending
+([#666](https://github.com/netrics-so/netrics/issues/666)); a month whose
+report is not published, not permitted or unreadable still emits only its
+availability row and never replaces that month's stored rows.
+
 Google continuations read the needed parsed page instead of downloading and
 parsing each report again. Each turn still discovers current reports and checks
 object-level access to the pinned generations. Corrections or expired staging

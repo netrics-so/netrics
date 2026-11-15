@@ -25,6 +25,7 @@ import {
   datasetVersions,
   ingestAppReviews,
   ingestDatasetPage,
+  receiveEmptySourceDataset,
   intersectDatasetVersions,
   queueDatasetBackfill,
   DatasetStoreError,
@@ -873,7 +874,43 @@ async function runSync(
             ),
         },
       );
-    let finalDatasetPages: Pick<SyncResult, "datasetPages"> = {};
+    /**
+     * Datasets the finished run checked completely (SDK 0.2.12, #666): one
+     * without rows yet is stored as received and empty, not left pending.
+     * Never replaces stored rows. Errors are classified as a page's are.
+     */
+    const receiveDatasets = async (
+      tx: Transaction,
+      result: Pick<SyncResult, "receivedDatasets">,
+    ) => {
+      for (const key of new Set(result.receivedDatasets ?? [])) {
+        const definition = manifest.datasets?.find((item) => item.key === key);
+        if (!definition)
+          throw new ContractViolationError("Undeclared source dataset");
+        try {
+          await receiveEmptySourceDataset(tx, {
+            workspaceId,
+            connectionId,
+            definition,
+            now,
+            policyDefaults: deps.dataPolicy,
+            clock,
+          });
+        } catch (error) {
+          if (error instanceof DatasetStoreError) {
+            if (TRANSIENT_DATASET_ERRORS.has(error.code)) throw error;
+            if (BUDGET_DATASET_ERRORS.has(error.code))
+              throw new DatasetBudgetError(error.code);
+            throw new ContractViolationError(error.code);
+          }
+          throw error;
+        }
+      }
+    };
+    let finalDatasetPages: Pick<
+      SyncResult,
+      "datasetPages" | "receivedDatasets"
+    > = {};
     let finalObservations: Observation[] = [];
     let finalReviews: Pick<SyncResult, "reviews" | "reviewWindows"> = {};
     let finalCursor = startCursor;
@@ -981,6 +1018,7 @@ async function runSync(
         (await ingestPage(tx, finalObservations));
       // Datasets before reviews: lock order as in the page transaction.
       await ingestDatasets(tx, finalDatasetPages);
+      await receiveDatasets(tx, finalDatasetPages);
       await ingestReviews(tx, finalReviews);
 
       // Cursor advancement commits in this same transaction as the
