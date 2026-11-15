@@ -123,8 +123,11 @@ export function inputs(): Map<string, DataTable> {
           ["com.example.gamma", "Third app"],
           ["com.example.delta", "Fourth app"],
           ["com.example.epsilon", "Fifth app"],
-          // Selected, but not read yet: no rating rows and no status.
+          // Selected and synced once, before rating reports were read.
           ["com.example.zeta", "Sixth app"],
+          // Discovered for the account but not selected: never reported.
+          ["com.example.eta", "Unselected app"],
+          ["com.example.theta", "Seventh app"],
         ],
         "Android",
       ),
@@ -254,6 +257,14 @@ export function inputs(): Map<string, DataTable> {
           daily_average_rating: null,
           total_average_rating: null,
         },
+        // Rated in October; October's report later could not be read again
+        // (its rows stay) and November is not published yet.
+        {
+          app_id: "com.example.theta",
+          day: "2026-10-20",
+          daily_average_rating: "4.0",
+          total_average_rating: "3.5",
+        },
         // Rated up to October; November's report cannot be read.
         {
           app_id: "com.example.epsilon",
@@ -280,6 +291,9 @@ export function inputs(): Map<string, DataTable> {
           ["com.example.delta", "ratings", "2026-11-01", "invalid_report"],
           ["com.example.epsilon", "ratings", "2026-10-01", "available"],
           ["com.example.epsilon", "ratings", "2026-11-01", "invalid_report"],
+          ["com.example.theta", "ratings", "2026-10-01", "invalid_report"],
+          ["com.example.theta", "ratings", "2026-11-01", "not_published"],
+          ["com.example.zeta", "installs", "2026-11-01", "not_published"],
         ].map(([app_id, report_type, report_month, availability]) => ({
           app_id,
           report_type,

@@ -75,13 +75,17 @@ permission as install reports.
 The store portfolio template (version 2) shows, per Google Play app, the latest
 total average rating with its report day as "Checked at" (a date, so it reads
 as the same Pacific report day in every viewer time zone), and an empty rating
-count. When the app's latest rating report month could not be read or is no
-longer accessible, the last rating and its day stay, with that reason ("Rating
-report could not be read", "No access to rating reports"); a month not
-published yet is the normal report lag and stays "Available". Every other app
-of the connection (its apps, and apps with a report status) shows why there is
-no rating: no ratings yet, no rating report yet (also before the first read of
-a newly selected app, then without a day), no access, or an unreadable report.
+count. When the latest rating report month that is not merely unpublished
+could not be read or is no longer accessible, the last rating and its day stay,
+with that reason ("Rating report could not be read", "No access to rating
+reports"); a new month not published yet is the normal report lag and neither
+changes "Available" nor hides a problem with the month before. Every other app
+the connection reads shows why there is no rating: no ratings yet, no rating
+report yet (a selected app synced before rating reports were read, then without
+a day), no access, or an unreadable report. These are the apps with install or
+rating report status, written for selected apps from their first sync; apps
+discovered for the account but not selected never appear, and before a
+connection's first sync the widget has no Google Play rows.
 
 Play rating reports cover all countries, so their rating country is the value
 `ALL`, shown as "All countries" / "Alle Länder" (version 2 gives the rating

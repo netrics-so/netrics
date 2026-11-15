@@ -72,7 +72,7 @@ function buildAll(
  */
 const VERSION_HASHES: Record<number, string> = {
   1: "44be27ea317c1faf154c41abfc16711e055ca8c47c6e6220918bba59c701aa24",
-  2: "fd0db8f3b4d123c9de2f74dc34555be10a02a3d85b867d3742a15ee73a7ca345",
+  2: "79726e4b4472c40243627181269daf6f08dcd991b7d1e415d2aba7bc51727aa3",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 

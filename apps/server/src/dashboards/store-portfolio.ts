@@ -122,8 +122,8 @@ export const ALL_STOREFRONTS = "ALL";
  * rating count), its report day as the "as of" day, and "available" unless
  * the app's latest rating report month could not be read or accessed (the
  * last value stays, with that reason; a month not published yet is the
- * normal report lag). Every other app the connection knows (its resources
- * and its report status) gets one row saying why there is no rating: no
+ * normal report lag). Every other app the connection reads (install or
+ * rating report status) gets one row saying why there is no rating: no
  * ratings yet, no report yet, no access, or an unreadable report.
  * `captured_at` only orders rows (the latest report day wins). Output: the
  * listing snapshot's columns plus `storefront_name`, ending in node `raw`.
@@ -207,6 +207,17 @@ function playRatingReportNodes(
         fieldId: "availability",
         orderBy: "report_month",
       },
+      // The reason a rating may be missing or outdated: the latest month
+      // that is not merely unpublished (a new month is the normal lag and
+      // must not hide that the month before could not be read).
+      {
+        id: "reason",
+        name: t.availability,
+        op: "last",
+        fieldId: "availability",
+        orderBy: "report_month",
+        filter: call("ne", field("availability"), text("not_published")),
+      },
       {
         id: "reported",
         name: "Available reports",
@@ -252,11 +263,11 @@ function playRatingReportNodes(
     t.availability,
     call(
       "if",
-      eq("status.latest", "permission_missing"),
+      eq("status.reason", "permission_missing"),
       text("permission_missing"),
       call(
         "if",
-        eq("status.latest", "invalid_report"),
+        eq("status.reason", "invalid_report"),
         text("invalid_report"),
         text("available"),
       ),
@@ -264,17 +275,17 @@ function playRatingReportNodes(
   );
   common("report");
 
-  // Every other known app: the connection's apps and those with a status.
+  // Every other app the connection reads: install report status is written
+  // for each selected app from its first sync (discovered apps that are not
+  // selected have none), and rating report status for each rated one.
   step({
-    id: "resource_apps",
-    type: "calculate",
-    input: "resource_names",
-    fieldId: "app_id",
-    name: t.app,
-    expression: field("resource_id"),
+    id: "install_status",
+    type: "filter",
+    input: "status_rows",
+    expression: eq("report_type", "installs"),
   });
   step({
-    id: "known_resource_apps",
+    id: "install_apps",
     type: "select",
     input: current,
     fields: ["app_id"],
@@ -288,7 +299,7 @@ function playRatingReportNodes(
   step({
     id: "known_apps_all",
     type: "append",
-    inputs: ["known_resource_apps", "status_apps"],
+    inputs: ["install_apps", "status_apps"],
   });
   step({
     id: "known_apps",
@@ -343,8 +354,8 @@ function playRatingReportNodes(
   );
   calc("status_day", "day", t.day, call("to_date", field("status.checked_at")));
   calc("status_rating", "rating", t.rating, nullOf("decimal", "stars"));
-  // Published reports without a rated day: no ratings yet. No status yet
-  // (before the first read, or a newly selected app): no report yet.
+  // Published reports without a rated day: no ratings yet. A selected app
+  // without rating report status yet: no report yet.
   calc(
     "status_availability",
     "availability",
@@ -361,7 +372,7 @@ function playRatingReportNodes(
           value: 0,
         }),
         text("unrated"),
-        field("status.latest"),
+        call("coalesce", field("status.reason"), field("status.latest")),
       ),
     ),
   );

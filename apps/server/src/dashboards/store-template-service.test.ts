@@ -359,6 +359,12 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
           null,
           "Rating report could not be read",
         ],
+        [
+          google.id + ":com.example.theta",
+          "3.5",
+          null,
+          "Rating report could not be read",
+        ],
         [google.id + ":com.example.zeta", null, null, "No rating report yet"],
       ].sort(),
     );

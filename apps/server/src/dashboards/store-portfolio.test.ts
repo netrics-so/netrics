@@ -251,7 +251,18 @@ describe("editable store portfolio definitions", () => {
           "2026-10-31",
           "Rating report could not be read",
         ],
-        // A selected app before its first report read still has a row.
+        // A month not published yet does not hide that the month before
+        // could not be read.
+        [
+          "Seventh app · Google Play",
+          "ALL",
+          "All countries",
+          "3.5",
+          null,
+          "2026-10-20",
+          "Rating report could not be read",
+        ],
+        // A selected app without rating report status yet still has a row.
         [
           "Sixth app · Google Play",
           "ALL",
@@ -263,7 +274,11 @@ describe("editable store portfolio definitions", () => {
         ],
       ]),
     );
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(8);
+    // A discovered app the connection does not read has no row.
+    expect(
+      rows.filter((row) => String(row[0]).startsWith("Unselected app")),
+    ).toEqual([]);
     // German labels; the storefront value stays the same in every language.
     const de = querySemanticModel(
       buildStoreModel("ratings", "facts", "de", 2),
@@ -277,6 +292,7 @@ describe("editable store portfolio definitions", () => {
       de.rows.map((row) => row.measures.availability?.value).sort(),
     ).toEqual(
       [
+        "Bewertungsbericht nicht lesbar",
         "Bewertungsbericht nicht lesbar",
         "Bewertungsbericht nicht lesbar",
         "Noch kein Bewertungsbericht",
