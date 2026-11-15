@@ -565,13 +565,20 @@ export function createDataLoader(
     options.shared && !id.startsWith("prepared:") && !options.generations?.[id]
       ? options.shared.sources
       : undefined;
-  /** Records a source load for the other loaders of the batch. */
-  const share = (id: string, table: DataTable, added: string[]) =>
+  /**
+   * Records a source load for the other loaders of the batch, with the
+   * warnings of this source itself: not what the load added to this
+   * loader's set, which may already hold them from another source.
+   */
+  const share = (id: string, table: DataTable, historyIncomplete = false) =>
     shareable(id)?.set(id, {
       table,
       view: views.get(id)!,
       generationId: generations[id],
-      warnings: added,
+      warnings: [
+        ...(table.pendingSources?.length ? ["data_source_pending"] : []),
+        ...(historyIncomplete ? ["retained_source_history_incomplete"] : []),
+      ],
     });
   const load = async (id: string): Promise<DataTable> => {
     const cached = tables.get(id);
@@ -593,8 +600,7 @@ export function createDataLoader(
       tables.set(id, shared.table);
       return shared.table;
     }
-    const known = new Set(warnings);
-    const added = () => [...warnings].filter((warning) => !known.has(warning));
+    let historyIncomplete = false;
     visiting.add(id);
     let result: DataTable;
     if (id.startsWith("prepared:")) {
@@ -949,7 +955,7 @@ export function createDataLoader(
         });
         visiting.delete(id);
         tables.set(id, pending);
-        share(id, pending, added());
+        share(id, pending);
         return pending;
       }
       if (generation.expiresAt !== null && generation.expiresAt <= now)
@@ -1001,6 +1007,7 @@ export function createDataLoader(
       if (records.length !== generation.rowCount) {
         if (requested) fail("data_snapshot_expired", 409);
         warnings.add("retained_source_history_incomplete");
+        historyIncomplete = true;
       }
       const expiry = records.reduce<Date | null>((min, row) => {
         const policyExpiry =
@@ -1042,7 +1049,7 @@ export function createDataLoader(
     bindings[id] = result.fields;
     visiting.delete(id);
     tables.set(id, result);
-    share(id, result, added());
+    share(id, result, historyIncomplete);
     return result;
   };
   return {

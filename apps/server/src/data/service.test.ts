@@ -1314,6 +1314,123 @@ describe("a batch data service (#668)", () => {
     });
   });
 
+  /** Two sources whose first report is still incomplete: no generation. */
+  async function pendingSources(prefix: string) {
+    const [connection] =
+      await admin`select id from connections where workspace_id=${actor.workspaceId} limit 1`;
+    const ids: string[] = [];
+    for (const key of [prefix + "_a", prefix + "_b"]) {
+      const result = await withWorkspace(
+        db,
+        { workspaceId: actor.workspaceId },
+        (tx) =>
+          ingestDatasetPage(tx, {
+            workspaceId: actor.workspaceId,
+            connectionId: connection!.id as string,
+            definition: { ...salesDefinition, key },
+            page: {
+              datasetKey: key,
+              schemaVersion: 1,
+              refreshKey: "first-report",
+              pageKey: "p1",
+              previousPageKey: null,
+              complete: false,
+              records: [
+                {
+                  values: {
+                    id: "o1",
+                    app: "a",
+                    amount: "1.00",
+                    currency: "EUR",
+                  },
+                },
+              ],
+            },
+            now: NOW,
+          }),
+      );
+      expect(result.generationId).toBeNull();
+      ids.push(result.datasetId);
+    }
+    return ids as [string, string];
+  }
+  /** Two manual sources that lost a retained record: incomplete history. */
+  async function incompleteSources(prefix: string) {
+    const ids: string[] = [];
+    for (const key of [prefix + "_a", prefix + "_b"]) {
+      const saved = await service.saveManual(actor, {
+        definition: { ...salesDefinition, key },
+        records: [
+          { values: { id: "s1", app: "a", amount: "1.00", currency: "EUR" } },
+          { values: { id: "s2", app: "a", amount: "2.00", currency: "EUR" } },
+        ],
+      });
+      await admin`delete from data_records
+        where generation_id=${saved.generationId} and record_key = (
+          select min(record_key) from data_records
+          where generation_id=${saved.generationId})`;
+      ids.push(saved.datasetId);
+    }
+    return ids as [string, string];
+  }
+  const sourcesGraph = (ids: string[]): PreparationGraph => ({
+    version: 1,
+    nodes: ids.map((datasetId, index) => ({
+      id: "input" + index,
+      type: "source" as const,
+      datasetId,
+    })),
+    outputs: ids.map((_, index) => "input" + index),
+  });
+  /**
+   * One batch reads two sources with the same warning, then only the
+   * second: the replayed second source still carries its own warning.
+   */
+  const batchReads = (ids: [string, string]) =>
+    withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      async (tx) => {
+        const batch = createDataService(tx, () => NOW, undefined, undefined, {
+          batch: true,
+        });
+        await batch.previewPreparation(actor, sourcesGraph(ids));
+        const preview = await batch.previewPreparation(
+          actor,
+          sourcesGraph([ids[1]]),
+        );
+        const saved = (
+          await batch.savePreparation(actor, {
+            name: "Second source only",
+            graph: sourcesGraph([ids[1]]),
+          })
+        ).preparation;
+        await batch.publishPreparation(actor, saved.id, saved.version);
+        return { preview, preparationId: saved.id };
+      },
+      { isolationLevel: "serializable" },
+    );
+
+  it("keeps a pending source's warning when another pending source was read first", async () => {
+    const { preview, preparationId } = await batchReads(
+      await pendingSources("batch_pending"),
+    );
+    expect(preview.warnings).toContain("data_source_pending");
+    expect(preview.outputs.input0?.rows).toEqual([]);
+    // No prepared output is cached from the empty table of a pending source.
+    const [cached] =
+      await admin`select count(*)::int as n from data_prepared_generations where preparation_id=${preparationId}`;
+    expect(cached!.n).toBe(0);
+  });
+
+  it("keeps a source's incomplete-history warning when another such source was read first", async () => {
+    const { preview } = await batchReads(
+      await incompleteSources("batch_incomplete"),
+    );
+    expect(preview.warnings).toContain("retained_source_history_incomplete");
+    expect(preview.outputs.input0?.rows).toHaveLength(1);
+  });
+
   it("runs only in a caller's transaction, for one actor", async () => {
     expect(() =>
       createDataService(db, () => NOW, undefined, undefined, { batch: true }),
