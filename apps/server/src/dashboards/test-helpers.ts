@@ -122,6 +122,9 @@ export function inputs(): Map<string, DataTable> {
           ["com.example.beta", "Other app"],
           ["com.example.gamma", "Third app"],
           ["com.example.delta", "Fourth app"],
+          ["com.example.epsilon", "Fifth app"],
+          // Selected, but not read yet: no rating rows and no status.
+          ["com.example.zeta", "Sixth app"],
         ],
         "Android",
       ),
@@ -251,6 +254,13 @@ export function inputs(): Map<string, DataTable> {
           daily_average_rating: null,
           total_average_rating: null,
         },
+        // Rated up to October; November's report cannot be read.
+        {
+          app_id: "com.example.epsilon",
+          day: "2026-10-31",
+          daily_average_rating: "3.0",
+          total_average_rating: "3.75",
+        },
       ]),
     ],
     [
@@ -268,6 +278,8 @@ export function inputs(): Map<string, DataTable> {
           ["com.example.gamma", "installs", "2026-11-01", "invalid_report"],
           ["com.example.delta", "ratings", "2026-10-01", "permission_missing"],
           ["com.example.delta", "ratings", "2026-11-01", "invalid_report"],
+          ["com.example.epsilon", "ratings", "2026-10-01", "available"],
+          ["com.example.epsilon", "ratings", "2026-11-01", "invalid_report"],
         ].map(([app_id, report_type, report_month, availability]) => ({
           app_id,
           report_type,

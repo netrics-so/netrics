@@ -174,77 +174,177 @@ describe("editable store portfolio definitions", () => {
     ]);
   });
   it("takes Google Play ratings from the latest rating report day in version 2, with a reason where there is none", () => {
-    const model = buildStoreModel("ratings", "facts", "en"),
+    const model = buildStoreModel("ratings", "facts", "en", 2),
       tables = new Map([["facts", prepared("ratings", 2)]]);
     validateSemanticModel(model, tables, now);
     const result = querySemanticModel(model, tables, {
       measureIds: ["rating", "rating_count", "checked", "availability"],
       groupBy: ["listing", "storefront"],
     });
-    expect(
-      result.rows.map((row) => [
-        row.dimensionLabels?.listing,
-        row.dimensions.storefront,
-        row.measures.rating?.value,
-        row.measures.rating_count?.value,
-        row.measures.checked?.value,
-        row.measures.availability?.value,
-      ]),
-    ).toEqual(
+    const rows = result.rows.map((row) => [
+      row.dimensionLabels?.listing,
+      row.dimensions.storefront,
+      row.dimensionLabels?.storefront,
+      row.measures.rating?.value,
+      row.measures.rating_count?.value,
+      row.measures.checked?.value,
+      row.measures.availability?.value,
+    ]);
+    const today = now.slice(0, 10);
+    expect(rows).toEqual(
       expect.arrayContaining([
-        ["Apple Example · Apple App Store", "US", "4.5", 100, now, "Available"],
-        // The report's Total Average Rating as of its latest day; Google's
-        // report has no rating count. The listing's 4.1 is not used.
+        [
+          "Apple Example · Apple App Store",
+          "US",
+          "US",
+          "4.5",
+          100,
+          "2026-10-01",
+          "Available",
+        ],
+        // The report's Total Average Rating as of its latest report day;
+        // Google's report has no rating count. The listing's 4.1 is not
+        // used. November not published yet is the normal report lag.
         [
           "Android Example · Google Play",
+          "ALL",
           "All countries",
           "4.3333",
           null,
-          "2026-10-04T00:00:00Z",
+          "2026-10-04",
           "Available",
         ],
         [
           "Other app · Google Play",
+          "ALL",
           "All countries",
           null,
           null,
-          now,
+          today,
           "No ratings yet",
         ],
         [
           "Third app · Google Play",
+          "ALL",
           "All countries",
           null,
           null,
-          now,
+          today,
           "No rating report yet",
         ],
         [
           "Fourth app · Google Play",
+          "ALL",
           "All countries",
           null,
           null,
-          now,
+          today,
           "Rating report could not be read",
+        ],
+        // The last value and its day stay, with why it may be outdated.
+        [
+          "Fifth app · Google Play",
+          "ALL",
+          "All countries",
+          "3.75",
+          null,
+          "2026-10-31",
+          "Rating report could not be read",
+        ],
+        // A selected app before its first report read still has a row.
+        [
+          "Sixth app · Google Play",
+          "ALL",
+          "All countries",
+          null,
+          null,
+          null,
+          "No rating report yet",
         ],
       ]),
     );
-    expect(result.rows).toHaveLength(5);
-    // German labels.
+    expect(rows).toHaveLength(7);
+    // German labels; the storefront value stays the same in every language.
     const de = querySemanticModel(
-      buildStoreModel("ratings", "facts", "de"),
+      buildStoreModel("ratings", "facts", "de", 2),
       new Map([["facts", prepared("ratings", 2, "de")]]),
-      { measureIds: ["availability"], groupBy: ["listing", "storefront"] },
+      {
+        measureIds: ["availability"],
+        groupBy: ["listing", "storefront"],
+      },
     );
     expect(
       de.rows.map((row) => row.measures.availability?.value).sort(),
-    ).toEqual([
-      "Bewertungsbericht nicht lesbar",
-      "Noch kein Bewertungsbericht",
-      "Noch keine Bewertungen",
-      "Verfügbar",
-      "Verfügbar",
-    ]);
+    ).toEqual(
+      [
+        "Bewertungsbericht nicht lesbar",
+        "Bewertungsbericht nicht lesbar",
+        "Noch kein Bewertungsbericht",
+        "Noch kein Bewertungsbericht",
+        "Noch keine Bewertungen",
+        "Verfügbar",
+        "Verfügbar",
+      ].sort(),
+    );
+    expect(
+      new Set(
+        de.rows
+          .filter((row) => row.dimensions.storefront === "ALL")
+          .map((row) => row.dimensionLabels?.storefront),
+      ),
+    ).toEqual(new Set(["Alle Länder"]));
+  });
+  it("reads a lost permission on the latest rating report month as the reason, keeping the last rating", () => {
+    const tables = inputs();
+    const status = tables.get("play-report-status")!;
+    tables.set("play-report-status", {
+      ...status,
+      rows: status.rows.map((row) =>
+        row.app_id === "com.example.epsilon" &&
+        row.report_month === "2026-11-01"
+          ? { ...row, availability: "permission_missing" }
+          : row,
+      ),
+    });
+    const output = executePreparation(
+      preparationGraphSchema.parse(
+        buildStorePreparation(
+          google,
+          "ratings",
+          "mapping",
+          "products",
+          "en",
+          2,
+        ),
+      ),
+      tables,
+    ).outputs.output!;
+    expect(
+      output.rows
+        .filter((row) => row.listing_name === "Fifth app · Google Play")
+        .map((row) => [row.rating, row.day, row.availability_label]),
+    ).toEqual([["3.75", "2026-10-31", "No access to rating reports"]]);
+  });
+  it("shows the as-of day as a date, the same report day in every viewer time zone", () => {
+    const model = buildStoreModel("ratings", "facts", "en", 2),
+      data = prepared("ratings", 2);
+    const checked = model.measures.find((measure) => measure.id === "checked")!;
+    expect(checked.kind === "aggregate" && checked.aggregate.fieldId).toBe(
+      "day",
+    );
+    expect(data.fields.find((field) => field.id === "day")?.type).toBe("date");
+    const result = querySemanticModel(model, new Map([["facts", data]]), {
+      measureIds: ["checked"],
+      groupBy: ["listing", "storefront"],
+    });
+    const alpha = result.rows.find(
+      (row) => row.dimensionLabels?.listing === "Android Example · Google Play",
+    )!;
+    // A date, not midnight UTC: west of UTC that showed the day before.
+    expect(alpha.measures.checked).toMatchObject({
+      value: "2026-10-04",
+      type: "date",
+    });
   });
   it("creates normal editable widgets with compatible filters and a fixed per-app scope", () => {
     const models = {

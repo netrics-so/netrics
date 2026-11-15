@@ -72,7 +72,7 @@ function buildAll(
  */
 const VERSION_HASHES: Record<number, string> = {
   1: "44be27ea317c1faf154c41abfc16711e055ca8c47c6e6220918bba59c701aa24",
-  2: "fb33afea57cf6a1fde4b98700b7ea5385256abe28647fb7a235ae90471930337",
+  2: "fd0db8f3b4d123c9de2f74dc34555be10a02a3d85b867d3742a15ee73a7ca345",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -107,7 +107,7 @@ describe("versioned store template", () => {
       sha256(JSON.stringify(buildAll(fixtureInputs))),
     );
   });
-  it("changes only the Google Play ratings preparation in version 2", () => {
+  it("changes only the ratings preparations and model in version 2", () => {
     const v1 = buildAll(fixtureInputs, storeTemplateV1),
       v2 = buildAll(fixtureInputs);
     expect(v2.map((record) => record.key)).toEqual(
@@ -118,7 +118,13 @@ describe("versioned store template", () => {
         (record, index) => JSON.stringify(record) !== JSON.stringify(v1[index]),
       )
       .map((record) => record.key);
-    expect(changed).toEqual([`preparation:source:${google.id}:ratings`]);
+    // Google: Play Console rating reports; both stores: a storefront display
+    // name; the model: that name and the as-of day as a date.
+    expect(changed).toEqual([
+      `preparation:source:${apple.id}:ratings`,
+      `preparation:source:${google.id}:ratings`,
+      "model:ratings",
+    ]);
   });
   it("keeps a single connection without an append preparation", () => {
     const single = { ...fixtureInputs, connections: [appleSource] };

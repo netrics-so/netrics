@@ -73,13 +73,29 @@ with its reason). Reading statistics reports needs the same Play Console
 permission as install reports.
 
 The store portfolio template (version 2) shows, per Google Play app, the latest
-total average rating as of the latest report day (the "Checked at" value is
-that day), for all countries, with an empty rating count. An app without a
-rated day shows why: no ratings yet, no rating report yet, no access to rating
-reports, or a report that could not be read. Installs of version 1 are offered
-this change as a template update; nothing changes before it is applied and its
-drafts are published. Scores are never added or averaged across apps, days or
-stores. Google's
+total average rating with its report day as "Checked at" (a date, so it reads
+as the same Pacific report day in every viewer time zone), and an empty rating
+count. When the app's latest rating report month could not be read or is no
+longer accessible, the last rating and its day stay, with that reason ("Rating
+report could not be read", "No access to rating reports"); a month not
+published yet is the normal report lag and stays "Available". Every other app
+of the connection (its apps, and apps with a report status) shows why there is
+no rating: no ratings yet, no rating report yet (also before the first read of
+a newly selected app, then without a day), no access, or an unreadable report.
+
+Play rating reports cover all countries, so their rating country is the value
+`ALL`, shown as "All countries" / "Alle Länder" (version 2 gives the rating
+country a display name, the same value in every language; App Store
+storefronts keep their country codes). A dashboard whose rating-country filter
+selects specific countries, such as `US`, therefore shows no Google Play
+ratings until `ALL` is added to it.
+
+Installs of version 1 are offered this change as a template update; nothing
+changes before it is applied and its drafts are published. Applying registers
+the rating report datasets for the install; if a sync registers them between
+the review and the apply, the apply answers `store_update_stale` and the
+update is reviewed again. Scores are never added or averaged across apps, days
+or stores. Google's
 [rating explanation](https://support.google.com/googleplay/android-developer/answer/138230?hl=en)
 describes how the published rating differs from a lifetime average.
 

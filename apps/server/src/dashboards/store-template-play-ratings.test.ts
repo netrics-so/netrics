@@ -73,7 +73,8 @@ async function versionOneInstall() {
     );
     connections.push(connection!);
   }
-  const play = connections[1]!;
+  const apple = connections[0]!,
+    play = connections[1]!;
   const requestId = randomUUID();
   await createStoreTemplateService({
     db,
@@ -100,12 +101,12 @@ async function versionOneInstall() {
     where request_id=${requestId}`;
   await owner`delete from data_datasets where connection_id=${play.id}
     and key in ('rating_rows', 'report_status')`;
-  return { workspaceId, requestId, play };
+  return { workspaceId, requestId, apple, play };
 }
 
 describe("store template version 2: Play Console rating reports", () => {
   it("offers version 1 installs the Play ratings change and applies it with the new sources", async () => {
-    const { workspaceId, requestId, play } = await versionOneInstall();
+    const { workspaceId, requestId, apple, play } = await versionOneInstall();
     const updates = createStoreTemplateUpdateService({
       db,
       registry,
@@ -123,11 +124,19 @@ describe("store template version 2: Play Console rating reports", () => {
     expect(storeTemplatePlanSchema.parse(plan)).toEqual(plan);
     const ratings = `preparation:source:${play.id}:ratings`;
     const changed = plan.records.filter((record) => record.items.length);
-    // Only the Play ratings preparation changes; nothing asks the customer.
-    expect(changed.map((record) => record.key)).toEqual([ratings]);
-    expect(changed[0]!.items.every((item) => item.outcome === "template")).toBe(
-      true,
+    // Only the ratings records change; nothing asks the customer.
+    expect(changed.map((record) => record.key).sort()).toEqual(
+      [
+        `preparation:source:${apple.id}:ratings`,
+        ratings,
+        "model:ratings",
+      ].sort(),
     );
+    expect(
+      changed.every((record) =>
+        record.items.every((item) => item.outcome === "template"),
+      ),
+    ).toBe(true);
     // Reviewing registers nothing.
     expect(
       await owner`select 1 from data_datasets where connection_id=${play.id} and key='rating_rows'`,

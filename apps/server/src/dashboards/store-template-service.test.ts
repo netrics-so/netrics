@@ -353,6 +353,13 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
           "Rating report could not be read",
         ],
         [google.id + ":com.example.gamma", null, null, "No rating report yet"],
+        [
+          google.id + ":com.example.epsilon",
+          "3.75",
+          null,
+          "Rating report could not be read",
+        ],
+        [google.id + ":com.example.zeta", null, null, "No rating report yet"],
       ].sort(),
     );
     await expect(

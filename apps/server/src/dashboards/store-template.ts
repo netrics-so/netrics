@@ -248,7 +248,7 @@ const defineStoreTemplate = (
         kind: "model",
         key,
         name: `${inputs.name} · ${t[metric]}`.slice(0, 100),
-        definition: buildStoreModel(metric, datasetId!, inputs.locale),
+        definition: buildStoreModel(metric, datasetId!, inputs.locale, version),
       };
     }
     if (key === "dashboard:portfolio") {
