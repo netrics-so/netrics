@@ -2272,6 +2272,40 @@ describe(
       expect(listed.lastUpdate).toEqual(back);
     });
 
+    // Archiving the project is not archiving the dashboard (#648): the swap
+    // moves screens that already show the original, so it works in an
+    // archived project both ways, while new screens stay refused.
+    it("swaps and swaps back in an archived project", async () => {
+      const { workspaceId, installed, update, copyId, screenId } =
+        await withCopy();
+      const [project] =
+        await owner`insert into projects (workspace_id, name, archived_at)
+        values (${workspaceId}, 'Launch', now()) returning id`;
+      await owner`update dashboards set project_id = ${project!.id as string}
+        where id in (${installed.dashboardId}, ${copyId})`;
+      await updates(v2).swap(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      expect(await devicesOn(copyId)).toContain(screenId);
+      const devices = createDeviceService({ db, pairingUrl: "http://pair" });
+      const [outside] = await owner`insert into devices (workspace_id, name)
+        values (${workspaceId}, 'Blank screen') returning id`;
+      expect(
+        await devices.update({ workspaceId, userId }, outside!.id as string, {
+          dashboardId: copyId,
+        }),
+      ).toMatchObject({ ok: false, status: 409, error: "project_archived" });
+      await updates(v2).swapBack(
+        actor(workspaceId),
+        update.id,
+        "dashboard:portfolio",
+      );
+      expect(await devicesOn(installed.dashboardId)).toContain(screenId);
+      expect(await devicesOn(copyId)).toEqual([]);
+    });
+
     it("serves the copy to a swapped screen", async () => {
       const { workspaceId, update, copyId, screenId, installed } =
         await withCopy();

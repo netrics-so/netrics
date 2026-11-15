@@ -811,20 +811,71 @@ export async function dashboardHasModelWidgets(
 }
 
 /**
- * The dashboard's archive state under a share lock, or null when it is not
- * in the workspace: an assignment of a screen checks it so that a template
- * swap archiving the dashboard concurrently either waits for it (and moves
- * the screen) or is seen (11E).
+ * The dashboard's archive state and its project's, under share locks, or
+ * null when the dashboard is not in the workspace: an assignment of a screen
+ * checks them so that a template swap archiving the dashboard (11E) or an
+ * archive of its project (#648) running concurrently either waits for it or
+ * is seen. A dashboard without a project has projectArchivedAt null.
+ *
+ * The project is locked before the dashboard, the order a project delete
+ * takes them (its ON DELETE SET NULL updates the dashboard row); the other
+ * order deadlocks against it. The project read first may change before the
+ * dashboard is locked (a delete or a move), so it is read again under the
+ * lock and the locks are retaken once if it moved.
  */
 export async function lockDashboardArchive(
   tx: Transaction,
   workspaceId: string,
   dashboardId: string,
-): Promise<{ archivedAt: Date | null } | null> {
-  const [row] = await tx
-    .select({ archivedAt: schema.dashboards.archivedAt })
-    .from(schema.dashboards)
-    .where(dashboardScope(workspaceId, dashboardId))
-    .for("share");
-  return row ?? null;
+): Promise<{ archivedAt: Date | null; projectArchivedAt: Date | null } | null> {
+  const projectOf = (lock: boolean) => {
+    const query = tx
+      .select({
+        archivedAt: schema.dashboards.archivedAt,
+        projectId: schema.dashboards.projectId,
+      })
+      .from(schema.dashboards)
+      .where(dashboardScope(workspaceId, dashboardId));
+    return lock ? query.for("share") : query;
+  };
+  const readProject = async (projectId: string | null, lock: boolean) => {
+    if (!projectId) return null;
+    const query = tx
+      .select({ archivedAt: schema.projects.archivedAt })
+      .from(schema.projects)
+      .where(
+        and(
+          eq(schema.projects.workspaceId, workspaceId),
+          eq(schema.projects.id, projectId),
+        ),
+      );
+    // Deleted meanwhile: the dashboard's project_id is null once we see it.
+    const [project] = await (lock ? query.for("share") : query);
+    return project ?? null;
+  };
+  const [first] = await projectOf(false);
+  if (!first) return null;
+  let expected = first.projectId;
+  for (let attempt = 0; ; attempt++) {
+    const project = await readProject(expected, true);
+    const [row] = await projectOf(true);
+    if (!row) return null;
+    if (row.projectId === expected) {
+      return {
+        archivedAt: row.archivedAt,
+        projectArchivedAt: project?.archivedAt ?? null,
+      };
+    }
+    if (attempt >= 1) {
+      // Moved again during the retry: the dashboard row is locked now, so
+      // it stays in this project; read it without a lock rather than lock
+      // out of order.
+      const current = await readProject(row.projectId, false);
+      return {
+        archivedAt: row.archivedAt,
+        projectArchivedAt: current?.archivedAt ?? null,
+      };
+    }
+    expected = row.projectId;
+  }
 }
