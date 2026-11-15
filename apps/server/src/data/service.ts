@@ -2543,10 +2543,6 @@ async function findDataModel(
 }
 
 /**
- * Internal query entry for authorized workspace transactions. Pinned paging
- * additionally requires a trusted principal identity, never a request field.
- */
-/**
  * Bytes of a workspace's prepared-output cache, for its capacity check. No
  * index leads with workspace_id, so this scans the whole table; in a
  * serializable transaction that is a predicate lock on every workspace's
@@ -2597,6 +2593,10 @@ export interface DeferredPageAdmission {
   admit?: (tx: Transaction) => Promise<DataModelQueryResult>;
 }
 
+/**
+ * Internal query entry for authorized workspace transactions. Pinned paging
+ * additionally requires a trusted principal identity, never a request field.
+ */
 export async function queryDataModel(
   tx: Transaction,
   workspaceId: string,

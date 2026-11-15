@@ -113,8 +113,9 @@ type ErrorClass = "auth" | "transient" | "contract" | "budget";
  * Dataset store failures that are not the connector's fault. Storage
  * failures (the store redacts every database error, including
  * serialization failures, deadlocks, timeouts and lost connections, to
- * dataset_storage_failed) and a refresh superseded by a concurrent newer one
- * are retried like an outage.
+ * dataset_storage_failed: its code, and for conflicts only the SQLSTATE)
+ * and a refresh superseded by a concurrent newer one are retried like an
+ * outage.
  */
 const TRANSIENT_DATASET_ERRORS = new Set([
   "dataset_storage_failed",
@@ -798,8 +799,9 @@ async function runSync(
                 error.code === "dataset_refresh_expired")
             )
               throw new DatasetStageUnavailableError();
-            // The store's error carries only its code: nothing of the
-            // database error reaches logs or sync_runs.
+            // The store's error carries only its code, and for conflicts
+            // only the SQLSTATE: nothing else of the database error reaches
+            // logs or sync_runs.
             if (TRANSIENT_DATASET_ERRORS.has(error.code)) throw error;
             if (BUDGET_DATASET_ERRORS.has(error.code))
               throw new DatasetBudgetError(error.code);

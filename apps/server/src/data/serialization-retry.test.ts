@@ -1,7 +1,9 @@
+import { inspect } from "node:util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   createDatabase,
   createRawSqlClient,
+  DatasetStoreError,
   isSerializationFailure,
   isTransactionHandle,
   SERIALIZATION_RETRY_DEFAULTS,
@@ -144,5 +146,17 @@ describe("serializable data transactions under conflicts (#598)", () => {
     expect(isTransactionHandle(db)).toBe(false);
     expect(isSerializationFailure(error)).toBe(true);
     expect(await attempts()).toBe(1);
+    // The store's redaction keeps only the SQLSTATE: the driver's message
+    // (here the trigger's "could not serialize access (test)") is gone.
+    const err = error as DatasetStoreError & { cause: Error };
+    expect(err).toBeInstanceOf(DatasetStoreError);
+    expect(err.code).toBe("dataset_storage_failed");
+    expect(String(err.cause.message)).toBe("SQLSTATE 40001");
+    const serialized = [
+      inspect(err, { depth: 10 }),
+      JSON.stringify(err, Object.getOwnPropertyNames(err)),
+      JSON.stringify(err.cause, Object.getOwnPropertyNames(err.cause)),
+    ].join("\n");
+    expect(serialized).not.toContain("could not serialize");
   });
 });
