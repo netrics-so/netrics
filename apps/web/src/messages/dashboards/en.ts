@@ -318,6 +318,8 @@ export const dashboardsEn = {
       noDrafts: "This update changes no data.",
       published: "Published",
       draft: "Draft, not published yet",
+      stale:
+        "Needs publishing again: it was published before the drafts above it and still reads their earlier versions",
       openDraft: "Open in data settings",
       checkAgain: "Check again",
       copyWaiting:

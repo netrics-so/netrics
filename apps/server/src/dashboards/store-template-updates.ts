@@ -823,6 +823,72 @@ export function createStoreTemplateUpdateService(deps: {
       .limit(1);
     return row ? updateView(tx, workspaceId, row) : null;
   }
+  /**
+   * Whether a published preparation version or model release reads the
+   * current published version of every preparation it pins (directly or
+   * through the preparations it reads).
+   */
+  async function readsCurrentInputs(
+    tx: Transaction,
+    workspaceId: string,
+    kind: "preparation" | "model",
+    id: string,
+    version: number,
+  ): Promise<boolean> {
+    const [publication] =
+      kind === "preparation"
+        ? await tx
+            .select({
+              dependencies: schema.dataPreparationVersions.dependencies,
+            })
+            .from(schema.dataPreparationVersions)
+            .where(
+              and(
+                eq(schema.dataPreparationVersions.workspaceId, workspaceId),
+                eq(schema.dataPreparationVersions.preparationId, id),
+                eq(schema.dataPreparationVersions.version, version),
+              ),
+            )
+        : await tx
+            .select({ dependencies: schema.dataModelReleases.dependencies })
+            .from(schema.dataModelReleases)
+            .where(
+              and(
+                eq(schema.dataModelReleases.workspaceId, workspaceId),
+                eq(schema.dataModelReleases.modelId, id),
+                eq(schema.dataModelReleases.version, version),
+              ),
+            );
+    const pinned = Object.entries(
+      (
+        publication?.dependencies as
+          { prepared?: Record<string, number> } | undefined
+      )?.prepared ?? {},
+    ).filter(([prepared]) => prepared !== id);
+    if (!pinned.length) return true;
+    const published = new Map(
+      (
+        await tx
+          .select({
+            id: schema.dataPreparations.id,
+            publishedVersion: schema.dataPreparations.publishedVersion,
+          })
+          .from(schema.dataPreparations)
+          .where(
+            and(
+              eq(schema.dataPreparations.workspaceId, workspaceId),
+              inArray(
+                schema.dataPreparations.id,
+                pinned.map(([prepared]) => prepared),
+              ),
+            ),
+          )
+      ).map((row) => [row.id, row.publishedVersion]),
+    );
+    return pinned.every(
+      ([prepared, version]) => published.get(prepared) === version,
+    );
+  }
   async function updateView(
     tx: Transaction,
     workspaceId: string,
@@ -855,19 +921,31 @@ export function createStoreTemplateUpdateService(deps: {
             ),
           ))
           current.set(record.id, record);
-    const views = drafts.flatMap((draft) => {
+    const views = [];
+    for (const draft of drafts) {
       const record = current.get(draft.recordId);
-      if (!record) return [];
-      return [
-        {
-          ...draft,
-          name: record.name,
-          published:
-            record.publishedVersion !== null &&
-            record.publishedVersion >= draft.version,
-        },
-      ];
-    });
+      if (!record) continue;
+      const released =
+        record.publishedVersion !== null &&
+        record.publishedVersion >= draft.version;
+      // Published before an input of it was (out of order): it pins that
+      // input's earlier version until it is published again.
+      const stale =
+        released &&
+        !(await readsCurrentInputs(
+          tx,
+          workspaceId,
+          draft.kind,
+          draft.recordId,
+          record.publishedVersion!,
+        ));
+      views.push({
+        ...draft,
+        name: record.name,
+        published: released && !stale,
+        stale,
+      });
+    }
     const published = views.every((draft) => draft.published);
     return {
       id: row.id,

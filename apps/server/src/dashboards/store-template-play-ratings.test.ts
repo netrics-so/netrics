@@ -22,7 +22,11 @@ import {
 } from "../test-db.js";
 import { createStoreTemplateService } from "./store-template-service.js";
 import { createStoreTemplateUpdateService } from "./store-template-updates.js";
-import { storeTemplate, storeTemplateV1 } from "./store-template.js";
+import {
+  storeTemplate,
+  storeTemplateV1,
+  type StoreTemplateDefinition,
+} from "./store-template.js";
 import { apple as appleFixture, google, inputs, now } from "./test-helpers.js";
 
 /**
@@ -437,4 +441,152 @@ describe("publishing a two-store template update", { timeout: 30_000 }, () => {
     ).toBe("4.3333");
     await data.publishModel(user, model.id, model.version);
   });
+});
+
+/**
+ * A later template version that changes content only (same columns): the
+ * ratings label "Available" becomes "Available (v3)"; with `retitle` it also
+ * retitles the ratings widget, so the update has a dashboard.
+ */
+function contentOnly(retitle: boolean): StoreTemplateDefinition {
+  return {
+    version: 3,
+    keys: (inputs) => storeTemplate.keys(inputs),
+    build(key, inputs, ids) {
+      const record = storeTemplate.build(key, inputs, ids);
+      if (record.kind === "preparation" && key.endsWith(":ratings")) {
+        const graph = JSON.parse(
+          JSON.stringify(record.graph).replace(
+            '"value":"Available"',
+            '"value":"Available (v3)"',
+          ),
+        ) as PreparationGraph;
+        return { ...record, graph };
+      }
+      if (record.kind === "dashboard" && retitle) {
+        const request = structuredClone(record.request);
+        request.slides![0]!.widgets![2]!.title = "Ratings (v3)";
+        return { ...record, request };
+      }
+      return record;
+    },
+  };
+}
+
+describe("drafts published before their inputs", { timeout: 30_000 }, () => {
+  for (const retitle of [false, true])
+    it(`count as not published until published again (${retitle ? "with" : "without"} a dashboard)`, async () => {
+      const workspaceId = await createWorkspace(db, {
+        name: "Order " + randomUUID().slice(0, 8),
+        ownerUserId: userId,
+      });
+      const connections = [];
+      for (const connectorId of ["app-store-connect", "google-play"] as const) {
+        const [connection] = await withWorkspace(db, { workspaceId }, (tx) =>
+          tx
+            .insert(schema.connections)
+            .values({
+              workspaceId,
+              connectorId,
+              name: connectorId,
+              setupPending: false,
+            })
+            .returning(),
+        );
+        connections.push(connection!);
+      }
+      const [apple, play] = connections as [
+        (typeof connections)[number],
+        (typeof connections)[number],
+      ];
+      const requestId = randomUUID();
+      await createStoreTemplateService({
+        db,
+        registry,
+        now: () => new Date(now),
+      }).install(actor(workspaceId), {
+        requestId,
+        name: "App portfolio",
+        connections: connections.map((c) => c.id),
+        groups: [],
+      });
+      await ingestReports(workspaceId, { apple, play });
+      const updates = createStoreTemplateUpdateService({
+        db,
+        registry,
+        now: () => new Date(now),
+        template: contentOnly(retitle),
+      });
+      const plan = await updates.plan(actor(workspaceId), requestId);
+      const update = await updates.apply(actor(workspaceId), requestId, {
+        basis: plan.basis,
+        decisions: [],
+      });
+      expect(update.dashboards).toHaveLength(retitle ? 1 : 0);
+      const data = createDataService(db, () => new Date(now));
+      const user = { workspaceId, callerId: userId };
+      const byKey = Object.fromEntries(update.drafts.map((d) => [d.key, d]));
+      const model = byKey["model:ratings"]!,
+        append = byKey["preparation:append:ratings:0:0"]!;
+      // Out of order: what reads the sources first, then the sources.
+      await data.publishModel(user, model.recordId, model.version);
+      await data.publishPreparation(user, append.recordId, append.version);
+      for (const draft of update.drafts)
+        if (draft.key.startsWith("preparation:source:"))
+          await data.publishPreparation(user, draft.recordId, draft.version);
+      const availability = async () =>
+        (
+          await data.query(user, model.recordId, {
+            measureIds: ["availability"],
+            groupBy: ["listing", "storefront"],
+          })
+        ).rows.find(
+          (row) => row.dimensions.listing === `${play.id}:com.example.alpha`,
+        )?.measures.availability?.value;
+      // Live, but still reading the sources' earlier versions.
+      expect(await availability()).toBe("Available");
+      const open = async () =>
+        (await updates.list(actor(workspaceId))).installs[0]!;
+      let state = await open();
+      expect(
+        Object.fromEntries(
+          state.openUpdate!.drafts.map((d) => [d.key, [d.published, d.stale]]),
+        ),
+      ).toMatchObject({
+        "model:ratings": [false, true],
+        "preparation:append:ratings:0:0": [false, true],
+        [`preparation:source:${play.id}:ratings`]: [true, false],
+        [`preparation:source:${apple.id}:ratings`]: [true, false],
+      });
+      if (retitle) expect(state.openUpdate!.dashboards[0]!.ready).toBe(false);
+      await expect(
+        updates.createCopy(
+          actor(workspaceId),
+          update.id,
+          "dashboard:portfolio",
+        ),
+      ).rejects.toThrow();
+
+      // Published again, in order: the combined preparation, then the model.
+      for (const draft of [append, model]) {
+        const current =
+          draft.kind === "model"
+            ? (await data.getModel(user, draft.recordId)).model.version
+            : (await data.getPreparation(user, draft.recordId)).preparation
+                .version;
+        if (draft.kind === "model")
+          await data.publishModel(user, draft.recordId, current);
+        else await data.publishPreparation(user, draft.recordId, current);
+      }
+      expect(await availability()).toBe("Available (v3)");
+      state = await open();
+      if (retitle) {
+        expect(state.openUpdate!.drafts.every((d) => d.published)).toBe(true);
+        expect(state.openUpdate!.dashboards[0]!.ready).toBe(true);
+      } else {
+        // No dashboards: done once everything reads the new versions.
+        expect(state.openUpdate).toBeNull();
+        expect(state.lastUpdate?.drafts.every((d) => d.published)).toBe(true);
+      }
+    });
 });

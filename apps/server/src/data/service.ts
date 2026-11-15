@@ -2377,9 +2377,15 @@ export function createDataService(
       }),
     publishModel: (actor: DataActor, id: string, expected: number) =>
       run(actor, async (tx, now) => {
-        const row = await findDataModel(tx, actor.workspaceId, id, true);
+        let row = await findDataModel(tx, actor.workspaceId, id, true);
         if (row.version !== expected) fail("version_conflict", 409);
-        if (row.publishedVersion === expected) return { model: modelView(row) };
+        // Publishing the published release again: as for a preparation, a
+        // new release of the same definition when the preparations it reads
+        // were published since; otherwise (or for a restored release, which
+        // keeps its inputs) nothing changes.
+        const republish = row.publishedVersion === expected;
+        if (republish && row.restoredFromVersion)
+          return { model: modelView(row) };
         const restored = row.restoredFromVersion
           ? await modelPublication(
               tx,
@@ -2408,6 +2414,33 @@ export function createDataService(
           now.toISOString(),
           loader.budget,
         );
+        if (republish) {
+          const release = await modelPublication(
+            tx,
+            actor.workspaceId,
+            id,
+            expected,
+          );
+          if (
+            stable(
+              (release.dependencies as Dependencies | null)?.prepared ?? {},
+            ) === stable(loader.dependencies.prepared)
+          )
+            return { model: modelView(row) };
+          const [bumped] = await tx
+            .update(schema.dataModels)
+            .set({ version: row.version + 1, updatedAt: now })
+            .where(
+              and(
+                eq(schema.dataModels.workspaceId, actor.workspaceId),
+                eq(schema.dataModels.id, id),
+                eq(schema.dataModels.version, row.version),
+              ),
+            )
+            .returning();
+          if (!bumped) fail("version_conflict", 409);
+          row = bumped;
+        }
         await tx.insert(schema.dataModelReleases).values({
           workspaceId: actor.workspaceId,
           modelId: id,

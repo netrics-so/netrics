@@ -343,6 +343,7 @@ const applied = (
       name: "App downloads",
       version: 2,
       published: false,
+      stale: false,
     },
   ],
   dashboards: [entry()],
@@ -523,6 +524,34 @@ describe("publishing, copying and swapping an update (11E)", () => {
     },
   );
 
+  it.each(["en", "de"] as const)(
+    "asks to publish again a draft published before its inputs, with its link (%s)",
+    (locale) => {
+      const html = progress(
+        {
+          update: applied({
+            drafts: [
+              { ...applied().drafts[0]!, published: false, stale: true },
+            ],
+            dashboards: [entry({ ready: false })],
+          }),
+        },
+        locale,
+      );
+      expect(html).toContain(
+        locale === "en" ? "Needs publishing again" : "Erneut veröffentlichen",
+      );
+      expect(html).toContain(`href="/workspaces/${W}/data?model=${MODEL}"`);
+      expect(
+        buttonOf(
+          html,
+          locale === "en"
+            ? "Create the updated dashboard</button>"
+            : "Aktualisiertes Dashboard erstellen</button>",
+        ),
+      ).toMatch(/^<button[^>]*disabled/);
+    },
+  );
   it("offers to discard copy edits and to recreate a copy of a changed original", () => {
     const copied = applied({
       drafts: [],

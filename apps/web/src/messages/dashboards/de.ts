@@ -329,6 +329,8 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       noDrafts: "Dieses Update ändert keine Daten.",
       published: "Veröffentlicht",
       draft: "Entwurf, noch nicht veröffentlicht",
+      stale:
+        "Erneut veröffentlichen: Er wurde vor den Entwürfen darüber veröffentlicht und liest noch deren frühere Versionen",
       openDraft: "In den Dateneinstellungen öffnen",
       checkAgain: "Erneut prüfen",
       copyWaiting:

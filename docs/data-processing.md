@@ -470,13 +470,21 @@ Published models pin preparation definition versions while reading newer
 compatible source generations. Editing drafts cannot change live queries.
 Republishing a model adopts newer preparation definitions it reads directly.
 A published preparation pins the preparations it reads in the same way, and a
-model reading it inherits those pins: publishing such a preparation again,
-even unchanged, adopts their newer published versions as a new version (and
-changes nothing when they are current), and a model then adopts them when it is
-republished. A store-template update therefore drafts, besides the records the
-template changes, every template preparation and model that reads a drafted
-preparation, listed after their inputs so publishing the drafts in that order
-carries the change through. A failed build
+model reading it inherits those pins. Publishing a published preparation or
+model again, even unchanged, adopts the newer published versions of what it
+reads as a new version (release) and changes nothing when they are current.
+Publishing again builds the definition first, so inputs that are broken,
+pending or over a limit now fail it where it used to change nothing. A
+restored version keeps the inputs it was restored with: publishing it again
+changes nothing, and only an edit (a new draft) or "adopt latest inputs"
+re-pins it.
+
+A store-template update therefore drafts, besides the records the template
+changes, every template preparation and model that reads a drafted
+preparation, listed after their inputs. A draft published before its inputs
+pins their earlier versions: the update shows it as "needs publishing again"
+(not published), its dashboard copy is not ready and an update without
+dashboards stays open until it is published again. A failed build
 leaves its previous publication active. A previously successful query can
 fall back to its complete retained source vector after a processing/schema
 failure, with `stale: true`, the error code and a warning. Fallback re-authorizes

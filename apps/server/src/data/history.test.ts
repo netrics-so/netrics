@@ -443,6 +443,72 @@ describe("published definition history", () => {
     ).rejects.toThrow("version_conflict");
   });
 
+  it("publishes a published model again with the current versions of the preparations it reads, and changes nothing when they are current", async () => {
+    const source = await service.saveManual(actor, {
+      definition: definition("refresh-model-numbers"),
+      records: [{ values: { id: "a", amount: "1" } }],
+    });
+    let base = (
+      await service.savePreparation(actor, {
+        name: "Model refresh base",
+        graph: graph(source.datasetId, "2"),
+      })
+    ).preparation;
+    await service.publishPreparation(actor, base.id, base.version);
+    const semantic = modelDefinition(`prepared:${base.id}:output`);
+    let model = (
+      await service.saveModel(actor, {
+        name: "Model refresh",
+        definition: semantic,
+      })
+    ).model;
+    model = (await service.publishModel(actor, model.id, model.version)).model;
+    const total = async () =>
+      (await service.query(actor, model.id, query)).rows[0]!.measures.total!
+        .value;
+    expect(await total()).toBe("2");
+    // Nothing it reads moved: publishing again changes nothing.
+    expect(
+      (await service.publishModel(actor, model.id, 1)).model,
+    ).toMatchObject({ version: 1, publishedVersion: 1 });
+
+    base = (
+      await service.savePreparation(
+        actor,
+        {
+          name: base.name,
+          graph: graph(source.datasetId, "5"),
+          version: base.version,
+        },
+        base.id,
+      )
+    ).preparation;
+    await service.publishPreparation(actor, base.id, base.version);
+    // The release still reads the base version it was published with.
+    expect(await total()).toBe("2");
+    expect(
+      (await service.publishModel(actor, model.id, 1)).model,
+    ).toMatchObject({ version: 2, publishedVersion: 2 });
+    expect(await total()).toBe("5");
+    await expect(service.publishModel(actor, model.id, 1)).rejects.toThrow(
+      "version_conflict",
+    );
+    // A restored release keeps its inputs: publishing it again changes nothing.
+    const restored = (
+      await service.restoreModel(actor, model.id, {
+        version: 2,
+        publishedVersion: 1,
+      })
+    ).model;
+    const published = (
+      await service.publishModel(actor, model.id, restored.version)
+    ).model;
+    expect(
+      (await service.publishModel(actor, model.id, published.version)).model,
+    ).toMatchObject({ version: published.version });
+    expect(await total()).toBe("2");
+  });
+
   it("reloads historical field and removed output identities for restored model and preparation editors", async () => {
     const source = await service.saveManual(actor, {
       definition: definition("history-fields"),
