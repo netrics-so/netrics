@@ -392,6 +392,18 @@ export function aggregateData(
   };
 }
 
+/** Failures of a type change on one value; "Use an empty value" turns them into null. */
+export const CAST_FAILURE_CODES: ReadonlySet<string> = new Set([
+  "data_cast_invalid",
+  "decimal_invalid",
+  "data_boolean_invalid",
+  "data_date_invalid",
+  "data_timestamp_invalid",
+  "data_integer_invalid",
+  "data_number_invalid",
+  "data_string_required",
+]);
+
 export function executePreparation(
   graph: PreparationGraph,
   sources: ReadonlyMap<string, DataTable>,
@@ -671,21 +683,16 @@ export function executePreparation(
               [node.fieldId]: expression.evaluate(row, budget).value,
             };
           } catch (error) {
-            if (
-              node.onError !== "null" ||
-              !(error instanceof DataProcessingError) ||
-              ![
-                "data_cast_invalid",
-                "decimal_invalid",
-                "data_boolean_invalid",
-                "data_date_invalid",
-                "data_timestamp_invalid",
-                "data_integer_invalid",
-                "data_number_invalid",
-                "data_string_required",
-              ].includes(error.code)
-            )
-              throw error;
+            const conversion =
+              error instanceof DataProcessingError &&
+              CAST_FAILURE_CODES.has(error.code);
+            // A value that does not convert names the column it is in (#643).
+            if (conversion && node.onError !== "null")
+              throw new DataProcessingError(
+                error.code,
+                error.fieldId ?? node.fieldId,
+              );
+            if (!conversion) throw error;
             rejectedRows++;
             return { ...row, [node.fieldId]: null };
           }

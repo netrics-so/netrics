@@ -280,6 +280,42 @@ export function exactDecimal(
     }
   }
 }
+/** Type errors of one call that a column operand causes. */
+const OPERAND_TYPE_CODES: ReadonlySet<string> = new Set([
+  "expression_numeric_required",
+  "expression_explicit_numeric_cast_required",
+  "expression_type_mismatch",
+  "expression_units_incompatible",
+  "expression_json_not_comparable",
+  "expression_date_required",
+]);
+/**
+ * A type error of a call, naming the column operand that causes it (#629):
+ * for a number requirement the first non-numeric column, otherwise the first
+ * column. Errors that name a column already, or have no column operand, stay.
+ */
+function withOperandField(
+  error: unknown,
+  args: readonly DataExpression[],
+  types: readonly ExpressionType[],
+): unknown {
+  if (
+    !(error instanceof DataProcessingError) ||
+    error.fieldId !== undefined ||
+    !OPERAND_TYPE_CODES.has(error.code)
+  )
+    return error;
+  const columns = args.flatMap((arg, index) =>
+    arg.kind === "field" ? [{ fieldId: arg.fieldId, type: types[index]! }] : [],
+  );
+  const operand =
+    (error.code === "expression_numeric_required"
+      ? columns.find((column) => !numeric(column.type.type))
+      : undefined) ?? columns[0];
+  return operand
+    ? new DataProcessingError(error.code, operand.fieldId, error.nodeId)
+    : error;
+}
 function numeric(type: DataType) {
   return ["integer", "decimal", "number"].includes(type);
 }
@@ -551,139 +587,151 @@ export function compileRowExpression(
       type: "boolean",
       nullable: types.some((t) => t.nullable),
     };
-    if (["add", "subtract", "multiply", "divide"].includes(fn)) {
-      arity(2);
-      const a = types[0]!,
-        b = types[1]!;
-      let type = a.nullLiteral
-        ? b.type
-        : b.nullLiteral
-          ? a.type
-          : contextualNumericType(a, b);
-      if (!numeric(type)) dataFail("expression_numeric_required");
-      if (fn === "divide" && type === "integer") type = "decimal";
-      if (
-        ["add", "subtract"].includes(fn) &&
-        a.unit !== b.unit &&
-        !a.scalar &&
-        !b.scalar
-      )
-        dataFail("expression_units_incompatible");
-      const unit = ["add", "subtract"].includes(fn)
-        ? (a.unit ?? b.unit)
-        : fn === "divide" && a.unit === b.unit
-          ? undefined
-          : a.unit && b.unit
-            ? `${a.unit}${fn === "divide" ? "/" : "*"}${b.unit}`
-            : fn === "divide" && b.unit
-              ? "1/" + b.unit
-              : (a.unit ?? b.unit);
-      result = {
-        type,
-        nullable: result.nullable || fn === "divide",
-        ...(unit ? { unit } : {}),
-        ...(unit && (a.currency ?? b.currency)
-          ? { currency: a.currency ?? b.currency }
-          : {}),
-        ...(a.scalar && b.scalar ? { scalar: true } : {}),
-        ...(unit && (a.currencyField ?? b.currencyField)
-          ? { currencyField: a.currencyField ?? b.currencyField }
-          : {}),
-      };
-    } else if (["eq", "ne", "lt", "lte", "gt", "gte"].includes(fn)) {
-      arity(2);
-      if (
-        types[0]!.type !== types[1]!.type &&
-        !types[0]!.nullLiteral &&
-        !types[1]!.nullLiteral
-      )
-        contextualNumericType(types[0]!, types[1]!);
-      if (types.some((t) => t.type === "json" && !t.nullLiteral))
-        dataFail("expression_json_not_comparable");
-      if (
-        types[0]!.unit !== types[1]!.unit &&
-        !types[0]!.scalar &&
-        !types[1]!.scalar
-      )
-        dataFail("expression_units_incompatible");
-    } else if (fn === "in") {
-      arity(2);
-      required(1, "json");
-      if (types[0]!.type === "json") dataFail("expression_json_not_comparable");
-      result = { type: "boolean", nullable: true };
-    } else if (fn === "and" || fn === "or") {
-      arity(2);
-      required(0, "boolean");
-      required(1, "boolean");
-    } else if (fn === "not") {
-      arity(1);
-      required(0, "boolean");
-    } else if (fn === "is_null") {
-      arity(1);
-      result = { type: "boolean", nullable: false };
-    } else if (fn === "if") {
-      arity(3);
-      required(0, "boolean");
-      result = mergedType(types[1]!, types[2]!);
-    } else if (fn === "coalesce") {
-      arity(2, 20);
-      result = types.reduce(mergedType);
-      result.nullable = types.every((t) => t.nullable);
-    } else if (fn === "negate" || fn === "abs" || fn === "round") {
-      arity(fn === "round" ? 2 : 1);
-      if (!numeric(types[0]!.type)) dataFail("expression_numeric_required");
-      if (fn === "round") required(1, "integer");
-      result = { ...types[0]! };
-    } else if (
-      [
-        "concat",
-        "lower",
-        "upper",
-        "trim",
-        "contains",
-        "starts_with",
-        "length",
-      ].includes(fn)
-    ) {
-      arity(
-        ["concat", "contains", "starts_with"].includes(fn) ? 2 : 1,
-        fn === "concat" ? 20 : ["contains", "starts_with"].includes(fn) ? 2 : 1,
-      );
-      types.forEach((_t, index) => required(index, "string"));
-      result = {
-        type:
-          fn === "length"
-            ? "integer"
+    try {
+      if (["add", "subtract", "multiply", "divide"].includes(fn)) {
+        arity(2);
+        const a = types[0]!,
+          b = types[1]!;
+        let type = a.nullLiteral
+          ? b.type
+          : b.nullLiteral
+            ? a.type
+            : contextualNumericType(a, b);
+        if (!numeric(type)) dataFail("expression_numeric_required");
+        if (fn === "divide" && type === "integer") type = "decimal";
+        if (
+          ["add", "subtract"].includes(fn) &&
+          a.unit !== b.unit &&
+          !a.scalar &&
+          !b.scalar
+        )
+          dataFail("expression_units_incompatible");
+        const unit = ["add", "subtract"].includes(fn)
+          ? (a.unit ?? b.unit)
+          : fn === "divide" && a.unit === b.unit
+            ? undefined
+            : a.unit && b.unit
+              ? `${a.unit}${fn === "divide" ? "/" : "*"}${b.unit}`
+              : fn === "divide" && b.unit
+                ? "1/" + b.unit
+                : (a.unit ?? b.unit);
+        result = {
+          type,
+          nullable: result.nullable || fn === "divide",
+          ...(unit ? { unit } : {}),
+          ...(unit && (a.currency ?? b.currency)
+            ? { currency: a.currency ?? b.currency }
+            : {}),
+          ...(a.scalar && b.scalar ? { scalar: true } : {}),
+          ...(unit && (a.currencyField ?? b.currencyField)
+            ? { currencyField: a.currencyField ?? b.currencyField }
+            : {}),
+        };
+      } else if (["eq", "ne", "lt", "lte", "gt", "gte"].includes(fn)) {
+        arity(2);
+        if (
+          types[0]!.type !== types[1]!.type &&
+          !types[0]!.nullLiteral &&
+          !types[1]!.nullLiteral
+        )
+          contextualNumericType(types[0]!, types[1]!);
+        if (types.some((t) => t.type === "json" && !t.nullLiteral))
+          dataFail("expression_json_not_comparable");
+        if (
+          types[0]!.unit !== types[1]!.unit &&
+          !types[0]!.scalar &&
+          !types[1]!.scalar
+        )
+          dataFail("expression_units_incompatible");
+      } else if (fn === "in") {
+        arity(2);
+        required(1, "json");
+        if (types[0]!.type === "json")
+          dataFail("expression_json_not_comparable");
+        result = { type: "boolean", nullable: true };
+      } else if (fn === "and" || fn === "or") {
+        arity(2);
+        required(0, "boolean");
+        required(1, "boolean");
+      } else if (fn === "not") {
+        arity(1);
+        required(0, "boolean");
+      } else if (fn === "is_null") {
+        arity(1);
+        result = { type: "boolean", nullable: false };
+      } else if (fn === "if") {
+        arity(3);
+        required(0, "boolean");
+        result = mergedType(types[1]!, types[2]!);
+      } else if (fn === "coalesce") {
+        arity(2, 20);
+        result = types.reduce(mergedType);
+        result.nullable = types.every((t) => t.nullable);
+      } else if (fn === "negate" || fn === "abs" || fn === "round") {
+        arity(fn === "round" ? 2 : 1);
+        if (!numeric(types[0]!.type)) dataFail("expression_numeric_required");
+        if (fn === "round") required(1, "integer");
+        result = { ...types[0]! };
+      } else if (
+        [
+          "concat",
+          "lower",
+          "upper",
+          "trim",
+          "contains",
+          "starts_with",
+          "length",
+        ].includes(fn)
+      ) {
+        arity(
+          ["concat", "contains", "starts_with"].includes(fn) ? 2 : 1,
+          fn === "concat"
+            ? 20
             : ["contains", "starts_with"].includes(fn)
-              ? "boolean"
-              : "string",
-        nullable: result.nullable,
-      };
-    } else if (
-      [
-        "to_string",
-        "to_decimal",
-        "to_integer",
-        "to_number",
-        "to_boolean",
-        "to_date",
-        "to_timestamp",
-        "to_json",
-      ].includes(fn)
-    ) {
-      arity(1);
-      result = { type: fn.slice(3) as DataType, nullable: types[0]!.nullable };
-    } else if (fn === "year" || fn === "month") {
-      arity(1);
-      if (!["date", "timestamp"].includes(types[0]!.type))
-        dataFail("expression_date_required");
-      result = { type: "integer", nullable: types[0]!.nullable };
-    } else if (fn === "json_get") {
-      arity(2);
-      required(0, "json");
-      required(1, "string");
-      result = { type: "json", nullable: true };
-    } else dataFail("expression_function_unknown");
+              ? 2
+              : 1,
+        );
+        types.forEach((_t, index) => required(index, "string"));
+        result = {
+          type:
+            fn === "length"
+              ? "integer"
+              : ["contains", "starts_with"].includes(fn)
+                ? "boolean"
+                : "string",
+          nullable: result.nullable,
+        };
+      } else if (
+        [
+          "to_string",
+          "to_decimal",
+          "to_integer",
+          "to_number",
+          "to_boolean",
+          "to_date",
+          "to_timestamp",
+          "to_json",
+        ].includes(fn)
+      ) {
+        arity(1);
+        result = {
+          type: fn.slice(3) as DataType,
+          nullable: types[0]!.nullable,
+        };
+      } else if (fn === "year" || fn === "month") {
+        arity(1);
+        if (!["date", "timestamp"].includes(types[0]!.type))
+          dataFail("expression_date_required");
+        result = { type: "integer", nullable: types[0]!.nullable };
+      } else if (fn === "json_get") {
+        arity(2);
+        required(0, "json");
+        required(1, "string");
+        result = { type: "json", nullable: true };
+      } else dataFail("expression_function_unknown");
+    } catch (error) {
+      throw withOperandField(error, expr.args, types);
+    }
     return {
       result,
       run: (row, budget) => {

@@ -200,7 +200,8 @@ describe("type-aware builder choices", () => {
         all,
         "calculation",
       ),
-    ).toEqual({ code: "expression_numeric_required" });
+      // The operand that is not a number is named (#629).
+    ).toEqual({ code: "expression_numeric_required", fieldId: "day" });
   });
 
   it("reads the result type from the checker", () => {

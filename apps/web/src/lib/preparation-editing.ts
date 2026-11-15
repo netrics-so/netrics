@@ -1,9 +1,15 @@
 import {
+  CAST_FAILURE_CODES,
   DataProcessingError,
   type PreparationGraph,
   type PreparationNode,
 } from "@netrics/domain";
-import type { DataErrorLocation } from "./data-editing";
+import {
+  dataErrorKey,
+  dataErrorLocation,
+  type DataErrorLocation,
+} from "./data-editing";
+import { ApiError } from "./api";
 
 export type PreparationEditProblem =
   | "missingStep"
@@ -60,6 +66,48 @@ export function preparationStepFailure(
   const { nodeId, fieldId } = location;
   if (!nodeId || !graph.nodes.some((node) => node.id === nodeId)) return null;
   return { nodeId, ...(fieldId ? { fieldId } : {}) };
+}
+/**
+ * The message key for a failure of step `nodeId` in `graph`: a type change
+ * whose values do not convert gets its own message (#643), others the key of
+ * their code.
+ */
+export function preparationStepErrorKey(
+  failure: unknown,
+  graph: PreparationGraph,
+  nodeId: string,
+): ReturnType<typeof dataErrorKey> | "conversion" {
+  const code =
+    failure instanceof ApiError || failure instanceof DataProcessingError
+      ? failure.code
+      : "";
+  const node = graph.nodes.find((node) => node.id === nodeId);
+  return node?.type === "cast" && CAST_FAILURE_CODES.has(code)
+    ? "conversion"
+    : dataErrorKey(failure);
+}
+/**
+ * What a failed check of a step change means for the editor (#643):
+ * - "proposal": the changed step itself failed. The change is not applied;
+ *   the step form stays open and the step list shows the proposed graph with
+ *   the step marked failed, so the user can fix the settings or cancel.
+ * - "applied": another step failed. The change applies and that step is marked.
+ * - "form": the failure names no step of the graph; the form shows it.
+ */
+export function preparationChangeFailure(
+  failure: unknown,
+  next: PreparationGraph,
+  changedIds: readonly string[],
+): "proposal" | "applied" | "form" {
+  const step = preparationStepFailure(dataErrorLocation(failure), next);
+  if (!step) return "form";
+  return changedIds.includes(step.nodeId) ? "proposal" : "applied";
+}
+/** A step change failure the editor already shows on the failed step; the step form shows nothing more. */
+export class PreparationStepFailureShown extends Error {
+  constructor(public readonly location: DataErrorLocation) {
+    super("preparation_step_failure_shown");
+  }
 }
 interface NamedField {
   id: string;

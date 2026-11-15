@@ -1,10 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
+import { API, API_PORT, ORIGIN, WEB_PORT } from "./e2e/support/origin.ts";
 
 /**
  * Browser journeys against the real web app and API (#570). Locally, a
  * running `pnpm dev` (web :3000, api :3001) is reused; otherwise, and always
  * in CI, the built server and web app are started (`pnpm build` first). Both
  * need a migrated database (`pnpm db:migrate`). Chromium only.
+ * NETRICS_E2E_WEB_PORT / NETRICS_E2E_API_PORT move both ports (see
+ * e2e/support/origin.ts); the started servers are told about each other.
  */
 export default defineConfig({
   testDir: "e2e",
@@ -23,7 +26,7 @@ export default defineConfig({
   timeout: 180_000,
   expect: { timeout: 15_000 },
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: ORIGIN,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -40,13 +43,19 @@ export default defineConfig({
   webServer: [
     {
       command: "node apps/server/dist/index.js",
-      url: "http://localhost:3001/health/live",
+      url: `${API}/health/live`,
+      env: {
+        PORT: String(API_PORT),
+        BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? API,
+        WEB_ORIGIN: process.env.WEB_ORIGIN ?? ORIGIN,
+      },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
-      command: "pnpm --filter @netrics/web start",
-      url: "http://localhost:3000/healthz",
+      command: `pnpm --filter @netrics/web start --port ${WEB_PORT}`,
+      url: `${ORIGIN}/healthz`,
+      env: { NETRICS_API_URL: process.env.NETRICS_API_URL ?? API },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

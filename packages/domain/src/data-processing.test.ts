@@ -687,6 +687,52 @@ describe("step attribution", () => {
       ),
     ).toEqual(["expression_field_not_found", "missing", "calc"]);
   });
+  it("names a type change that fails on a value (#643)", () => {
+    const cast: PreparationNode = {
+      id: "cast-country",
+      type: "cast",
+      input: "source",
+      fieldId: "country",
+      to: "decimal",
+      onError: "reject",
+    };
+    expect(
+      where(
+        failure({
+          version: 1,
+          nodes: [source, cast],
+          outputs: ["cast-country"],
+        }),
+      ),
+    ).toEqual(["decimal_invalid", "country", "cast-country"]);
+  });
+  it("names the column of a comparison with the wrong type (#629)", () => {
+    const filter: PreparationNode = {
+      id: "only",
+      type: "filter",
+      input: "source",
+      expression: call("gt", field("country"), lit("integer", 0)),
+    };
+    expect(
+      where(
+        failure({ version: 1, nodes: [source, filter], outputs: ["only"] }),
+      ),
+    ).toEqual(["expression_numeric_required", "country", "only"]);
+    // The non-numeric column, not the first one.
+    expect(() =>
+      compileRowExpression(
+        call("add", field("amount"), field("country")),
+        fields,
+      ),
+    ).toThrow("expression_numeric_required: country");
+    // No column operand: nothing to name.
+    expect(() =>
+      compileRowExpression(
+        call("add", lit("string", "x"), lit("integer", 1)),
+        fields,
+      ),
+    ).toThrow(/^expression_numeric_required$/);
+  });
   it("keeps the innermost step when later steps consume the failure", () => {
     const kept = {
       id: "kept",
