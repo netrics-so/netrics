@@ -16,6 +16,7 @@ version=""
 http_port=80
 https_port=443
 name=netrics-selfhost
+name_given=0
 force=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -23,7 +24,7 @@ while [ $# -gt 0 ]; do
     --version) version="$2"; shift 2 ;;
     --http-port) http_port="$2"; shift 2 ;;
     --https-port) https_port="$2"; shift 2 ;;
-    --name) name="$2"; shift 2 ;;
+    --name) name="$2"; name_given=1; shift 2 ;;
     --force) force=1; shift ;;
     -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -62,6 +63,9 @@ for port in "$http_port" "$https_port"; do
   case "$port" in
     ''|*[!0-9]*) echo "not a port number: $port" >&2; exit 2 ;;
   esac
+  if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    echo "port out of range (1-65535): $port" >&2; exit 2
+  fi
 done
 # The Compose project name: containers and volumes are named after it
 # (netrics-selfhost_pgdata). Two installations on one host need two names.
@@ -72,6 +76,20 @@ esac
 case "$name" in
   *[!abcdefghijklmnopqrstuvwxyz0123456789_-]*) echo "--name may contain only a-z, 0-9, _ and -" >&2; exit 2 ;;
 esac
+# Installations made with 0.2.0 or older have no project name in .env, so
+# Compose named them after this folder ("compose", volume compose_pgdata).
+# A new name would start a second, empty installation next to that data:
+# keep the old name unless --name asks for another.
+folder_project="$(basename "$PWD" | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C tr -cd 'a-z0-9_-')"
+if [ -n "$folder_project" ] && [ "$folder_project" != "$name" ] &&
+  docker volume inspect "${folder_project}_pgdata" >/dev/null 2>&1; then
+  if [ "$name_given" -eq 1 ]; then
+    echo "warning: the volume ${folder_project}_pgdata holds an existing installation's database; --name ${name} starts a new, empty one." >&2
+  else
+    name="$folder_project"
+    echo "note: keeping the Compose project name ${name} of the existing installation (volume ${name}_pgdata)." >&2
+  fi
+fi
 
 if [ "$https_port" = "443" ]; then
   public_url="https://${domain}"

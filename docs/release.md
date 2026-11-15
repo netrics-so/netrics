@@ -127,8 +127,9 @@ rebuilds.
 1. Bump `version` in the root `package.json` in a pull request (for
    example `0.2.0`) and merge it. The release run for that commit bakes the
    version into the images.
-2. Tag that merge commit (only its images report the plain version) and
-   push the tag:
+2. Tag that merge commit and push the tag. A version tag must go on the
+   commit that changes the root `package.json` version: only its images
+   report the plain `X.Y.Z`, and `promote.yml` refuses any other commit.
    `git tag -a v0.2.0 <sha> -m v0.2.0 && git push origin v0.2.0`.
 3. `.github/workflows/promote.yml` checks that the tag is `vX.Y.Z`, matches
    `package.json`, and points at a `main` commit. It waits for that commit's

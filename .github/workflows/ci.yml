@@ -349,6 +349,12 @@ jobs:
           test "$(stat -c '%a %u' "$dump")" = "600 $(id -u)"
           # install.sh names the project (#646): its volumes are netrics-selfhost_*.
           docker volume inspect netrics-selfhost_pgdata > /dev/null
+          # A mount that refuses chown and chmod (NFS root_squash, SMB) still
+          # keeps the dump, mode 600 through the umask, with a warning.
+          docker compose --profile backup run --rm --no-deps --cap-drop CHOWN --cap-drop FOWNER \
+            -e BACKUP_ONCE=1 -e BACKUP_LABEL=nochown backup 2> "$RUNNER_TEMP/nochown.err"
+          grep 'warning: could not give the dump' "$RUNNER_TEMP/nochown.err"
+          test "$(stat -c '%a %u' backups/netrics-0.0.0-dev-dev-*-nochown.dump)" = "600 0"
           source=$(counts docker compose)
           # README "Backup and restore", into a second installation with the
           # same .env (its own volumes and ports).

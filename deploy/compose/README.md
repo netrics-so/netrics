@@ -235,7 +235,9 @@ Installations made with 0.2.0 or older have no `COMPOSE_PROJECT_NAME` in
 database volume is `compose_pgdata`. Keep it that way: do not add
 `COMPOSE_PROJECT_NAME` to such an `.env`, because a new name means new,
 empty volumes (the data stays in the old ones). `docker volume ls` shows
-which volumes you have.
+which volumes you have. `install.sh --force` in such a folder keeps the old
+name when it finds the folder's `<name>_pgdata` volume, and warns if
+`--name` asks for another.
 
 ## What runs
 
@@ -315,6 +317,11 @@ mode 700 and every dump at mode 600, owned by the owner of `backups/`, so
 other users on the host cannot read them. Copy them off the host (another
 machine or storage only you can read), and keep them apart from `.env`: the
 dump and `APP_ENCRYPTION_KEY` together open the stored credentials.
+
+Some storage refuses to change owners or modes, for example NFS with
+`root_squash` or SMB shares. The backup is kept there all the same, mode
+600 and owned by the container's `root`, and the service logs a warning
+(`docker compose logs backup`). Restrict the folder on the host then.
 
 On installations made with 0.2.0 or older, Docker created `backups/` as
 `root`, so the dumps belong to `root` too. Give the folder to the user who
