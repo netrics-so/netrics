@@ -61,6 +61,7 @@ let workspaceId: string;
 let dashboardId: string;
 let foreignDashboardId: string;
 let clientCounter = 0;
+let testAdminUrl: string;
 
 function call(
   method: "GET" | "POST" | "PATCH" | "DELETE",
@@ -198,6 +199,7 @@ beforeAll(async () => {
     devicePayloadCacheMs: 0,
   });
   admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+  testAdminUrl = testDb.adminUrl;
   owner = await signUp("tv-owner@example.com");
   editor = await signUp("tv-editor@example.com");
   stranger = await signUp("tv-stranger@example.com");
@@ -1252,11 +1254,18 @@ describe("device dashboard", () => {
       await admin`update dashboards set project_id = ${project} where id = ${id}`;
     const playing = await pair("Launch TV", launch);
     const other = await pair("Other launch TV", salesId);
-    const before = await read(playing.accessToken);
-    const v3 = await getDashboard(playing.accessToken, {
-      query: "?schema=3",
-    });
-    expect(v3.statusCode).toBe(200);
+    const payloads = async () => {
+      const bodies: string[] = [];
+      for (const schema of [1, 2, 3]) {
+        const response = await getDashboard(playing.accessToken, {
+          query: `?schema=${schema}`,
+        });
+        expect(response.statusCode, `schema ${schema}`).toBe(200);
+        bodies.push(response.body);
+      }
+      return bodies;
+    };
+    const before = await payloads();
 
     expect(
       (
@@ -1266,12 +1275,12 @@ describe("device dashboard", () => {
       ).statusCode,
     ).toBe(200);
 
-    // The screen already on it keeps playing, byte for byte.
-    const after = await read(playing.accessToken);
-    expect(after.response.body).toBe(before.response.body);
-    expect(
-      (await getDashboard(playing.accessToken, { query: "?schema=3" })).body,
-    ).toBe(v3.body);
+    // The screen already on it keeps playing, byte for byte, on every
+    // device schema (1, 2 and 3).
+    const after = await payloads();
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).toBe(before[1]);
+    expect(after[2]).toBe(before[2]);
     // And keeps its settings: renaming it or saving its own dashboard again.
     const renamed = await call("PATCH", `${ws}/devices/${playing.device.id}`, {
       cookie: owner,
@@ -1327,6 +1336,68 @@ describe("device dashboard", () => {
       ).statusCode,
     ).toBe(200);
     expect((await reassign(other.device.id, launch)).statusCode).toBe(200);
+  });
+
+  // Assigning locks the project before the dashboard, as deleting a project
+  // does (its ON DELETE SET NULL updates the dashboard row): the other order
+  // deadlocked an assignment against a concurrent delete (#648 review).
+  it("assigns without deadlocking against a concurrent project delete", async () => {
+    const ws = `/v1/workspaces/${workspaceId}`;
+    const project = (
+      await call("POST", `${ws}/projects`, {
+        cookie: owner,
+        payload: { name: "Doomed" },
+      })
+    ).json().project.id as string;
+    const doomed = await tileDashboard("Doomed wall", []);
+    await admin`update dashboards set project_id = ${project} where id = ${doomed}`;
+    const { device } = await pair("Doomed TV", salesId);
+
+    const lockers = createRawSqlClient(testAdminUrl, { max: 2 });
+    const waiting = async (count: number) => {
+      for (let i = 0; i < 500; i++) {
+        const [row] = await admin`
+          select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and wait_event_type = 'Lock'`;
+        if ((row!.n as number) >= count) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`fewer than ${count} lock waiters`);
+    };
+    try {
+      // A holder keeps the project row so that the delete queues first and
+      // the assignment second, both waiting on the project.
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      let locked!: () => void;
+      const isLocked = new Promise<void>((resolve) => (locked = resolve));
+      const holder = lockers.begin(async (sql) => {
+        await sql`select id from projects where id = ${project} for update`;
+        locked();
+        await released;
+      });
+      await isLocked;
+      const deleting = lockers.begin(
+        (sql) => sql`delete from projects where id = ${project}`,
+      );
+      await waiting(1);
+      const assigning = reassign(device.id, doomed);
+      await waiting(2);
+      release();
+      await holder;
+      await deleting;
+      const assigned = await assigning;
+      // Never a deadlock (500): the assignment sees the project gone.
+      expect(assigned.statusCode, assigned.body).toBe(200);
+      const [row] =
+        await admin`select dashboard_id from devices where id = ${device.id}`;
+      expect(row!.dashboard_id).toBe(doomed);
+      const [dashboard] =
+        await admin`select project_id from dashboards where id = ${doomed}`;
+      expect(dashboard!.project_id).toBeNull();
+    } finally {
+      await lockers.end({ timeout: 5 });
+    }
   });
 
   it("reports the connection's health per tile", async () => {
