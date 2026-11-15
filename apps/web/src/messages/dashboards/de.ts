@@ -124,4 +124,235 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       noProject: "Kein Projekt",
     },
   },
+  storeUpdate: {
+    badge: "Update verfügbar",
+    badgeNamed: "Update verfügbar für {name}: prüfen",
+    studioAvailable: "Die Vorlage hat ein Update für dieses Dashboard.",
+    studioCopy:
+      "Das ist die aktualisierte Kopie. Vergleiche sie mit dem Original und nutze sie dann auf deinen Bildschirmen.",
+    studioArchivedCopy:
+      "Diese aktualisierte Kopie ist archiviert, weil du zurückgewechselt hast. Nutze sie über die Update-Seite wieder.",
+    studioArchived:
+      "Archiviert, solange die aktualisierte Kopie auf deinen Bildschirmen läuft. Wechsle zurück, um es wieder zu nutzen und zu bearbeiten.",
+    review: "Update prüfen",
+    openUpdate: "Update öffnen",
+    dataBanner: "Vorlagen-Update für {name}",
+    dataProgress:
+      "{count, plural, one {# Entwurf aus dem Vorlagen-Update wartet auf die Veröffentlichung.} other {# Entwürfe aus dem Vorlagen-Update warten auf die Veröffentlichung.}}",
+    dataMark: "Update",
+    archived: "Archiviert",
+    archivedHint:
+      "Originale, die aufbewahrt werden, solange ihre aktualisierten Kopien auf deinen Bildschirmen laufen, damit du zurückwechseln kannst. Sie sind schreibgeschützt.",
+    switchBackLink: "Zurückwechseln",
+    title: "{name} aktualisieren",
+    back: "Zurück zu den Dashboards",
+    roleCannot:
+      "Ein Bearbeiter, Admin oder Inhaber des Workspaces kann Vorlagen-Updates prüfen und anwenden.",
+    versions: "Vorlagenversion {from} → {to}",
+    unavailable:
+      "Für dieses Dashboard sind keine Updates verfügbar. Es wurde eingerichtet, bevor Vorlagen Versionen hatten, und eine seiner Store-Verbindungen wurde seitdem gelöscht. Deshalb kann netrics deine Änderungen nicht von denen der Vorlage unterscheiden. Das Dashboard funktioniert weiter wie bisher.",
+    upToDate: "Dieses Dashboard ist auf dem Stand seiner Vorlage.",
+    intro:
+      "Nichts ändert sich, bevor du es willst. Datenänderungen werden zu Entwürfen, die du in den Dateneinstellungen veröffentlichst. Dashboard-Änderungen kommen als aktualisierte Kopie, die du vergleichst, bevor sie auf deine Bildschirme kommt; dein Original wird archiviert, damit du zurückwechseln kannst.",
+    steps: {
+      label: "Fortschritt",
+      review: "Prüfen und anwenden",
+      publish: "Datenentwürfe veröffentlichen",
+      copy: "Aktualisiertes Dashboard erstellen",
+      compare: "Im Studio vergleichen",
+      swap: "Auf deinen Bildschirmen nutzen",
+      done: "erledigt",
+    },
+    summary: {
+      measures: {
+        changed:
+          "{count, plural, one {# Kennzahl geändert} other {# Kennzahlen geändert}}",
+        added:
+          "{count, plural, one {# Kennzahl hinzugefügt} other {# Kennzahlen hinzugefügt}}",
+        removed:
+          "{count, plural, one {# Kennzahl entfernt} other {# Kennzahlen entfernt}}",
+      },
+      steps: {
+        changed:
+          "{count, plural, one {# Schritt geändert} other {# Schritte geändert}}",
+        added:
+          "{count, plural, one {# Schritt hinzugefügt} other {# Schritte hinzugefügt}}",
+        removed:
+          "{count, plural, one {# Schritt entfernt} other {# Schritte entfernt}}",
+      },
+      widgets: {
+        changed:
+          "{count, plural, one {# Widget geändert} other {# Widgets geändert}}",
+        added:
+          "{count, plural, one {# Widget hinzugefügt} other {# Widgets hinzugefügt}}",
+        removed:
+          "{count, plural, one {# Widget entfernt} other {# Widgets entfernt}}",
+      },
+      changed: "{count} geändert",
+      added: "{count} hinzugefügt",
+      removed: "{count} entfernt",
+      conflicts: "{count} zu entscheiden",
+      removals: "{count} zum Entfernen vorgeschlagen",
+      none: "Keine Änderungen an Kennzahlen, Schritten oder Widgets",
+    },
+    scopeNote:
+      "{count, plural, one {# Teil folgt} other {# Teile folgen}} deiner App-Auswahl (die zusammengeführten App-Daten und der App-Filter). Sie werden aus deinen Apps neu erzeugt, nicht geprüft.",
+    groups: {
+      choose: "Deine Entscheidung",
+      removal: "Zum Entfernen vorgeschlagen",
+      template: "Aus der Vorlage",
+      customer: "Von dir behalten",
+    },
+    kinds: {
+      preparation: "Aufbereitung",
+      model: "Kennzahlen",
+      dashboard: "Dashboard",
+    },
+    newRecord: "Neu in dieser Version",
+    unpublishedDraft: "Enthält deine unveröffentlichten Änderungen",
+    useTemplate: "Version der Vorlage übernehmen",
+    keepMine: "Meine behalten",
+    remove: "Entfernen",
+    keep: "Behalten",
+    templateValue: "Vorlage: {text}",
+    yourValue: "Deine: {text}",
+    absent: "entfernt",
+    change: {
+      added: "hinzugefügt",
+      changed: "geändert",
+      removed: "entfernt",
+    },
+    why: {
+      both: "Du und die Vorlage habt das beide geändert.",
+      templateRemoved: "Die Vorlage hat das entfernt; du hattest es geändert.",
+      customerRemoved: "Du hast das entfernt; die Vorlage hat es geändert.",
+      bothAdded:
+        "Du und die Vorlage habt das beide hinzugefügt, aber unterschiedlich.",
+      removedDataset:
+        "Wenn du die Version der Vorlage übernimmst, kommt {dataset} zurück, das du aus diesen Kennzahlen entfernt hast.",
+      removedDatasetUnknown:
+        "Wenn du die Version der Vorlage übernimmst, kommen Daten zurück, die du aus diesen Kennzahlen entfernt hast.",
+      proposeRemoval:
+        "Die neue Vorlage hat das nicht mehr. Du hast es nie geändert: Entferne es oder behalte es als deins.",
+    },
+    item: {
+      measure: "Kennzahl {name} · {how}",
+      dimension: "Dimension {name}",
+      step: "{type} · {name}",
+      stepUnnamed: "{type}",
+      output: "Ergebnis {name}",
+      relationship: "Eine Beziehung zwischen Datensätzen",
+      widget: "Widget {title} · {type}",
+      widgetUntitled: "Widget {type}",
+      filter: "Gemeinsamer Filter {name}",
+      slide: "Folie {name}",
+      slideUntitled: "Eine Folie",
+      setting: "Dashboard-Einstellung {name}",
+      formula: "Formel",
+      rolling: "gleitendes Fenster",
+      period_offset: "früherer Zeitraum",
+      other: "berechnet",
+    },
+    widgetTypes: {
+      measure: "Kennzahl",
+      metric: "Metrik",
+      line: "Liniendiagramm",
+      bar: "Balkendiagramm",
+      table: "Tabelle",
+      compare: "Vergleich",
+      gauge: "Tacho",
+      image: "Bild",
+      text: "Text",
+      clock: "Uhr",
+      status: "Status",
+      countdown: "Countdown",
+      review: "Bewertung",
+      widget: "Widget",
+    },
+    decided: "{done} von {total} entschieden",
+    apply: "Als Entwürfe anwenden",
+    applying: "Wird angewendet …",
+    applyHint:
+      "Triff zuerst für jeden Eintrag unter „Deine Entscheidung“ und „Zum Entfernen vorgeschlagen“ eine Wahl.",
+    nothingToDecide: "Du musst nichts entscheiden.",
+    reloaded:
+      "Das Update hat sich geändert, seit du es geöffnet hast, deshalb wurde die Prüfung neu geladen. Prüf deine Entscheidungen und wende es dann erneut an.",
+    loading: "Update wird geladen …",
+    retry: "Erneut versuchen",
+    done: {
+      applied:
+        "Als Entwürfe angewendet. Veröffentliche sie als Nächstes in den Dateneinstellungen.",
+      copy: "Aktualisierte Kopie erstellt. Vergleiche sie als Nächstes im Studio.",
+      swap: "Bildschirme auf das aktualisierte Dashboard verschoben.",
+      swapBack: "Bildschirme zurück auf dein Original verschoben.",
+      close:
+        "Update abgebrochen. Seine Entwürfe bleiben als normale Entwürfe erhalten.",
+    },
+    progress: {
+      confirmSwapUnknown:
+        "Alle Bildschirme, die das Original zeigen, auf das aktualisierte Dashboard verschieben? Das Original wird archiviert, und du kannst zurückwechseln.",
+      confirmSwapBackUnknown:
+        "Alle Bildschirme, die die aktualisierte Kopie zeigen, zurück auf dein Original verschieben? Die aktualisierte Kopie wird archiviert, und du kannst sie wieder nutzen.",
+      viewArchivedCopy: "Archivierte aktualisierte Kopie ansehen",
+      confirmSwap:
+        "{count, plural, =0 {Das aktualisierte Dashboard nutzen? Noch kein Bildschirm zeigt das Original.} one {# Bildschirm ({screens}) auf das aktualisierte Dashboard verschieben?} other {# Bildschirme ({screens}) auf das aktualisierte Dashboard verschieben?}} Das Original wird archiviert, und du kannst zurückwechseln.",
+      confirmSwapBack:
+        "{count, plural, =0 {Zu deinem Original zurückwechseln?} one {# Bildschirm ({screens}) zurück auf dein Original verschieben?} other {# Bildschirme ({screens}) zurück auf dein Original verschieben?}} Die aktualisierte Kopie wird archiviert, und du kannst sie wieder nutzen.",
+      publishIntro:
+        "Öffne jeden Entwurf in den Dateneinstellungen, sieh dir die Vorschau an und veröffentliche ihn dort. Vor dem Veröffentlichen siehst du, was davon abhängt.",
+      noDrafts: "Dieses Update ändert keine Daten.",
+      published: "Veröffentlicht",
+      draft: "Entwurf, noch nicht veröffentlicht",
+      openDraft: "In den Dateneinstellungen öffnen",
+      checkAgain: "Erneut prüfen",
+      copyWaiting:
+        "Veröffentliche zuerst alle Entwürfe: Das aktualisierte Dashboard zeigt nur veröffentlichte Daten.",
+      createCopy: "Aktualisiertes Dashboard erstellen",
+      creating: "Wird erstellt …",
+      copyHint:
+        "Eine Kopie von {name} mit den Änderungen der Vorlage und deinen Entscheidungen. Sie ist auf keinem Bildschirm, bis du sie nutzt.",
+      copyCreated: "Aktualisierte Kopie erstellt.",
+      noDashboards: "Dieses Update ändert kein Dashboard.",
+      openCopy: "Aktualisierte Kopie im Studio öffnen",
+      openOriginal: "Original öffnen",
+      afterCopy: "Verfügbar, sobald das aktualisierte Dashboard existiert.",
+      compareHint:
+        "Vergleiche die Kopie mit deinem Original. Änderungen, die du an der Kopie machst, bleiben erhalten.",
+      screens:
+        "{count, plural, =0 {Noch kein Bildschirm zeigt dieses Dashboard.} one {Verschiebt # Bildschirm: {screens}} other {Verschiebt # Bildschirme: {screens}}}",
+      swap: "Auf meinen Bildschirmen nutzen",
+      swapping: "Bildschirme werden verschoben …",
+      swapHint:
+        "Alle Bildschirme wechseln in einem Schritt. Das Original wird archiviert, nicht gelöscht.",
+      swapCannot:
+        "Ein Admin oder Inhaber des Workspaces kann Bildschirme verschieben.",
+      copyCannot:
+        "Ein Bearbeiter, Admin oder Inhaber des Workspaces kann das aktualisierte Dashboard erstellen.",
+      swapped:
+        "Das aktualisierte Dashboard läuft auf deinen Bildschirmen. Das Original ist archiviert.",
+      switchBack: "Zurückwechseln",
+      switchingBack: "Wird zurückgewechselt …",
+      switchBackHint:
+        "Bringt dein Original auf alle Bildschirme zurück und archiviert die aktualisierte Kopie.",
+      switchedBack:
+        "Dein Original ist wieder auf deinen Bildschirmen. Die aktualisierte Kopie ist archiviert.",
+      swapAgain: "Aktualisiertes Dashboard wieder nutzen",
+      scopeProblems:
+        "Kein Bildschirm wurde verschoben: {screens} {count, plural, one {hat einen festen Bereich} other {haben einen festen Bereich}}, den das aktualisierte Dashboard nicht zeigen kann. Ändere den Bereich unter Bildschirme und versuch es dann erneut.",
+      reviewChanged:
+        "Dein Dashboard hat sich geändert, seit du das Update geprüft hast. Brich dieses Update ab und prüf es erneut, um über diese Einträge zu entscheiden:",
+      close: "Dieses Update abbrechen",
+      closing: "Wird abgebrochen …",
+      closeConfirm:
+        "Dieses Update abbrechen? Seine Datenentwürfe bleiben als normale Entwürfe erhalten, und auf deinen Bildschirmen ändert sich nichts.",
+      recreate: "Kopie erneut erstellen",
+      discardEdits:
+        "Meine Änderungen an der Kopie verwerfen und sie neu erstellen",
+      finished: "Update abgeschlossen.",
+      unmergeable:
+        "Das aktualisierte Dashboard lässt sich mit diesen Widgets nicht erstellen: {names}. Brich dieses Update ab, prüf es erneut und behalte für sie deine Version.",
+      unmergeableData:
+        "{name} lässt sich mit diesen Entscheidungen nicht aktualisieren: {names}. Entscheide für sie anders und wende es dann erneut an.",
+    },
+  },
 };

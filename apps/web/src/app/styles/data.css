@@ -621,3 +621,16 @@
 .data-history-list p {
   margin: 4px 0 0;
 }
+/* Store-template updates (11E): the banner and the marks on records. */
+.data-update-banner {
+  margin: 0 0 12px;
+}
+.data-update-mark {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--warning-tint);
+  color: var(--warning-text);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+}

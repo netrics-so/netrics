@@ -109,7 +109,12 @@ import {
 import { PlayMode } from "./play-mode";
 import { SlideRail } from "./slide-rail";
 import { SlideSettings } from "./slide-settings";
-import { CanvasHead, LiveIndicator, StatusLine } from "./studio-status";
+import {
+  CanvasHead,
+  LiveIndicator,
+  StatusLine,
+  StoreUpdateNote,
+} from "./studio-status";
 import { useLeaveGuard } from "./use-leave-guard";
 import {
   reviewConnectionIds,
@@ -152,6 +157,7 @@ export function StudioEditor({
   goals: initialGoals = [],
   canCreateGoals = false,
   canPublishData = false,
+  storeUpdate = null,
 }: {
   workspaceId: string;
   dashboard: Dashboard;
@@ -176,6 +182,11 @@ export function StudioEditor({
   canCreateGoals?: boolean;
   /** Whether a compare widget may be saved as a measure (data:publish). */
   canPublishData?: boolean;
+  /** A store-template update concerning this dashboard (11E), and its page. */
+  storeUpdate?: {
+    kind: "available" | "copy" | "archived" | "archivedCopy";
+    href: string;
+  } | null;
 }) {
   const locale = useLocale();
   const dataText = useT("data.dashboard");
@@ -808,6 +819,10 @@ export function StudioEditor({
             </button>
           </div>
         </header>
+
+        {storeUpdate ? (
+          <StoreUpdateNote kind={storeUpdate.kind} href={storeUpdate.href} />
+        ) : null}
 
         {conflict ? (
           <div className="error studio-banner" role="alert">

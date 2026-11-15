@@ -243,6 +243,7 @@ describe("store-template updates", { timeout: TIMEOUT_MS }, () => {
         summary: null,
         error: null,
         openUpdate: null,
+        lastUpdate: null,
       }),
     ]);
     const { installs } = await updates(v2).list(actor(workspaceId));
@@ -2121,6 +2122,8 @@ describe(
         openUpdate: null,
         dashboardIds: [copyId],
       });
+      // The closed update stays listed, so its swap can be undone.
+      expect(listed.lastUpdate).toEqual(next);
       const [audit] =
         await owner`select target, metadata from audit_events where workspace_id=${workspaceId} and action='dashboard.template_swapped'`;
       expect(audit!.target).toBe(copyId);
@@ -2240,9 +2243,9 @@ describe(
         ),
       ).toEqual(back);
       const { installs } = await updates(v2).list(actor(workspaceId));
-      expect(
-        installs.find((i) => i.requestId === requestId)!.updateAvailable,
-      ).toBe(true);
+      const listed = installs.find((i) => i.requestId === requestId)!;
+      expect(listed.updateAvailable).toBe(true);
+      expect(listed.lastUpdate).toEqual(back);
     });
 
     it("serves the copy to a swapped screen", async () => {

@@ -5547,3 +5547,15 @@ a.button.primary:hover {
 .sw-measure .sw-measure-choice:disabled {
   text-decoration: none;
 }
+
+/* A store-template update concerning this dashboard (11E): Studio
+   and the view page of an archived original. */
+.studio-update-note {
+  margin: 12px 20px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-control);
+  background: var(--warning-wash);
+  color: var(--warning-text);
+  font-size: var(--size-13);
+}

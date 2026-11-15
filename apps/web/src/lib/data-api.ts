@@ -14,8 +14,13 @@ import {
   preparationViewSchema,
   modelViewSchema,
   dataImpactResponseSchema,
+  storeTemplateInstallListSchema,
 } from "@netrics/contracts";
-import type { DataImpact, ProjectFilterQuery } from "@netrics/contracts";
+import type {
+  DataImpact,
+  ProjectFilterQuery,
+  StoreTemplateInstallList,
+} from "@netrics/contracts";
 import type {
   PreparationGraph,
   SemanticModelDefinition,
@@ -35,6 +40,11 @@ export type DataWorkspace = {
   sources: DataSource[];
   preparations: PreparationDraft[];
   models: ModelDraft[];
+  /**
+   * Store-template installs (11E): an update offered or in progress shows
+   * in data settings, with marks on the records it changes.
+   */
+  storeUpdates?: StoreTemplateInstallList["installs"];
 };
 const base = (workspaceId: string) => `/v1/workspaces/${workspaceId}/data`;
 async function read<T>(
@@ -55,7 +65,7 @@ export async function getDataWorkspace(
   query?: ProjectFilterQuery,
 ): Promise<DataWorkspace> {
   const filter = projectQueryString(query);
-  const [sources, preparations, models] = await Promise.all([
+  const [sources, preparations, models, storeUpdates] = await Promise.all([
     read(
       dataSourcesResponseSchema,
       base(workspaceId) + "/sources" + filter,
@@ -71,8 +81,17 @@ export async function getDataWorkspace(
       base(workspaceId) + "/models" + filter,
       cookie,
     ),
+    // An extra: data settings work without it.
+    read(
+      storeTemplateInstallListSchema,
+      `/v1/workspaces/${workspaceId}/dashboard-templates/stores/installs`,
+      cookie,
+    ).then(
+      ({ installs }) => installs,
+      () => [],
+    ),
   ]);
-  return { ...sources, ...preparations, ...models };
+  return { ...sources, ...preparations, ...models, storeUpdates };
 }
 /** One model by id, whatever its project; null when it is gone. */
 export async function getModel(

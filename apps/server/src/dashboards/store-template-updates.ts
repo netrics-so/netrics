@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
@@ -639,6 +639,32 @@ export function createStoreTemplateUpdateService(deps: {
           isNull(schema.dataTemplateUpdates.closedAt),
         ),
       );
+    return row ? updateView(tx, workspaceId, row) : null;
+  }
+  /**
+   * The install's newest update, open or closed: what a swap back (or a
+   * swap again after one) acts on once the update closed.
+   */
+  async function lastUpdateOf(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+  ): Promise<StoreTemplateUpdate | null> {
+    const [row] = await tx
+      .select()
+      .from(schema.dataTemplateUpdates)
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.requestId, requestId),
+        ),
+      )
+      .orderBy(
+        sql`${schema.dataTemplateUpdates.closedAt} is not null`,
+        desc(schema.dataTemplateUpdates.createdAt),
+        desc(schema.dataTemplateUpdates.closedAt),
+      )
+      .limit(1);
     return row ? updateView(tx, workspaceId, row) : null;
   }
   async function updateView(
@@ -1786,6 +1812,11 @@ export function createStoreTemplateUpdateService(deps: {
                   )
               : [];
             const inputs = install.inputs as StoreTemplateInputs | null;
+            const openUpdate = await openUpdateOf(
+              tx,
+              actor.workspaceId,
+              install.requestId,
+            );
             result.push({
               requestId: install.requestId,
               name: dashboard?.name ?? inputs?.name ?? "",
@@ -1800,11 +1831,11 @@ export function createStoreTemplateUpdateService(deps: {
               dashboardIds: idsOf("dashboard"),
               modelIds: idsOf("model"),
               preparationIds: idsOf("preparation"),
-              openUpdate: await openUpdateOf(
-                tx,
-                actor.workspaceId,
-                install.requestId,
-              ),
+              openUpdate,
+              // The open update is the newest; read further only without one.
+              lastUpdate:
+                openUpdate ??
+                (await lastUpdateOf(tx, actor.workspaceId, install.requestId)),
             });
           }
           return { installs: result };

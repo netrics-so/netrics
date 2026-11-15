@@ -84,10 +84,13 @@ export function activeProjectName(
 }
 
 /** "?project=…&unassigned=include", or "" for the full list. */
-export function projectQueryString(query: ProjectFilterQuery | undefined) {
+export function projectQueryString(
+  query: (ProjectFilterQuery & { archived?: "include" }) | undefined,
+) {
   const params = new URLSearchParams();
   if (query?.project) params.set("project", query.project);
   if (query?.unassigned) params.set("unassigned", query.unassigned);
+  if (query?.archived) params.set("archived", query.archived);
   const text = params.toString();
   return text ? `?${text}` : "";
 }

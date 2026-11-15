@@ -14,12 +14,18 @@ import {
   listGoals,
   listImages,
   listProjects,
+  listStoreTemplateInstalls,
   listThemes,
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
+import {
+  storeUpdatePath,
+  studioUpdateNote,
+  studioViewOnlyPath,
+} from "@/lib/store-updates";
 import type { StudioConnection } from "@/lib/studio-widgets";
 
 import "@/app/styles/studio.css";
@@ -53,6 +59,9 @@ export default async function StudioPage({ params }: StudioPageProps) {
     // Viewers see the dashboard read-only.
     redirect(`/workspaces/${workspaceId}/dashboards/${dashboardId}`);
   }
+  // An archived original (11E) is read-only until it is switched back.
+  const viewOnly = studioViewOnlyPath(workspaceId, dashboardResult.dashboard);
+  if (viewOnly) redirect(viewOnly);
   const canManageDevices = can(role, "devices:manage");
   const [
     { metrics },
@@ -65,6 +74,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
     devices,
     conversion,
     { goals },
+    storeInstalls,
   ] = await Promise.all([
     listWorkspaceMetrics(cookieHeader, workspaceId),
     listConnections(cookieHeader, workspaceId),
@@ -76,7 +86,13 @@ export default async function StudioPage({ params }: StudioPageProps) {
     canManageDevices ? listDevices(cookieHeader, workspaceId) : null,
     getCurrencyConversion(cookieHeader, workspaceId),
     listGoals(cookieHeader, workspaceId),
+    // Store-template updates (11E) are an extra: the Studio works without.
+    listStoreTemplateInstalls(cookieHeader, workspaceId).then(
+      ({ installs }) => installs,
+      () => [],
+    ),
   ]);
+  const updateNote = studioUpdateNote(storeInstalls, dashboardResult.dashboard);
   const byId: Record<string, StudioConnection> = Object.fromEntries(
     connections.map((connection) => [
       connection.id,
@@ -114,6 +130,14 @@ export default async function StudioPage({ params }: StudioPageProps) {
         goals={goals}
         canCreateGoals={can(role, "dashboards:create")}
         canPublishData={can(role, "data:publish")}
+        storeUpdate={
+          updateNote
+            ? {
+                kind: updateNote.kind,
+                href: storeUpdatePath(workspaceId, updateNote.requestId),
+              }
+            : null
+        }
         dashboardNames={Object.fromEntries(
           dashboards.map((dashboard) => [dashboard.id, dashboard.name]),
         )}
