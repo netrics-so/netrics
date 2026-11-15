@@ -1757,6 +1757,8 @@ export const dataDatasets = pgTable(
       .where(sql`${t.kind} = 'manual'`),
     unique("data_datasets_tenant_key").on(t.id, t.workspaceId),
     unique("data_datasets_connection_key").on(t.connectionId, t.key),
+    // Workspace quotas (maxSources) count a workspace's datasets (#604).
+    index("data_datasets_workspace_idx").on(t.workspaceId),
     foreignKey({
       columns: [t.connectionId, t.workspaceId],
       foreignColumns: [connections.id, connections.workspaceId],
@@ -1825,6 +1827,8 @@ export const dataRefreshes = pgTable(
       sql`${t.pageCount} >= 0 and ${t.rowCount} >= 0`,
     ),
     index("data_refreshes_expiry_idx").on(t.expiresAt),
+    // Workspace usage (datasetWorkspaceBytes) reads a workspace's refreshes (#604).
+    index("data_refreshes_workspace_idx").on(t.workspaceId, t.datasetId),
   ],
 );
 
@@ -1894,6 +1898,13 @@ export const dataGenerations = pgTable(
       sql`${t.sequence} > 0 and ${t.rowCount} >= 0`,
     ),
     index("data_generations_expiry_idx").on(t.expiresAt),
+    // Workspace usage and data_generation_releasable read a workspace's
+    // generations by dataset and sequence (#604).
+    index("data_generations_workspace_idx").on(
+      t.workspaceId,
+      t.datasetId,
+      t.sequence,
+    ),
   ],
 );
 
@@ -2092,6 +2103,8 @@ export const dataPreparedGenerations = pgTable(
     }).onDelete("cascade"),
     check("data_prepared_generations_size_check", sql`${t.byteSize} >= 0`),
     index("data_prepared_generations_expiry_idx").on(t.expiresAt),
+    // The prepared-cache quota sums a workspace's entries (#604).
+    index("data_prepared_generations_workspace_idx").on(t.workspaceId),
   ],
 );
 
@@ -2280,6 +2293,8 @@ export const dataConnectorStages = pgTable(
       sql`${t.byteSize} between 0 and 134217728`,
     ),
     index("data_connector_stages_expiry_idx").on(t.expiresAt),
+    // The staging quota sums a workspace's live stages (#604).
+    index("data_connector_stages_workspace_idx").on(t.workspaceId, t.expiresAt),
   ],
 );
 

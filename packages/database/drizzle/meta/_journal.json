@@ -526,6 +526,13 @@
       "when": 1794697392178,
       "tag": "0074_dashboard_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1794735909121,
+      "tag": "0075_workspace_quota_indexes",
+      "breakpoints": true
     }
   ]
 }
