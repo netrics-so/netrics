@@ -7,19 +7,14 @@ import { screenEn } from "../apps/web/src/messages/screen/en.ts";
 import { workspaceDe } from "../apps/web/src/messages/workspace/de.ts";
 import { workspaceEn } from "../apps/web/src/messages/workspace/en.ts";
 import { fill, labels, type Locale } from "./support/labels.ts";
+import { API, ORIGIN } from "./support/origin.ts";
 import { startWorkspace } from "./support/session.ts";
 import {
   installWithUpdate,
   OLD_MEASURE_NAME,
+  ownerUrl,
   publishedMeasureName,
 } from "./support/store-template.ts";
-
-const ORIGIN = "http://localhost:3000";
-/** The API itself, as screens reach it (not through the web app). */
-const API = "http://localhost:3001";
-const ownerUrl = () =>
-  process.env.DATABASE_MIGRATION_URL ??
-  "postgres://netrics:netrics@localhost:5433/netrics";
 
 const catalogs = (locale: Locale) => ({
   update: (locale === "de" ? dashboardsDe : dashboardsEn)
@@ -48,6 +43,12 @@ const isDashboardPoll = (response: Response) =>
  *
  * The kiosk's page clock is installed so its 60 s poll runs on demand
  * (`clock.fastForward`) instead of in real time.
+ *
+ * Pairing is limited per IP (PAIRING_RATE_LIMIT: 10 per 10 minutes), and
+ * every journey pairs from the same address. A full run makes 4 pairings
+ * (this journey and store-update-journey, once per locale), so a third
+ * local run within 10 minutes is refused with 429 and the kiosk shows no
+ * code. This journey therefore pairs only once.
  */
 test("a paired browser screen plays offline and changes only on publish or swap", async ({
   page,

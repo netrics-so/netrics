@@ -9,13 +9,14 @@ import Testing
 // app and survive its offline cache, so an older server, or a payload a TV
 // cached before an update, keeps playing.
 
+// Each call drops the named component; what is left is the repository root.
 private let fixtureURL = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()  // LegacyServerPayloadTests.swift
     .deletingLastPathComponent()  // NetricsKitTests
     .deletingLastPathComponent()  // Tests
     .deletingLastPathComponent()  // NetricsKit
     .deletingLastPathComponent()  // netrics-tv
     .deletingLastPathComponent()  // apps
-    .deletingLastPathComponent()  // repository
     .appendingPathComponent("apps/server/src/devices/fixtures/compare-legacy-payloads.json")
 
 private func recorded(_ key: String) throws -> Data {

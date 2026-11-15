@@ -8,7 +8,7 @@ import { API, ORIGIN } from "./origin.ts";
  * The owner connection of the journeys' database (as `pnpm db:migrate`
  * uses it): seeding reaches past the API and row-level security.
  */
-const ownerUrl = () =>
+export const ownerUrl = () =>
   process.env.DATABASE_MIGRATION_URL ??
   "postgres://netrics:netrics@localhost:5433/netrics";
 
