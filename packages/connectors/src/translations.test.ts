@@ -44,7 +44,7 @@ describe.each(FIRST_PARTY.map((manifest) => [manifest.id, manifest] as const))(
     it("validate against the SDK version required by their capabilities", () => {
       expect(manifest.sdkVersion).toBe(
         manifest.id === "google-play"
-          ? "^0.2.10"
+          ? "^0.2.12"
           : manifest.datasets?.length
             ? "^0.2.9"
             : "^0.2.7",

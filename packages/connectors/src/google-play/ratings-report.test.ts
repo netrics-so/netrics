@@ -208,7 +208,14 @@ async function sync(
       );
       pages.push(page);
     }
-    if (result.done) return { pages, cursor: result.nextCursor };
+    if (result.done)
+      return {
+        pages,
+        cursor: result.nextCursor,
+        received: result.receivedDatasets ?? [],
+      };
+    // Only a finished run has checked every month (#666).
+    expect(result.receivedDatasets).toBeUndefined();
     cursor = result.nextCursor;
   }
   throw new Error("Sync did not finish");
@@ -318,6 +325,83 @@ describe("rating report sync", () => {
     expect(ratingStatus(pages)).toEqual([
       ["2026-11-01", "permission_missing", null],
       ["2026-10-01", "permission_missing", null],
+    ]);
+  });
+  it("declares the rating rows received after a full sync of an account without rating reports (#666)", async () => {
+    const fake = fakePlay();
+    const { pages, received } = await sync(
+      fake,
+      { mode: "backfill", from: "2026-10-01T00:00:00.000Z" },
+      [ALPHA, BETA],
+    );
+    // No report, so no rows: the host stores the dataset as received and
+    // empty instead of pending. Installs and earnings are not declared.
+    expect(ratingPages(pages)).toEqual([]);
+    expect(received).toEqual(["rating_rows"]);
+    expect(ratingStatus(pages)).toEqual([
+      ["2026-11-01", "not_published", null],
+      ["2026-10-01", "not_published", null],
+    ]);
+    // An incremental run declares it again; an empty selection checks nothing.
+    const next = await sync(fake, {
+      mode: "incremental",
+      from: "2026-11-04T12:00:00.000Z",
+      cursor: `google-play-done:${REPORT_READER}:2026-11-04T12:00:00.000Z`,
+    });
+    expect(next.received).toEqual(["rating_rows"]);
+    expect(
+      (
+        await sync(
+          fake,
+          { mode: "backfill", from: "2026-10-01T00:00:00.000Z" },
+          [],
+        )
+      ).received,
+    ).toEqual([]);
+  });
+  it("never emits a rows page that could replace stored ratings when permission or the report is lost (#666)", async () => {
+    const fake = fakePlay();
+    fake.put(RATINGS_202610, fixtureBytes("ratings-alpha-overview.csv"));
+    const first = await sync(fake, {
+      mode: "backfill",
+      from: "2026-10-01T00:00:00.000Z",
+    });
+    expect(ratingPages(first.pages).map((page) => page.window!.from)).toEqual([
+      "2026-10-01",
+    ]);
+    // Permission withdrawn: status rows only, the stored October stays.
+    fake.privateStatus.set("stats/ratings/", 403);
+    const lost = await sync(fake, {
+      mode: "incremental",
+      from: "2026-11-04T12:00:00.000Z",
+      cursor: first.cursor,
+    });
+    expect(ratingPages(lost.pages)).toEqual([]);
+    expect(ratingStatus(lost.pages)).toContainEqual([
+      "2026-10-01",
+      "permission_missing",
+      null,
+    ]);
+    expect(lost.received).toEqual(["rating_rows"]);
+    // An unreadable report replaces nothing either.
+    fake.privateStatus.delete("stats/ratings/");
+    fake.put(
+      RATINGS_202610,
+      report("Date,Package Name,Daily Average Rating", [
+        `2026-10-01,${ALPHA},4.0`,
+      ]),
+      "2",
+    );
+    const invalid = await sync(fake, {
+      mode: "incremental",
+      from: "2026-11-04T12:00:00.000Z",
+      cursor: first.cursor,
+    });
+    expect(ratingPages(invalid.pages)).toEqual([]);
+    expect(ratingStatus(invalid.pages)).toContainEqual([
+      "2026-10-01",
+      "invalid_report",
+      "missing_columns:Total Average Rating",
     ]);
   });
   it("reads a year of rating reports once after the reader upgrade, then recent months", async () => {

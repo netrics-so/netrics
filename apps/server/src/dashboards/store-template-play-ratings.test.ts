@@ -5,6 +5,7 @@ import {
   createRawSqlClient,
   createWorkspace,
   ingestDatasetPage,
+  receiveEmptySourceDataset,
   upsertConnectionResources,
   schema,
   withWorkspace,
@@ -986,6 +987,89 @@ describe(
       });
       expect(proceeds.pendingSources?.length).toBeGreaterThan(0);
       expect(proceeds.receivedAt).toBeNull();
+    });
+    it("shows the Play status rows of an account without rating reports with a refresh time once its sync declared them received (#666)", async () => {
+      const workspaceId = await createWorkspace(db, {
+        name: "No ratings " + randomUUID().slice(0, 8),
+        ownerUserId: userId,
+      });
+      const connections = [];
+      for (const connectorId of ["app-store-connect", "google-play"] as const) {
+        const [connection] = await withWorkspace(db, { workspaceId }, (tx) =>
+          tx
+            .insert(schema.connections)
+            .values({
+              workspaceId,
+              connectorId,
+              name: connectorId,
+              setupPending: false,
+            })
+            .returning(),
+        );
+        connections.push(connection!);
+      }
+      const play = connections[1]!;
+      const installed = await createStoreTemplateService({
+        db,
+        registry,
+        now: () => new Date(now),
+      }).install(actor(workspaceId), {
+        requestId: randomUUID(),
+        name: "App portfolio",
+        connections: connections.map((c) => c.id),
+        groups: [],
+      });
+      // Every report but Play rating reports: the account has none.
+      await ingestReports(workspaceId, { apple: connections[0]!, play }, {}, [
+        "google-play:rating_rows",
+      ]);
+      const data = createDataService(db, () => new Date(now));
+      const user = { workspaceId, callerId: userId };
+      const query = {
+        measureIds: ["rating", "rating_count", "availability"],
+        groupBy: ["listing", "storefront"],
+      };
+      const pending = await data.query(user, installed.models.ratings, query);
+      expect(pending.pendingSources?.length).toBeGreaterThan(0);
+      expect(pending.receivedAt).toBeNull();
+      // The finished sync declares the rating rows received.
+      const definition = registry
+        .get("google-play")!
+        .manifest.datasets!.find((d) => d.key === "rating_rows")!;
+      await withWorkspace(db, { workspaceId }, (tx) =>
+        receiveEmptySourceDataset(tx, {
+          workspaceId,
+          connectionId: play.id,
+          definition,
+          now: new Date(now),
+        }),
+      );
+      const ratings = await data.query(user, installed.models.ratings, query);
+      expect(ratings.pendingSources ?? []).toEqual([]);
+      expect(ratings.warnings).not.toContain("data_source_pending");
+      expect(ratings.receivedAt).not.toBeNull();
+      expect(
+        ratings.rows.map((row) => [
+          row.dimensions.listing,
+          row.measures.rating?.value,
+          row.measures.availability?.value,
+        ]),
+      ).toEqual(
+        expect.arrayContaining([
+          [`${play.id}:com.example.gamma`, null, "No rating report yet"],
+          [
+            `${play.id}:com.example.delta`,
+            null,
+            "Rating report could not be read",
+          ],
+          [`${play.id}:com.example.zeta`, null, "No rating report yet"],
+        ]),
+      );
+      // Complete results get last-valid query snapshots.
+      expect(
+        await owner`select 1 from data_model_query_snapshots
+          where workspace_id=${workspaceId}`,
+      ).not.toHaveLength(0);
     });
   },
 );

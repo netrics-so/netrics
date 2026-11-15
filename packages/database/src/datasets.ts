@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, sql, isNull, or } from "drizzle-orm";
 import {
   DATASET_LIMITS,
@@ -728,6 +728,92 @@ export async function ingestDatasetPage(
       else await reset;
     }
   }
+}
+
+/**
+ * A source dataset its connector checked completely without rows (SDK 0.2.12
+ * `receivedDatasets`, #666): stores an empty generation, so the dataset reads
+ * as received and empty instead of pending, with this check as its refresh
+ * time. It never replaces stored rows: nothing happens while the latest
+ * generation holds rows, or when history was published and is gone (that
+ * stays `data_source_history_unavailable`).
+ */
+export async function receiveEmptySourceDataset(
+  tx: Transaction,
+  input: Omit<IngestDatasetPageInput, "page" | "kind" | "retainedSource"> & {
+    connectionId: string;
+  },
+): Promise<{ datasetId: string; generationId: string } | null> {
+  const parsed = sourceDatasetSchema.safeParse(input.definition);
+  if (!parsed.success) return fail("dataset_schema_invalid");
+  const definition = parsed.data;
+  const { workspaceId, connectionId } = input;
+  // The ingestion lock, before reading what is stored: a concurrent page of
+  // this dataset commits either wholly before or after this check.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${workspaceId}::uuid::text, 440))`,
+  );
+  const [dataset] = await tx
+    .select({ id: dataDatasets.id, published: dataDatasets.hasPublishedData })
+    .from(dataDatasets)
+    .where(
+      and(
+        eq(dataDatasets.workspaceId, workspaceId),
+        eq(dataDatasets.connectionId, connectionId),
+        eq(dataDatasets.key, definition.key),
+        eq(dataDatasets.kind, "source"),
+      ),
+    );
+  if (dataset) {
+    const [latest] = await tx
+      .select({ rowCount: dataGenerations.rowCount })
+      .from(dataGenerations)
+      .where(
+        and(
+          eq(dataGenerations.workspaceId, workspaceId),
+          eq(dataGenerations.datasetId, dataset.id),
+        ),
+      )
+      .orderBy(desc(dataGenerations.sequence))
+      .limit(1);
+    if (latest ? latest.rowCount > 0 : dataset.published) return null;
+  }
+  // A replacement window must be given; with no rows stored, the widest one
+  // replaces nothing.
+  const instant =
+    definition.fields.find((field) => field.id === definition.reportingField)
+      ?.type === "timestamp";
+  const result = await ingestDatasetPage(tx, {
+    ...input,
+    kind: "source",
+    page: {
+      datasetKey: definition.key,
+      schemaVersion: definition.version,
+      refreshKey: `received:${randomUUID()}`,
+      pageKey: "0",
+      previousPageKey: null,
+      complete: true,
+      records: [],
+      ...(definition.mode === "replace_window"
+        ? {
+            window: instant
+              ? {
+                  from: "1970-01-01T00:00:00.000Z",
+                  toExclusive: "9999-12-31T00:00:00.000Z",
+                  partition: {},
+                }
+              : {
+                  from: "1970-01-01",
+                  toExclusive: "9999-12-31",
+                  partition: {},
+                },
+          }
+        : {}),
+    },
+  });
+  return result.generationId
+    ? { datasetId: result.datasetId, generationId: result.generationId }
+    : null;
 }
 
 /**

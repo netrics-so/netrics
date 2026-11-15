@@ -799,8 +799,18 @@ export async function syncPlayReports(
       (task) =>
         afterTask === undefined || task.key.localeCompare(afterTask) > 0,
     );
-  if (!task || apps.length === 0)
-    return { observations: [], nextCursor: finished(state.to), done: true };
+  if (!task)
+    return {
+      observations: [],
+      nextCursor: finished(state.to),
+      // Every month of the window was checked for every app. Rating rows
+      // are only emitted for months with a readable report, so an account
+      // without any would otherwise stay pending forever: declared received,
+      // the host stores it as empty while it has no rows and never replaces
+      // stored rows (#666). Install and earnings reports are not declared.
+      receivedDatasets: [ratingReportDataset.key],
+      done: true,
+    };
   const source = hash(
     frameObjects(task, catalog).map((object) => [
       object.name,

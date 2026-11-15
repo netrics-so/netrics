@@ -808,6 +808,41 @@ describe("dataset transport validation (#440)", () => {
       ),
     ).rejects.toThrow("Invalid dataset field type: id");
   });
+  it("accepts received datasets only on a done result and only declared ones (#666)", async () => {
+    const definition = sourceDatasetSchema.parse({
+      key: "events",
+      name: "Events",
+      version: 1,
+      keyFields: ["id"],
+      grain: "one event",
+      mode: "upsert",
+      fields: [
+        {
+          id: "id",
+          name: "ID",
+          type: "string",
+          nullable: false,
+          classification: "internal",
+        },
+      ],
+    });
+    const manifest = { ...demoManifest, datasets: [definition] };
+    const run = (result: Record<string, unknown>) =>
+      executeSync(
+        connectorWith(manifest, () => ({ observations: [], ...result })),
+        baseContext,
+        request,
+      );
+    await expect(
+      run({ receivedDatasets: ["events"], done: true }),
+    ).resolves.toMatchObject({ receivedDatasets: ["events"], done: true });
+    await expect(
+      run({ receivedDatasets: ["other"], done: true }),
+    ).rejects.toThrow("Undeclared source dataset");
+    await expect(
+      run({ receivedDatasets: ["events"], nextCursor: "c", done: false }),
+    ).rejects.toThrow("Received datasets on a sync page that is not final");
+  });
 });
 
 it("does not accept a successful final sync with an incomplete dataset page", async () => {
