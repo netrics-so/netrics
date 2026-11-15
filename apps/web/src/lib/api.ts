@@ -12,7 +12,11 @@ import {
   storeTemplatePlanSchema,
   storeTemplateRequestSchema,
   storeTemplateResultSchema,
+  storeTemplateScopeRequestSchema,
+  storeTemplateScopeSchema,
   storeTemplateUpdateSchema,
+  type StoreTemplateScope,
+  type StoreTemplateScopeRequest,
   type StoreTemplateApplyRequest,
   type StoreTemplateInstallList,
   type StoreTemplatePlan,
@@ -1592,6 +1596,65 @@ export function applyStoreTemplateUpdate(
     "POST",
     `${storesPath(workspaceId)}/installs/${requestId}/update`,
     storeTemplateApplyRequestSchema.parse(body),
+  );
+}
+/** The store connections and their apps a template can use (server). */
+export function readStoreTemplateOptions(
+  cookieHeader: string,
+  workspaceId: string,
+): Promise<StoreTemplateOptions> {
+  return serverGet(
+    storeTemplateOptionsSchema,
+    cookieHeader,
+    storesPath(workspaceId),
+  );
+}
+/** The connections and app scope an install is built from (server). */
+export function readStoreTemplateScope(
+  cookieHeader: string,
+  workspaceId: string,
+  requestId: string,
+): Promise<StoreTemplateScope> {
+  return serverGet(
+    storeTemplateScopeSchema,
+    cookieHeader,
+    `${storesPath(workspaceId)}/installs/${requestId}/scope`,
+  );
+}
+/** The plan of changing an install's connections or app scope. */
+export function getStoreTemplateScopePlan(
+  workspaceId: string,
+  requestId: string,
+  scope: Pick<StoreTemplateScopeRequest, "connections" | "appScope">,
+): Promise<StoreTemplatePlan> {
+  const query = new URLSearchParams({
+    connections: scope.connections.join(","),
+  });
+  if (scope.appScope)
+    query.set(
+      "appScope",
+      `${scope.appScope.connectionId}:${scope.appScope.appId}`,
+    );
+  return browserSend(
+    storeTemplatePlanSchema,
+    "GET",
+    `${storesPath(workspaceId)}/installs/${requestId}/scope-plan?${query.toString()}`,
+  );
+}
+/**
+ * Changes an install's connections or app scope as data drafts and an
+ * updated dashboard copy; 409 store_update_stale when the plan changed.
+ */
+export function changeStoreTemplateScope(
+  workspaceId: string,
+  requestId: string,
+  body: StoreTemplateScopeRequest,
+): Promise<StoreTemplateUpdate> {
+  return browserSend(
+    storeTemplateUpdateSchema,
+    "PUT",
+    `${storesPath(workspaceId)}/installs/${requestId}/scope`,
+    storeTemplateScopeRequestSchema.parse(body),
   );
 }
 /** Closes an applied update; its drafts stay as ordinary drafts. */

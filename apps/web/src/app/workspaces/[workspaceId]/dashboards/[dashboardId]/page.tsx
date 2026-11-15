@@ -16,7 +16,11 @@ import {
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
-import { storeUpdatePath, studioUpdateNote } from "@/lib/store-updates";
+import {
+  storeScopePath,
+  storeUpdatePath,
+  studioUpdateNote,
+} from "@/lib/store-updates";
 import { StoreUpdateNote } from "@/components/studio-editor/studio-status";
 import { resolveDashboardTheme } from "@/lib/studio-theme";
 import { referencedImageIds } from "@/lib/studio-widgets";
@@ -54,15 +58,28 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   const { dashboard } = dashboardResult;
   // An archived original (11E) is read-only until it is switched back.
   const archived = dashboard.archivedAt !== null;
-  const archivedNote = archived
-    ? studioUpdateNote(
-        await listStoreTemplateInstalls(cookieHeader, workspaceId).then(
+  // A store-template dashboard's apps can be changed by those who apply
+  // its updates (data:edit and dashboards:create).
+  const canChangeApps =
+    can(membership.role, "data:edit") &&
+    can(membership.role, "dashboards:create");
+  const installs =
+    archived || canChangeApps
+      ? await listStoreTemplateInstalls(cookieHeader, workspaceId).then(
           ({ installs }) => installs,
           () => [],
-        ),
-        dashboard,
-      )
-    : null;
+        )
+      : [];
+  const archivedNote = archived ? studioUpdateNote(installs, dashboard) : null;
+  const scopeInstall =
+    !archived && canChangeApps
+      ? installs.find(
+          (install) =>
+            install.error === null &&
+            install.dashboardIds.includes(dashboard.id),
+        )
+      : undefined;
+  const tu = await getT("storeUpdate");
   const [{ metrics }, { connections }, workspaceResult, customTheme, images] =
     await Promise.all([
       listWorkspaceMetrics(cookieHeader, workspaceId),
@@ -95,6 +112,14 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
           {t("breadcrumb")}
         </Link>{" "}
         /
+        {scopeInstall ? (
+          <>
+            {" "}
+            <Link href={storeScopePath(workspaceId, scopeInstall.requestId)}>
+              {tu("changeApps")}
+            </Link>
+          </>
+        ) : null}
       </p>
       {archivedNote ? (
         <StoreUpdateNote

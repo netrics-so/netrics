@@ -18,6 +18,10 @@ export const apiErrorsEn = {
     store_template_baseline_unavailable:
       "Updates aren’t available for this dashboard: it was set up before templates had versions, and a store connection it used was deleted since. The dashboard keeps working as it is.",
     store_template_up_to_date: "This dashboard is already up to date.",
+    store_template_update_available:
+      "The template has an update for this dashboard. Apply or close it first, then change the apps.",
+    store_scope_unchanged:
+      "These are the apps the dashboard already uses; nothing changes.",
     store_template_not_found:
       "This template setup no longer exists. Go back to your dashboards.",
     store_template_update_not_found:

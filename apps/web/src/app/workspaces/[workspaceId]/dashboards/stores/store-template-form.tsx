@@ -2,15 +2,27 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import type { StoreTemplateOptions } from "@netrics/contracts";
+import type {
+  StoreTemplateOptions,
+  StoreTemplatePlan,
+  StoreTemplateScope,
+} from "@netrics/contracts";
 import {
   apiErrorMessage,
+  changeStoreTemplateScope,
+  getStoreTemplateScopePlan,
   installStoreTemplate,
   listConnectionResources,
   listStoreTemplateOptions,
 } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { useLeaveGuard } from "@/components/studio-editor/use-leave-guard";
+import {
+  applyReviewed,
+  storeUpdatePath,
+  type Decisions,
+} from "@/lib/store-updates";
+import { ReviewView } from "./updates/[requestId]/store-update-review";
 
 type Choice = {
   key: string;
@@ -26,6 +38,8 @@ export function StoreTemplateForm({
   workspaceId,
   initialConnectionId,
   projectId = null,
+  install,
+  initialOptions = null,
 }: {
   workspaceId: string;
   initialConnectionId?: string;
@@ -34,31 +48,51 @@ export function StoreTemplateForm({
    * start in it (#573).
    */
   projectId?: string | null;
+  /**
+   * Edit mode (`?install=<requestId>`): change the connections and app
+   * scope of an install. Product links stay in its mapping table.
+   */
+  install?: { requestId: string; name: string; scope: StoreTemplateScope };
+  /** Options read by the page, so the form starts without loading them. */
+  initialOptions?: StoreTemplateOptions | null;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
     router = useRouter(),
     id = useId();
-  const [options, setOptions] = useState<StoreTemplateOptions | null>(null),
-    [selected, setSelected] = useState<string[]>([]),
+  const initialScope = install?.scope.appScope ?? null;
+  const [options, setOptions] = useState<StoreTemplateOptions | null>(
+      initialOptions,
+    ),
+    [selected, setSelected] = useState<string[]>(
+      install?.scope.connections ?? [],
+    ),
     [revision, setRevision] = useState(0);
-  const [name, setName] = useState(t("defaultName")),
-    [mode, setMode] = useState<"portfolio" | "app">("portfolio"),
-    [scope, setScope] = useState("");
+  const [name, setName] = useState(install?.name ?? t("defaultName")),
+    [mode, setMode] = useState<"portfolio" | "app">(
+      initialScope ? "app" : "portfolio",
+    ),
+    [scope, setScope] = useState(
+      initialScope ? initialScope.connectionId + ":" + initialScope.appId : "",
+    );
   const [groups, setGroups] = useState<Group[]>([]),
     [step, setStep] = useState<"edit" | "review">("edit"),
     [suggestionPage, setSuggestionPage] = useState(0);
-  const [pending, setPending] = useState<"options" | "apps" | "create" | null>(
-      "options",
-    ),
+  const [pending, setPending] = useState<
+      "options" | "apps" | "create" | "plan" | null
+    >(initialOptions ? null : "options"),
     [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false),
     [done, setDone] = useState(false),
-    [requestId] = useState(() => crypto.randomUUID());
-  const initialized = useRef(false);
+    [requestId] = useState(() => install?.requestId ?? crypto.randomUUID());
+  const [plan, setPlan] = useState<StoreTemplatePlan | null>(null),
+    [decisions, setDecisions] = useState<Decisions>({}),
+    [reloaded, setReloaded] = useState(false);
+  const initialized = useRef(!!install || !!initialOptions);
   useLeaveGuard(dirty && !done, t("unsaved"));
   useEffect(() => {
+    if (initialOptions && revision === 0) return;
     let alive = true;
     setPending("options");
     setError(null);
@@ -89,11 +123,19 @@ export function StoreTemplateForm({
     return () => {
       alive = false;
     };
-  }, [workspaceId, initialConnectionId, revision, locale]);
+  }, [workspaceId, initialConnectionId, initialOptions, revision, locale]);
   const connections =
     options?.connections.filter((connection) =>
       selected.includes(connection.id),
     ) ?? [];
+  /** The scope sent for an install (edit mode): connections still listed. */
+  const chosenScope = () => ({
+    connections: connections.map((connection) => connection.id),
+    appScope:
+      mode === "app" && scopeChoice
+        ? { connectionId: scopeChoice.connectionId, appId: scopeChoice.appId }
+        : null,
+  });
   const apps: Choice[] = connections.flatMap((connection) =>
     connection.apps.map((app) => ({
       key: connection.id + ":" + app.id,
@@ -104,6 +146,27 @@ export function StoreTemplateForm({
       connectorId: connection.connectorId,
     })),
   );
+  // The install's app stays choosable while its name is not known yet.
+  const fixedConnection = connections.find(
+    (connection) => connection.id === initialScope?.connectionId,
+  );
+  if (
+    initialScope &&
+    fixedConnection &&
+    !apps.some(
+      (app) =>
+        app.connectionId === initialScope.connectionId &&
+        app.appId === initialScope.appId,
+    )
+  )
+    apps.push({
+      key: initialScope.connectionId + ":" + initialScope.appId,
+      connectionId: initialScope.connectionId,
+      appId: initialScope.appId,
+      name: initialScope.appId,
+      account: fixedConnection.name,
+      connectorId: fixedConnection.connectorId,
+    });
   const assigned = new Set(groups.flatMap((group) => group.keys));
   const matching = new Map<string, Choice[]>();
   for (const app of apps) {
@@ -207,6 +270,12 @@ export function StoreTemplateForm({
   }
   function review() {
     setError(null);
+    if (install) {
+      if (!connections.length) setError(t("invalid"));
+      else if (mode === "app" && !scopeChoice) setError(t("appRequired"));
+      else void loadScopePlan();
+      return;
+    }
     if (!name.trim() || !connections.length) {
       setError(t("invalid"));
       return;
@@ -220,6 +289,57 @@ export function StoreTemplateForm({
       return;
     }
     setStep("review");
+  }
+  async function loadScopePlan() {
+    if (!install) return;
+    setPending("plan");
+    setError(null);
+    try {
+      setPlan(
+        await getStoreTemplateScopePlan(
+          workspaceId,
+          install.requestId,
+          chosenScope(),
+        ),
+      );
+      setDecisions({});
+      setReloaded(false);
+      setStep("review");
+    } catch (cause) {
+      setError(apiErrorMessage(cause, locale));
+    } finally {
+      setPending(null);
+    }
+  }
+  async function applyScope() {
+    if (!install || !plan) return;
+    setPending("create");
+    setError(null);
+    const chosen = chosenScope();
+    try {
+      const result = await applyReviewed(plan, decisions, {
+        apply: (body) =>
+          changeStoreTemplateScope(workspaceId, install.requestId, {
+            ...body,
+            ...chosen,
+          }),
+        reload: () =>
+          getStoreTemplateScopePlan(workspaceId, install.requestId, chosen),
+      });
+      if (result.kind === "reloaded") {
+        setPlan(result.plan);
+        setDecisions(result.decisions);
+        setReloaded(true);
+        return;
+      }
+      setDone(true);
+      setDirty(false);
+      router.push(storeUpdatePath(workspaceId, install.requestId));
+    } catch (cause) {
+      setError(apiErrorMessage(cause, locale));
+    } finally {
+      setPending(null);
+    }
   }
   async function create() {
     setPending("create");
@@ -288,21 +408,25 @@ export function StoreTemplateForm({
         <>
           <section className="card stack">
             <h2>{t("connections")}</h2>
-            <p className="muted">{t("connectionsHelp")}</p>
-            <div className="field">
-              <label htmlFor={`${id}-name`}>{t("name")}</label>
-              <input
-                id={`${id}-name`}
-                required
-                maxLength={100}
-                value={name}
-                disabled={!!pending}
-                onChange={(event) => {
-                  update();
-                  setName(event.target.value);
-                }}
-              />
-            </div>
+            <p className="muted">
+              {install ? t("editConnectionsHelp") : t("connectionsHelp")}
+            </p>
+            {install ? null : (
+              <div className="field">
+                <label htmlFor={`${id}-name`}>{t("name")}</label>
+                <input
+                  id={`${id}-name`}
+                  required
+                  maxLength={100}
+                  value={name}
+                  disabled={!!pending}
+                  onChange={(event) => {
+                    update();
+                    setName(event.target.value);
+                  }}
+                />
+              </div>
+            )}
             <div className="store-template-connections">
               {options.connections.map((connection) => (
                 <div className="store-template-connection" key={connection.id}>
@@ -394,124 +518,153 @@ export function StoreTemplateForm({
               </div>
             ) : null}
           </section>
-          <section className="card stack">
-            <h2>{t("mapping")}</h2>
-            <p className="muted">{t("mappingHelp")}</p>
-            {suggestions.length ? (
-              <div className="actions">
-                {suggestions
-                  .slice(
-                    visibleSuggestionPage * 5,
-                    visibleSuggestionPage * 5 + 5,
-                  )
-                  .map((choices) => (
+          {install ? (
+            <section className="card stack">
+              <h2>{t("mapping")}</h2>
+              <p className="muted">{t("editMapping")}</p>
+              <Link href={`/workspaces/${workspaceId}/data`}>
+                {t("editMappingLink")}
+              </Link>
+            </section>
+          ) : (
+            <section className="card stack">
+              <h2>{t("mapping")}</h2>
+              <p className="muted">{t("mappingHelp")}</p>
+              {suggestions.length ? (
+                <div className="actions">
+                  {suggestions
+                    .slice(
+                      visibleSuggestionPage * 5,
+                      visibleSuggestionPage * 5 + 5,
+                    )
+                    .map((choices) => (
+                      <button
+                        key={choices[0]!.key}
+                        disabled={!!pending}
+                        onClick={() => addGroup(choices)}
+                      >
+                        {t("suggestion", { name: choices[0]!.name })}
+                      </button>
+                    ))}
+                  {suggestions.length > 5 ? (
                     <button
-                      key={choices[0]!.key}
                       disabled={!!pending}
-                      onClick={() => addGroup(choices)}
+                      onClick={() =>
+                        setSuggestionPage(
+                          (value) =>
+                            (value + 1) % Math.ceil(suggestions.length / 5),
+                        )
+                      }
                     >
-                      {t("suggestion", { name: choices[0]!.name })}
+                      {t("moreSuggestions")}
                     </button>
-                  ))}
-                {suggestions.length > 5 ? (
-                  <button
+                  ) : null}
+                </div>
+              ) : null}
+              {groups.map((group) => (
+                <div className="store-template-group stack" key={group.id}>
+                  <div className="field">
+                    <label htmlFor={`product-${group.id}`}>
+                      {t("groupName")}
+                    </label>
+                    <input
+                      id={`product-${group.id}`}
+                      value={group.name}
+                      required
+                      maxLength={100}
+                      disabled={!!pending}
+                      onChange={(event) => {
+                        update();
+                        setGroups((current) =>
+                          current.map((entry) =>
+                            entry.id === group.id
+                              ? { ...entry, name: event.target.value }
+                              : entry,
+                          ),
+                        );
+                      }}
+                    />
+                  </div>
+                  <MappingApps
+                    apps={apps}
+                    selected={group.keys}
                     disabled={!!pending}
-                    onClick={() =>
-                      setSuggestionPage(
-                        (value) =>
-                          (value + 1) % Math.ceil(suggestions.length / 5),
+                    assigned={
+                      new Set(
+                        groups
+                          .filter((entry) => entry.id !== group.id)
+                          .flatMap((entry) => entry.keys),
                       )
                     }
-                  >
-                    {t("moreSuggestions")}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            {groups.map((group) => (
-              <div className="store-template-group stack" key={group.id}>
-                <div className="field">
-                  <label htmlFor={`product-${group.id}`}>
-                    {t("groupName")}
-                  </label>
-                  <input
-                    id={`product-${group.id}`}
-                    value={group.name}
-                    required
-                    maxLength={100}
-                    disabled={!!pending}
-                    onChange={(event) => {
+                    onChange={(keys) => {
                       update();
                       setGroups((current) =>
                         current.map((entry) =>
                           entry.id === group.id
-                            ? { ...entry, name: event.target.value }
+                            ? {
+                                ...entry,
+                                keys,
+                                name:
+                                  entry.name ||
+                                  apps.find((app) => keys.includes(app.key))
+                                    ?.name ||
+                                  "",
+                              }
                             : entry,
                         ),
                       );
                     }}
                   />
+                  <div className="actions">
+                    <button
+                      disabled={!!pending}
+                      onClick={() => {
+                        update();
+                        setGroups((current) =>
+                          current.filter((entry) => entry.id !== group.id),
+                        );
+                      }}
+                    >
+                      {t("removeGroup")}
+                    </button>
+                  </div>
                 </div>
-                <MappingApps
-                  apps={apps}
-                  selected={group.keys}
-                  disabled={!!pending}
-                  assigned={
-                    new Set(
-                      groups
-                        .filter((entry) => entry.id !== group.id)
-                        .flatMap((entry) => entry.keys),
-                    )
-                  }
-                  onChange={(keys) => {
-                    update();
-                    setGroups((current) =>
-                      current.map((entry) =>
-                        entry.id === group.id
-                          ? {
-                              ...entry,
-                              keys,
-                              name:
-                                entry.name ||
-                                apps.find((app) => keys.includes(app.key))
-                                  ?.name ||
-                                "",
-                            }
-                          : entry,
-                      ),
-                    );
-                  }}
-                />
-                <div className="actions">
-                  <button
-                    disabled={!!pending}
-                    onClick={() => {
-                      update();
-                      setGroups((current) =>
-                        current.filter((entry) => entry.id !== group.id),
-                      );
-                    }}
-                  >
-                    {t("removeGroup")}
-                  </button>
-                </div>
+              ))}
+              <div className="actions">
+                <button
+                  disabled={!!pending || !apps.length}
+                  onClick={() => addGroup()}
+                >
+                  {t("addGroup")}
+                </button>
               </div>
-            ))}
-            <div className="actions">
-              <button
-                disabled={!!pending || !apps.length}
-                onClick={() => addGroup()}
-              >
-                {t("addGroup")}
-              </button>
-            </div>
-          </section>
+            </section>
+          )}
           <div className="actions">
             <button className="primary" disabled={!!pending} onClick={review}>
-              {t("review")}
+              {install
+                ? pending === "plan"
+                  ? t("planning")
+                  : t("reviewChanges")
+                : t("review")}
             </button>
           </div>
         </>
+      ) : install && plan ? (
+        <ScopeReview
+          plan={plan}
+          decisions={decisions}
+          connections={connections.map((connection) => connection.name)}
+          app={mode === "app" ? (scopeChoice?.name ?? scope) : null}
+          reloaded={reloaded}
+          pending={pending === "create"}
+          onDecide={(ref, choice) => {
+            setDirty(true);
+            setDecisions((current) => ({ ...current, [ref]: choice }));
+          }}
+          onEdit={() => setStep("edit")}
+          onApply={() => void applyScope()}
+        />
       ) : (
         <section className="card stack">
           <h2>{t("reviewTitle")}</h2>
@@ -567,6 +720,65 @@ export function StoreTemplateForm({
         </p>
       ) : null}
     </div>
+  );
+}
+/**
+ * Edit mode's review: the chosen apps and the scope plan, applied as data
+ * drafts and an updated dashboard copy like a template update.
+ */
+export function ScopeReview({
+  plan,
+  decisions,
+  connections,
+  app,
+  reloaded,
+  pending,
+  onDecide,
+  onEdit,
+  onApply,
+}: {
+  plan: StoreTemplatePlan;
+  decisions: Decisions;
+  /** Names of the chosen connections. */
+  connections: string[];
+  /** The app the dashboard is fixed to; null: every app. */
+  app: string | null;
+  reloaded: boolean;
+  pending: boolean;
+  onDecide: (
+    ref: string,
+    choice: "template" | "customer" | "remove" | "keep",
+  ) => void;
+  onEdit: () => void;
+  onApply: () => void;
+}) {
+  const t = useT("storeTemplate");
+  const changes = plan.records.some((record) => record.items.length > 0);
+  return (
+    <section className="card stack">
+      <h2>{t("editReviewTitle")}</h2>
+      <p>{connections.join(" · ")}</p>
+      <p>{app ?? t("portfolio")}</p>
+      {changes ? (
+        <ReviewView
+          scopeChange
+          plan={plan}
+          decisions={decisions}
+          onDecide={onDecide}
+          onApply={onApply}
+          pending={pending}
+          notice={reloaded ? "reloaded" : null}
+          error={null}
+        />
+      ) : (
+        <p className="notice">{t("scopeUnchanged")}</p>
+      )}
+      <div className="actions">
+        <button disabled={pending} onClick={onEdit}>
+          {t("edit")}
+        </button>
+      </div>
+    </section>
   );
 }
 function MappingApps({

@@ -18,6 +18,10 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Diese Connector-Version stellt die für die Vorlage benötigten Datensätze nicht bereit.",
     store_template_baseline_unavailable:
       "Für dieses Dashboard sind keine Updates verfügbar: Es wurde eingerichtet, bevor Vorlagen Versionen hatten, und eine seiner Store-Verbindungen wurde seitdem gelöscht. Das Dashboard funktioniert weiter wie bisher.",
+    store_template_update_available:
+      "Die Vorlage hat ein Update für dieses Dashboard. Wende es zuerst an oder schließe es und ändere danach die Apps.",
+    store_scope_unchanged:
+      "Das sind die Apps, die das Dashboard schon nutzt; nichts ändert sich.",
     store_template_up_to_date:
       "Dieses Dashboard ist schon auf dem neuesten Stand.",
     store_template_not_found:

@@ -345,6 +345,7 @@ export function ReviewView({
   pending,
   notice,
   error,
+  scopeChange = false,
 }: {
   plan: StoreTemplatePlan;
   decisions: Decisions;
@@ -353,6 +354,11 @@ export function ReviewView({
   pending: boolean;
   notice: "reloaded" | null;
   error: string | null;
+  /**
+   * A change of the install's apps (not a template update): a removed
+   * connection's preparation is decided as a whole.
+   */
+  scopeChange?: boolean;
 }) {
   const t = useT("storeUpdate");
   const missing = missingDecisions(plan, decisions);
@@ -366,10 +372,12 @@ export function ReviewView({
   return (
     <section className="store-update-review" aria-labelledby="review-title">
       <h2 id="review-title">{t("steps.review")}</h2>
-      <p>
-        <StoreUpdateSummary summary={plan.summary} />
-      </p>
-      <p className="muted">{t("intro")}</p>
+      {scopeChange ? null : (
+        <p>
+          <StoreUpdateSummary summary={plan.summary} />
+        </p>
+      )}
+      <p className="muted">{scopeChange ? t("scopeIntro") : t("intro")}</p>
       {scope > 0 ? (
         <p className="muted">{t("scopeNote", { count: scope })}</p>
       ) : null}
@@ -385,6 +393,7 @@ export function ReviewView({
           plan={plan}
           decisions={decisions}
           onDecide={onDecide}
+          scope={scopeChange}
         />
       ))}
       <div className="store-update-apply">
@@ -419,11 +428,13 @@ function RecordReview({
   plan,
   decisions,
   onDecide,
+  scope,
 }: {
   record: PlanRecord;
   plan: StoreTemplatePlan;
   decisions: Decisions;
   onDecide: (ref: string, choice: Choice) => void;
+  scope: boolean;
 }) {
   const t = useT("storeUpdate");
   const groups = groupItems(record);
@@ -433,6 +444,14 @@ function RecordReview({
     groups.template.length +
     groups.customer.length;
   if (shown === 0) return null;
+  if (scope && groups.removal.length === record.items.length)
+    return (
+      <RecordRemoval
+        record={record}
+        decisions={decisions}
+        onDecide={onDecide}
+      />
+    );
   return (
     <section className="card store-update-record">
       <h3>
@@ -498,6 +517,56 @@ function RecordReview({
           ))}
         </ItemGroup>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * The preparation of a connection the install no longer reads: one choice
+ * for all its items. Either way it is detached, never deleted.
+ */
+function RecordRemoval({
+  record,
+  decisions,
+  onDecide,
+}: {
+  record: PlanRecord;
+  decisions: Decisions;
+  onDecide: (ref: string, choice: Choice) => void;
+}) {
+  const t = useT("storeUpdate");
+  const values = new Set(record.items.map((item) => decisions[item.ref]));
+  const value = values.size === 1 ? [...values][0] : undefined;
+  return (
+    <section className="card store-update-record">
+      <fieldset className="store-update-decision">
+        <legend>
+          <span className="store-update-kind">{t(`kinds.${record.kind}`)}</span>{" "}
+          {record.name}
+        </legend>
+        <p className="muted">{t("why.scopeRemoval")}</p>
+        <div className="store-update-choices">
+          {(
+            [
+              ["remove", t("remove")],
+              ["keep", t("keep")],
+            ] as const
+          ).map(([choice, label]) => (
+            <label key={choice}>
+              <input
+                type="radio"
+                name={record.key}
+                value={choice}
+                checked={value === choice}
+                onChange={() => {
+                  for (const item of record.items) onDecide(item.ref, choice);
+                }}
+              />{" "}
+              {label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </section>
   );
 }
