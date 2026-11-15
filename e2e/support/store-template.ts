@@ -93,6 +93,42 @@ export async function pairScreen(
 type Widget = Json & { title?: string | null };
 
 /**
+ * A store-template install for seeding, answered 200. Installs no longer
+ * conflict with each other (they run one at a time, #604), but on a
+ * database this small an install still conflicts with the other journeys'
+ * serializable data transactions: every workspace's rows share the same
+ * heap and index pages. Right after the servers start, while every request
+ * is slow, that can outlast the API's retry budget. The same request is
+ * idempotent, so it is retried after a growing pause. Any other refusal
+ * fails the journey.
+ */
+async function installStores(
+  page: Page,
+  workspaceId: string,
+  data: Json & { requestId: string },
+) {
+  const install = () =>
+    page.request.post(
+      `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
+      { headers: { origin: ORIGIN }, data },
+    );
+  const conflicted = async (answer: Awaited<ReturnType<typeof install>>) =>
+    answer.status() === 409 &&
+    ((await answer.json()) as { error?: string }).error === "version_conflict";
+  let response = await install();
+  for (
+    let attempt = 0;
+    attempt < 5 && (await conflicted(response));
+    attempt++
+  ) {
+    await page.waitForTimeout(500 * (attempt + 1));
+    response = await install();
+  }
+  expect(response.status(), await response.text()).toBe(200);
+  return response;
+}
+
+/**
  * An App portfolio install of two store connections ("Apple team", "Play
  * account"), plus a third connection it does not read yet ("Second Play"),
  * all stored as set up without network.
@@ -120,42 +156,12 @@ export async function installWithConnections(
       second: await add("google-play", "Second Play"),
     };
     const requestId = randomUUID();
-    const install = () =>
-      page.request.post(
-        `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
-        {
-          headers: { origin: ORIGIN },
-          data: {
-            requestId,
-            name: "App portfolio",
-            connections: [connections.apple, connections.play],
-            groups: [],
-          },
-        },
-      );
-    // Seeding only. Installs no longer conflict with each other (they run
-    // one at a time, #604), but on a database this small an install still
-    // conflicts with the other journeys' serializable data transactions:
-    // every workspace's rows share the same heap and index pages. Right
-    // after the servers start, while every request is slow, that can outlast
-    // the API's retry budget (seen once in a run of 30 journeys). The
-    // same request is idempotent, retried after a growing pause so the
-    // other journeys' transactions can finish. Any other refusal fails the
-    // journey.
-    const conflicted = async (answer: Awaited<ReturnType<typeof install>>) =>
-      answer.status() === 409 &&
-      ((await answer.json()) as { error?: string }).error ===
-        "version_conflict";
-    let response = await install();
-    for (
-      let attempt = 0;
-      attempt < 5 && (await conflicted(response));
-      attempt++
-    ) {
-      await page.waitForTimeout(500 * (attempt + 1));
-      response = await install();
-    }
-    expect(response.status(), await response.text()).toBe(200);
+    const response = await installStores(page, workspaceId, {
+      requestId,
+      name: "App portfolio",
+      connections: [connections.apple, connections.play],
+      groups: [],
+    });
     const { dashboardId } = (await response.json()) as { dashboardId: string };
     return { requestId, dashboardId, connections };
   } finally {
@@ -218,19 +224,12 @@ export async function installWithUpdate(
       values (${workspaceId}, 'app-store-connect', 'Apple team', false)
       returning id`;
     const requestId = randomUUID();
-    const response = await page.request.post(
-      `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
-      {
-        headers: { origin: ORIGIN },
-        data: {
-          requestId,
-          name: "App portfolio",
-          connections: [connection!.id],
-          groups: [],
-        },
-      },
-    );
-    expect(response.status(), await response.text()).toBe(200);
+    const response = await installStores(page, workspaceId, {
+      requestId,
+      name: "App portfolio",
+      connections: [connection!.id],
+      groups: [],
+    });
     const installed = (await response.json()) as {
       dashboardId: string;
       models: { downloads: string };
