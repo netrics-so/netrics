@@ -546,6 +546,7 @@ export {
   lockWorkspaceBackfills,
   markHistoryReloadRequested,
   queueDatasetBackfill,
+  storedDatasetsMissingBackfill,
 } from "./dataset-backfill.js";
 export type {
   DatasetBackfillOutcome,

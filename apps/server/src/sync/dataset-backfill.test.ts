@@ -144,7 +144,7 @@ function growingConnector(release: 1 | 2 | 3): Connector {
             dimensions: { resource: "app" },
           },
         ],
-        datasetPages: datasets.map((dataset) => ({
+        datasetPages: (withholdRows ? [] : datasets).map((dataset) => ({
           datasetKey: dataset.key,
           schemaVersion: dataset.version,
           refreshKey: `${request.mode}-${randomUUID()}`,
@@ -176,6 +176,8 @@ function registryAt(release: 1 | 2 | 3): ConnectorRegistry {
 let paged = false;
 /** The final page of a paged backfill fails. */
 let failFinalPage = false;
+/** Runs write no dataset page, like a provider without rows yet (#634). */
+let withholdRows = false;
 
 let testDb: TestDatabase;
 let appDb: Database;
@@ -285,6 +287,14 @@ async function newWorkspace(): Promise<string> {
     .values({ email: `busy-${randomUUID()}@example.com`, displayName: "B" })
     .returning({ id: schema.users.id });
   return createWorkspace(appDb, { name: "Busy", ownerUserId: user!.id });
+}
+
+/** Earlier tests' backfills would hold the workspace's one slot. */
+async function settleBackfills(): Promise<void> {
+  await owner`
+    update jobs set status = 'succeeded'
+    where workspace_id = ${workspaceId} and kind = 'connection.backfill'
+      and status in ('pending', 'continuing', 'running')`;
 }
 
 beforeAll(async () => {
@@ -433,6 +443,51 @@ describe("backfill of datasets a connector update adds (#617)", () => {
     expect(await auditEvents(connectionId)).toHaveLength(2);
   });
 
+  describe("a dataset the connection has not stored (#634)", () => {
+    afterAll(async () => {
+      withholdRows = false;
+      await settleBackfills();
+    });
+
+    it("queues nothing for a declared dataset the connection never writes, also a day later", async () => {
+      await settleBackfills();
+      const connectionId = await seedConnection();
+      await run(1, "connection.backfill", connectionId);
+      withholdRows = true;
+      await run(2, "connection.sync", connectionId);
+      await owner`
+        update connection_state
+        set backfill_requested_at = now() - interval '25 hours'
+        where connection_id = ${connectionId}`;
+      await run(2, "connection.sync", connectionId);
+      await run(2, "connection.sync", connectionId);
+      withholdRows = false;
+      expect(await backfillJobs(connectionId)).toEqual([]);
+      expect(await auditEvents(connectionId)).toEqual([]);
+      expect(await state(connectionId)).toEqual({
+        backfilled_datasets: {},
+        backfill_requested_datasets: null,
+      });
+    });
+
+    it("queues one backfill once the added dataset's first rows arrive", async () => {
+      await settleBackfills();
+      const connectionId = await seedConnection();
+      await run(1, "connection.backfill", connectionId);
+      withholdRows = true;
+      await run(2, "connection.sync", connectionId);
+      expect(await backfillJobs(connectionId)).toEqual([]);
+      withholdRows = false;
+      await run(2, "connection.sync", connectionId);
+      await run(2, "connection.sync", connectionId);
+      expect(await backfillJobs(connectionId)).toHaveLength(1);
+      expect((await auditEvents(connectionId))[0]!.metadata).toMatchObject({
+        reason: "dataset_added",
+        datasets: ["rows"],
+      });
+    });
+  });
+
   describe("a backfill resumed across a deploy", () => {
     afterAll(() => {
       paged = false;
@@ -510,6 +565,12 @@ describe("backfill of datasets a connector update adds (#617)", () => {
     await owner`
       update connection_state set backfilled_datasets = '{}'::jsonb
       where workspace_id = ${busy}`;
+    // Each stores "rows" (#634: a dataset never stored queues nothing).
+    for (const connectionId of connections) {
+      await owner`
+        insert into data_datasets (workspace_id, connection_id, kind, key, name)
+        values (${busy}, ${connectionId}, 'source', 'rows', 'Report rows')`;
+    }
     const outcomes = await Promise.all(
       connections.map((connectionId) =>
         withWorkspace(appDb, { workspaceId: busy }, (tx) =>
@@ -587,6 +648,67 @@ describe("backfill of datasets a connector update adds (#617)", () => {
         values (${workspaceId}, ${connectionId}, 'backfill', now() - interval '90 days', now(), 1, 'continued', now(), now() + interval '1 minute')`;
       await run(2, "connection.sync", connectionId);
       expect(await backfillJobs(connectionId)).toHaveLength(1);
+    });
+
+    /**
+     * A connection from before #617 whose last backfill (on 0.1.0) predates
+     * the "rows" dataset, and that has not stored any of it (#634).
+     */
+    async function legacyWithoutRows(): Promise<string> {
+      await settleBackfills();
+      const connectionId = await seedConnection();
+      await run(1, "connection.backfill", connectionId);
+      await owner`
+        update connection_state
+        set backfilled_datasets = null, backfill_requested_datasets = null
+        where connection_id = ${connectionId}`;
+      return connectionId;
+    }
+
+    it("backfills an added dataset once its first rows arrive, not when the first run has none (#634)", async () => {
+      withholdRows = true;
+      const connectionId = await legacyWithoutRows();
+      // The first run after the deploy stores no rows of "rows": not
+      // recorded as backfilled, and nothing to backfill yet.
+      await run(2, "connection.sync", connectionId);
+      withholdRows = false;
+      expect(await backfillJobs(connectionId)).toEqual([]);
+      expect((await state(connectionId)).backfilled_datasets).toEqual({});
+
+      // Its first rows arrive: one backfill, not again on the next run.
+      await run(2, "connection.sync", connectionId);
+      await run(2, "connection.sync", connectionId);
+      const jobs = await backfillJobs(connectionId);
+      expect(jobs).toEqual([{ id: expect.any(String), status: "pending" }]);
+      expect(await auditEvents(connectionId)).toEqual([
+        {
+          actor_user_id: null,
+          metadata: {
+            connectorId: CONNECTOR,
+            by: "system",
+            reason: "dataset_added",
+            datasets: ["rows"],
+            jobId: jobs[0]!.id,
+          },
+        },
+      ]);
+      await runPendingBackfill(2, connectionId);
+      expect((await state(connectionId)).backfilled_datasets).toEqual({
+        rows: 1,
+      });
+      await run(2, "connection.sync", connectionId);
+      expect(await backfillJobs(connectionId)).toHaveLength(1);
+    });
+
+    it("queues nothing for a declared dataset it never writes (#634)", async () => {
+      withholdRows = true;
+      const connectionId = await legacyWithoutRows();
+      await run(2, "connection.sync", connectionId);
+      await run(2, "connection.sync", connectionId);
+      withholdRows = false;
+      expect(await backfillJobs(connectionId)).toEqual([]);
+      expect(await auditEvents(connectionId)).toEqual([]);
+      expect((await state(connectionId)).backfilled_datasets).toEqual({});
     });
 
     it("records a dataset a later backfill read, and queues nothing", async () => {
