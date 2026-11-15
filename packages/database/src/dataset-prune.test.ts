@@ -487,11 +487,9 @@ describe("prune with many expired current generations (#531)", () => {
       await admin`insert into workspaces(name) values ('Current') returning id`;
     workspaceId = ws!.id as string;
     await admin`insert into connectors(id,version,manifest) values ('prune-fixture','1.0.0','{}')`;
-    // The test counts the index blocks one session reads. Autovacuum of
-    // these tables, due after the drain deletes every record, changes their
-    // pg_class row; the prune function's cached plans are then planned again,
-    // and the planner reads the primary key's metapage: one block without a
-    // scan, not a lookup (#556). The test runs its own ANALYZE instead.
+    // The idle calls run before vacuum, with the deleted records' index
+    // entries in place, as in production between vacuums. Autovacuum is due
+    // after the drain deletes every record; the test runs its own ANALYZE.
     await admin`alter table data_records set (autovacuum_enabled = false)`;
     await admin`alter table data_generations set (autovacuum_enabled = false)`;
     for (let i = 0; i < GENERATIONS; i++) await currentGeneration();
@@ -512,12 +510,21 @@ describe("prune with many expired current generations (#531)", () => {
     await test?.drop();
   }, TEST_DATABASE_DROP_TIMEOUT_MS);
 
-  type Call = { deleted: number; more: boolean; scans: number; blocks: number };
+  type Call = { deleted: number; more: boolean; scans: number; read: number };
 
   /**
    * One prune call in its own transaction, as the scheduler makes them, with
-   * the scans of the data_records primary key it made and the index blocks
-   * it read. Fails instead of waiting long for a lock.
+   * the scans of the data_records primary key it made and the index entries
+   * those scans read. Fails instead of waiting long for a lock.
+   *
+   * Not the index blocks the session read: planning reads the primary key's
+   * metapage, one block without a scan, whenever this session's cached copy
+   * is dropped. Autovacuum of data_records drops it (#556), and so does a
+   * reset of all of the session's caches, which PostgreSQL makes when the
+   * session falls behind the server-wide queue of cache invalidations, as
+   * when other test files create databases and run DDL at the same time
+   * (#665). Any call may plan its statements again, so that block can come
+   * with any call. Index pages are otherwise only read by scans.
    */
   async function call(pruner: postgres.Sql, batch: number): Promise<Call> {
     return pruner.begin(async (sql) => {
@@ -525,9 +532,9 @@ describe("prune with many expired current generations (#531)", () => {
       const stats = async () => {
         const [row] = await sql`
           select pg_stat_get_xact_numscans(i.oid)::int as scans,
-                 pg_stat_get_xact_blocks_fetched(i.oid)::int as blocks
+                 pg_stat_get_xact_tuples_returned(i.oid)::int as read
           from pg_class i where i.relname = 'data_records_generation_id_record_key_pk'`;
-        return row as { scans: number; blocks: number };
+        return row as { scans: number; read: number };
       };
       const before = await stats();
       const [row] = await sql`
@@ -537,7 +544,7 @@ describe("prune with many expired current generations (#531)", () => {
         deleted: row!.deleted as number,
         more: row!.more as boolean,
         scans: after.scans - before.scans,
-        blocks: after.blocks - before.blocks,
+        read: after.read - before.read,
       };
     });
   }
@@ -569,8 +576,8 @@ describe("prune with many expired current generations (#531)", () => {
       // scans and 66,000 blocks with 100 generations of 20,000 records).
       const idle = [await call(pruner, 1000), await call(pruner, 1000)];
       expect(idle).toEqual([
-        { deleted: 0, more: false, scans: 0, blocks: 0 },
-        { deleted: 0, more: false, scans: 0, blocks: 0 },
+        { deleted: 0, more: false, scans: 0, read: 0 },
+        { deleted: 0, more: false, scans: 0, read: 0 },
       ]);
     } finally {
       await pruner.end({ timeout: 5 });
