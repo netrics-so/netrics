@@ -352,7 +352,10 @@ describe("complete report ingestion", () => {
         )
         .every((page) => page.window?.from === "2026-10-01"),
     ).toBe(true);
-    expect(pages.at(-1)).toMatchObject({ done: true, nextCursor: request.to });
+    expect(pages.at(-1)).toMatchObject({
+      done: true,
+      nextCursor: `google-play-done:2:${request.to}`,
+    });
     expect(JSON.stringify(pages)).not.toContain("synthetic-access-token");
   });
   it("isolates financial permission failures while installs continue and retains account adjustments only at account scope", async () => {

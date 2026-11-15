@@ -13,6 +13,7 @@ import {
   reportDecimal,
   reportZip,
   reportZipStream,
+  ReportFormatError,
   ReportTooLargeError,
   type ByteSink,
   type ReportSource,
@@ -143,7 +144,9 @@ export const listingRatingDataset: SourceDatasetDefinition = {
 export const reportStatusDataset: SourceDatasetDefinition = {
   key: "report_status",
   name: "Google Play report availability",
-  version: 1,
+  // Version 2 adds the nullable `reason` (#611). Registered versions are
+  // immutable: a changed definition always takes a new version.
+  version: 2,
   mode: "upsert",
   keyFields: ["app_id", "report_type", "report_month"],
   reportingField: "report_month",
@@ -161,12 +164,59 @@ export const reportStatusDataset: SourceDatasetDefinition = {
     }),
     field("object_names", "Report objects", "json"),
     field("unmapped_rows", "Unmapped account rows", "integer"),
+    // A safe code such as "missing_columns:Package Name" or "scope_mismatch"
+    // for an invalid_report; never row data or object names.
+    field("reason", "Why the report could not be read", "string", {
+      nullable: true,
+    }),
   ],
 };
 
-function requiredColumns(headers: string[], columns: string[]): void {
-  if (columns.some((name) => !headers.includes(name)))
-    throw new Error("Google Play report is missing required columns");
+/**
+ * How a delivered header is compared with a column the parser reads: case,
+ * repeated or odd whitespace and compatibility forms are not significant.
+ * Play Console has delivered both "Package Name" and "Package name" (#611).
+ */
+export function headerKey(name: string): string {
+  return name.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+}
+/**
+ * The delivered header for each canonical column the parser reads. Records
+ * keep the delivered names (provider_fields stay as delivered); the parser
+ * looks values up through this map. A missing required column, or one that
+ * two delivered headers would both match, makes the report invalid with a
+ * reason naming only the canonical columns.
+ */
+export function resolveColumns<R extends string, O extends string = never>(
+  headers: string[],
+  required: readonly R[],
+  optional: readonly O[] = [],
+): Record<R, string> & Partial<Record<O, string>> {
+  const delivered = new Map<string, string[]>();
+  for (const header of headers) {
+    const key = headerKey(header);
+    delivered.set(key, [...(delivered.get(key) ?? []), header]);
+  }
+  const columns: Record<string, string> = {};
+  const missing: string[] = [],
+    ambiguous: string[] = [];
+  for (const name of [...required, ...optional]) {
+    const matches = delivered.get(headerKey(name)) ?? [];
+    if (matches.length > 1) ambiguous.push(name);
+    else if (matches.length === 1) columns[name] = matches[0]!;
+    else if ((required as readonly string[]).includes(name)) missing.push(name);
+  }
+  if (missing.length)
+    throw new ReportFormatError(
+      `missing_columns:${missing.join(",")}`,
+      "Google Play report is missing required columns",
+    );
+  if (ambiguous.length)
+    throw new ReportFormatError(
+      `ambiguous_columns:${ambiguous.join(",")}`,
+      "Google Play report has ambiguous columns",
+    );
+  return columns as Record<R, string> & Partial<Record<O, string>>;
 }
 // Built once: a schema per parsed row was a large share of a report's
 // garbage (#528).
@@ -174,13 +224,19 @@ const isoDate = z.iso.date();
 function date(raw: string): string {
   const value = raw.trim();
   if (!isoDate.safeParse(value).success)
-    throw new Error("Google Play report has an invalid reporting date");
+    throw new ReportFormatError(
+      "invalid_value",
+      "Google Play report has an invalid reporting date",
+    );
   return value;
 }
 function integer(raw: string): string | null {
   if (!raw.trim()) return null;
   if (!/^\d+$/.test(raw.trim()))
-    throw new Error("Google Play install report has an invalid count");
+    throw new ReportFormatError(
+      "invalid_value",
+      "Google Play install report has an invalid count",
+    );
   return reportDecimal(raw);
 }
 /**
@@ -221,6 +277,24 @@ export type RowSink = (appId: string, row: DatasetRecord) => void;
 /** Awaited between pieces of a report, so a consumer can write out what it holds. */
 export type Drain = () => Promise<void>;
 
+/** Columns an install report must have, by their canonical names. */
+const INSTALL_COLUMNS = [
+  "Date",
+  "Package Name",
+  "Country",
+  "Daily User Installs",
+  "Daily Device Installs",
+] as const;
+/** Columns an earnings report must have, by their canonical names. */
+const EARNING_COLUMNS = [
+  "Transaction Date",
+  "Transaction Type",
+  "Package ID",
+  "Merchant Currency",
+  "Amount (Merchant Currency)",
+] as const;
+const EARNING_OPTIONAL = ["Buyer Country"] as const;
+
 /** Typed install rows from one country install report, pushed as bytes. */
 function installSink(
   appId: string,
@@ -230,22 +304,17 @@ function installSink(
   emit: RowSink,
 ): ByteSink {
   const rowIdentity = rowIdentities();
+  let column: Record<(typeof INSTALL_COLUMNS)[number], string>;
   return reportCsv(
-    (headers) =>
-      requiredColumns(headers, [
-        "Date",
-        "Package Name",
-        "Country",
-        "Daily User Installs",
-        "Daily Device Installs",
-      ]),
+    (headers) => (column = resolveColumns(headers, INSTALL_COLUMNS)),
     (original) => {
-      const day = date(original.Date!);
+      const day = date(original[column.Date]!);
       if (
-        original["Package Name"]?.trim() !== appId ||
+        original[column["Package Name"]]!.trim() !== appId ||
         day.slice(0, 7) !== reportMonth.slice(0, 7)
       )
-        throw new Error(
+        throw new ReportFormatError(
+          "scope_mismatch",
           "Google Play install report has a row outside its app/month scope",
         );
       emit(appId, {
@@ -253,9 +322,13 @@ function installSink(
           app_id: appId,
           day,
           row_id: rowIdentity(original),
-          country: original.Country!.trim().toUpperCase(),
-          daily_user_installs: integer(original["Daily User Installs"]!),
-          daily_device_installs: integer(original["Daily Device Installs"]!),
+          country: original[column.Country]!.trim().toUpperCase(),
+          daily_user_installs: integer(
+            original[column["Daily User Installs"]]!,
+          ),
+          daily_device_installs: integer(
+            original[column["Daily Device Installs"]]!,
+          ),
           report_file: name,
           object_generation: generation,
           provider_fields: original,
@@ -355,16 +428,15 @@ const MONTHS = [
 ];
 function transactionDay(raw: string): string {
   if (isoDate.safeParse(raw.trim()).success) return raw.trim();
+  const invalid = () =>
+    new ReportFormatError(
+      "invalid_value",
+      "Google Play earnings report has an invalid transaction date",
+    );
   const match = /^([A-Z][a-z]{2})\s+(\d{1,2}),\s*(\d{4})$/.exec(raw.trim());
-  if (!match)
-    throw new Error(
-      "Google Play earnings report has an invalid transaction date",
-    );
+  if (!match) throw invalid();
   const month = MONTHS.indexOf(match[1]!);
-  if (month < 0)
-    throw new Error(
-      "Google Play earnings report has an invalid transaction date",
-    );
+  if (month < 0) throw invalid();
   return date(
     `${match[3]}-${String(month + 1).padStart(2, "0")}-${match[2]!.padStart(2, "0")}`,
   );
@@ -384,34 +456,41 @@ function earningsSink(
   emit: RowSink,
 ): ByteSink {
   const rowIdentity = rowIdentities();
+  let column: ReturnType<
+    typeof resolveColumns<
+      (typeof EARNING_COLUMNS)[number],
+      (typeof EARNING_OPTIONAL)[number]
+    >
+  >;
   return reportCsv(
     (headers) =>
-      requiredColumns(headers, [
-        "Transaction Date",
-        "Transaction Type",
-        "Package ID",
-        "Merchant Currency",
-        "Amount (Merchant Currency)",
-      ]),
+      (column = resolveColumns(headers, EARNING_COLUMNS, EARNING_OPTIONAL)),
     (original) => {
-      const appId = original["Package ID"]!.trim() || "__unmapped";
+      const appId = original[column["Package ID"]]!.trim() || "__unmapped";
       if (appId === "__unmapped") result.unmapped++;
       if (selected && !selected.has(appId)) return;
-      const currency = original["Merchant Currency"]!.trim().toUpperCase();
+      const currency =
+        original[column["Merchant Currency"]]!.trim().toUpperCase();
       if (!/^[A-Z]{3}$/.test(currency))
-        throw new Error(
+        throw new ReportFormatError(
+          "invalid_value",
           "Google Play earnings report has an invalid merchant currency",
         );
+      const buyerCountry = column["Buyer Country"];
       const row = {
         values: {
           app_id: appId,
           report_month: date(reportMonth),
-          transaction_day: transactionDay(original["Transaction Date"]!),
+          transaction_day: transactionDay(
+            original[column["Transaction Date"]]!,
+          ),
           row_id: rowIdentity(original),
-          transaction_type: original["Transaction Type"]!,
-          country: (original["Buyer Country"] ?? "").trim().toUpperCase(),
+          transaction_type: original[column["Transaction Type"]]!,
+          country: (buyerCountry === undefined ? "" : original[buyerCountry]!)
+            .trim()
+            .toUpperCase(),
           merchant_amount: reportDecimal(
-            original["Amount (Merchant Currency)"]!,
+            original[column["Amount (Merchant Currency)"]]!,
           ),
           currency,
           report_file: file,
