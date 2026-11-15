@@ -1,5 +1,13 @@
 "use client";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   formatDataDate,
   type DashboardDataFilter,
@@ -368,6 +376,7 @@ function CompactFilter({
   workspaceId,
   open,
   onOpenChange,
+  sheet,
   onChange,
 }: {
   filter: DashboardDataFilter;
@@ -376,6 +385,12 @@ function CompactFilter({
   /** One popover at a time (#624): the filter bar owns which is open. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Where the popover opens as a full-width sheet in the page flow, below
+   * the filter bar, when the bar wraps or is narrow: anchored under its
+   * trigger it would cover the triggers of the next row (#624).
+   */
+  sheet: HTMLElement | null;
   onChange: (value: DashboardFilterValue) => void;
 }) {
   const t = useT("data.dashboard"),
@@ -397,20 +412,30 @@ function CompactFilter({
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
-      if (!controlRef.current?.contains(event.target as Node)) close(false);
+      const target = event.target as Node;
+      if (
+        !controlRef.current?.contains(target) &&
+        !popoverRef.current?.contains(target)
+      )
+        close(false);
     };
     document.addEventListener("pointerdown", outside, true);
     return () => document.removeEventListener("pointerdown", outside, true);
   }, [open, close]);
-  // Opening moves focus into the popover, to its first control.
+  // Opening moves focus into the popover: to its first control, or, on
+  // touch screens, to the popover itself, so that no on-screen keyboard
+  // covers the values.
   useEffect(() => {
-    if (open)
-      popoverRef.current
-        ?.querySelector<HTMLElement>(
+    const popover = popoverRef.current;
+    if (!open || !popover) return;
+    if (window.matchMedia?.("(pointer: coarse)").matches) popover.focus();
+    else
+      popover
+        .querySelector<HTMLElement>(
           "input:not([disabled]), select:not([disabled]), button:not([disabled])",
         )
         ?.focus();
-  }, [open]);
+  }, [open, sheet]);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const receiveLabels = useCallback(
     (next: Record<string, string>) =>
@@ -493,7 +518,8 @@ function CompactFilter({
         if (
           open &&
           event.relatedTarget &&
-          !event.currentTarget.contains(event.relatedTarget as Node)
+          !event.currentTarget.contains(event.relatedTarget as Node) &&
+          !popoverRef.current?.contains(event.relatedTarget as Node)
         )
           close(false);
       }}
@@ -534,32 +560,53 @@ function CompactFilter({
         </svg>
       </button>
       {open ? (
-        <div
-          ref={popoverRef}
-          id={id}
-          className="dashboard-filter-popover"
-          style={{ left }}
-          role="group"
-          aria-label={filter.name}
-        >
-          <DashboardFilterInput
-            initialBrowse
-            workspaceId={workspaceId}
-            filter={filter}
-            value={value}
-            onChange={onChange}
-            onLabels={receiveLabels}
-          />
-          {filter.fixedValue ? (
-            <p className="help">{t("fixedScopeActive")}</p>
-          ) : null}
-          <button type="button" className="primary" onClick={() => close(true)}>
-            {t("done")}
-          </button>
-        </div>
+        <Sheet target={sheet}>
+          <div
+            ref={popoverRef}
+            id={id}
+            className={
+              sheet
+                ? "dashboard-filter-popover dashboard-filter-sheet"
+                : "dashboard-filter-popover"
+            }
+            style={sheet ? undefined : { left }}
+            role="group"
+            aria-label={filter.name}
+            tabIndex={-1}
+          >
+            <DashboardFilterInput
+              initialBrowse
+              workspaceId={workspaceId}
+              filter={filter}
+              value={value}
+              onChange={onChange}
+              onLabels={receiveLabels}
+            />
+            {filter.fixedValue ? (
+              <p className="help">{t("fixedScopeActive")}</p>
+            ) : null}
+            <button
+              type="button"
+              className="primary"
+              onClick={() => close(true)}
+            >
+              {t("done")}
+            </button>
+          </div>
+        </Sheet>
       ) : null}
     </div>
   );
+}
+/** Children in `target` (a portal) when given, else in place. */
+function Sheet({
+  target,
+  children,
+}: {
+  target: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return target ? createPortal(children, target) : <>{children}</>;
 }
 export function DashboardFilters({
   workspaceId,
@@ -573,36 +620,77 @@ export function DashboardFilters({
   onChange: (value: Record<string, DashboardFilterValue>) => void;
 }) {
   const t = useT("data.dashboard"),
-    [openId, setOpenId] = useState<string | null>(null);
+    // The open popover, by the same key as its control: a filter whose
+    // mapping changes mounts anew, closed.
+    [openKey, setOpenKey] = useState<string | null>(null);
+  const barRef = useRef<HTMLElement>(null),
+    [sheet, setSheet] = useState<HTMLDivElement | null>(null),
+    [stacked, setStacked] = useState(false);
+  // Popovers anchor under their trigger only while the triggers and the
+  // reset button share one row; otherwise they open as a sheet below the
+  // bar, pushing the dashboard down, and never cover another trigger.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const measure = () => {
+      const boxes = Array.from(
+        bar.querySelectorAll<HTMLElement>(
+          ".dashboard-filter-trigger, .dashboard-filter-reset",
+        ),
+        (element) => element.getBoundingClientRect(),
+      );
+      // Wrapped: some control starts below where another one ends.
+      const lowestTop = Math.max(...boxes.map((box) => box.top)),
+        highestBottom = Math.min(...boxes.map((box) => box.bottom));
+      setStacked(
+        bar.clientWidth < 480 ||
+          (boxes.length > 1 && lowestTop >= highestBottom - 1),
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [filters.length]);
   return filters.length ? (
     <section
+      ref={barRef}
       className="dashboard-shared-filters"
       aria-label={t("sharedFilters")}
     >
       <div className="dashboard-filter-controls">
-        {filters.map((filter) => (
-          <CompactFilter
-            key={filter.id + JSON.stringify(filter.mappings[0])}
-            filter={filter}
-            workspaceId={workspaceId}
-            open={openId === filter.id}
-            onOpenChange={(open) =>
-              setOpenId((current) =>
-                open ? filter.id : current === filter.id ? null : current,
-              )
-            }
-            value={
-              Object.hasOwn(values, filter.id)
-                ? values[filter.id]!
-                : filter.defaultValue
-            }
-            onChange={(value) => onChange({ ...values, [filter.id]: value })}
-          />
-        ))}
+        {filters.map((filter) => {
+          const key = filter.id + JSON.stringify(filter.mappings[0]);
+          return (
+            <CompactFilter
+              key={key}
+              filter={filter}
+              workspaceId={workspaceId}
+              open={openKey === key}
+              sheet={stacked ? sheet : null}
+              onOpenChange={(open) =>
+                setOpenKey((current) =>
+                  open ? key : current === key ? null : current,
+                )
+              }
+              value={
+                Object.hasOwn(values, filter.id)
+                  ? values[filter.id]!
+                  : filter.defaultValue
+              }
+              onChange={(value) => onChange({ ...values, [filter.id]: value })}
+            />
+          );
+        })}
       </div>
-      <button type="button" onClick={() => onChange({})}>
+      <button
+        type="button"
+        className="dashboard-filter-reset"
+        onClick={() => onChange({})}
+      >
         {t("resetFilters")}
       </button>
+      <div ref={setSheet} className="dashboard-filter-sheet-slot" />
     </section>
   ) : null;
 }

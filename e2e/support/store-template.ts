@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import postgres from "postgres";
 // API: the API itself, as screens reach it (not through the web app).
 import { API, ORIGIN } from "./origin.ts";
@@ -100,7 +100,9 @@ type Widget = Json & { title?: string | null };
  * heap and index pages. Right after the servers start, while every request
  * is slow, that can outlast the API's retry budget. The same request is
  * idempotent, so it is retried after a growing pause. Any other refusal
- * fails the journey.
+ * fails the journey. Every retry is recorded on the test (annotation and
+ * warning), so that the workaround stays visible.
+ * TODO(#660): remove the retry once installs no longer conflict there.
  */
 async function installStores(
   page: Page,
@@ -121,6 +123,9 @@ async function installStores(
     attempt < 5 && (await conflicted(response));
     attempt++
   ) {
+    const note = `store-template install hit version_conflict; retry ${attempt + 1} of 5 (#660)`;
+    test.info().annotations.push({ type: "seeding-retry", description: note });
+    console.warn(`[${test.info().title}] ${note}`);
     await page.waitForTimeout(500 * (attempt + 1));
     response = await install();
   }

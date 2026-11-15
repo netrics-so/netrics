@@ -5426,6 +5426,23 @@ a.button.primary:hover {
   max-height: min(70dvh, 560px);
   overflow: auto;
 }
+/* A wrapped or narrow filter bar opens its popover as a sheet in the page
+   flow below the bar, so it never covers another trigger (#624). */
+.dashboard-filter-sheet-slot {
+  flex: 1 0 100%;
+}
+.dashboard-filter-sheet-slot:empty {
+  display: none;
+}
+.dashboard-filter-popover.dashboard-filter-sheet {
+  position: static;
+  width: auto;
+  max-height: none;
+}
+.dashboard-filter-popover:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
 
 /* App selection stays bounded in the DOM, without limiting account size. */
 .app-picker {
