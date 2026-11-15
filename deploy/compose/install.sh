@@ -2,7 +2,9 @@
 # netrics self-hosted installer: writes .env with generated secrets.
 #
 #   ./install.sh                         # interactive
-#   ./install.sh --domain netrics.example.com [--version <image tag>] [--https-port 8443]
+#   ./install.sh --domain netrics.example.com [--version <image tag>]
+#       [--http-port 8080] [--https-port 8443] [--name netrics-selfhost]
+#   ./install.sh --domain localhost       # try it on this machine
 #
 # Then: docker compose up -d, and open https://<domain>/setup.
 set -eu
@@ -11,15 +13,19 @@ cd "$(dirname "$0")"
 
 domain=""
 version=""
+http_port=80
 https_port=443
+name=netrics-selfhost
 force=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) domain="$2"; shift 2 ;;
     --version) version="$2"; shift 2 ;;
+    --http-port) http_port="$2"; shift 2 ;;
     --https-port) https_port="$2"; shift 2 ;;
+    --name) name="$2"; shift 2 ;;
     --force) force=1; shift ;;
-    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -52,6 +58,21 @@ if [ -z "$version" ]; then
 fi
 [ -n "$version" ] || { echo "pass --version <image tag>" >&2; exit 1; }
 
+for port in "$http_port" "$https_port"; do
+  case "$port" in
+    ''|*[!0-9]*) echo "not a port number: $port" >&2; exit 2 ;;
+  esac
+done
+# The Compose project name: containers and volumes are named after it
+# (netrics-selfhost_pgdata). Two installations on one host need two names.
+case "$name" in
+  [abcdefghijklmnopqrstuvwxyz0123456789]*) ;;
+  *) echo "--name must start with a lowercase letter or digit" >&2; exit 2 ;;
+esac
+case "$name" in
+  *[!abcdefghijklmnopqrstuvwxyz0123456789_-]*) echo "--name may contain only a-z, 0-9, _ and -" >&2; exit 2 ;;
+esac
+
 if [ "$https_port" = "443" ]; then
   public_url="https://${domain}"
 else
@@ -62,12 +83,21 @@ hex() { openssl rand -hex "$1"; }
 b64() { openssl rand -base64 32; }
 
 umask 077
+# Backups hold all data: only this user may read them (compose.yml, backup).
+mkdir -p backups
+chmod 700 backups
+
 cat > .env <<ENV
 # netrics self-hosted configuration, generated $(date -u +%Y-%m-%dT%H:%M:%SZ).
 # KEEP A BACKUP OF THIS FILE. APP_ENCRYPTION_KEY cannot be recovered: without
 # it, stored connection credentials are lost.
 
+# Containers and volumes are named after the project (${name}_pgdata holds
+# the database). Do not change it after the first start.
+COMPOSE_PROJECT_NAME=${name}
+
 NETRICS_DOMAIN=${domain}
+NETRICS_HTTP_PORT=${http_port}
 NETRICS_HTTPS_PORT=${https_port}
 NETRICS_PUBLIC_URL=${public_url}
 NETRICS_VERSION=${version}
@@ -114,3 +144,10 @@ Next:
 Back up .env now (password manager or offline). Losing APP_ENCRYPTION_KEY
 makes stored connection credentials unrecoverable.
 INFO
+if [ "$domain" = "localhost" ]; then
+  cat <<INFO
+
+localhost: Caddy signs the certificate with its own local CA, so the browser
+warns about it once. Accept the warning to continue (README, "Try it locally").
+INFO
+fi

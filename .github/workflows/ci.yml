@@ -344,6 +344,11 @@ jobs:
           # recorded (README "Backup and restore").
           docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
           dump=$(ls backups/netrics-0.0.0-dev-dev-*.dump)
+          # Only the owner of backups/ (the installing user) reads dumps (#647).
+          test "$(stat -c %a backups)" = 700
+          test "$(stat -c '%a %u' "$dump")" = "600 $(id -u)"
+          # install.sh names the project (#646): its volumes are netrics-selfhost_*.
+          docker volume inspect netrics-selfhost_pgdata > /dev/null
           source=$(counts docker compose)
           # README "Backup and restore", into a second installation with the
           # same .env (its own volumes and ports).
