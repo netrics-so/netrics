@@ -20,6 +20,7 @@ import {
   preparationStepFailure,
   preparationFieldName,
   preparationChangeFailure,
+  preparationChangeRejection,
   preparationStepErrorKey,
 } from "./preparation-editing";
 import { appendPreparation } from "./data-editing";
@@ -748,5 +749,41 @@ describe("a step change that fails (#643)", () => {
       expect(webTranslator(locale, "data")("errors.conversion")).not.toBe(
         webTranslator(locale, "data")("errors.invalid"),
       );
+  });
+});
+
+describe("the editor's reaction to a rejected step change (#652)", () => {
+  it("keeps a proposal only for an open form, with the sample out of date", () => {
+    expect(preparationChangeRejection("proposal", true)).toEqual({
+      proposal: true,
+      sampleCurrent: false,
+      banner: "keep",
+    });
+  });
+  it("leaves a rejected reorder's unchanged sample current, with the message in the banner", () => {
+    expect(preparationChangeRejection("proposal", false)).toEqual({
+      proposal: false,
+      sampleCurrent: true,
+      banner: "step",
+    });
+  });
+  it("drops an earlier proposal when a later failure names no step", () => {
+    expect(preparationChangeRejection("form", true)).toEqual({
+      proposal: false,
+      sampleCurrent: true,
+      banner: "clear",
+    });
+    expect(preparationChangeRejection("form", false)).toEqual({
+      proposal: false,
+      sampleCurrent: true,
+      banner: "keep",
+    });
+  });
+  it("marks the sample out of date when the change applies with another step failing", () => {
+    expect(preparationChangeRejection("applied", true)).toEqual({
+      proposal: false,
+      sampleCurrent: false,
+      banner: "keep",
+    });
   });
 });

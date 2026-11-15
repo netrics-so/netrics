@@ -7,7 +7,9 @@ import { API, API_PORT, ORIGIN, WEB_PORT } from "./e2e/support/origin.ts";
  * in CI, the built server and web app are started (`pnpm build` first). Both
  * need a migrated database (`pnpm db:migrate`). Chromium only.
  * NETRICS_E2E_WEB_PORT / NETRICS_E2E_API_PORT move both ports (see
- * e2e/support/origin.ts); the started servers are told about each other.
+ * e2e/support/origin.ts); the started servers are told about each other,
+ * unless BETTER_AUTH_URL, WEB_ORIGIN or NETRICS_API_URL are already set,
+ * which win over the moved ports.
  */
 export default defineConfig({
   testDir: "e2e",

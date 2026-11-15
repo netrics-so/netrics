@@ -103,6 +103,39 @@ export function preparationChangeFailure(
   if (!step) return "form";
   return changedIds.includes(step.nodeId) ? "proposal" : "applied";
 }
+/**
+ * How the editor reacts to a failed check of a step change, from
+ * `preparationChangeFailure` and whether a step form is open for it:
+ * - `proposal`: show the proposed graph with the failed step marked (only
+ *   while a form is open); any earlier proposal is dropped otherwise, so an
+ *   old marking never stays beside a new failure.
+ * - `sampleCurrent`: the graph stayed as it was, so the sample still matches
+ *   it and is not out of date. Only an applied change, or the open form of a
+ *   failed proposal, leaves the sample marked out of date.
+ * - `banner`: "step" shows the step's message in the banner (no form, no
+ *   marker), "clear" removes the banner (the form shows it), "keep" leaves
+ *   what the check showed.
+ */
+export function preparationChangeRejection(
+  outcome: "proposal" | "applied" | "form",
+  fromForm: boolean,
+): {
+  proposal: boolean;
+  sampleCurrent: boolean;
+  banner: "step" | "clear" | "keep";
+} {
+  if (outcome === "applied")
+    return { proposal: false, sampleCurrent: false, banner: "keep" };
+  if (outcome === "proposal")
+    return fromForm
+      ? { proposal: true, sampleCurrent: false, banner: "keep" }
+      : { proposal: false, sampleCurrent: true, banner: "step" };
+  return {
+    proposal: false,
+    sampleCurrent: true,
+    banner: fromForm ? "clear" : "keep",
+  };
+}
 /** A step change failure the editor already shows on the failed step; the step form shows nothing more. */
 export class PreparationStepFailureShown extends Error {
   constructor(public readonly location: DataErrorLocation) {

@@ -627,7 +627,7 @@ export const dataEn = {
       conversion:
         "Some values in this column cannot be changed to the chosen type. Choose “Use an empty value” for them, or pick another type.",
       numeric:
-        "This needs numbers, but uses a column of another type, such as text. Compare the column with a value of its own type, or change its type first.",
+        "This needs a number. Use a number column or value here, or change the column’s type first.",
       cycle:
         "These dependencies form a loop. Remove the relationship or step that points back to itself.",
       interaction:

@@ -733,6 +733,53 @@ describe("step attribution", () => {
       ),
     ).toThrow(/^expression_numeric_required$/);
   });
+  it("never names a valid column for another operand's type error (#652)", () => {
+    const failing = (
+      expression: Parameters<typeof compileRowExpression>[0],
+    ) => {
+      try {
+        compileRowExpression(expression, fields);
+      } catch (error) {
+        return [
+          (error as DataProcessingError).code,
+          (error as DataProcessingError).fieldId,
+        ];
+      }
+      throw new Error("expected a failure");
+    };
+    // The number column is fine; the other operand is not a column.
+    expect(
+      failing(call("add", field("amount"), call("upper", field("country")))),
+    ).toEqual(["expression_numeric_required", undefined]);
+    expect(failing(call("gt", field("amount"), lit("string", "abc")))).toEqual([
+      "expression_numeric_required",
+      undefined,
+    ]);
+    // A required type names the operand that has the wrong one.
+    expect(failing(call("and", field("paid"), field("country")))).toEqual([
+      "expression_type_mismatch",
+      "country",
+    ]);
+    expect(failing(call("round", field("amount"), field("country")))).toEqual([
+      "expression_type_mismatch",
+      "country",
+    ]);
+    expect(failing(call("concat", field("country"), field("amount")))).toEqual([
+      "expression_type_mismatch",
+      "amount",
+    ]);
+    // Branches that do not match: not the condition, and no guess.
+    expect(
+      failing(call("if", field("paid"), field("amount"), field("country"))),
+    ).toEqual(["expression_numeric_required", undefined]);
+    // A condition that is not true / false is named, as a required type.
+    expect(
+      failing(call("if", field("country"), field("amount"), field("amount"))),
+    ).toEqual(["expression_type_mismatch", "country"]);
+    expect(
+      failing(call("coalesce", field("amount"), field("country")))[1],
+    ).toBeUndefined();
+  });
   it("keeps the innermost step when later steps consume the failure", () => {
     const kept = {
       id: "kept",

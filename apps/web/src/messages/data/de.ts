@@ -647,7 +647,7 @@ export const dataDe: Catalog<typeof dataEn> = {
       conversion:
         "Einige Werte dieser Spalte lassen sich nicht in den gewählten Typ umwandeln. Wähle für sie „Leeren Wert verwenden“ oder einen anderen Typ.",
       numeric:
-        "Hier werden Zahlen benötigt, aber eine Spalte eines anderen Typs wird verwendet, etwa Text. Vergleiche die Spalte mit einem Wert ihres eigenen Typs oder ändere zuerst ihren Typ.",
+        "Hier wird eine Zahl benötigt. Verwende hier eine Zahlenspalte oder einen Zahlenwert, oder ändere zuerst den Typ der Spalte.",
       cycle:
         "Diese Abhängigkeiten bilden einen Kreis. Entferne die Beziehung oder den Schritt, der auf sich selbst zurückverweist.",
       interaction:

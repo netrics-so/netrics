@@ -105,25 +105,28 @@ test("a failing step is named, marked and fixable", async ({
 
   // 5. A filter comparing a text column with a number (#629). Country is a
   // decimal by now, App is still text.
+  const addFilter = async (formula: string) => {
+    await addStep.click();
+    await operation.selectOption({ label: t.filter });
+    // A complete condition switches to the formula, which is then rewritten.
+    const condition = page.getByRole("group", {
+      name: fill(t.builder.condition, { number: 1 }),
+    });
+    await condition
+      .getByRole("combobox", { name: t.builder.column, ...exact })
+      .selectOption({ label: "Revenue" });
+    await condition
+      .getByRole("combobox", { name: t.builder.operator })
+      .selectOption({ label: t.builder.operators.gt });
+    await condition.getByRole("textbox", { name: t.builder.literal }).fill("0");
+    await page.getByRole("radio", { name: t.formula }).check();
+    await page
+      .getByRole("combobox", { name: t.builder.keepWhen })
+      .fill(formula);
+    await applyStep.click();
+  };
   await steps.nth(2).getByRole("button").click();
-  await addStep.click();
-  await operation.selectOption({ label: t.filter });
-  // A complete condition switches to the formula, which is then rewritten.
-  const condition = page.getByRole("group", {
-    name: fill(t.builder.condition, { number: 1 }),
-  });
-  await condition
-    .getByRole("combobox", { name: t.builder.column, ...exact })
-    .selectOption({ label: "Revenue" });
-  await condition
-    .getByRole("combobox", { name: t.builder.operator })
-    .selectOption({ label: t.builder.operators.gt });
-  await condition.getByRole("textbox", { name: t.builder.literal }).fill("0");
-  await page.getByRole("radio", { name: t.formula }).check();
-  await page
-    .getByRole("combobox", { name: t.builder.keepWhen })
-    .fill("[App] > 0");
-  await applyStep.click();
+  await addFilter("[App] > 0");
   const filterFailure =
     fill(t.stepFailed, { message: t.errors.numeric }) +
     " " +
@@ -135,4 +138,38 @@ test("a failing step is named, marked and fixable", async ({
   await cancel.click();
   await expect(steps).toHaveCount(3);
   await expect(addStep).toBeEnabled();
+  await expect(page.getByText(t.sampleOutdated)).toBeHidden();
+
+  // 6. A reorder that would make a step fail is refused: the message shows
+  // in the banner, nothing is marked, and the unchanged sample is current.
+  // The filter needs Country as a decimal, so it cannot move before the cast.
+  await addFilter("[Country] > 0");
+  await expect(applyStep).toBeHidden();
+  await addStep.click();
+  await operation.selectOption({ label: t.deduplicate });
+  await applyStep.click();
+  await expect(applyStep).toBeHidden();
+  await expect(steps).toHaveCount(5);
+  const moveUp = page.getByRole("button", { name: t.moveStepUp });
+  await steps.nth(3).getByRole("button").click();
+  await expect(steps.nth(3).getByRole("button")).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  await moveUp.click();
+  // Now right after the type change; one more step up is refused.
+  await expect(steps.nth(2)).toContainText(t.filter);
+  await expect(steps.nth(2).getByRole("button")).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  await moveUp.click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: t.errors.numeric }),
+  ).toBeVisible();
+  await expect(steps.nth(2)).toContainText(t.filter);
+  await expect(steps.filter({ hasText: t.stepStatus.failed })).toHaveCount(0);
+  await expect(page.getByText(t.sampleOutdated)).toBeHidden();
+  await expect(moveUp).toBeEnabled();
+  await expect(page.getByRole("button", { name: t.undo })).toBeEnabled();
 });

@@ -291,27 +291,35 @@ const OPERAND_TYPE_CODES: ReadonlySet<string> = new Set([
 ]);
 /**
  * A type error of a call, naming the column operand that causes it (#629):
- * for a number requirement the first non-numeric column, otherwise the first
- * column. Errors that name a column already, or have no column operand, stay.
+ * for a number requirement only a column that is not a number; for other
+ * type errors only the one column operand of a call with one or two
+ * operands. Branches of `if` and `coalesce` that do not match have no
+ * single cause, so they name none. Errors that name a column already, or
+ * whose cause is not one column, stay as they are.
  */
 function withOperandField(
   error: unknown,
+  fn: string,
   args: readonly DataExpression[],
   types: readonly ExpressionType[],
 ): unknown {
   if (
     !(error instanceof DataProcessingError) ||
     error.fieldId !== undefined ||
-    !OPERAND_TYPE_CODES.has(error.code)
+    !OPERAND_TYPE_CODES.has(error.code) ||
+    fn === "if" ||
+    fn === "coalesce"
   )
     return error;
   const columns = args.flatMap((arg, index) =>
     arg.kind === "field" ? [{ fieldId: arg.fieldId, type: types[index]! }] : [],
   );
   const operand =
-    (error.code === "expression_numeric_required"
+    error.code === "expression_numeric_required"
       ? columns.find((column) => !numeric(column.type.type))
-      : undefined) ?? columns[0];
+      : columns.length === 1 && args.length <= 2
+        ? columns[0]
+        : undefined;
   return operand
     ? new DataProcessingError(error.code, operand.fieldId, error.nodeId)
     : error;
@@ -580,8 +588,14 @@ export function compileRowExpression(
       if (args.length < min || args.length > max)
         dataFail("expression_arity_invalid");
     };
+    // The operand at `index` must have `type`; a column operand is named.
     const required = (index: number, type: DataType) => {
-      if (types[index]?.type !== type) dataFail("expression_type_mismatch");
+      const arg = expr.args[index];
+      if (types[index]?.type !== type)
+        dataFail(
+          "expression_type_mismatch",
+          arg?.kind === "field" ? arg.fieldId : undefined,
+        );
     };
     let result: ExpressionType = {
       type: "boolean",
@@ -730,7 +744,7 @@ export function compileRowExpression(
         result = { type: "json", nullable: true };
       } else dataFail("expression_function_unknown");
     } catch (error) {
-      throw withOperandField(error, expr.args, types);
+      throw withOperandField(error, fn, expr.args, types);
     }
     return {
       result,

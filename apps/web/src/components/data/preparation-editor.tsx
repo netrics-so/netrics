@@ -47,6 +47,7 @@ import {
   preparationStepStates,
   preparationFieldName,
   preparationChangeFailure,
+  preparationChangeRejection,
   preparationStepErrorKey,
   PreparationStepFailureShown,
 } from "@/lib/preparation-editing";
@@ -442,24 +443,24 @@ export function PreparationEditor({
       await show(next, output, true);
     } catch (failure) {
       const outcome = preparationChangeFailure(failure, next, changedIds);
-      if (outcome === "proposal" && !fromForm) {
-        // The graph stays as it was, so the step marker would not show.
-        const step = dataErrorLocation(failure).nodeId!;
-        setError(t(`errors.${preparationStepErrorKey(failure, next, step)}`));
-        throw failure;
-      }
-      if (outcome === "proposal") {
-        // The graph stays as it was; the list shows the proposed one with
-        // the failed step marked, once, while the form stays open.
-        setProposal(next);
+      const reaction = preparationChangeRejection(outcome, fromForm);
+      setProposal(reaction.proposal ? next : null);
+      if (reaction.sampleCurrent) setPreviewStale(false);
+      if (reaction.banner === "clear") setError(null);
+      if (reaction.banner === "step")
+        setError(
+          t(
+            `errors.${preparationStepErrorKey(
+              failure,
+              next,
+              dataErrorLocation(failure).nodeId!,
+            )}`,
+          ),
+        );
+      // The list shows it on the proposed step; the form shows nothing more.
+      if (reaction.proposal)
         throw new PreparationStepFailureShown(dataErrorLocation(failure));
-      }
-      if (outcome === "form" && fromForm) {
-        // The step form shows it; no second copy in the banner.
-        setError(null);
-        throw failure;
-      }
-      if (outcome === "form") throw failure;
+      if (outcome !== "applied") throw failure;
     }
     // A step applied unchanged leaves no undo step.
     setGraphHistory((h) => recordChange(h, next));
