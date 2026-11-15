@@ -485,6 +485,7 @@
 .data-builder {
   display: flex;
   flex-direction: column;
+  align-items: start;
   gap: 12px;
 }
 .data-builder > .field {

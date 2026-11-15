@@ -519,7 +519,65 @@ test("the step form opens beside the steps, not below a wide sample", async ({
 
     await panel.getByRole("button", { name: t.cancel, ...exact }).click();
     await expect(panel).toHaveCount(0);
+    // Focus goes back to the button that opened the form.
+    await expect(page.getByRole("button", { name: t.addStep })).toBeFocused();
   }
+
+  // A step whose check fails (#643): the form stays open, in view and with
+  // focus in it, and the step is marked failed. On a desktop screen.
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const steps = page.locator(".data-step-list > li");
+  const failed = steps.filter({ hasText: t.stepStatus.failed });
+  const onError = page.getByRole("combobox", { name: t.onError });
+  const focusIn = (region: Locator) =>
+    expect
+      .poll(() => region.evaluate((el) => el.contains(document.activeElement)))
+      .toBe(true);
+  const staysInView = async (region: Locator) => {
+    await expect(region).toBeInViewport();
+    await focusIn(region);
+    expect((await region.boundingBox())!.y).toBeLessThan(
+      (await preview.boundingBox())!.y,
+    );
+  };
+  const adding = page.getByRole("region", { name: t.addStep, ...exact });
+  await page.getByRole("button", { name: t.addStep }).click();
+  await adding
+    .getByRole("combobox", { name: t.operation })
+    .selectOption({ label: t.cast });
+  await adding
+    .getByRole("combobox", { name: t.field, ...exact })
+    .selectOption({ label: "Column 1" });
+  await adding
+    .getByRole("combobox", { name: t.type, ...exact })
+    .selectOption({ label: t.types.decimal });
+  await onError.selectOption({ label: t.reject });
+  await adding.getByRole("button", { name: t.applyStep }).click();
+  await expect(failed).toHaveCount(1);
+  await staysInView(adding);
+
+  // Empty values for what does not convert: it applies, the form closes and
+  // focus is back on "Add a step".
+  await onError.selectOption({ label: t.useNull });
+  await adding.getByRole("button", { name: t.applyStep }).click();
+  await expect(adding).toHaveCount(0);
+  await expect(failed).toHaveCount(0);
+  await expect(page.getByRole("button", { name: t.addStep })).toBeFocused();
+
+  // The edit form opens in the same place; a failing change keeps it open.
+  await steps.nth(1).getByRole("button").click();
+  await page.getByRole("button", { name: t.editStep }).click();
+  const editing = page.getByRole("region", { name: t.editStep, ...exact });
+  await expect(editing).toBeFocused();
+  await staysInView(editing);
+  await onError.selectOption({ label: t.reject });
+  await editing.getByRole("button", { name: t.applyStepChanges }).click();
+  await expect(failed).toHaveCount(1);
+  await staysInView(editing);
+  await editing.getByRole("button", { name: t.cancel, ...exact }).click();
+  await expect(editing).toHaveCount(0);
+  await expect(failed).toHaveCount(0);
+  await expect(page.getByRole("button", { name: t.editStep })).toBeFocused();
 });
 
 /**

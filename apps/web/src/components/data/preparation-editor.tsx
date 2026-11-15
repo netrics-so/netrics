@@ -389,6 +389,48 @@ export function PreparationEditor({
   useEffect(() => {
     if (stepFormTitle) stepPanel.current?.focus();
   }, [stepFormTitle]);
+  // A form kept open after a failed check keeps focus in its panel: the
+  // apply button it was on is disabled while the check runs.
+  useEffect(() => {
+    const panel = stepPanel.current;
+    if (
+      panel &&
+      !busy &&
+      (!document.activeElement || document.activeElement === document.body)
+    )
+      panel.focus();
+  }, [busy, stepFormTitle]);
+  // When the form closes (applied, cancelled, removed), focus goes back to
+  // the control that opened it, or to the selected step when that control
+  // is no longer available.
+  const openForm = removing
+    ? ("removeStep" as const)
+    : editing
+      ? ("editStep" as const)
+      : adding
+        ? ("addStep" as const)
+        : null;
+  const openers = useRef<
+      Partial<Record<NonNullable<typeof openForm>, HTMLButtonElement | null>>
+    >({}),
+    stepsAside = useRef<HTMLElement>(null),
+    lastForm = useRef(openForm);
+  const [returnFocus, setReturnFocus] = useState<typeof openForm>(null);
+  useEffect(() => {
+    if (lastForm.current && !openForm) setReturnFocus(lastForm.current);
+    lastForm.current = openForm;
+  }, [openForm]);
+  useEffect(() => {
+    if (!returnFocus || busy) return;
+    setReturnFocus(null);
+    const opener = openers.current[returnFocus];
+    (opener && !opener.disabled
+      ? opener
+      : stepsAside.current?.querySelector<HTMLButtonElement>(
+          '[aria-current="step"]:not(:disabled)',
+        )
+    )?.focus();
+  }, [returnFocus, busy]);
   const moveUp = selectedNode
     ? preparationMoveProblem(graph, selected, "up")
     : "missingStep";
@@ -588,7 +630,7 @@ export function PreparationEditor({
         />
       ) : null}
       <div className="data-preparation-layout">
-        <aside className="data-steps">
+        <aside className="data-steps" ref={stepsAside}>
           <div className="field">
             <label htmlFor={nameId}>{t("preparationName")}</label>
             <input
@@ -695,6 +737,9 @@ export function PreparationEditor({
               previewStale ||
               !graph.outputs.includes(selected)
             }
+            ref={(button) => {
+              openers.current.addStep = button;
+            }}
             onClick={() => setAdding(true)}
           >
             {t("addStep")}
@@ -917,6 +962,9 @@ export function PreparationEditor({
                       !!inputMetadata.error ||
                       formOpen
                     }
+                    ref={(button) => {
+                      openers.current.editStep = button;
+                    }}
                     onClick={() => void editSelected()}
                   >
                     {t("editStep")}
@@ -958,6 +1006,9 @@ export function PreparationEditor({
                       formOpen ||
                       !!removal
                     }
+                    ref={(button) => {
+                      openers.current.removeStep = button;
+                    }}
                     title={removal ? t(`editErrors.${removal}`) : undefined}
                     onClick={() => {
                       setBypass(preparationStepInputs(selectedNode)[0] ?? "");
