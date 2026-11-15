@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   formulaMeasureFields,
+  measureRequiredDimensions,
   missingModelMeasureScope,
   modelMeasureScope,
   probeModelMeasures,
@@ -632,6 +633,16 @@ describe("required measure dimensions", () => {
       "app",
       "country",
     ]);
+  });
+  it("agrees with the catalog's required dimensions that Studio binds with", () => {
+    for (const ids of [
+      ["apple-downloads"],
+      ["total-downloads"],
+      ["play-downloads"],
+    ])
+      expect(new Set(modelMeasureScope(guarded, ids))).toEqual(
+        new Set(measureRequiredDimensions(guarded, ids)),
+      );
   });
   it("leaves out what the query groups by or fixes to one value, like the query does", () => {
     const appA: DataExpression = {

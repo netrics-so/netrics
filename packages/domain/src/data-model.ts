@@ -173,6 +173,8 @@ function singleValueDimensions(expression?: DataExpression): Set<string> {
  * to read these measures: their required dimensions and those of every
  * measure they read, as the query checks them. Ordered as the model lists
  * its dimensions; unknown measures and dimensions are left to the query.
+ * The published catalog's measureRequiredDimensions (what Studio binds with)
+ * is this plus the date grouping windows need.
  */
 export function modelMeasureScope(
   model: SemanticModelDefinition,
@@ -187,9 +189,7 @@ export function modelMeasureScope(
     seen.add(id);
     for (const dimension of measure.requiredDimensions ?? [])
       required.add(dimension);
-    if (measure.kind === "formula")
-      for (const ref of references(measure.expression)) visit(ref);
-    else if (measure.kind !== "aggregate") visit(measure.baseMeasureId);
+    measureDependencies(measure).forEach(visit);
   };
   measureIds.forEach(visit);
   return model.dimensions.map((d) => d.id).filter((id) => required.has(id));
