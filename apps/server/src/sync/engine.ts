@@ -27,6 +27,7 @@ import {
   DatasetStoreError,
   DatasetStageUnavailableError,
   resolveDataPolicy,
+  retryOnSerializationFailure,
   schema,
   upsertConnectionResources,
   withWorkspace,
@@ -115,7 +116,8 @@ type ErrorClass = "auth" | "transient" | "contract" | "budget";
  * serialization failures, deadlocks, timeouts and lost connections, to
  * dataset_storage_failed: its code, and for conflicts only the SQLSTATE)
  * and a refresh superseded by a concurrent newer one are retried like an
- * outage.
+ * outage. A conflict reaches this only once the ingestion transaction's own
+ * retries (ingestTransaction) are exhausted.
  */
 const TRANSIENT_DATASET_ERRORS = new Set([
   "dataset_storage_failed",
@@ -811,6 +813,26 @@ async function runSync(
         }
       }
     };
+    /**
+     * One ingestion transaction (a page's checkpoint or the final commit),
+     * run again on a serialization failure or deadlock (#604), with the
+     * data service's backoff (#598). Before, a conflict failed the job as a
+     * transient dataset_storage_failed and the whole run was retried later.
+     * The body only stores what the connector already returned: every
+     * provider call happens before it, so a retry fetches nothing again.
+     * An exhausted retry rethrows the last error, handled as before.
+     */
+    const ingestTransaction = <T>(body: (tx: Transaction) => Promise<T>) =>
+      retryOnSerializationFailure(
+        () => withWorkspace(appDb, { workspaceId }, body),
+        {
+          onRetry: (_error, index, delayMs) =>
+            log.info(
+              { attempt: index + 1, delayMs },
+              "sync ingestion conflicted, retrying",
+            ),
+        },
+      );
     let finalDatasetPages: Pick<SyncResult, "datasetPages"> = {};
     let finalObservations: Observation[] = [];
     let finalReviews: Pick<SyncResult, "reviews" | "reviewWindows"> = {};
@@ -884,32 +906,28 @@ async function runSync(
         }
         // Checkpoint: the page's observations and the cursor after them
         // commit together, so the cursor never passes uncommitted data.
-        const written = await withWorkspace(
-          appDb,
-          { workspaceId },
-          async (tx) => {
-            const count = await ingestPage(tx, result.observations);
-            // Datasets first: they take the workspace ingestion lock, and
-            // retention updates take that lock before the connection row
-            // that ingestReviews share-locks. Same order, no deadlock.
-            await ingestDatasets(tx, result);
-            await ingestReviews(tx, result);
-            await tx
-              .insert(schema.connectionState)
-              .values({
-                connectionId,
-                workspaceId,
-                pollIntervalSeconds,
-                cursor: nextCursor,
-                ...backfillMarker,
-              })
-              .onConflictDoUpdate({
-                target: schema.connectionState.connectionId,
-                set: { cursor: nextCursor, ...backfillMarker },
-              });
-            return count;
-          },
-        );
+        const written = await ingestTransaction(async (tx) => {
+          const count = await ingestPage(tx, result.observations);
+          // Datasets first: they take the workspace ingestion lock, and
+          // retention updates take that lock before the connection row
+          // that ingestReviews share-locks. Same order, no deadlock.
+          await ingestDatasets(tx, result);
+          await ingestReviews(tx, result);
+          await tx
+            .insert(schema.connectionState)
+            .values({
+              connectionId,
+              workspaceId,
+              pollIntervalSeconds,
+              cursor: nextCursor,
+              ...backfillMarker,
+            })
+            .onConflictDoUpdate({
+              target: schema.connectionState.connectionId,
+              set: { cursor: nextCursor, ...backfillMarker },
+            });
+          return count;
+        });
         progress.pagesCommitted += 1;
         progress.observationsWritten += written;
         progress.cursor = nextCursor;
@@ -917,7 +935,7 @@ async function runSync(
       }
     }
 
-    await withWorkspace(appDb, { workspaceId }, async (tx) => {
+    await ingestTransaction(async (tx) => {
       const observationsWritten =
         progress.observationsWritten +
         (await ingestPage(tx, finalObservations));
