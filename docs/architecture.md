@@ -502,8 +502,12 @@ earlier pages it did not read, and the other entries stay.
 worker is the only process that has both the connector registry and the
 connection, and the scheduler role cannot read `connections`. After each
 succeeded incremental run, the engine compares the record with the datasets
-the running connector declares. A dataset that is missing from the record, or
-recorded at another version, gets one `connection.backfill`. It is audited as
+the running connector declares. A dataset that the connection stores and that
+is missing from the record, or recorded at another version, gets one
+`connection.backfill`. A dataset the connection has never stored (no
+`data_datasets` row) waits until its first rows arrive (#634): the provider
+may have nothing for the last days yet, or the connection may never write it,
+e.g. an optional report that is turned off. It is audited as
 `connection.backfill_requested` with `by: "system"` and the reason
 `dataset_added` or `dataset_changed`.
 
@@ -527,15 +531,15 @@ OAuth app's (Google), are not covered by this throttle.
 **Connections from before #617.** These have no record yet, and the first check
 derives one. A stored dataset counts as read if a succeeded backfill run
 finished after its schema version was registered. If no backfill run is
-retained, it counts as not read. A dataset that has never been stored counts as
-read. Only a completed job writes a succeeded backfill run: a segment that
+retained, it counts as not read. A dataset that has never been stored is left
+out of the record, so it is backfilled once it stores rows (#634). Only a completed job writes a succeeded backfill run: a segment that
 hands over to a continuation writes `continued`, a failed attempt `failed`.
 
 **Stored data.** Backfills keep stored data and replace or upsert it window by
 window, as before.
 
 **Visibility.** The connection page says when the history is still loading. It
-names the datasets whose history is incomplete.
+names the stored datasets whose history is incomplete.
 
 **Reload history.** Members with `connections:update` can press "Reload
 history" (`POST …/connections/{id}/backfill`). It is audited with the member,

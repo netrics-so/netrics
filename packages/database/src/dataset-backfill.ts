@@ -33,6 +33,56 @@ export function datasetsMissingBackfill(
     .sort();
 }
 
+/**
+ * Which of the datasets the connection has stored (#634): a source dataset
+ * is registered (data_datasets) by the first page written to it. A dataset
+ * it has never stored has no history to fill or to show as incomplete yet,
+ * e.g. one the provider has no rows for so far, or one the connection does
+ * not write at all (an optional report that is turned off).
+ */
+async function storedSourceDatasets(
+  tx: Transaction,
+  input: { workspaceId: string; connectionId: string; keys: string[] },
+): Promise<Set<string>> {
+  const { workspaceId, connectionId, keys } = input;
+  if (keys.length === 0) return new Set();
+  const rows = await tx
+    .select({ key: schema.dataDatasets.key })
+    .from(schema.dataDatasets)
+    .where(
+      and(
+        eq(schema.dataDatasets.workspaceId, workspaceId),
+        eq(schema.dataDatasets.connectionId, connectionId),
+        eq(schema.dataDatasets.kind, "source"),
+        inArray(schema.dataDatasets.key, keys),
+      ),
+    );
+  return new Set(rows.map((row) => row.key));
+}
+
+/**
+ * Declared datasets the record does not cover and the connection stores
+ * (#634): the ones a backfill should fill, and the connection page names.
+ */
+export async function storedDatasetsMissingBackfill(
+  tx: Transaction,
+  input: {
+    workspaceId: string;
+    connectionId: string;
+    declared: DatasetVersions;
+    backfilled: DatasetVersions;
+  },
+): Promise<string[]> {
+  const missing = datasetsMissingBackfill(input.declared, input.backfilled);
+  if (missing.length === 0) return [];
+  const stored = await storedSourceDatasets(tx, {
+    workspaceId: input.workspaceId,
+    connectionId: input.connectionId,
+    keys: missing,
+  });
+  return missing.filter((key) => stored.has(key));
+}
+
 /** Connection jobs that fill history: a backfill waiting or running. */
 const ACTIVE_BACKFILL = ["pending", "running", "continuing"] as const;
 
@@ -66,9 +116,13 @@ export async function connectionBackfillState(
  * a succeeded backfill run finished after its declared schema version was
  * registered for the connection: that run read the whole window into it.
  * A dataset registered at that version only later (by an incremental run),
- * or never at that version while the dataset exists, does not count. A
- * dataset the connection has never stored counts: there is no partial
- * history to show, and the next backfill records it anyway.
+ * or never at that version while the dataset exists, does not count.
+ *
+ * A dataset the connection has never stored is left out (#634): no
+ * backfill is known to have read it. It is not queued for while nothing is
+ * stored (storedDatasetsMissingBackfill), so a dataset the first run after
+ * a connector update has no rows for is backfilled once rows arrive, and a
+ * dataset the connection never writes queues nothing.
  *
  * Sync runs are pruned after 90 days (each connection's latest is kept),
  * so a connection whose last backfill is older counts its stored datasets as
@@ -127,10 +181,7 @@ export async function deriveBackfilledDatasets(
   for (const key of keys) {
     const version = declared[key]!;
     const rows = stored.filter((row) => row.key === key);
-    if (rows.length === 0) {
-      covered[key] = version;
-      continue;
-    }
+    if (rows.length === 0) continue;
     const registered = rows.find((row) => row.version === version);
     if (
       registered?.registeredAt &&
@@ -211,7 +262,9 @@ export type DatasetBackfillOutcome =
 
 /**
  * After a succeeded incremental run: queues one backfill when the connector
- * declares datasets the connection's backfills have not read (#617).
+ * declares datasets the connection's backfills have not read (#617) and
+ * the connection stores them (#634): a dataset without stored rows waits
+ * until its first rows arrive, and one never written queues nothing.
  *
  * - The state row is locked, then the workspace's backfill lock, so
  *   concurrent callers (also on other replicas) decide one at a time.
@@ -270,7 +323,12 @@ export async function queueDatasetBackfill(
       .set({ backfilledDatasets: backfilled })
       .where(scope);
   }
-  const missing = datasetsMissingBackfill(declared, backfilled);
+  const missing = await storedDatasetsMissingBackfill(tx, {
+    workspaceId,
+    connectionId,
+    declared,
+    backfilled,
+  });
   if (missing.length === 0) {
     return { queued: false, reason: "complete", datasets: [] };
   }

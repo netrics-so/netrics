@@ -395,6 +395,16 @@ describe("reload history (#617)", () => {
     await finishBackfills();
     // Not recorded yet (a connection from before #617): nothing claimed.
     expect((await detail(connectionId)).history.incompleteDatasets).toEqual([]);
+    // Recorded, but the connection has not stored "sales" (#634): nothing
+    // to fill, e.g. a report it does not write.
+    await admin`
+      update connection_state set backfilled_datasets = '{}'::jsonb
+      where connection_id = ${connectionId}`;
+    expect((await detail(connectionId)).history.incompleteDatasets).toEqual([]);
+    await admin`
+      insert into data_datasets (workspace_id, connection_id, kind, key, name)
+      select workspace_id, id, 'source', 'sales', 'Sales rows'
+      from connections where id = ${connectionId}`;
     // Recorded at an older schema version, as after a connector update.
     await admin`
       update connection_state set backfilled_datasets = ${admin.json({ sales: 1 })}

@@ -52,7 +52,6 @@ import {
 import {
   activeBackfillConnections,
   connectionBackfillState,
-  datasetsMissingBackfill,
   datasetVersions,
   deleteConnection as deleteConnectionRow,
   deleteConnectionAppReviews,
@@ -78,6 +77,7 @@ import {
   requestConnectionSync,
   resetConnectionAuth,
   resourceNameKey,
+  storedDatasetsMissingBackfill,
   updateConnection as updateConnectionRow,
   withOAuthGrantLocks,
   withWorkspace,
@@ -516,23 +516,38 @@ function reloadAvailableAt(at: Date | null): Date | null {
 }
 
 /**
+ * The declared datasets the connection stores and no backfill has read
+ * (#617, #634). None while nothing is recorded (a connection from before
+ * #617, recorded by its next sync), during setup, or without backfills.
+ */
+async function incompleteHistory(
+  tx: Transaction,
+  { row, state }: ConnectionWithState,
+  registry: ConnectorRegistry,
+): Promise<string[]> {
+  const manifest = registry.get(row.connectorId)?.manifest;
+  const recorded = state?.backfilledDatasets ?? null;
+  if (!recorded || row.setupPending || !manifest?.supportsBackfill) return [];
+  return storedDatasetsMissingBackfill(tx, {
+    workspaceId: row.workspaceId,
+    connectionId: row.id,
+    declared: datasetVersions(manifest.datasets),
+    backfilled: recorded,
+  });
+}
+
+/**
  * The connection page's history status (#617): whether a backfill waits or
  * runs, which datasets no backfill has read yet, and the reload slot.
  */
 function historyView(
   { row, state }: ConnectionWithState,
   backfill: "idle" | "queued" | "running",
+  missing: string[],
   registry: ConnectorRegistry,
   now: Date = new Date(),
 ): ConnectionHistory {
   const manifest = registry.get(row.connectorId)?.manifest;
-  const declared = datasetVersions(manifest?.datasets);
-  // Null: recorded by the first sync after #617; not known before.
-  const recorded = state?.backfilledDatasets ?? null;
-  const missing =
-    recorded && !row.setupPending && manifest?.supportsBackfill
-      ? datasetsMissingBackfill(declared, recorded)
-      : [];
   const availableAt = reloadAvailableAt(
     state?.historyReloadRequestedAt ?? null,
   );
@@ -2163,7 +2178,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.workspaceId,
           connectionId,
         );
-        return { ...loaded, syncRuns, signedKey, backfill };
+        const incomplete = await incompleteHistory(tx, loaded, registry);
+        return { ...loaded, syncRuns, signedKey, backfill, incomplete };
       });
       if (!found) {
         return fail(404, NOT_FOUND);
@@ -2176,7 +2192,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.locale,
         ),
         syncRuns: found.syncRuns.map(presentSyncRun),
-        history: historyView(found, found.backfill, registry),
+        history: historyView(found, found.backfill, found.incomplete, registry),
       });
     },
 
