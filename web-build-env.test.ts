@@ -42,3 +42,5 @@ describe("NEXT_PUBLIC_* variables", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+# Automated fix for issue #624: Dashboard filters: popovers overlap and steal clicks; "Browse values" closes the list
