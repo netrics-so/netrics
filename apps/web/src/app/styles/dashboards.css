@@ -373,6 +373,9 @@
 }
 
 .dash-chip--update {
+  /* Above the card's stretched name link, like the Studio link. */
+  position: relative;
+  z-index: 1;
   background: var(--warning-tint);
   color: var(--warning-text);
   text-decoration: none;
@@ -584,6 +587,10 @@
   gap: 6px;
   margin: 0;
   padding-left: 18px;
+}
+
+.store-update-group li:has(> .store-update-decision) {
+  list-style: none;
 }
 
 .store-update-decision {

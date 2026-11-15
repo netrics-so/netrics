@@ -297,6 +297,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       noDashboards: "Dieses Update ändert kein Dashboard.",
       openCopy: "Aktualisierte Kopie im Studio öffnen",
       openOriginal: "Original öffnen",
+      afterCopy: "Verfügbar, sobald das aktualisierte Dashboard existiert.",
       compareHint:
         "Vergleiche die Kopie mit deinem Original. Änderungen, die du an der Kopie machst, bleiben erhalten.",
       screens:

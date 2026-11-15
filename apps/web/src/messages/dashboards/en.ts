@@ -288,6 +288,7 @@ export const dashboardsEn = {
       noDashboards: "This update doesn’t change any dashboard.",
       openCopy: "Open the updated copy in Studio",
       openOriginal: "Open the original",
+      afterCopy: "Available once the updated dashboard exists.",
       compareHint:
         "Compare the copy with your original. Edits you make to the copy are kept.",
       screens:

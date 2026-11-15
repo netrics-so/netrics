@@ -888,7 +888,9 @@ export function DashboardSteps({
               </Link>
             </p>
           </>
-        ) : null}
+        ) : (
+          <p className="muted">{t("progress.afterCopy")}</p>
+        )}
       </section>
       <section className="card store-update-stage">
         <h2>{t("steps.swap")}</h2>
@@ -943,7 +945,9 @@ export function DashboardSteps({
               <p className="muted">{t("progress.swapCannot")}</p>
             )}
           </>
-        ) : null}
+        ) : (
+          <p className="muted">{t("progress.afterCopy")}</p>
+        )}
         {problem && problem.action !== "copy" ? (
           <ProblemText
             problem={problem}
