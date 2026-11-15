@@ -50,6 +50,27 @@ import {
   storeTemplateInputsSchema,
 } from "./store-template.js";
 
+/**
+ * Installs run one at a time, across workspaces (#604). An install is one
+ * serializable transaction of ~25 tables that reads before it writes
+ * (dataset keys, schema versions, generations, refreshes, install ids).
+ * Until those tables are large, every workspace's rows share their heap
+ * relation (the planner picks sequential scans, which lock the whole
+ * relation) or a single index leaf page, so any two concurrent installs read
+ * what the other writes and SSI cancels all but one of them. Measured: of 4
+ * (8) concurrent installs in different workspaces, exactly one committed
+ * per round, so the last needed 4 (8) full attempts and the jittered retries
+ * could run out of budget under load (409 version_conflict).
+ *
+ * The lock is taken before the snapshot: a lock taken after it (an advisory
+ * lock in a SELECT) still leaves the waiter's snapshot older than the
+ * holder's commit, and SSI cancels it anyway. SHARE ROW EXCLUSIVE conflicts
+ * with itself and with writes to data_template_installs (an update's apply
+ * waits for a running install), not with reads. It also replaces the
+ * per-request advisory lock, which installs no longer need.
+ */
+const INSTALL_LOCK = sql`lock table data_template_installs in share row exclusive mode`;
+
 type Actor = { workspaceId: string; callerId: string; locale: Locale };
 const appKey = (app: { connectionId: string; appId: string }) =>
   app.connectionId + ":" + app.appId;
@@ -345,9 +366,6 @@ export function createStoreTemplateService(deps: {
               deps.db,
               { workspaceId: actor.workspaceId, userId: actor.callerId },
               async (tx) => {
-                await tx.execute(
-                  sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + input.requestId}))`,
-                );
                 const [installed] = await tx
                   .select()
                   .from(schema.dataTemplateInstalls)
@@ -620,7 +638,7 @@ export function createStoreTemplateService(deps: {
                 });
                 return result;
               },
-              { isolationLevel: "serializable" },
+              { isolationLevel: "serializable", beforeSnapshot: INSTALL_LOCK },
             ),
           {
             retryable: isRetryableDataConflict,

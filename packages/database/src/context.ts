@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 
@@ -36,11 +36,22 @@ export async function withWorkspace<T>(
   options?: {
     isolationLevel?: "read committed" | "repeatable read" | "serializable";
     accessMode?: "read only" | "read write";
+    /**
+     * A statement run first, before set_config (a SELECT) takes the snapshot
+     * of a repeatable read or serializable transaction. Meant for LOCK
+     * TABLE: a lock taken after the snapshot still leaves the transaction
+     * overlapping the one it waited for, so SSI sees them as concurrent.
+     */
+    beforeSnapshot?: SQL;
   },
 ): Promise<T> {
   const workspaceId = uuidSchema.parse(ctx.workspaceId);
   const userId = ctx.userId ? uuidSchema.parse(ctx.userId) : undefined;
+  const { beforeSnapshot, ...rest } = options ?? {};
+  // drizzle sends an empty config as an invalid bare SET TRANSACTION.
+  const config = Object.keys(rest).length ? rest : undefined;
   return db.transaction(async (tx) => {
+    if (beforeSnapshot) await tx.execute(beforeSnapshot);
     await tx.execute(
       sql`select set_config('app.workspace_id', ${workspaceId}, true)`,
     );
@@ -48,7 +59,7 @@ export async function withWorkspace<T>(
       await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
     }
     return fn(tx);
-  }, options);
+  }, config);
 }
 
 /**
