@@ -13,6 +13,22 @@ export class ReportTooLargeError extends Error {
   }
 }
 
+/**
+ * A report whose bytes arrived but cannot be read as the expected format.
+ * `reason` is a short, safe code (never row data or object names) recorded on
+ * the report's availability row, so a provider format change is diagnosable
+ * without downloading the report.
+ */
+export class ReportFormatError extends Error {
+  constructor(
+    readonly reason: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ReportFormatError";
+  }
+}
+
 /** A pinned report object read by byte offset, in bounded pieces. */
 export interface ReportSource {
   readonly size: number;
@@ -26,7 +42,10 @@ export interface ByteSink {
 }
 
 const unreadable = () =>
-  new Error("Google Play report has an unreadable text encoding");
+  new ReportFormatError(
+    "encoding",
+    "Google Play report has an unreadable text encoding",
+  );
 
 /**
  * Incremental form of reportText: the encoding is chosen from the first eight
@@ -85,6 +104,12 @@ export function reportText(bytes: Uint8Array): string {
   return parts.join("");
 }
 
+const malformed = () =>
+  new ReportFormatError(
+    "malformed_csv",
+    "Google Play report has malformed quoted CSV",
+  );
+
 /**
  * CSV with quoted commas, escaped quotes and multiline cells. No eval. Text is
  * pushed in chunks of any size; the last code unit of each chunk waits for the
@@ -107,7 +132,10 @@ export class CsvParser {
     this.#carry = "";
     this.#scan(chunk, chunk.length);
     if (this.#quoted)
-      throw new Error("Google Play report has an unfinished CSV field");
+      throw new ReportFormatError(
+        "malformed_csv",
+        "Google Play report has an unfinished CSV field",
+      );
     if (this.#field !== "" || this.#row.length > 0 || this.#closed)
       this.#endRow();
   }
@@ -158,12 +186,10 @@ export class CsvParser {
         if (c === "\r" && text[i + 1] === "\n") i++;
         run = i + 1;
       } else if (this.#closed) {
-        if (c !== " " && c !== "\t")
-          throw new Error("Google Play report has malformed quoted CSV");
+        if (c !== " " && c !== "\t") throw malformed();
         run = i + 1;
       } else if (c === '"') {
-        if (this.#field !== "" || i > run)
-          throw new Error("Google Play report has malformed quoted CSV");
+        if (this.#field !== "" || i > run) throw malformed();
         this.#quoted = true;
         run = i + 1;
       }
@@ -192,7 +218,10 @@ export class CsvRecordParser {
         return;
       }
       if (cells.length !== headers.length)
-        throw new Error("Google Play report has inconsistent CSV columns");
+        throw new ReportFormatError(
+          "inconsistent_columns",
+          "Google Play report has inconsistent CSV columns",
+        );
       onRecord(
         Object.fromEntries(headers.map((name, index) => [name, cells[index]!])),
       );
@@ -213,7 +242,10 @@ function csvHeaders(cells: string[]): string[] {
     headers.some((name) => !name) ||
     new Set(headers).size !== headers.length
   )
-    throw new Error("Google Play report has missing or duplicate CSV headers");
+    throw new ReportFormatError(
+      "invalid_headers",
+      "Google Play report has missing or duplicate CSV headers",
+    );
   return headers;
 }
 
@@ -265,9 +297,10 @@ export function crc32(bytes: Uint8Array, previous = 0): number {
   return (value ^ 0xffffffff) >>> 0;
 }
 
-class ZipError extends Error {
+class ZipError extends ReportFormatError {
   constructor() {
     super(
+      "archive",
       "Google Play earnings report is not a supported readable ZIP archive",
     );
   }
@@ -536,7 +569,10 @@ export function reportDecimal(raw: string, nullable = false): string | null {
   const value = raw.trim();
   if (!value && nullable) return null;
   if (!/^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(value))
-    throw new Error("Google Play report has an invalid decimal value");
+    throw new ReportFormatError(
+      "invalid_value",
+      "Google Play report has an invalid decimal value",
+    );
   const [whole = "0", fraction] = value
     .replace(/^[+-]/, "")
     .replaceAll(",", "")
@@ -545,7 +581,8 @@ export function reportDecimal(raw: string, nullable = false): string | null {
     whole.replace(/^0+(?=\d)/, "") +
     (fraction === undefined ? "" : `.${fraction}`);
   if (digits.replace(".", "").length > 38 || (fraction?.length ?? 0) > 18)
-    throw new Error(
+    throw new ReportFormatError(
+      "invalid_value",
       "Google Play report decimal exceeds exact transport precision",
     );
   return value.startsWith("-") && /[1-9]/.test(digits) ? `-${digits}` : digits;

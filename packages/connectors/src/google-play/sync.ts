@@ -36,9 +36,31 @@ import {
   type StagedPart,
 } from "./partitions.js";
 import { listingSnapshot, type ListingSnapshot } from "./ratings.js";
-import { ReportTooLargeError, type ReportSource } from "./tabular.js";
+import {
+  ReportFormatError,
+  ReportTooLargeError,
+  type ReportSource,
+} from "./tabular.js";
 
 const PREFIX = "google-play-data:";
+/**
+ * Version of the report reader. Raise it when reports the previous reader
+ * refused (invalid_report) can now be read: the first incremental sync after
+ * the upgrade then reads the whole import window again instead of only recent
+ * months, so those reports are not skipped forever. 2: report headers match
+ * case- and whitespace-insensitively (#611).
+ */
+export const REPORT_READER = 2;
+/** Default import window, in days, of a first import and a reader catch-up. */
+export const HISTORY_DAYS = 365;
+/**
+ * The cursor of a finished sync: the reader version and the sync end. A bare
+ * timestamp is the finished cursor of reader 1.
+ */
+const FINISHED = "google-play-done:";
+function finished(to: string): string {
+  return `${FINISHED}${REPORT_READER}:${to}`;
+}
 /** Staged pages one turn emits at most, within one page's worth of bytes. */
 const STAGED_TURN_PAGES = 16;
 const taskSchema = z.object({
@@ -50,6 +72,8 @@ const taskSchema = z.object({
 type Task = z.infer<typeof taskSchema>;
 const stateSchema = z.object({
   version: z.literal(1),
+  /** REPORT_READER of the run; absent in checkpoints of reader 1. */
+  reader: z.number().int().positive().optional(),
   signature: z.string(),
   phase: z.enum(["ratings", "reports"]),
   mode: z.enum(["backfill", "incremental"]),
@@ -105,6 +129,39 @@ function decode(cursor: string): State {
   } catch {
     throw new Error("Invalid Google Play sync checkpoint");
   }
+}
+/**
+ * Where a run starts from the host's cursor: a checkpoint of this reader to
+ * continue, the end of the last finished sync (incremental runs revisit
+ * reports changed since then), and whether an older reader read the reports
+ * last (`stale`). A checkpoint of an older reader is dropped, as one of
+ * another configuration is.
+ */
+function startingPoint(request: SyncRequest): {
+  state?: State;
+  since: string;
+  stale: boolean;
+} {
+  const cursor = request.cursor;
+  if (!cursor) return { since: request.from, stale: false };
+  if (cursor.startsWith(PREFIX)) {
+    const state = decode(cursor);
+    // A checkpoint of a catch-up keeps that scope if its configuration changes.
+    const catchUp = state.mode === "backfill" && request.mode === "incremental";
+    if (state.reader === REPORT_READER)
+      return { state, since: request.from, stale: catchUp };
+    return { since: request.from, stale: true };
+  }
+  const done = new RegExp(`^${FINISHED}(\\d+):(.+)$`).exec(cursor);
+  if (done && z.iso.datetime().safeParse(done[2]).success)
+    return {
+      since: done[2]!,
+      stale: Number(done[1]) !== REPORT_READER,
+    };
+  // Reader 1 finished with the bare sync end.
+  if (z.iso.datetime().safeParse(cursor).success)
+    return { since: cursor, stale: true };
+  return { since: request.from, stale: false };
 }
 function monthOf(date: string): string {
   return date.slice(0, 7) + "-01";
@@ -211,6 +268,8 @@ interface Frame {
     "available" | "not_published" | "permission_missing" | "invalid_report";
   objects: ReportObject[];
   unmapped: number;
+  /** Safe reason code of an invalid_report (ReportFormatError.reason). */
+  reason?: string;
   /** The task's rows are staged: turns read their page from the stage. */
   stage?: { id: string; parts: StagedPart[] };
   /** Not staged: this turn's pages of one app, read from the report again. */
@@ -329,7 +388,8 @@ async function readReport(
   try {
     if (task.kind === "installs") {
       if (frame.objects.length !== 1)
-        throw new Error(
+        throw new ReportFormatError(
+          "duplicate_reports",
           "Google Play returned duplicate country install reports",
         );
       const object = frame.objects[0]!;
@@ -370,11 +430,22 @@ async function readReport(
         frame.availability = "permission_missing";
       else if (cause instanceof PlayReportError && cause.status === 404)
         frame.availability = "not_published";
-      else if (cause instanceof ReportTooLargeError)
+      else if (cause instanceof ReportTooLargeError) {
         frame.availability = "invalid_report";
-      else throw cause;
+        frame.reason = "too_large";
+      } else throw cause;
     } else if (error instanceof StagingRefusedError) throw error;
-    else frame.availability = "invalid_report";
+    else {
+      // The reason is recorded on the availability row (#611): a code, never
+      // the message, row data or the object name.
+      frame.availability = "invalid_report";
+      frame.reason =
+        error instanceof ReportFormatError
+          ? error.reason
+          : error instanceof ReportTooLargeError
+            ? "too_large"
+            : "unreadable";
+    }
     frame.unmapped = 0;
     return false;
   }
@@ -403,9 +474,18 @@ async function taskFrame(
 ): Promise<Frame> {
   const frame = baseFrame(task, apps, catalog);
   const permitted = frame.availability !== "permission_missing";
+  // Rows staged by another reader version are never reused.
   const key =
     "play-v2:" +
-    hash([signature, task, apps, selected, permitted, frame.objects]);
+    hash([
+      signature,
+      task,
+      apps,
+      selected,
+      permitted,
+      frame.objects,
+      REPORT_READER,
+    ]);
   const stage =
     store && frame.availability === "available" ? await store.get(key) : null;
   if (stage) {
@@ -559,7 +639,7 @@ function statusPage(
       .at(-1) ?? null;
   return {
     datasetKey: reportStatusDataset.key,
-    schemaVersion: 1,
+    schemaVersion: reportStatusDataset.version,
     refreshKey: randomUUID(),
     pageKey: "0",
     previousPageKey: null,
@@ -575,6 +655,10 @@ function statusPage(
           provider_updated_at: updated,
           object_names: frame.objects.map((object) => object.name),
           unmapped_rows: frame.unmapped,
+          reason:
+            frame.availability === "invalid_report"
+              ? (frame.reason ?? "unreadable")
+              : null,
         },
       },
     ],
@@ -595,27 +679,36 @@ export async function syncPlayReports(
   runtime: ConnectorRuntime,
   options: PlaySyncOptions,
 ): Promise<SyncResult> {
-  let state = request.cursor?.startsWith(PREFIX)
-    ? decode(request.cursor)
-    : undefined;
+  const start = startingPoint(request);
+  let state = start.state;
   if (!state || state.signature !== options.signature) {
+    // A sync after one whose reader was older reads the whole import window
+    // again, as a backfill does: reports the old reader refused would
+    // otherwise stay invalid_report once they are no longer recent (#611).
+    const catchUp = request.mode === "incremental" && start.stale;
+    const mode = catchUp ? "backfill" : request.mode;
     const from =
-      request.mode === "backfill"
+      mode === "backfill"
         ? options.historyFrom
           ? options.historyFrom + "T00:00:00.000Z"
-          : request.from
-        : priorMonth(monthOf(request.from)) + "T00:00:00.000Z";
+          : catchUp
+            ? new Date(
+                Date.parse(request.to) - HISTORY_DAYS * 86_400_000,
+              ).toISOString()
+            : request.from
+        : priorMonth(monthOf(start.since)) + "T00:00:00.000Z";
     if (Date.parse(from) >= Date.parse(request.to))
       throw new Error("Google Play history start must be before the sync end.");
     state = {
       version: 1,
+      reader: REPORT_READER,
       signature: options.signature,
       phase: "ratings",
-      mode: request.mode,
+      mode,
       historyFloor: options.historyFrom,
       from,
       to: request.to,
-      since: request.from,
+      since: start.since,
       offset: 0,
       previous: null,
       refresh: randomUUID(),
@@ -624,7 +717,7 @@ export async function syncPlayReports(
   }
   const apps = [...new Set(await options.apps())].sort();
   if (apps.length === 0)
-    return { observations: [], nextCursor: state.to, done: true };
+    return { observations: [], nextCursor: finished(state.to), done: true };
   const capturedAt = new Date(options.now).toISOString();
   if (state.phase === "ratings") {
     const ratingAfter = state.ratingAfter;
@@ -674,7 +767,7 @@ export async function syncPlayReports(
         afterTask === undefined || task.key.localeCompare(afterTask) > 0,
     );
   if (!task || apps.length === 0)
-    return { observations: [], nextCursor: state.to, done: true };
+    return { observations: [], nextCursor: finished(state.to), done: true };
   const source = hash(
     frameObjects(task, catalog).map((object) => [
       object.name,

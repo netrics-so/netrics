@@ -39,7 +39,12 @@ import {
   PLAY_STORE_HOST,
   type ListingSnapshot,
 } from "./ratings.js";
-import { reportCatalog, reportedPackages, syncPlayReports } from "./sync.js";
+import {
+  HISTORY_DAYS,
+  reportCatalog,
+  reportedPackages,
+  syncPlayReports,
+} from "./sync.js";
 
 const de: ManifestTranslation = {
   name: "Google Play",
@@ -142,7 +147,7 @@ export const googlePlayManifest: ConnectorManifest = {
   supportsResourceSelection: true,
   minRefreshIntervalSeconds: 6 * 60 * 60,
   supportsBackfill: true,
-  backfillDays: 365,
+  backfillDays: HISTORY_DAYS,
   outboundDomains: [
     STORAGE_HOST,
     REPORTING_HOST,

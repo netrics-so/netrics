@@ -36,7 +36,7 @@ are never cached across connections.
 | `install_rows`  | App/day/country, daily user and device installs, original columns                                                    | Sum the chosen install field over a reporting period                     |
 | `earning_rows`  | Signed merchant amount/currency, transaction type/day, billing report month, original columns                        | Sum all signed merchant amounts by app and currency                      |
 | `store_ratings` | From the public Play Store listing: app/country/language/default form factor/day snapshot, score/count, availability | Latest scoped score and count per app                                    |
-| `report_status` | App/report type/month, availability, checked time, object names and unmapped row count                               | Distinguish missing, inaccessible and invalid reports from zero activity |
+| `report_status` | App/report type/month, availability, checked time, object names, unmapped row count and invalid-report reason        | Distinguish missing, inaccessible and invalid reports from zero activity |
 
 Provider reporting details are described in Google's
 [downloadable report reference](https://support.google.com/googleplay/android-developer/answer/6135870?hl=en).
@@ -74,6 +74,15 @@ objects. Continuation cursors pin the import window and object generation;
 changed content restarts the pending partition. An app/report-month replacement
 publishes only after every page is committed. A missing, inaccessible or corrupt
 report updates status and keeps previously published records.
+
+Report headers are matched by name, ignoring case and repeated whitespace
+(Play Console has delivered both `Package Name` and `Package name`); original
+columns keep the delivered names. An `invalid_report` status carries a short
+`reason` code, such as `missing_columns:Package Name`, `scope_mismatch`,
+`encoding`, `malformed_csv`, `invalid_value`, `archive` or `too_large`, and
+never row values. When a connector update can read reports an earlier version
+refused, the next scheduled sync reads the whole import window again once,
+as a backfill does, so those months are not left invalid.
 
 The connector declares its rows as kept until deleted. Earnings original
 columns may contain order identifiers and postal data, so that JSON field is
