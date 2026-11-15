@@ -33,11 +33,23 @@ async function openDashboard(page: Page, locale: Locale) {
   };
 }
 
+/**
+ * A locator's box once it is laid out: the dashboard may still re-render
+ * right after loading, when a box read at once can come back empty.
+ */
+async function boxOf(locator: Locator) {
+  let box: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  await expect
+    .poll(async () => (box = await locator.boundingBox()))
+    .not.toBeNull();
+  return box!;
+}
+
 /** The open popover overlaps none of the filter triggers. */
 async function coversNoTrigger(popover: Locator, triggers: Locator) {
-  const box = (await popover.boundingBox())!;
+  const box = await boxOf(popover);
   for (const trigger of await triggers.all()) {
-    const other = (await trigger.boundingBox())!;
+    const other = await boxOf(trigger);
     const overlaps =
       box.x < other.x + other.width &&
       other.x < box.x + box.width &&
@@ -116,10 +128,10 @@ test.describe("on a phone", () => {
     );
     // The bar wraps: find a trigger on a lower row than the first.
     const first = triggers.first();
-    const firstBox = (await first.boundingBox())!;
+    const firstBox = await boxOf(first);
     let second: Locator | null = null;
     for (const candidate of await triggers.all()) {
-      const box = (await candidate.boundingBox())!;
+      const box = await boxOf(candidate);
       if (box.y >= firstBox.y + firstBox.height) {
         second = candidate;
         break;
