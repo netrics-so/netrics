@@ -73,7 +73,10 @@ export default async function StoreUpdatePage({
           <h1>{t("title", { name: install.name })}</h1>
         </div>
         <div className="actions">
-          {install.error === null ? (
+          {/* The roles the dashboard page shows the link to. */}
+          {install.error === null &&
+          can(role, "data:edit") &&
+          can(role, "dashboards:create") ? (
             <Link href={storeScopePath(workspaceId, requestId)}>
               {t("changeApps")}
             </Link>

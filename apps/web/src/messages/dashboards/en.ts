@@ -171,7 +171,7 @@ export const dashboardsEn = {
       "Updates aren’t available for this dashboard. It was set up before templates had versions, and a store connection it used was deleted since, so netrics can’t tell your changes from the template’s. The dashboard keeps working as it is.",
     upToDate: "This dashboard is up to date with its template.",
     scopeIntro:
-      "Nothing changes until you say so. The parts that follow from your apps are regenerated and never conflict with your changes. Data changes become drafts you publish in data settings; a new app filter arrives as an updated dashboard copy you compare before it goes on your screens.",
+      "Nothing changes until you say so. The parts that follow from your apps are regenerated from your apps; we only ask where you edited them. Data changes become drafts you publish in data settings; a new app filter arrives as an updated dashboard copy you compare before it goes on your screens.",
     intro:
       "Nothing changes until you say so. Data changes become drafts you publish in data settings. Dashboard changes arrive as an updated copy you compare before it goes on your screens; your original is archived, so you can switch back.",
     steps: {
@@ -233,6 +233,7 @@ export const dashboardsEn = {
     keepMine: "Keep mine",
     remove: "Remove",
     keep: "Keep",
+    detach: "Detach (kept in Data & measures)",
     templateValue: "Template: {text}",
     yourValue: "Yours: {text}",
     absent: "removed",
@@ -247,7 +248,7 @@ export const dashboardsEn = {
       removedDatasetUnknown:
         "Taking the template’s version brings back data you removed from these measures.",
       scopeRemoval:
-        "This connection is no longer part of the dashboard. Remove it from the template or keep it as yours: either way the preparation stays in Data & measures with your changes, it is never deleted.",
+        "This connection is no longer part of the dashboard. Its preparation is detached from the template and stays in Data & measures with your changes; it is never deleted.",
       proposeRemoval:
         "The new template no longer has this. You never changed it: remove it, or keep it as yours.",
     },

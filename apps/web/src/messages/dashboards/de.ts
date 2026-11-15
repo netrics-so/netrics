@@ -174,7 +174,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       "Für dieses Dashboard sind keine Updates verfügbar. Es wurde eingerichtet, bevor Vorlagen Versionen hatten, und eine seiner Store-Verbindungen wurde seitdem gelöscht. Deshalb kann netrics deine Änderungen nicht von denen der Vorlage unterscheiden. Das Dashboard funktioniert weiter wie bisher.",
     upToDate: "Dieses Dashboard ist auf dem Stand seiner Vorlage.",
     scopeIntro:
-      "Nichts ändert sich, bevor du es sagst. Was sich aus deinen Apps ergibt, wird neu erzeugt und kollidiert nie mit deinen Änderungen. Datenänderungen werden Entwürfe, die du in den Dateneinstellungen veröffentlichst; ein neuer App-Filter kommt als aktualisierte Dashboard-Kopie, die du vergleichst, bevor sie auf deine Bildschirme kommt.",
+      "Nichts ändert sich, bevor du es sagst. Was sich aus deinen Apps ergibt, wird aus deinen Apps neu erzeugt; wir fragen nur dort, wo du etwas geändert hast. Datenänderungen werden Entwürfe, die du in den Dateneinstellungen veröffentlichst; ein neuer App-Filter kommt als aktualisierte Dashboard-Kopie, die du vergleichst, bevor sie auf deine Bildschirme kommt.",
     intro:
       "Nichts ändert sich, bevor du es willst. Datenänderungen werden zu Entwürfen, die du in den Dateneinstellungen veröffentlichst. Dashboard-Änderungen kommen als aktualisierte Kopie, die du vergleichst, bevor sie auf deine Bildschirme kommt; dein Original wird archiviert, damit du zurückwechseln kannst.",
     steps: {
@@ -237,6 +237,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     keepMine: "Meine behalten",
     remove: "Entfernen",
     keep: "Behalten",
+    detach: "Ablösen (bleibt unter Daten & Kennzahlen)",
     templateValue: "Vorlage: {text}",
     yourValue: "Deine: {text}",
     absent: "entfernt",
@@ -256,7 +257,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       removedDatasetUnknown:
         "Wenn du die Version der Vorlage übernimmst, kommen Daten zurück, die du aus diesen Kennzahlen entfernt hast.",
       scopeRemoval:
-        "Diese Verbindung gehört nicht mehr zum Dashboard. Entferne sie aus der Vorlage oder behalte sie als deine: In beiden Fällen bleibt die Aufbereitung mit deinen Änderungen unter Daten & Kennzahlen, sie wird nie gelöscht.",
+        "Diese Verbindung gehört nicht mehr zum Dashboard. Ihre Aufbereitung wird von der Vorlage abgelöst und bleibt mit deinen Änderungen unter Daten & Kennzahlen; sie wird nie gelöscht.",
       proposeRemoval:
         "Die neue Vorlage hat das nicht mehr. Du hast es nie geändert: Entferne es oder behalte es als deins.",
     },

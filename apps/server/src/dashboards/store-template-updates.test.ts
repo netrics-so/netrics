@@ -3311,6 +3311,42 @@ describe("changing the apps of an install", { timeout: TIMEOUT_MS }, () => {
     const keptId = (await recordOf(requestId, sourceKeys(kept)[0]!))!
       .record_id as string;
     await editStep(workspaceId, keptId, "calculate_app_key", "Mine", true);
+    // The customer's own product row, and their renamed unallocated row.
+    const data = createDataService(db, () => new Date(now));
+    const productsId = installed.productDatasetId;
+    const products = async () =>
+      (
+        await data.readManual(actor(workspaceId), productsId, {
+          offset: 0,
+          limit: 1000,
+        })
+      ).records
+        .map((record) => record.values)
+        .sort((a, b) =>
+          String(a.product_id).localeCompare(String(b.product_id)),
+        );
+    const seeded = await data.readManual(actor(workspaceId), productsId, {
+      offset: 0,
+      limit: 1000,
+    });
+    const customerRows = [
+      ...seeded.records.map((record) =>
+        record.values.product_id === kept + ":__unmapped"
+          ? { values: { ...record.values, product_name: "Our leftovers" } }
+          : record,
+      ),
+      { values: { product_id: "product:mine", product_name: "Mine" } },
+    ];
+    await data.saveManual(
+      actor(workspaceId),
+      {
+        definition: seeded.definition,
+        records: customerRows,
+        generationId: seeded.generationId,
+      },
+      productsId,
+    );
+    const productsBefore = await products();
     const extra = await newConnection(workspaceId);
     const before = await publishedState(workspaceId);
     const scope = { connections: [kept, extra.id] };
@@ -3385,6 +3421,25 @@ describe("changing the apps of an install", { timeout: TIMEOUT_MS }, () => {
         row.published_version,
       );
     expect(model.recordId).toBe(installed.models.downloads);
+    // The added connection gets its unallocated product row; the
+    // customer's rows stay as they were.
+    expect(await products()).toEqual(
+      [
+        ...productsBefore,
+        {
+          product_id: extra.id + ":__unmapped",
+          product_name: "Unallocated report rows · Second Play",
+        },
+      ].sort((a, b) =>
+        String(a.product_id).localeCompare(String(b.product_id)),
+      ),
+    );
+    expect(productsBefore).toEqual(
+      expect.arrayContaining([
+        { product_id: kept + ":__unmapped", product_name: "Our leftovers" },
+        { product_id: "product:mine", product_name: "Mine" },
+      ]),
+    );
     // The customer's edit is untouched.
     expect(
       (await preparationRow(keptId)).graph.nodes.find(
@@ -3598,6 +3653,59 @@ describe("changing the apps of an install", { timeout: TIMEOUT_MS }, () => {
     await expect(
       updates().scope(actor(mine.workspaceId), theirs.requestId),
     ).rejects.toMatchObject({ code: "store_template_not_found", status: 404 });
+  });
+
+  it("reads a product's app scope from an app the install still reads", async () => {
+    const workspaceId = await createWorkspace(db, {
+      name: "Stores " + randomUUID().slice(0, 8),
+      ownerUserId: userId,
+    });
+    const [a, b] = await Promise.all([
+      newConnection(workspaceId, "app-store-connect"),
+      newConnection(workspaceId, "google-play"),
+    ]);
+    // The app key that sorts first is the one whose connection goes.
+    const [gone, stays] = [a!, b!].sort((x, y) => (x.id < y.id ? -1 : 1));
+    const requestId = randomUUID();
+    await createStoreTemplateService({
+      db,
+      registry,
+      now: () => new Date(now),
+    }).install(actor(workspaceId), {
+      requestId,
+      name: "App portfolio",
+      connections: [gone!.id, stays!.id],
+      groups: [
+        {
+          id: randomUUID(),
+          name: "Focus",
+          apps: [
+            { connectionId: gone!.id, appId: "x" },
+            { connectionId: stays!.id, appId: "y" },
+          ],
+        },
+      ],
+      appScope: { connectionId: stays!.id, appId: "y" },
+    });
+    const choice = {
+      connections: [stays!.id],
+      appScope: { connectionId: stays!.id, appId: "y" },
+    };
+    const plan = await updates().scopePlan(
+      actor(workspaceId),
+      requestId,
+      choice,
+    );
+    await updates().changeScope(actor(workspaceId), requestId, {
+      ...choice,
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    expect(await updates().scope(actor(workspaceId), requestId)).toEqual({
+      requestId,
+      connections: [stays!.id],
+      appScope: { connectionId: stays!.id, appId: "y" },
+    });
   });
 
   it("asks for a pending template update first", async () => {

@@ -266,7 +266,7 @@ export function StoreUpdateReview({
               plan={plan}
               decisions={decisions}
               onDecide={(ref, choice) =>
-                setDecisions((current) => ({ ...current, [ref]: choice }))
+                setDecisions((current) => withChoice(current, ref, choice))
               }
               onApply={() => void apply()}
               pending={pending === "apply"}
@@ -349,7 +349,8 @@ export function ReviewView({
 }: {
   plan: StoreTemplatePlan;
   decisions: Decisions;
-  onDecide: (ref: string, choice: Choice) => void;
+  /** null takes a choice back (an unticked acknowledgement). */
+  onDecide: (ref: string, choice: Choice | null) => void;
   onApply: () => void;
   pending: boolean;
   notice: "reloaded" | null;
@@ -361,10 +362,26 @@ export function ReviewView({
   scopeChange?: boolean;
 }) {
   const t = useT("storeUpdate");
-  const missing = missingDecisions(plan, decisions);
-  const asked = plan.records
-    .flatMap((record) => record.items)
-    .filter(needsDecision).length;
+  // In a change of apps a removed connection's preparation is one
+  // acknowledgement, counted once (RecordRemoval).
+  const whole = scopeChange ? plan.records.filter(isWholeRemoval) : [];
+  const inWhole = new Set(
+    whole.flatMap((record) => record.items.map((item) => item.ref)),
+  );
+  const missingRefs = missingDecisions(plan, decisions);
+  const missing = [
+    ...missingRefs.filter((ref) => !inWhole.has(ref)),
+    ...whole
+      .filter((record) =>
+        record.items.some((item) => missingRefs.includes(item.ref)),
+      )
+      .map((record) => record.key),
+  ];
+  const asked =
+    plan.records
+      .flatMap((record) => record.items)
+      .filter((item) => needsDecision(item) && !inWhole.has(item.ref)).length +
+    whole.length;
   const scope = plan.records.reduce(
     (count, record) => count + groupItems(record).scope,
     0,
@@ -433,7 +450,7 @@ function RecordReview({
   record: PlanRecord;
   plan: StoreTemplatePlan;
   decisions: Decisions;
-  onDecide: (ref: string, choice: Choice) => void;
+  onDecide: (ref: string, choice: Choice | null) => void;
   scope: boolean;
 }) {
   const t = useT("storeUpdate");
@@ -444,7 +461,7 @@ function RecordReview({
     groups.template.length +
     groups.customer.length;
   if (shown === 0) return null;
-  if (scope && groups.removal.length === record.items.length)
+  if (scope && isWholeRemoval(record))
     return (
       <RecordRemoval
         record={record}
@@ -521,9 +538,27 @@ function RecordReview({
   );
 }
 
+/** A record whose every item is proposed for removal. */
+const isWholeRemoval = (record: PlanRecord) =>
+  record.items.length > 0 &&
+  record.items.every((item) => item.outcome === "propose_removal");
+
+/** Decisions with `choice` for `ref`, or without it for null. */
+export function withChoice(
+  decisions: Decisions,
+  ref: string,
+  choice: Choice | null,
+): Decisions {
+  const next = { ...decisions };
+  if (choice === null) delete next[ref];
+  else next[ref] = choice;
+  return next;
+}
+
 /**
- * The preparation of a connection the install no longer reads: one choice
- * for all its items. Either way it is detached, never deleted.
+ * The preparation of a connection the install no longer reads: removing
+ * and keeping both detach it from the template (it stays, with the
+ * customer's changes), so it is one acknowledgement for all its items.
  */
 function RecordRemoval({
   record,
@@ -532,11 +567,12 @@ function RecordRemoval({
 }: {
   record: PlanRecord;
   decisions: Decisions;
-  onDecide: (ref: string, choice: Choice) => void;
+  onDecide: (ref: string, choice: Choice | null) => void;
 }) {
   const t = useT("storeUpdate");
-  const values = new Set(record.items.map((item) => decisions[item.ref]));
-  const value = values.size === 1 ? [...values][0] : undefined;
+  const detached = record.items.every(
+    (item) => decisions[item.ref] === "remove",
+  );
   return (
     <section className="card store-update-record">
       <fieldset className="store-update-decision">
@@ -546,25 +582,18 @@ function RecordRemoval({
         </legend>
         <p className="muted">{t("why.scopeRemoval")}</p>
         <div className="store-update-choices">
-          {(
-            [
-              ["remove", t("remove")],
-              ["keep", t("keep")],
-            ] as const
-          ).map(([choice, label]) => (
-            <label key={choice}>
-              <input
-                type="radio"
-                name={record.key}
-                value={choice}
-                checked={value === choice}
-                onChange={() => {
-                  for (const item of record.items) onDecide(item.ref, choice);
-                }}
-              />{" "}
-              {label}
-            </label>
-          ))}
+          <label>
+            <input
+              type="checkbox"
+              name={record.key}
+              checked={detached}
+              onChange={(event) => {
+                for (const item of record.items)
+                  onDecide(item.ref, event.target.checked ? "remove" : null);
+              }}
+            />{" "}
+            {t("detach")}
+          </label>
         </div>
       </fieldset>
     </section>

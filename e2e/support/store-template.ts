@@ -136,9 +136,18 @@ export async function installWithConnections(
         },
       );
     // Seeding only: parallel journeys' serializable installs can still
-    // conflict after the API's own retries; the same request is idempotent.
+    // conflict after the API's own retries (#604); the same request is
+    // idempotent. Any other refusal fails the journey.
+    const conflicted = async (answer: Awaited<ReturnType<typeof install>>) =>
+      answer.status() === 409 &&
+      ((await answer.json()) as { error?: string }).error ===
+        "version_conflict";
     let response = await install();
-    for (let attempt = 0; attempt < 3 && response.status() === 409; attempt++)
+    for (
+      let attempt = 0;
+      attempt < 3 && (await conflicted(response));
+      attempt++
+    )
       response = await install();
     expect(response.status(), await response.text()).toBe(200);
     const { dashboardId } = (await response.json()) as { dashboardId: string };

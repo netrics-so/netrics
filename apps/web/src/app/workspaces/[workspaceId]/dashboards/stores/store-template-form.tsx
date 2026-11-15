@@ -22,7 +22,10 @@ import {
   storeUpdatePath,
   type Decisions,
 } from "@/lib/store-updates";
-import { ReviewView } from "./updates/[requestId]/store-update-review";
+import {
+  ReviewView,
+  withChoice,
+} from "./updates/[requestId]/store-update-review";
 
 type Choice = {
   key: string;
@@ -660,7 +663,7 @@ export function StoreTemplateForm({
           pending={pending === "create"}
           onDecide={(ref, choice) => {
             setDirty(true);
-            setDecisions((current) => ({ ...current, [ref]: choice }));
+            setDecisions((current) => withChoice(current, ref, choice));
           }}
           onEdit={() => setStep("edit")}
           onApply={() => void applyScope()}
@@ -747,7 +750,7 @@ export function ScopeReview({
   pending: boolean;
   onDecide: (
     ref: string,
-    choice: "template" | "customer" | "remove" | "keep",
+    choice: "template" | "customer" | "remove" | "keep" | null,
   ) => void;
   onEdit: () => void;
   onApply: () => void;

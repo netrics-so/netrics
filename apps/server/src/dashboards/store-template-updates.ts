@@ -86,7 +86,10 @@ import {
   type StoreTemplateRecord,
   storeTemplateInputsSchema,
 } from "./store-template.js";
-import { storeTemplateSources } from "./store-template-service.js";
+import {
+  storeTemplateSources,
+  unmappedProductRow,
+} from "./store-template-service.js";
 
 /**
  * "Update available" for store-template installs (template updates, 11E):
@@ -857,6 +860,49 @@ export function createStoreTemplateUpdateService(deps: {
     };
   }
 
+  /**
+   * Adds the unallocated product row of each of `sources` to the install's
+   * products table where its product id is absent; a new snapshot of the
+   * table with every existing row as it is.
+   */
+  async function addProductRows(
+    data: ReturnType<typeof createDataService>,
+    actor: Actor,
+    datasetId: string | undefined,
+    sources: { id: string; name: string }[],
+    locale: Locale,
+  ) {
+    if (!datasetId || !sources.length) return;
+    const first = await data.readManual(actor, datasetId, {
+      offset: 0,
+      limit: 1000,
+    });
+    const records = [...first.records];
+    while (records.length < first.total) {
+      const page = await data.readManual(actor, datasetId, {
+        generationId: first.generationId ?? undefined,
+        offset: records.length,
+        limit: 1000,
+      });
+      if (!page.records.length) break;
+      records.push(...page.records);
+    }
+    const known = new Set(records.map((record) => record.values.product_id));
+    const added = sources
+      .map((source) => unmappedProductRow(source, locale))
+      .filter((row) => !known.has(row.values.product_id));
+    if (!added.length) return;
+    await data.saveManual(
+      actor,
+      {
+        definition: first.definition,
+        records: [...records, ...added],
+        generationId: first.generationId,
+      },
+      datasetId,
+    );
+  }
+
   /** The app scope an install's inputs describe (scopeInputs reversed). */
   function scopeOf(inputs: StoreTemplateInputs): ScopeChoice {
     const fixed = inputs.fixedProduct;
@@ -865,7 +911,11 @@ export function createStoreTemplateUpdateService(deps: {
       const group = inputs.groups?.find(
         (candidate) => "product:" + candidate.id === fixed,
       );
-      appScope = group?.apps[0] ?? null;
+      // An app of the group the install still reads, so the scope applies.
+      appScope =
+        group?.apps.find((app) =>
+          inputs.connections.some((c) => c.id === app.connectionId),
+        ) ?? null;
     } else if (fixed) {
       const cut = fixed.indexOf(":");
       appScope = {
@@ -1225,6 +1275,19 @@ export function createStoreTemplateUpdateService(deps: {
         );
     if (created.length)
       await tx.insert(schema.dataTemplateRecords).values(created);
+    // An added connection's unallocated product row, as install writes it;
+    // the customer's rows stay. Inert until its preparations are published.
+    if (scope && completed.ok)
+      await addProductRows(
+        data,
+        actor,
+        plan.ids["dataset:products"],
+        plan.inputs.connections.filter(
+          (connection) =>
+            !completed.inputs.connections.some((c) => c.id === connection.id),
+        ),
+        plan.inputs.locale,
+      );
     await tx
       .update(schema.dataTemplateInstalls)
       .set({

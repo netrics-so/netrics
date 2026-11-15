@@ -68,11 +68,11 @@ test("a customer adds and removes a store connection of a template dashboard", a
   await expect(page.getByText(u.why.both)).toHaveCount(0);
   const apply = page.getByRole("button", { name: u.apply });
   await expect(apply).toBeDisabled();
-  const keep = await page
-    .getByRole("radio", { name: u.keep, exact: true })
-    .all();
-  expect(keep.length).toBeGreaterThan(0);
-  for (const radio of keep) await radio.check();
+  // Removing and keeping both detach: one acknowledgement per preparation.
+  await expect(page.getByRole("radio")).toHaveCount(0);
+  const detach = await page.getByRole("checkbox", { name: u.detach }).all();
+  expect(detach.length).toBeGreaterThan(0);
+  for (const box of detach) await box.check();
   await expect(apply).toBeEnabled();
   // Nothing changed before applying.
   expect(await scopeOf()).toEqual(

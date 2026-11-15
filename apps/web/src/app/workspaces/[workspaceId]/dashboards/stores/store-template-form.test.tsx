@@ -165,7 +165,7 @@ describe("store template form", () => {
         decisions={
           decided
             ? Object.fromEntries(
-                plan.records[0]!.items.map((item) => [item.ref, "keep"]),
+                plan.records[0]!.items.map((item) => [item.ref, "remove"]),
               )
             : {}
         }
@@ -188,7 +188,13 @@ describe("store template form", () => {
     // One choice for the removed connection's preparation, never deleted.
     expect(html).toContain("Downloads · Second Play");
     expect(html).toContain("it is never deleted");
-    expect(html.match(/type="radio"/g)).toHaveLength(2);
+    // Remove and keep both detach: one acknowledgement for the record,
+    // counted once.
+    expect(html).not.toContain('type="radio"');
+    expect(html.match(/type="checkbox"/g)).toHaveLength(1);
+    expect(html).toContain("Detach (kept in Data &amp; measures)");
+    expect(html).toContain("0 of 1 decided");
+    expect(review("en", true)).toContain("1 of 1 decided");
     expect(html).not.toContain("Store name");
     // What follows from the apps is regenerated, not asked about.
     expect(html).toContain("1 part follows your app selection");
@@ -205,6 +211,8 @@ describe("store template form", () => {
     expect(html).toContain("Was sich ändert");
     expect(html).toContain("Alle Apps dieser Verbindungen");
     expect(html).toContain("sie wird nie gelöscht");
+    expect(html).toContain("Ablösen (bleibt unter Daten &amp; Kennzahlen)");
+    expect(html).toContain("0 von 1 entschieden");
     expect(html).toContain("Als Entwürfe anwenden");
   });
 

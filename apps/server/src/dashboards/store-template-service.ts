@@ -138,6 +138,26 @@ async function installedWidgetKeys(
 }
 
 /**
+ * A connection's row in an install's products table: the name of its
+ * account rows no app claims (`<connectionId>:__unmapped`).
+ */
+export function unmappedProductRow(
+  source: { id: string; name: string },
+  locale: Locale,
+): { values: { product_id: string; product_name: string } } {
+  return {
+    values: {
+      product_id: source.id + ":__unmapped",
+      product_name:
+        `${storeTemplateCopy(locale).unallocated} · ${source.name}`.slice(
+          0,
+          100,
+        ),
+    },
+  };
+}
+
+/**
  * The store sources of `connectionIds` (all of the workspace, set up, of a
  * store connector), each with the source datasets the template reads.
  * `register` registers those datasets; without it (a read-only plan) a
@@ -385,15 +405,7 @@ export function createStoreTemplateService(deps: {
                   },
                 }));
                 for (const source of sources)
-                  productRows.push({
-                    values: {
-                      product_id: source.id + ":__unmapped",
-                      product_name: `${t.unallocated} · ${source.name}`.slice(
-                        0,
-                        100,
-                      ),
-                    },
-                  });
+                  productRows.push(unmappedProductRow(source, actor.locale));
                 const products = await data.saveManual(actor, {
                   definition: sourceDatasetSchema.parse({
                     key: "store_products_" + input.requestId,
