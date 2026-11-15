@@ -40,9 +40,7 @@ function prepared(
     ]),
   );
   const labels = executePreparation(
-    preparationGraphSchema.parse(
-      buildStoreAppLabels(["downloads", "proceeds", "ratings"], locale),
-    ),
+    preparationGraphSchema.parse(buildStoreAppLabels(["downloads"], locale)),
     all,
   ).outputs.labels!;
   return executePreparation(
@@ -271,22 +269,39 @@ describe("editable store portfolio definitions", () => {
     ]);
     expect(labels(3, "de")).toEqual(labels(3, "en"));
   });
-  it("gives an app the same label in every model, also where only one store has data for a metric (#621)", () => {
+  it("gives an app one label in every model, from the downloads data (#621)", () => {
     const tables = inputs();
     const mapping = tables.get("mapping")!;
     tables.set("mapping", {
       ...mapping,
       rows: mapping.rows.filter((row) => row.app_key !== apple.id + ":a"),
     });
+    // "Other app": downloads in both stores (the App Store app and beta),
+    // and a third Google Play app (gamma) with proceeds but no downloads.
     tables.set(`resources:${apple.id}`, {
       ...tables.get(`resources:${apple.id}`)!,
       rows: [{ resource_id: "a", name: "Other app", kind: "iOS" }],
     });
-    // Proceeds: only the App Store app has any.
+    const resources = tables.get(`resources:${google.id}`)!;
+    tables.set(`resources:${google.id}`, {
+      ...resources,
+      rows: resources.rows.map((row) =>
+        row.resource_id === "com.example.gamma"
+          ? { ...row, name: "Other app" }
+          : row,
+      ),
+    });
     const earnings = tables.get("play-earnings")!;
     tables.set("play-earnings", {
       ...earnings,
-      rows: earnings.rows.filter((row) => row.app_id !== "com.example.beta"),
+      rows: [
+        ...earnings.rows,
+        {
+          ...earnings.rows[0]!,
+          app_id: "com.example.gamma",
+          merchant_amount: "5",
+        },
+      ],
     });
     const queries: Record<Metric, { measureIds: string[]; groupBy: string[] }> =
       {
@@ -309,16 +324,20 @@ describe("editable store portfolio definitions", () => {
       );
     };
     const appleApp = apple.id + ":a",
-      betaApp = google.id + ":com.example.beta";
-    const proceeds = labelsOf("proceeds");
+      betaApp = google.id + ":com.example.beta",
+      gammaApp = google.id + ":com.example.gamma";
+    const downloads = labelsOf("downloads"),
+      proceeds = labelsOf("proceeds"),
+      ratings = labelsOf("ratings");
+    // Downloads in both stores: the store in every model that has the app.
+    expect(downloads[appleApp]).toBe("Other app · Apple App Store");
+    expect(downloads[betaApp]).toBe("Other app · Google Play");
     expect(proceeds[appleApp]).toBe("Other app · Apple App Store");
-    expect(proceeds[betaApp]).toBeUndefined();
-    for (const metric of ["downloads", "ratings"] as const) {
-      const labels = labelsOf(metric);
-      expect(labels[appleApp]).toBe("Other app · Apple App Store");
-      if (metric === "downloads")
-        expect(labels[betaApp]).toBe("Other app · Google Play");
-    }
+    expect(proceeds[betaApp]).toBe("Other app · Google Play");
+    expect(ratings[appleApp]).toBe("Other app · Apple App Store");
+    // No downloads: the app's name, the same wherever it appears.
+    expect(downloads[gammaApp]).toBeUndefined();
+    expect(proceeds[gammaApp]).toBe("Other app");
   });
   it("keeps ratings per underlying listing even when the customer confirms one shared product", () => {
     const data = prepared("ratings"),

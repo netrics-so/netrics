@@ -726,12 +726,13 @@ const integer = (value: number): DataExpression => ({
 
 /**
  * Version 3 (#621): one display label per app, shared by all three models,
- * from the apps of every metric's combined data (the selected apps that
- * report anything). Where apps of different stores share a display name,
- * the label of each app that lives in one store says which ("Example App ·
- * Google Play"); a product the customer linked across stores keeps its
- * name. `inputs`: the combined downloads, proceeds and ratings data.
- * Output `labels`: product_id, product_label.
+ * from the apps in `inputs` (the template passes the combined downloads
+ * data only, so the proceeds and ratings sources never hold up or fail the
+ * downloads model; an app without downloads keeps its name in every model).
+ * Where apps of different stores share a display name, the label of each
+ * app that lives in one store says which ("Example App · Google Play"); a
+ * product the customer linked across stores keeps its name. Output
+ * `labels`: product_id, product_label.
  */
 export function buildStoreAppLabels(
   inputs: string[],
@@ -759,16 +760,18 @@ export function buildStoreAppLabels(
       },
     );
   });
-  nodes.push(
-    {
+  const apps = inputs.length === 1 ? "app_columns_0" : "apps";
+  if (inputs.length > 1)
+    nodes.push({
       id: "apps",
       type: "append",
       inputs: inputs.map((_, index) => `app_columns_${index}`),
-    },
+    });
+  nodes.push(
     {
       id: "app_stores",
       type: "group",
-      input: "apps",
+      input: apps,
       keys: ["product_id"],
       aggregates: [
         {
@@ -782,7 +785,7 @@ export function buildStoreAppLabels(
     {
       id: "one_per_app",
       type: "deduplicate",
-      input: "apps",
+      input: apps,
       keys: ["product_id"],
       keep: "first",
     },

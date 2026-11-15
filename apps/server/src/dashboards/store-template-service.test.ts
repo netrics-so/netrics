@@ -122,9 +122,9 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
       { measureIds: ["downloads"], groupBy: ["app", "store"] },
     );
     expect(result.rows).toEqual([]);
-    // Version 3: the app labels read every metric's data, so the downloads
-    // model waits for all six source datasets of the two connections.
-    expect(result.pendingSources).toHaveLength(6);
+    // The app labels read the downloads data only: the downloads model
+    // waits for its own two sources, not proceeds' or ratings'.
+    expect(result.pendingSources).toHaveLength(2);
     const choices = await withWorkspace(db, { workspaceId }, (tx) =>
       dashboardDimensionValues(
         tx,

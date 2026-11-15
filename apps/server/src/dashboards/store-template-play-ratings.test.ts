@@ -239,6 +239,8 @@ async function ingestReports(
   connections: { apple: { id: string }; play: { id: string } },
   /** App names to use instead of the fixture's, by connection and app id. */
   rename: Record<string, Record<string, string>> = {},
+  /** Source datasets (by key) left without any report, i.e. pending. */
+  skip: string[] = [],
 ) {
   const fixtures = inputs();
   for (const [connection, fixture] of [
@@ -247,6 +249,7 @@ async function ingestReports(
   ] as const) {
     const manifest = registry.get(fixture.connectorId)!.manifest;
     for (const [key, fixtureId] of Object.entries(fixture.datasets)) {
+      if (skip.includes(`${fixture.connectorId}:${key}`)) continue;
       const definition = manifest.datasets!.find((d) => d.key === key)!;
       await withWorkspace(db, { workspaceId }, (tx) =>
         ingestDatasetPage(tx, {
@@ -928,6 +931,61 @@ describe(
             .filter(([value]) => String(value) in expected),
         ),
       ).toEqual(expected);
+    });
+    it("keeps the downloads model fresh while a proceeds source is still pending", async () => {
+      const workspaceId = await createWorkspace(db, {
+        name: "Pending " + randomUUID().slice(0, 8),
+        ownerUserId: userId,
+      });
+      const connections = [];
+      for (const connectorId of ["app-store-connect", "google-play"] as const) {
+        const [connection] = await withWorkspace(db, { workspaceId }, (tx) =>
+          tx
+            .insert(schema.connections)
+            .values({
+              workspaceId,
+              connectorId,
+              name: connectorId,
+              setupPending: false,
+            })
+            .returning(),
+        );
+        connections.push(connection!);
+      }
+      const installed = await createStoreTemplateService({
+        db,
+        registry,
+        now: () => new Date(now),
+      }).install(actor(workspaceId), {
+        requestId: randomUUID(),
+        name: "App portfolio",
+        connections: connections.map((c) => c.id),
+        groups: [],
+      });
+      // Every report but Google Play's earnings.
+      await ingestReports(
+        workspaceId,
+        { apple: connections[0]!, play: connections[1]! },
+        {},
+        ["google-play:earning_rows"],
+      );
+      const data = createDataService(db, () => new Date(now));
+      const user = { workspaceId, callerId: userId };
+      const downloads = await data.query(user, installed.models.downloads, {
+        measureIds: ["downloads"],
+        groupBy: ["app", "store"],
+      });
+      // Not held up by the pending proceeds source: complete, with its
+      // received time (the condition for query snapshots too).
+      expect(downloads.pendingSources ?? []).toEqual([]);
+      expect(downloads.receivedAt).not.toBeNull();
+      expect(downloads.rows.length).toBeGreaterThan(0);
+      const proceeds = await data.query(user, installed.models.proceeds, {
+        measureIds: ["proceeds"],
+        groupBy: ["app", "currency"],
+      });
+      expect(proceeds.pendingSources?.length).toBeGreaterThan(0);
+      expect(proceeds.receivedAt).toBeNull();
     });
   },
 );

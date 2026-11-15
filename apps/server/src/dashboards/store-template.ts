@@ -36,9 +36,10 @@ export const STORE_TEMPLATE_ID = "store_portfolio";
  */
 /**
  * 3: proceeds leave out rows without proceeds and name a missing currency
- * (#620); one app label for all three models adds the store where apps of
- * different stores share a name (#621): `preparation:labels` and a
- * `preparation:labelled:<metric>` per metric, which the models read.
+ * (#620); one app label for all three models, from the downloads data, adds
+ * the store where apps of different stores share a name (#621):
+ * `preparation:labels` and a `preparation:labelled:<metric>` per metric,
+ * which the models read.
  */
 export const STORE_TEMPLATE_VERSION = 3;
 
@@ -268,7 +269,9 @@ const defineStoreTemplate = (
         key,
         name: `${inputs.name} · ${t.appLabels}`.slice(0, 100),
         graph: buildStoreAppLabels(
-          storeMetrics.map((metric) => combined(metric)),
+          // Downloads only: a pending or failing proceeds or ratings
+          // source must not hold up or fail the other models.
+          [combined("downloads")],
           inputs.locale,
         ),
       };

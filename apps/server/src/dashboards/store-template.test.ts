@@ -19,6 +19,7 @@ import {
   type StoreMetric,
 } from "./store-portfolio.js";
 import { apple, google } from "./test-helpers.js";
+import { preparationGraphSchema } from "@netrics/contracts";
 
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -74,7 +75,7 @@ function buildAll(
 const VERSION_HASHES: Record<number, string> = {
   1: "44be27ea317c1faf154c41abfc16711e055ca8c47c6e6220918bba59c701aa24",
   2: "79726e4b4472c40243627181269daf6f08dcd991b7d1e415d2aba7bc51727aa3",
-  3: "35b7ebbb8aa9565e14028e81f602e5c44fc511a86a85631fbe03f71fa6e3b4f9",
+  3: "803b151fd59622b368644799eed102cfe37f3632fbc2266f2f32a3ea221c6923",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -167,20 +168,22 @@ describe("versioned store template", () => {
       "model:proceeds",
       "model:ratings",
     ]);
-    // One label preparation reads every metric's combined data; each model
-    // reads its metric's labelled data.
+    // One label preparation reads the combined downloads data only (a
+    // pending or failing proceeds or ratings source must not hold up the
+    // other models); each model reads its metric's labelled data.
     const labels = v3.find((record) => record.key === "preparation:labels");
     expect(
       labels?.kind === "preparation" &&
         labels.graph.nodes.flatMap((node) =>
           node.type === "source" ? [node.datasetId] : [],
         ),
-    ).toEqual(
-      ["downloads", "proceeds", "ratings"].map(
-        (metric) =>
-          `prepared:${uuidFor(`preparation:append:${metric}:0:0`)}:append_0_0`,
-      ),
-    );
+    ).toEqual([
+      `prepared:${uuidFor("preparation:append:downloads:0:0")}:append_0_0`,
+    ]);
+    // Every version 3 record is a valid preparation, model or dashboard.
+    for (const record of v3)
+      if (record.kind === "preparation")
+        expect(() => preparationGraphSchema.parse(record.graph)).not.toThrow();
     expect(v3.find((record) => record.key === "model:proceeds")).toMatchObject({
       kind: "model",
       definition: {
