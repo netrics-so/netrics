@@ -73,6 +73,12 @@ test("a scoped model publishes without guessing the grouping", async ({
     .getByRole("status")
     .filter({ hasText: fill(t.previewScope, { dimensions: "Country" }) });
   await expect(scope).toBeVisible();
+  // The hint describes the Preview button.
+  await expect(
+    preview.getByRole("button", { name: t.preview, ...exact }),
+  ).toHaveAccessibleDescription(
+    new RegExp(fill(t.previewScope, { dimensions: "Country" }).slice(0, 30)),
+  );
   await scope
     .getByRole("button", {
       name: fill(t.previewScopeFix, { dimensions: "Country" }),

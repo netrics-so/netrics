@@ -219,3 +219,17 @@ export function withMeasureScope(
   );
   return missing.length ? [...groupBy, ...missing] : groupBy;
 }
+
+/**
+ * The error to show for a failed preview: none for a missing scope while the
+ * scope hint beside the preview explains it, so the refusal is never hidden
+ * when no hint is shown.
+ */
+export function previewFailureKey<K extends string>(
+  key: K,
+  hintShown: boolean,
+): K | null {
+  return hintShown && (key === "scope" || key === "windowGrouping")
+    ? null
+    : key;
+}

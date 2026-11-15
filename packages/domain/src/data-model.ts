@@ -169,40 +169,67 @@ function singleValueDimensions(expression?: DataExpression): Set<string> {
 }
 
 /**
- * The dimensions a query must group by, or fix to one value with its filter,
- * to read these measures: their required dimensions and those of every
- * measure they read, as the query checks them. Ordered as the model lists
- * its dimensions; unknown measures and dimensions are left to the query.
- * The published catalog's measureRequiredDimensions (what Studio binds with)
- * is this plus the date grouping windows need.
+ * What these measures need from a query, following every measure they read
+ * as the query does: `grain` must be grouped by or fixed to one value by the
+ * filter (requiredDimensions); `perDate` must be grouped by (the date of a
+ * rolling or day/week comparison, which a filter cannot replace).
  */
-export function modelMeasureScope(
+function measureScope(
   model: SemanticModelDefinition,
   measureIds: readonly string[],
-): string[] {
+): { grain: Set<string>; perDate: Set<string> } {
   const measures = new Map(model.measures.map((m) => [m.id, m]));
   const seen = new Set<string>(),
-    required = new Set<string>();
+    grain = new Set<string>(),
+    perDate = new Set<string>();
   const visit = (id: string) => {
     const measure = measures.get(id);
     if (!measure || seen.has(id)) return;
     seen.add(id);
     for (const dimension of measure.requiredDimensions ?? [])
-      required.add(dimension);
+      grain.add(dimension);
+    if (isWindowedMeasure(measure) && windowNeedsTimeGrouping(measure))
+      perDate.add(measure.timeDimensionId);
     measureDependencies(measure).forEach(visit);
   };
   measureIds.forEach(visit);
-  return model.dimensions.map((d) => d.id).filter((id) => required.has(id));
+  return { grain, perDate };
+}
+const inModelOrder = (model: SemanticModelDefinition, ids: Set<string>) =>
+  model.dimensions.map((d) => d.id).filter((id) => ids.has(id));
+
+/**
+ * The dimensions a query must group by (or, for requiredDimensions, fix to
+ * one value with its filter) to read these measures. Ordered as the model
+ * lists its dimensions; unknown measures and dimensions are left to the
+ * query. The same set as the published catalog's measureRequiredDimensions,
+ * which Studio binds with.
+ */
+export function modelMeasureScope(
+  model: SemanticModelDefinition,
+  measureIds: readonly string[],
+): string[] {
+  const { grain, perDate } = measureScope(model, measureIds);
+  return inModelOrder(model, new Set([...grain, ...perDate]));
 }
 
-/** The required dimensions a query neither groups by nor fixes to one value. */
+/** The part of modelMeasureScope only grouping satisfies: window dates. */
+export function modelMeasureDateScope(
+  model: SemanticModelDefinition,
+  measureIds: readonly string[],
+): string[] {
+  return inModelOrder(model, measureScope(model, measureIds).perDate);
+}
+
+/** The required dimensions a query neither groups by nor (where allowed) fixes to one value. */
 export function missingModelMeasureScope(
   model: SemanticModelDefinition,
   query: Pick<ModelQuery, "measureIds" | "groupBy" | "filter">,
 ): string[] {
   const fixed = singleValueDimensions(query.filter);
+  const { perDate } = measureScope(model, query.measureIds);
   return modelMeasureScope(model, query.measureIds).filter(
-    (id) => !query.groupBy.includes(id) && !fixed.has(id),
+    (id) => !query.groupBy.includes(id) && (perDate.has(id) || !fixed.has(id)),
   );
 }
 

@@ -494,6 +494,8 @@ export const dataEn = {
     previewScope:
       "Your measures keep {dimensions} separate. Show results by {dimensions}, or filter to one value, to preview and publish this draft.",
     previewScopeFix: "Group by {dimensions} to preview",
+    previewScopeDate:
+      "Rolling values and day or week comparisons have one value per date. Show results by {dimensions} to preview and publish this draft.",
     builder: {
       keepWhen: "Keep rows when",
       newValue: "Value of the new column",

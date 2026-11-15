@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   measureRequiredDimensions,
+  missingModelMeasureScope,
+  modelMeasureDateScope,
+  modelMeasureScope,
   querySemanticModel,
   validateSemanticModel,
   type ModelMeasure,
@@ -1137,5 +1140,78 @@ describe("windowed measure validation and edge cases", () => {
       status: "ok",
     });
     expect(result.warnings).not.toContain("decimal_rounded");
+  });
+});
+
+describe("preview scope of windowed measures", () => {
+  // A per-app measure, and every kind of measure built on it.
+  const scoped: ModelMeasure[] = [
+    { ...aggregate("appUnits", "sum", "units"), requiredDimensions: ["app"] },
+    {
+      id: "appUnitsTwice",
+      name: "appUnitsTwice",
+      kind: "formula",
+      expression: call("add", field("appUnits"), field("appUnits")),
+    },
+    rolling("appUnits7", "appUnits", "day", 7),
+    offset("appChangeDay", "appUnits", "day", "change"),
+    offset("appPrevMonth", "appUnits", "month"),
+  ];
+  const definition = model(scoped);
+
+  it("names the date a rolling or day/week comparison is grouped by", () => {
+    expect(modelMeasureScope(definition, ["units7"])).toEqual(["date"]);
+    expect(modelMeasureDateScope(definition, ["units7"])).toEqual(["date"]);
+    expect(modelMeasureScope(definition, ["prevMonth"])).toEqual([]);
+    expect(modelMeasureScope(definition, ["appChangeDay"])).toEqual([
+      "date",
+      "app",
+    ]);
+    expect(modelMeasureDateScope(definition, ["appChangeDay"])).toEqual([
+      "date",
+    ]);
+    expect(modelMeasureScope(definition, ["appPrevMonth"])).toEqual(["app"]);
+  });
+
+  it("agrees with the catalog's required dimensions that Studio binds with", () => {
+    for (const measure of definition.measures)
+      expect(
+        new Set(modelMeasureScope(definition, [measure.id])),
+        measure.id,
+      ).toEqual(new Set(measureRequiredDimensions(definition, [measure.id])));
+  });
+
+  it("previews exactly when nothing required is missing", () => {
+    const range = between("2026-10-01", "2026-10-07");
+    const filters: [string, DataExpression][] = [
+      ["range", range],
+      ["range and one app", call("and", range, appIs("a"))],
+      [
+        "range and one day",
+        call("and", range, call("eq", field("date"), day("2026-10-05"))),
+      ],
+    ];
+    const groupings = [[], ["app"], ["date"], ["date", "app"]];
+    let succeeded = 0,
+      refused = 0;
+    for (const measure of [...scoped.map((m) => m.id), "units7", "pctDay"])
+      for (const groupBy of groupings)
+        for (const [label, filter] of filters) {
+          const query = { measureIds: [measure], groupBy, filter };
+          const missing = missingModelMeasureScope(definition, query);
+          const name = `${measure} by [${groupBy.join(",")}] with ${label}`;
+          if (missing.length) {
+            expect(() => run(query, { extra: scoped }), name).toThrow(
+              /model_measure_scope_required|model_window_time_grouping_required/,
+            );
+            refused++;
+          } else {
+            expect(() => run(query, { extra: scoped }), name).not.toThrow();
+            succeeded++;
+          }
+        }
+    // Both outcomes are exercised.
+    expect(succeeded).toBeGreaterThan(10);
+    expect(refused).toBeGreaterThan(10);
   });
 });

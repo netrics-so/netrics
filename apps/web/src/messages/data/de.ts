@@ -511,6 +511,8 @@ export const dataDe: Catalog<typeof dataEn> = {
     previewScope:
       "Deine Kennzahlen halten {dimensions} getrennt. Zeige die Ergebnisse nach {dimensions} an oder filtere auf einen Wert, um diesen Entwurf zu prüfen und zu veröffentlichen.",
     previewScopeFix: "Nach {dimensions} gruppieren und Vorschau zeigen",
+    previewScopeDate:
+      "Gleitende Werte und Vergleiche mit Vortag oder Vorwoche haben einen Wert pro Datum. Zeige die Ergebnisse nach {dimensions} an, um diesen Entwurf zu prüfen und zu veröffentlichen.",
     builder: {
       keepWhen: "Zeilen behalten, wenn",
       newValue: "Wert der neuen Spalte",
