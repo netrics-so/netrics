@@ -139,8 +139,9 @@ services:
 
   # Optional nightly database dump into ./backups (14 days kept):
   #   docker compose --profile backup up -d
-  # One dump now (README, "Backup and restore"):
+  # One dump now (README, "Backup and restore"), optionally labelled:
   #   docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
+  #   ... -e BACKUP_ONCE=1 -e BACKUP_LABEL=before-restore backup
   # Files are named netrics-<version>-<commit>-<time>.dump after the release
   # that last migrated the database (schema_info, written by migrate), read
   # at dump time, so they stay right across upgrades.
@@ -157,8 +158,17 @@ services:
       - |
         while true; do
           release=$$(psql -h postgres -U netrics -d netrics -Atc "select coalesce(max(value) filter (where key = 'netrics_version'), 'unknown') || '-' || coalesce(left(max(value) filter (where key = 'netrics_commit'), 12), 'unknown') from schema_info" | sed 's/[^A-Za-z0-9._-]/_/g')
-          file=/backups/netrics-$${release:-unknown}-$$(date -u +%Y%m%dT%H%M%SZ).dump
-          pg_dump -h postgres -U netrics -d netrics -Fc -f "$$file" && echo "backup: $$file" || exit 1
+          label=$$(printf '%s' "$${BACKUP_LABEL:-}" | sed 's/[^A-Za-z0-9._-]/_/g')
+          file=/backups/netrics-$${release:-unknown}-$$(date -u +%Y%m%dT%H%M%SZ)$${label:+-$$label}.dump
+          # Written under a temporary name and renamed only when complete:
+          # a failed dump never looks like a backup.
+          if pg_dump -h postgres -U netrics -d netrics -Fc -f "$$file.partial"; then
+            mv "$$file.partial" "$$file" && echo "backup: $$file"
+          else
+            rm -f "$$file.partial"
+            echo "backup failed" >&2
+            exit 1
+          fi
           find /backups -name 'netrics-*.dump' -mtime +14 -delete
           [ -z "$${BACKUP_ONCE:-}" ] || exit 0
           sleep 86400

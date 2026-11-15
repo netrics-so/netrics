@@ -311,13 +311,19 @@ run the `pg_restore` command again, then `docker compose up -d`.
 This is also how to go back after an upgrade.
 
 > [!WARNING]
-> This deletes the installation's current database. Take a dump of it
-> first and keep it until the restored installation works.
+> This deletes the installation's current database. The steps below stop
+> the application and then dump the current database as
+> `netrics-…-before-restore.dump`. Keep that file until the restored
+> installation works.
+
+Copy in the backup you want to go back to, for example the one taken
+before an upgrade. That is **not** the `…-before-restore.dump` just written
+into the same folder.
 
 ```sh
-docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
 docker compose stop api worker scheduler web caddy backup
-docker compose cp backups/netrics-….dump postgres:/tmp/restore.dump
+docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 -e BACKUP_LABEL=before-restore backup
+docker compose cp backups/netrics-<the backup to restore>.dump postgres:/tmp/restore.dump
 docker compose exec postgres pg_restore --list /tmp/restore.dump > /dev/null && echo "dump readable"
 # read the release from the dump (above) and set NETRICS_VERSION
 docker compose exec postgres dropdb -U netrics --force netrics
