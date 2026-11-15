@@ -76,6 +76,26 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     mappingRequired:
       "Wähle für jedes verknüpfte Produkt mindestens eine App und gib einen Namen ein.",
     appDashboard: "App-Dashboard erstellen",
+    editTitle: "Apps von {name} ändern",
+    editSubtitle:
+      "Füge Store-Verbindungen hinzu oder entferne sie und wähle, welche App das Dashboard zeigt, ohne etwas neu zu verbinden.",
+    editRoleCannot:
+      "Die Apps eines Vorlagen-Dashboards können Bearbeiter, Admins oder Inhaber des Workspaces ändern.",
+    editUnavailable:
+      "Die Apps dieses Dashboards lassen sich hier nicht ändern. Es wurde eingerichtet, bevor Vorlagen Versionen hatten, und eine Store-Verbindung, die es genutzt hat, wurde inzwischen gelöscht.",
+    editUpdateFirst:
+      "Die Vorlage hat ein Update für dieses Dashboard. Prüfe es zuerst und ändere danach die Apps.",
+    editOpenUpdate: "Update öffnen",
+    editConnectionsHelp:
+      "Deine eigenen Änderungen an Aufbereitungen, Kennzahlen und Widgets bleiben. Was sich aus den Apps ergibt, wird neu erzeugt: Neue Verbindungen kommen als Entwürfe, entfernte werden abgelöst und bleiben erhalten.",
+    editMapping:
+      "Produkt-Verknüpfungen bleiben in der Zuordnungstabelle dieses Dashboards unter Daten & Kennzahlen.",
+    editMappingLink: "Produkt-Verknüpfungen in Daten & Kennzahlen bearbeiten",
+    reviewChanges: "Änderungen prüfen",
+    planning: "Wird verglichen …",
+    editReviewTitle: "Was sich ändert",
+    scopeUnchanged:
+      "Das sind die Apps, die das Dashboard schon nutzt. Ändere zuerst eine Verbindung oder die App.",
     templateCard: "Apple und Google Play, bereit zum Anpassen",
   },
   dashboardsPage: {
@@ -135,6 +155,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     studioArchived:
       "Archiviert, solange die aktualisierte Kopie auf deinen Bildschirmen läuft. Wechsle zurück, um es wieder zu nutzen und zu bearbeiten.",
     review: "Update prüfen",
+    changeApps: "Apps ändern",
     openUpdate: "Update öffnen",
     dataBanner: "Vorlagen-Update für {name}",
     dataProgress:
@@ -152,6 +173,8 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     unavailable:
       "Für dieses Dashboard sind keine Updates verfügbar. Es wurde eingerichtet, bevor Vorlagen Versionen hatten, und eine seiner Store-Verbindungen wurde seitdem gelöscht. Deshalb kann netrics deine Änderungen nicht von denen der Vorlage unterscheiden. Das Dashboard funktioniert weiter wie bisher.",
     upToDate: "Dieses Dashboard ist auf dem Stand seiner Vorlage.",
+    scopeIntro:
+      "Nichts ändert sich, bevor du es sagst. Was sich aus deinen Apps ergibt, wird aus deinen Apps neu erzeugt; wir fragen nur dort, wo du etwas geändert hast. Datenänderungen werden Entwürfe, die du in den Dateneinstellungen veröffentlichst; ein neuer App-Filter kommt als aktualisierte Dashboard-Kopie, die du vergleichst, bevor sie auf deine Bildschirme kommt.",
     intro:
       "Nichts ändert sich, bevor du es willst. Datenänderungen werden zu Entwürfen, die du in den Dateneinstellungen veröffentlichst. Dashboard-Änderungen kommen als aktualisierte Kopie, die du vergleichst, bevor sie auf deine Bildschirme kommt; dein Original wird archiviert, damit du zurückwechseln kannst.",
     steps: {
@@ -214,6 +237,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     keepMine: "Meine behalten",
     remove: "Entfernen",
     keep: "Behalten",
+    detach: "Ablösen (bleibt unter Daten & Kennzahlen)",
     templateValue: "Vorlage: {text}",
     yourValue: "Deine: {text}",
     absent: "entfernt",
@@ -232,6 +256,8 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
         "Wenn du die Version der Vorlage übernimmst, kommt {dataset} zurück, das du aus diesen Kennzahlen entfernt hast.",
       removedDatasetUnknown:
         "Wenn du die Version der Vorlage übernimmst, kommen Daten zurück, die du aus diesen Kennzahlen entfernt hast.",
+      scopeRemoval:
+        "Diese Verbindung gehört nicht mehr zum Dashboard. Ihre Aufbereitung wird von der Vorlage abgelöst und bleibt mit deinen Änderungen unter Daten & Kennzahlen; sie wird nie gelöscht.",
       proposeRemoval:
         "Die neue Vorlage hat das nicht mehr. Du hast es nie geändert: Entferne es oder behalte es als deins.",
     },

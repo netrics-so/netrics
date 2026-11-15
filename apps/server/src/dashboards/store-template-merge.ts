@@ -148,17 +148,50 @@ function datasetLists(
   return { original: of(original), current: of(current), next: of(next) };
 }
 
+export interface ClassifyOptions {
+  /**
+   * A change of the install's app scope (not a template update): the items
+   * of a connection the install loses are proposed for removal instead of
+   * following the scope, the customer's edits included. Either choice
+   * detaches the record; nothing is deleted.
+   */
+  proposeRemovedConnections?: boolean;
+}
+
 /** Every item that is not unchanged, by ref. */
 export function classify(
   original: Items,
   current: Items,
   next: Items,
+  options: ClassifyOptions = {},
 ): PlanItem[] {
   const scope = scopeTest(original, current, next);
+  const before = connections(original, current),
+    after = connections(next);
+  const removedConnection = (ref: ItemRef) => {
+    const id = sourceConnection(ref);
+    return (
+      options.proposeRemovedConnections === true &&
+      id !== undefined &&
+      before.has(id) &&
+      !after.has(id)
+    );
+  };
   const plan: PlanItem[] = [];
   for (const ref of refsOf(original, current, next)) {
     const o = original.get(ref),
       c = current.get(ref);
+    if (removedConnection(ref)) {
+      if (c === undefined) continue;
+      plan.push({
+        ref,
+        change: "removed",
+        outcome: "propose_removal",
+        ...(o === undefined ? {} : { original: o }),
+        current: c,
+      });
+      continue;
+    }
     let n = next.get(ref);
     // A model's datasets: what the update writes (the template's, the
     // customer's own kept, removed ones left out), not the template's list.
@@ -220,10 +253,11 @@ export function merge(
   current: Items,
   next: Items,
   decisions: Decision[],
+  options: ClassifyOptions = {},
 ): Items {
   const byRef = new Map(decisions.map((d) => [d.ref, d.choice]));
   const plan = new Map(
-    classify(original, current, next).map((item) => [item.ref, item]),
+    classify(original, current, next, options).map((item) => [item.ref, item]),
   );
   const missing: ItemRef[] = [];
   const merged: Items = new Map();

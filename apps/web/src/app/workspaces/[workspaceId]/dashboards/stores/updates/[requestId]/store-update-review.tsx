@@ -266,7 +266,7 @@ export function StoreUpdateReview({
               plan={plan}
               decisions={decisions}
               onDecide={(ref, choice) =>
-                setDecisions((current) => ({ ...current, [ref]: choice }))
+                setDecisions((current) => withChoice(current, ref, choice))
               }
               onApply={() => void apply()}
               pending={pending === "apply"}
@@ -345,20 +345,43 @@ export function ReviewView({
   pending,
   notice,
   error,
+  scopeChange = false,
 }: {
   plan: StoreTemplatePlan;
   decisions: Decisions;
-  onDecide: (ref: string, choice: Choice) => void;
+  /** null takes a choice back (an unticked acknowledgement). */
+  onDecide: (ref: string, choice: Choice | null) => void;
   onApply: () => void;
   pending: boolean;
   notice: "reloaded" | null;
   error: string | null;
+  /**
+   * A change of the install's apps (not a template update): a removed
+   * connection's preparation is decided as a whole.
+   */
+  scopeChange?: boolean;
 }) {
   const t = useT("storeUpdate");
-  const missing = missingDecisions(plan, decisions);
-  const asked = plan.records
-    .flatMap((record) => record.items)
-    .filter(needsDecision).length;
+  // In a change of apps a removed connection's preparation is one
+  // acknowledgement, counted once (RecordRemoval).
+  const whole = scopeChange ? plan.records.filter(isWholeRemoval) : [];
+  const inWhole = new Set(
+    whole.flatMap((record) => record.items.map((item) => item.ref)),
+  );
+  const missingRefs = missingDecisions(plan, decisions);
+  const missing = [
+    ...missingRefs.filter((ref) => !inWhole.has(ref)),
+    ...whole
+      .filter((record) =>
+        record.items.some((item) => missingRefs.includes(item.ref)),
+      )
+      .map((record) => record.key),
+  ];
+  const asked =
+    plan.records
+      .flatMap((record) => record.items)
+      .filter((item) => needsDecision(item) && !inWhole.has(item.ref)).length +
+    whole.length;
   const scope = plan.records.reduce(
     (count, record) => count + groupItems(record).scope,
     0,
@@ -366,10 +389,12 @@ export function ReviewView({
   return (
     <section className="store-update-review" aria-labelledby="review-title">
       <h2 id="review-title">{t("steps.review")}</h2>
-      <p>
-        <StoreUpdateSummary summary={plan.summary} />
-      </p>
-      <p className="muted">{t("intro")}</p>
+      {scopeChange ? null : (
+        <p>
+          <StoreUpdateSummary summary={plan.summary} />
+        </p>
+      )}
+      <p className="muted">{scopeChange ? t("scopeIntro") : t("intro")}</p>
       {scope > 0 ? (
         <p className="muted">{t("scopeNote", { count: scope })}</p>
       ) : null}
@@ -385,6 +410,7 @@ export function ReviewView({
           plan={plan}
           decisions={decisions}
           onDecide={onDecide}
+          scope={scopeChange}
         />
       ))}
       <div className="store-update-apply">
@@ -419,11 +445,13 @@ function RecordReview({
   plan,
   decisions,
   onDecide,
+  scope,
 }: {
   record: PlanRecord;
   plan: StoreTemplatePlan;
   decisions: Decisions;
-  onDecide: (ref: string, choice: Choice) => void;
+  onDecide: (ref: string, choice: Choice | null) => void;
+  scope: boolean;
 }) {
   const t = useT("storeUpdate");
   const groups = groupItems(record);
@@ -433,6 +461,14 @@ function RecordReview({
     groups.template.length +
     groups.customer.length;
   if (shown === 0) return null;
+  if (scope && isWholeRemoval(record))
+    return (
+      <RecordRemoval
+        record={record}
+        decisions={decisions}
+        onDecide={onDecide}
+      />
+    );
   return (
     <section className="card store-update-record">
       <h3>
@@ -498,6 +534,68 @@ function RecordReview({
           ))}
         </ItemGroup>
       ) : null}
+    </section>
+  );
+}
+
+/** A record whose every item is proposed for removal. */
+const isWholeRemoval = (record: PlanRecord) =>
+  record.items.length > 0 &&
+  record.items.every((item) => item.outcome === "propose_removal");
+
+/** Decisions with `choice` for `ref`, or without it for null. */
+export function withChoice(
+  decisions: Decisions,
+  ref: string,
+  choice: Choice | null,
+): Decisions {
+  const next = { ...decisions };
+  if (choice === null) delete next[ref];
+  else next[ref] = choice;
+  return next;
+}
+
+/**
+ * The preparation of a connection the install no longer reads: removing
+ * and keeping both detach it from the template (it stays, with the
+ * customer's changes), so it is one acknowledgement for all its items.
+ */
+function RecordRemoval({
+  record,
+  decisions,
+  onDecide,
+}: {
+  record: PlanRecord;
+  decisions: Decisions;
+  onDecide: (ref: string, choice: Choice | null) => void;
+}) {
+  const t = useT("storeUpdate");
+  const detached = record.items.every(
+    (item) => decisions[item.ref] === "remove",
+  );
+  return (
+    <section className="card store-update-record">
+      <fieldset className="store-update-decision">
+        <legend>
+          <span className="store-update-kind">{t(`kinds.${record.kind}`)}</span>{" "}
+          {record.name}
+        </legend>
+        <p className="muted">{t("why.scopeRemoval")}</p>
+        <div className="store-update-choices">
+          <label>
+            <input
+              type="checkbox"
+              name={record.key}
+              checked={detached}
+              onChange={(event) => {
+                for (const item of record.items)
+                  onDecide(item.ref, event.target.checked ? "remove" : null);
+              }}
+            />{" "}
+            {t("detach")}
+          </label>
+        </div>
+      </fieldset>
     </section>
   );
 }

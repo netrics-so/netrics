@@ -95,6 +95,93 @@ export async function pairScreen(
 type Widget = Json & { title?: string | null };
 
 /**
+ * An App portfolio install of two store connections ("Apple team", "Play
+ * account"), plus a third connection it does not read yet ("Second Play"),
+ * all stored as set up without network.
+ */
+export async function installWithConnections(
+  page: Page,
+  workspaceId: string,
+): Promise<{
+  requestId: string;
+  dashboardId: string;
+  connections: Record<"apple" | "play" | "second", string>;
+}> {
+  const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
+  try {
+    const add = async (connectorId: string, name: string) => {
+      const [row] = await sql<{ id: string }[]>`
+        insert into connections (workspace_id, connector_id, name, setup_pending)
+        values (${workspaceId}, ${connectorId}, ${name}, false)
+        returning id`;
+      return row!.id;
+    };
+    const connections = {
+      apple: await add("app-store-connect", "Apple team"),
+      play: await add("google-play", "Play account"),
+      second: await add("google-play", "Second Play"),
+    };
+    const requestId = randomUUID();
+    const install = () =>
+      page.request.post(
+        `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
+        {
+          headers: { origin: ORIGIN },
+          data: {
+            requestId,
+            name: "App portfolio",
+            connections: [connections.apple, connections.play],
+            groups: [],
+          },
+        },
+      );
+    // Seeding only: parallel journeys' serializable installs can still
+    // conflict after the API's own retries (#604); the same request is
+    // idempotent. Any other refusal fails the journey.
+    const conflicted = async (answer: Awaited<ReturnType<typeof install>>) =>
+      answer.status() === 409 &&
+      ((await answer.json()) as { error?: string }).error ===
+        "version_conflict";
+    let response = await install();
+    for (
+      let attempt = 0;
+      attempt < 3 && (await conflicted(response));
+      attempt++
+    )
+      response = await install();
+    expect(response.status(), await response.text()).toBe(200);
+    const { dashboardId } = (await response.json()) as { dashboardId: string };
+    return { requestId, dashboardId, connections };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/** The install's template records, detached or not, read past the API. */
+export async function templateRecords(
+  workspaceId: string,
+  requestId: string,
+): Promise<{ key: string; recordId: string; detached: boolean }[]> {
+  const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
+  try {
+    const rows = await sql<
+      { key: string; record_id: string; detached: boolean }[]
+    >`
+      select key, record_id, detached_at is not null as detached
+      from data_template_records
+      where workspace_id = ${workspaceId} and request_id = ${requestId}
+      order by key`;
+    return rows.map((row) => ({
+      key: row.key,
+      recordId: row.record_id,
+      detached: row.detached,
+    }));
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
  * An App Store portfolio install with an update to offer, without network:
  * a store connection is stored as set up (no credentials are needed until
  * it syncs), the template is installed through the API, and the install is

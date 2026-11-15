@@ -9,6 +9,8 @@ import {
   type StoreTemplateApplyRequest,
   type StoreTemplateInstallList,
   type StoreTemplatePlan,
+  type StoreTemplateScope,
+  type StoreTemplateScopeRequest,
   type StoreTemplateUpdate,
 } from "@netrics/contracts";
 import {
@@ -69,6 +71,7 @@ import {
   merge,
   MergeDecisionMissing,
   summarize,
+  type ClassifyOptions,
   type Decision,
   type PlanItem,
   type UpdateSummary,
@@ -81,7 +84,12 @@ import {
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
+  storeTemplateInputsSchema,
 } from "./store-template.js";
+import {
+  storeTemplateSources,
+  unmappedProductRow,
+} from "./store-template-service.js";
 
 /**
  * "Update available" for store-template installs (template updates, 11E):
@@ -101,7 +109,7 @@ type PreparationRow = typeof schema.dataPreparations.$inferSelect;
 type ModelRow = typeof schema.dataModels.$inferSelect;
 type Kind = "preparation" | "model" | "dashboard";
 
-function reject(code: string, status: 404 | 409): never {
+function reject(code: string, status: 400 | 404 | 409): never {
   throw new DataServiceError(code, status);
 }
 
@@ -221,6 +229,14 @@ type Original =
 
 class BaselineUnavailable extends Error {}
 
+/** An app scope the customer chose for an install (scope change). */
+interface ScopeChoice {
+  connections: string[];
+  appScope?: { connectionId: string; appId: string } | null;
+}
+const appKeyOf = (app: { connectionId: string; appId: string }) =>
+  app.connectionId + ":" + app.appId;
+
 interface RecordPlan {
   key: string;
   kind: Kind;
@@ -250,6 +266,11 @@ interface ComputedPlan {
   idsToKeys: Map<string, string>;
   /** Per dashboard key: the widget and slide keys its current state used. */
   dashboardKeys: Map<string, Record<string, string>>;
+  classifyOptions: ClassifyOptions;
+  /** Scope change: detached keys the new scope builds again, by state. */
+  reattached: string[];
+  /** Same, but their record was deleted since: built anew. */
+  replaced: string[];
 }
 
 const isUpdateAvailable = (
@@ -325,6 +346,11 @@ export function createStoreTemplateUpdateService(deps: {
     tx: Transaction,
     workspaceId: string,
     requestId: string,
+    /**
+     * A change of the install's app scope: the plan builds the same version
+     * from these inputs instead of the stored ones (scopeInputs).
+     */
+    scope?: { inputs: StoreTemplateInputs },
   ): Promise<ComputedPlan | null> {
     // Read-only: an install made before versions is completed in memory
     // (keys renamed, inputs derived); applying an update writes it.
@@ -335,8 +361,8 @@ export function createStoreTemplateUpdateService(deps: {
     );
     if (!completion.ok) return null;
     const install = (await installRow(tx, workspaceId, requestId))!;
-    const inputs = completion.inputs;
-    const rows = (await recordRows(tx, workspaceId, requestId)).map((row) => {
+    const inputs = scope?.inputs ?? completion.inputs;
+    let rows = (await recordRows(tx, workspaceId, requestId)).map((row) => {
       if (!completion.pending) return row;
       const key = completion.keys[row.key] ?? row.key;
       return {
@@ -348,6 +374,46 @@ export function createStoreTemplateUpdateService(deps: {
             : row.widgetKeys,
       };
     });
+    const reattached: string[] = [],
+      replaced: string[] = [];
+    if (scope) {
+      // A connection added back: the records detached when it was removed
+      // are the install's again, as the customer left them; one deleted
+      // since is built anew.
+      const keys = new Set(template.keys(inputs));
+      const back = rows.filter(
+        (row) =>
+          row.detachedAt !== null &&
+          keys.has(row.key) &&
+          (row.kind === "preparation" || row.kind === "model"),
+      );
+      const exists = new Set<string>();
+      for (const [table, kind] of [
+        [schema.dataPreparations, "preparation"],
+        [schema.dataModels, "model"],
+      ] as const) {
+        const ids = back
+          .filter((row) => row.kind === kind)
+          .map((row) => row.recordId);
+        if (ids.length)
+          for (const found of await tx
+            .select({ id: table.id })
+            .from(table)
+            .where(
+              and(eq(table.workspaceId, workspaceId), inArray(table.id, ids)),
+            ))
+            exists.add(found.id);
+      }
+      for (const row of back)
+        (exists.has(row.recordId) ? reattached : replaced).push(row.key);
+      rows = rows.flatMap((row) =>
+        !back.includes(row)
+          ? [row]
+          : exists.has(row.recordId)
+            ? [{ ...row, detachedAt: null }]
+            : [],
+      );
+    }
     const live = rows.filter(
       (row) => row.detachedAt === null && row.kind !== "dataset",
     );
@@ -569,7 +635,8 @@ export function createStoreTemplateUpdateService(deps: {
 
     // By key, whatever keys the rows were stored under (baseline renames).
     plans.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-    const plan = classify(original, current, upcoming);
+    const classifyOptions = { proposeRemovedConnections: scope !== undefined };
+    const plan = classify(original, current, upcoming, classifyOptions);
     const byRecord = new Map<string, PlanItem[]>();
     for (const item of plan) {
       const key = recordKeyOf(item.ref);
@@ -579,6 +646,8 @@ export function createStoreTemplateUpdateService(deps: {
     const basis = createHash("sha256")
       .update(
         JSON.stringify([
+          // A scope plan is never the basis of an update, nor the reverse.
+          scope ? "scope" : "update",
           template.version,
           install.templateVersion,
           // The inputs the next version is built from (apps, scope, name).
@@ -607,6 +676,9 @@ export function createStoreTemplateUpdateService(deps: {
       models,
       idsToKeys,
       dashboardKeys,
+      classifyOptions,
+      reattached,
+      replaced,
     };
   }
 
@@ -614,9 +686,10 @@ export function createStoreTemplateUpdateService(deps: {
     tx: Transaction,
     workspaceId: string,
     requestId: string,
+    scope?: { inputs: StoreTemplateInputs },
   ) {
     try {
-      return await computePlan(tx, workspaceId, requestId);
+      return await computePlan(tx, workspaceId, requestId, scope);
     } catch (error) {
       if (error instanceof BaselineUnavailable) return null;
       throw error;
@@ -733,6 +806,130 @@ export function createStoreTemplateUpdateService(deps: {
   }
 
   /**
+   * The inputs an install is built from with `choice` as its app scope:
+   * the stored inputs (name, locale, project, groups) with the chosen
+   * connections (kept ones as stored, new ones resolved and, with
+   * `register`, their sources registered) and the app filter's fixed value
+   * derived as at install (the app's install-time group, else the app).
+   */
+  async function scopeInputs(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    choice: ScopeChoice,
+    register: boolean,
+  ): Promise<StoreTemplateInputs> {
+    const completion = await deriveInstallCompletion(
+      tx,
+      workspaceId,
+      requestId,
+    );
+    if (!completion.ok) reject("store_template_baseline_unavailable", 409);
+    const base = completion.inputs;
+    const ids = [...new Set(choice.connections)].sort();
+    if (!ids.length) reject("store_scope_invalid", 400);
+    const appScope = choice.appScope ?? null;
+    if (appScope && !ids.includes(appScope.connectionId))
+      reject("store_scope_invalid", 400);
+    const kept = base.connections.filter((c) => ids.includes(c.id));
+    const added = await storeTemplateSources(
+      tx,
+      {
+        registry: deps.registry,
+        policy: deps.policy ?? DEFAULT_DATA_POLICY,
+      },
+      workspaceId,
+      ids.filter((id) => !kept.some((c) => c.id === id)),
+      { register },
+    );
+    const group = appScope
+      ? base.groups?.find((candidate) =>
+          candidate.apps.some((app) => appKeyOf(app) === appKeyOf(appScope)),
+        )
+      : undefined;
+    return {
+      ...base,
+      connections: [...kept, ...added].sort((a, b) =>
+        a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+      ),
+      fixedProduct: appScope
+        ? group
+          ? "product:" + group.id
+          : appKeyOf(appScope)
+        : null,
+    };
+  }
+
+  /**
+   * Adds the unallocated product row of each of `sources` to the install's
+   * products table where its product id is absent; a new snapshot of the
+   * table with every existing row as it is.
+   */
+  async function addProductRows(
+    data: ReturnType<typeof createDataService>,
+    actor: Actor,
+    datasetId: string | undefined,
+    sources: { id: string; name: string }[],
+    locale: Locale,
+  ) {
+    if (!datasetId || !sources.length) return;
+    const first = await data.readManual(actor, datasetId, {
+      offset: 0,
+      limit: 1000,
+    });
+    const records = [...first.records];
+    while (records.length < first.total) {
+      const page = await data.readManual(actor, datasetId, {
+        generationId: first.generationId ?? undefined,
+        offset: records.length,
+        limit: 1000,
+      });
+      if (!page.records.length) break;
+      records.push(...page.records);
+    }
+    const known = new Set(records.map((record) => record.values.product_id));
+    const added = sources
+      .map((source) => unmappedProductRow(source, locale))
+      .filter((row) => !known.has(row.values.product_id));
+    if (!added.length) return;
+    await data.saveManual(
+      actor,
+      {
+        definition: first.definition,
+        records: [...records, ...added],
+        generationId: first.generationId,
+      },
+      datasetId,
+    );
+  }
+
+  /** The app scope an install's inputs describe (scopeInputs reversed). */
+  function scopeOf(inputs: StoreTemplateInputs): ScopeChoice {
+    const fixed = inputs.fixedProduct;
+    let appScope: ScopeChoice["appScope"] = null;
+    if (fixed?.startsWith("product:")) {
+      const group = inputs.groups?.find(
+        (candidate) => "product:" + candidate.id === fixed,
+      );
+      // An app of the group the install still reads, so the scope applies.
+      appScope =
+        group?.apps.find((app) =>
+          inputs.connections.some((c) => c.id === app.connectionId),
+        ) ?? null;
+    } else if (fixed) {
+      const cut = fixed.indexOf(":");
+      appScope = {
+        connectionId: fixed.slice(0, cut),
+        appId: fixed.slice(cut + 1),
+      };
+    }
+    return {
+      connections: inputs.connections.map((connection) => connection.id).sort(),
+      appScope,
+    };
+  }
+
+  /**
    * Writes the update's data drafts in tx: each preparation and model the
    * merge changes is saved as a draft of its record (its published version
    * stays live), records the new version adds are created unpublished, and
@@ -744,6 +941,8 @@ export function createStoreTemplateUpdateService(deps: {
     actor: Actor,
     requestId: string,
     body: StoreTemplateApplyRequest,
+    /** A change of the install's app scope instead of a template update. */
+    scope?: ScopeChoice,
   ): Promise<StoreTemplateUpdate> {
     const at = now();
     const install = await installRow(tx, actor.workspaceId, requestId);
@@ -757,12 +956,47 @@ export function createStoreTemplateUpdateService(deps: {
     );
     if (!completed.ok) reject("store_template_baseline_unavailable", 409);
     const rows = await recordRows(tx, actor.workspaceId, requestId);
-    if (!isUpdateAvailable(install, rows, template.version))
-      reject("store_template_up_to_date", 409);
-    const plan = await planOrUnavailable(tx, actor.workspaceId, requestId);
+    let plan: ComputedPlan | null;
+    if (scope) {
+      if (isUpdateAvailable(install, rows, template.version))
+        reject("store_template_update_available", 409);
+      // The plan the customer reviewed: new connections' sources as they
+      // were then (not registered yet), so the basis compares.
+      const reviewed = await planOrUnavailable(
+        tx,
+        actor.workspaceId,
+        requestId,
+        {
+          inputs: await scopeInputs(
+            tx,
+            actor.workspaceId,
+            requestId,
+            scope,
+            false,
+          ),
+        },
+      );
+      if (!reviewed) reject("store_template_baseline_unavailable", 409);
+      if (reviewed.basis !== body.basis) reject("store_update_stale", 409);
+      if (!reviewed.records.some((record) => record.items.length > 0))
+        reject("store_scope_unchanged", 409);
+      plan = await planOrUnavailable(tx, actor.workspaceId, requestId, {
+        inputs: await scopeInputs(
+          tx,
+          actor.workspaceId,
+          requestId,
+          scope,
+          true,
+        ),
+      });
+    } else {
+      if (!isUpdateAvailable(install, rows, template.version))
+        reject("store_template_up_to_date", 409);
+      plan = await planOrUnavailable(tx, actor.workspaceId, requestId);
+    }
     if (!plan) reject("store_template_baseline_unavailable", 409);
     // The same plan applied twice (double click, two tabs) is stale first.
-    if (plan.basis !== body.basis) reject("store_update_stale", 409);
+    if (!scope && plan.basis !== body.basis) reject("store_update_stale", 409);
     // An earlier update's drafts are the customer's to publish, or they
     // close that update (closeUpdate) to leave them as ordinary drafts:
     // a new apply would build on them and lose track of them.
@@ -776,6 +1010,7 @@ export function createStoreTemplateUpdateService(deps: {
         plan.current,
         plan.upcoming,
         body.decisions as Decision[],
+        plan.classifyOptions,
       );
     } catch (error) {
       if (error instanceof MergeDecisionMissing)
@@ -1015,11 +1250,54 @@ export function createStoreTemplateUpdateService(deps: {
           ),
         );
     }
+    // A connection added back: its kept records are tracked again; a key
+    // whose record was deleted since points at the one just created.
+    if (plan.reattached.length)
+      await tx
+        .update(schema.dataTemplateRecords)
+        .set({ detachedAt: null })
+        .where(
+          and(
+            eq(schema.dataTemplateRecords.workspaceId, actor.workspaceId),
+            eq(schema.dataTemplateRecords.requestId, requestId),
+            inArray(schema.dataTemplateRecords.key, plan.reattached),
+          ),
+        );
+    if (plan.replaced.length)
+      await tx
+        .delete(schema.dataTemplateRecords)
+        .where(
+          and(
+            eq(schema.dataTemplateRecords.workspaceId, actor.workspaceId),
+            eq(schema.dataTemplateRecords.requestId, requestId),
+            inArray(schema.dataTemplateRecords.key, plan.replaced),
+          ),
+        );
     if (created.length)
       await tx.insert(schema.dataTemplateRecords).values(created);
+    // An added connection's unallocated product row, as install writes it;
+    // the customer's rows stay. Inert until its preparations are published.
+    if (scope && completed.ok)
+      await addProductRows(
+        data,
+        actor,
+        plan.ids["dataset:products"],
+        plan.inputs.connections.filter(
+          (connection) =>
+            !completed.inputs.connections.some((c) => c.id === connection.id),
+        ),
+        plan.inputs.locale,
+      );
     await tx
       .update(schema.dataTemplateInstalls)
-      .set({ templateVersion: template.version, updatedAt: at })
+      .set({
+        templateVersion: template.version,
+        updatedAt: at,
+        // What the install is built from from now on (scope change).
+        ...(scope
+          ? { inputs: storeTemplateInputsSchema.parse(plan.inputs) }
+          : {}),
+      })
       .where(
         and(
           eq(schema.dataTemplateInstalls.workspaceId, actor.workspaceId),
@@ -1098,12 +1376,20 @@ export function createStoreTemplateUpdateService(deps: {
     await insertAuditEvent(tx, {
       workspaceId: actor.workspaceId,
       actorUserId: actor.callerId,
-      action: "data.store_template_update_applied",
+      action: scope
+        ? "data.store_template_scope_changed"
+        : "data.store_template_update_applied",
       target: requestId,
       metadata: {
         requestId,
         fromVersion: plan.install.templateVersion,
         toVersion: template.version,
+        ...(scope
+          ? {
+              connections: plan.inputs.connections.map((c) => c.id),
+              appScope: scope.appScope ?? null,
+            }
+          : {}),
       },
     });
     return updateView(tx, actor.workspaceId, update!);
@@ -1742,6 +2028,115 @@ export function createStoreTemplateUpdateService(deps: {
                   sql`select pg_advisory_xact_lock(hashtext('netrics.store_template'),hashtext(${actor.workspaceId + ":" + requestId}))`,
                 );
                 return writeUpdate(tx, actor, requestId, body);
+              },
+              { isolationLevel: "serializable" },
+            ),
+          { retryable: isRetryableDataConflict },
+        );
+      } catch (error) {
+        if (isDataConflict(error)) reject("version_conflict", 409);
+        if (error instanceof DatasetStoreError)
+          throw new DataServiceError(
+            error.code,
+            datasetStoreStatus(error.code),
+          );
+        throw error;
+      }
+    },
+    /** The connections and app scope an install is built from. */
+    scope(actor: Actor, requestId: string): Promise<StoreTemplateScope> {
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        async (tx) => {
+          const install = await installRow(tx, actor.workspaceId, requestId);
+          if (!install) reject("store_template_not_found", 404);
+          const completion = await deriveInstallCompletion(
+            tx,
+            actor.workspaceId,
+            requestId,
+          );
+          if (!completion.ok)
+            reject("store_template_baseline_unavailable", 409);
+          const { connections, appScope } = scopeOf(completion.inputs);
+          return { requestId, connections, appScope: appScope ?? null };
+        },
+      );
+    },
+    /**
+     * The plan of changing an install's app scope: the same template
+     * version built from the chosen connections and app scope. What the
+     * scope derives is `scope` (no conflict), the preparations of removed
+     * connections are proposed for removal; read-only.
+     */
+    scopePlan(
+      actor: Actor,
+      requestId: string,
+      choice: ScopeChoice,
+    ): Promise<StoreTemplatePlan> {
+      return withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        async (tx) => {
+          const install = await installRow(tx, actor.workspaceId, requestId);
+          if (!install) reject("store_template_not_found", 404);
+          const rows = await recordRows(tx, actor.workspaceId, requestId);
+          if (isUpdateAvailable(install, rows, template.version))
+            reject("store_template_update_available", 409);
+          const computed = await planOrUnavailable(
+            tx,
+            actor.workspaceId,
+            requestId,
+            {
+              inputs: await scopeInputs(
+                tx,
+                actor.workspaceId,
+                requestId,
+                choice,
+                false,
+              ),
+            },
+          );
+          if (!computed) reject("store_template_baseline_unavailable", 409);
+          return {
+            requestId,
+            fromVersion: computed.install.templateVersion,
+            toVersion: computed.install.templateVersion,
+            basis: computed.basis,
+            summary: computed.summary,
+            records: planRecords(
+              computed.records.filter((record) => record.items.length > 0),
+            ),
+          };
+        },
+      );
+    },
+    /**
+     * Changes an install's app scope like an update (apply): drafts for the
+     * data the scope derives, the new connections' sources registered,
+     * removed connections' records detached, the dashboard's app filter
+     * through the updated copy; the stored inputs follow.
+     */
+    async changeScope(
+      actor: Actor,
+      requestId: string,
+      body: StoreTemplateScopeRequest,
+    ): Promise<StoreTemplateUpdate> {
+      try {
+        return await retryOnSerializationFailure(
+          () =>
+            withWorkspace(
+              deps.db,
+              { workspaceId: actor.workspaceId, userId: actor.callerId },
+              async (tx) => {
+                await lockInstall(tx, actor.workspaceId, requestId);
+                return writeUpdate(
+                  tx,
+                  actor,
+                  requestId,
+                  { basis: body.basis, decisions: body.decisions ?? [] },
+                  { connections: body.connections, appScope: body.appScope },
+                );
               },
               { isolationLevel: "serializable" },
             ),

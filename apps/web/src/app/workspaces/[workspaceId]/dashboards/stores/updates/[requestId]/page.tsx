@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
+import { storeScopePath } from "@/lib/store-updates";
 
 import { StoreUpdateReview } from "./store-update-review";
 
@@ -71,7 +72,17 @@ export default async function StoreUpdatePage({
         <div>
           <h1>{t("title", { name: install.name })}</h1>
         </div>
-        {back}
+        <div className="actions">
+          {/* The roles the dashboard page shows the link to. */}
+          {install.error === null &&
+          can(role, "data:edit") &&
+          can(role, "dashboards:create") ? (
+            <Link href={storeScopePath(workspaceId, requestId)}>
+              {t("changeApps")}
+            </Link>
+          ) : null}
+          {back}
+        </div>
       </header>
       <StoreUpdateReview
         workspaceId={workspaceId}

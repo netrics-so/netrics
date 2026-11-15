@@ -3163,4 +3163,563 @@ describe("store-template update routes", { timeout: TIMEOUT_MS }, () => {
       ).statusCode,
     ).toBe(404);
   });
+
+  it("changes an install's apps for editors only, within the workspace", async () => {
+    // An install of its own: the shared one is at the fixture's version.
+    const install = await installIn(["google-play"]);
+    for (const [email, role] of [
+      ["updates-editor@example.test", "editor"],
+      ["updates-viewer@example.test", "viewer"],
+    ] as const)
+      await owner`insert into memberships (workspace_id, user_id, role)
+        select ${install.workspaceId}, id, ${role} from users where email=${email}`;
+    const base = `/installs/${install.requestId}`;
+    const extra = await newConnection(install.workspaceId);
+    const connections = [install.connections[0]!.id, extra.id];
+    const query = `?connections=${connections.join(",")}`;
+    const put = (workspaceId: string, cookie: string, payload: unknown) =>
+      app.inject({
+        method: "PUT",
+        url: `/v1/workspaces/${workspaceId}/dashboard-templates/stores${base}/scope`,
+        headers: { cookie },
+        payload: payload as object,
+      });
+    for (const path of [`${base}/scope`, `${base}/scope-plan${query}`])
+      expect((await get(install.workspaceId, path, viewer)).statusCode).toBe(
+        403,
+      );
+    expect(
+      (
+        await put(install.workspaceId, viewer, {
+          basis: "0".repeat(64),
+          connections,
+        })
+      ).statusCode,
+    ).toBe(403);
+    // Another workspace's install and connections are not found.
+    for (const path of [`${base}/scope`, `${base}/scope-plan${query}`]) {
+      const response = await get(strangerWorkspace, path, stranger);
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "store_template_not_found" });
+    }
+    const foreign = await newConnection(strangerWorkspace);
+    const refused = await get(
+      install.workspaceId,
+      `${base}/scope-plan?connections=${install.connections[0]!.id},${foreign.id}`,
+      editor,
+    );
+    expect(refused.statusCode).toBe(404);
+    expect(refused.json()).toEqual({ error: "connection_not_found" });
+    for (const bad of ["?connections=nope", "?connections=", ""])
+      expect(
+        (await get(install.workspaceId, `${base}/scope-plan${bad}`, editor))
+          .statusCode,
+      ).toBe(400);
+
+    const current = await get(install.workspaceId, `${base}/scope`, editor);
+    expect(current.statusCode).toBe(200);
+    expect(current.json()).toEqual({
+      requestId: install.requestId,
+      connections: [install.connections[0]!.id],
+      appScope: null,
+    });
+    const planned = await get(
+      install.workspaceId,
+      `${base}/scope-plan${query}&appScope=${extra.id}:com.example`,
+      editor,
+    );
+    expect(planned.statusCode).toBe(200);
+    const plan = storeTemplatePlanSchema.parse(planned.json());
+    expect(
+      item(plan, "dashboard:portfolio#filter:app.fixedValue"),
+    ).toMatchObject({ outcome: "scope" });
+    const stale = await put(install.workspaceId, editor, {
+      basis: "0".repeat(64),
+      connections,
+      appScope: { connectionId: extra.id, appId: "com.example" },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toEqual({ error: "store_update_stale" });
+    const changed = await put(install.workspaceId, editor, {
+      basis: plan.basis,
+      connections,
+      appScope: { connectionId: extra.id, appId: "com.example" },
+    });
+    expect(changed.statusCode).toBe(200);
+    expect(storeTemplateUpdateSchema.parse(changed.json()).drafts).not.toEqual(
+      [],
+    );
+    expect(
+      (await get(install.workspaceId, `${base}/scope`, editor)).json(),
+    ).toMatchObject({
+      connections: [...connections].sort(),
+      appScope: { connectionId: extra.id, appId: "com.example" },
+    });
+  });
+});
+
+/** A store connection of the workspace that no install reads yet. */
+async function newConnection(
+  workspaceId: string,
+  connectorId: "app-store-connect" | "google-play" = "google-play",
+) {
+  const [row] = await withWorkspace(db, { workspaceId }, (tx) =>
+    tx
+      .insert(schema.connections)
+      .values({
+        workspaceId,
+        connectorId,
+        name: connectorId === "google-play" ? "Second Play" : "Second team",
+        setupPending: false,
+      })
+      .returning(),
+  );
+  return row!;
+}
+const recordItems = (plan: StoreTemplatePlan, key: string) =>
+  plan.records.find((record) => record.key === key)?.items ?? [];
+const sourceKeys = (connectionId: string) =>
+  (["downloads", "proceeds", "ratings"] as const).map(
+    (metric) => `preparation:source:${connectionId}:${metric}`,
+  );
+
+describe("changing the apps of an install", { timeout: TIMEOUT_MS }, () => {
+  it("reads the install's connections and app scope", async () => {
+    const one = await installIn(["app-store-connect"], { appScope: true });
+    expect(
+      await updates().scope(actor(one.workspaceId), one.requestId),
+    ).toEqual({
+      requestId: one.requestId,
+      connections: [one.connections[0]!.id],
+      appScope: { connectionId: one.connections[0]!.id, appId: "a" },
+    });
+    const two = await installIn(["app-store-connect", "google-play"]);
+    expect(
+      await updates().scope(actor(two.workspaceId), two.requestId),
+    ).toMatchObject({
+      connections: two.connections.map((c) => c.id).sort(),
+      appScope: null,
+    });
+  });
+
+  it("adds a connection as draft preparations without conflicts", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn([
+      "app-store-connect",
+    ]);
+    // The customer's own edit of a kept source preparation stays theirs.
+    const kept = connections[0]!.id;
+    const keptId = (await recordOf(requestId, sourceKeys(kept)[0]!))!
+      .record_id as string;
+    await editStep(workspaceId, keptId, "calculate_app_key", "Mine", true);
+    // The customer's own product row, and their renamed unallocated row.
+    const data = createDataService(db, () => new Date(now));
+    const productsId = installed.productDatasetId;
+    const products = async () =>
+      (
+        await data.readManual(actor(workspaceId), productsId, {
+          offset: 0,
+          limit: 1000,
+        })
+      ).records
+        .map((record) => record.values)
+        .sort((a, b) =>
+          String(a.product_id).localeCompare(String(b.product_id)),
+        );
+    const seeded = await data.readManual(actor(workspaceId), productsId, {
+      offset: 0,
+      limit: 1000,
+    });
+    const customerRows = [
+      ...seeded.records.map((record) =>
+        record.values.product_id === kept + ":__unmapped"
+          ? { values: { ...record.values, product_name: "Our leftovers" } }
+          : record,
+      ),
+      { values: { product_id: "product:mine", product_name: "Mine" } },
+    ];
+    await data.saveManual(
+      actor(workspaceId),
+      {
+        definition: seeded.definition,
+        records: customerRows,
+        generationId: seeded.generationId,
+      },
+      productsId,
+    );
+    const productsBefore = await products();
+    const extra = await newConnection(workspaceId);
+    const before = await publishedState(workspaceId);
+    const scope = { connections: [kept, extra.id] };
+    const plan = await updates().scopePlan(
+      actor(workspaceId),
+      requestId,
+      scope,
+    );
+    expect(storeTemplatePlanSchema.parse(plan)).toEqual(plan);
+    expect(plan).toMatchObject({ fromVersion: 1, toVersion: 1 });
+    // Every part the new connection derives is scope: nothing to decide;
+    // the customer's own edit shows as theirs, kept.
+    expect(
+      items(plan)
+        .filter((i) => i.outcome !== "scope")
+        .map((i) => [i.ref, i.outcome]),
+    ).toEqual([[`${sourceKeys(kept)[0]!}#step:calculate_app_key`, "customer"]]);
+    for (const key of sourceKeys(extra.id))
+      expect(plan.records.find((r) => r.key === key)).toMatchObject({
+        recordId: null,
+      });
+    // Reading the plan registers nothing.
+    expect(
+      await owner`select id from data_datasets where connection_id=${extra.id}`,
+    ).toHaveLength(0);
+
+    const update = await updates().changeScope(actor(workspaceId), requestId, {
+      ...scope,
+      basis: plan.basis,
+      decisions: [],
+    });
+    expect(storeTemplateUpdateSchema.parse(update)).toEqual(update);
+    expect(update).toMatchObject({ fromVersion: 1, toVersion: 1 });
+    // The new connection's sources are registered and stored in the inputs.
+    const datasets =
+      await owner`select id, key from data_datasets where connection_id=${extra.id} order by key`;
+    expect(datasets.map((d) => d.key as string)).toEqual([
+      "earning_rows",
+      "install_rows",
+      "store_ratings",
+    ]);
+    const [install] =
+      await owner`select inputs from data_template_installs where request_id=${requestId}`;
+    const inputs = install!.inputs as {
+      connections: { id: string; datasets: Record<string, string> }[];
+    };
+    expect(inputs.connections.map((c) => c.id)).toEqual(
+      [kept, extra.id].sort(),
+    );
+    expect(
+      Object.values(
+        inputs.connections.find((c) => c.id === extra.id)!.datasets,
+      ).sort(),
+    ).toEqual(datasets.map((d) => d.id as string).sort());
+    // Drafts only: the new records unpublished, the models as drafts.
+    for (const key of sourceKeys(extra.id)) {
+      const record = await recordOf(requestId, key);
+      const row = await preparationRow(record!.record_id as string);
+      expect(row.published_version).toBeNull();
+      expect(
+        strings(row.graph).some((value) =>
+          datasets.some((d) => d.id === value),
+        ),
+      ).toBe(true);
+      expect(update.drafts.map((d) => d.recordId)).toContain(record!.record_id);
+    }
+    const model = update.drafts.find((d) => d.key === "model:downloads")!;
+    expect(model.published).toBe(false);
+    const after = await publishedState(workspaceId);
+    for (const row of before.models)
+      expect(after.models.find((m) => m.id === row.id)!.published_version).toBe(
+        row.published_version,
+      );
+    expect(model.recordId).toBe(installed.models.downloads);
+    // The added connection gets its unallocated product row; the
+    // customer's rows stay as they were.
+    expect(await products()).toEqual(
+      [
+        ...productsBefore,
+        {
+          product_id: extra.id + ":__unmapped",
+          product_name: "Unallocated report rows · Second Play",
+        },
+      ].sort((a, b) =>
+        String(a.product_id).localeCompare(String(b.product_id)),
+      ),
+    );
+    expect(productsBefore).toEqual(
+      expect.arrayContaining([
+        { product_id: kept + ":__unmapped", product_name: "Our leftovers" },
+        { product_id: "product:mine", product_name: "Mine" },
+      ]),
+    );
+    // The customer's edit is untouched.
+    expect(
+      (await preparationRow(keptId)).graph.nodes.find(
+        (n) => n.id === "calculate_app_key",
+      ),
+    ).toMatchObject({ name: "Mine" });
+    const [audit] =
+      await owner`select metadata from audit_events where workspace_id=${workspaceId} and action='data.store_template_scope_changed'`;
+    expect(audit!.metadata).toMatchObject({ requestId });
+    // The same plan applied again is stale.
+    await expect(
+      updates().changeScope(actor(workspaceId), requestId, {
+        ...scope,
+        basis: plan.basis,
+        decisions: [],
+      }),
+    ).rejects.toThrow("store_update_stale");
+  });
+
+  it("proposes the removed connection's preparations for removal", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn([
+      "app-store-connect",
+      "google-play",
+    ]);
+    const [stays, goes] = [connections[0]!.id, connections[1]!.id];
+    const editedId = (await recordOf(requestId, sourceKeys(goes)[0]!))!
+      .record_id as string;
+    await editStep(workspaceId, editedId, "calculate_app_key", "Mine", true);
+    const editedGraph = (await preparationRow(editedId)).graph;
+    const scope = { connections: [stays] };
+    const plan = await updates().scopePlan(
+      actor(workspaceId),
+      requestId,
+      scope,
+    );
+    for (const key of sourceKeys(goes)) {
+      const record = recordItems(plan, key);
+      expect(record.length, key).toBeGreaterThan(0);
+      // The customer's edit included: removal is proposed, never a conflict.
+      for (const i of record) expect(i.outcome, i.ref).toBe("propose_removal");
+    }
+    expect(
+      items(plan)
+        .filter((i) => !sourceKeys(goes).some((k) => i.ref.startsWith(k + "#")))
+        .filter((i) => i.outcome !== "scope"),
+    ).toEqual([]);
+    expect(plan.summary.conflicts).toBe(0);
+    expect(plan.summary.removals).toBe(
+      items(plan).filter((i) => i.outcome === "propose_removal").length,
+    );
+    const missing = await updates()
+      .changeScope(actor(workspaceId), requestId, {
+        ...scope,
+        basis: plan.basis,
+        decisions: [],
+      })
+      .catch((error: unknown) => error);
+    expect(missing).toMatchObject({ code: "store_update_decision_missing" });
+    const update = await updates().changeScope(actor(workspaceId), requestId, {
+      ...scope,
+      basis: plan.basis,
+      decisions: choices(plan, "customer"),
+    });
+    // Detached and kept, the customer's edit included.
+    const detached =
+      await owner`select key, record_id from data_template_records
+        where request_id=${requestId} and detached_at is not null order by key`;
+    expect(detached.map((r) => r.key as string)).toEqual(
+      expect.arrayContaining(sourceKeys(goes)),
+    );
+    for (const row of detached)
+      expect(await preparationRow(row.record_id as string)).toBeTruthy();
+    expect((await preparationRow(editedId)).graph).toEqual(editedGraph);
+    const model = update.drafts.find((d) => d.key === "model:downloads")!;
+    const keptId = (await recordOf(requestId, sourceKeys(stays)[0]!))!
+      .record_id as string;
+    expect((await modelDefinition(model.recordId)).datasets).toEqual([
+      `prepared:${keptId}:output`,
+    ]);
+    expect(await updates().scope(actor(workspaceId), requestId)).toMatchObject({
+      connections: [stays],
+    });
+    expect(installed.preparationIds).toContain(editedId);
+  });
+
+  it("re-attaches a removed connection's preparations when it is added again", async () => {
+    const { workspaceId, requestId, connections } = await installIn([
+      "app-store-connect",
+      "google-play",
+    ]);
+    const [stays, back] = [connections[0]!.id, connections[1]!.id];
+    const editedId = (await recordOf(requestId, sourceKeys(back)[0]!))!
+      .record_id as string;
+    await editStep(workspaceId, editedId, "calculate_app_key", "Mine", true);
+    const change = async (ids: string[]) => {
+      const plan = await updates().scopePlan(actor(workspaceId), requestId, {
+        connections: ids,
+      });
+      const update = await updates().changeScope(
+        actor(workspaceId),
+        requestId,
+        {
+          connections: ids,
+          basis: plan.basis,
+          decisions: choices(plan, "template"),
+        },
+      );
+      await publishDrafts(workspaceId, update);
+      return { plan, update };
+    };
+    await change([stays]);
+    const { plan } = await change([stays, back]);
+    // The kept record comes back with the customer's edit, as theirs.
+    expect(
+      plan.records.find((r) => r.key === sourceKeys(back)[0]),
+    ).toMatchObject({ recordId: editedId });
+    expect(
+      items(plan).filter(
+        (i) => i.outcome === "choose" || i.outcome === "propose_removal",
+      ),
+    ).toEqual([]);
+    const record = await recordOf(requestId, sourceKeys(back)[0]!);
+    expect(record).toMatchObject({ record_id: editedId, detached_at: null });
+    expect(
+      (await preparationRow(editedId)).graph.nodes.find(
+        (n) => n.id === "calculate_app_key",
+      ),
+    ).toMatchObject({ name: "Mine" });
+  });
+
+  it("changes the app scope through an updated dashboard copy", async () => {
+    const { workspaceId, requestId, installed, connections } = await installIn(
+      ["google-play"],
+      { appScope: true },
+    );
+    const fixed = connections[0]!.id + ":a";
+    const original = await readDashboardData(installed.dashboardId);
+    const scope = { connections: [connections[0]!.id], appScope: null };
+    const plan = await updates().scopePlan(
+      actor(workspaceId),
+      requestId,
+      scope,
+    );
+    expect(items(plan).map((i) => [i.ref, i.outcome])).toEqual([
+      ["dashboard:portfolio#filter:app.fixedValue", "scope"],
+    ]);
+    const update = await updates().changeScope(actor(workspaceId), requestId, {
+      ...scope,
+      basis: plan.basis,
+      decisions: [],
+    });
+    expect(update.drafts).toEqual([]);
+    expect(update.dashboards).toEqual([
+      expect.objectContaining({
+        key: "dashboard:portfolio",
+        originalId: installed.dashboardId,
+        copyId: null,
+        ready: true,
+      }),
+    ]);
+    // Nothing live changed: the dashboard waits for its copy and swap.
+    expect(await readDashboardData(installed.dashboardId)).toEqual(original);
+    const copied = await updates().createCopy(
+      actor(workspaceId),
+      update.id,
+      "dashboard:portfolio",
+    );
+    const copyId = copied.dashboards[0]!.copyId!;
+    expect(
+      JSON.stringify(await readDashboard(workspaceId, copyId)),
+    ).not.toContain(fixed);
+    expect(
+      JSON.stringify(await readDashboard(workspaceId, installed.dashboardId)),
+    ).toContain(fixed);
+    await updates().swap(actor(workspaceId), update.id, "dashboard:portfolio");
+    expect(await updates().scope(actor(workspaceId), requestId)).toMatchObject({
+      appScope: null,
+    });
+    // The install is current with its new scope: nothing left to apply.
+    const again = await updates().scopePlan(
+      actor(workspaceId),
+      requestId,
+      scope,
+    );
+    expect(items(again)).toEqual([]);
+  });
+
+  it("refuses a connection of another workspace", async () => {
+    const mine = await installIn(["google-play"]);
+    const theirs = await installIn(["google-play"]);
+    const scope = {
+      connections: [mine.connections[0]!.id, theirs.connections[0]!.id],
+    };
+    await expect(
+      updates().scopePlan(actor(mine.workspaceId), mine.requestId, scope),
+    ).rejects.toMatchObject({ code: "connection_not_found", status: 404 });
+    await expect(
+      updates().changeScope(actor(mine.workspaceId), mine.requestId, {
+        ...scope,
+        basis: "0".repeat(64),
+        decisions: [],
+      }),
+    ).rejects.toMatchObject({ code: "connection_not_found", status: 404 });
+    // An app scope outside the chosen connections, and another's install.
+    await expect(
+      updates().scopePlan(actor(mine.workspaceId), mine.requestId, {
+        connections: [mine.connections[0]!.id],
+        appScope: { connectionId: theirs.connections[0]!.id, appId: "a" },
+      }),
+    ).rejects.toMatchObject({ code: "store_scope_invalid", status: 400 });
+    await expect(
+      updates().scope(actor(mine.workspaceId), theirs.requestId),
+    ).rejects.toMatchObject({ code: "store_template_not_found", status: 404 });
+  });
+
+  it("reads a product's app scope from an app the install still reads", async () => {
+    const workspaceId = await createWorkspace(db, {
+      name: "Stores " + randomUUID().slice(0, 8),
+      ownerUserId: userId,
+    });
+    const [a, b] = await Promise.all([
+      newConnection(workspaceId, "app-store-connect"),
+      newConnection(workspaceId, "google-play"),
+    ]);
+    // The app key that sorts first is the one whose connection goes.
+    const [gone, stays] = [a!, b!].sort((x, y) => (x.id < y.id ? -1 : 1));
+    const requestId = randomUUID();
+    await createStoreTemplateService({
+      db,
+      registry,
+      now: () => new Date(now),
+    }).install(actor(workspaceId), {
+      requestId,
+      name: "App portfolio",
+      connections: [gone!.id, stays!.id],
+      groups: [
+        {
+          id: randomUUID(),
+          name: "Focus",
+          apps: [
+            { connectionId: gone!.id, appId: "x" },
+            { connectionId: stays!.id, appId: "y" },
+          ],
+        },
+      ],
+      appScope: { connectionId: stays!.id, appId: "y" },
+    });
+    const choice = {
+      connections: [stays!.id],
+      appScope: { connectionId: stays!.id, appId: "y" },
+    };
+    const plan = await updates().scopePlan(
+      actor(workspaceId),
+      requestId,
+      choice,
+    );
+    await updates().changeScope(actor(workspaceId), requestId, {
+      ...choice,
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    expect(await updates().scope(actor(workspaceId), requestId)).toEqual({
+      requestId,
+      connections: [stays!.id],
+      appScope: { connectionId: stays!.id, appId: "y" },
+    });
+  });
+
+  it("asks for a pending template update first", async () => {
+    const { workspaceId, requestId, connections } = await installIn([
+      "google-play",
+    ]);
+    const extra = await newConnection(workspaceId);
+    await expect(
+      updates(v2).scopePlan(actor(workspaceId), requestId, {
+        connections: [connections[0]!.id, extra.id],
+      }),
+    ).rejects.toMatchObject({
+      code: "store_template_update_available",
+      status: 409,
+    });
+  });
 });

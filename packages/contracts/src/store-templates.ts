@@ -117,6 +117,38 @@ export type StoreTemplateApplyRequest = z.infer<
   typeof storeTemplateApplyRequestSchema
 >;
 /**
+ * An install's app scope: the store connections it reads and the one app
+ * its dashboard is fixed to (null: every app). Product groups are not part
+ * of it; they live in the install's mapping tables.
+ */
+export const storeTemplateScopeSchema = z.object({
+  requestId: z.uuid(),
+  connections: z.array(z.uuid()),
+  appScope: app.nullable(),
+});
+export type StoreTemplateScope = z.infer<typeof storeTemplateScopeSchema>;
+/** The app scope a scope plan is made for, as query parameters. */
+export const storeTemplateScopeQuerySchema = z.object({
+  /** Comma-separated connection ids. */
+  connections: z.string().min(1).max(4000),
+  /** `<connectionId>:<appId>`; absent: every app. */
+  appScope: z.string().min(1).max(65600).optional(),
+});
+/**
+ * Changing an install's app scope: the new scope, the scope plan's `basis`
+ * and a choice for every item it asks about (the removed connections'
+ * preparations: remove or keep; either way they are detached, not deleted).
+ */
+export const storeTemplateScopeRequestSchema = z.strictObject({
+  basis: z.string(),
+  connections: z.array(z.uuid()).min(1),
+  appScope: app.nullish(),
+  decisions: storeTemplateApplyRequestSchema.shape.decisions.default([]),
+});
+export type StoreTemplateScopeRequest = z.infer<
+  typeof storeTemplateScopeRequestSchema
+>;
+/**
  * `store_update_decision_missing` lists the items still without a choice;
  * `store_update_unmergeable` names the record (`key`) whose merged content
  * cannot be written and, when known, its items; `paths` are the validation

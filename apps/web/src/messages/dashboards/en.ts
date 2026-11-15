@@ -74,6 +74,26 @@ export const dashboardsEn = {
     mappingRequired:
       "Choose at least one app and enter a name for every linked product.",
     appDashboard: "Create app dashboard",
+    editTitle: "Change the apps of {name}",
+    editSubtitle:
+      "Add or remove store connections and choose which app the dashboard shows, without connecting anything again.",
+    editRoleCannot:
+      "A workspace editor, admin or owner can change the apps of a template dashboard.",
+    editUnavailable:
+      "The apps of this dashboard can’t be changed here. It was set up before templates had versions, and a store connection it used was deleted since.",
+    editUpdateFirst:
+      "The template has an update for this dashboard. Review it first, then change the apps.",
+    editOpenUpdate: "Open the update",
+    editConnectionsHelp:
+      "Your own changes to preparations, measures and widgets stay. What follows from the apps is regenerated: new connections arrive as drafts, removed ones are detached and kept.",
+    editMapping:
+      "Product links stay in the mapping table of this dashboard, in Data & measures.",
+    editMappingLink: "Edit product links in Data & measures",
+    reviewChanges: "Review changes",
+    planning: "Comparing…",
+    editReviewTitle: "What changes",
+    scopeUnchanged:
+      "These are the apps the dashboard already uses. Change a connection or the app first.",
     templateCard: "Apple and Google Play, ready to customize",
   },
   dashboardsPage: {
@@ -132,6 +152,7 @@ export const dashboardsEn = {
     studioArchived:
       "Archived while its updated copy is on your screens. Switch back to use and edit it again.",
     review: "Review the update",
+    changeApps: "Change apps",
     openUpdate: "Open the update",
     dataBanner: "Template update for {name}",
     dataProgress:
@@ -149,6 +170,8 @@ export const dashboardsEn = {
     unavailable:
       "Updates aren’t available for this dashboard. It was set up before templates had versions, and a store connection it used was deleted since, so netrics can’t tell your changes from the template’s. The dashboard keeps working as it is.",
     upToDate: "This dashboard is up to date with its template.",
+    scopeIntro:
+      "Nothing changes until you say so. The parts that follow from your apps are regenerated from your apps; we only ask where you edited them. Data changes become drafts you publish in data settings; a new app filter arrives as an updated dashboard copy you compare before it goes on your screens.",
     intro:
       "Nothing changes until you say so. Data changes become drafts you publish in data settings. Dashboard changes arrive as an updated copy you compare before it goes on your screens; your original is archived, so you can switch back.",
     steps: {
@@ -210,6 +233,7 @@ export const dashboardsEn = {
     keepMine: "Keep mine",
     remove: "Remove",
     keep: "Keep",
+    detach: "Detach (kept in Data & measures)",
     templateValue: "Template: {text}",
     yourValue: "Yours: {text}",
     absent: "removed",
@@ -223,6 +247,8 @@ export const dashboardsEn = {
         "Taking the template’s version brings back {dataset}, which you removed from these measures.",
       removedDatasetUnknown:
         "Taking the template’s version brings back data you removed from these measures.",
+      scopeRemoval:
+        "This connection is no longer part of the dashboard. Its preparation is detached from the template and stays in Data & measures with your changes; it is never deleted.",
       proposeRemoval:
         "The new template no longer has this. You never changed it: remove it, or keep it as yours.",
     },

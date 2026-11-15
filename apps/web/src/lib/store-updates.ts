@@ -23,6 +23,9 @@ export type UpdateDashboard = StoreTemplateUpdate["dashboards"][number];
 
 export const storeUpdatePath = (workspaceId: string, requestId: string) =>
   `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`;
+/** Where an install's connections and app scope are changed. */
+export const storeScopePath = (workspaceId: string, requestId: string) =>
+  `/workspaces/${workspaceId}/dashboards/stores?install=${requestId}`;
 
 /** The install a dashboard belongs to while it has an update to offer. */
 export function installWithUpdate(

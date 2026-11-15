@@ -137,6 +137,106 @@ async function installedWidgetKeys(
   ]);
 }
 
+/**
+ * A connection's row in an install's products table: the name of its
+ * account rows no app claims (`<connectionId>:__unmapped`).
+ */
+export function unmappedProductRow(
+  source: { id: string; name: string },
+  locale: Locale,
+): { values: { product_id: string; product_name: string } } {
+  return {
+    values: {
+      product_id: source.id + ":__unmapped",
+      product_name:
+        `${storeTemplateCopy(locale).unallocated} · ${source.name}`.slice(
+          0,
+          100,
+        ),
+    },
+  };
+}
+
+/**
+ * The store sources of `connectionIds` (all of the workspace, set up, of a
+ * store connector), each with the source datasets the template reads.
+ * `register` registers those datasets; without it (a read-only plan) a
+ * dataset not registered yet is `pending:<connectionId>:<key>`.
+ */
+export async function storeTemplateSources(
+  tx: Transaction,
+  deps: { registry: ConnectorRegistry; policy: DataPolicy },
+  workspaceId: string,
+  connectionIds: string[],
+  options: { register: boolean },
+): Promise<StoreTemplateSource[]> {
+  if (!connectionIds.length) return [];
+  const rows = await tx
+    .select()
+    .from(schema.connections)
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        inArray(schema.connections.id, connectionIds),
+      ),
+    )
+    .orderBy(asc(schema.connections.id));
+  if (rows.length !== new Set(connectionIds).size)
+    reject("connection_not_found", 404);
+  const sources: StoreTemplateSource[] = [];
+  for (const row of rows) {
+    if (row.setupPending) reject("connection_setup_pending", 409);
+    if (
+      row.connectorId !== "app-store-connect" &&
+      row.connectorId !== "google-play"
+    )
+      reject("store_connector_required");
+    const registered = deps.registry.get(row.connectorId);
+    if (!registered) reject("connector_unavailable", 503);
+    const needed =
+      row.connectorId === "app-store-connect"
+        ? ["sales_rows", "store_ratings"]
+        : ["install_rows", "earning_rows", "store_ratings"];
+    const datasets: Record<string, string> = {};
+    for (const key of needed) {
+      const definition = registered.manifest.datasets?.find(
+        (dataset) => dataset.key === key,
+      );
+      if (!definition) reject("store_source_schema_unavailable", 503);
+      if (options.register) {
+        datasets[key] = (
+          await registerSourceDataset(tx, {
+            workspaceId,
+            connectionId: row.id,
+            definition,
+            policyDefaults: deps.policy,
+          })
+        ).id;
+        continue;
+      }
+      const [existing] = await tx
+        .select({ id: schema.dataDatasets.id })
+        .from(schema.dataDatasets)
+        .where(
+          and(
+            eq(schema.dataDatasets.workspaceId, workspaceId),
+            eq(schema.dataDatasets.connectionId, row.id),
+            eq(schema.dataDatasets.kind, "source"),
+            eq(schema.dataDatasets.key, definition.key),
+          ),
+        );
+      datasets[key] = existing?.id ?? `pending:${row.id}:${key}`;
+    }
+    sources.push({
+      id: row.id,
+      name: row.name,
+      connectorId: row.connectorId,
+      datasets,
+    });
+  }
+  return sources;
+}
+
 export function createStoreTemplateService(deps: {
   db: Database;
   registry: ConnectorRegistry;
@@ -281,55 +381,13 @@ export function createStoreTemplateService(deps: {
                   if (!dashboard) reject("store_template_removed", 409);
                   return result;
                 }
-                const rows = await tx
-                  .select()
-                  .from(schema.connections)
-                  .where(
-                    and(
-                      eq(schema.connections.workspaceId, actor.workspaceId),
-                      inArray(schema.connections.id, input.connections),
-                    ),
-                  )
-                  .orderBy(asc(schema.connections.id));
-                if (rows.length !== input.connections.length)
-                  reject("connection_not_found", 404);
-                const sources: StoreTemplateSource[] = [];
-                for (const row of rows) {
-                  if (row.setupPending) reject("connection_setup_pending", 409);
-                  if (
-                    row.connectorId !== "app-store-connect" &&
-                    row.connectorId !== "google-play"
-                  )
-                    reject("store_connector_required");
-                  const registered = deps.registry.get(row.connectorId);
-                  if (!registered) reject("connector_unavailable", 503);
-                  const needed =
-                    row.connectorId === "app-store-connect"
-                      ? ["sales_rows", "store_ratings"]
-                      : ["install_rows", "earning_rows", "store_ratings"];
-                  const datasets: Record<string, string> = {};
-                  for (const key of needed) {
-                    const definition = registered.manifest.datasets?.find(
-                      (dataset) => dataset.key === key,
-                    );
-                    if (!definition)
-                      reject("store_source_schema_unavailable", 503);
-                    datasets[key] = (
-                      await registerSourceDataset(tx, {
-                        workspaceId: actor.workspaceId,
-                        connectionId: row.id,
-                        definition,
-                        policyDefaults: defaults,
-                      })
-                    ).id;
-                  }
-                  sources.push({
-                    id: row.id,
-                    name: row.name,
-                    connectorId: row.connectorId,
-                    datasets,
-                  });
-                }
+                const sources = await storeTemplateSources(
+                  tx,
+                  { registry: deps.registry, policy: defaults },
+                  actor.workspaceId,
+                  input.connections,
+                  { register: true },
+                );
                 const data = createDataService(tx, now, defaults),
                   t = storeTemplateCopy(actor.locale);
                 const mappingRows = input.groups.flatMap((group) =>
@@ -347,15 +405,7 @@ export function createStoreTemplateService(deps: {
                   },
                 }));
                 for (const source of sources)
-                  productRows.push({
-                    values: {
-                      product_id: source.id + ":__unmapped",
-                      product_name: `${t.unallocated} · ${source.name}`.slice(
-                        0,
-                        100,
-                      ),
-                    },
-                  });
+                  productRows.push(unmappedProductRow(source, actor.locale));
                 const products = await data.saveManual(actor, {
                   definition: sourceDatasetSchema.parse({
                     key: "store_products_" + input.requestId,
