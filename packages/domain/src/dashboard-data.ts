@@ -348,3 +348,70 @@ export function displayMeasureAmount(
   const exponent = currencyExponent(currency);
   return exactDecimal("divide", String(value), String(10 ** exponent));
 }
+
+/**
+ * Fraction digits a value of a measure unit is shown with (#619): an average
+ * rating reads as 4.29 rather than every digit of 4.2857…; the stored and
+ * exported value stays exact. Units not listed show every digit.
+ */
+export const MEASURE_UNIT_FRACTION_DIGITS: Readonly<Record<string, number>> = {
+  stars: 2,
+};
+
+/**
+ * A decimal string rounded to at most `digits` fraction digits, half away
+ * from zero, trailing zeros dropped; computed on the digits, never through a
+ * float. Text that is no plain decimal is returned unchanged.
+ */
+export function roundDecimalText(raw: string, digits: number): string {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
+  if (!match) return raw;
+  const [, sign = "", whole = "0", given = ""] = match;
+  const fraction = given.padEnd(digits + 1, "0");
+  const scaled =
+    BigInt(whole + fraction.slice(0, digits)) +
+    (fraction.charCodeAt(digits) >= 53 /* "5" */ ? 1n : 0n);
+  const text = scaled.toString().padStart(digits + 1, "0");
+  const integer = text.slice(0, text.length - digits);
+  const rest = text.slice(text.length - digits).replace(/0+$/, "");
+  const result = `${integer}${rest ? `.${rest}` : ""}`;
+  return sign && /[1-9]/.test(result) ? `-${result}` : result;
+}
+
+/**
+ * A date or timestamp value as people read it (#619): a calendar day
+ * ("YYYY-MM-DD") in the locale's medium date style, the same day in every
+ * time zone; a timestamp adds the time of day in `timeZone` (the viewer's
+ * when omitted). Null when the value is no valid date of that type.
+ */
+export function formatDataDate(
+  value: unknown,
+  type: string,
+  locale: string,
+  timeZone?: string,
+): string | null {
+  if (typeof value !== "string") return null;
+  if (type === "date") {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const date = new Date(
+      Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+    );
+    if (date.toISOString().slice(0, 10) !== value) return null;
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(date);
+  }
+  if (type === "timestamp") {
+    const time = Date.parse(value);
+    if (!Number.isFinite(time) || !/^\d{4}-\d{2}-\d{2}T/.test(value))
+      return null;
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      ...(timeZone ? { timeZone } : {}),
+    }).format(new Date(time));
+  }
+  return null;
+}

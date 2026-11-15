@@ -2282,6 +2282,8 @@ describe("rolling and period-offset model measures", () => {
     expect(read.statusCode, read.body).toBe(200);
     const [line] = read.json().widgets;
     expect(line.error).toBeNull();
+    // The footnote reads the range as dates in the viewer's language (#619).
+    expect(line.scope).toEqual(["Day: Oct 1, 2026 – Oct 5, 2026"]);
     // Lookback rows from September fill each window but add no points.
     expect(line.result.totalRows).toBe(5);
     expect(

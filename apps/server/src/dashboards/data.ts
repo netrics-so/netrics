@@ -12,6 +12,7 @@ import {
   compareDataValues,
   dimensionValueLabels,
   dataKey,
+  formatDataDate,
   measureInteractionDimension,
   measureIsPercentChange,
   measureLookbackDays,
@@ -374,7 +375,18 @@ export async function queryDashboardMeasure(
         if (currencies.size > 1)
           throw new DataServiceError("dashboard_measure_currency_incompatible");
       }
+      // Days in the locale's date format (#619); a timestamp has no viewer
+      // time zone here, so it reads in UTC and says so.
+      const shown = (type: string, value: unknown): string => {
+        const date = formatDataDate(value, type, locale, "UTC");
+        return date === null
+          ? String(value)
+          : type === "timestamp"
+            ? `${date} UTC`
+            : date;
+      };
       const selection = (
+        type: string,
         value: DashboardFilterValue | undefined,
         dimensionId?: string,
       ): string =>
@@ -383,7 +395,7 @@ export async function queryDashboardMeasure(
           : value.kind === "range"
             ? value.from === null && value.to === null
               ? ""
-              : `${String(value.from ?? "…")} – ${String(value.to ?? "…")}`
+              : `${value.from == null ? "…" : shown(type, value.from)} – ${value.to == null ? "…" : shown(type, value.to)}`
             : value.values
                 .map(
                   (value) =>
@@ -402,7 +414,7 @@ export async function queryDashboardMeasure(
                           : value
                             ? "True"
                             : "False"
-                        : String(value)),
+                        : shown(type, value)),
                 )
                 .join(", ");
       const scope = filters
@@ -417,13 +429,15 @@ export async function queryDashboardMeasure(
             (mapping) => mapping.modelId === input.binding.modelId,
           )?.dimensionId;
           const chosen = selection(
+              filter.type,
               Object.hasOwn(values, filter.id)
                 ? values[filter.id]
                 : filter.defaultValue,
               dimensionId,
             ),
-            fixed = selection(filter.fixedValue, dimensionId),
+            fixed = selection(filter.type, filter.fixedValue, dimensionId),
             screen = selection(
+              filter.type,
               Object.hasOwn(deviceScope, filter.id)
                 ? deviceScope[filter.id]
                 : undefined,
