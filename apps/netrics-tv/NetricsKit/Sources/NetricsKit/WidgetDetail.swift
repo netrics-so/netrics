@@ -139,7 +139,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
             let items = (data.result?.rows ?? []).flatMap { row in
                 measures.map { id in
                     let name = data.metadata?.measures.first { $0.id == id }?.name ?? id
-                    let group = groups.map { row.dimensions[$0]?.text(language: language) ?? "—" }.joined(separator: " · ")
+                    let group = groups.map { data.dimensionText(row, dimension: $0, language: language) }.joined(separator: " · ")
                     return Item(label: group.isEmpty ? name : "\(group) · \(name)", value: data.text(row.measures[id], measure: id, language: language))
                 }
             }

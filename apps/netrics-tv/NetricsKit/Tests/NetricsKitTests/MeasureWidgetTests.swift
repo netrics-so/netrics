@@ -82,4 +82,88 @@ import Testing
             older.text(older.result?.rows.first?.measures["pct"], measure: "pct", language: .en)
                 == "0.083333333333333333")
     }
+    // Mirrors "display formatting (#619)" in packages/domain/src/dashboard-data.test.ts.
+    @Test func showsACalendarDayInTheLanguagesDateFormatTheSameDayInEveryTimeZone() throws {
+        #expect(DataFormat.date("2026-01-07", type: "date", language: .de) == "07.01.2026")
+        #expect(DataFormat.date("2026-01-07", type: "date", language: .en) == "Jan 7, 2026")
+        #expect(
+            DataFormat.date("2026-01-07", type: "date", language: .de, timeZone: try #require(TimeZone(identifier: "Pacific/Honolulu")))
+                == "07.01.2026")
+    }
+    @Test func showsATimestampWithItsTimeInTheGivenZone() throws {
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        #expect(DataFormat.date("2026-01-07T09:15:00.000Z", type: "timestamp", language: .de, timeZone: utc) == "07.01.2026, 09:15")
+        #expect(DataFormat.date("2026-01-07T09:15:00.000Z", type: "timestamp", language: .en, timeZone: utc) == "Jan 7, 2026, 9:15 AM")
+    }
+    @Test func leavesValuesThatAreNoDateToTheCaller() {
+        #expect(DataFormat.date("soon", type: "date", language: .en) == nil)
+        #expect(DataFormat.date("2026-02-30", type: "date", language: .en) == nil)
+        #expect(DataFormat.date("42", type: "timestamp", language: .en) == nil)
+        #expect(DataFormat.date("2026-01-07", type: "string", language: .en) == nil)
+    }
+    @Test func roundsDecimalTextHalfAwayFromZeroWithoutFloatingPoint() {
+        #expect(DataFormat.roundDecimalText("4.2857", digits: 2) == "4.29")
+        #expect(DataFormat.roundDecimalText("4.66667", digits: 2) == "4.67")
+        #expect(DataFormat.roundDecimalText("4.5", digits: 2) == "4.5")
+        #expect(DataFormat.roundDecimalText("4.995", digits: 2) == "5")
+        #expect(DataFormat.roundDecimalText("4.10", digits: 2) == "4.1")
+        #expect(DataFormat.roundDecimalText("-0.004", digits: 2) == "0")
+        #expect(DataFormat.roundDecimalText("-1.005", digits: 2) == "-1.01")
+        #expect(DataFormat.roundDecimalText("9007199254740993.125", digits: 2) == "9007199254740993.13")
+        #expect(DataFormat.roundDecimalText("12", digits: 2) == "12")
+        #expect(DataFormat.unitFractionDigits["stars"] == 2)
+        // Beyond the TypeScript cases: a carry through every digit, and text that is no decimal.
+        #expect(DataFormat.roundDecimalText("99.999", digits: 2) == "100")
+        #expect(DataFormat.roundDecimalText("0.005", digits: 2) == "0.01")
+        #expect(DataFormat.roundDecimalText("n/a", digits: 2) == "n/a")
+    }
+    @Test func showsRatingsWithTwoDecimalsAndDatesInTheScreenLanguage() throws {
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        #expect(try cell("4.2857", unit: "stars").text(language: .en) == "4.29 ★")
+        #expect(try cell("4.2857", unit: "stars").text(language: .de) == "4,29 ★")
+        #expect(try cell("4.995", unit: "stars").text(language: .en) == "5 ★")
+        let number = MeasureCell(value: .number(4.2857), type: "decimal", unit: "stars", currency: nil, status: "ok")
+        #expect(number.text(language: .de) == "4,29 ★")
+        let float = MeasureCell(value: .number(4.66667), type: "number", unit: "stars", currency: nil, status: "ok")
+        #expect(float.text(language: .en) == "4.67 ★")
+        // Units without a display precision keep every digit.
+        #expect(try cell("1234.56789").text(language: .de) == "1.234,56789")
+        #expect(try cell("2026-01-07", type: "date").text(language: .de) == "07.01.2026")
+        #expect(try cell("2026-01-07", type: "date").text(language: .en) == "Jan 7, 2026")
+        #expect(
+            try cell("2026-01-07T09:15:00.000Z", type: "timestamp").text(language: .en, timeZone: utc)
+                == "Jan 7, 2026, 9:15 AM")
+        #expect(try cell("soon", type: "date").text(language: .en) == "soon")
+    }
+    @Test func showsDateDimensionsByTheirTypeAndPrefersLabels() throws {
+        let json = #"{"metadata":{"modelId":"m","modelName":"Reviews","measures":[{"id":"rating","name":"Rating"}],"dimensions":[{"id":"day","name":"Day","type":"date"},{"id":"app","name":"App","type":"string"}]},"result":{"rows":[{"dimensions":{"day":"2026-01-07","app":"stable-id"},"dimensionLabels":{"app":"Friendly app"},"measures":{"rating":{"value":"4.2857","type":"decimal","unit":"stars","status":"ok"}}}],"warnings":[],"provenance":[],"stale":false},"exclusions":[]}"#
+        let data = try JSONDecoder().decode(MeasureWidgetData.self, from: Data(json.utf8))
+        let row = try #require(data.result?.rows.first)
+        #expect(data.metadata?.dimensions.map(\.type) == ["date", "string"])
+        #expect(data.dimensionText(row, dimension: "day", language: .de) == "07.01.2026")
+        #expect(data.dimensionText(row, dimension: "day", language: .en) == "Jan 7, 2026")
+        #expect(data.dimensionText(row, dimension: "app", language: .en) == "Friendly app")
+        #expect(data.dimensionText(row, dimension: "missing", language: .en) == "—")
+        #expect(data.text(row.measures["rating"], measure: "rating", language: .de) == "4,29 ★")
+    }
+    @Test func shiftsMinorUnitNumbersFromTheirShortestTextLikeTheWeb() {
+        func minor(_ number: Double) -> MeasureCell {
+            MeasureCell(value: .number(number), type: "decimal", unit: "currency_minor", currency: "EUR", status: "ok")
+        }
+        #expect(minor(12.5).text(language: .en) == "0.125 EUR")
+        #expect(minor(1e17).text(language: .en) == "1,000,000,000,000,000.00 EUR")
+        #expect(minor(150).text(language: .de) == "1,50 EUR")
+        #expect(MeasureCell.plainDecimal(1.5e-7) == "0.00000015")
+        #expect(MeasureCell.plainDecimal(-1e21) == "-1000000000000000000000")
+    }
+    @Test func leavesNonASCIIDigitsUnchanged() throws {
+        #expect(DataFormat.roundDecimalText("٤.٥٥٥", digits: 2) == "٤.٥٥٥")
+        #expect(DataFormat.roundDecimalText("１.２３５", digits: 2) == "１.２３５")
+        #expect(try cell("٤.٥٥٥", unit: "stars").text(language: .en) == "٤.٥٥٥ ★")
+        #expect(DataFormat.date("٢٠٢٦-٠١-٠٧", type: "date", language: .en) == nil)
+        #expect(DataFormat.date("２０２６-０１-０７T09:15:00Z", type: "timestamp", language: .en) == nil)
+    }
+    @Test func showsNegativeZeroDecimalsAsZero() {
+        #expect(MeasureCell(value: .number(-0.0), type: "decimal", unit: nil, currency: nil, status: "ok").text(language: .en) == "0")
+    }
 }
