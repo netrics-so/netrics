@@ -1230,6 +1230,105 @@ describe("device dashboard", () => {
     expect(row!.dashboard_id).toBe(salesId);
   });
 
+  // An archived project takes no new screens (#648): its dashboards are not
+  // the dashboard's own archive (a store-template swap), so the error says
+  // which one, and screens already on them play on unchanged.
+  it("refuses to pair or assign a screen to a dashboard of an archived project", async () => {
+    const ws = `/v1/workspaces/${workspaceId}`;
+    const project = (
+      await call("POST", `${ws}/projects`, {
+        cookie: owner,
+        payload: { name: "Launch" },
+      })
+    ).json().project.id as string;
+    const signups = { metricKey: "demo.signups", period: "last_7_days" };
+    const launch = await tileDashboard("Launch wall", [
+      { ...signups, connectionId, title: "Sign-ups" },
+    ]);
+    const live = await tileDashboard("Live wall", [
+      { ...signups, connectionId, title: "Sign-ups" },
+    ]);
+    for (const id of [launch, live])
+      await admin`update dashboards set project_id = ${project} where id = ${id}`;
+    const playing = await pair("Launch TV", launch);
+    const other = await pair("Other launch TV", salesId);
+    const before = await read(playing.accessToken);
+    const v3 = await getDashboard(playing.accessToken, {
+      query: "?schema=3",
+    });
+    expect(v3.statusCode).toBe(200);
+
+    expect(
+      (
+        await call("POST", `${ws}/projects/${project}/archive`, {
+          cookie: owner,
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    // The screen already on it keeps playing, byte for byte.
+    const after = await read(playing.accessToken);
+    expect(after.response.body).toBe(before.response.body);
+    expect(
+      (await getDashboard(playing.accessToken, { query: "?schema=3" })).body,
+    ).toBe(v3.body);
+    // And keeps its settings: renaming it or saving its own dashboard again.
+    const renamed = await call("PATCH", `${ws}/devices/${playing.device.id}`, {
+      cookie: owner,
+      payload: { name: "Renamed launch TV", dashboardId: launch },
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+
+    // No other screen goes on it: assign, or a move between two of its
+    // dashboards.
+    expectError(
+      await reassign(other.device.id, launch),
+      409,
+      "project_archived",
+    );
+    expectError(
+      await reassign(playing.device.id, live),
+      409,
+      "project_archived",
+    );
+    // Nor a new one on pairing; the pairing stays usable.
+    const pairing = await startPairing();
+    expectError(
+      await approve(owner, { code: pairing.code, dashboardId: launch }),
+      409,
+      "project_archived",
+    );
+    const [{ count }] = (await admin`
+      select count(*)::int as count from devices
+      where workspace_id = ${workspaceId} and name = 'Lobby TV'
+        and dashboard_id = ${launch}`) as unknown as [{ count: number }];
+    expect(count).toBe(0);
+    const [row] =
+      await admin`select dashboard_id from devices where id = ${other.device.id}`;
+    expect(row!.dashboard_id).toBe(salesId);
+
+    // Dashboards outside the archived project still pair and assign, and a
+    // screen leaves the archived project's dashboard freely.
+    const approved = await approve(owner, {
+      code: pairing.code,
+      name: "Sales lobby",
+      dashboardId: salesId,
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect((await reassign(playing.device.id, null)).statusCode).toBe(200);
+    expect((await reassign(playing.device.id, salesId)).statusCode).toBe(200);
+
+    // Unarchived, the project takes screens again.
+    expect(
+      (
+        await call("POST", `${ws}/projects/${project}/unarchive`, {
+          cookie: owner,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect((await reassign(other.device.id, launch)).statusCode).toBe(200);
+  });
+
   it("reports the connection's health per tile", async () => {
     const { accessToken } = await pair("Health TV", brokenId);
     // The data is there, but the connection needs new credentials.

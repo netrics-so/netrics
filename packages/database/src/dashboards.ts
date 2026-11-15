@@ -811,20 +811,39 @@ export async function dashboardHasModelWidgets(
 }
 
 /**
- * The dashboard's archive state under a share lock, or null when it is not
- * in the workspace: an assignment of a screen checks it so that a template
- * swap archiving the dashboard concurrently either waits for it (and moves
- * the screen) or is seen (11E).
+ * The dashboard's archive state and its project's, under share locks, or
+ * null when the dashboard is not in the workspace: an assignment of a screen
+ * checks them so that a template swap archiving the dashboard (11E) or an
+ * archive of its project (#648) running concurrently either waits for it or
+ * is seen. A dashboard without a project has projectArchivedAt null.
  */
 export async function lockDashboardArchive(
   tx: Transaction,
   workspaceId: string,
   dashboardId: string,
-): Promise<{ archivedAt: Date | null } | null> {
+): Promise<{ archivedAt: Date | null; projectArchivedAt: Date | null } | null> {
   const [row] = await tx
-    .select({ archivedAt: schema.dashboards.archivedAt })
+    .select({
+      archivedAt: schema.dashboards.archivedAt,
+      projectId: schema.dashboards.projectId,
+    })
     .from(schema.dashboards)
     .where(dashboardScope(workspaceId, dashboardId))
     .for("share");
-  return row ?? null;
+  if (!row) return null;
+  let projectArchivedAt: Date | null = null;
+  if (row.projectId) {
+    const [project] = await tx
+      .select({ archivedAt: schema.projects.archivedAt })
+      .from(schema.projects)
+      .where(
+        and(
+          eq(schema.projects.workspaceId, workspaceId),
+          eq(schema.projects.id, row.projectId),
+        ),
+      )
+      .for("share");
+    projectArchivedAt = project?.archivedAt ?? null;
+  }
+  return { archivedAt: row.archivedAt, projectArchivedAt };
 }

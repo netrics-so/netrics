@@ -403,7 +403,10 @@ export function registerDeviceRoutes(
         "/workspaces/:workspaceId/devices/approve",
         {
           schema: routeSchema({
-            summary: "Approve a pairing code and add the device",
+            summary:
+              "Approve a pairing code and add the device (409 " +
+              "dashboard_archived or project_archived when the dashboard " +
+              "or its project is archived)",
             tags: ["devices"],
             body: approveDeviceRequestSchema,
             response: deviceResponseSchema,
@@ -440,7 +443,9 @@ export function registerDeviceRoutes(
             summary:
               "Rename a device, change its dashboard, rotation, display mode " +
               "or fixed scope (the filter values its screen may show; 409 " +
-              "when a scoped screen changes dashboard without a new scope)",
+              "when a scoped screen changes dashboard without a new scope, " +
+              "and dashboard_archived or project_archived when the new " +
+              "dashboard or its project is archived)",
             tags: ["devices"],
             body: updateDeviceRequestSchema,
             response: deviceResponseSchema,

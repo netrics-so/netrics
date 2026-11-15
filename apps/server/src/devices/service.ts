@@ -433,6 +433,10 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             if (!dashboard) return fail(404, "dashboard_not_found");
             // Replaced by an updated store-template copy (11E).
             if (dashboard.archivedAt) return fail(409, "dashboard_archived");
+            // An archived project takes no new screens (#648).
+            if (dashboard.projectArchivedAt) {
+              return fail(409, "project_archived");
+            }
           }
           const platform = storedPlatform(pairing.platform);
           const device = await insertDevice(tx, {
@@ -821,7 +825,8 @@ export function createDeviceService(deps: DeviceServiceDeps) {
         { workspaceId: actor.workspaceId, userId: actor.userId },
         async (tx) => {
           // Under a share lock: a concurrent template swap archiving it
-          // either moves this screen too or is seen here (11E).
+          // either moves this screen too or is seen here (11E), and so is a
+          // concurrent archive of its project (#648).
           const assigned = body.dashboardId
             ? await lockDashboardArchive(
                 tx,
@@ -845,6 +850,14 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             body.dashboardId !== current.dashboardId
           ) {
             return fail<Device>(409, "dashboard_archived");
+          }
+          // Nor does an archived project's dashboard (#648); screens on it
+          // keep it. A template swap moves screens on its own path.
+          if (
+            assigned?.projectArchivedAt &&
+            body.dashboardId !== current.dashboardId
+          ) {
+            return fail<Device>(409, "project_archived");
           }
           const dashboardId =
             body.dashboardId !== undefined
