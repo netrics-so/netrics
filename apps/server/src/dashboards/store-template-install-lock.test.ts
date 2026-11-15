@@ -84,18 +84,32 @@ const actor = (workspaceId: string) => ({
   callerId: userId,
   locale: "en" as const,
 });
-const install = (w: { id: string; connections: string[] }) =>
-  createStoreTemplateService({ db, registry }).install(actor(w.id), {
-    requestId: randomUUID(),
-    name: "App portfolio",
-    connections: w.connections,
-    groups: [],
-  });
+const install = (
+  w: { id: string; connections: string[] },
+  options: { installLockTimeoutMs?: number } = {},
+) =>
+  createStoreTemplateService({ db, registry, ...options }).install(
+    actor(w.id),
+    {
+      requestId: randomUUID(),
+      name: "App portfolio",
+      connections: w.connections,
+      groups: [],
+    },
+  );
 
-/** Runs `during` while another session holds the install lock. */
-async function whileLocked<T>(during: () => Promise<T>): Promise<T> {
+/**
+ * Runs `during` while another session holds the install lock: until
+ * `during` settles, or for `holdMs` once given, as an install of that
+ * length in another workspace does.
+ */
+async function whileLocked<T>(
+  during: () => Promise<T>,
+  holdMs?: number,
+): Promise<T> {
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
+  if (holdMs !== undefined) setTimeout(() => release(), holdMs);
   let locked!: () => void;
   const holding = new Promise<void>((resolve) => (locked = resolve));
   const held = holder.begin(async (tx) => {
@@ -152,20 +166,36 @@ describe("the store-template install lock (#604)", () => {
     expect(row!.version).toBe(next.version);
   }, 30_000);
 
-  it("answers 409 version_conflict when the lock stays held, after bounded waits", async () => {
+  it("waits its turn behind an install that runs longer than a few seconds (#660)", async () => {
+    // An install is ~1,100 statements in one transaction: ~0.7 s on CI,
+    // 3-7.5 s against a local Docker Postgres. Before #660 a waiter gave up
+    // after 2 s, queued again at the back twice, and answered 409
+    // version_conflict after ~6 s while the install ahead still ran.
     const w = await workspace();
+    const holdMs = 7_000;
+    expect(holdMs).toBeLessThan(INSTALL_LOCK_TIMEOUT_MS);
+    const started = Date.now();
+    const result = await whileLocked(() => install(w), holdMs);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(holdMs);
+    expect(result).toMatchObject({ dashboardId: expect.any(String) });
+  }, 60_000);
+
+  it("answers 409 version_conflict when the lock stays held, after one bounded wait", async () => {
+    const w = await workspace();
+    const timeoutMs = 1_500;
     const started = Date.now();
     const error = await whileLocked(() =>
-      install(w).then(
+      install(w, { installLockTimeoutMs: timeoutMs }).then(
         () => null,
         (caught: unknown) => caught,
       ),
     );
     const elapsed = Date.now() - started;
     expect(error).toMatchObject({ code: "version_conflict", status: 409 });
-    // Three waits of the lock timeout: the first attempt and two retries.
-    expect(elapsed).toBeGreaterThanOrEqual(3 * INSTALL_LOCK_TIMEOUT_MS);
-    expect(elapsed).toBeLessThan(3 * INSTALL_LOCK_TIMEOUT_MS + 5_000);
+    // One wait: a retry would give up the waiter's place in the lock queue
+    // to installs that came later, and wait the timeout again.
+    expect(elapsed).toBeGreaterThanOrEqual(timeoutMs);
+    expect(elapsed).toBeLessThan(2 * timeoutMs);
     // Nothing was installed, and the workspace installs once the lock is free.
     await expect(install(w)).resolves.toMatchObject({
       dashboardId: expect.any(String),

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import postgres from "postgres";
 // API: the API itself, as screens reach it (not through the web app).
 import { API, ORIGIN } from "./origin.ts";
@@ -93,42 +93,21 @@ export async function pairScreen(
 type Widget = Json & { title?: string | null };
 
 /**
- * A store-template install for seeding, answered 200. Installs no longer
- * conflict with each other (they run one at a time, #604), but on a
- * database this small an install still conflicts with the other journeys'
- * serializable data transactions: every workspace's rows share the same
- * heap and index pages. Right after the servers start, while every request
- * is slow, that can outlast the API's retry budget. The same request is
- * idempotent, so it is retried after a growing pause. Any other refusal
- * fails the journey. Every retry is recorded on the test (annotation and
- * warning), so that the workaround stays visible.
- * TODO(#660): remove the retry once installs no longer conflict there.
+ * A store-template install for seeding, answered 200. Installs run one at a
+ * time across workspaces and wait their turn (#604, #660), so a journey
+ * installing while another one does waits instead of failing.
  */
 async function installStores(
   page: Page,
   workspaceId: string,
   data: Json & { requestId: string },
 ) {
-  const install = () =>
-    page.request.post(
-      `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
-      { headers: { origin: ORIGIN }, data },
-    );
-  const conflicted = async (answer: Awaited<ReturnType<typeof install>>) =>
-    answer.status() === 409 &&
-    ((await answer.json()) as { error?: string }).error === "version_conflict";
-  let response = await install();
-  for (
-    let attempt = 0;
-    attempt < 5 && (await conflicted(response));
-    attempt++
-  ) {
-    const note = `store-template install hit version_conflict; retry ${attempt + 1} of 5 (#660)`;
-    test.info().annotations.push({ type: "seeding-retry", description: note });
-    console.warn(`[${test.info().title}] ${note}`);
-    await page.waitForTimeout(500 * (attempt + 1));
-    response = await install();
-  }
+  const response = await page.request.post(
+    `/v1/workspaces/${workspaceId}/dashboard-templates/stores`,
+    // Past the install's lock wait (INSTALL_LOCK_TIMEOUT_MS, 60 s) and the
+    // install itself; the request default is 30 s.
+    { headers: { origin: ORIGIN }, data, timeout: 90_000 },
+  );
   expect(response.status(), await response.text()).toBe(200);
   return response;
 }
