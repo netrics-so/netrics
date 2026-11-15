@@ -157,7 +157,6 @@ export const dashboardsEn = {
       compare: "Compare in Studio",
       swap: "Use it on your screens",
       done: "done",
-      current: "current step",
     },
     summary: {
       measures: {
@@ -268,9 +267,19 @@ export const dashboardsEn = {
     reloaded:
       "The update changed since you opened it, so the review was reloaded. Check your choices, then apply again.",
     loading: "Loading the update…",
-    loadFailed: "The update could not be loaded.",
     retry: "Try again",
+    done: {
+      applied: "Applied as drafts. Publish them in data settings next.",
+      copy: "Updated copy created. Compare it in Studio next.",
+      swap: "Screens moved to the updated dashboard.",
+      swapBack: "Screens moved back to your original.",
+      close: "Update stopped. Its drafts stay as normal drafts.",
+    },
     progress: {
+      confirmSwap:
+        "{count, plural, =0 {Use the updated dashboard? No screen shows the original yet.} one {Move # screen ({screens}) to the updated dashboard?} other {Move # screens ({screens}) to the updated dashboard?}} The original is archived, and you can switch back.",
+      confirmSwapBack:
+        "{count, plural, =0 {Switch back to your original?} one {Move # screen ({screens}) back to your original?} other {Move # screens ({screens}) back to your original?}} The updated copy is archived, and you can use it again.",
       publishIntro:
         "Open each draft in data settings, preview it and publish it there. Before publishing, you see what depends on it.",
       noDrafts: "This update changes no data.",

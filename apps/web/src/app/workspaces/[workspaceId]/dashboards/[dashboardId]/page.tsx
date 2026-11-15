@@ -9,12 +9,15 @@ import {
   getTheme,
   getWorkspace,
   listConnections,
+  listStoreTemplateInstalls,
   listStudioImages,
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
+import { storeUpdatePath, studioUpdateNote } from "@/lib/store-updates";
+import { StoreUpdateNote } from "@/components/studio-editor/studio-status";
 import { resolveDashboardTheme } from "@/lib/studio-theme";
 import { referencedImageIds } from "@/lib/studio-widgets";
 
@@ -49,6 +52,17 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     notFound();
   }
   const { dashboard } = dashboardResult;
+  // An archived original (11E) is read-only until it is switched back.
+  const archived = dashboard.archivedAt !== null;
+  const archivedNote = archived
+    ? studioUpdateNote(
+        await listStoreTemplateInstalls(cookieHeader, workspaceId).then(
+          ({ installs }) => installs,
+          () => [],
+        ),
+        dashboard,
+      )
+    : null;
   const [{ metrics }, { connections }, workspaceResult, customTheme, images] =
     await Promise.all([
       listWorkspaceMetrics(cookieHeader, workspaceId),
@@ -82,6 +96,12 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         </Link>{" "}
         /
       </p>
+      {archivedNote ? (
+        <StoreUpdateNote
+          kind={archivedNote.kind}
+          href={storeUpdatePath(workspaceId, archivedNote.requestId)}
+        />
+      ) : null}
       <DashboardView
         workspaceId={workspaceId}
         dashboard={dashboard}
@@ -93,9 +113,9 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         images={images}
         metrics={metrics}
         connections={byId}
-        canEdit={can(membership.role, "dashboards:update")}
+        canEdit={!archived && can(membership.role, "dashboards:update")}
         canDuplicate={can(membership.role, "dashboards:create")}
-        canDelete={can(membership.role, "dashboards:delete")}
+        canDelete={!archived && can(membership.role, "dashboards:delete")}
       />
     </div>
   );

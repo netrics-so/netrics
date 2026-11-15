@@ -3,11 +3,17 @@ import { dashboardsDe } from "../apps/web/src/messages/dashboards/de.ts";
 import { dashboardsEn } from "../apps/web/src/messages/dashboards/en.ts";
 import { fill, labels, type Locale } from "./support/labels.ts";
 import { startWorkspace } from "./support/session.ts";
-import { installWithUpdate } from "./support/store-template.ts";
+import {
+  installWithUpdate,
+  OLD_MEASURE_NAME,
+  pairScreen,
+  publishedMeasureName,
+} from "./support/store-template.ts";
 
 /** One branch of a `{count, plural, …}` message, e.g. `=0`. */
 const pluralBranch = (message: string, branch: string) =>
-  new RegExp(`${branch} \\{([^}]*)\\}`).exec(message)![1]!;
+  // A branch may hold `{name}` placeholders, one level deep.
+  new RegExp(`${branch} \\{((?:[^{}]|\\{[^{}]*\\})*)\\}`).exec(message)![1]!;
 
 const updateLabels = (locale: Locale) =>
   (locale === "de" ? dashboardsDe : dashboardsEn)
@@ -30,8 +36,47 @@ test("a customer reviews and applies a store-template update", async ({
   const name = "App portfolio";
 
   const { workspaceId } = await startWorkspace(page, locale);
-  const { requestId, dashboardId } = await installWithUpdate(page, workspaceId);
+  const { requestId, dashboardId, modelId } = await installWithUpdate(
+    page,
+    workspaceId,
+  );
   const updatePath = `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`;
+  // A paired screen shows the original throughout, until the swap.
+  const servedOnLobby = await pairScreen(page, workspaceId, {
+    name: "Lobby",
+    dashboardId,
+  });
+  expect(await servedOnLobby()).toBe(dashboardId);
+  const titles = async (id: string) => {
+    const response = await page.request.get(
+      `/v1/workspaces/${workspaceId}/dashboards/${id}`,
+    );
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as {
+      dashboard: { slides: { widgets: { title: string | null }[] }[] };
+    };
+    return body.dashboard.slides.flatMap((slide) =>
+      slide.widgets.map((widget) => widget.title),
+    );
+  };
+  const originalTitles = await titles(dashboardId);
+  expect(originalTitles).toEqual(
+    expect.arrayContaining(["My downloads", "Proceeds (v0)"]),
+  );
+  /** Nothing the customer's screens or dashboards use has changed yet. */
+  const nothingChangedYet = async () => {
+    expect(await publishedMeasureName(workspaceId, modelId)).toBe(
+      OLD_MEASURE_NAME,
+    );
+    expect(await titles(dashboardId)).toEqual(originalTitles);
+    expect(await servedOnLobby()).toBe(dashboardId);
+  };
+  // Swaps ask first; the questions name the screens.
+  const asked: string[] = [];
+  page.on("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.accept();
+  });
 
   // 1. The dashboard says an update is available; the badge opens it.
   await page.goto(`/workspaces/${workspaceId}/dashboards`);
@@ -64,6 +109,13 @@ test("a customer reviews and applies a store-template update", async ({
     await removal.check();
   await expect(apply).toBeEnabled();
   await apply.click();
+  // Applied: focus moves to the progress, which says what happened.
+  await expect(
+    page.getByRole("status").filter({ hasText: u.done.applied }),
+  ).toBeVisible();
+  await expect(page.locator(".store-update-progress")).toBeFocused();
+  // Drafts only: the published model and the dashboard are as they were.
+  await nothingChangedYet();
 
   // 3. The model draft is published in data settings, impact first.
   const publishStep = page
@@ -100,33 +152,30 @@ test("a customer reviews and applies a store-template update", async ({
   await expect(
     page.getByRole("status").filter({ hasText: data.publishedNotice }),
   ).toBeVisible();
+  expect(await publishedMeasureName(workspaceId, modelId)).not.toBe(
+    OLD_MEASURE_NAME,
+  );
 
   // 4. Back on the update: the copy is made from the published data.
   await page.goto(updatePath);
   await expect(publishStep.getByText(u.progress.published)).toBeVisible();
   await expect(createCopy).toBeEnabled();
   await createCopy.click();
+  await expect(
+    page.getByRole("status").filter({ hasText: u.done.copy }),
+  ).toBeVisible();
+  await expect(page.locator(".store-update-progress")).toBeFocused();
   const openCopy = page.getByRole("link", { name: u.progress.openCopy });
   await expect(openCopy).toBeVisible();
   const copyHref = await openCopy.getAttribute("href");
   const copyId = copyHref!.split("/").at(-2)!;
   expect(copyId).not.toBe(dashboardId);
-  // The copy has the template's titles; the original is untouched.
-  const titles = async (id: string) => {
-    const response = await page.request.get(
-      `/v1/workspaces/${workspaceId}/dashboards/${id}`,
-    );
-    expect(response.status()).toBe(200);
-    const body = (await response.json()) as {
-      dashboard: { slides: { widgets: { title: string | null }[] }[] };
-    };
-    return body.dashboard.slides.flatMap((slide) =>
-      slide.widgets.map((widget) => widget.title),
-    );
-  };
+  // The copy has the template's titles; the original and the screen are
+  // untouched.
   expect(await titles(copyId)).not.toContain("My downloads");
   expect(await titles(copyId)).not.toContain("Proceeds (v0)");
-  expect(await titles(dashboardId)).toContain("My downloads");
+  expect(await titles(dashboardId)).toEqual(originalTitles);
+  expect(await servedOnLobby()).toBe(dashboardId);
 
   // 5. Compare in Studio: the copy says what it is.
   await openCopy.click();
@@ -135,13 +184,35 @@ test("a customer reviews and applies a store-template update", async ({
   ).toBeVisible();
   await page.goto(updatePath);
 
-  // 6. Swap onto the screens (none yet), then the update is done.
+  // 6. Swap onto the screens, after a question naming them.
   await expect(
-    page.getByText(pluralBranch(u.progress.screens, "=0")),
+    page.getByText(
+      pluralBranch(u.progress.screens, "one")
+        .replace("#", "1")
+        .replace("{screens}", "Lobby"),
+    ),
   ).toBeVisible();
   await page.getByRole("button", { name: u.progress.swap }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: u.done.swap }),
+  ).toBeVisible();
+  expect(asked.at(-1)).toContain(
+    pluralBranch(u.progress.confirmSwap, "one")
+      .replace("#", "1")
+      .replace("{screens}", "Lobby"),
+  );
   await expect(page.getByText(u.progress.swapped)).toBeVisible();
   await expect(page.getByText(u.progress.finished)).toBeVisible();
+  expect(await servedOnLobby()).toBe(copyId);
+
+  // The archived original opens read-only, never in the Studio.
+  await page.goto(
+    `/workspaces/${workspaceId}/dashboards/${dashboardId}/studio`,
+  );
+  await expect(page).toHaveURL(
+    `/workspaces/${workspaceId}/dashboards/${dashboardId}`,
+  );
+  await expect(page.getByText(u.studioArchived)).toBeVisible();
 
   // 7. The original is archived: not in the grid, in its own section.
   await page.goto(`/workspaces/${workspaceId}/dashboards`);
@@ -157,7 +228,16 @@ test("a customer reviews and applies a store-template update", async ({
 
   // 8. Switch back: the original returns, the update is offered again.
   await page.getByRole("button", { name: u.progress.switchBack }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: u.done.swapBack }),
+  ).toBeVisible();
+  expect(asked.at(-1)).toContain(
+    pluralBranch(u.progress.confirmSwapBack, "one")
+      .replace("#", "1")
+      .replace("{screens}", "Lobby"),
+  );
   await expect(page.getByText(u.progress.switchedBack)).toBeVisible();
+  expect(await servedOnLobby()).toBe(dashboardId);
   await expect(
     page.getByRole("button", { name: u.progress.swapAgain }),
   ).toBeVisible();

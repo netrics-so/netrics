@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 
 import type {
   StoreTemplatePlan,
   StoreTemplateUpdate,
 } from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
 
 import { StoreUpdateSummary } from "@/components/store-update-summary";
 import {
@@ -21,6 +22,7 @@ import {
   swapBackStoreTemplateDashboard,
   swapStoreTemplateDashboard,
 } from "@/lib/api";
+import type { WebTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
 import {
   applyReviewed,
@@ -86,7 +88,13 @@ export function StoreUpdateReview({
     [notice, setNotice] = useState<"reloaded" | null>(null),
     [error, setError] = useState<string | null>(null),
     [pending, setPending] = useState<string | null>(null),
-    [problem, setProblem] = useState<Problem | null>(null);
+    [problem, setProblem] = useState<Problem | null>(null),
+    [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  // After a step succeeds, focus moves to the progress, which announces it.
+  const focusTarget = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (announcement) focusTarget.current?.focus();
+  }, [announcement]);
   const stage = stageOf(install);
   const requestId = install.requestId;
 
@@ -117,6 +125,7 @@ export function StoreUpdateReview({
     setPending("apply");
     setError(null);
     setNotice(null);
+    setAnnouncement(null);
     try {
       const result = await applyReviewed(plan, decisions, {
         apply: (body) => applyStoreTemplateUpdate(workspaceId, requestId, body),
@@ -134,6 +143,7 @@ export function StoreUpdateReview({
         }));
         setPlan(null);
         await reloadInstall().catch(() => {});
+        setAnnouncement("applied");
       }
     } catch (failure) {
       if (failure instanceof ApiError && failure.code === "store_update_open")
@@ -170,9 +180,11 @@ export function StoreUpdateReview({
     setPending(`${action}:${key}`);
     setProblem(null);
     setError(null);
+    setAnnouncement(null);
     try {
       await run();
       await reloadInstall();
+      if (action !== "refresh") setAnnouncement(action);
     } catch (failure) {
       if (failure instanceof ApiError) {
         let names: string[] = [];
@@ -229,11 +241,12 @@ export function StoreUpdateReview({
         </p>
       ) : null}
       {stage === "review" ? (
-        <>
+        <div ref={focusTarget} tabIndex={-1} className="store-update-focus">
+          <StatusLine announcement={announcement} />
           <Steps current={1} />
           {install.lastUpdate &&
           install.lastUpdate.dashboards.some(
-            (entry) => swapState(entry) === "swappedBack",
+            (entry) => entry.swappedAt !== null,
           ) ? (
             <ProgressView
               workspaceId={workspaceId}
@@ -270,9 +283,11 @@ export function StoreUpdateReview({
           ) : (
             <p className="muted">{t("loading")}</p>
           )}
-        </>
+        </div>
       ) : update ? (
         <ProgressView
+          focusRef={focusTarget}
+          announcement={announcement}
           workspaceId={workspaceId}
           update={update}
           screens={screens}
@@ -663,6 +678,39 @@ function useDescribe() {
   };
 }
 
+/** A step that succeeded, announced to the customer. */
+type Announcement = "applied" | "copy" | "swap" | "swapBack" | "close";
+
+function StatusLine({ announcement }: { announcement: Announcement | null }) {
+  const t = useT("storeUpdate");
+  return announcement ? (
+    <p className="notice" role="status">
+      {t(`done.${announcement}`)}
+    </p>
+  ) : null;
+}
+
+/**
+ * The question before screens move: how many, which, and that it can be
+ * undone.
+ */
+export function swapConfirmation(
+  t: WebTranslator<"storeUpdate">,
+  direction: "swap" | "swapBack",
+  names: readonly string[],
+  locale: Locale,
+): string {
+  return t(
+    direction === "swap" ? "progress.confirmSwap" : "progress.confirmSwapBack",
+    {
+      count: names.length,
+      screens: new Intl.ListFormat(locale, { type: "conjunction" }).format(
+        names,
+      ),
+    },
+  );
+}
+
 type Problem = {
   key: string;
   action: "copy" | "swap" | "swapBack" | "close" | "refresh";
@@ -694,6 +742,8 @@ export function ProgressView({
   actions,
   closable = false,
   previous = false,
+  announcement = null,
+  focusRef,
 }: {
   workspaceId: string;
   update: StoreTemplateUpdate;
@@ -708,12 +758,21 @@ export function ProgressView({
   closable?: boolean;
   /** A closed update shown above a new review: its swap only. */
   previous?: boolean;
+  /** The step that just succeeded, announced in a status line. */
+  announcement?: Announcement | null;
+  /** Takes focus after a step succeeds. */
+  focusRef?: Ref<HTMLDivElement>;
 }) {
   const t = useT("storeUpdate");
   const current = progressStep(update);
   const unpublished = update.drafts.some((draft) => !draft.published);
   return (
-    <div className="store-update-progress">
+    <div
+      className="store-update-progress store-update-focus"
+      ref={focusRef}
+      tabIndex={-1}
+    >
+      {previous ? null : <StatusLine announcement={announcement} />}
       {previous ? null : <Steps current={current} />}
       {previous ? null : (
         <section className="card store-update-stage">
@@ -904,7 +963,19 @@ export function DashboardSteps({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => actions.swapBack(entry.key)}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      swapConfirmation(
+                        t,
+                        "swapBack",
+                        screens ? screensOn(screens, entry.copyId) : [],
+                        locale,
+                      ),
+                    )
+                  )
+                    actions.swapBack(entry.key);
+                }}
               >
                 {pending === `swapBack:${entry.key}`
                   ? t("progress.switchingBack")
@@ -933,7 +1004,12 @@ export function DashboardSteps({
                 type="button"
                 className="primary"
                 disabled={busy}
-                onClick={() => actions.swap(entry.key)}
+                onClick={() => {
+                  if (
+                    window.confirm(swapConfirmation(t, "swap", moving, locale))
+                  )
+                    actions.swap(entry.key);
+                }}
               >
                 {pending === `swap:${entry.key}`
                   ? t("progress.swapping")
@@ -988,9 +1064,16 @@ function ProblemText({
     );
   if (error.code === "store_update_unmergeable")
     return (
-      <p className="error" role="alert">
-        {t("progress.unmergeable", { names: list.format(problem.names) })}
-      </p>
+      <div className="error" role="alert">
+        <p>
+          {t("progress.unmergeable", { names: list.format(problem.names) })}
+        </p>
+        {onClose ? (
+          <button type="button" onClick={onClose}>
+            {t("progress.close")}
+          </button>
+        ) : null}
+      </div>
     );
   if (error.code === "store_update_review_changed") {
     const items = (error.details.records ?? [])

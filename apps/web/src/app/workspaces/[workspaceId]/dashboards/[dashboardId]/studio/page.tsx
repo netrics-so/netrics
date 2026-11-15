@@ -21,7 +21,11 @@ import {
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
-import { storeUpdatePath, studioUpdateNote } from "@/lib/store-updates";
+import {
+  storeUpdatePath,
+  studioUpdateNote,
+  studioViewOnlyPath,
+} from "@/lib/store-updates";
 import type { StudioConnection } from "@/lib/studio-widgets";
 
 import "@/app/styles/studio.css";
@@ -55,6 +59,9 @@ export default async function StudioPage({ params }: StudioPageProps) {
     // Viewers see the dashboard read-only.
     redirect(`/workspaces/${workspaceId}/dashboards/${dashboardId}`);
   }
+  // An archived original (11E) is read-only until it is switched back.
+  const viewOnly = studioViewOnlyPath(workspaceId, dashboardResult.dashboard);
+  if (viewOnly) redirect(viewOnly);
   const canManageDevices = can(role, "devices:manage");
   const [
     { metrics },

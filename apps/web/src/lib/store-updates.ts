@@ -378,6 +378,20 @@ export function studioUpdateNote(
   return offered ? { kind: "available", requestId: offered.requestId } : null;
 }
 
+/**
+ * An archived original is read-only until it is switched back (11E): the
+ * Studio sends it to the dashboard's view page, which says so and links to
+ * the update. Null for every other dashboard.
+ */
+export function studioViewOnlyPath(
+  workspaceId: string,
+  dashboard: { id: string; archivedAt: string | null },
+): string | null {
+  return dashboard.archivedAt === null
+    ? null
+    : `/workspaces/${workspaceId}/dashboards/${dashboard.id}`;
+}
+
 /** A dashboard of an update: on the copy now, or back on the original. */
 export function swapState(
   entry: UpdateDashboard,

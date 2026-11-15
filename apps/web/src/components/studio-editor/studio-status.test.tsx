@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 
+import { studioViewOnlyPath } from "@/lib/store-updates";
+
 import { freeCells } from "./editor-canvas";
 import {
   CanvasHead,
@@ -106,6 +108,17 @@ describe("store-template updates in the Studio (11E)", () => {
       expect(html).toContain(`href="${href}">${link}</a>`);
     },
   );
+
+  it("keeps an archived original out of the Studio: it opens read-only", () => {
+    const dashboard = { id: "d1", archivedAt: null };
+    expect(studioViewOnlyPath("w", dashboard)).toBeNull();
+    expect(
+      studioViewOnlyPath("w", {
+        ...dashboard,
+        archivedAt: "2026-11-14T10:00:00.000Z",
+      }),
+    ).toBe("/workspaces/w/dashboards/d1");
+  });
 
   it("marks the updated copy and an archived original", () => {
     expect(renderI18n(<StoreUpdateNote kind="copy" href={href} />)).toContain(

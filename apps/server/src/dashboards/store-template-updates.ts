@@ -1812,6 +1812,11 @@ export function createStoreTemplateUpdateService(deps: {
                   )
               : [];
             const inputs = install.inputs as StoreTemplateInputs | null;
+            const openUpdate = await openUpdateOf(
+              tx,
+              actor.workspaceId,
+              install.requestId,
+            );
             result.push({
               requestId: install.requestId,
               name: dashboard?.name ?? inputs?.name ?? "",
@@ -1826,16 +1831,11 @@ export function createStoreTemplateUpdateService(deps: {
               dashboardIds: idsOf("dashboard"),
               modelIds: idsOf("model"),
               preparationIds: idsOf("preparation"),
-              openUpdate: await openUpdateOf(
-                tx,
-                actor.workspaceId,
-                install.requestId,
-              ),
-              lastUpdate: await lastUpdateOf(
-                tx,
-                actor.workspaceId,
-                install.requestId,
-              ),
+              openUpdate,
+              // The open update is the newest; read further only without one.
+              lastUpdate:
+                openUpdate ??
+                (await lastUpdateOf(tx, actor.workspaceId, install.requestId)),
             });
           }
           return { installs: result };

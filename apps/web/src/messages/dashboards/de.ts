@@ -160,7 +160,6 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       compare: "Im Studio vergleichen",
       swap: "Auf deinen Bildschirmen nutzen",
       done: "erledigt",
-      current: "aktueller Schritt",
     },
     summary: {
       measures: {
@@ -277,9 +276,21 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     reloaded:
       "Das Update hat sich geändert, seit du es geöffnet hast, deshalb wurde die Prüfung neu geladen. Prüf deine Entscheidungen und wende es dann erneut an.",
     loading: "Update wird geladen …",
-    loadFailed: "Das Update konnte nicht geladen werden.",
     retry: "Erneut versuchen",
+    done: {
+      applied:
+        "Als Entwürfe angewendet. Veröffentliche sie als Nächstes in den Dateneinstellungen.",
+      copy: "Aktualisierte Kopie erstellt. Vergleiche sie als Nächstes im Studio.",
+      swap: "Bildschirme auf das aktualisierte Dashboard verschoben.",
+      swapBack: "Bildschirme zurück auf dein Original verschoben.",
+      close:
+        "Update abgebrochen. Seine Entwürfe bleiben als normale Entwürfe erhalten.",
+    },
     progress: {
+      confirmSwap:
+        "{count, plural, =0 {Das aktualisierte Dashboard nutzen? Noch kein Bildschirm zeigt das Original.} one {# Bildschirm ({screens}) auf das aktualisierte Dashboard verschieben?} other {# Bildschirme ({screens}) auf das aktualisierte Dashboard verschieben?}} Das Original wird archiviert, und du kannst zurückwechseln.",
+      confirmSwapBack:
+        "{count, plural, =0 {Zu deinem Original zurückwechseln?} one {# Bildschirm ({screens}) zurück auf dein Original verschieben?} other {# Bildschirme ({screens}) zurück auf dein Original verschieben?}} Die aktualisierte Kopie wird archiviert, und du kannst sie wieder nutzen.",
       publishIntro:
         "Öffne jeden Entwurf in den Dateneinstellungen, sieh dir die Vorschau an und veröffentliche ihn dort. Vor dem Veröffentlichen siehst du, was davon abhängt.",
       noDrafts: "Dieses Update ändert keine Daten.",

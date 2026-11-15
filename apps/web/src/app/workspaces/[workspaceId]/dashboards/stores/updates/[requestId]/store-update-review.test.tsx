@@ -5,6 +5,7 @@ import type {
 } from "@netrics/contracts";
 
 import { ApiError } from "@/lib/api";
+import { webTranslator } from "@/lib/i18n/catalogs";
 import { renderI18n } from "@/lib/i18n/test-render";
 import {
   applyReviewed,
@@ -16,6 +17,7 @@ import {
   ProgressView,
   ReviewView,
   StoreUpdateReview,
+  swapConfirmation,
 } from "./store-update-review";
 
 vi.mock("next/navigation", () => ({
@@ -587,5 +589,97 @@ describe("publishing, copying and swapping an update (11E)", () => {
     );
     expect(html).toContain("Updates aren’t available for this dashboard.");
     expect(html).not.toContain("Apply as drafts");
+  });
+});
+
+describe("fix round 1 (#602 review)", () => {
+  const en = webTranslator("en", "storeUpdate"),
+    de = webTranslator("de", "storeUpdate");
+
+  it("asks before moving screens, naming them (en, de)", () => {
+    expect(swapConfirmation(en, "swap", ["Lobby", "Kitchen"], "en")).toBe(
+      "Move 2 screens (Lobby and Kitchen) to the updated dashboard? The original is archived, and you can switch back.",
+    );
+    expect(swapConfirmation(en, "swap", [], "en")).toBe(
+      "Use the updated dashboard? No screen shows the original yet. The original is archived, and you can switch back.",
+    );
+    expect(swapConfirmation(en, "swapBack", ["Lobby"], "en")).toBe(
+      "Move 1 screen (Lobby) back to your original? The updated copy is archived, and you can use it again.",
+    );
+    expect(swapConfirmation(de, "swap", ["Lobby", "Küche"], "de")).toBe(
+      "2 Bildschirme (Lobby und Küche) auf das aktualisierte Dashboard verschieben? Das Original wird archiviert, und du kannst zurückwechseln.",
+    );
+    expect(swapConfirmation(de, "swapBack", ["Lobby"], "de")).toBe(
+      "1 Bildschirm (Lobby) zurück auf dein Original verschieben? Die aktualisierte Kopie wird archiviert, und du kannst sie wieder nutzen.",
+    );
+  });
+
+  it.each([
+    ["en", "copy", "Updated copy created. Compare it in Studio next."],
+    ["en", "swap", "Screens moved to the updated dashboard."],
+    ["en", "swapBack", "Screens moved back to your original."],
+    ["de", "swap", "Bildschirme auf das aktualisierte Dashboard verschoben."],
+  ] as const)(
+    "announces what succeeded in a status line (%s, %s)",
+    (locale, done, text) => {
+      const html = progress({ announcement: done }, locale);
+      expect(html).toMatch(
+        new RegExp(
+          `<p[^>]*role="status"[^>]*>${text.replace(/\./g, "\\.")}</p>`,
+        ),
+      );
+      // The progress can take focus for the announcement.
+      expect(html).toContain('tabindex="-1"');
+    },
+  );
+
+  it("shows an earlier swapped update with switch back while a new one is reviewed", () => {
+    const install: StoreInstall = {
+      requestId: REQUEST,
+      name: "App portfolio",
+      templateVersion: 2,
+      latestVersion: 3,
+      updateAvailable: true,
+      summary: plan.summary,
+      error: null,
+      dashboardIds: [COPY],
+      modelIds: [],
+      preparationIds: [],
+      openUpdate: null,
+      lastUpdate: applied({
+        drafts: [],
+        dashboards: [
+          entry({ copyId: COPY, swappedAt: "2026-11-14T11:00:00.000Z" }),
+        ],
+      }),
+    };
+    const html = renderI18n(
+      <StoreUpdateReview
+        workspaceId={W}
+        install={install}
+        screens={null}
+        dashboardNames={{}}
+        canCopy
+        canSwap
+      />,
+    );
+    expect(html).toContain("Switch back</button>");
+    expect(html).toContain("Loading the update…");
+  });
+
+  it("offers to stop the update when the copy cannot be made", () => {
+    const html = progress({
+      update: applied({ drafts: [], dashboards: [entry({ ready: true })] }),
+      problem: {
+        key: "dashboard:portfolio",
+        action: "copy",
+        names: ["Ratings"],
+        error: new ApiError(409, "store_update_unmergeable"),
+      },
+    });
+    const alert = html.slice(html.indexOf("can’t be made with these widgets"));
+    expect(alert.slice(0, alert.indexOf("</section>"))).toContain(
+      "Stop this update</button>",
+    );
   });
 });
