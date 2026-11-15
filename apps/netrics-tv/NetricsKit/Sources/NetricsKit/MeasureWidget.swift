@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Typed semantic results are calculated on the server and retained in the offline payload.
 public enum MeasureValue: Codable, Sendable, Equatable {
@@ -100,18 +101,50 @@ public struct MeasureCell: Codable, Sendable, Equatable {
     }
     /// The value as a plain decimal string ("-1234.5"), minor units shifted to
     /// major ones; nil when it is none (text, or a number beyond exact integers).
+    /// As on the web, a minor-unit number is shifted from its shortest text
+    /// (12.5 cents → "0.125"), whatever its size.
     private var decimalText: String? {
+        let minor = unit == "currency_minor" ? currency : nil
         var raw: String
         switch value {
         case .text(let text): raw = text
-        case .number(let number) where number.rounded() == number && abs(number) <= 9_007_199_254_740_991:
-            raw = String(format: "%.0f", number)
+        case .number(let number) where minor != nil || (number.rounded() == number && abs(number) <= 9_007_199_254_740_991):
+            guard let text = Self.plainDecimal(number) else { return nil }
+            raw = text
         default: return nil
         }
-        if unit == "currency_minor", let currency {
-            raw = Self.majorAmount(raw, exponent: MetricFormat.exponent(of: currency))
+        if let minor {
+            raw = Self.majorAmount(raw, exponent: MetricFormat.exponent(of: minor))
         }
-        return raw.wholeMatch(of: /-?\d+(\.\d+)?/) == nil ? nil : raw
+        return raw.wholeMatch(of: /-?[0-9]+(\.[0-9]+)?/) == nil ? nil : raw
+    }
+    /// A finite number's shortest round-trip text without an exponent, as
+    /// JavaScript's String(number) for these values: 1e17 → "100000000000000000",
+    /// 1.5e-7 → "0.00000015", -0.0 → "0".
+    static func plainDecimal(_ number: Double) -> String? {
+        guard number.isFinite else { return nil }
+        if number == 0 { return "0" }
+        let text = "\(abs(number))"
+        let parts = text.split(separator: "e", maxSplits: 1)
+        let mantissa = parts[0].split(separator: ".", omittingEmptySubsequences: false)
+        var whole = String(mantissa[0])
+        var fraction = mantissa.count > 1 ? String(mantissa[1]) : ""
+        if parts.count > 1, let exponent = Int(parts[1]) {
+            if exponent > 0 {
+                fraction += String(repeating: "0", count: max(0, exponent - fraction.count))
+                whole += fraction.prefix(exponent)
+                fraction = String(fraction.dropFirst(exponent))
+            } else if exponent < 0 {
+                whole = String(repeating: "0", count: max(0, -exponent - whole.count + 1)) + whole
+                let at = whole.index(whole.endIndex, offsetBy: exponent)
+                fraction = whole[at...] + fraction
+                whole = String(whole[..<at])
+            }
+        }
+        while fraction.last == "0" { fraction.removeLast() }
+        while whole.count > 1 && whole.first == "0" { whole.removeFirst() }
+        if whole.isEmpty { whole = "0" }
+        return (number < 0 ? "-" : "") + whole + (fraction.isEmpty ? "" : ".\(fraction)")
     }
     static func exactNumber(_ text: String, minimumFraction: Int, language: ScreenLanguage) -> String {
         if text == "—" { return text }
@@ -251,7 +284,7 @@ public enum DataFormat {
      * a Double. Text that is no plain decimal is returned unchanged.
      */
     public static func roundDecimalText(_ raw: String, digits: Int) -> String {
-        guard let match = raw.wholeMatch(of: /(-?)(\d+)(?:\.(\d+))?/) else { return raw }
+        guard let match = raw.wholeMatch(of: /(-?)([0-9]+)(?:\.([0-9]+))?/) else { return raw }
         let negative = !match.1.isEmpty
         let given = match.3.map(String.init) ?? ""
         let fraction = Array(given.utf8) + Array(repeating: UInt8(ascii: "0"), count: max(0, digits + 1 - given.utf8.count))
@@ -286,7 +319,7 @@ public enum DataFormat {
         let utc = TimeZone(identifier: "UTC")!
         switch type {
         case "date":
-            guard let match = value.wholeMatch(of: /(\d{4})-(\d{2})-(\d{2})/),
+            guard let match = value.wholeMatch(of: /([0-9]{4})-([0-9]{2})-([0-9]{2})/),
                 let year = Int(match.1), let month = Int(match.2), let day = Int(match.3)
             else { return nil }
             var calendar = Calendar(identifier: .gregorian)
@@ -296,14 +329,14 @@ public enum DataFormat {
                 calendar.dateComponents([.year, .month, .day], from: date)
                     == DateComponents(year: year, month: month, day: day)
             else { return nil }
-            return formatter(language, timeZone: utc, date: .medium, time: .none).string(from: date)
+            return format(date, language, timeZone: utc, date: .medium, time: .none)
         case "timestamp":
-            guard value.prefixMatch(of: /\d{4}-\d{2}-\d{2}T/) != nil, let date = ISODate.parse(value) else {
+            guard value.prefixMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}T/) != nil, let date = ISODate.parse(value) else {
                 return nil
             }
             // Joined like Intl's "Jan 7, 2026, 9:15 AM"; Apple writes " at " in English.
-            let day = formatter(language, timeZone: timeZone, date: .medium, time: .none).string(from: date)
-            let time = formatter(language, timeZone: timeZone, date: .none, time: .short).string(from: date)
+            let day = format(date, language, timeZone: timeZone, date: .medium, time: .none)
+            let time = format(date, language, timeZone: timeZone, date: .none, time: .short)
             // Plain spaces: ICU writes a narrow no-break space before "AM".
             return "\(day), \(time)".replacingOccurrences(of: "\u{202F}", with: " ")
         default:
@@ -311,16 +344,25 @@ public enum DataFormat {
         }
     }
 
-    private static func formatter(
-        _ language: ScreenLanguage, timeZone: TimeZone, date: DateFormatter.Style, time: DateFormatter.Style
-    ) -> DateFormatter {
-        let formatter = DateFormatter()
-        // The web's locales: "en" reads as en-US ("Jan 7, 2026"), "de" as de-DE.
-        formatter.locale = language.numberLocale
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = timeZone
-        formatter.dateStyle = date
-        formatter.timeStyle = time
-        return formatter
+    /// Formatters by language, zone and style: SwiftUI bodies call this per cell.
+    private static let formatters = Mutex<[String: DateFormatter]>([:])
+
+    private static func format(
+        _ value: Date, _ language: ScreenLanguage, timeZone: TimeZone, date: DateFormatter.Style,
+        time: DateFormatter.Style
+    ) -> String {
+        let key = "\(language.rawValue)|\(timeZone.identifier)|\(date.rawValue)|\(time.rawValue)"
+        return formatters.withLock { cache in
+            if let formatter = cache[key] { return formatter.string(from: value) }
+            let formatter = DateFormatter()
+            // The web's locales: "en" reads as en-US ("Jan 7, 2026"), "de" as de-DE.
+            formatter.locale = language.numberLocale
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.timeZone = timeZone
+            formatter.dateStyle = date
+            formatter.timeStyle = time
+            cache[key] = formatter
+            return formatter.string(from: value)
+        }
     }
 }

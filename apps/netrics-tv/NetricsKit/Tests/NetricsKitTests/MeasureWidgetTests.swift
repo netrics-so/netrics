@@ -146,4 +146,24 @@ import Testing
         #expect(data.dimensionText(row, dimension: "missing", language: .en) == "—")
         #expect(data.text(row.measures["rating"], measure: "rating", language: .de) == "4,29 ★")
     }
+    @Test func shiftsMinorUnitNumbersFromTheirShortestTextLikeTheWeb() {
+        func minor(_ number: Double) -> MeasureCell {
+            MeasureCell(value: .number(number), type: "decimal", unit: "currency_minor", currency: "EUR", status: "ok")
+        }
+        #expect(minor(12.5).text(language: .en) == "0.125 EUR")
+        #expect(minor(1e17).text(language: .en) == "1,000,000,000,000,000.00 EUR")
+        #expect(minor(150).text(language: .de) == "1,50 EUR")
+        #expect(MeasureCell.plainDecimal(1.5e-7) == "0.00000015")
+        #expect(MeasureCell.plainDecimal(-1e21) == "-1000000000000000000000")
+    }
+    @Test func leavesNonASCIIDigitsUnchanged() throws {
+        #expect(DataFormat.roundDecimalText("٤.٥٥٥", digits: 2) == "٤.٥٥٥")
+        #expect(DataFormat.roundDecimalText("１.２３５", digits: 2) == "１.２３５")
+        #expect(try cell("٤.٥٥٥", unit: "stars").text(language: .en) == "٤.٥٥٥ ★")
+        #expect(DataFormat.date("٢٠٢٦-٠١-٠٧", type: "date", language: .en) == nil)
+        #expect(DataFormat.date("２０２６-０１-０７T09:15:00Z", type: "timestamp", language: .en) == nil)
+    }
+    @Test func showsNegativeZeroDecimalsAsZero() {
+        #expect(MeasureCell(value: .number(-0.0), type: "decimal", unit: nil, currency: nil, status: "ok").text(language: .en) == "0")
+    }
 }
