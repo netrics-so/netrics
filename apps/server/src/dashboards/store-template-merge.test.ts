@@ -110,6 +110,37 @@ describe("three-way store-template comparison", () => {
       )[0]!.outcome,
     ).toBe("template");
   });
+  it("proposes a removed connection's preparation for removal in a scope change", () => {
+    const step: ItemRef = "preparation:source:x:downloads#step:raw",
+      added: ItemRef = "preparation:source:x:downloads#step:mine";
+    const options = { proposeRemovedConnections: true };
+    // The customer's edit and own step included; never a conflict.
+    for (const current of [one(step, a), one(step, c)])
+      expect(
+        classify(one(step, a), current, new Map(), options).map(
+          (i) => i.outcome,
+        ),
+      ).toEqual(["propose_removal"]);
+    expect(
+      classify(new Map(), one(added, c), new Map(), options)[0],
+    ).toMatchObject({ outcome: "propose_removal", change: "removed" });
+    // A connection the scope adds stays scope.
+    expect(
+      classify(new Map(), new Map(), one(step, a), options)[0]!.outcome,
+    ).toBe("scope");
+    expect(() =>
+      merge(one(step, a), one(step, c), new Map(), [], options),
+    ).toThrow(MergeDecisionMissing);
+    expect(
+      merge(
+        one(step, a),
+        one(step, c),
+        new Map(),
+        [{ ref: step, choice: "keep" }],
+        options,
+      ).get(step),
+    ).toEqual(c);
+  });
   it("proposes a source preparation the new version stops building for a connection that stays", () => {
     // Connection x stays (its downloads preparation is in every state); the
     // new version no longer builds x's ratings preparation.
