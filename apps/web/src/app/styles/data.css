@@ -200,11 +200,36 @@
 .data-editor-header p {
   margin: 0;
 }
-.data-builder {
+/* The preparation editor: steps beside the open step form and the sample.
+   Not .data-builder, which is the visual expression builder (#628). */
+.data-preparation-layout {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
   gap: 24px;
   align-items: start;
+}
+.data-preparation-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+/* The open step form, above the sample and outside its scrolling table. */
+.data-step-panel {
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  scroll-margin-top: 16px;
+}
+.data-step-panel > h3 {
+  margin: 0;
+  padding: 20px 20px 0;
+  font-size: 18px;
+}
+.data-step-panel > .data-step-form {
+  margin-top: 16px;
 }
 .data-steps {
   padding-right: 8px;
@@ -532,7 +557,7 @@
 }
 @media (max-width: 1000px) {
   .data-dataset-layout,
-  .data-builder {
+  .data-preparation-layout {
     grid-template-columns: minmax(0, 1fr);
   }
   .data-source-list ul {

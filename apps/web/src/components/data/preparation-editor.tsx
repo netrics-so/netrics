@@ -373,6 +373,22 @@ export function PreparationEditor({
   }
   const fields: DataField[] = preview?.fields ?? [];
   const selectedNode = graph.nodes.find((node) => node.id === selected);
+  // The open step form's panel sits between the step list and the sample,
+  // outside the sample's scrolling table, and takes focus when it opens
+  // (#628).
+  const stepFormTitle =
+    removing && selectedNode
+      ? ("removeStep" as const)
+      : editing
+        ? ("editStep" as const)
+        : adding && preview
+          ? ("addStep" as const)
+          : null;
+  const stepPanel = useRef<HTMLElement>(null),
+    stepPanelTitleId = useId();
+  useEffect(() => {
+    if (stepFormTitle) stepPanel.current?.focus();
+  }, [stepFormTitle]);
   const moveUp = selectedNode
     ? preparationMoveProblem(graph, selected, "up")
     : "missingStep";
@@ -571,7 +587,7 @@ export function PreparationEditor({
           onAdoptLatest={() => restore()}
         />
       ) : null}
-      <div className="data-builder">
+      <div className="data-preparation-layout">
         <aside className="data-steps">
           <div className="field">
             <label htmlFor={nameId}>{t("preparationName")}</label>
@@ -725,258 +741,278 @@ export function PreparationEditor({
             <p className="help">{t("preparationAdoptionHint")}</p>
           ) : null}
         </aside>
-        <div className="data-preview-panel">
-          <div className="data-preview-header">
-            <div>
-              <h3>{t("sample")}</h3>
-              <p className="page-meta">{t("sampleHint")}</p>
-            </div>
-            <button
-              type="button"
-              disabled={
-                !!busy ||
-                inputMetadata.loading ||
-                !!inputMetadata.error ||
-                !selected
-              }
-              onClick={() => void show(graph, selected).catch(() => undefined)}
+        <div className="data-preparation-main">
+          {stepFormTitle ? (
+            <section
+              ref={stepPanel}
+              className="data-step-panel"
+              aria-labelledby={stepPanelTitleId}
+              tabIndex={-1}
             >
-              {t(busy === "preview" ? "previewing" : "preview")}
-            </button>
-          </div>
-          {selectedNode ? (
-            <div className="data-step-actions">
-              <div className="data-form-actions">
-                <button
-                  type="button"
-                  disabled={
-                    !!busy ||
-                    inputMetadata.loading ||
-                    !!inputMetadata.error ||
-                    formOpen
-                  }
-                  onClick={() => void editSelected()}
+              <h3 id={stepPanelTitleId}>{t(stepFormTitle)}</h3>
+              {removing && selectedNode ? (
+                <div
+                  className="data-step-form"
+                  role="group"
+                  aria-label={t("removeStep")}
                 >
-                  {t("editStep")}
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    !!busy ||
-                    inputMetadata.loading ||
-                    !!inputMetadata.error ||
-                    formOpen ||
-                    !!moveUp
-                  }
-                  title={moveUp ? t(`editErrors.${moveUp}`) : undefined}
-                  onClick={() => void move("up")}
-                >
-                  {t("moveStepUp")}
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    !!busy ||
-                    inputMetadata.loading ||
-                    !!inputMetadata.error ||
-                    formOpen ||
-                    !!moveDown
-                  }
-                  title={moveDown ? t(`editErrors.${moveDown}`) : undefined}
-                  onClick={() => void move("down")}
-                >
-                  {t("moveStepDown")}
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    !!busy ||
-                    inputMetadata.loading ||
-                    !!inputMetadata.error ||
-                    formOpen ||
-                    !!removal
-                  }
-                  title={removal ? t(`editErrors.${removal}`) : undefined}
-                  onClick={() => {
-                    setBypass(preparationStepInputs(selectedNode)[0] ?? "");
-                    setRemoving(true);
-                  }}
-                >
-                  {t("removeStep")}
-                </button>
-              </div>
-              <p className="help">
-                {graph.outputs.includes(selected)
-                  ? removal
-                    ? t("editErrors.outputIdentity")
-                    : t("outputRemovalHint")
-                  : t("stepMoveHint")}
-              </p>
-              {formOpen ? <p className="help">{t("finishStep")}</p> : null}
-            </div>
-          ) : null}
-          {removing && selectedNode ? (
-            <div
-              className="data-step-form"
-              role="group"
-              aria-label={t("removeStep")}
-            >
-              <p>{t("removeStepHint")}</p>
-              {preparationStepInputs(selectedNode).length > 1 ? (
-                <label className="field">
-                  {t("continueInput")}
-                  <select
-                    value={bypass}
-                    onChange={(event) => setBypass(event.target.value)}
-                  >
-                    {preparationStepInputs(selectedNode).map((nodeId) => (
-                      <option key={nodeId} value={nodeId}>
-                        {nodeLabel(nodeId)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <p>{t("removeStepHint")}</p>
+                  {preparationStepInputs(selectedNode).length > 1 ? (
+                    <label className="field">
+                      {t("continueInput")}
+                      <select
+                        value={bypass}
+                        onChange={(event) => setBypass(event.target.value)}
+                      >
+                        {preparationStepInputs(selectedNode).map((nodeId) => (
+                          <option key={nodeId} value={nodeId}>
+                            {nodeLabel(nodeId)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <div className="data-form-actions">
+                    <button
+                      type="button"
+                      disabled={!!busy}
+                      onClick={() => {
+                        try {
+                          const next = removePreparationStep(
+                            graph,
+                            selected,
+                            bypass,
+                          );
+                          void changeGraph(
+                            next,
+                            next.nodes.some((node) => node.id === selected)
+                              ? selected
+                              : next.outputs[0]!,
+                            [],
+                          )
+                            .then(() => setRemoving(false))
+                            .catch(() => undefined);
+                        } catch (failure) {
+                          if (failure instanceof PreparationEditError)
+                            setError(t(`editErrors.${failure.problem}`));
+                        }
+                      }}
+                    >
+                      {t("removeStep")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!!busy}
+                      onClick={() => {
+                        setRemoving(false);
+                        void show(graph, selected).catch(() => undefined);
+                      }}
+                    >
+                      {t("cancel")}
+                    </button>
+                  </div>
+                </div>
               ) : null}
-              <div className="data-form-actions">
-                <button
-                  type="button"
-                  disabled={!!busy}
-                  onClick={() => {
-                    try {
-                      const next = removePreparationStep(
-                        graph,
-                        selected,
-                        bypass,
-                      );
-                      void changeGraph(
-                        next,
-                        next.nodes.some((node) => node.id === selected)
-                          ? selected
-                          : next.outputs[0]!,
-                        [],
-                      )
-                        .then(() => setRemoving(false))
-                        .catch(() => undefined);
-                    } catch (failure) {
-                      if (failure instanceof PreparationEditError)
-                        setError(t(`editErrors.${failure.problem}`));
-                    }
-                  }}
-                >
-                  {t("removeStep")}
-                </button>
-                <button
-                  type="button"
-                  disabled={!!busy}
-                  onClick={() => {
-                    setRemoving(false);
+              {editing ? (
+                <StepForm
+                  key={editing.node.id}
+                  workspaceId={workspaceId}
+                  draft={
+                    record
+                      ? { id: record.id, version: record.version }
+                      : undefined
+                  }
+                  input={preparationStepInputs(editing.node)[0] ?? ""}
+                  graph={graph}
+                  initial={editing.node}
+                  fields={editing.fields}
+                  sources={sources.filter(
+                    (source) =>
+                      !record ||
+                      !source.id.startsWith("prepared:" + record.id + ":"),
+                  )}
+                  busy={!!busy}
+                  onCancel={() => {
+                    setEditing(null);
                     void show(graph, selected).catch(() => undefined);
                   }}
-                >
-                  {t("cancel")}
-                </button>
+                  onApply={async (nodes) => {
+                    await changeGraph(
+                      replacePreparationStep(graph, editing.node.id, nodes),
+                      editing.node.id,
+                      [editing.node.id],
+                      true,
+                    );
+                    setEditing(null);
+                  }}
+                />
+              ) : null}
+              {adding && preview ? (
+                <StepForm
+                  key={currentOutput}
+                  workspaceId={workspaceId}
+                  draft={
+                    record
+                      ? { id: record.id, version: record.version }
+                      : undefined
+                  }
+                  input={currentOutput}
+                  fields={fields}
+                  graph={graph}
+                  sources={sources.filter(
+                    (s) =>
+                      !record ||
+                      !s.id.startsWith("prepared:" + record.id + ":"),
+                  )}
+                  busy={!!busy}
+                  onCancel={() => {
+                    setAdding(false);
+                    void show(graph, currentOutput).catch(() => undefined);
+                  }}
+                  onApply={async (nodes) => {
+                    const next = appendPreparation(graph, nodes, currentOutput);
+                    await changeGraph(
+                      next,
+                      currentOutput,
+                      next.nodes
+                        .slice(graph.nodes.length)
+                        .map((node) => node.id),
+                      true,
+                    );
+                    setAdding(false);
+                  }}
+                />
+              ) : null}
+            </section>
+          ) : null}
+          <div className="data-preview-panel">
+            <div className="data-preview-header">
+              <div>
+                <h3>{t("sample")}</h3>
+                <p className="page-meta">{t("sampleHint")}</p>
               </div>
+              <button
+                type="button"
+                disabled={
+                  !!busy ||
+                  inputMetadata.loading ||
+                  !!inputMetadata.error ||
+                  !selected
+                }
+                onClick={() =>
+                  void show(graph, selected).catch(() => undefined)
+                }
+              >
+                {t(busy === "preview" ? "previewing" : "preview")}
+              </button>
             </div>
-          ) : null}
-          {editing ? (
-            <StepForm
-              key={editing.node.id}
-              workspaceId={workspaceId}
-              draft={
-                record ? { id: record.id, version: record.version } : undefined
+            {selectedNode ? (
+              <div className="data-step-actions">
+                <div className="data-form-actions">
+                  <button
+                    type="button"
+                    disabled={
+                      !!busy ||
+                      inputMetadata.loading ||
+                      !!inputMetadata.error ||
+                      formOpen
+                    }
+                    onClick={() => void editSelected()}
+                  >
+                    {t("editStep")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      !!busy ||
+                      inputMetadata.loading ||
+                      !!inputMetadata.error ||
+                      formOpen ||
+                      !!moveUp
+                    }
+                    title={moveUp ? t(`editErrors.${moveUp}`) : undefined}
+                    onClick={() => void move("up")}
+                  >
+                    {t("moveStepUp")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      !!busy ||
+                      inputMetadata.loading ||
+                      !!inputMetadata.error ||
+                      formOpen ||
+                      !!moveDown
+                    }
+                    title={moveDown ? t(`editErrors.${moveDown}`) : undefined}
+                    onClick={() => void move("down")}
+                  >
+                    {t("moveStepDown")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      !!busy ||
+                      inputMetadata.loading ||
+                      !!inputMetadata.error ||
+                      formOpen ||
+                      !!removal
+                    }
+                    title={removal ? t(`editErrors.${removal}`) : undefined}
+                    onClick={() => {
+                      setBypass(preparationStepInputs(selectedNode)[0] ?? "");
+                      setRemoving(true);
+                    }}
+                  >
+                    {t("removeStep")}
+                  </button>
+                </div>
+                <p className="help">
+                  {graph.outputs.includes(selected)
+                    ? removal
+                      ? t("editErrors.outputIdentity")
+                      : t("outputRemovalHint")
+                    : t("stepMoveHint")}
+                </p>
+                {formOpen ? <p className="help">{t("finishStep")}</p> : null}
+              </div>
+            ) : null}
+            <DataTable
+              fields={fields}
+              rows={preview?.rows ?? []}
+              loading={busy === "preview"}
+              focusColumn={
+                graph.nodes.find((node) => node.id === selected)?.type ===
+                "calculate"
+                  ? (
+                      graph.nodes.find(
+                        (node) => node.id === selected,
+                      ) as Extract<PreparationNode, { type: "calculate" }>
+                    ).fieldId
+                  : undefined
               }
-              input={preparationStepInputs(editing.node)[0] ?? ""}
-              graph={graph}
-              initial={editing.node}
-              fields={editing.fields}
-              sources={sources.filter(
-                (source) =>
-                  !record ||
-                  !source.id.startsWith("prepared:" + record.id + ":"),
-              )}
-              busy={!!busy}
-              onCancel={() => {
-                setEditing(null);
-                void show(graph, selected).catch(() => undefined);
-              }}
-              onApply={async (nodes) => {
-                await changeGraph(
-                  replacePreparationStep(graph, editing.node.id, nodes),
-                  editing.node.id,
-                  [editing.node.id],
-                  true,
-                );
-                setEditing(null);
-              }}
             />
-          ) : null}
-          <DataTable
-            fields={fields}
-            rows={preview?.rows ?? []}
-            loading={busy === "preview"}
-            focusColumn={
-              graph.nodes.find((node) => node.id === selected)?.type ===
-              "calculate"
-                ? (
-                    graph.nodes.find((node) => node.id === selected) as Extract<
+            {preview && previewStale ? (
+              <p className="help" role="status">
+                {t("sampleOutdated")}
+              </p>
+            ) : null}
+            <PreviewNotes warnings={preview?.warnings ?? []} />
+            {selected &&
+            graph.nodes.find((n) => n.id === selected)?.type === "calculate" ? (
+              <p className="data-formula-summary">
+                {formatDataFormula(
+                  (
+                    graph.nodes.find((n) => n.id === selected) as Extract<
                       PreparationNode,
                       { type: "calculate" }
                     >
-                  ).fieldId
-                : undefined
-            }
-          />
-          {preview && previewStale ? (
-            <p className="help" role="status">
-              {t("sampleOutdated")}
-            </p>
-          ) : null}
-          <PreviewNotes warnings={preview?.warnings ?? []} />
-          {selected &&
-          graph.nodes.find((n) => n.id === selected)?.type === "calculate" ? (
-            <p className="data-formula-summary">
-              {formatDataFormula(
-                (
-                  graph.nodes.find((n) => n.id === selected) as Extract<
-                    PreparationNode,
-                    { type: "calculate" }
-                  >
-                ).expression,
-                fields,
-              )}
-            </p>
-          ) : null}
-          {adding && preview ? (
-            <StepForm
-              key={currentOutput}
-              workspaceId={workspaceId}
-              draft={
-                record ? { id: record.id, version: record.version } : undefined
-              }
-              input={currentOutput}
-              fields={fields}
-              graph={graph}
-              sources={sources.filter(
-                (s) =>
-                  !record || !s.id.startsWith("prepared:" + record.id + ":"),
-              )}
-              busy={!!busy}
-              onCancel={() => {
-                setAdding(false);
-                void show(graph, currentOutput).catch(() => undefined);
-              }}
-              onApply={async (nodes) => {
-                const next = appendPreparation(graph, nodes, currentOutput);
-                await changeGraph(
-                  next,
-                  currentOutput,
-                  next.nodes.slice(graph.nodes.length).map((node) => node.id),
-                  true,
-                );
-                setAdding(false);
-              }}
-            />
-          ) : null}
+                  ).expression,
+                  fields,
+                )}
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>

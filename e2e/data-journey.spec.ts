@@ -440,6 +440,89 @@ test("a customer builds and publishes without code", async ({
 });
 
 /**
+ * The step form opens where it was asked for (#628): with a sample wider
+ * than the screen and a hundred rows, "Add a step" opens the form above the
+ * sample, in view and focused, and nothing scrolls sideways with the wide
+ * table. On a desktop screen and on a phone, in English and in German.
+ */
+test("the step form opens beside the steps, not below a wide sample", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = labels(locale);
+  const exact = { exact: true } as const;
+  const columns = Array.from({ length: 14 }, (_, index) => index + 1);
+  const wide = {
+    name: "Wide sample",
+    key: "wide_sample",
+    fields: [
+      { id: "id", name: "Id", type: "string" as const, nullable: false },
+      ...columns.map((column) => ({
+        id: `c${column}`,
+        name: `Column ${column}`,
+        type: "string" as const,
+        nullable: false,
+      })),
+    ],
+    rows: Array.from({ length: 120 }, (_, row) => ({
+      id: `row-${String(row).padStart(3, "0")}`,
+      ...Object.fromEntries(
+        columns.map((column) => [
+          `c${column}`,
+          `a fairly long value ${row}-${column}`,
+        ]),
+      ),
+    })),
+  };
+
+  const { workspaceId } = await startWorkspace(page, locale);
+  await seedReferenceTable(page, workspaceId, wide);
+
+  await page.goto(`/workspaces/${workspaceId}/data`);
+  await page
+    .getByRole("complementary")
+    .getByRole("button", { name: wide.name })
+    .click();
+  await page.getByRole("button", { name: t.prepare }).click();
+  const preview = page.getByRole("table");
+  await expect(preview.getByRole("row")).toHaveCount(101);
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.getByRole("button", { name: t.addStep }).click();
+    // In view without scrolling, and above the sample, not after its rows.
+    const operation = page.getByRole("combobox", { name: t.operation });
+    await expect(operation).toBeInViewport();
+    const form = (await page.locator("form.data-step-form").boundingBox())!;
+    const table = (await preview.boundingBox())!;
+    expect(form.y).toBeLessThan(table.y);
+    // Within the screen's width: the wide table scrolls on its own.
+    expect(form.x).toBeGreaterThanOrEqual(0);
+    expect(form.x + form.width).toBeLessThanOrEqual(viewport.width);
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    // A named panel that takes focus, so keyboard users land in the form.
+    const panel = page.getByRole("region", { name: t.addStep, ...exact });
+    await expect(panel).toBeFocused();
+    await expect(panel).toBeInViewport();
+    await expect(
+      panel.getByRole("combobox", { name: t.operation }),
+    ).toBeVisible();
+
+    await panel.getByRole("button", { name: t.cancel, ...exact }).click();
+    await expect(panel).toHaveCount(0);
+  }
+});
+
+/**
  * Publishes a saved draft. The impact confirmation must open (a saved draft
  * always has a record to check); `check` inspects it, then it is accepted.
  */
