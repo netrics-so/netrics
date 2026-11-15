@@ -687,6 +687,99 @@ describe("step attribution", () => {
       ),
     ).toEqual(["expression_field_not_found", "missing", "calc"]);
   });
+  it("names a type change that fails on a value (#643)", () => {
+    const cast: PreparationNode = {
+      id: "cast-country",
+      type: "cast",
+      input: "source",
+      fieldId: "country",
+      to: "decimal",
+      onError: "reject",
+    };
+    expect(
+      where(
+        failure({
+          version: 1,
+          nodes: [source, cast],
+          outputs: ["cast-country"],
+        }),
+      ),
+    ).toEqual(["decimal_invalid", "country", "cast-country"]);
+  });
+  it("names the column of a comparison with the wrong type (#629)", () => {
+    const filter: PreparationNode = {
+      id: "only",
+      type: "filter",
+      input: "source",
+      expression: call("gt", field("country"), lit("integer", 0)),
+    };
+    expect(
+      where(
+        failure({ version: 1, nodes: [source, filter], outputs: ["only"] }),
+      ),
+    ).toEqual(["expression_numeric_required", "country", "only"]);
+    // The non-numeric column, not the first one.
+    expect(() =>
+      compileRowExpression(
+        call("add", field("amount"), field("country")),
+        fields,
+      ),
+    ).toThrow("expression_numeric_required: country");
+    // No column operand: nothing to name.
+    expect(() =>
+      compileRowExpression(
+        call("add", lit("string", "x"), lit("integer", 1)),
+        fields,
+      ),
+    ).toThrow(/^expression_numeric_required$/);
+  });
+  it("never names a valid column for another operand's type error (#652)", () => {
+    const failing = (
+      expression: Parameters<typeof compileRowExpression>[0],
+    ) => {
+      try {
+        compileRowExpression(expression, fields);
+      } catch (error) {
+        return [
+          (error as DataProcessingError).code,
+          (error as DataProcessingError).fieldId,
+        ];
+      }
+      throw new Error("expected a failure");
+    };
+    // The number column is fine; the other operand is not a column.
+    expect(
+      failing(call("add", field("amount"), call("upper", field("country")))),
+    ).toEqual(["expression_numeric_required", undefined]);
+    expect(failing(call("gt", field("amount"), lit("string", "abc")))).toEqual([
+      "expression_numeric_required",
+      undefined,
+    ]);
+    // A required type names the operand that has the wrong one.
+    expect(failing(call("and", field("paid"), field("country")))).toEqual([
+      "expression_type_mismatch",
+      "country",
+    ]);
+    expect(failing(call("round", field("amount"), field("country")))).toEqual([
+      "expression_type_mismatch",
+      "country",
+    ]);
+    expect(failing(call("concat", field("country"), field("amount")))).toEqual([
+      "expression_type_mismatch",
+      "amount",
+    ]);
+    // Branches that do not match: not the condition, and no guess.
+    expect(
+      failing(call("if", field("paid"), field("amount"), field("country"))),
+    ).toEqual(["expression_numeric_required", undefined]);
+    // A condition that is not true / false is named, as a required type.
+    expect(
+      failing(call("if", field("country"), field("amount"), field("amount"))),
+    ).toEqual(["expression_type_mismatch", "country"]);
+    expect(
+      failing(call("coalesce", field("amount"), field("country")))[1],
+    ).toBeUndefined();
+  });
   it("keeps the innermost step when later steps consume the failure", () => {
     const kept = {
       id: "kept",

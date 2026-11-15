@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
 import postgres from "postgres";
-
-const ORIGIN = "http://localhost:3000";
-/** The API itself, as screens reach it (not through the web app). */
-const API = "http://localhost:3001";
+// API: the API itself, as screens reach it (not through the web app).
+import { API, ORIGIN } from "./origin.ts";
 
 /**
  * The owner connection of the journeys' database (as `pnpm db:migrate`

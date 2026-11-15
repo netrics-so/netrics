@@ -23,6 +23,7 @@ import {
   preparationInputNodes,
   suggestAppendColumnMapping,
   buildAppendStep,
+  PreparationStepFailureShown,
 } from "@/lib/preparation-editing";
 import {
   resolveExpressionDraft,
@@ -472,6 +473,17 @@ export function StepForm({
         };
       await onApply([...added, node]);
     } catch (failure) {
+      if (failure instanceof PreparationStepFailureShown) {
+        // The step list shows it on the failed step; mark the column here.
+        const { fieldId } = failure.location;
+        setExpressionProblem(
+          fieldId && (operation === "filter" || operation === "calculate")
+            ? { code: "step_failed", fieldId }
+            : undefined,
+        );
+        setError(null);
+        return;
+      }
       setExpressionProblem(
         failure instanceof DataProcessingError && failure.fieldId
           ? { code: failure.code, fieldId: failure.fieldId }

@@ -24,6 +24,7 @@ export function dataErrorCodeKey(code: string) {
   if (/cycle|ambiguous_path/.test(code)) return "cycle";
   if (/incompatible_dimension|relationship_path|filter/.test(code))
     return "filter";
+  if (code === "expression_numeric_required") return "numeric";
   if (/unit|currency|numeric|type_mismatch|explicit.*cast/.test(code))
     return "units";
   if (/field.*(missing|not_found)|schema_changed/.test(code)) return "field";

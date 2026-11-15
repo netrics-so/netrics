@@ -46,6 +46,10 @@ import {
   preparationStepFailure,
   preparationStepStates,
   preparationFieldName,
+  preparationChangeFailure,
+  preparationChangeRejection,
+  preparationStepErrorKey,
+  PreparationStepFailureShown,
 } from "@/lib/preparation-editing";
 import { PreparationStepList } from "./preparation-step-list";
 import {
@@ -105,7 +109,9 @@ export function PreparationEditor({
   );
   const [selected, setSelected] = useState(graph.outputs[0] ?? "");
   const [preview, setPreview] = useState<DataPreview | null>(null),
-    [previewState, setPreviewState] = useState("");
+    [previewState, setPreviewState] = useState(""),
+    // The sample is the last valid one, from before a check that failed.
+    [previewStale, setPreviewStale] = useState(false);
   const [editing, setEditing] = useState<{
     node: PreparationNode;
     fields: DataField[];
@@ -125,8 +131,11 @@ export function PreparationEditor({
     graph: string;
     nodeId: string;
     fieldId?: string;
-    key: ReturnType<typeof dataErrorKey>;
+    key: ReturnType<typeof preparationStepErrorKey>;
   } | null>(null);
+  // A step change whose own step failed: not applied, shown in the step list
+  // with the failure while its form stays open (#643).
+  const [proposal, setProposal] = useState<PreparationGraph | null>(null);
   const request = useRef(0);
   const confirmation = useImpactConfirmation(
     name.trim() || t("defaultPreparation"),
@@ -134,7 +143,14 @@ export function PreparationEditor({
   const current = useMemo(() => canonicalJson({ name, graph }), [name, graph]),
     dirty = current !== savedState || (!record && graph.nodes.length > 0);
   const graphSignature = useMemo(() => canonicalJson(graph), [graph]);
-  const shownStepError = stepError?.graph === graphSignature ? stepError : null;
+  const formOpen = adding || !!editing || removing;
+  // While a failed change's form is open, the list shows the proposed graph.
+  const listGraph = formOpen && proposal ? proposal : graph;
+  const listSignature = useMemo(() => canonicalJson(listGraph), [listGraph]);
+  const shownStepError = stepError?.graph === listSignature ? stepError : null;
+  useEffect(() => {
+    if (!adding && !editing) setProposal(null);
+  }, [adding, editing]);
   /** Mark the failing step when the error names one in `failed`; otherwise show the banner. */
   function reportFailure(failure: unknown, failed: PreparationGraph) {
     const step = preparationStepFailure(dataErrorLocation(failure), failed);
@@ -142,7 +158,7 @@ export function PreparationEditor({
       setStepError({
         graph: canonicalJson(failed),
         ...step,
-        key: dataErrorKey(failure),
+        key: preparationStepErrorKey(failure, failed, step.nodeId),
       });
     else setError(t(`errors.${dataErrorKey(failure)}`));
     return step;
@@ -182,6 +198,7 @@ export function PreparationEditor({
       setPreview({ ...table, warnings: result.warnings });
       setSelected(output);
       setPreviewState(canonicalJson(next));
+      setPreviewStale(false);
       // Only a check of every output proves the marked step is fixed.
       if (validateAll) setStepError(null);
     } catch (failure) {
@@ -203,11 +220,14 @@ export function PreparationEditor({
               });
               setSelected(output);
               setPreviewState(canonicalJson(next));
+              setPreviewStale(false);
             }
           } catch {
-            if (sequence === request.current) setPreview(null);
+            if (sequence === request.current) setPreviewStale(true);
           }
-        } else setPreview(null);
+          // Keep the last valid sample, marked as out of date, so an open
+          // step form and its columns stay usable (#629, #643).
+        } else setPreviewStale(true);
       }
       throw failure;
     } finally {
@@ -362,7 +382,6 @@ export function PreparationEditor({
   const removal = selectedNode
     ? preparationRemovalProblem(graph, selected)
     : "missingStep";
-  const formOpen = adding || !!editing || removing;
   const nodeLabel = (nodeId: string) => {
     const node = graph.nodes.find((node) => node.id === nodeId);
     return node?.type === "source"
@@ -417,16 +436,31 @@ export function PreparationEditor({
     next: PreparationGraph,
     output: string,
     changedIds: string[],
+    // A step form is open for the change and can show its failure.
+    fromForm = false,
   ) {
     try {
       await show(next, output, true);
     } catch (failure) {
-      const step = preparationStepFailure(dataErrorLocation(failure), next);
-      if (!step || changedIds.includes(step.nodeId)) {
-        // The graph stays as it was, so the step marker would not show.
-        if (step) setError(t(`errors.${dataErrorKey(failure)}`));
-        throw failure;
-      }
+      const outcome = preparationChangeFailure(failure, next, changedIds);
+      const reaction = preparationChangeRejection(outcome, fromForm);
+      setProposal(reaction.proposal ? next : null);
+      if (reaction.sampleCurrent) setPreviewStale(false);
+      if (reaction.banner === "clear") setError(null);
+      if (reaction.banner === "step")
+        setError(
+          t(
+            `errors.${preparationStepErrorKey(
+              failure,
+              next,
+              dataErrorLocation(failure).nodeId!,
+            )}`,
+          ),
+        );
+      // The list shows it on the proposed step; the form shows nothing more.
+      if (reaction.proposal)
+        throw new PreparationStepFailureShown(dataErrorLocation(failure));
+      if (outcome !== "applied") throw failure;
     }
     // A step applied unchanged leaves no undo step.
     setGraphHistory((h) => recordChange(h, next));
@@ -586,11 +620,11 @@ export function PreparationEditor({
           ) : null}
           <h3>{t("steps")}</h3>
           <PreparationStepList
-            nodes={graph.nodes}
+            nodes={listGraph.nodes}
             selected={selected}
             states={
               shownStepError
-                ? preparationStepStates(graph, shownStepError.nodeId)
+                ? preparationStepStates(listGraph, shownStepError.nodeId)
                 : new Map()
             }
             failure={
@@ -600,7 +634,7 @@ export function PreparationEditor({
                     ...(shownStepError.fieldId
                       ? {
                           column: preparationFieldName(
-                            graph,
+                            listGraph,
                             sources,
                             shownStepError.fieldId,
                             fields,
@@ -642,6 +676,7 @@ export function PreparationEditor({
               !!editing ||
               removing ||
               !preview ||
+              previewStale ||
               !graph.outputs.includes(selected)
             }
             onClick={() => setAdding(true)}
@@ -869,6 +904,7 @@ export function PreparationEditor({
                   replacePreparationStep(graph, editing.node.id, nodes),
                   editing.node.id,
                   [editing.node.id],
+                  true,
                 );
                 setEditing(null);
               }}
@@ -890,6 +926,11 @@ export function PreparationEditor({
                 : undefined
             }
           />
+          {preview && previewStale ? (
+            <p className="help" role="status">
+              {t("sampleOutdated")}
+            </p>
+          ) : null}
           <PreviewNotes warnings={preview?.warnings ?? []} />
           {selected &&
           graph.nodes.find((n) => n.id === selected)?.type === "calculate" ? (
@@ -930,6 +971,7 @@ export function PreparationEditor({
                   next,
                   currentOutput,
                   next.nodes.slice(graph.nodes.length).map((node) => node.id),
+                  true,
                 );
                 setAdding(false);
               }}

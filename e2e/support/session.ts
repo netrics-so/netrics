@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
 import type { DataField } from "@netrics/domain";
 import type { Locale } from "./labels.ts";
-
-const ORIGIN = "http://localhost:3000";
+import { ORIGIN } from "./origin.ts";
 
 const acceptLanguage = (locale: Locale) =>
   locale === "de" ? "de-DE,de;q=0.9" : "en-US,en;q=0.9";

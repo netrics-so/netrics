@@ -254,6 +254,8 @@ export const dataDe: Catalog<typeof dataEn> = {
     },
     stepFailed: "Dieser Schritt ist fehlgeschlagen. {message}",
     stepFailedColumn: "Spalte: {column}",
+    sampleOutdated:
+      "Veraltet: Das ist die letzte Vorschau, die funktioniert hat. Sie wird aktualisiert, sobald der fehlgeschlagene Schritt funktioniert.",
     stepAffected:
       "Nicht geprüft: Dieser Schritt verwendet das Ergebnis eines fehlgeschlagenen Schritts. Frühere Schritte kannst du weiter ansehen.",
     editStep: "Schritt bearbeiten",
@@ -642,6 +644,10 @@ export const dataDe: Catalog<typeof dataEn> = {
       unpublished:
         "Veröffentliche die referenzierte Aufbereitung, bevor du sie hier verwendest.",
       invalid: "Prüfe die eingegebenen Werte und Pflichtfelder.",
+      conversion:
+        "Einige Werte dieser Spalte lassen sich nicht in den gewählten Typ umwandeln. Wähle für sie „Leeren Wert verwenden“ oder einen anderen Typ.",
+      numeric:
+        "Hier wird eine Zahl benötigt. Verwende hier eine Zahlenspalte oder einen Zahlenwert, oder ändere zuerst den Typ der Spalte.",
       cycle:
         "Diese Abhängigkeiten bilden einen Kreis. Entferne die Beziehung oder den Schritt, der auf sich selbst zurückverweist.",
       interaction:

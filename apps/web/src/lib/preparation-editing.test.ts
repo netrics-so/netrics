@@ -19,7 +19,13 @@ import {
   preparationStepStates,
   preparationStepFailure,
   preparationFieldName,
+  preparationChangeFailure,
+  preparationChangeRejection,
+  preparationStepErrorKey,
 } from "./preparation-editing";
+import { appendPreparation } from "./data-editing";
+import { ApiError } from "./api";
+import { webTranslator } from "./i18n/catalogs";
 
 const source: DataTable = {
   fields: [
@@ -643,5 +649,141 @@ describe("column names for a step error", () => {
     // Only sources the graph reads count.
     expect(preparationFieldName(graph, sources, "elsewhere")).toBe("elsewhere");
     expect(preparationFieldName(graph, sources, "missing")).toBe("missing");
+  });
+});
+
+describe("a step change that fails (#643)", () => {
+  // The editor appends a step under the output's id: the source moves to an
+  // internal id and the new type change is the step called "source".
+  const before: PreparationGraph = {
+    version: 1,
+    nodes: [{ id: "source", type: "source", datasetId: "sales" }],
+    outputs: ["source"],
+  };
+  const next = appendPreparation(
+    before,
+    [
+      {
+        id: "new",
+        type: "cast",
+        input: "source",
+        fieldId: "country",
+        to: "decimal",
+        onError: "reject",
+      },
+    ],
+    "source",
+  );
+  const castFailure = new ApiError(400, "decimal_invalid", {
+    nodeId: "source",
+    fieldId: "country",
+  });
+  it("keeps the form open with the proposed step marked when the changed step fails", () => {
+    expect(preparationChangeFailure(castFailure, next, ["source"])).toBe(
+      "proposal",
+    );
+    const states = preparationStepStates(next, "source");
+    expect(states.get("source")).toBe("failed");
+    expect([...states.values()]).toEqual(["failed"]);
+  });
+  it("applies a change when an untouched step fails, and leaves unattributed failures to the form", () => {
+    expect(preparationChangeFailure(castFailure, next, ["other"])).toBe(
+      "applied",
+    );
+    expect(
+      preparationChangeFailure(new ApiError(400, "decimal_invalid"), next, [
+        "source",
+      ]),
+    ).toBe("form");
+    expect(
+      preparationChangeFailure(
+        new ApiError(400, "decimal_invalid", { nodeId: "gone" }),
+        next,
+        ["source"],
+      ),
+    ).toBe("form");
+  });
+  it("marks the steps after an edited step that fails as affected", () => {
+    const edited: PreparationGraph = {
+      version: 1,
+      nodes: [
+        { id: "src", type: "source", datasetId: "sales" },
+        {
+          id: "cast",
+          type: "cast",
+          input: "src",
+          fieldId: "country",
+          to: "decimal",
+          onError: "reject",
+        },
+        {
+          id: "keep",
+          type: "filter",
+          input: "cast",
+          expression: { kind: "literal", type: "boolean", value: true },
+        },
+      ],
+      outputs: ["keep"],
+    };
+    expect(
+      preparationChangeFailure(
+        new ApiError(400, "decimal_invalid", { nodeId: "cast" }),
+        edited,
+        ["cast"],
+      ),
+    ).toBe("proposal");
+    expect([...preparationStepStates(edited, "cast")]).toEqual([
+      ["cast", "failed"],
+      ["keep", "affected"],
+    ]);
+  });
+  it("names a type change whose values do not convert, in English and German", () => {
+    expect(preparationStepErrorKey(castFailure, next, "source")).toBe(
+      "conversion",
+    );
+    // The same code from another step keeps its general key.
+    expect(preparationStepErrorKey(castFailure, before, "source")).not.toBe(
+      "conversion",
+    );
+    for (const locale of ["en", "de"] as const)
+      expect(webTranslator(locale, "data")("errors.conversion")).not.toBe(
+        webTranslator(locale, "data")("errors.invalid"),
+      );
+  });
+});
+
+describe("the editor's reaction to a rejected step change (#652)", () => {
+  it("keeps a proposal only for an open form, with the sample out of date", () => {
+    expect(preparationChangeRejection("proposal", true)).toEqual({
+      proposal: true,
+      sampleCurrent: false,
+      banner: "keep",
+    });
+  });
+  it("leaves a rejected reorder's unchanged sample current, with the message in the banner", () => {
+    expect(preparationChangeRejection("proposal", false)).toEqual({
+      proposal: false,
+      sampleCurrent: true,
+      banner: "step",
+    });
+  });
+  it("drops an earlier proposal when a later failure names no step", () => {
+    expect(preparationChangeRejection("form", true)).toEqual({
+      proposal: false,
+      sampleCurrent: true,
+      banner: "clear",
+    });
+    expect(preparationChangeRejection("form", false)).toEqual({
+      proposal: false,
+      sampleCurrent: true,
+      banner: "keep",
+    });
+  });
+  it("marks the sample out of date when the change applies with another step failing", () => {
+    expect(preparationChangeRejection("applied", true)).toEqual({
+      proposal: false,
+      sampleCurrent: false,
+      banner: "keep",
+    });
   });
 });

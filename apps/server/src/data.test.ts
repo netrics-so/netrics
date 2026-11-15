@@ -348,6 +348,49 @@ describe("data API authorization and contract", () => {
       { error: "version_conflict" },
     ]);
   });
+  it("names the type change step and column whose values do not convert (#643)", async () => {
+    // The editor appends a step under the output's id, so the source moves to
+    // an internal id and the new cast step is the one called "source".
+    const preview = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "f_original", type: "source", datasetId },
+          {
+            id: "source",
+            type: "cast",
+            input: "f_original",
+            fieldId: "id",
+            to: "decimal",
+            onError: "reject",
+          },
+        ],
+        outputs: ["source"],
+      },
+    });
+    expect([preview.statusCode, preview.json()]).toEqual([
+      400,
+      { error: "decimal_invalid", fieldId: "id", nodeId: "source" },
+    ]);
+    const lenient = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "f_original", type: "source", datasetId },
+          {
+            id: "source",
+            type: "cast",
+            input: "f_original",
+            fieldId: "id",
+            to: "decimal",
+            onError: "null",
+          },
+        ],
+        outputs: ["source"],
+      },
+    });
+    expect(lenient.statusCode, lenient.body).toBe(200);
+  });
   it("attributes a failing upstream preparation to the consuming source step, never to the upstream step", async () => {
     const definition = {
       key: "groups",

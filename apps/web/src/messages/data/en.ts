@@ -242,6 +242,8 @@ export const dataEn = {
     },
     stepFailed: "This step failed. {message}",
     stepFailedColumn: "Column: {column}",
+    sampleOutdated:
+      "Out of date: this is the last sample that worked. It updates once the failed step works.",
     stepAffected:
       "Not checked: this step uses the result of a failed step. Earlier steps still preview.",
     editStep: "Edit step",
@@ -622,6 +624,10 @@ export const dataEn = {
         "This source’s retained data has expired. Refresh the source or choose another dataset.",
       unpublished: "Publish the referenced preparation before using it here.",
       invalid: "Check the entered values and required fields.",
+      conversion:
+        "Some values in this column cannot be changed to the chosen type. Choose “Use an empty value” for them, or pick another type.",
+      numeric:
+        "This needs a number. Use a number column or value here, or change the column’s type first.",
       cycle:
         "These dependencies form a loop. Remove the relationship or step that points back to itself.",
       interaction:

@@ -3,8 +3,7 @@ import type {
   PreparationGraph,
   SemanticModelDefinition,
 } from "@netrics/domain";
-
-const ORIGIN = "http://localhost:3000";
+import { ORIGIN } from "./origin.ts";
 
 /** A stored draft as the API answers it, with its exact JSON text. */
 export interface Stored<T> {

@@ -1,9 +1,15 @@
 import {
+  CAST_FAILURE_CODES,
   DataProcessingError,
   type PreparationGraph,
   type PreparationNode,
 } from "@netrics/domain";
-import type { DataErrorLocation } from "./data-editing";
+import {
+  dataErrorKey,
+  dataErrorLocation,
+  type DataErrorLocation,
+} from "./data-editing";
+import { ApiError } from "./api";
 
 export type PreparationEditProblem =
   | "missingStep"
@@ -60,6 +66,81 @@ export function preparationStepFailure(
   const { nodeId, fieldId } = location;
   if (!nodeId || !graph.nodes.some((node) => node.id === nodeId)) return null;
   return { nodeId, ...(fieldId ? { fieldId } : {}) };
+}
+/**
+ * The message key for a failure of step `nodeId` in `graph`: a type change
+ * whose values do not convert gets its own message (#643), others the key of
+ * their code.
+ */
+export function preparationStepErrorKey(
+  failure: unknown,
+  graph: PreparationGraph,
+  nodeId: string,
+): ReturnType<typeof dataErrorKey> | "conversion" {
+  const code =
+    failure instanceof ApiError || failure instanceof DataProcessingError
+      ? failure.code
+      : "";
+  const node = graph.nodes.find((node) => node.id === nodeId);
+  return node?.type === "cast" && CAST_FAILURE_CODES.has(code)
+    ? "conversion"
+    : dataErrorKey(failure);
+}
+/**
+ * What a failed check of a step change means for the editor (#643):
+ * - "proposal": the changed step itself failed. The change is not applied;
+ *   the step form stays open and the step list shows the proposed graph with
+ *   the step marked failed, so the user can fix the settings or cancel.
+ * - "applied": another step failed. The change applies and that step is marked.
+ * - "form": the failure names no step of the graph; the form shows it.
+ */
+export function preparationChangeFailure(
+  failure: unknown,
+  next: PreparationGraph,
+  changedIds: readonly string[],
+): "proposal" | "applied" | "form" {
+  const step = preparationStepFailure(dataErrorLocation(failure), next);
+  if (!step) return "form";
+  return changedIds.includes(step.nodeId) ? "proposal" : "applied";
+}
+/**
+ * How the editor reacts to a failed check of a step change, from
+ * `preparationChangeFailure` and whether a step form is open for it:
+ * - `proposal`: show the proposed graph with the failed step marked (only
+ *   while a form is open); any earlier proposal is dropped otherwise, so an
+ *   old marking never stays beside a new failure.
+ * - `sampleCurrent`: the graph stayed as it was, so the sample still matches
+ *   it and is not out of date. Only an applied change, or the open form of a
+ *   failed proposal, leaves the sample marked out of date.
+ * - `banner`: "step" shows the step's message in the banner (no form, no
+ *   marker), "clear" removes the banner (the form shows it), "keep" leaves
+ *   what the check showed.
+ */
+export function preparationChangeRejection(
+  outcome: "proposal" | "applied" | "form",
+  fromForm: boolean,
+): {
+  proposal: boolean;
+  sampleCurrent: boolean;
+  banner: "step" | "clear" | "keep";
+} {
+  if (outcome === "applied")
+    return { proposal: false, sampleCurrent: false, banner: "keep" };
+  if (outcome === "proposal")
+    return fromForm
+      ? { proposal: true, sampleCurrent: false, banner: "keep" }
+      : { proposal: false, sampleCurrent: true, banner: "step" };
+  return {
+    proposal: false,
+    sampleCurrent: true,
+    banner: fromForm ? "clear" : "keep",
+  };
+}
+/** A step change failure the editor already shows on the failed step; the step form shows nothing more. */
+export class PreparationStepFailureShown extends Error {
+  constructor(public readonly location: DataErrorLocation) {
+    super("preparation_step_failure_shown");
+  }
 }
 interface NamedField {
   id: string;
