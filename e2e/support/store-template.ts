@@ -139,7 +139,9 @@ export async function installWithConnections(
     // every workspace's rows share the same heap and index pages. Right
     // after the servers start, while every request is slow, that can outlast
     // the API's retry budget (seen once in a run of 30 journeys). The
-    // same request is idempotent. Any other refusal fails the journey.
+    // same request is idempotent, retried after a growing pause so the
+    // other journeys' transactions can finish. Any other refusal fails the
+    // journey.
     const conflicted = async (answer: Awaited<ReturnType<typeof install>>) =>
       answer.status() === 409 &&
       ((await answer.json()) as { error?: string }).error ===
@@ -147,10 +149,12 @@ export async function installWithConnections(
     let response = await install();
     for (
       let attempt = 0;
-      attempt < 3 && (await conflicted(response));
+      attempt < 5 && (await conflicted(response));
       attempt++
-    )
+    ) {
+      await page.waitForTimeout(500 * (attempt + 1));
       response = await install();
+    }
     expect(response.status(), await response.text()).toBe(200);
     const { dashboardId } = (await response.json()) as { dashboardId: string };
     return { requestId, dashboardId, connections };
