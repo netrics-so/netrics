@@ -3,10 +3,13 @@ import { randomBytes } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { runMigrations } from "./index.js";
 import {
+  ApplicationRoleGrantsMissingError,
   DEV_ROLE_PASSWORDS,
   PrivilegedDatabaseRoleError,
   assertUnprivilegedRole,
+  ensureApplicationRoles,
   findRolesWithDefaultPasswords,
   setRolePassword,
 } from "./roles.js";
@@ -80,5 +83,76 @@ describe("setRolePassword", () => {
     } finally {
       await client.end({ timeout: 5 });
     }
+  });
+});
+
+describe("ensureApplicationRoles", () => {
+  // The real roles exist on the shared test server; a throwaway name shows
+  // creation without touching them.
+  const role = `netrics_test_role_${randomBytes(4).toString("hex")}`;
+  let admin: postgres.Sql;
+
+  beforeAll(() => {
+    admin = postgres(testDb.adminUrl, { max: 1, onnotice: () => undefined });
+  });
+
+  afterAll(async () => {
+    await admin.unsafe(`DROP ROLE IF EXISTS ${role}`);
+    await admin.end({ timeout: 5 });
+  });
+
+  it("creates missing roles without login, and only once", async () => {
+    await expect(ensureApplicationRoles(admin, [role])).resolves.toEqual([
+      role,
+    ]);
+    const [row] = await admin<{ login: boolean; inherit: boolean }[]>`
+      select rolcanlogin as login, rolinherit as inherit
+      from pg_roles where rolname = ${role}
+    `;
+    expect(row).toEqual({ login: false, inherit: false });
+    await expect(ensureApplicationRoles(admin, [role])).resolves.toEqual([]);
+  });
+
+  it("leaves the existing application roles alone", async () => {
+    await expect(ensureApplicationRoles(admin)).resolves.toEqual([]);
+  });
+});
+
+describe("runMigrations on a database whose role grants are gone", () => {
+  // A dump restored while the application roles did not exist loses every
+  // GRANT and policy for them, while its journal says all migrations ran
+  // (#642). Migrating must refuse instead of starting a broken instance.
+  let restored: TestDatabase;
+  let admin: postgres.Sql;
+
+  beforeAll(async () => {
+    restored = await createTestDatabase();
+    admin = postgres(restored.adminUrl, { max: 1, onnotice: () => undefined });
+  }, TEST_DATABASE_SETUP_TIMEOUT_MS);
+
+  afterAll(async () => {
+    await admin.end({ timeout: 5 });
+    await restored.drop();
+  });
+
+  it("passes on a migrated database", async () => {
+    await expect(runMigrations(restored.adminUrl)).resolves.toBeUndefined();
+  });
+
+  it("fails with restore guidance when the grants are missing", async () => {
+    await admin.unsafe(
+      "REVOKE ALL ON ALL TABLES IN SCHEMA public FROM netrics_app, netrics_scheduler",
+    );
+    await admin.unsafe("REVOKE ALL ON SCHEMA auth FROM netrics_app");
+    const error = await runMigrations(restored.adminUrl).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ApplicationRoleGrantsMissingError);
+    expect((error as ApplicationRoleGrantsMissingError).missing).toEqual([
+      "netrics_app cannot read public.workspaces",
+      "netrics_app cannot use schema auth",
+      "netrics_scheduler cannot read public.jobs",
+    ]);
+    expect((error as Error).message).toContain("Backup and restore");
   });
 });

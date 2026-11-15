@@ -324,10 +324,57 @@ jobs:
             echo "client secret in logs"; exit 1
           fi
           test "$(docker compose ps --format '{{.Service}}={{.State}}' worker)" = worker=running
+      - name: Back up and restore into a fresh installation
+        working-directory: deploy/compose
+        run: |
+          set -euo pipefail
+          # Row counts of every table, to compare source and restore.
+          counts() {
+            "$@" exec -T postgres psql -U netrics -d netrics -At -c \
+              "select string_agg(t || '=' || (xpath('/row/c/text()', query_to_xml('select count(*) as c from ' || t, false, true, '')))[1]::text, ' ' order by t)
+               from (select format('%I.%I', schemaname, tablename) as t from pg_tables where schemaname in ('public', 'auth', 'drizzle')) s"
+          }
+          workspace=$(curl -sk -b jar https://localhost/v1/workspaces | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+          test "$(curl -sk -b jar -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -H 'origin: https://localhost' \
+            -d '{}' https://localhost/v1/workspaces/$workspace/demo)" = 200
+          sleep 10
+          # A quiet source: nothing writes between the dump and the count.
+          docker compose stop api worker scheduler web caddy
+          # The backup service names the dump after the release migrate
+          # recorded (README "Backup and restore").
+          docker compose --profile backup run --rm --no-deps -e BACKUP_ONCE=1 backup
+          dump=$(ls backups/netrics-0.0.0-dev-dev-*.dump)
+          source=$(counts docker compose)
+          # README "Backup and restore", into a second installation with the
+          # same .env (its own volumes and ports).
+          export NETRICS_HTTP_PORT=8080 NETRICS_HTTPS_PORT=8443
+          r() { docker compose -p restore "$@"; }
+          r up -d --wait postgres
+          r cp "$dump" postgres:/tmp/restore.dump
+          r exec -T postgres pg_restore --data-only --table=schema_info -f - /tmp/restore.dump | grep -P '^netrics_version\t0\.0\.0-dev\t'
+          r run --rm migrate
+          r exec -T postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/restore.dump
+          restored=$(counts r)
+          r up -d
+          healthy=no
+          for i in $(seq 1 60); do
+            state=$(r ps --format '{{.Service}}={{.Health}}' | tr '\n' ' ')
+            case "$state" in *api=healthy*web=healthy*) healthy=yes; break ;; esac
+            sleep 3
+          done
+          r ps -a
+          test "$healthy" = yes || { echo "restored installation not healthy after 3 minutes: $state"; exit 1; }
+          test "$source" = "$restored" || { echo "row counts differ"; echo "source:   $source"; echo "restored: $restored"; exit 1; }
+          # The restored session works against the restored data (RLS as
+          # netrics_app): the workspace and its demo dashboard are there.
+          curl -skf -b jar https://localhost:8443/v1/workspaces | grep -q "\"id\":\"$workspace\""
+          curl -skf -b jar https://localhost:8443/v1/workspaces/$workspace/dashboards | grep -q '"id"'
       - name: Logs on failure
         if: failure()
         working-directory: deploy/compose
-        run: docker compose logs --tail 100
+        run: |
+          docker compose logs --tail 100
+          docker compose -p restore logs --tail 100
 
   # Release signing only runs on main (release.yml, promote.yml), so a cosign
   # or cosign-installer update would otherwise first meet it in a release.
