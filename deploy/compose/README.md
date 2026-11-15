@@ -255,6 +255,27 @@ To restore into a fresh installation with the **same `.env`**:
 
 ```sh
 docker compose up -d postgres
+docker compose run --rm migrate
+docker compose cp netrics.dump postgres:/tmp/netrics.dump
+docker compose exec postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/netrics.dump
+docker compose up -d
+```
+
+`migrate` has to run before `pg_restore`. It creates the database roles the
+application connects as (`netrics_app`, `netrics_scheduler`). Roles belong to
+the PostgreSQL server, not to the database, so a dump does not contain them.
+If they are missing, `pg_restore` skips their privileges and row-level
+security policies with `role "netrics_app" does not exist` errors.
+
+If you restored without that step, the next `migrate` stops with "The
+application roles lack their privileges". It has created the roles by then:
+run the `pg_restore` command again, then `docker compose up -d`.
+
+To restore into an installation that is running, stop the application
+first, then restore and start it again:
+
+```sh
+docker compose stop api worker scheduler web caddy
 docker compose cp netrics.dump postgres:/tmp/netrics.dump
 docker compose exec postgres pg_restore -U netrics -d netrics --clean --if-exists /tmp/netrics.dump
 docker compose up -d

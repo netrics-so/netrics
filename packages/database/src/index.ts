@@ -6,7 +6,12 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import * as authSchema from "./auth-schema.js";
-import { provisionRolePasswords, type RolePasswords } from "./roles.js";
+import {
+  assertApplicationRoleGrants,
+  ensureApplicationRoles,
+  provisionRolePasswords,
+  type RolePasswords,
+} from "./roles.js";
 import * as schema from "./schema.js";
 
 export * as authSchema from "./auth-schema.js";
@@ -147,8 +152,11 @@ export {
 } from "./installation.js";
 export {
   APPLICATION_ROLES,
+  ApplicationRoleGrantsMissingError,
   DEV_ROLE_PASSWORDS,
   PrivilegedDatabaseRoleError,
+  assertApplicationRoleGrants,
+  ensureApplicationRoles,
   assertUnprivilegedRole,
   findRolesWithDefaultPasswords,
   inspectCurrentRole,
@@ -444,10 +452,14 @@ export async function runMigrations(
 ): Promise<void> {
   const client = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
+    // Roles first, whatever the journal says: a restored database may
+    // reference roles this server never had (#642).
+    await ensureApplicationRoles(client);
     await migrate(drizzle(client), { migrationsFolder });
     if (options.rolePasswords) {
       await provisionRolePasswords(client, options.rolePasswords);
     }
+    await assertApplicationRoleGrants(client);
   } finally {
     await client.end({ timeout: 5 }).catch(() => undefined);
   }
