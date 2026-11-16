@@ -10,6 +10,7 @@ import { syncResultSchema } from "@netrics/connector-sdk";
 import {
   expectValidFreshness,
   freshnessEntry,
+  recordingLogger,
 } from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
@@ -284,6 +285,43 @@ describe("analytics chain: request → reports → instances → segments", () =
     expect(
       await readAppAnalytics(client(api), api.fetch, APP, { now: NOW }),
     ).toEqual({ status: "pending", observations: [] });
+  });
+
+  it("logs a pending app to the host's runtime.log (SDK 0.2.14)", async () => {
+    const empty = { data: [], links: {} };
+    const api = fake({
+      analytics: analytics({
+        pages: {
+          "/v1/analyticsReports/r3-0001/instances": empty,
+          "/v1/analyticsReports/r5-0001/instances": empty,
+        },
+      }),
+    });
+    const log = recordingLogger();
+    const connector = createAppStoreConnectConnector({
+      ratings: false,
+      rawSales: false,
+      now: () => NOW,
+    });
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const result = await connector.sync(
+        CONTEXT,
+        request({ resources: [APP], ...(cursor ? { cursor } : {}) }),
+        { ...api.runtime, log },
+      );
+      if (result.done) break;
+      cursor = result.nextCursor;
+    }
+    expect(
+      log.entries.filter((entry) => entry.message.includes("analytics")),
+    ).toEqual([
+      {
+        level: "info",
+        message: `App Store analytics of app ${APP} not generated yet; read again on the next sync`,
+        fields: { app: APP, status: "pending" },
+      },
+    ]);
   });
 });
 
@@ -615,16 +653,21 @@ describe("analytics sync pages", () => {
       teams: [team()],
       remaining: 50,
     });
-    const log: string[] = [];
+    const log = recordingLogger();
     const result = await syncAnalyticsApps(
       createAppStoreConnectClient(limited.fetch, TOKEN),
       limited.fetch,
       [APP, OTHER_APP],
-      { now: NOW, log: (message) => log.push(message) },
+      { now: NOW, log },
     );
     expect(result.rateLimited).toBe(true);
-    expect(log).toEqual([
-      "App Store analytics postponed: the key's hourly request budget is used up",
+    expect(log.entries).toEqual([
+      {
+        level: "info",
+        message:
+          "App Store analytics postponed: the key's hourly request budget is used up",
+        fields: { app: APP },
+      },
     ]);
 
     const api = fake();
@@ -633,7 +676,7 @@ describe("analytics sync pages", () => {
         createAppStoreConnectClient(api.fetch, "revoked-token"),
         api.fetch,
         [APP],
-        { now: NOW, log: () => {} },
+        { now: NOW, log: recordingLogger() },
       ),
     ).rejects.toMatchObject({ name: "AccessTokenRejectedError" });
   });

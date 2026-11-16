@@ -2,6 +2,7 @@ import type {
   CheckResult,
   ConnectionContext,
   Connector,
+  ConnectorLogger,
   ConnectorManifest,
   FreshnessEntry,
   ManifestTranslation,
@@ -702,7 +703,9 @@ export interface AppStoreConnectConnectorOptions {
   now?: () => number;
   /**
    * Notes that carry no data (unknown product type codes, skipped
-   * analytics). Default: console.warn.
+   * analytics, reports not published yet), as plain messages. Tests use
+   * it. Default: the host's runtime.log (SDK 0.2.14), or console.warn on
+   * a host without one.
    */
   log?: (message: string) => void;
   /**
@@ -807,6 +810,28 @@ export function analyticsCursor(
   return `analytics:${index}:${withRun(salesCursor, run)}`;
 }
 
+const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
+
+/**
+ * A ConnectorLogger over a plain message function. Lines below `minimum`
+ * are dropped; fields are left out (the messages name what matters).
+ */
+function messageLogger(
+  write: (message: string) => void,
+  minimum: (typeof LOG_LEVELS)[number] = "info",
+): ConnectorLogger {
+  const at = (level: (typeof LOG_LEVELS)[number]) =>
+    LOG_LEVELS.indexOf(level) >= LOG_LEVELS.indexOf(minimum)
+      ? (message: string) => write(message)
+      : () => {};
+  return {
+    debug: at("debug"),
+    info: at("info"),
+    warn: at("warn"),
+    error: at("error"),
+  };
+}
+
 /**
  * App Store Connect (ADR 0014). The host signs a fresh ES256 token from the
  * connection's team key for every call and hands the connector
@@ -820,7 +845,11 @@ export function createAppStoreConnectConnector(
   options: AppStoreConnectConnectorOptions = {},
 ): Connector {
   const now = options.now ?? Date.now;
-  const log = options.log ?? ((message: string) => console.warn(message));
+  /** Where this call's notes go (#638): see options.log. */
+  const logOf = (runtime: Parameters<Connector["sync"]>[2]): ConnectorLogger =>
+    runtime.log && !options.log
+      ? runtime.log
+      : messageLogger(options.log ?? ((message) => console.warn(message)));
   const analytics = options.analytics ?? true;
   const ratings = options.ratings ?? true;
   const rawSales = options.rawSales ?? true;
@@ -942,6 +971,7 @@ export function createAppStoreConnectConnector(
     }
     const client = createAppStoreConnectClient(runtime.fetch, token(context));
     const reviewsToken = reviewsTokenOf(context);
+    const log = logOf(runtime);
     const appIdsOf = async () =>
       request.resources !== undefined
         ? [...request.resources].sort()

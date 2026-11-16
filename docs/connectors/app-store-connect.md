@@ -607,6 +607,34 @@ How report rows become values:
   syncs read the current month up to the latest day (at most about 31
   requests), because the territory ranking needs the whole month.
 
+## Which Apple reports netrics reads
+
+The connector reads through the App Store Connect API (and, for ratings, the
+public lookup API), never the dashboards of the App Store Connect web
+interface:
+
+| Data                | Apple source                                                                                                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sales and proceeds  | The daily **Summary Sales Report**: `GET /v1/salesReports` with `reportType=SALES`, `reportSubType=SUMMARY`, `frequency=DAILY`, `version=1_0`                              |
+| App Store analytics | The **Analytics Reports API** standard reports "App Store Discovery and Engagement Standard" and "App Downloads Standard" (daily instances of an `ONGOING` report request) |
+| Reviews             | `GET /v1/apps/{id}/customerReviews`                                                                                                                                        |
+| Ratings             | The public Apple lookup API (see [Overall store rating](#overall-store-rating-and-rating-count))                                                                           |
+
+No code requests a `SUBSCRIPTION`, `SUBSCRIPTION_EVENT` or `SUBSCRIBER`
+report, or any other revenue-event report.
+
+Two changes Apple announced for 2026 therefore do not affect the connector:
+
+- Apple stops producing the **revenue-event reports** on 19 November 2026.
+  netrics reads the Summary Sales Report, not a revenue-event report.
+- The **Trends** dashboards (with their subscription metrics) move into the
+  **Apps** module of App Store Connect. That is a change to the web
+  interface; the API reports above stay where they are.
+
+When netrics adds subscription metrics, they are built on reports Apple keeps
+producing (the newest API for them), not on the retired revenue-event
+reports.
+
 ## Limits
 
 Apple allows about 3,500 requests per key and rolling hour, and reports the
@@ -631,6 +659,12 @@ give netrics its own key.
 | "This key cannot read ratings and reviews"                                             | The reviews key needs the Customer Support role. Create one and add it on the connection page.                                                                             |
 | "This key can also read sales reports, so it has the Admin role"                       | netrics does not store Admin keys. Create a Customer Support key; revoke the Admin key if it was for us.                                                                   |
 | "App Store reviews paused — upload a new reviews key"                                  | Apple refused the reviews key (revoked or role changed). Upload a new Customer Support key; sales go on.                                                                   |
+
+Notes that carry no data go to the server log, attributed to the connection
+and sync run: a sales day kept pending because its report is not published
+yet (debug) or late (info), analytics not generated yet for an app, a paused
+or skipped app, and product type codes netrics does not know. They name app
+IDs and dates, never tokens or review text.
 
 ## App icons
 

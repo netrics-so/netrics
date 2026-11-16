@@ -7,7 +7,10 @@ import type {
   SyncResult,
 } from "@netrics/connector-sdk";
 import { observationKey, syncResultSchema } from "@netrics/connector-sdk";
-import { runConnectorContractTests } from "@netrics/connector-sdk/testing";
+import {
+  recordingLogger,
+  runConnectorContractTests,
+} from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -1366,6 +1369,47 @@ describe("the two kinds of 404: no sales, or not published yet (#719)", () => {
       });
       expect(Date.parse(entry.nextExpectedAt!)).toBeGreaterThan(NOW);
     }
+  });
+
+  it("logs a parked day to the host's runtime.log: debug before it is due, info once late", async () => {
+    const parked = async (now: number) => {
+      const log = recordingLogger();
+      const api = fake({
+        reports,
+        notFoundDays: { "2026-09-30": NOT_AVAILABLE },
+      });
+      await createAppStoreConnectConnector({
+        ratings: false,
+        rawSales: false,
+        analytics: false,
+        now: () => now,
+      }).sync(CONTEXT, window(now), { ...api.runtime, log });
+      return log.entries.filter((entry) => entry.message.includes("pending"));
+    };
+    expect(await parked(NOW)).toEqual([
+      {
+        level: "debug",
+        message:
+          "App Store sales report not published yet; the day and later days stay pending",
+        fields: {
+          day: "2026-09-30",
+          late: false,
+          lateBoundDays: LATE_REPORT_BOUND_DAYS,
+        },
+      },
+    ]);
+    expect(await parked(AFTERNOON)).toEqual([
+      {
+        level: "info",
+        message:
+          "App Store sales report is late; the day and later days stay pending",
+        fields: {
+          day: "2026-09-30",
+          late: true,
+          lateBoundDays: LATE_REPORT_BOUND_DAYS,
+        },
+      },
+    ]);
   });
 
   it("'not available yet' for an older day keeps that day and every later one pending", async () => {

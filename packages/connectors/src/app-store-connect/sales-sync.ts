@@ -1,4 +1,5 @@
 import type {
+  ConnectorLogger,
   FreshnessEntry,
   Observation,
   SyncRequest,
@@ -111,8 +112,11 @@ export interface SalesSyncOptions {
   vendorNumber: string;
   /** SKU → Apple ID of every app of the team (for in-app purchases). */
   listAppSkus: () => Promise<Map<string, string>>;
-  /** Product type codes the mapping does not know (code only, no data). */
-  log: (message: string) => void;
+  /**
+   * Notes without data: days kept pending, unrecognised 404s, product type
+   * codes the mapping does not know (code only, no data).
+   */
+  log: ConnectorLogger;
   rawData?: boolean;
   listAppIds?: () => Promise<string[]>;
 }
@@ -381,8 +385,9 @@ async function readSalesPage(
     }),
   );
   if (unrecognised) {
-    options.log(
+    options.log.warn(
       `App Store sales report: a 404 with an unrecognised message; the day stays pending for up to ${LATE_REPORT_BOUND_DAYS} days after it was due`,
+      { lateBoundDays: LATE_REPORT_BOUND_DAYS },
     );
   }
   const published = new Map<number, SalesRow[]>();
@@ -405,6 +410,23 @@ async function readSalesPage(
         servedFromMs = Math.max(servedFromMs ?? 0, dayMs + DAY_MS);
     }
   });
+
+  if (pendingMs !== undefined) {
+    // Parked, not lost: the cursor stops before this day, so the next sync
+    // reads it again. Before its publication time that is routine (debug);
+    // once due, the report is late (info).
+    const late = pendingMs <= latestMs;
+    options.log[late ? "info" : "debug"](
+      late
+        ? "App Store sales report is late; the day and later days stay pending"
+        : "App Store sales report not published yet; the day and later days stay pending",
+      {
+        day: day(pendingMs),
+        late,
+        lateBoundDays: LATE_REPORT_BOUND_DAYS,
+      },
+    );
+  }
 
   // In-app purchases name their app by SKU (Parent Identifier); the app rows
   // of the same reports give most SKUs, the team's app list the rest.
@@ -491,8 +513,9 @@ async function readSalesPage(
     }
   }
   for (const code of [...unknownTypes].sort()) {
-    options.log(
+    options.log.warn(
       `App Store sales report: unknown product type "${code.slice(0, 20)}" counted in no metric`,
+      { productType: code.slice(0, 20) },
     );
   }
 

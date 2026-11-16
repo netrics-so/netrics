@@ -372,6 +372,24 @@ const leakyConnector: Connector = {
   },
 };
 
+/** Explains a parked item through runtime.log (SDK 0.2.14, #638). */
+const loggingConnector: Connector = {
+  manifest: testManifest("logging", "logging.hits"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync(context: ConnectionContext, _request, runtime) {
+    runtime.log?.info(`report parked; sent ${context.credentials.token}`, {
+      day: "2024-01-01",
+      token: String(context.credentials.token),
+    });
+    return { observations: [], done: true };
+  },
+};
+
 /**
  * A paged provider shaped like Search Console (#145): one page per week of
  * the window, the cursor is the first day of the next page, and every page
@@ -632,6 +650,7 @@ beforeAll(async () => {
   registry.register(widePageConnector);
   registry.register(brokenConnector);
   registry.register(leakyConnector);
+  registry.register(loggingConnector);
   registry.register(probeConnector);
   registry.register(revisingConnector);
   registry.register(namingConnector);
@@ -693,6 +712,7 @@ describe("catalog sync", () => {
       "google-play",
       "google-search-console",
       "leaky",
+      "logging",
       "naming",
       "pager-fresh",
       "pager-large",
@@ -997,6 +1017,49 @@ describe("sync engine", () => {
     const runs = await syncRunsFor(workspaceA, connectionId);
     expect(String(runs[0]!.error_message)).not.toContain(token);
     expect(String(runs[0]!.error_message)).toContain("[redacted]");
+  });
+
+  it("writes connector log lines attributed to connection and run, without secrets", async () => {
+    const token = "sk-test-logging-token-456";
+    const connectionId = await seedConnection(
+      workspaceA,
+      "logging",
+      {},
+      { token },
+    );
+    const lines: Record<string, unknown>[] = [];
+    const jobId = randomUUID();
+    await createJobHandlers({ registry, credentialKeyring: KEYRING })[
+      "connection.sync"
+    ]!({
+      job: {
+        id: jobId,
+        kind: "connection.sync",
+        workspaceId: workspaceA,
+        connectionId,
+        attempts: 0,
+        payload: { workspace_id: workspaceA, connection_id: connectionId },
+      } as unknown as Job,
+      appDb,
+      schedulerDb,
+      logger: pino(
+        { level: "debug" },
+        { write: (line: string) => lines.push(JSON.parse(line)) },
+      ).child({ jobId }),
+    });
+    const connectorLines = lines.filter((line) => line.source === "connector");
+    expect(connectorLines).toEqual([
+      expect.objectContaining({
+        level: 30,
+        jobId,
+        connectionId,
+        attempt: 1,
+        connector: "logging",
+        msg: "report parked; sent [redacted]",
+        fields: { day: "2024-01-01", token: "[redacted]" },
+      }),
+    ]);
+    expect(JSON.stringify(lines)).not.toContain(token);
   });
 
   it("rejects jobs for connections of another workspace", async () => {

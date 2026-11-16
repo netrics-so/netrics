@@ -265,6 +265,35 @@ The manifest declares:
 the next cursor. Connectors receive no direct database, queue, or internal API
 access.
 
+The cursor is opaque to the platform. The host stores the `nextCursor` a
+connector returns and hands it back unchanged as `cursor` in a later request;
+it never rewrites, migrates or interprets its content. The connector owns its
+shape and versioning: a connector that changes its format must still read, or
+deliberately restart from, every shape it ever returned (a version prefix
+helps), because a stored cursor survives connector upgrades. That includes
+items a connector parks in its cursor, such as a report that is not published
+yet. The host touches a cursor in three narrow ways only: a non-final page
+whose `nextCursor` equals the request's cursor is a contract violation; for an
+incremental run, a stored cursor that `Date.parse` reads as a date is the start
+of the requested window (otherwise the last success is); and a final result
+without a `nextCursor` stores the end of the window.
+
+Connector code can explain what it skipped or parked through `runtime.log`
+(SDK 0.2.14): `debug`, `info`, `warn` and `error`, each with a short message
+and optional scalar fields (`runtime.log?.info("report not published yet",
+{ app, day })`). The host writes the lines to its log attributed to the
+connection, the job (the run) and the attempt, and keeps secrets out: it drops
+fields that are not scalars or have malformed names, replaces the value of
+every field whose name looks secret-like (secret, token, password, credential,
+key, auth, cookie, session, signature) with `[redacted]`, strips the
+connection's credential values and anything that looks like a bearer value,
+JWT or PEM block from messages and string fields, truncates long strings and
+keeps at most 20 fields per line and 200 lines per call. Lines written after
+the call ended are dropped, and logging never fails a call. Connectors still
+log only ids, dates, counts and statuses, never personal data or provider
+payloads. `recordingLogger()` in `@netrics/connector-sdk/testing` records the
+lines in tests.
+
 Use JSON-compatible transport objects even inside TypeScript. A future isolated
 runner can then use the same contract over JSON-RPC or another process boundary.
 
@@ -329,6 +358,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.11 | Optional incremental staging, `datasetStaging.begin` (ADR 0024)   |
 | 0.2.12 | Optional `receivedDatasets` in a final `SyncResult` (#666)        |
 | 0.2.13 | Optional `freshnessStreams` and a final `freshness` (ADR 0025)    |
+| 0.2.14 | Optional `runtime.log`, a structured connector logger (#638)      |
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),

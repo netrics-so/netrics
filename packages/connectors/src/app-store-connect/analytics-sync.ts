@@ -1,4 +1,4 @@
-import type { Observation } from "@netrics/connector-sdk";
+import type { ConnectorLogger, Observation } from "@netrics/connector-sdk";
 import { z } from "zod";
 
 import {
@@ -533,7 +533,7 @@ export async function syncAnalyticsApps(
   appIds: readonly string[],
   options: {
     now: number;
-    log: (message: string) => void;
+    log: ConnectorLogger;
     hosts?: readonly string[];
   },
 ): Promise<{
@@ -548,8 +548,16 @@ export async function syncAnalyticsApps(
     try {
       const result = await readAppAnalytics(client, fetch, appId, options);
       if (result.status === "stopped") {
-        options.log(
+        options.log.warn(
           `App Store analytics of app ${appId} paused: Apple stopped its report request; enable analytics again`,
+          { app: appId, status: result.status },
+        );
+      } else if (result.status === "pending") {
+        // Requested, but Apple has not generated a report instance yet
+        // (1–2 days): nothing to read, the next sync asks again.
+        options.log.info(
+          `App Store analytics of app ${appId} not generated yet; read again on the next sync`,
+          { app: appId, status: result.status },
         );
       }
       observations.push(...result.observations);
@@ -558,12 +566,13 @@ export async function syncAnalyticsApps(
     } catch (error) {
       if (isRefusedKey(error)) throw error;
       if (stopsRun(error)) {
-        options.log(
+        options.log.info(
           "App Store analytics postponed: the key's hourly request budget is used up",
+          { app: appId },
         );
         return { observations, rateLimited: true, dataThrough };
       }
-      options.log(failureNote(appId, error));
+      options.log.warn(failureNote(appId, error), { app: appId });
     }
   }
   return { observations, rateLimited: false, dataThrough };

@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import type {
   Connector,
+  ConnectorLogFields,
+  ConnectorLogger,
+  ConnectorLogLevel,
   ConnectorResponse,
   ConnectorRuntime,
 } from "../connector.js";
@@ -71,6 +74,36 @@ export const offlineRuntime: ConnectorRuntime = {
   },
   signal: new AbortController().signal,
 };
+
+/** One line a connector logged through a recordingLogger. */
+export interface RecordedLogEntry {
+  level: ConnectorLogLevel;
+  message: string;
+  fields?: ConnectorLogFields;
+}
+
+/**
+ * A runtime.log for connector tests (SDK 0.2.14): keeps every line in
+ * `entries` instead of writing it anywhere. Pass it as `log` of a
+ * fixture-backed runtime and assert on what the connector logged.
+ */
+export function recordingLogger(): ConnectorLogger & {
+  entries: RecordedLogEntry[];
+} {
+  const entries: RecordedLogEntry[] = [];
+  const at =
+    (level: ConnectorLogLevel) =>
+    (message: string, fields?: ConnectorLogFields) => {
+      entries.push({ level, message, ...(fields ? { fields } : {}) });
+    };
+  return {
+    entries,
+    debug: at("debug"),
+    info: at("info"),
+    warn: at("warn"),
+    error: at("error"),
+  };
+}
 
 /**
  * A buffered ConnectorResponse for fixture-backed runtimes, shaped like the
