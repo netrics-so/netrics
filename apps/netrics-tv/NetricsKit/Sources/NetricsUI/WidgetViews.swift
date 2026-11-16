@@ -963,6 +963,8 @@ struct StatusWidgetView: View {
         let layout = StudioLayout.statusLayout(
             label: label, width: box.width, height: box.height, fontScale: env.fontScale, showAge: options.showAge)
         let rows = StatusBoard.rows(data.items, capacity: layout.rowCapacity)
+        // Each source's streams (#727) in the rows the sources leave free.
+        let streams = StatusBoard.streamRows(data.items, layout: layout, now: now, language: language)
         let rise = env.pt(EnterMotion.rowRise)
 
         VStack(alignment: .leading, spacing: 0) {
@@ -980,6 +982,10 @@ struct StatusWidgetView: View {
                         stale: item.status == .stale, layout: layout, env: env
                     )
                     .modifier(RowRise(progress: progressValue, index: index, rise: rise))
+                    ForEach(streams[item.connectionId] ?? [], id: \.key) { stream in
+                        StatusStreamRowView(stream: stream, layout: layout, env: env)
+                            .modifier(RowRise(progress: progressValue, index: index, rise: rise))
+                    }
                 }
                 if rows.more > 0 {
                     StatusRowView(
@@ -997,6 +1003,29 @@ struct StatusWidgetView: View {
                     size: layout.sizes.footer, env: env)
             }
         }
+    }
+}
+
+/**
+ * A stream under its source (#727): one line at the age size across the
+ * name and age columns, after the dot's room; overdue in the warning colour.
+ */
+struct StatusStreamRowView: View {
+    let stream: StatusBoard.StreamRow
+    let layout: StudioLayout.StatusLayout
+    let env: WidgetEnv
+
+    var body: some View {
+        HStack(alignment: .center, spacing: env.pt(layout.columns.gap)) {
+            Color.clear.frame(width: env.pt(layout.columns.dot), height: env.pt(layout.columns.dot))
+            Text(verbatim: stream.text)
+                .font(env.font(layout.sizes.age).monospacedDigit())
+                .foregroundStyle(stream.overdue ? env.colors.warning : env.colors.muted)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: env.pt(layout.sizes.cell * 1.15))
+        .padding(.top, env.pt(StudioLayout.StatusSpacing.rowGap))
     }
 }
 

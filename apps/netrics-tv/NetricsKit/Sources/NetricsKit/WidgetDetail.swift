@@ -29,12 +29,26 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
 
     /** A labelled value of a list widget: a bar, a table row, a source on a status board, an operand. */
     public struct Item: Sendable, Equatable {
+        /** A line under an item: a source's freshness stream on a status board (#727). */
+        public struct Line: Sendable, Equatable {
+            public var text: String
+            /** Overdue by a day: the warning style. */
+            public var warning: Bool
+
+            public init(text: String, warning: Bool) {
+                self.text = text
+                self.warning = warning
+            }
+        }
+
         public var label: String
         public var value: String
+        public var lines: [Line]
 
-        public init(label: String, value: String) {
+        public init(label: String, value: String, lines: [Line] = []) {
             self.label = label
             self.value = value
+            self.lines = lines
         }
     }
 
@@ -244,7 +258,12 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                     label: item.name,
                     value: item.status == .ok
                         ? RelativeTime.describe(item.lastSuccessAt, now: now, language: language)
-                        : statusText(item.status, lastSuccessAt: item.lastSuccessAt, now: now, language: language))
+                        : statusText(item.status, lastSuccessAt: item.lastSuccessAt, now: now, language: language),
+                    lines: item.streams.compactMap { stream in
+                        StatusBoard.streamLine(
+                            stream, of: item, now: now, language: language, timeZone: timeZone, region: region
+                        ).map { Item.Line(text: $0, warning: stream.overdue) }
+                    })
             }
             let failing = data.items.filter { $0.status == .authFailed || $0.status == .outage }.count
             let delayed = data.items.filter { $0.status == .stale }.count

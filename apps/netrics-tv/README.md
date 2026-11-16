@@ -336,6 +336,14 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   minute; dates follow the screen language; `dataThrough` is the provider's
   day and never converted. A missing or damaged `freshness` leaves the
   widget as before.
+- **Status board streams (#727).** A source's `streams` are listed under
+  it with the stream's name first ("Sales up to Nov 15 · next ~21:00",
+  "Reviews checked 10 min. ago · next check ~14:30"), an overdue one in
+  the warning colour with only the day and the late wording, and no next
+  times while the source's credentials failed. On screens they take only
+  the rows the sources leave free (`StatusBoard.streamRows`, as the web's
+  `statusWidgetLayout`), so a source is never hidden for a stream; the
+  scroll card and the detail sheet list them all.
 - **Slide logo (#707).** A slide's `logo` replaces the dashboard's in the
   header while the slide shows; the scroll view puts it before the slide's
   heading, as the web does.

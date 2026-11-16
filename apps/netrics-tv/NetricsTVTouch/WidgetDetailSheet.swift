@@ -62,7 +62,19 @@ struct WidgetDetailSheet: View {
             if !detail.items.isEmpty {
                 Section {
                     ForEach(Array(detail.items.enumerated()), id: \.offset) { _, item in
-                        LabeledContent(item.label, value: item.value)
+                        if item.lines.isEmpty {
+                            LabeledContent(item.label, value: item.value)
+                        } else {
+                            // A source's freshness streams under it (#727).
+                            VStack(alignment: .leading, spacing: 4) {
+                                LabeledContent(item.label, value: item.value)
+                                ForEach(Array(item.lines.enumerated()), id: \.offset) { _, line in
+                                    Text(verbatim: line.text)
+                                        .font(.footnote)
+                                        .foregroundStyle(line.warning ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                                }
+                            }
+                        }
                     }
                 }
             }

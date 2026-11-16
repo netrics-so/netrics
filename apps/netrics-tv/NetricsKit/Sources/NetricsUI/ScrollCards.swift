@@ -573,6 +573,16 @@ struct ScrollStatusCard: View {
                 VStack(alignment: .leading, spacing: env.pt(12)) {
                     ForEach(Array(data.items.enumerated()), id: \.offset) { _, item in
                         row(item)
+                        // Its streams in full (#727): the card grows, nothing is hidden.
+                        ForEach(item.streams, id: \.key) { stream in
+                            if let line = StatusBoard.streamLine(stream, of: item, now: now, language: language) {
+                                Text(verbatim: line)
+                                    .font(env.font(Size.small).monospacedDigit())
+                                    .foregroundStyle(stream.overdue ? env.colors.warning : env.colors.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.leading, env.pt(30))
+                            }
+                        }
                     }
                 }
                 .padding(.top, env.pt(12))

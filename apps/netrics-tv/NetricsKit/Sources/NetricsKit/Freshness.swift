@@ -277,8 +277,14 @@ public struct FreshnessText: Sendable {
     }
 
     /** The line's parts, most important first; narrow widgets drop them from the end. */
-    func parts(_ f: WidgetFreshness, status: DeviceTileStatus, stream: String? = nil, now: Date) -> [String] {
+    func parts(
+        _ f: WidgetFreshness, status: DeviceTileStatus, stream: String? = nil, now: Date, paused: Bool = false
+    ) -> [String] {
         let mode = Self.mode(f, status: status)
+        // Paused syncs: no next time of any kind.
+        func next(_ iso: String?, now: Date, key: KitText, soon: KitText) -> String? {
+            paused ? nil : self.next(iso, now: now, key: key, soon: soon)
+        }
         if f.kind == .continuous {
             let checked = checked(f, stream: stream, now: now)
             guard mode != .failing else { return [checked].compactMap { $0 } }
@@ -343,6 +349,28 @@ public struct FreshnessText: Sendable {
             return nil
         }
         return [upTo, notPublished(f, now: now)].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /**
+     * A status board's stream line, longest first (#727; web:
+     * `statusStreamText`): the stream's name first, "Sales up to Nov 15 ·
+     * next ~21:00". Overdue: only the covered day and the late wording, as
+     * a warning; a continuous stream then has nothing to say. While syncs
+     * are paused (credentials failed) no "next", "checking again" or "next
+     * check".
+     */
+    public func streamCandidates(_ stream: StatusStream, paused: Bool, now: Date = Date()) -> [String] {
+        let f = stream.freshness
+        let trimmed = f.stream.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? nil : trimmed
+        let parts: [String]
+        if stream.overdue {
+            guard f.kind == .periodic else { return [] }
+            parts = [upTo(f, stream: name, now: now), f.late ? notPublished(f, now: now) : nil].compactMap { $0 }
+        } else {
+            parts = self.parts(f, status: .ok, stream: name, now: now, paused: paused)
+        }
+        return (0..<parts.count).reversed().map { parts[0...$0].joined(separator: " · ") }
     }
 
     /**
