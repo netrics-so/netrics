@@ -1548,7 +1548,11 @@ function buildPortfolioSlides(
       key: `slide:${slideKey}`,
       widgets,
       slide: {
-        name: app.name.slice(0, STUDIO_LIMITS.slideNameLength),
+        // Never blank: storeAppIdentities names it; the id as a last resort.
+        name: (
+          app.name.trim().slice(0, STUDIO_LIMITS.slideNameLength).trim() ||
+          app.productId.slice(0, STUDIO_LIMITS.slideNameLength)
+        ).trim(),
         logoImageId: app.icon,
         scope: { app: { kind: "values" as const, values: [app.productId] } },
         widgets: widgets.map((placed) => placed.widget),

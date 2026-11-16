@@ -665,4 +665,44 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       dimensions: { resource: "2002" },
     });
   });
+
+  it("never builds a blank slide name: the first app's name, then its id", () => {
+    const product = (name: string, apps: [string, string][]) => ({
+      productId: `product:${name || "blank"}`,
+      name,
+      apps: apps.map(([appId, appName]) => ({
+        connectionId: apple.id,
+        appId,
+        name: appName,
+        connectorId: "app-store-connect" as const,
+      })),
+      icon: null,
+      iconSource: { connectionId: apple.id, resourceId: apps[0]![0] },
+      pricing: "auto" as const,
+      hadProceeds: false,
+      paid: false,
+      notEditable: null,
+      website: null,
+    });
+    const identities = storeAppIdentities([
+      product("", [
+        ["1", " "],
+        ["2", "Second"],
+      ]),
+      { ...product(" ", [["3", ""]]), productId: "product:spaces" },
+    ]);
+    expect(identities.map((app) => app.name)).toEqual(["3", "Second"]);
+    const slides = createDashboardRequestSchema.parse(
+      dashboardOf({
+        ...fixtureInputs,
+        apps: [...identities, { ...identities[0]!, productId: "x", name: " " }],
+      }).request,
+    ).slides!;
+    expect(slides.map((slide) => slide.name)).toEqual([
+      "App portfolio",
+      "3",
+      "Second",
+      "x",
+    ]);
+  });
 });

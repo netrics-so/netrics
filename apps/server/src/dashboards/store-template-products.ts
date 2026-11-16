@@ -754,7 +754,14 @@ export function storeAppIdentities(
       );
       return {
         productId: product.productId,
-        name: product.name,
+        // A slide needs a name: an empty product name (valid in the
+        // editable Products table) falls back to its first app's name, then
+        // its id. The product itself keeps its name.
+        name: product.name.trim()
+          ? product.name
+          : (product.apps.find((app) => app.name.trim())?.name ??
+            product.apps[0]?.appId ??
+            product.productId),
         paid: product.paid,
         icon: product.icon?.id ?? null,
         appStore:

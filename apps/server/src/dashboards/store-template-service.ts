@@ -788,6 +788,9 @@ export function createStoreTemplateService(deps: {
                                 ...(record.slideKeys
                                   ? { slideKeys: record.slideKeys }
                                   : {}),
+                                // The apps its slides were built from: what
+                                // a later app change is compared with.
+                                ...(inputs.apps ? { apps: inputs.apps } : {}),
                               },
                       widgetKeys:
                         record.kind === "dashboard"

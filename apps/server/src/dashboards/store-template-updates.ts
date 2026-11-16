@@ -210,6 +210,8 @@ const storedDashboardsSchema = z.array(
     copyWidgetKeys: z.record(z.string(), z.string()).optional(),
     /** The new template's dashboard in comparison form (once made). */
     templateOriginal: z.unknown().optional(),
+    /** The apps the copy was built from (version 4), its record's baseline. */
+    templateApps: z.array(z.unknown()).optional(),
     /** The record as it was before the swap, for swapping back. */
     previousOriginal: z.unknown().optional(),
     previousWidgetKeys: z.record(z.string(), z.string()).nullable().optional(),
@@ -237,6 +239,8 @@ type Original =
       widgetKeys?: string[];
       /** Version 4: the slides' keys in position order. */
       slideKeys?: string[];
+      /** Version 4: the apps the slides were built from (builtApps). */
+      apps?: unknown[];
     }
   /** Installs made before versions: the dashboard rows at migration time. */
   | { legacySnapshot: LegacyDashboardSnapshot }
@@ -385,7 +389,9 @@ export function createStoreTemplateUpdateService(deps: {
     inputs: StoreTemplateInputs,
     identity: Identity,
   ): Promise<StoreTemplateInputs> {
-    if (template.version < 4 || identity === "stored") return inputs;
+    if (template.version < 4) return inputs;
+    if (identity === "stored")
+      return withCurrentIcons(tx, workspaceId, requestId, inputs);
     const install = await installRow(tx, workspaceId, requestId);
     if (!install) return inputs;
     try {
@@ -428,7 +434,70 @@ export function createStoreTemplateUpdateService(deps: {
     if (!stored.success) return false;
     const inputs = stored.data as StoreTemplateInputs;
     const fresh = await withApps(tx, workspaceId, requestId, inputs, "lenient");
-    return !same(inputs.apps ?? [], fresh.apps ?? []);
+    return !same(builtApps(rows) ?? inputs.apps ?? [], fresh.apps ?? []);
+  }
+
+  /**
+   * The apps the active dashboard's slides were built from (its record's
+   * original), not the install's inputs: an applied update stores its apps
+   * in the inputs at once, but the dashboard on screens keeps the old
+   * slides until its copy is swapped in, and again after a swap back or
+   * when the update is closed unswapped. Undefined before version 4.
+   */
+  function builtApps(rows: RecordRow[]): unknown[] | undefined {
+    const dashboard = rows.find(
+      (row) => row.kind === "dashboard" && row.detachedAt === null,
+    );
+    const apps = (dashboard?.original as { apps?: unknown } | null)?.apps;
+    return Array.isArray(apps) ? apps : undefined;
+  }
+
+  /**
+   * The stored apps with icons that still exist: the daily icon refresh
+   * replaces a changed icon with a new image (and removes the old one)
+   * wherever dashboards show it, not in the stored inputs. An icon gone
+   * since is the product's current one (none if it has none now).
+   */
+  async function withCurrentIcons(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    inputs: StoreTemplateInputs,
+  ): Promise<StoreTemplateInputs> {
+    const ids = [
+      ...new Set(
+        (inputs.apps ?? []).flatMap((app) => (app.icon ? [app.icon] : [])),
+      ),
+    ];
+    if (!ids.length) return inputs;
+    const existing = new Set(
+      (
+        await tx
+          .select({ id: schema.workspaceImages.id })
+          .from(schema.workspaceImages)
+          .where(
+            and(
+              eq(schema.workspaceImages.workspaceId, workspaceId),
+              inArray(schema.workspaceImages.id, ids),
+            ),
+          )
+      ).map((row) => row.id),
+    );
+    if (ids.every((id) => existing.has(id))) return inputs;
+    const current = new Map(
+      (
+        (await withApps(tx, workspaceId, requestId, inputs, "lenient")).apps ??
+        []
+      ).map((app) => [app.productId, app.icon]),
+    );
+    return {
+      ...inputs,
+      apps: inputs.apps!.map((app) =>
+        app.icon && !existing.has(app.icon)
+          ? { ...app, icon: current.get(app.productId) ?? null }
+          : app,
+      ),
+    };
   }
 
   /**
@@ -2010,6 +2079,7 @@ export function createStoreTemplateUpdateService(deps: {
                 plan.idsToKeys,
                 next.slideKeys,
               ),
+              ...(plan.inputs.apps ? { templateApps: plan.inputs.apps } : {}),
             }
           : candidate,
       ),
@@ -2237,7 +2307,10 @@ export function createStoreTemplateUpdateService(deps: {
     if (direction === "swap") {
       await setRecord(tx, actor.workspaceId, row.requestId, key, {
         recordId: to,
-        original: { normalized: entry.templateOriginal },
+        original: {
+          normalized: entry.templateOriginal,
+          ...(entry.templateApps ? { apps: entry.templateApps } : {}),
+        },
         widgetKeys: entry.copyWidgetKeys ?? {},
         templateVersion: row.toVersion,
       });

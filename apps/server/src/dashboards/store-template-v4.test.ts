@@ -5,6 +5,7 @@ import {
   createRawSqlClient,
   createWorkspace,
   ingestDatasetPage,
+  replaceImageReferences,
   schema,
   upsertConnectionResources,
   withWorkspace,
@@ -525,5 +526,109 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     } finally {
       locale = "en";
     }
+  });
+
+  it("names a slide after its first app when the product's name is empty", async () => {
+    const requestId = randomUUID();
+    const result = await install(storeTemplate, requestId);
+    // An empty product name is valid in the editable Products table.
+    const data = createDataService(db, at);
+    const table = await data.readManual(actor(), result.productDatasetId, {
+      offset: 0,
+      limit: 1000,
+    });
+    await data.saveManual(
+      actor(),
+      {
+        definition: table.definition,
+        records: table.records.map((record) => ({
+          values: String(record.values.product_id).startsWith("product:")
+            ? { ...record.values, product_name: "" }
+            : record.values,
+        })),
+        generationId: table.generationId,
+      },
+      result.productDatasetId,
+    );
+    // Listing installs and the update work; the slide has a name.
+    expect(await updateAvailable(requestId)).toBe(true);
+    const { copy } = await applyUpdate(requestId);
+    expect(copy.slides.map((slide) => slide.name)).toEqual([
+      "App portfolio",
+      "Focus Timer: Pomodoro & Deep Work",
+      "Notes",
+      "Timer",
+    ]);
+  });
+
+  it("offers the app changes again when their update is closed before the swap", async () => {
+    const requestId = randomUUID();
+    await install(storeTemplate, requestId);
+    await products().update(actor(), requestId, {
+      products: [{ productId: focus, pricing: "free", website: null }],
+    });
+    const plan = await updates().plan(actor(), requestId);
+    const update = await updates().apply(actor(), requestId, {
+      basis: plan.basis,
+      decisions: decisions(plan),
+    });
+    await updates().closeUpdate(actor(), requestId, update.id);
+    // The dashboard on screens still has Focus's revenue: still an update.
+    expect(await updateAvailable(requestId)).toBe(true);
+    const again = await updates().plan(actor(), requestId);
+    expect(
+      again.records.flatMap((record) => record.items).map((item) => item.ref),
+    ).toContain(`dashboard:portfolio#widget:${appSlideKey(focus)}:revenue`);
+    // Swapping back restores the old slides: the update is offered again.
+    const { copy } = await applyUpdate(requestId);
+    const listed = (await updates().list(actor())).installs.find(
+      (entry) => entry.requestId === requestId,
+    )!;
+    await updates().swap(actor(), listed.openUpdate!.id, "dashboard:portfolio");
+    expect(await updateAvailable(requestId)).toBe(false);
+    await updates().swapBack(
+      actor(),
+      listed.openUpdate!.id,
+      "dashboard:portfolio",
+    );
+    expect(await updateAvailable(requestId)).toBe(true);
+    expect(copy.slides[1]!.widgets).toHaveLength(3);
+  });
+
+  it("makes the copy with an app's current icon after the daily refresh replaced it", async () => {
+    const requestId = randomUUID();
+    await install(storeTemplateV3, requestId);
+    const plan = await updates().plan(actor(), requestId);
+    const update = await updates().apply(actor(), requestId, {
+      basis: plan.basis,
+      decisions: decisions(plan),
+    });
+    const data = createDataService(db, at);
+    for (const draft of update.drafts)
+      if (draft.kind === "preparation")
+        await data.publishPreparation(actor(), draft.recordId, draft.version);
+      else await data.publishModel(actor(), draft.recordId, draft.version);
+    // The refresh stores a changed icon and removes the old one, as
+    // images/resource-icons.ts does.
+    const content = Buffer.from("a refreshed icon");
+    const [fresh] = await owner`insert into workspace_images
+        (workspace_id, name, content_type, bytes, width, height, sha256,
+         content, origin, connection_id, resource_id, created_at)
+      values (${workspaceId}, 'App icon', 'image/png', ${content.length}, 64,
+        64, ${createHash("sha256").update(content).digest("hex")}, ${content},
+        'resource_icon', ${apple.id}, '1001', ${now})
+      returning id`;
+    await withWorkspace(db, { workspaceId }, (tx) =>
+      replaceImageReferences(tx, workspaceId, focusIcon, fresh!.id as string),
+    );
+    await owner`delete from workspace_images where id = ${focusIcon}`;
+    focusIcon = fresh!.id as string;
+    const copied = await updates().createCopy(
+      actor(),
+      update.id,
+      "dashboard:portfolio",
+    );
+    const copy = await readDashboard(copied.dashboards[0]!.copyId!);
+    expect(copy.slides[1]!.logoImageId).toBe(focusIcon);
   });
 });

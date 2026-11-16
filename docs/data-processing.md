@@ -858,7 +858,13 @@ icon, App Store app, stores, website). An app added or removed, paid or
 free changed, a new icon or website, or a renamed product makes the install
 offer a template update (same version) whose plan shows the slide changes;
 customised dashboards follow the usual three-way rules, and nothing changes
-on screens before the updated copy is swapped in. A scope change builds
+on screens before the updated copy is swapped in. The comparison is with
+the apps the active dashboard was built from (stored with its template
+record), so an update closed before its swap, or swapped back, is offered
+again. A slide's name is the product's name, else (an empty name is valid
+in the Products table) its first app's name, else that app's id. An icon
+the daily refresh replaced after an update was applied is the product's
+current icon when the updated copy is made. A scope change builds
 from the current identity too. Before an install, a plan or an apply,
 icons the apps lack are fetched through the resource-icon path ("Use app
 icon"); an icon that cannot be fetched leaves the slide without a logo.
