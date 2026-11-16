@@ -22,6 +22,7 @@ const preparation = {
   projectId: null,
   version: 1,
   publishedVersion: 1,
+  hasUnpublishedChanges: false,
   updatedAt: "2026-11-16T00:00:00.000Z",
 };
 const model = {
@@ -37,6 +38,7 @@ const model = {
   projectId: null,
   version: 1,
   publishedVersion: 1,
+  hasUnpublishedChanges: false,
   updatedAt: "2026-11-16T00:00:00.000Z",
 };
 

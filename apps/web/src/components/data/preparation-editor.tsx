@@ -151,13 +151,17 @@ export function PreparationEditor({
   // The published graph and its inputs, when known: undoing back to them
   // clears the mark.
   const [publishedGraph, setPublishedGraph] = useState(() =>
-    initial && initial.publishedVersion === initial.version
+    // The server says whether a saved draft equals the release (#697).
+    initial?.publishedVersion &&
+    (initial.publishedVersion === initial.version ||
+      initial.hasUnpublishedChanges === false)
       ? releaseState(canonicalJson(initial.graph), initial.restoredFromVersion)
       : undefined,
   );
   const unpublishedChanges = hasUnpublishedChanges({
     version: record?.version,
     publishedVersion: record?.publishedVersion,
+    savedDiffers: record?.hasUnpublishedChanges,
     published: publishedGraph,
     current: releaseState(graphSignature, record?.restoredFromVersion),
     dirty,

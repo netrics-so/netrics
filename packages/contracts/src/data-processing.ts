@@ -349,6 +349,11 @@ export const preparationViewSchema = z.object({
   version: z.number().int().positive(),
   publishedVersion: z.number().int().positive().nullable(),
   restoredFromVersion: z.number().int().positive().nullable().optional(),
+  /**
+   * Whether the draft differs from its live release by content: definition
+   * or inputs, not the name. False when never published (#697).
+   */
+  hasUnpublishedChanges: z.boolean(),
   updatedAt: z.iso.datetime(),
 });
 export const preparationResponseSchema = z.object({
@@ -365,6 +370,11 @@ export const modelViewSchema = z.object({
   version: z.number().int().positive(),
   publishedVersion: z.number().int().positive().nullable(),
   restoredFromVersion: z.number().int().positive().nullable().optional(),
+  /**
+   * Whether the draft differs from its live release by content: definition
+   * or inputs, not the name. False when never published (#697).
+   */
+  hasUnpublishedChanges: z.boolean(),
   updatedAt: z.iso.datetime(),
 });
 export const modelResponseSchema = z.object({ model: modelViewSchema });

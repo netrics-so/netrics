@@ -371,6 +371,197 @@ function modelView(row: typeof schema.dataModels.$inferSelect) {
   };
 }
 
+/**
+ * The preparations a definition reads directly: every "prepared:<id>:<output>"
+ * source it names, wherever it names one.
+ */
+function directPreparations(content: unknown, into = new Set<string>()) {
+  if (typeof content === "string") {
+    const match = /^prepared:([0-9a-f-]{36}):/.exec(content);
+    if (match) into.add(match[1]!);
+  } else if (Array.isArray(content))
+    for (const item of content) directPreparations(item, into);
+  else if (content !== null && typeof content === "object")
+    for (const value of Object.values(content)) directPreparations(value, into);
+  return into;
+}
+interface StoredRelease {
+  content: unknown;
+  dependencies: unknown;
+}
+/**
+ * Whether a draft differs from its live release by content (#697): its
+ * definition (the name is not part of a release), or the versions of the
+ * preparations it reads. A draft restored from a release reads that
+ * release's pins, others the preparations' current published versions, as
+ * publishing would pin them; nested pins follow from those immutable
+ * versions. So a republished input marks its readers, and a saved draft
+ * equal to the release (every save bumps the version) is not marked.
+ */
+function differsFromRelease(
+  content: unknown,
+  release: StoredRelease | undefined,
+  /** The release the draft was restored from; undefined when not restored. */
+  restored: StoredRelease | undefined | null,
+  published: ReadonlyMap<string, number | null>,
+): boolean {
+  if (!release || restored === undefined) return true;
+  if (stable(content) !== stable(release.content)) return true;
+  const pinned = (release.dependencies as Dependencies | null)?.prepared ?? {};
+  const pins = (restored?.dependencies as Dependencies | null)?.prepared ?? {};
+  for (const id of directPreparations(content))
+    if ((pins[id] ?? published.get(id) ?? null) !== (pinned[id] ?? null))
+      return true;
+  return false;
+}
+type DraftRow = {
+  id: string;
+  publishedVersion: number | null;
+  restoredFromVersion: number | null;
+};
+/**
+ * `hasUnpublishedChanges` for each draft: loads the live and restored
+ * releases and the published versions of the preparations they read, in
+ * one query each.
+ */
+async function unpublishedChanges(
+  tx: Transaction,
+  workspaceId: string,
+  rows: readonly (DraftRow & { content: unknown })[],
+  loadReleases: (
+    keys: [string, number][],
+  ) => Promise<
+    { id: string; version: number; content: unknown; dependencies: unknown }[]
+  >,
+): Promise<boolean[]> {
+  const keys = rows.flatMap((row): [string, number][] =>
+    row.publishedVersion
+      ? [
+          [row.id, row.publishedVersion],
+          ...(row.restoredFromVersion &&
+          row.restoredFromVersion !== row.publishedVersion
+            ? [[row.id, row.restoredFromVersion] as [string, number]]
+            : []),
+        ]
+      : [],
+  );
+  const releases = new Map(
+    (keys.length ? await loadReleases(keys) : []).map((r) => [
+      r.id + ":" + r.version,
+      r,
+    ]),
+  );
+  const ids = new Set<string>();
+  for (const row of rows)
+    if (row.publishedVersion) directPreparations(row.content, ids);
+  const t = schema.dataPreparations;
+  const published = new Map(
+    (ids.size
+      ? await tx
+          .select({ id: t.id, publishedVersion: t.publishedVersion })
+          .from(t)
+          .where(and(eq(t.workspaceId, workspaceId), inArray(t.id, [...ids])))
+      : []
+    ).map((p) => [p.id, p.publishedVersion]),
+  );
+  return rows.map(
+    (row) =>
+      !!row.publishedVersion &&
+      differsFromRelease(
+        row.content,
+        releases.get(row.id + ":" + row.publishedVersion),
+        row.restoredFromVersion
+          ? releases.get(row.id + ":" + row.restoredFromVersion)
+          : null,
+        published,
+      ),
+  );
+}
+async function preparationViews(
+  tx: Transaction,
+  workspaceId: string,
+  rows: (typeof schema.dataPreparations.$inferSelect)[],
+) {
+  const t = schema.dataPreparationVersions;
+  const changed = await unpublishedChanges(
+    tx,
+    workspaceId,
+    rows.map((row) => ({ ...row, content: row.graph })),
+    (keys) =>
+      tx
+        .select({
+          id: t.preparationId,
+          version: t.version,
+          content: t.graph,
+          dependencies: t.dependencies,
+        })
+        .from(t)
+        .where(
+          and(
+            eq(t.workspaceId, workspaceId),
+            or(
+              ...keys.map(([id, version]) =>
+                and(eq(t.preparationId, id), eq(t.version, version)),
+              ),
+            ),
+          ),
+        ),
+  );
+  return rows.map((row, i) => ({
+    ...preparationView(row),
+    hasUnpublishedChanges: changed[i]!,
+  }));
+}
+async function modelViews(
+  tx: Transaction,
+  workspaceId: string,
+  rows: (typeof schema.dataModels.$inferSelect)[],
+) {
+  const t = schema.dataModelReleases;
+  const changed = await unpublishedChanges(
+    tx,
+    workspaceId,
+    rows.map((row) => ({ ...row, content: row.definition })),
+    (keys) =>
+      tx
+        .select({
+          id: t.modelId,
+          version: t.version,
+          content: t.definition,
+          dependencies: t.dependencies,
+        })
+        .from(t)
+        .where(
+          and(
+            eq(t.workspaceId, workspaceId),
+            or(
+              ...keys.map(([id, version]) =>
+                and(eq(t.modelId, id), eq(t.version, version)),
+              ),
+            ),
+          ),
+        ),
+  );
+  return rows.map((row, i) => ({
+    ...modelView(row),
+    hasUnpublishedChanges: changed[i]!,
+  }));
+}
+async function preparationViewIn(
+  tx: Transaction,
+  workspaceId: string,
+  row: typeof schema.dataPreparations.$inferSelect,
+) {
+  return (await preparationViews(tx, workspaceId, [row]))[0]!;
+}
+async function modelViewIn(
+  tx: Transaction,
+  workspaceId: string,
+  row: typeof schema.dataModels.$inferSelect,
+) {
+  return (await modelViews(tx, workspaceId, [row]))[0]!;
+}
+
 interface DraftContext {
   id: string;
   version: number;
@@ -1641,7 +1832,9 @@ export function createDataService(
             ),
           )
           .returning();
-        return { preparation: preparationView(row!) };
+        return {
+          preparation: await preparationViewIn(tx, actor.workspaceId, row!),
+        };
       }
       const [row] = await tx
         .update(schema.dataModels)
@@ -1653,7 +1846,7 @@ export function createDataService(
           ),
         )
         .returning();
-      return { model: modelView(row!) };
+      return { model: await modelViewIn(tx, actor.workspaceId, row!) };
     });
   /**
    * What depends on a preparation, model or some of a model's measures
@@ -2287,7 +2480,9 @@ export function createDataService(
       }),
     listPreparations: (actor: DataActor, filter: ProjectFilter = {}) =>
       run(actor, async (tx) => ({
-        preparations: (
+        preparations: await preparationViews(
+          tx,
+          actor.workspaceId,
           await tx
             .select()
             .from(schema.dataPreparations)
@@ -2301,12 +2496,14 @@ export function createDataService(
                 ),
               ),
             )
-            .orderBy(asc(schema.dataPreparations.name))
-        ).map(preparationView),
+            .orderBy(asc(schema.dataPreparations.name)),
+        ),
       })),
     getPreparation: (actor: DataActor, id: string) =>
       run(actor, async (tx) => ({
-        preparation: preparationView(
+        preparation: await preparationViewIn(
+          tx,
+          actor.workspaceId,
           await findPreparation(tx, actor.workspaceId, id),
         ),
       })),
@@ -2425,7 +2622,9 @@ export function createDataService(
           fromVersion: publication.version,
           draftVersion: updated!.version,
         });
-        return { preparation: preparationView(updated!) };
+        return {
+          preparation: await preparationViewIn(tx, actor.workspaceId, updated!),
+        };
       }),
     savePreparation: (
       actor: DataActor,
@@ -2467,7 +2666,9 @@ export function createDataService(
             )
             .returning();
           await audit(tx, actor, "data.preparation_updated", id);
-          return { preparation: preparationView(row!) };
+          return {
+            preparation: await preparationViewIn(tx, actor.workspaceId, row!),
+          };
         }
         const count = await tx
           .select({ id: schema.dataPreparations.id })
@@ -2489,7 +2690,9 @@ export function createDataService(
           })
           .returning();
         await audit(tx, actor, "data.preparation_created", row!.id);
-        return { preparation: preparationView(row!) };
+        return {
+          preparation: await preparationViewIn(tx, actor.workspaceId, row!),
+        };
       }),
     previewPreparation: (
       actor: DataActor,
@@ -2549,7 +2752,9 @@ export function createDataService(
         // version, which keeps its inputs on purpose) nothing changes.
         const republish = row.publishedVersion === expected;
         if (republish && row.restoredFromVersion)
-          return { preparation: preparationView(row) };
+          return {
+            preparation: await preparationViewIn(tx, actor.workspaceId, row),
+          };
         const restored = row.restoredFromVersion
           ? await preparationPublication(
               tx,
@@ -2591,7 +2796,9 @@ export function createDataService(
               (publication.dependencies as Dependencies | null)?.prepared ?? {},
             ) === stable(loader.dependencies.prepared)
           )
-            return { preparation: preparationView(row) };
+            return {
+              preparation: await preparationViewIn(tx, actor.workspaceId, row),
+            };
           preparationChanged(id);
           const [bumped] = await tx
             .update(schema.dataPreparations)
@@ -2648,11 +2855,15 @@ export function createDataService(
           )
           .returning();
         await audit(tx, actor, "data.preparation_published", id);
-        return { preparation: preparationView(updated!) };
+        return {
+          preparation: await preparationViewIn(tx, actor.workspaceId, updated!),
+        };
       }),
     listModels: (actor: DataActor, filter: ProjectFilter = {}) =>
       run(actor, async (tx) => ({
-        models: (
+        models: await modelViews(
+          tx,
+          actor.workspaceId,
           await tx
             .select()
             .from(schema.dataModels)
@@ -2666,12 +2877,16 @@ export function createDataService(
                 ),
               ),
             )
-            .orderBy(asc(schema.dataModels.name))
-        ).map(modelView),
+            .orderBy(asc(schema.dataModels.name)),
+        ),
       })),
     getModel: (actor: DataActor, id: string) =>
       run(actor, async (tx) => ({
-        model: modelView(await findDataModel(tx, actor.workspaceId, id)),
+        model: await modelViewIn(
+          tx,
+          actor.workspaceId,
+          await findDataModel(tx, actor.workspaceId, id),
+        ),
       })),
     modelInputs: (actor: DataActor, id: string, expected: number) =>
       run(actor, async (tx, now) => {
@@ -2782,7 +2997,7 @@ export function createDataService(
           fromVersion: publication.version,
           draftVersion: updated!.version,
         });
-        return { model: modelView(updated!) };
+        return { model: await modelViewIn(tx, actor.workspaceId, updated!) };
       }),
     saveModel: (
       actor: DataActor,
@@ -2820,7 +3035,7 @@ export function createDataService(
             )
             .returning();
           await audit(tx, actor, "data.model_updated", id);
-          return { model: modelView(updated!) };
+          return { model: await modelViewIn(tx, actor.workspaceId, updated!) };
         }
         const count = await tx
           .select({ id: schema.dataModels.id })
@@ -2842,7 +3057,7 @@ export function createDataService(
           })
           .returning();
         await audit(tx, actor, "data.model_created", row!.id);
-        return { model: modelView(row!) };
+        return { model: await modelViewIn(tx, actor.workspaceId, row!) };
       }),
     publishModel: (actor: DataActor, id: string, expected: number) =>
       run(actor, async (tx, now) => {
@@ -2854,7 +3069,7 @@ export function createDataService(
         // keeps its inputs) nothing changes.
         const republish = row.publishedVersion === expected;
         if (republish && row.restoredFromVersion)
-          return { model: modelView(row) };
+          return { model: await modelViewIn(tx, actor.workspaceId, row) };
         const restored = row.restoredFromVersion
           ? await modelPublication(
               tx,
@@ -2895,7 +3110,7 @@ export function createDataService(
               (release.dependencies as Dependencies | null)?.prepared ?? {},
             ) === stable(loader.dependencies.prepared)
           )
-            return { model: modelView(row) };
+            return { model: await modelViewIn(tx, actor.workspaceId, row) };
           const [bumped] = await tx
             .update(schema.dataModels)
             .set({ version: row.version + 1, updatedAt: now })
@@ -2930,7 +3145,7 @@ export function createDataService(
           )
           .returning();
         await audit(tx, actor, "data.model_published", id);
-        return { model: modelView(updated!) };
+        return { model: await modelViewIn(tx, actor.workspaceId, updated!) };
       }),
     query: async (
       actor: DataActor,

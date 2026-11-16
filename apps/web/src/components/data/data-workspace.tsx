@@ -769,7 +769,7 @@ export function DataWorkspace({
                               version: preparation.publishedVersion,
                             })
                           : t("unpublished")}
-                        {preparation.version !== preparation.publishedVersion
+                        {preparation.hasUnpublishedChanges
                           ? " · " + t("changed")
                           : ""}
                       </td>
@@ -833,7 +833,7 @@ export function DataWorkspace({
                         {model.publishedVersion
                           ? t("published", { version: model.publishedVersion })
                           : t("unpublished")}
-                        {model.version !== model.publishedVersion
+                        {model.hasUnpublishedChanges
                           ? " · " + t("changed")
                           : ""}
                       </td>

@@ -235,13 +235,23 @@ export function renameMeasure(
  * order for measures not named yet, so two of them stay apart.
  */
 export function measureLabels(
-  measures: readonly ModelMeasure[],
+  measures: readonly { id: string; name: string }[],
   unnamed: (number: number) => string,
 ): Map<string, string> {
   let count = 0;
   return new Map(
     measures.map((m) => [m.id, m.name.trim() || unnamed(++count)]),
   );
+}
+/** As `measureLabels`, for dimensions: "Unnamed dimension 1", "…2" (#698). */
+export const dimensionLabels = measureLabels;
+/**
+ * A new dimension: an empty name, which the name field's placeholder
+ * explains, on the first selected source. A prefilled name had to be
+ * deleted first (#698).
+ */
+export function newDimension(id: string, datasetId: string): ModelDimension {
+  return { id, name: "", datasetId, fieldId: "", labelFieldId: undefined };
 }
 export function ModelEditor({
   workspaceId,
@@ -320,8 +330,10 @@ export function ModelEditor({
     [previewState, setPreviewState] = useState("");
   // The draft and query the shown preview ran with.
   const [previewed, setPreviewed] = useState<ModelPreviewQuery | null>(null);
-  // The measure just added, whose empty name field takes the focus.
+  // The measure or dimension just added, whose empty name field takes the
+  // focus.
   const [addedMeasureId, setAddedMeasureId] = useState<string | null>(null);
+  const [addedDimensionId, setAddedDimensionId] = useState<string | null>(null);
   const [busy, setBusy] = useState<
     "preview" | "save" | "publish" | "history" | null
   >(null);
@@ -344,7 +356,10 @@ export function ModelEditor({
   // them clears the "Unpublished changes" mark. The name is not part of a
   // release.
   const [publishedState, setPublishedState] = useState(() =>
-    initial && initial.publishedVersion === initial.version
+    // The server says whether a saved draft equals the release (#697).
+    initial?.publishedVersion &&
+    (initial.publishedVersion === initial.version ||
+      initial.hasUnpublishedChanges === false)
       ? releaseState(
           modelEditorState("", initial.definition, {}),
           initial.restoredFromVersion,
@@ -376,8 +391,10 @@ export function ModelEditor({
   }, [definition, measureIds, groupBy, filterText]);
   const scopeHintShown = missingScope.length > 0 && measureIds.length > 0;
   const dateScope = modelMeasureDateScope(definition, measureIds);
-  const dimensionName = (id: string) =>
-    definition.dimensions.find((d) => d.id === id)?.name ?? id;
+  const dimensionNames = dimensionLabels(definition.dimensions, (number) =>
+    t("unnamedDimension", { number }),
+  );
+  const dimensionName = (id: string) => dimensionNames.get(id) ?? id;
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -716,7 +733,9 @@ export function ModelEditor({
     setGroupBy((current) => withMeasureScope(definition, [id], current));
     setAddedMeasureId(id);
   }
-  const timeDimensions = timeDimensionCandidates(definition, fieldsFor);
+  const timeDimensions = timeDimensionCandidates(definition, fieldsFor).map(
+    (d) => ({ ...d, name: dimensionName(d.id) }),
+  );
   const dependents = (id: string) => measureDependents(definition, id);
   function addChangeMeasures(
     measure: Extract<ModelMeasure, { kind: "period_offset" }>,
@@ -752,7 +771,7 @@ export function ModelEditor({
       nullable: true,
     }),
     id: d.id,
-    name: d.name,
+    name: dimensionName(d.id),
   }));
   const labels = measureLabels(definition.measures, (number) =>
     t("unnamedMeasure", { number }),
@@ -803,6 +822,7 @@ export function ModelEditor({
             {hasUnpublishedChanges({
               version: record?.version,
               publishedVersion: record?.publishedVersion,
+              savedDiffers: record?.hasUnpublishedChanges,
               published: publishedState,
               current: releaseState(
                 definitionState,
@@ -1094,23 +1114,16 @@ export function ModelEditor({
             <button
               type="button"
               disabled={!selectedSources.length}
-              onClick={() =>
+              onClick={() => {
+                const id = newDataId();
                 change({
                   dimensions: [
                     ...definition.dimensions,
-                    {
-                      id: newDataId(),
-                      name:
-                        t("dimensionName") +
-                        " " +
-                        (definition.dimensions.length + 1),
-                      datasetId: selectedSources[0]!.id,
-                      fieldId: "",
-                      labelFieldId: undefined,
-                    },
+                    newDimension(id, selectedSources[0]!.id),
                   ],
-                })
-              }
+                });
+                setAddedDimensionId(id);
+              }}
             >
               {t("addDimension")}
             </button>
@@ -1141,6 +1154,8 @@ export function ModelEditor({
                   <input
                     maxLength={100}
                     required
+                    placeholder={t("dimensionNamePlaceholder")}
+                    autoFocus={dimension.id === addedDimensionId}
                     value={dimension.name}
                     onChange={(e) =>
                       update(
@@ -1437,7 +1452,7 @@ export function ModelEditor({
                             );
                         }}
                       />
-                      {dimension.name}
+                      {dimensionName(dimension.id)}
                     </label>
                   ))}
                 </fieldset>

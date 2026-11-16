@@ -287,6 +287,38 @@ describe("unpublished changes (#632)", () => {
       }),
     ).toBe(true);
   });
+  it("takes the server's word on the saved draft without unsaved edits (#697)", () => {
+    // Shown as published, but an input it pins was published again.
+    const known = {
+      version: 3,
+      publishedVersion: 3,
+      published: releaseState("A", null),
+      current: releaseState("A", null),
+    };
+    expect(
+      hasUnpublishedChanges({ ...known, savedDiffers: true, dirty: false }),
+    ).toBe(true);
+    // A saved draft equal to the release, even with a restore marker the
+    // editor would count as different.
+    expect(
+      hasUnpublishedChanges({
+        ...known,
+        version: 4,
+        current: releaseState("A", 1),
+        savedDiffers: false,
+        dirty: false,
+      }),
+    ).toBe(false);
+    // Unsaved edits compare with the published definition, as before.
+    expect(
+      hasUnpublishedChanges({
+        ...known,
+        current: releaseState("B", null),
+        savedDiffers: false,
+        dirty: true,
+      }),
+    ).toBe(true);
+  });
   it("never marks an item that was never published", () => {
     expect(
       hasUnpublishedChanges({

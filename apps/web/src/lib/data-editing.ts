@@ -281,12 +281,17 @@ export function releaseState(
  * differs from the published definition. `published` is that definition's
  * signature when the editor knows it (opened at the published version, or
  * published or restored it since), so undoing back to it clears the mark.
- * Otherwise a saved draft ahead of the release counts, as in the lists, and
- * so do unsaved edits. Never-published items say "Not published" instead.
+ * Otherwise the saved draft counts when the server says it differs from the
+ * release (#697; without that word, any saved draft ahead of it), and so do
+ * unsaved edits. Without unsaved edits the server's word wins: only it knows
+ * whether the inputs a release pinned were published again since.
+ * Never-published items say "Not published" instead.
  */
 export function hasUnpublishedChanges(state: {
   version: number | undefined;
   publishedVersion: number | null | undefined;
+  /** The server's word on whether the saved draft differs from the release. */
+  savedDiffers?: boolean | undefined;
   /** The published definition's signature, when known. */
   published: string | undefined;
   /** The shown definition's signature, in the same form. */
@@ -295,7 +300,10 @@ export function hasUnpublishedChanges(state: {
   dirty: boolean;
 }): boolean {
   if (!state.publishedVersion) return false;
+  if (!state.dirty && state.savedDiffers !== undefined)
+    return state.savedDiffers;
   return state.published === undefined
-    ? state.version !== state.publishedVersion || state.dirty
+    ? (state.savedDiffers ?? state.version !== state.publishedVersion) ||
+        state.dirty
     : state.current !== state.published;
 }
