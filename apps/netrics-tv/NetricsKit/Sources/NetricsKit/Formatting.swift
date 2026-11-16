@@ -390,14 +390,14 @@ public enum TVTime {
         TimeZone(identifier: identifier) ?? .current
     }
 
-    /** "14:05" in the workspace's zone (the offline marker). */
+    /** "14:05" in `timeZone`. */
     public static func hourMinute(_ date: Date, timeZone: String, language: ScreenLanguage = .en) -> String {
         var style = Date.FormatStyle(locale: language.dateLocale, timeZone: zone(timeZone))
         style = style.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
         return date.formatted(style)
     }
 
-    /** "Tue 29 Sep, 14:05" in the workspace's zone (the header clock); "Di. 29. Sept., 14:05". */
+    /** "Tue 29 Sep, 14:05" in `timeZone`; "Di. 29. Sept., 14:05". */
     public static func clock(_ date: Date, timeZone: String, language: ScreenLanguage = .en) -> String {
         let day = Date.FormatStyle(locale: language.dateLocale, timeZone: zone(timeZone))
             .weekday(.abbreviated).day().month(.abbreviated)
@@ -409,6 +409,38 @@ public enum TVTime {
         guard let updatedAt else { return KitStrings.text(.offline, language) }
         return KitStrings.text(
             .offlineLastUpdate, language, hourMinute(updatedAt, timeZone: timeZone, language: language))
+    }
+
+    // MARK: The viewer's zone (ADR 0025 §8, #736)
+    //
+    // Every time a viewer reads is in the device's zone, the person in front
+    // of the screen. The payload's `timeZone` (the workspace's) only counts
+    // data days: goals, "today", measures.
+
+    /** The device's zone; it follows a change in Settings while the app runs. */
+    public static func viewerZone(device: TimeZone = .autoupdatingCurrent) -> String {
+        device.identifier
+    }
+
+    /** The slide header's clock, "14:05", in the device's zone. */
+    public static func headerTime(
+        _ date: Date, device: TimeZone = .autoupdatingCurrent, language: ScreenLanguage = .en
+    ) -> String {
+        hourMinute(date, timeZone: viewerZone(device: device), language: language)
+    }
+
+    /** The schema 1 header's clock, "Tue 29 Sep, 14:05", in the device's zone. */
+    public static func headerClock(
+        _ date: Date, device: TimeZone = .autoupdatingCurrent, language: ScreenLanguage = .en
+    ) -> String {
+        clock(date, timeZone: viewerZone(device: device), language: language)
+    }
+
+    /** The offline marker with the last update in the device's zone. */
+    public static func offlineMarker(
+        updatedAt: Date?, device: TimeZone = .autoupdatingCurrent, language: ScreenLanguage = .en
+    ) -> String {
+        offlineMarker(updatedAt: updatedAt, timeZone: viewerZone(device: device), language: language)
     }
 }
 

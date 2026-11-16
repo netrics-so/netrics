@@ -7,6 +7,7 @@ import { clockLayout, type ClockDateStyle } from "@netrics/domain";
 import { useLocale } from "@/lib/i18n/client";
 import { clockText, msUntilNextMinute } from "@/lib/studio-clock";
 import { contentBox, u, type ScreenPlacement } from "@/lib/studio-render";
+import { useClockZone } from "@/lib/viewer-time-zone";
 
 /**
  * The current time, re-rendered when the minute changes. Before hydration
@@ -100,19 +101,19 @@ export function ClockWidgetView(props: ClockWidgetViewProps) {
   );
 }
 
-/** A clock that ticks on its own, in its zone or the workspace's. */
+/**
+ * A clock that ticks on its own, in its zone or, without one, the viewer's
+ * (#736): never the workspace's, which only counts data days. A payload
+ * clock marked `followsViewer` shows the viewer's as well.
+ */
 export function LiveClockWidget(
   props: Omit<ClockWidgetViewProps, "now" | "timeZone"> & {
     timeZone: string | null;
-    workspaceTimeZone: string;
+    followsViewer?: boolean;
   },
 ) {
+  const { followsViewer, ...view } = props;
   const now = useNow();
-  return (
-    <ClockWidgetView
-      {...props}
-      now={now}
-      timeZone={props.timeZone ?? props.workspaceTimeZone}
-    />
-  );
+  const timeZone = useClockZone(props.timeZone, followsViewer);
+  return <ClockWidgetView {...view} now={now} timeZone={timeZone} />;
 }

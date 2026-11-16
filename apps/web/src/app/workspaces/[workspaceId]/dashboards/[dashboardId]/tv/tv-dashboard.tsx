@@ -20,6 +20,7 @@ import {
   type StudioImage,
 } from "@/lib/studio-widgets";
 import { useWakeLock } from "@/lib/use-screen";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 import type { TileConnection } from "../metric-tile";
 import { useServerRefresh } from "../use-server-refresh";
@@ -70,7 +71,9 @@ export function TvDashboard({
   useEffect(() => {
     setUpdatedAt(Date.now());
   }, [dashboard, metrics, connections]);
-  const offlineSince = clockTime(updatedAt, timeZone, locale);
+  // The viewer's zone, not the workspace's (#736).
+  const viewerZone = useViewerTimeZone();
+  const offlineSince = clockTime(updatedAt, viewerZone, locale);
 
   const env: StudioEnv = useMemo(
     () => ({
@@ -126,7 +129,6 @@ export function TvDashboard({
           header={{
             name: dashboard.name,
             logoImageId: logoImageId(settings),
-            timeZone,
             offline,
             offlineSince,
             refresh,

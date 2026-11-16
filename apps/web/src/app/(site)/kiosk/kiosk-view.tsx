@@ -39,6 +39,7 @@ import { pairingAddress } from "@/lib/pairing-address";
 import type { RefreshCycle } from "@/lib/refresh-countdown";
 import { deviceTileNotice } from "@/lib/tile-status";
 import { useWakeLock } from "@/lib/use-screen";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 /** The product name, the same in every language. */
 const BRAND = "netrics";
@@ -154,7 +155,7 @@ export function KioskScreen({ state }: { state: KioskState }) {
         ) : (
           <Message title={t("noDashboardTitle")}>
             {t("noDashboardText")}
-            <OfflineMarker state={state} timeZone={state.dashboard.timeZone} />
+            <OfflineMarker state={state} />
           </Message>
         )}
       </RotatedScreen>
@@ -228,15 +229,11 @@ function PairingScreen({ state }: { state: KioskState }) {
   );
 }
 
-function OfflineMarker({
-  state,
-  timeZone,
-}: {
-  state: KioskState;
-  timeZone: string;
-}) {
+/** The offline note; its last update in the viewer's zone (#736). */
+function OfflineMarker({ state }: { state: KioskState }) {
   const t = useT("screen.kiosk");
   const locale = useLocale();
+  const viewerZone = useViewerTimeZone();
   if (!state.offline) {
     return null;
   }
@@ -244,7 +241,7 @@ function OfflineMarker({
     <span className="kiosk-offline" role="status" title={state.lastError ?? ""}>
       {state.updatedAt
         ? t("offlineSince", {
-            time: clockTime(state.updatedAt, timeZone, locale),
+            time: clockTime(state.updatedAt, viewerZone, locale),
           })
         : t("offline")}
     </span>
@@ -315,6 +312,7 @@ function KioskSlides({
   const idle = useIdle();
   const t = useT("screen.kiosk");
   const locale = useLocale();
+  const viewerZone = useViewerTimeZone();
   const { theme, timeZone } = payload;
   const env = {
     timeZone,
@@ -338,12 +336,11 @@ function KioskSlides({
         header={{
           name: dashboard.name,
           logoImageId: dashboard.logo?.imageId ?? null,
-          timeZone,
           offline: dashboard.showHeader && state.offline,
           offlineSince:
             state.updatedAt === null
               ? null
-              : clockTime(state.updatedAt, timeZone, locale),
+              : clockTime(state.updatedAt, viewerZone, locale),
           refresh: kioskRefreshCycle(state, payload),
         }}
         images={state.images}
@@ -355,7 +352,7 @@ function KioskSlides({
       {/* With the header the marker is in it; without, in the corner. */}
       {state.offline && !dashboard.showHeader ? (
         <div className="slide-screen-status">
-          <OfflineMarker state={state} timeZone={timeZone} />
+          <OfflineMarker state={state} />
         </div>
       ) : null}
     </div>
@@ -395,7 +392,7 @@ function KioskScroll({
         }))}
         tokens={theme.tokens}
         images={state.images}
-        toolbar={<OfflineMarker state={state} timeZone={timeZone} />}
+        toolbar={<OfflineMarker state={state} />}
         renderWidget={(widget, size) => (
           <DeviceScrollWidget widget={widget} env={env} size={size} />
         )}
@@ -411,7 +408,7 @@ function KioskDashboard({
   state: KioskState;
   dashboard: DeviceDashboardResponse;
 }) {
-  const clock = useClock(dashboard.timeZone);
+  const clock = useClock();
   const t = useT("screen.kiosk");
   const locale = useLocale();
   return (
@@ -420,7 +417,7 @@ function KioskDashboard({
       tileCount={dashboard.tiles.length}
       meta={
         <>
-          <OfflineMarker state={state} timeZone={dashboard.timeZone} />
+          <OfflineMarker state={state} />
           <span>{clock}</span>
         </>
       }

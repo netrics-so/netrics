@@ -417,7 +417,6 @@ export function EditorCanvas({
           slideName: slide.name,
           pageLabel,
           logoImageId: settings.logoImageId,
-          timeZone: env.timeZone,
         }}
         images={env.images}
         renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}

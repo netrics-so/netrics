@@ -175,7 +175,6 @@ export function SlideViewer({
             slideName: slide.name,
             pageLabel: pageLabel(entry.page, entry.pages),
             logoImageId: logoImageId(dashboard.settings),
-            timeZone: env.timeZone,
             offline,
           }}
           images={env.images}

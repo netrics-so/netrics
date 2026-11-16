@@ -1,6 +1,6 @@
 // The clock widget and the slide header's clock (ADR 0015, section 2): the
 // time, and optionally the date (short or long) and the zone line (ADR 0019,
-// section 9), in the workspace's time zone or the widget's own.
+// section 9), in the viewer's time zone or the widget's own (#736).
 
 import { zoneLabel, type ClockDateStyle } from "@netrics/domain";
 

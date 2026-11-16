@@ -774,6 +774,7 @@ describe("device payload schema 2", () => {
                 "id": "11111111-0000-4000-8000-000000000106",
                 "label": null,
                 "options": {
+                  "followsViewer": true,
                   "hour12": true,
                   "showDate": true,
                   "timeZone": "Europe/Berlin",
@@ -906,7 +907,7 @@ describe("device payload schema 2", () => {
           },
         },
         "timeZone": "Europe/Berlin",
-        "version": "vkS3519PLTrdKahmZu4VSTgmws72uAFK",
+        "version": "LHg0L5RvSKgBLvBK-0GaCUKn0O7hsftC",
       }
     `);
   });
@@ -938,11 +939,41 @@ describe("device payload schema 2", () => {
         showDate: true,
         hour12: true,
         timeZone: "Europe/Berlin",
+        followsViewer: true,
         dateStyle: "long",
         showZone: true,
       });
       expect(after.version).not.toBe(before.version);
       expect(deviceDashboardV2ResponseSchema.parse(after)).toEqual(after);
+    } finally {
+      await owner`
+        update dashboard_widgets set options = ${owner.json({ hour12: true })}
+        where id = ${id(1, 106)}`;
+    }
+  });
+
+  it("marks a clock without its own zone as the viewer's (#736)", async () => {
+    const clockOf = (payload: DeviceDashboardV2Response) =>
+      widgetsOf(payload).find((widget) => widget.id === id(1, 106))!;
+    // Unset: screens show the viewer's zone. `timeZone` stays the
+    // workspace's, as before, for released screens that require it.
+    expect(clockOf(await v2(STUDIO)).options).toEqual({
+      showDate: true,
+      hour12: true,
+      timeZone: "Europe/Berlin",
+      followsViewer: true,
+    });
+    const set = { hour12: true, timeZone: "Asia/Tokyo" };
+    await owner`
+      update dashboard_widgets set options = ${owner.json(set)}
+      where id = ${id(1, 106)}`;
+    try {
+      // Its own zone: as it was, without the marker.
+      expect(clockOf(await v2(STUDIO)).options).toEqual({
+        showDate: true,
+        hour12: true,
+        timeZone: "Asia/Tokyo",
+      });
     } finally {
       await owner`
         update dashboard_widgets set options = ${owner.json({ hour12: true })}

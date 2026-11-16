@@ -149,8 +149,7 @@ struct DeviceView: View {
                     text: L10n.tr(
                         "Choose one under TVs in netrics; this screen picks it up on its own.", language),
                     marker: state.offline
-                        ? TVTime.offlineMarker(
-                            updatedAt: state.updatedAt, timeZone: payload.timeZone, language: language)
+                        ? TVTime.offlineMarker(updatedAt: state.updatedAt, language: language)
                         : nil
                 )
                 .remoteSettingsGesture { showSettings = true }

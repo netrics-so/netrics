@@ -1664,16 +1664,13 @@ function StyleFields({
                 options({ timeZone: event.target.value || null })
               }
             >
-              <option value="">
-                {t("workspaceZone", { zone: workspaceZone })}
-              </option>
-              {clockTimeZones(workspaceZone)
-                .slice(1)
-                .map((zone) => (
-                  <option key={zone} value={zone}>
-                    {zone.replaceAll("_", " ")}
-                  </option>
-                ))}
+              {/* No zone: each screen's own (#736). */}
+              <option value="">{t("viewerZone")}</option>
+              {clockTimeZones(workspaceZone).map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone.replaceAll("_", " ")}
+                </option>
+              ))}
             </select>
           </div>
           <div className="field">

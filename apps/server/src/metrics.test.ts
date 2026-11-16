@@ -185,12 +185,24 @@ describe("workspace time zone", () => {
     expect((await createWorkspace(owner)).timeZone).toBe("UTC");
   });
 
-  it("rejects unknown zones", async () => {
-    const response = await call("POST", "/v1/workspaces", owner, {
+  it("rejects unknown zones when changed; creation falls back to UTC (#736)", async () => {
+    const workspace = await createWorkspace(owner);
+    const changed = await call(
+      "PATCH",
+      `/v1/workspaces/${workspace.id}`,
+      owner,
+      { timeZone: "Mars/Olympus" },
+    );
+    expect(changed.statusCode).toBe(400);
+    // The browser's zone at creation must never block it.
+    const created = await call("POST", "/v1/workspaces", owner, {
       name: "Nowhere",
       timeZone: "Mars/Olympus",
     });
-    expect(response.statusCode).toBe(400);
+    expect(created.statusCode).toBe(200);
+    expect(
+      workspaceResponseSchema.parse(created.json()).workspace.timeZone,
+    ).toBe("UTC");
   });
 
   it("can be changed by an owner and is audited", async () => {

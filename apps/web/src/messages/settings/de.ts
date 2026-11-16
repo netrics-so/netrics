@@ -21,7 +21,7 @@ export const settingsDe: Catalog<typeof settingsEn> = {
       rename: "Umbenennen",
       timeZone: "Zeitzone",
       timeZoneHint:
-        "Dashboards zählen „heute“ und Tageswerte in dieser Zeitzone.",
+        "Dashboards zählen „heute“, Tageswerte und Ziele in dieser Zeitzone. Uhren auf Bildschirmen zeigen die Ortszeit des Geräts oder Browsers.",
     },
     currency: {
       title: "Währung",

@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { useLocale, useT } from "@/lib/i18n/client";
 import { tvGrid } from "@/lib/tv-grid";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 const IDLE_MS = 3000;
 
@@ -13,8 +14,9 @@ export function clockLocale(locale: string): string {
 }
 
 /**
- * A moment as the screen clock shows it ("12:00"), in the workspace's zone:
- * the offline note's last update on the kiosk and in TV mode (#649, #681).
+ * A moment as the screen clock shows it ("12:00"), in `timeZone`, the
+ * viewer's (#736, `useViewerTimeZone`): the offline note's last update on
+ * the kiosk and in TV mode (#649, #681).
  */
 export function clockTime(
   epochMs: number,
@@ -40,11 +42,12 @@ function formatClock(timeZone: string, locale: string): string {
 }
 
 /**
- * The time in the workspace's zone and the screen's language, updated
+ * The time in the viewer's zone (#736) and the screen's language, updated
  * every 15 seconds.
  */
-export function useClock(timeZone: string): string {
+export function useClock(): string {
   const locale = useLocale();
+  const timeZone = useViewerTimeZone();
   const [now, setNow] = useState(() => formatClock(timeZone, locale));
   useEffect(() => {
     setNow(formatClock(timeZone, locale));

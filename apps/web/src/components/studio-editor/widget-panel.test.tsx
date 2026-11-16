@@ -208,8 +208,12 @@ describe("widget panel", () => {
         showZone: false,
       },
     });
+    // No zone: the screen's own (#736); the workspace's is a choice.
     expect(html).toContain(
-      '<option value="">Workspace (Europe/Berlin)</option>',
+      '<option value="">Local time of the screen</option>',
+    );
+    expect(html).toContain(
+      '<option value="Europe/Berlin">Europe/Berlin</option>',
     );
     expect(html).toContain(
       '<option value="America/New_York" selected="">America/New York</option>',

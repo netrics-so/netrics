@@ -239,7 +239,7 @@ struct SlideHeaderView: View {
             state.offline
             ? StudioLayout.offlineNote(
                 name: name, slideName: slide.name, format: format, logoAspect: logoAspect,
-                updatedAt: state.updatedAt, timeZone: payload.timeZone, language: env.language) : nil
+                updatedAt: state.updatedAt, timeZone: TVTime.viewerZone(), language: env.language) : nil
         let fit = StudioLayout.headerFit(
             name: name, slideName: slide.name, format: format, logoAspect: logoAspect,
             meta: offlineNote.map { "⚠ \($0)" })
@@ -310,7 +310,8 @@ struct SlideHeaderView: View {
                         .lineLimit(1)
                 }
                 TimelineView(.everyMinute) { context in
-                    Text(TVTime.hourMinute(context.date, timeZone: payload.timeZone, language: env.language))
+                    // The device's zone, not the workspace's (#736).
+                    Text(TVTime.headerTime(context.date, language: env.language))
                         .font(env.font(StudioHeaderMetrics.meta).monospacedDigit())
                         .foregroundStyle(colors.accent)
                 }

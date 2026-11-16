@@ -1473,7 +1473,13 @@ async function buildSlides(
           label: widget.title,
           options: {
             ...clock,
+            // Released screens require a zone: without the widget's own,
+            // the workspace's, as before; current screens see
+            // `followsViewer` and show their own (#736).
             timeZone: clock.timeZone ?? timeZone,
+            ...(clock.timeZone === null
+              ? { followsViewer: true as const }
+              : {}),
             // Only when set (ADR 0019 §9): an existing clock's payload and
             // version stay as they were.
             ...(dateStyle === "short" ? {} : { dateStyle }),

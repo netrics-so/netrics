@@ -130,14 +130,14 @@ optional `theme_*` pair on slides.
 
 ### 2. Widget types (first release)
 
-| Type     | Shows                                               | Options (`options` jsonb)                                              | Min size |
-| -------- | --------------------------------------------------- | ---------------------------------------------------------------------- | -------- |
-| `metric` | Today's tile: label, big value, change, sparkline   | `showSparkline` (true), `showChange` (true)                            | 3 × 2    |
-| `line`   | One metric over the period, previous period dashed  | `showPrevious` (true), `showAxis` (true)                               | 4 × 3    |
-| `bar`    | One metric by a dimension, top N, descending        | `groupBy` (dimension key, e.g. `resource`, `territory`), `limit` 3–10  | 4 × 3    |
-| `image`  | An uploaded image or a resource icon                | `fit` (`contain`, `cover`), `align`                                    | 1 × 1    |
-| `text`   | Static text, markdown-lite                          | `size` (`body`, `heading`, `display`), `align`                         | 2 × 1    |
-| `clock`  | Time and optionally date in the workspace time zone | `showDate`, `hour12` (false), `timeZone` (IANA, defaults to workspace) | 2 × 1    |
+| Type     | Shows                                                     | Options (`options` jsonb)                                                 | Min size |
+| -------- | --------------------------------------------------------- | ------------------------------------------------------------------------- | -------- |
+| `metric` | Today's tile: label, big value, change, sparkline         | `showSparkline` (true), `showChange` (true)                               | 3 × 2    |
+| `line`   | One metric over the period, previous period dashed        | `showPrevious` (true), `showAxis` (true)                                  | 4 × 3    |
+| `bar`    | One metric by a dimension, top N, descending              | `groupBy` (dimension key, e.g. `resource`, `territory`), `limit` 3–10     | 4 × 3    |
+| `image`  | An uploaded image or a resource icon                      | `fit` (`contain`, `cover`), `align`                                       | 1 × 1    |
+| `text`   | Static text, markdown-lite                                | `size` (`body`, `heading`, `display`), `align`                            | 2 × 1    |
+| `clock`  | Time and optionally date in the viewer's time zone (#736) | `showDate`, `hour12` (false), `timeZone` (IANA, defaults to the viewer's) | 2 × 1    |
 
 Markdown-lite for `text`: paragraphs, line breaks, `#`/`##` headings,
 `**bold**`, `*italic*`. No links, images or HTML; anything else is shown

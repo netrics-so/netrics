@@ -19,6 +19,7 @@ import { deviceReviewReading } from "@/components/studio/review-widget";
 import { WidgetFailed } from "@/components/studio/slide-canvas";
 import { useLocale } from "@/lib/i18n/client";
 import { useExpired } from "@/lib/use-expired";
+import { useClockZone } from "@/lib/viewer-time-zone";
 
 import {
   ScrollBarCard,
@@ -57,18 +58,21 @@ function DeviceScrollCompare({
 
 function DeviceScrollClock({
   widget,
-  env,
   size,
 }: {
   widget: Extract<DeviceWidget, { type: "clock" }>;
-  env: DeviceWidgetEnv;
   size: ScrollCardSize;
 }) {
   const now = useNow();
+  // Its own zone, else the viewer's (#736), as in screen view.
+  const timeZone = useClockZone(
+    widget.options.timeZone,
+    widget.options.followsViewer,
+  );
   return (
     <ScrollClockCard
       now={now}
-      timeZone={widget.options.timeZone ?? env.timeZone}
+      timeZone={timeZone}
       options={widget.options}
       {...size}
     />
@@ -162,7 +166,7 @@ export function DeviceScrollWidget({
         />
       );
     case "clock":
-      return <DeviceScrollClock widget={widget} env={env} size={size} />;
+      return <DeviceScrollClock widget={widget} size={size} />;
     case "countdown":
       return <DeviceScrollCountdown widget={widget} size={size} />;
     case "text":

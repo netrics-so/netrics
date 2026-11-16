@@ -45,7 +45,12 @@ import {
   type Project,
   type Workspace,
 } from "@netrics/database";
-import { can, canManageMember, isLocale } from "@netrics/domain";
+import {
+  can,
+  canManageMember,
+  isLocale,
+  isValidTimeZone,
+} from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
 import { conversionOptions } from "../metrics/query.js";
@@ -179,7 +184,11 @@ export function registerWorkspaceRoutes(
           const workspace = await createWorkspaceWithOwner(deps.db, {
             name: body.name,
             ownerUserId: callerId,
-            ...(body.timeZone ? { timeZone: body.timeZone } : {}),
+            // The creator's zone when it is a valid IANA name, else the
+            // default UTC (#736).
+            ...(body.timeZone && isValidTimeZone(body.timeZone)
+              ? { timeZone: body.timeZone }
+              : {}),
           });
           // The workspace exists either way; demo content is a bonus that
           // must not fail its creation.

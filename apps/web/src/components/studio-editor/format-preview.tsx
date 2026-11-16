@@ -187,7 +187,6 @@ export function PreviewScreen({
         slideName: slide.name,
         pageLabel: pageLabel(shown, pages.length),
         logoImageId: logoImageId(document.settings),
-        timeZone: env.timeZone,
       }}
       images={env.images}
       renderWidget={(widget) => <LiveWidget widget={widget} env={env} />}

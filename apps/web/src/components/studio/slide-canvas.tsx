@@ -34,6 +34,7 @@ import { refreshCountdown, type RefreshCycle } from "@/lib/refresh-countdown";
 import { clockText } from "@/lib/studio-clock";
 import { u, type ScreenPlacement } from "@/lib/studio-render";
 import { useElementSize } from "@/lib/use-screen";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 import { themeStyle, themeSurface } from "@/lib/studio-theme";
 import {
   slideBackground,
@@ -149,7 +150,6 @@ export function LiveWidget({
         <LiveClockWidget
           options={widget.options}
           timeZone={widget.options.timeZone}
-          workspaceTimeZone={env.timeZone}
           placement={widget}
           showHeader={env.showHeader}
           fontScale={env.fontScale}
@@ -180,7 +180,6 @@ export interface SlideHeaderInfo {
   /** The page of a slide on several pages ("1/2"), never cut off. */
   pageLabel?: string | null;
   logoImageId: string | null;
-  timeZone: string;
   /** Shown when the screen has lost its connection. */
   offline?: boolean;
   /**
@@ -211,9 +210,11 @@ export function useOffline(): boolean {
   return offline;
 }
 
-function HeaderClock({ timeZone }: { timeZone: string }) {
+/** The header's clock: the viewer's zone, never the workspace's (#736). */
+function HeaderClock() {
   const now = useNow();
   const locale = useLocale();
+  const timeZone = useViewerTimeZone();
   return (
     <time className="studio-header-clock" suppressHydrationWarning>
       {clockText(now, { timeZone, locale }).time}
@@ -426,7 +427,7 @@ function SlideHeader({
             <span aria-hidden="true">⚠</span> {offlineNote}
           </span>
         ) : null}
-        <HeaderClock timeZone={header.timeZone} />
+        <HeaderClock />
       </span>
     </header>
   );

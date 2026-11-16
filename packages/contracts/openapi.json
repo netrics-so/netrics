@@ -6897,7 +6897,6 @@
                   },
                   "timeZone": {
                     "type": "string",
-                    "minLength": 1,
                     "maxLength": 64
                   },
                   "withDemo": {
@@ -71632,6 +71631,12 @@
                                             },
                                             "showZone": {
                                               "type": "boolean"
+                                            },
+                                            "followsViewer": {
+                                              "type": "boolean",
+                                              "enum": [
+                                                true
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -76039,6 +76044,12 @@
                                             },
                                             "showZone": {
                                               "type": "boolean"
+                                            },
+                                            "followsViewer": {
+                                              "type": "boolean",
+                                              "enum": [
+                                                true
+                                              ]
                                             }
                                           },
                                           "required": [

@@ -403,25 +403,40 @@ public struct CountdownWidgetOptions: Codable, Sendable, Equatable {
 public struct ClockWidgetOptions: Codable, Sendable, Equatable {
     public var showDate: Bool
     public var hour12: Bool
-    /** Resolved by the server; nil falls back to the workspace's zone. */
+    /**
+     * Resolved by the server: the widget's zone, else the workspace's (for
+     * builds that predate `followsViewer`).
+     */
     public var timeZone: String?
     /** Short ("Sat 4 Oct") or long ("Saturday, 4 October"); unknown → short. */
     public var dateStyle: ClockDateStyle
     /** The zone line ("Berlin · UTC+2"). */
     public var showZone: Bool
+    /**
+     * The widget has no zone of its own: it shows the device's (#736).
+     * False from servers that predate it: `timeZone` as before.
+     */
+    public var followsViewer: Bool
 
     public init(
         showDate: Bool = true, hour12: Bool = false, timeZone: String? = nil, dateStyle: ClockDateStyle = .short,
-        showZone: Bool = false
+        showZone: Bool = false, followsViewer: Bool = false
     ) {
         self.showDate = showDate
         self.hour12 = hour12
         self.timeZone = timeZone
         self.dateStyle = dateStyle
         self.showZone = showZone
+        self.followsViewer = followsViewer
     }
 
-    private enum CodingKeys: String, CodingKey { case showDate, hour12, timeZone, dateStyle, showZone }
+    /** The zone the clock shows: its own, else the device's (ADR 0025 §8, #736). */
+    public func zone(device: TimeZone = .autoupdatingCurrent) -> String {
+        if !followsViewer, let timeZone { return timeZone }
+        return TVTime.viewerZone(device: device)
+    }
+
+    private enum CodingKeys: String, CodingKey { case showDate, hour12, timeZone, dateStyle, showZone, followsViewer }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -430,6 +445,7 @@ public struct ClockWidgetOptions: Codable, Sendable, Equatable {
         timeZone = c.lenient(String.self, .timeZone)
         dateStyle = c.lenient(String.self, .dateStyle).flatMap(ClockDateStyle.init(rawValue:)) ?? .short
         showZone = c.lenient(Bool.self, .showZone) ?? false
+        followsViewer = c.lenient(Bool.self, .followsViewer) ?? false
     }
 }
 

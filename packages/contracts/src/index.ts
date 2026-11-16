@@ -176,8 +176,12 @@ export type Workspace = z.infer<typeof workspaceSchema>;
 
 export const createWorkspaceRequestSchema = z.object({
   name: nameSchema,
-  /** Defaults to UTC; the web app sends the creator's browser zone. */
-  timeZone: timeZoneSchema.optional(),
+  /**
+   * The IANA zone the workspace counts data days in; the web app sends the
+   * creator's browser zone (#736). Absent or not a zone the server knows:
+   * UTC, so an unusual browser never blocks creating a workspace.
+   */
+  timeZone: z.string().max(64).optional(),
   /** Also add the demo connection and a sample dashboard (#51). */
   withDemo: z.boolean().optional(),
 });
@@ -2054,7 +2058,7 @@ export const imageWidgetOptionsSchema = z.object({
 export const clockWidgetOptionsSchema = z.object({
   showDate: z.boolean().default(true),
   hour12: z.boolean().default(false),
-  /** IANA time zone; null shows the workspace's. */
+  /** IANA time zone; null shows the viewer's: the screen's own (#736). */
   timeZone: timeZoneSchema.nullable().default(null),
   /**
    * short: "Sat 4 Oct"; long: "Saturday, 4 October" (ADR 0019 §9). Older
@@ -3660,6 +3664,13 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
         timeZone: z.string().min(1),
         dateStyle: z.enum(["short", "long"]).optional(),
         showZone: z.boolean().optional(),
+        /**
+         * Sent (true) when the widget has no zone of its own: the screen
+         * shows its own zone, the viewer's (ADR 0025 §8, #736). `timeZone`
+         * is then the workspace's, for screens that predate the field.
+         * Absent (an older server): `timeZone` as before.
+         */
+        followsViewer: z.literal(true).optional(),
       }),
     }),
     z.object({

@@ -1903,7 +1903,8 @@ struct ClockWidgetView: View {
 
     var body: some View {
         TimelineView(.everyMinute) { context in
-            let zone = options.timeZone ?? env.timeZone
+            // Its own zone, else the device's (#736).
+            let zone = options.zone()
             let text = TVTime.clockWidget(
                 context.date, timeZone: zone, hour12: options.hour12, showDate: options.showDate,
                 dateStyle: options.dateStyle, showZone: options.showZone, language: env.language)
