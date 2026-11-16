@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parseDataFormula, formatDataFormula } from "./data-formula.js";
-import { compileRowExpression, type DataField } from "./data-expression.js";
+import {
+  compileRowExpression,
+  type DataExpression,
+  type DataField,
+} from "./data-expression.js";
 import { fromVisual, sameDataExpression } from "./data-expression-visual.js";
 import { mulberry32, randomVisualModel } from "./test-helpers.js";
 const fields: DataField[] = [
@@ -8,6 +12,49 @@ const fields: DataField[] = [
   { id: "downloads", name: "Downloads", type: "integer", nullable: true },
   { id: "paid", name: "Paid", type: "boolean", nullable: true },
 ];
+/**
+ * Equal, except that a whole decimal literal may read back as the same
+ * integer (it prints as a plain number where that means the same).
+ */
+function sameUpToPlainDecimals(
+  parsed: DataExpression,
+  original: DataExpression,
+): boolean {
+  if (
+    parsed.kind === "literal" &&
+    original.kind === "literal" &&
+    parsed.type === "integer" &&
+    original.type === "decimal"
+  )
+    return (
+      String(parsed.value) === original.value &&
+      parsed.unit === original.unit &&
+      parsed.currency === original.currency
+    );
+  if (parsed.kind === "call" && original.kind === "call")
+    return (
+      parsed.fn === original.fn &&
+      parsed.args.length === original.args.length &&
+      parsed.args.every((arg, i) =>
+        sameUpToPlainDecimals(arg, original.args[i]!),
+      )
+    );
+  return sameDataExpression(parsed, original);
+}
+/** Result type and value on a sample row, or the error code. */
+function outcome(expression: DataExpression) {
+  try {
+    const compiled = compileRowExpression(expression, fields);
+    const cell = compiled.evaluate({
+      revenue: "12.50",
+      downloads: 5,
+      paid: true,
+    });
+    return JSON.stringify([compiled.result.type, cell]);
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
 function evaluate(
   text: string,
   row: Record<string, unknown> = { revenue: "12.50", downloads: 5, paid: true },
@@ -144,10 +191,18 @@ describe("editable formulas", () => {
             ),
           );
           const text = formatDataFormula(e, fields);
+          const parsed = parseDataFormula(text, fields);
+          if (sameDataExpression(parsed, e)) continue;
+          // A whole decimal printed as a plain number reads back as an
+          // integer only where that changes neither result type nor value.
           expect(
-            sameDataExpression(parseDataFormula(text, fields), e),
+            sameUpToPlainDecimals(parsed, e),
             `seed ${seed} #${i}: ${text}`,
           ).toBe(true);
+          expect(outcome(parsed), `seed ${seed} #${i}: ${text}`).toBe(
+            outcome(e),
+          );
+          expect(formatDataFormula(parsed, fields)).toBe(text);
         }
     }
   });
@@ -183,6 +238,87 @@ describe("editable formulas", () => {
     expect(() => parseDataFormula('DATE("2026-13-01")', [])).toThrow(
       "formula_literal_invalid",
     );
+  });
+  it("prints a whole decimal typed in the builder as a plain number next to a decimal (#630)", () => {
+    const decimal = (value: string): DataExpression => ({
+      kind: "literal",
+      type: "decimal",
+      value,
+    });
+    const revenue: DataExpression = { kind: "field", fieldId: "revenue" };
+    const downloads: DataExpression = { kind: "field", fieldId: "downloads" };
+    const cases: [DataExpression, string][] = [
+      [
+        { kind: "call", fn: "gt", args: [revenue, decimal("0")] },
+        "GT([Revenue], 0)",
+      ],
+      [
+        { kind: "call", fn: "lte", args: [decimal("-5"), revenue] },
+        "LTE(-5, [Revenue])",
+      ],
+      [
+        {
+          kind: "call",
+          fn: "add",
+          args: [revenue, decimal("12345678901234567890")],
+        },
+        "ADD([Revenue], 12345678901234567890)",
+      ],
+      [
+        { kind: "call", fn: "multiply", args: [revenue, decimal("-1.50")] },
+        "MULTIPLY([Revenue], -1.50)",
+      ],
+      [
+        { kind: "call", fn: "subtract", args: [decimal("1.5"), decimal("2")] },
+        "SUBTRACT(1.5, 2)",
+      ],
+      [
+        {
+          kind: "call",
+          fn: "if",
+          args: [{ kind: "field", fieldId: "paid" }, decimal("0"), revenue],
+        },
+        "IF([Paid], 0, [Revenue])",
+      ],
+      [
+        {
+          kind: "call",
+          fn: "add",
+          args: [
+            { kind: "call", fn: "multiply", args: [revenue, decimal("2")] },
+            decimal("-3"),
+          ],
+        },
+        "ADD(MULTIPLY([Revenue], 2), -3)",
+      ],
+      // The wrapper stays where an integer would change the result type.
+      [decimal("0"), 'DECIMAL("0")'],
+      [
+        { kind: "call", fn: "add", args: [downloads, decimal("0")] },
+        'ADD([Downloads], DECIMAL("0"))',
+      ],
+      [
+        { kind: "call", fn: "add", args: [decimal("1"), decimal("2")] },
+        'ADD(DECIMAL("1"), DECIMAL("2"))',
+      ],
+      [
+        { kind: "call", fn: "coalesce", args: [revenue, decimal("0")] },
+        'COALESCE([Revenue], DECIMAL("0"))',
+      ],
+    ];
+    for (const [expression, text] of cases) {
+      expect(formatDataFormula(expression, fields)).toBe(text);
+      const parsed = parseDataFormula(text, fields);
+      expect(sameUpToPlainDecimals(parsed, expression), text).toBe(true);
+      expect(outcome(parsed), text).toBe(outcome(expression));
+    }
+    // Without column types the printer cannot know, and keeps the wrapper.
+    expect(
+      formatDataFormula(
+        { kind: "call", fn: "gt", args: [revenue, decimal("0")] },
+        [{ id: "revenue", name: "Revenue" }],
+      ),
+    ).toBe('GT([Revenue], DECIMAL("0"))');
   });
   it("parses every literal form and refuses malformed ones", () => {
     expect(parseDataFormula('TIMESTAMP("2026-01-31T12:00:00Z")', [])).toEqual({

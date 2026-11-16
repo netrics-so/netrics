@@ -74,6 +74,8 @@ function negated(operand: DataExpression): DataExpression {
 export interface FormulaReference {
   id: string;
   name: string;
+  /** The column's type, when known: lets plain numbers print without a wrapper. */
+  type?: DataType;
 }
 const functions = new Set<DataFunction>([
   "add",
@@ -368,9 +370,89 @@ export function parseDataFormula(
   return result;
 }
 
+/** Operators whose result does not depend on an integer vs decimal operand next to a decimal. */
+const decimalNeutral = new Set<DataFunction>([
+  "add",
+  "subtract",
+  "multiply",
+  "divide",
+  "eq",
+  "ne",
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+]);
+/** A whole number in its one canonical spelling (no sign on zero, no leading zeros). */
+const wholeDecimal = /^(0|-?[1-9][0-9]*)$/;
+
+/**
+ * Whether `expression` reads back as a decimal from its printed text alone:
+ * a decimal column, a decimal literal with a point, or arithmetic over one.
+ * Whole decimal literals do not count: they may print as plain numbers.
+ */
+function printsAsDecimal(
+  expression: DataExpression,
+  references: readonly FormulaReference[],
+): boolean {
+  if (expression.kind === "field")
+    return (
+      references.find((r) => r.id === expression.fieldId)?.type === "decimal"
+    );
+  if (expression.kind === "literal")
+    return (
+      expression.type === "decimal" &&
+      typeof expression.value === "string" &&
+      expression.value.includes(".")
+    );
+  if (["add", "subtract", "multiply", "divide"].includes(expression.fn))
+    return expression.args.some((arg) => printsAsDecimal(arg, references));
+  if (expression.fn === "if")
+    return expression.args
+      .slice(1)
+      .some((arg) => printsAsDecimal(arg, references));
+  if (["negate", "abs", "round"].includes(expression.fn))
+    return (
+      expression.args[0] !== undefined &&
+      printsAsDecimal(expression.args[0], references)
+    );
+  return expression.fn === "to_decimal";
+}
+
+/**
+ * A whole decimal literal (typed `0` in the builder) prints as the plain
+ * number where an integer in its place means the same: as an operand of
+ * arithmetic or a comparison next to a decimal, or as an IF branch beside a
+ * decimal branch, which promote it anyway.
+ * Elsewhere (alone, next to an integer column) `DECIMAL("0")` keeps the
+ * result a decimal.
+ */
+function plainDecimal(
+  expression: DataExpression,
+  sibling: DataExpression | undefined,
+  references: readonly FormulaReference[],
+): boolean {
+  return (
+    expression.kind === "literal" &&
+    expression.type === "decimal" &&
+    typeof expression.value === "string" &&
+    wholeDecimal.test(expression.value) &&
+    sibling !== undefined &&
+    printsAsDecimal(sibling, references)
+  );
+}
+
 export function formatDataFormula(
   expression: DataExpression,
   references: readonly FormulaReference[],
+): string {
+  return formatExpression(expression, references, false);
+}
+
+function formatExpression(
+  expression: DataExpression,
+  references: readonly FormulaReference[],
+  plain: boolean,
 ): string {
   if (expression.kind === "field") {
     const ref = references.find((r) => r.id === expression.fieldId);
@@ -383,15 +465,29 @@ export function formatDataFormula(
         : expression.fieldId;
     return "[" + name.replace(/]/g, "]]") + "]";
   }
-  if (expression.kind === "call")
+  if (expression.kind === "call") {
+    // Operands whose integer or decimal reading gives the same result.
+    const sibling = (index: number): DataExpression | undefined =>
+      decimalNeutral.has(expression.fn) && expression.args.length === 2
+        ? expression.args[1 - index]
+        : expression.fn === "if" && expression.args.length === 3 && index > 0
+          ? expression.args[3 - index]
+          : undefined;
     return (
       expression.fn.toUpperCase() +
       "(" +
       expression.args
-        .map((arg) => formatDataFormula(arg, references))
+        .map((arg, index) =>
+          formatExpression(
+            arg,
+            references,
+            plainDecimal(arg, sibling(index), references),
+          ),
+        )
         .join(", ") +
       ")"
     );
+  }
   const value =
     expression.value === null
       ? "NULL"
@@ -411,6 +507,7 @@ export function formatDataFormula(
               : expression.type === "number"
                 ? "NUMBER(" + JSON.stringify(String(expression.value)) + ")"
                 : expression.type === "decimal" &&
+                    !plain &&
                     !String(expression.value).includes(".")
                   ? "DECIMAL(" + JSON.stringify(String(expression.value)) + ")"
                   : String(expression.value);
@@ -429,5 +526,5 @@ export function formatDataFormula(
 export function formulaReferences(
   fields: readonly DataField[],
 ): FormulaReference[] {
-  return fields.map(({ id, name }) => ({ id, name }));
+  return fields.map(({ id, name, type }) => ({ id, name, type }));
 }

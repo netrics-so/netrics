@@ -120,9 +120,10 @@ test("a failing step is named, marked and fixable", async ({
       .selectOption({ label: t.builder.operators.gt });
     await condition.getByRole("textbox", { name: t.builder.literal }).fill("0");
     await page.getByRole("radio", { name: t.formula }).check();
-    await page
-      .getByRole("combobox", { name: t.builder.keepWhen })
-      .fill(formula);
+    const keepWhen = page.getByRole("combobox", { name: t.builder.keepWhen });
+    // A typed 0 reads as 0, not DECIMAL("0") (#630).
+    await expect(keepWhen).toHaveValue("GT([Revenue], 0)");
+    await keepWhen.fill(formula);
     await applyStep.click();
   };
   await steps.nth(2).getByRole("button").click();

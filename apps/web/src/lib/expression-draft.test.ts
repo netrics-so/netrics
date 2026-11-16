@@ -48,6 +48,33 @@ describe("expression draft", () => {
     );
   });
 
+  it("shows a typed 0 as 0 in the formula and back in the builder (#630)", () => {
+    const zero = call("gt", field("amount"), {
+      kind: "literal",
+      type: "decimal",
+      value: "0",
+    });
+    const visual = initialExpressionDraft(zero, "condition", fields);
+    const formula = switchExpressionView(visual, "condition", fields);
+    expect(formula).toMatchObject({ view: "formula", text: "GT([Amount], 0)" });
+    const back = switchExpressionView(formula, "condition", fields);
+    expect(back).toEqual(visual);
+    // Edited text reads back with the same meaning, still in the builder.
+    const edited = switchExpressionView(
+      {
+        ...formula,
+        text: "GT([Amount], -12)",
+        edited: true,
+      } as ExpressionDraft,
+      "condition",
+      fields,
+    );
+    expect(edited.view).toBe("visual");
+    expect(
+      resolveExpressionDraft(edited, zero, "condition", fields),
+    ).toMatchObject({ fn: "gt", args: [field("amount"), { value: -12 }] });
+  });
+
   it("keeps an unedited expression with a missing field", () => {
     const stored = call("eq", field("gone"), {
       kind: "literal",
