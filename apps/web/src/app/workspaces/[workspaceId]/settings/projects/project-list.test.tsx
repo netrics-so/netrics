@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { webTranslator } from "@/lib/i18n/catalogs";
 import { renderI18n } from "@/lib/i18n/test-render";
 
+import { projectName } from "../../create-project-form";
 import { ProjectList } from "./project-list";
 
 vi.mock("next/navigation", () => ({
@@ -58,5 +59,20 @@ describe("projects page (#640)", () => {
     expect(de("overview", { active: 0, archived: 1 })).toBe(
       "Projekte: keine aktiven · 1 archiviert.",
     );
+  });
+
+  it("trims names and catches whitespace-only ones", () => {
+    expect(projectName("  Marketing  ")).toBe("Marketing");
+    expect(projectName("   ")).toBeNull();
+    expect(projectName("")).toBeNull();
+    const en = webTranslator("en", "projectsPage");
+    const de = webTranslator("de", "projectsPage");
+    expect(en("nameRequired")).toBe("Enter a name for the project.");
+    expect(de("nameRequired")).toBe("Gib dem Projekt einen Namen.");
+    expect(en("renamedDone", { name: projectName(" Launch ")! })).toBe(
+      "Renamed to Launch.",
+    );
+    expect(en("createdDone", { name: "Launch" })).toBe("Launch is created.");
+    expect(de("createdDone", { name: "Launch" })).toBe("Launch ist angelegt.");
   });
 });

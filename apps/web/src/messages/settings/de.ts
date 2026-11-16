@@ -90,6 +90,8 @@ export const settingsDe: Catalog<typeof settingsEn> = {
     renamedDone: "In {name} umbenannt.",
     archivedDone: "{name} ist archiviert.",
     unarchivedDone: "{name} ist zurück.",
+    nameRequired: "Gib dem Projekt einen Namen.",
+    createdDone: "{name} ist angelegt.",
     create: "Neues Projekt",
     cannotCreate:
       "Deine Rolle kann in diesem Workspace keine Projekte anlegen.",

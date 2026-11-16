@@ -59,10 +59,34 @@ test("projects are easy to find and assignments confirm", async ({
     .getByRole("button", { name: t.workspace.newProject.create })
     .click();
   await expect(
-    page.getByRole("button", {
-      name: fill(t.page.renameNamed, { name: "Marketing" }),
+    page.getByRole("status").filter({
+      hasText: fill(t.page.createdDone, { name: "Marketing" }),
     }),
   ).toBeVisible();
+  const rename = page.getByRole("button", {
+    name: fill(t.page.renameNamed, { name: "Marketing" }),
+  });
+  await expect(rename).toBeVisible();
+
+  // Renaming trims the name and says so; whitespace alone is refused
+  // with its own message.
+  const renameField = page.getByLabel(
+    fill(t.page.renameLabel, { name: "Marketing" }),
+  );
+  await rename.click();
+  await renameField.fill("   ");
+  await page.getByRole("button", { name: t.page.save, ...exact }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: t.page.nameRequired }),
+  ).toBeVisible();
+  await renameField.fill("  Marketing  ");
+  await page.getByRole("button", { name: t.page.save, ...exact }).click();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: fill(t.page.renamedDone, { name: "Marketing" }),
+    }),
+  ).toBeVisible();
+  await expect(rename).toBeVisible();
 
   // 2. The sidebar's switcher links back to it.
   const sidebar = page.locator("#shell-sidebar");
@@ -96,11 +120,23 @@ test("projects are easy to find and assignments confirm", async ({
   );
   expect(created.status(), await created.text()).toBe(200);
   await page.goto(`/workspaces/${workspaceId}/settings/projects`);
+  // Archive the active project: the confirmation stays while the page
+  // refreshes onto "All projects".
+  const switcher = sidebar.getByLabel(t.shell.projectSwitcher, exact);
+  await switcher.selectOption({ label: "Marketing" });
+  await expect(switcher).toHaveValue(projectId);
   await page
     .getByRole("button", {
       name: fill(t.page.archiveNamed, { name: "Marketing" }),
     })
     .click();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: fill(t.page.archivedDone, { name: "Marketing" }),
+    }),
+  ).toBeVisible();
+  // The switcher goes (no project left to pick), the note stays.
+  await expect(switcher).toHaveCount(0);
   await expect(
     page.getByRole("status").filter({
       hasText: fill(t.page.archivedDone, { name: "Marketing" }),

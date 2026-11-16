@@ -11,6 +11,8 @@ import {
 } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
 
+import { projectName } from "../../create-project-form";
+
 type ProjectRow = { id: string; name: string; archivedAt: string | null };
 
 /**
@@ -66,7 +68,14 @@ export function ProjectList({
 
   function onRename(event: FormEvent<HTMLFormElement>, project: ProjectRow) {
     event.preventDefault();
-    const name = String(new FormData(event.currentTarget).get("name") ?? "");
+    const name = projectName(
+      String(new FormData(event.currentTarget).get("name") ?? ""),
+    );
+    if (name === null) {
+      setDone(null);
+      setError(t("nameRequired"));
+      return;
+    }
     void run(project.id, async () => {
       await renameProject(workspaceId, project.id, name);
       setRenaming(null);

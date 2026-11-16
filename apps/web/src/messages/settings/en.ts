@@ -89,6 +89,8 @@ export const settingsEn = {
     renamedDone: "Renamed to {name}.",
     archivedDone: "{name} is archived.",
     unarchivedDone: "{name} is back.",
+    nameRequired: "Enter a name for the project.",
+    createdDone: "{name} is created.",
     create: "New project",
     cannotCreate: "Your role cannot create projects in this workspace.",
   },
