@@ -138,21 +138,21 @@ const measureWidget = (x: number, title: string, modelId: string) => ({
 
 const wording = {
   en: {
-    periodic: /^Up to \w{3} \d{1,2} · fetched \d+ min\. ago · next ~/,
-    continuous: /^Checked \d+ min\. ago · next check ~/,
+    periodic: /^Up to \w{3} \d{1,2} · fetched \d+ min\. ago · next [^~]*~/,
+    continuous: /^Checked \d+ min\. ago · next check [^~]*~/,
     metric: /^Up to \w{3} \d{1,2} · fetched \d+ min\. ago/,
     title: "Data freshness",
-    sales: /^Sales up to \w{3} \d{1,2} · next ~/,
-    reviews: /^Reviews checked \d+ min\. ago · next check ~/,
+    sales: /^Sales up to \w{3} \d{1,2} · next [^~]*~/,
+    reviews: /^Reviews checked \d+ min\. ago · next check [^~]*~/,
     notChecked: /not checked yet$/,
   },
   de: {
-    periodic: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\. · nächste ~/,
-    continuous: /^Geprüft vor \d+ Min\. · nächste Prüfung ~/,
+    periodic: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\. · nächste [^~]*~/,
+    continuous: /^Geprüft vor \d+ Min\. · nächste Prüfung [^~]*~/,
     metric: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\./,
     title: "Datenstand",
-    sales: / bis \d{1,2}\. \S+ · nächste ~/,
-    reviews: / geprüft vor \d+ Min\. · nächste Prüfung ~/,
+    sales: / bis \d{1,2}\. \S+ · nächste [^~]*~/,
+    reviews: / geprüft vor \d+ Min\. · nächste Prüfung [^~]*~/,
     notChecked: /noch nicht geprüft$/,
   },
 } as const;
