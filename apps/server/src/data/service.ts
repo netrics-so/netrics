@@ -97,19 +97,25 @@ export class DataServiceError extends Error {
  * check sees every mapping saved before it, and a save after it finds the
  * model gone. A row lock alone would not do: a serializable delete whose
  * snapshot predates the save's commit would still read the dashboards
- * without the new mapping. Past the timeout the delete answers 409
- * version_conflict.
+ * without the new mapping. While the delete waits for its lock, Postgres
+ * queues every later ROW EXCLUSIVE request on data_models behind it (model
+ * saves, installs, dashboard saves with mappings, in every workspace), so
+ * the wait is kept short: past 1 s the delete answers 409 version_conflict
+ * and the customer tries again.
  */
 export const MODEL_DELETE_LOCK = {
   tables: [schema.dataModels],
   mode: "share row exclusive",
-  timeoutMs: 5_000,
+  timeoutMs: 1_000,
 } satisfies TableLocks;
 /**
  * Takes ROW EXCLUSIVE on data_models, the lock every model write takes, so
  * a concurrent model delete (MODEL_DELETE_LOCK) runs entirely before or
- * after the caller's mapping checks. Read committed callers only: their
- * next statements see a delete that committed while they waited.
+ * after the caller's mapping checks. A read committed caller's next
+ * statements see a delete that committed while it waited. A serializable
+ * caller (createUpdatedDashboardCopy) may already hold an older snapshot;
+ * then SSI fails it with 40001 instead of writing a mapping to a deleted
+ * model, and its retry reads the model as gone.
  */
 export async function lockModelsForMappings(tx: Transaction) {
   await tx.execute(sql`lock table ${schema.dataModels} in row exclusive mode`);
@@ -1190,6 +1196,13 @@ export function createDataService(
     /** Table locks taken before the snapshot (withWorkspace lockTables). */
     lockTables?: TableLocks,
   ): Promise<T> => {
+    // Locks taken before the snapshot need a transaction of their own: a
+    // batch or a caller's transaction already has its snapshot, so the
+    // lock would come too late and protect nothing (#671).
+    if (lockTables && (options.batch || isTransactionHandle(handle)))
+      throw new Error(
+        "table locks before the snapshot need a transaction of their own",
+      );
     if (
       batch &&
       (batch.actor.workspaceId !== actor.workspaceId ||

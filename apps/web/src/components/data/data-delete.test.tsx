@@ -173,6 +173,9 @@ describe("a refused delete", () => {
       { kind: "inUse", usedBy },
     );
     expect(deleteFailure(new ApiError(409, "version_conflict"))).toEqual({
+      kind: "busy",
+    });
+    expect(deleteFailure(new ApiError(503, "data_storage_failed"))).toEqual({
       kind: "other",
     });
     expect(deleteFailure(new TypeError("offline"))).toEqual({ kind: "other" });
@@ -183,5 +186,7 @@ describe("a refused delete", () => {
     const { dataDe } = await import("@/messages/data/de");
     expect(dataEn.data.delete.forbidden).toContain("owners and admins");
     expect(dataDe.data.delete.forbidden).toContain("Inhaber und Admins");
+    expect(dataEn.data.delete.busy).toContain("again in a moment");
+    expect(dataDe.data.delete.busy).toContain("gleich noch einmal");
   });
 });

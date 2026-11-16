@@ -24,6 +24,7 @@ import {
   TEST_DATABASE_SETUP_TIMEOUT_MS,
 } from "../test-db.js";
 import { addMemberViaInvitation } from "../test-helpers.js";
+import { createDataService } from "./service.js";
 
 // Deleting preparations and models (#671): refused while something uses
 // the item, naming it; otherwise gone with every version and draft. Scoped
@@ -636,5 +637,41 @@ describe("a model delete racing a dashboard save (#671)", () => {
     );
     expect(saved.statusCode, saved.body).toBe(409);
     expect(saved.json().error).toBe("dashboard_model_deleted");
+  });
+});
+
+describe("the model delete lock (#671)", () => {
+  it("refuses to run where it could not lock before the snapshot", async () => {
+    const m = await model(owner, "Locked out", await source(owner));
+    const [me] =
+      await admin`select id from users where email = 'delete-owner@example.com'`;
+    const actor = {
+      workspaceId,
+      callerId: me!.id as string,
+      role: "owner" as const,
+    };
+    const message =
+      "table locks before the snapshot need a transaction of their own";
+    const attempt = (run: () => Promise<void>) =>
+      run().then(
+        () => "deleted",
+        (error: Error) => error.message,
+      );
+    // In a caller's transaction, and as part of a batch: loud, not unlocked.
+    expect(
+      await withWorkspace(db, { workspaceId }, (tx) =>
+        attempt(() => createDataService(tx).remove(actor, "model", m)),
+      ),
+    ).toBe(message);
+    expect(
+      await db.transaction((tx) =>
+        attempt(() =>
+          createDataService(tx, undefined, undefined, undefined, {
+            batch: true,
+          }).remove(actor, "model", m),
+        ),
+      ),
+    ).toBe(message);
+    expect(await count("data_models", "id", m)).toBe(1);
   });
 });

@@ -34,6 +34,7 @@ export const dataEn = {
       deleting: "Deleting…",
       deleted: "“{name}” was deleted.",
       alreadyDeleted: "“{name}” had already been deleted.",
+      busy: "Data is being saved right now. Try deleting again in a moment.",
       forbidden:
         "Only workspace owners and admins can delete preparations and models.",
       inUse:

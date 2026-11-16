@@ -39,6 +39,7 @@ export const dataDe: Catalog<typeof dataEn> = {
       deleting: "Wird gelöscht …",
       deleted: "„{name}“ wurde gelöscht.",
       alreadyDeleted: "„{name}“ war bereits gelöscht.",
+      busy: "Gerade werden Daten gespeichert. Versuche das Löschen gleich noch einmal.",
       forbidden:
         "Nur Inhaber und Admins des Workspaces können Aufbereitungen und Modelle löschen.",
       inUse:

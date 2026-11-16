@@ -258,8 +258,8 @@ export function DataWorkspace({
             : {
                 kind: "failed",
                 message:
-                  outcome.kind === "forbidden"
-                    ? t("delete.forbidden")
+                  outcome.kind === "forbidden" || outcome.kind === "busy"
+                    ? t(`delete.${outcome.kind}`)
                     : t(`errors.${dataErrorKey(failure)}`),
               },
         );
@@ -909,10 +909,13 @@ export function deleteFailure(
   | { kind: "gone" }
   | { kind: "inUse"; usedBy: DataUsers }
   | { kind: "forbidden" }
+  | { kind: "busy" }
   | { kind: "other" } {
   if (!(failure instanceof ApiError)) return { kind: "other" };
   if (failure.status === 404) return { kind: "gone" };
   if (failure.status === 403) return { kind: "forbidden" };
+  // Other data writes held the delete off (#671): nothing to reload.
+  if (failure.code === "version_conflict") return { kind: "busy" };
   if (failure.code === "data_in_use" && failure.details.usedBy)
     return { kind: "inUse", usedBy: failure.details.usedBy };
   return { kind: "other" };
