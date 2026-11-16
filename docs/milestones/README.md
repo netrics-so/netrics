@@ -66,6 +66,7 @@ distribution runs the signed images.
 | [10 — Apple Ads](./10-apple-ads.md)                                                       | Token-exchange auth and Apple Ads metrics                        |
 | [10.1 — netrics TV on iPad and iPhone](./10.1-netrics-tv-ipad-iphone.md)                  | Paired iPads and iPhones show the dashboard                      |
 | [11 — Reusable data models and dashboard filtering](./11-projects-and-derived-metrics.md) | Prepare and relate data, define measures, filter full dashboards |
+| [11.2 — App slides on TV](./11.2-app-slides-on-tv.md)                                     | Per-app slides with data freshness on Apple TV                   |
 | [12 — Community connector system](./12-community-connectors.md)                           | Public SDK, template, catalog, and review pipeline               |
 | [13 — Custom API connector](./13-custom-api-connector.md)                                 | Safe declarative connection builder                              |
 | [14 — Alerts and notifications](./14-alerts-and-notifications.md)                         | Stateful rules deliver email and webhooks                        |
@@ -95,6 +96,7 @@ distribution runs the signed images.
                                     ├── 10.1 netrics TV on iPad and iPhone (after 09.2 and 09.3)
                                     └── 10 Apple Ads
                                         └── 11 reusable data models and dashboard filtering
+                                            ├── 11.2 app slides on TV
                                             └── 12 community connectors
                                                 └── 13 custom API
                                                     └── 14 alerts
@@ -165,6 +167,10 @@ State on 2026-11-14.
   [the completion design](./11-completion-design.md). The umbrella #439
   stays open until every gate and the owner's real-account acceptance
   (hosted and self-hosted) pass.
+- Priority update 2026-11-16: the owner requests an app portfolio on Apple
+  TV with one slide per app and, on every number, when the next numbers are
+  expected. [Milestone 11.2](./11.2-app-slides-on-tv.md) (#701–#710) is
+  planned before milestone 12.
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 
