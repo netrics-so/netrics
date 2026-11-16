@@ -63,6 +63,8 @@ public struct DeviceState: Sendable, Equatable {
     public var offline = false
     public var lastError: String?
     public var device: DeviceSummary?
+    /** The server's version from its info (#737, shown in the settings); nil until read. */
+    public var serverVersion: String?
 
     public init() {}
 
@@ -845,6 +847,9 @@ public actor DeviceClient {
         else { return }
         serverSchema = info.preferredDashboardSchema
         schemaCheckedAt = now()
+        if state.serverVersion != info.version {
+            update { $0.serverVersion = info.version }
+        }
     }
 
     /** The schema to ask for: the server's, else the cached payload's, else 1. */

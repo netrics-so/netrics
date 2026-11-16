@@ -96,7 +96,19 @@ struct RotatedScreen<Content: View>: View {
 struct DeviceView: View {
     @Environment(DeviceSession.self) private var model
     @Environment(\.screenLanguage) private var language
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showSettings = false
+    /** Paired in this session: the menu hint shows again (#737). */
+    @State private var justPaired = false
+    /** "Press the clickpad for the menu", until the menu opens or its time is up. */
+    @State private var showHint = false
+    @State private var pendingHint = PendingHint()
+
+    /** What the hint's wait depends on: its time, and whether the settings cover the screen. */
+    private struct HintSchedule: Equatable {
+        var dueAt: Date?
+        var settings: Bool
+    }
 
     var body: some View {
         let state = model.device
@@ -115,6 +127,34 @@ struct DeviceView: View {
                     paired(state)
                 }
             }
+        }
+        .onChange(of: state.phase) { old, new in
+            if old == .pairing, new == .paired { justPaired = true }
+        }
+        // The menu hint (#737): a while after the dashboard appears, after a
+        // pairing or once per app version.
+        .onChange(of: state.phase == .paired && state.payload != nil, initial: true) { _, shown in
+            if !shown {
+                pendingHint.cancel()
+            } else if MenuHint.standard().isDue(version: DeviceSession.appVersionAndBuild, justPaired: justPaired) {
+                pendingHint.arm(now: Date())
+            }
+        }
+        // Never behind the settings: open when it is due, it follows once they close.
+        .task(id: HintSchedule(dueAt: pendingHint.dueAt, settings: showSettings)) {
+            guard let wait = pendingHint.wait(now: Date(), blocked: showSettings) else { return }
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled, !showSettings else { return }
+            let take = MenuHint.standard().take(version: DeviceSession.appVersionAndBuild, justPaired: justPaired)
+            pendingHint.shown()
+            justPaired = false
+            guard take else { return }
+            withAnimation(reduceMotion ? nil : .default) { showHint = true }
+        }
+        .task(id: showHint) {
+            guard showHint else { return }
+            try? await Task.sleep(for: .seconds(MenuHint.duration))
+            withAnimation(reduceMotion ? nil : .default) { showHint = false }
         }
         .fullScreenCover(isPresented: $showSettings) {
             // Turns with the content once paired; upright while pairing (#298).
@@ -138,11 +178,12 @@ struct DeviceView: View {
                 // Schema 2 or 3: slides, rotated here (ADR 0015, ADR 0017).
                 SlideshowView(
                     state: state, payload: v2, images: model.images,
+                    rotationSetting: ScreenView.rotation(v2), hint: $showHint,
                     openSettings: { showSettings = true })
             } else if let dashboard = state.dashboard, dashboard.dashboard != nil {
                 // Schema 1 (an older server): every tile on one screen.
                 DashboardView(state: state, dashboard: dashboard)
-                    .remoteSettingsGesture { showSettings = true }
+                    .remoteMenu(hint: $showHint) { showSettings = true }
             } else {
                 MessageView(
                     title: L10n.tr("No dashboard assigned yet", language),
@@ -152,30 +193,14 @@ struct DeviceView: View {
                         ? TVTime.offlineMarker(updatedAt: state.updatedAt, language: language)
                         : nil
                 )
-                .remoteSettingsGesture { showSettings = true }
+                .remoteMenu(hint: $showHint) { showSettings = true }
             }
         } else {
             MessageView(
                 title: Brand.name,
                 text: L10n.tr(state.offline ? "Connecting to netrics…" : "Loading…", language))
-                .remoteSettingsGesture { showSettings = true }
+                .remoteMenu(hint: $showHint) { showSettings = true }
         }
-    }
-}
-
-extension View {
-    /**
-     * Settings on a screen without buttons: press and hold the clickpad
-     * (select), or press Play/Pause on the Siri Remote.
-     */
-    func remoteSettingsGesture(_ open: @escaping () -> Void) -> some View {
-        self
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .focusable()
-            .focusEffectDisabled()
-            .onLongPressGesture(minimumDuration: 0.8, perform: open)
-            .onPlayPauseCommand(perform: open)
     }
 }
 
