@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 
 import type { DashboardListResponse } from "@netrics/contracts";
 import { BUILTIN_THEMES, DEFAULT_THEME_KEY } from "@netrics/domain";
@@ -48,6 +54,7 @@ export function DashboardsBrowser({
   meta,
   storeInstalls = [],
   archived = [],
+  readOnlyNote = null,
 }: {
   workspaceId: string;
   dashboards: DashboardCardData[];
@@ -69,6 +76,8 @@ export function DashboardsBrowser({
   canEdit: boolean;
   title: string;
   meta: string;
+  /** Why the create and edit actions are missing, for viewers (#636). */
+  readOnlyNote?: ReactNode;
 }) {
   const t = useT("dashboardsPage");
   const stores = useT("storeTemplate");
@@ -122,6 +131,7 @@ export function DashboardsBrowser({
           ) : null}
         </div>
       </header>
+      {readOnlyNote}
 
       {canCreate ? (
         <section

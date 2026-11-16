@@ -7,6 +7,7 @@ import { can } from "@netrics/domain";
 import { DisconnectResult } from "../connections/disconnect-result";
 import { OAuthOutcomeBanner } from "../connections/oauth-outcome";
 import { HealthBadge } from "../health-badge";
+import { ViewerHint } from "../viewer-hint";
 import "@/app/styles/sources.css";
 import { ConnectedStrip } from "@/components/sources/connected-strip";
 import { ConnectorCatalogue } from "@/components/sources/connector-catalogue";
@@ -113,7 +114,9 @@ export default async function SourcesPage({
               {t("addConnection")}
             </Link>
           </div>
-        ) : null}
+        ) : (
+          <ViewerHint role={role} workspaceId={workspaceId} />
+        )}
       </header>
       <OAuthOutcomeBanner outcome={outcome} />
       <DisconnectResult revocation={disconnected} />

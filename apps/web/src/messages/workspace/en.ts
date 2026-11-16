@@ -62,6 +62,10 @@ export const workspaceEn = {
     projects: "Projects",
     noProjects: "No projects yet.",
     cannotCreateProjects: "Your role cannot create projects in this workspace.",
+    viewerHint: {
+      text: "You can view this workspace. To add sources, edit data or change dashboards, ask an owner or admin for editor access.",
+      team: "See who on the Team page",
+    },
     pages: {
       dashboards: "Dashboards",
       screens: "Screens",

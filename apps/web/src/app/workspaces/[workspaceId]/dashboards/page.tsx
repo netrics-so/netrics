@@ -5,6 +5,7 @@ import { can } from "@netrics/domain";
 
 import "@/app/styles/dashboards.css";
 import { CreateProjectForm } from "../create-project-form";
+import { ViewerHint } from "../viewer-hint";
 import { DashboardsBrowser } from "./dashboards-browser";
 import { ProjectList } from "./project-list";
 import {
@@ -95,6 +96,7 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
         projectName={projectName}
         canCreate={can(role, "dashboards:create")}
         canEdit={can(role, "dashboards:update")}
+        readOnlyNote={<ViewerHint role={role} workspaceId={workspaceId} />}
         title={t("pages.dashboards")}
         meta={[
           live > 0
