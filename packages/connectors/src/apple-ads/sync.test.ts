@@ -6,9 +6,15 @@ import {
   type SyncRequest,
   type SyncResult,
 } from "@netrics/connector-sdk";
+import {
+  expectValidFreshness,
+  freshnessEntry,
+} from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
 import {
+  ADS_STREAM,
+  appleAdsManifest,
   addDays,
   adAccountToday,
   AD_GROUP_CAMPAIGNS_PER_PAGE,
@@ -311,6 +317,48 @@ describe("time zone", () => {
         api.runtime,
       ),
     ).rejects.toThrow("time zone");
+  });
+
+  it("reports freshness once per connection, through yesterday in the account's zone (ADR 0025)", async () => {
+    const api = fake({ [US]: { currency: "USD", campaigns: [] } });
+    // 03:00 UTC on the 29th: still the 28th in Los Angeles, the 29th in Berlin.
+    const early = Date.parse("2026-10-29T03:00:00.000Z");
+    const window = request({
+      mode: "incremental",
+      from: "2026-10-20T00:00:00.000Z",
+      to: new Date(early).toISOString(),
+    });
+    const la = await syncAll(api, window, context(), early);
+    const done = la.pages.at(-1)!;
+    expectValidFreshness(appleAdsManifest, done);
+    expect(done.freshness).toEqual([
+      {
+        stream: ADS_STREAM,
+        dataThrough: "2026-10-27",
+        timeZone: "America/Los_Angeles",
+      },
+    ]);
+    const berlin = await syncAll(
+      api,
+      window,
+      context(US, { currency: "USD", timeZone: "Europe/Berlin" }),
+      early,
+    );
+    expect(freshnessEntry(berlin.pages.at(-1)!, ADS_STREAM)).toEqual({
+      stream: ADS_STREAM,
+      dataThrough: "2026-10-28",
+      timeZone: "Europe/Berlin",
+    });
+  });
+
+  it("reports freshness only on the done page of a backfill", async () => {
+    const api = fake({ [US]: { currency: "USD", campaigns: [] } });
+    const { pages } = await syncAll(api, request());
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.slice(0, -1).every((page) => !page.freshness)).toBe(true);
+    expect(freshnessEntry(pages.at(-1)!, ADS_STREAM)?.dataThrough).toBe(
+      addDays(TODAY, -1),
+    );
   });
 
   it("asks Apple for currency and time zone when the connection has none", async () => {

@@ -1,8 +1,15 @@
 import type {
+  FreshnessEntry,
   Observation,
   SyncRequest,
   SyncResult,
 } from "@netrics/connector-sdk";
+
+import {
+  PACIFIC_TIME_ZONE,
+  addCalendarDays,
+  zonedInstant,
+} from "../freshness.js";
 
 import {
   AppStoreConnectApiError,
@@ -57,6 +64,46 @@ export const SALES_METRIC_KEYS = {
   iapUnits: `${PREFIX}.iap_units`,
   proceeds: `${PREFIX}.proceeds`,
 } as const;
+
+/** The freshness stream of the daily sales report (ADR 0025). */
+export const SALES_STREAM = "sales";
+/**
+ * Pacific hour from which a day's sales report is expected: the day after,
+ * at noon PT (`latestReportDay`). Apple says reports are generally available
+ * by 8 a.m. PT; noon leaves room for its late days.
+ */
+export const SALES_CUTOFF_HOUR_PT = 12;
+/**
+ * Pacific hour from which a day's report typically can appear: an
+ * assumption (Apple documents no earliest time, only "generally by 8 a.m."),
+ * chosen early so that a report published before 8 a.m. is not missed.
+ */
+export const SALES_EARLIEST_HOUR_PT = 5;
+
+/**
+ * The freshness of the sales stream once the run confirmed every reporting
+ * day up to `dataThrough` (a Pacific date): the day after it is expected
+ * the morning after, by 12:00 PT, from 05:00 PT (ADR 0025 section 2). The
+ * expected times stay as they are when already past: that is how the host
+ * sees Apple is late.
+ */
+export function salesFreshness(dataThrough: string): FreshnessEntry {
+  const publication = addCalendarDays(dataThrough, 2);
+  return {
+    stream: SALES_STREAM,
+    dataThrough,
+    expectedFrom: zonedInstant(
+      publication,
+      SALES_EARLIEST_HOUR_PT,
+      PACIFIC_TIME_ZONE,
+    ),
+    nextExpectedAt: zonedInstant(
+      publication,
+      SALES_CUTOFF_HOUR_PT,
+      PACIFIC_TIME_ZONE,
+    ),
+  };
+}
 
 export interface SalesSyncOptions {
   now: number;
@@ -518,11 +565,21 @@ async function readSalesPage(
   if (pendingMs === undefined && monthEnd < endMs) {
     return { observations, nextCursor: stamp(monthEnd), done: false };
   }
+  // Freshness (ADR 0025): the newest day before the first pending one, once
+  // this page read up to the newest day that can be published (a window
+  // ending earlier says nothing about the newest days). Every day before it
+  // was read by this run or answered 404 after its publication time.
+  const confirmedTo = pendingMs ?? readTo;
+  const reachedNewest = pendingMs !== undefined || readTo === newestMs + DAY_MS;
+  const freshness = reachedNewest
+    ? [salesFreshness(day(confirmedTo - DAY_MS))]
+    : undefined;
   // The next sync starts a few days back (revisions), and never after a
   // day that is not published yet.
   return {
     observations,
     nextCursor: resumeAt(Math.min(endMs, pendingMs ?? endMs)),
+    ...(freshness ? { freshness } : {}),
     done: true,
   };
 }

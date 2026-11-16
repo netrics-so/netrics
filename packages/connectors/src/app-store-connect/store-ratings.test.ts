@@ -7,7 +7,13 @@ import type {
 } from "@netrics/connector-sdk";
 import { syncResultSchema, validateDatasetPage } from "@netrics/connector-sdk";
 
-import { createAppStoreConnectConnector, listApps } from "./index.js";
+import { expectValidFreshness } from "@netrics/connector-sdk/testing";
+
+import {
+  appStoreConnectManifest,
+  createAppStoreConnectConnector,
+  listApps,
+} from "./index.js";
 import {
   ratingStorefront,
   readStoreRatings,
@@ -192,6 +198,42 @@ describe("overall storefront rating snapshots", () => {
       expect(() => ratingStorefront({ ratingStorefront: bad })).toThrow(
         "two-letter",
       );
+  });
+});
+
+describe("rating freshness (ADR 0025)", () => {
+  it("bounds the run's entries together with the listing entry, so the done result stays valid", async () => {
+    // 2,000 apps with analytics: the run's entries reach the host's bound
+    // before the listing entry is added.
+    const appIds = Array.from({ length: 2_000 }, (_, i) => String(10_000 + i));
+    const legacy = vi.fn().mockResolvedValue({
+      observations: [],
+      done: true,
+      nextCursor: "2026-11-05T00:00:00.000Z",
+      freshness: appIds.map((resource, i) => ({
+        stream: "analytics",
+        resource,
+        dataThrough: i === 3 ? "2026-11-01" : "2026-11-03",
+      })),
+    } satisfies SyncResult);
+    const rt = runtime({ results: [] });
+    let cursor: string | undefined = "2026-11-01T00:00:00.000Z";
+    let result: SyncResult | undefined;
+    for (let page = 0; page < 100 && !result?.done; page++) {
+      result = await syncWithStoreRatings({ ...request, cursor }, rt, {
+        storefront: "US",
+        now: NOW,
+        appIds: async () => appIds,
+        legacy,
+      });
+      cursor = result.nextCursor;
+    }
+    expect(result?.done).toBe(true);
+    expectValidFreshness(appStoreConnectManifest, result);
+    expect(result!.freshness).toEqual([
+      { stream: "analytics", dataThrough: "2026-11-01" },
+      { stream: "listing_ratings" },
+    ]);
   });
 });
 

@@ -363,7 +363,19 @@ export type AppAnalyticsStatus =
 export interface AppAnalyticsResult {
   status: AppAnalyticsStatus;
   observations: Observation[];
+  /**
+   * The last day both reports were read through (ADR 0025): the older of
+   * the two reports' newest reporting days in the files this run read. Not
+   * the instances' processing days: an instance processed on April 1 can
+   * hold data for March 30–31 only (Apple's data-completeness example).
+   * Absent when a report is missing or its files had no row of the app
+   * (analytics not enabled, not generated yet, or no activity read).
+   */
+  dataThrough?: string;
 }
+
+/** The freshness stream of App Store analytics (ADR 0025), per app. */
+export const ANALYTICS_STREAM = "analytics";
 
 /**
  * The analytics observations of one app: impressions and product page
@@ -406,12 +418,19 @@ export async function readAppAnalytics(
   const inWindow = (window: ReportWindow, date: string) =>
     window.from === undefined || date >= window.from;
 
+  /** The newest reporting day read per report. */
+  let discoveryDay: string | undefined;
+  let downloadsDay: string | undefined;
+  const later = (a: string | undefined, b: string) =>
+    a !== undefined && a > b ? a : b;
+
   if (discovery) {
     const impressions = new Map<string, number>();
     const views = new Map<string, number>();
     for (const text of discovery.texts) {
       for (const row of parseDiscoveryReport(text)) {
         if (row.appId !== appId || !inWindow(discovery, row.date)) continue;
+        discoveryDay = later(discoveryDay, row.date);
         add(impressions, row.date, isImpression(row) ? row.counts : 0);
         add(views, row.date, isProductPageView(row) ? row.counts : 0);
       }
@@ -438,6 +457,7 @@ export async function readAppAnalytics(
     for (const text of downloads.texts) {
       for (const row of parseDownloadsReport(text)) {
         if (row.appId !== appId || !inWindow(downloads, row.date)) continue;
+        downloadsDay = later(downloadsDay, row.date);
         if (!isFirstTimeDownload(row)) continue;
         let day = bySource.get(row.date);
         if (!day) {
@@ -460,12 +480,17 @@ export async function readAppAnalytics(
       }
     }
   }
+  const newest =
+    discoveryDay !== undefined && downloadsDay !== undefined
+      ? [discoveryDay, downloadsDay].sort()[0]!
+      : undefined;
   return {
     status:
       (discovery?.instances ?? 0) + (downloads?.instances ?? 0) > 0
         ? "read"
         : "pending",
     observations,
+    ...(newest !== undefined ? { dataThrough: newest } : {}),
   };
 }
 
@@ -511,8 +536,14 @@ export async function syncAnalyticsApps(
     log: (message: string) => void;
     hosts?: readonly string[];
   },
-): Promise<{ observations: Observation[]; rateLimited: boolean }> {
+): Promise<{
+  observations: Observation[];
+  rateLimited: boolean;
+  /** Apps read completely, with the last day their reports cover. */
+  dataThrough: Map<string, string>;
+}> {
   const observations: Observation[] = [];
+  const dataThrough = new Map<string, string>();
   for (const appId of appIds) {
     try {
       const result = await readAppAnalytics(client, fetch, appId, options);
@@ -522,16 +553,18 @@ export async function syncAnalyticsApps(
         );
       }
       observations.push(...result.observations);
+      if (result.dataThrough !== undefined)
+        dataThrough.set(appId, result.dataThrough);
     } catch (error) {
       if (isRefusedKey(error)) throw error;
       if (stopsRun(error)) {
         options.log(
           "App Store analytics postponed: the key's hourly request budget is used up",
         );
-        return { observations, rateLimited: true };
+        return { observations, rateLimited: true, dataThrough };
       }
       options.log(failureNote(appId, error));
     }
   }
-  return { observations, rateLimited: false };
+  return { observations, rateLimited: false, dataThrough };
 }

@@ -8,7 +8,11 @@ import type {
   SyncRequest,
   SyncResult,
 } from "@netrics/connector-sdk";
-import { runConnectorContractTests } from "@netrics/connector-sdk/testing";
+import {
+  expectValidFreshness,
+  freshnessEntry,
+  runConnectorContractTests,
+} from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,6 +20,7 @@ import {
   INCREMENTAL_LOOKBACK_DAYS,
   MAX_ROWS_PER_DAY,
   PAGE_ROWS,
+  PERFORMANCE_STREAM,
   WEBMASTERS_READONLY_SCOPE,
   createSearchConsoleConnector,
   oldestAvailableDay,
@@ -502,11 +507,12 @@ describe("search console connector", () => {
       from: "2023-12-20T08:00:00.000Z",
       to: "2024-01-20T12:00:00.000Z",
     });
+    // Page cursors carry the newest final day read so far (ADR 0025).
     expect(pages.map((page) => [page.nextCursor, page.done])).toEqual([
-      ["2023-12-25T00:00:00.000Z", false],
-      ["2024-01-01T00:00:00.000Z", false],
-      ["2024-01-08T00:00:00.000Z", false],
-      ["2024-01-15T00:00:00.000Z", false],
+      ["2023-12-25T00:00:00.000Z|2023-12-24", false],
+      ["2024-01-01T00:00:00.000Z|2023-12-31", false],
+      ["2024-01-08T00:00:00.000Z|2024-01-07", false],
+      ["2024-01-15T00:00:00.000Z|2024-01-14", false],
       // 20 January − INCREMENTAL_LOOKBACK_DAYS
       ["2024-01-15T00:00:00.000Z", true],
     ]);
@@ -925,5 +931,97 @@ describe("search console connector check", () => {
         fake().runtime,
       ),
     ).rejects.toMatchObject({ name: "AccessTokenRejectedError" });
+  });
+});
+
+// ─── Freshness (ADR 0025) ──────────────────────────────────────────────────
+
+describe("search console freshness", () => {
+  it("reports the newest final day per property, without a next expected time", async () => {
+    const { pages } = await syncAll(fake().runtime, {
+      mode: "backfill",
+      from: "2023-12-20T08:00:00.000Z",
+      to: "2024-01-20T12:00:00.000Z",
+    });
+    const done = pages.at(-1)!;
+    expectValidFreshness(searchConsoleManifest, done);
+    // Final data trails today (20 January) by three days.
+    // One connection reads one property: a connection entry.
+    expect(done.freshness).toEqual([
+      { stream: PERFORMANCE_STREAM, dataThrough: "2024-01-17" },
+    ]);
+    expect(
+      pages.slice(0, -1).every((page) => page.freshness === undefined),
+    ).toBe(true);
+  });
+
+  it("keeps the newest final day of an earlier page when the last page has none", async () => {
+    // Tuesday 23 January: the last weekly page (22–23) has no final day.
+    const today = "2024-01-23";
+    const { pages } = await syncAll(
+      fake({ today }).runtime,
+      {
+        mode: "incremental",
+        from: "2024-01-18T00:00:00.000Z",
+        to: `${today}T12:00:00.000Z`,
+      },
+      context(),
+      () => Date.parse(`${today}T12:00:00.000Z`),
+    );
+    expect(pages).toHaveLength(2);
+    expect(freshnessEntry(pages[1]!, PERFORMANCE_STREAM)).toEqual({
+      stream: PERFORMANCE_STREAM,
+      dataThrough: "2024-01-20",
+    });
+  });
+
+  it("claims no day when the run read no final data", async () => {
+    const today = "2024-01-23";
+    const { pages } = await syncAll(
+      fake({ today }).runtime,
+      {
+        mode: "incremental",
+        from: "2024-01-22T00:00:00.000Z",
+        to: `${today}T12:00:00.000Z`,
+      },
+      context(),
+      () => Date.parse(`${today}T12:00:00.000Z`),
+    );
+    expect(pages.at(-1)).toMatchObject({ done: true });
+    expect(pages.at(-1)!.freshness).toBeUndefined();
+  });
+
+  it("never fails a sync for a URL-prefix property longer than a freshness resource", async () => {
+    const long = `https://www.example.com/${"section/".repeat(30)}`;
+    expect(long.length).toBeGreaterThan(200);
+    const { pages } = await syncAll(
+      fake({ sites: [{ siteUrl: long, permissionLevel: "siteOwner" }] })
+        .runtime,
+      {
+        mode: "incremental",
+        from: "2024-01-10T00:00:00.000Z",
+        to: "2024-01-20T12:00:00.000Z",
+      },
+      context({ siteUrl: long }),
+    );
+    const done = pages.at(-1)!;
+    expectValidFreshness(searchConsoleManifest, done);
+    expect(done.freshness).toEqual([
+      { stream: PERFORMANCE_STREAM, dataThrough: "2024-01-17" },
+    ]);
+  });
+
+  it("reports nothing for a property outside the selection", async () => {
+    const result = await connector().sync(
+      context(),
+      {
+        mode: "incremental",
+        from: "2024-01-10T00:00:00.000Z",
+        to: "2024-01-20T12:00:00.000Z",
+        resources: ["sc-domain:other.example"],
+      },
+      fake().runtime,
+    );
+    expect(result.freshness).toBeUndefined();
   });
 });

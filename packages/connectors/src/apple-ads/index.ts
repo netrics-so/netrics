@@ -32,7 +32,11 @@ import {
   TOP_KEYWORDS,
 } from "./metrics.js";
 import { noteOnce } from "./observations.js";
-import { APPLE_ADS_BACKFILL_DAYS, syncCampaignPage } from "./sync.js";
+import {
+  ADS_STREAM,
+  APPLE_ADS_BACKFILL_DAYS,
+  syncCampaignPage,
+} from "./sync.js";
 
 export {
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
@@ -139,6 +143,7 @@ export {
 } from "./reports.js";
 export {
   AD_GROUP_CAMPAIGNS_PER_PAGE,
+  ADS_STREAM,
   adAccountToday,
   addDays,
   APPLE_ADS_BACKFILL_DAYS,
@@ -299,6 +304,7 @@ const appleAdsDe: ManifestTranslation = {
     attribution: "Zuordnung",
     currency: "Währung",
   },
+  freshnessStreams: { [ADS_STREAM]: "Anzeigen" },
 };
 
 /**
@@ -308,8 +314,8 @@ const appleAdsDe: ManifestTranslation = {
  */
 export const appleAdsManifest: ConnectorManifest = {
   id: "apple-ads",
-  version: "0.1.0",
-  sdkVersion: "^0.2.7",
+  version: "0.1.1",
+  sdkVersion: "^0.2.13",
   category: "ads",
   brandColor: "#0d84ff",
   name: "Apple Ads",
@@ -366,6 +372,22 @@ export const appleAdsManifest: ConnectorManifest = {
   outboundDomains: [APPLE_ADS_HOST],
   resourceNoun: { singular: "app", plural: "apps" },
   translations: { de: appleAdsDe },
+  // When the numbers arrive (ADR 0025): days of the ad account's own time
+  // zone, one connection entry per sync with that zone. UTC here is only
+  // the default every entry overrides.
+  freshnessStreams: [
+    {
+      key: ADS_STREAM,
+      name: "Ads",
+      kind: "periodic",
+      timeZone: "UTC",
+      metrics: [
+        ...APPLE_ADS_METRICS,
+        ...APPLE_ADS_AD_GROUP_METRICS,
+        ...APPLE_ADS_KEYWORD_METRICS,
+      ].map((metric) => metric.key),
+    },
+  ],
 };
 
 /** Kinds of the resources discover lists. */

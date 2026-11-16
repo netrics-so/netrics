@@ -385,3 +385,40 @@ describe("stage page building", () => {
     }
   });
 });
+
+describe("freshness from staged reports (ADR 0025)", () => {
+  it("keeps each app's newest report day with the stage, so a reused stage reports it too", async () => {
+    const staging = memoryStaging();
+    const done = async () => {
+      const fake = fakePlay();
+      fake.runtime.datasetStaging = staging.store;
+      const connector = createGooglePlayConnector({ now: () => TEST_NOW });
+      let cursor: string | undefined;
+      for (let turn = 0; turn < 200; turn++) {
+        const result = syncResultSchema.parse(
+          await connector.sync(context, { ...request, cursor }, fake.runtime),
+        );
+        if (result.done) return { result, fake };
+        cursor = result.nextCursor;
+      }
+      throw new Error("Sync did not finish");
+    };
+    const first = await done();
+    const second = await done();
+    // The second run read no install report: every one came from its stage.
+    expect(
+      second.fake.calls.some(
+        (call) =>
+          call.url.searchParams.get("alt") === "media" &&
+          call.url.pathname.includes("installs_"),
+      ),
+    ).toBe(false);
+    for (const { result } of [first, second])
+      expect(
+        result.freshness?.filter((entry) => entry.stream === "installs"),
+      ).toEqual([
+        { stream: "installs", resource: ALPHA, dataThrough: "2026-10-03" },
+        { stream: "installs", resource: BETA, dataThrough: "2026-10-01" },
+      ]);
+  });
+});

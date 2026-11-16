@@ -60,6 +60,14 @@ Every value is a daily count per project, dated by Vercel's reporting day
   absorbed; otherwise the sync is retried later and the dashboard shows the
   last values.
 
+## When numbers arrive
+
+Vercel counts visitors and page views live, so there is no day to wait
+for. Widgets show when netrics last checked and when it checks next
+([ADR 0025](../decisions/0025-data-freshness.md)): every completed sync,
+about every 15 minutes, counts as a check. Today's numbers keep growing
+until the day ends.
+
 ## When something goes wrong
 
 | What you see                                           | What to do                                                                                |

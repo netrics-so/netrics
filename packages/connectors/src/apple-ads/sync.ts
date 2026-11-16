@@ -4,6 +4,7 @@ import type {
   SyncResult,
 } from "@netrics/connector-sdk";
 
+import { boundFreshness } from "../freshness.js";
 import { AppleAdsApiError, type AppleAdsClient } from "./api.js";
 import {
   APPLE_ADS_DIMENSIONS,
@@ -113,6 +114,9 @@ export const AD_GROUP_CAMPAIGNS_PER_PAGE = 10;
 export const FAN_OUT_BUDGET_MS = 30_000;
 
 const CURSOR_PREFIX = "apple-ads:1";
+
+/** The freshness stream of every Apple Ads metric (ADR 0025). */
+export const ADS_STREAM = "ads";
 
 /** Note code: a deleted campaign had no ad-group report (404). */
 export const DELETED_CAMPAIGN_NOTE = "apple_ads.deleted_campaign_ad_groups";
@@ -897,7 +901,26 @@ export async function syncCampaignPage(
   }
 
   if (range.start <= position.floor || range.start <= oldest) {
-    return { observations, nextCursor: resume, done: true };
+    // Freshness (ADR 0025): this run read every range from the newest day
+    // down, so the account's days are read through yesterday (today is
+    // still running), or through the window's last day when it ends
+    // earlier. One connection entry in the account's zone; Apple documents
+    // no time a day is final, so there is no next expected time.
+    const dataThrough = minDay(position.newest, addDays(today, -1));
+    // The zone's canonical IANA name (adAccountToday has accepted it).
+    const timeZone = new Intl.DateTimeFormat("en-US", {
+      timeZone: options.timeZone,
+    }).resolvedOptions().timeZone;
+    // The final assembly: within what the host accepts, never failing it.
+    const freshness = boundFreshness([
+      { stream: ADS_STREAM, dataThrough, timeZone },
+    ]);
+    return {
+      observations,
+      nextCursor: resume,
+      ...(freshness.length > 0 ? { freshness } : {}),
+      done: true,
+    };
   }
   const { after: _after, ...rest } = position;
   return {

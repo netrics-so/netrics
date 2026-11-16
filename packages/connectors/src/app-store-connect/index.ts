@@ -3,6 +3,7 @@ import type {
   ConnectionContext,
   Connector,
   ConnectorManifest,
+  FreshnessEntry,
   ManifestTranslation,
   Resource,
   SyncRequest,
@@ -24,12 +25,15 @@ import {
   ANALYTICS_APPS_PER_PAGE,
   ANALYTICS_METRIC_KEYS,
   ANALYTICS_SEGMENT_HOSTS,
+  ANALYTICS_STREAM,
   syncAnalyticsApps,
 } from "./analytics-sync.js";
+import { PACIFIC_TIME_ZONE, withBoundFreshness } from "../freshness.js";
 import { ANALYTICS_SOURCE_TYPES, OTHER_SOURCE } from "./analytics-report.js";
 import { ARTWORK_HOSTS, ITUNES_LOOKUP_HOST, appIcons } from "./icons.js";
 import { checkKey, vendorNumberOf } from "./probes.js";
 import {
+  LISTING_RATINGS_STREAM,
   ratingStorefront,
   storeRatingsDataset,
   syncWithStoreRatings,
@@ -45,6 +49,7 @@ import {
   BACKFILL_DAYS,
   OTHERS,
   SALES_METRIC_KEYS,
+  SALES_STREAM,
   TOP_TERRITORIES,
   syncSalesPage,
 } from "./sales-sync.js";
@@ -86,6 +91,7 @@ export {
   ANALYTICS_LOOKBACK_DAYS,
   ANALYTICS_METRIC_KEYS,
   ANALYTICS_SEGMENT_HOSTS,
+  ANALYTICS_STREAM,
   AnalyticsSegmentHostError,
   downloadSegment,
   readAppAnalytics,
@@ -172,10 +178,18 @@ export {
   INCREMENTAL_LOOKBACK_DAYS,
   OTHERS,
   REPORT_CONCURRENCY,
+  SALES_CUTOFF_HOUR_PT,
+  SALES_EARLIEST_HOUR_PT,
   SALES_METRIC_KEYS,
+  SALES_STREAM,
   TOP_TERRITORIES,
   UNKNOWN,
+  salesFreshness,
 } from "./sales-sync.js";
+export { LISTING_RATINGS_STREAM } from "./store-ratings.js";
+
+/** The freshness stream of the review metrics (ADR 0025): continuous. */
+export const REVIEWS_STREAM = "reviews";
 
 /** Apps per page of `GET /v1/apps` (Apple allows up to 200). */
 export const APPS_PAGE_SIZE = 100;
@@ -276,12 +290,18 @@ const appStoreConnectDe: ManifestTranslation = {
     source: "Quelle",
     rating: "Bewertung",
   },
+  freshnessStreams: {
+    [SALES_STREAM]: "Verkäufe",
+    [ANALYTICS_STREAM]: "App-Store-Analysen",
+    [REVIEWS_STREAM]: "Rezensionen",
+    [LISTING_RATINGS_STREAM]: "Bewertungen im App Store",
+  },
 };
 
 export const appStoreConnectManifest: ConnectorManifest = {
   id: "app-store-connect",
-  version: "0.1.4",
-  sdkVersion: "^0.2.9",
+  version: "0.1.5",
+  sdkVersion: "^0.2.13",
   category: "apps",
   brandColor: "#0d84ff",
   name: "App Store Connect",
@@ -484,6 +504,38 @@ export const appStoreConnectManifest: ConnectorManifest = {
   ],
   resourceNoun: { singular: "app", plural: "apps" },
   translations: { de: appStoreConnectDe },
+  // When the numbers arrive (ADR 0025): sales by Pacific day for the whole
+  // vendor, analytics per app about two days later, reviews and the rating
+  // snapshots whenever a sync reads them.
+  freshnessStreams: [
+    {
+      key: SALES_STREAM,
+      name: "Sales",
+      kind: "periodic",
+      timeZone: PACIFIC_TIME_ZONE,
+      metrics: Object.values(SALES_METRIC_KEYS),
+      datasets: [salesDataset.key],
+    },
+    {
+      key: ANALYTICS_STREAM,
+      name: "App Store analytics",
+      kind: "periodic",
+      timeZone: PACIFIC_TIME_ZONE,
+      metrics: Object.values(ANALYTICS_METRIC_KEYS),
+    },
+    {
+      key: REVIEWS_STREAM,
+      name: "Reviews",
+      kind: "continuous",
+      metrics: Object.values(REVIEW_METRIC_KEYS),
+    },
+    {
+      key: LISTING_RATINGS_STREAM,
+      name: "App Store ratings",
+      kind: "continuous",
+      datasets: [storeRatingsDataset.key],
+    },
+  ],
   // Apple's limit is per key and rolling hour; connections sharing a key
   // share it (ADR 0014).
   rateLimit: { maxRequests: 3500, windowSeconds: 3600, scope: "key" },
@@ -662,24 +714,94 @@ export interface AppStoreConnectConnectorOptions {
 }
 
 /**
- * The cursor of a reviews page: `reviews:<app index>:<sales cursor>`, read
- * after the analytics pages with the optional reviews key (#190).
+ * What a run has confirmed so far, carried through its analytics and
+ * reviews cursors to the done result (ADR 0025): the sales entry, the last
+ * analytics day per app read, and whether every reviews page read every
+ * app. Cursors written before freshness carry nothing: such a run reports
+ * no sales or reviews entry.
  */
-const REVIEWS_CURSOR = /^reviews:(\d+):(.+)$/;
+interface RunFreshness {
+  sales?: FreshnessEntry;
+  analytics?: Record<string, string>;
+  reviews?: boolean;
+}
 
-export function reviewsCursor(index: number, salesCursor: string): string {
-  return `reviews:${index}:${salesCursor}`;
+const runFreshnessSchema = z.object({
+  sales: z
+    .object({
+      stream: z.literal(SALES_STREAM),
+      dataThrough: z.iso.date(),
+      expectedFrom: z.iso.datetime().optional(),
+      nextExpectedAt: z.iso.datetime().optional(),
+    })
+    .optional(),
+  analytics: z.record(z.string().regex(/^\d+$/), z.iso.date()).optional(),
+  reviews: z.boolean().optional(),
+});
+
+function encodeRunFreshness(value: RunFreshness): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function decodeRunFreshness(value: string | undefined): RunFreshness {
+  if (value === undefined) return {};
+  try {
+    return runFreshnessSchema.parse(
+      JSON.parse(Buffer.from(value, "base64url").toString("utf8")),
+    );
+  } catch {
+    throw new Error("Invalid App Store Connect checkpoint");
+  }
+}
+
+/** The done result's freshness entries of what the run confirmed. */
+function freshnessOf(run: RunFreshness): FreshnessEntry[] {
+  return [
+    ...(run.sales ? [run.sales] : []),
+    ...Object.entries(run.analytics ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([resource, dataThrough]) => ({
+        stream: ANALYTICS_STREAM,
+        resource,
+        dataThrough,
+      })),
+    ...(run.reviews === true ? [{ stream: REVIEWS_STREAM }] : []),
+  ];
 }
 
 /**
- * The cursor of an analytics page: `analytics:<app index>:<sales cursor>`.
- * Sales cursors are ISO timestamps, so they never look like this; the
- * sales cursor is where the next sync's sales continue.
+ * The cursor of a reviews page: `reviews:<app index>:[f.<freshness>:]<sales
+ * cursor>`, read after the analytics pages with the optional reviews key
+ * (#190).
  */
-const ANALYTICS_CURSOR = /^analytics:(\d+):(.+)$/;
+const REVIEWS_CURSOR = /^reviews:(\d+):(?:f\.([A-Za-z0-9_-]+):)?(.+)$/;
 
-export function analyticsCursor(index: number, salesCursor: string): string {
-  return `analytics:${index}:${salesCursor}`;
+function withRun(salesCursor: string, run: RunFreshness | undefined): string {
+  return run === undefined
+    ? salesCursor
+    : `f.${encodeRunFreshness(run)}:${salesCursor}`;
+}
+
+export function reviewsCursor(
+  index: number,
+  salesCursor: string,
+  run?: RunFreshness,
+): string {
+  return `reviews:${index}:${withRun(salesCursor, run)}`;
+}
+
+/**
+ * The cursor of an analytics page: `analytics:<app index>:[f.<freshness>:]
+ * <sales cursor>`. Sales cursors are ISO timestamps, so they never look
+ * like this; the sales cursor is where the next sync's sales continue.
+ */
+const ANALYTICS_CURSOR = /^analytics:(\d+):(?:f\.([A-Za-z0-9_-]+):)?(.+)$/;
+export function analyticsCursor(
+  index: number,
+  salesCursor: string,
+  run?: RunFreshness,
+): string {
+  return `analytics:${index}:${withRun(salesCursor, run)}`;
 }
 
 /**
@@ -778,7 +900,17 @@ export function createAppStoreConnectConnector(
     },
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
-      if (!ratings) return syncLegacy(context, request, runtime);
+      if (!ratings)
+        return withBoundFreshness(
+          await syncLegacy(context, request, runtime),
+          async () =>
+            request.resources ??
+            (
+              await listApps(
+                createAppStoreConnectClient(runtime.fetch, token(context)),
+              )
+            ).map((app) => app.id),
+        );
       return syncWithStoreRatings(request, runtime, {
         storefront: ratingStorefront(context.config),
         now: now(),
@@ -811,31 +943,54 @@ export function createAppStoreConnectConnector(
       request.resources !== undefined
         ? [...request.resources].sort()
         : (await listApps(client)).map((app) => app.id).sort();
+    /** The end of the run: the cursor and what the run confirmed. */
+    const finish = async (
+      result: Pick<SyncResult, "observations" | "reviews" | "reviewWindows">,
+      salesCursor: string,
+      run: RunFreshness,
+    ): Promise<SyncResult> => {
+      // Unbounded here: the connector's final assembly bounds the entries
+      // together with the listing entry (withBoundFreshness).
+      const freshness = freshnessOf(run);
+      return {
+        ...result,
+        nextCursor: salesCursor,
+        ...(freshness.length > 0 ? { freshness } : {}),
+        done: true,
+      };
+    };
     /** What follows the analytics: the reviews, or the end of the run. */
-    const afterAnalytics = (
+    const afterAnalytics = async (
       observations: SyncResult["observations"],
       salesCursor: string,
-    ): SyncResult =>
+      run: RunFreshness,
+    ): Promise<SyncResult> =>
       reviewsToken !== undefined && request.resources?.length !== 0
         ? {
             observations,
-            nextCursor: reviewsCursor(0, salesCursor),
+            nextCursor: reviewsCursor(0, salesCursor, {
+              ...run,
+              reviews: true,
+            }),
             done: false,
           }
-        : { observations, nextCursor: salesCursor, done: true };
-
+        : finish({ observations }, salesCursor, run);
     // Reviews pages come last (#190), with the reviews key's own token
     // and hourly budget. A refused reviews key pauses only the reviews.
     const reviewsResumed = REVIEWS_CURSOR.exec(request.cursor ?? "");
     if (reviewsResumed) {
       const start = Number(reviewsResumed[1]);
-      const salesCursor = reviewsResumed[2]!;
+      const run = decodeRunFreshness(reviewsResumed[2]);
+      const salesCursor = reviewsResumed[3]!;
       if (reviewsToken === undefined) {
-        return { observations: [], nextCursor: salesCursor, done: true };
+        return finish({ observations: [] }, salesCursor, {
+          ...run,
+          reviews: false,
+        });
       }
       const appIds = await appIdsOf();
       const end = Math.min(start + REVIEWS_APPS_PER_PAGE, appIds.length);
-      const { observations, reviews, reviewWindows, stop } =
+      const { observations, reviews, reviewWindows, stop, skipped } =
         await syncReviewApps(
           createAppStoreConnectClient(runtime.fetch, reviewsToken),
           appIds.slice(start, end),
@@ -848,39 +1003,57 @@ export function createAppStoreConnectConnector(
         reviews.length > 0 || reviewWindows.length > 0
           ? { reviews, reviewWindows }
           : {};
+      // Reviews count as read when every page read every app (ADR 0025).
+      const next: RunFreshness = {
+        ...run,
+        reviews: run.reviews === true && !stop && skipped === 0,
+      };
       return end < appIds.length && !stop
         ? {
             observations,
             ...text,
-            nextCursor: reviewsCursor(end, salesCursor),
+            nextCursor: reviewsCursor(end, salesCursor, next),
             done: false,
           }
-        : { observations, ...text, nextCursor: salesCursor, done: true };
+        : finish({ observations, ...text }, salesCursor, next);
     }
-
     // Analytics pages come after the sales of a sync (ADR 0014, #174):
     // a few apps per page, each page within its own time budget.
     const resumed = ANALYTICS_CURSOR.exec(request.cursor ?? "");
     if (resumed) {
       const start = Number(resumed[1]);
-      const salesCursor = resumed[2]!;
+      const run = decodeRunFreshness(resumed[2]);
+      const salesCursor = resumed[3]!;
       const appIds = await appIdsOf();
       const end = Math.min(start + ANALYTICS_APPS_PER_PAGE, appIds.length);
-      const { observations, rateLimited } = await syncAnalyticsApps(
-        client,
-        runtime.fetch,
-        appIds.slice(start, end),
-        { now: now(), log },
-      );
+      const { observations, rateLimited, dataThrough } =
+        await syncAnalyticsApps(
+          client,
+          runtime.fetch,
+          appIds.slice(start, end),
+          { now: now(), log },
+        );
+      // Apps whose analytics were read completely (ADR 0025); an app
+      // without analytics, or whose read failed, gets no entry.
+      const next: RunFreshness = {
+        ...run,
+        ...(dataThrough.size > 0
+          ? {
+              analytics: {
+                ...run.analytics,
+                ...Object.fromEntries(dataThrough),
+              },
+            }
+          : {}),
+      };
       return end < appIds.length && !rateLimited
         ? {
             observations,
-            nextCursor: analyticsCursor(end, salesCursor),
+            nextCursor: analyticsCursor(end, salesCursor, next),
             done: false,
           }
-        : afterAnalytics(observations, salesCursor);
+        : await afterAnalytics(observations, salesCursor, next);
     }
-
     const sales = await syncSalesPage(client, request, {
       now: now(),
       vendorNumber,
@@ -897,16 +1070,24 @@ export function createAppStoreConnectConnector(
     if (!sales.done || request.resources?.length === 0) {
       return sales;
     }
+    const { freshness: salesFreshness, ...salesResult } = sales;
+    const run: RunFreshness = salesFreshness?.[0]
+      ? { sales: salesFreshness[0] }
+      : {};
     if (!analytics) {
       return {
-        ...afterAnalytics(sales.observations, sales.nextCursor!),
+        ...(await afterAnalytics(
+          salesResult.observations,
+          sales.nextCursor!,
+          run,
+        )),
         ...(sales.datasetPages ? { datasetPages: sales.datasetPages } : {}),
       };
     }
     return {
       observations: sales.observations,
       ...(sales.datasetPages ? { datasetPages: sales.datasetPages } : {}),
-      nextCursor: analyticsCursor(0, sales.nextCursor!),
+      nextCursor: analyticsCursor(0, sales.nextCursor!, run),
       done: false,
     };
   }

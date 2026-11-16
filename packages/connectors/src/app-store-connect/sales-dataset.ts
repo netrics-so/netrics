@@ -320,6 +320,7 @@ export async function syncSalesDataset(
       },
     ],
     nextCursor: finished ? result.nextCursor : checkpoint(nextState),
+    ...(finished && result.freshness ? { freshness: result.freshness } : {}),
     done: finished && result.done,
   };
 }

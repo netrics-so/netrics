@@ -146,6 +146,33 @@ deleted. Workspace or installation retention still caps every choice (see
 Losing Google authorization pauses future ingestion; it does not remove
 workspace history.
 
+## When numbers arrive
+
+Play Console writes its reports into the bucket some days after the
+activity, without a fixed time. Widgets show which day (or month) the
+numbers go up to ([ADR 0025](../decisions/0025-data-freshness.md)); since
+Google names no publication time, netrics shows no "next" time for Google
+Play, and the connection syncs every 6 hours.
+
+| Data          | Up to                                                              |
+| ------------- | ------------------------------------------------------------------ |
+| Installs      | Per app: the newest day in that app's install reports a sync read  |
+| Ratings       | Per app: the newest day in that app's rating overview reports      |
+| Earnings      | The last complete calendar month whose earnings report a sync read |
+| Store listing | No day: when netrics last read every app's public listing          |
+
+- Days and months are **Pacific Time**, as in Play Console, and are shown as
+  Google names them.
+- Install and rating reports usually lag a few days. An app whose report
+  could not be read, or that has none yet, shows no day for it.
+- Earnings are monthly: a month counts once it has ended in Pacific Time
+  and its earnings report could be read. A file for a running month does
+  not count.
+- The store listing counts as checked only when the listing of every app
+  could be read in that sync.
+- An account with more than about 1,000 apps gets one "up to" day per kind
+  of report instead of one per app: the oldest of its apps' days.
+
 ## Current implementation boundaries
 
 There is no fixed app or retained-history count. Account discovery and dataset

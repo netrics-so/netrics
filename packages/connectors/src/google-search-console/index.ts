@@ -12,6 +12,7 @@ import type {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
+import { PACIFIC_TIME_ZONE, boundFreshness } from "../freshness.js";
 import {
   SearchConsoleApiError,
   createSearchConsoleClient,
@@ -58,6 +59,9 @@ export const DIMENSION_CHOICES: string[] = [
 
 const PREFIX = "google-search-console";
 const BREAKDOWN_DIMENSIONS = ["resource", ...DIMENSIONS];
+
+/** The freshness stream of every Search Console metric (ADR 0025). */
+export const PERFORMANCE_STREAM = "performance";
 
 /**
  * German texts of the manifest (ADR 0016, #257): "du" where the text
@@ -133,12 +137,13 @@ const searchConsoleDe: ManifestTranslation = {
     country: "Land",
     device: "Gerät",
   },
+  freshnessStreams: { [PERFORMANCE_STREAM]: "Suchleistung" },
 };
 
 export const searchConsoleManifest: ConnectorManifest = {
   id: PREFIX,
-  version: "0.1.1",
-  sdkVersion: "^0.2.7",
+  version: "0.1.2",
+  sdkVersion: "^0.2.13",
   category: "seo",
   brandColor: "#4285f4",
   name: "Google Search Console",
@@ -287,6 +292,26 @@ export const searchConsoleManifest: ConnectorManifest = {
   translations: { de: searchConsoleDe },
   // Google's per-property and per-user limit for Search Analytics queries.
   rateLimit: { maxRequests: 1200, windowSeconds: 60, scope: "property" },
+  // When the numbers arrive (ADR 0025): final data per property, by
+  // Pacific Time day, two to three days behind.
+  freshnessStreams: [
+    {
+      key: PERFORMANCE_STREAM,
+      name: "Search performance",
+      kind: "periodic",
+      timeZone: PACIFIC_TIME_ZONE,
+      metrics: [
+        `${PREFIX}.clicks`,
+        `${PREFIX}.impressions`,
+        `${PREFIX}.ctr`,
+        `${PREFIX}.position`,
+        `${PREFIX}.position_sum`,
+        `${PREFIX}.breakdown_clicks`,
+        `${PREFIX}.breakdown_impressions`,
+        `${PREFIX}.breakdown_position_sum`,
+      ],
+    },
+  ],
 };
 
 // ─── Response shapes (a changed shape fails parsing, and the tests) ─────────
@@ -632,10 +657,30 @@ export function createSearchConsoleConnector(
         startOfUtcDay(toMs - 1) + DAY_MS,
         todayMs + DAY_MS,
       );
+      // A page cursor carries the newest final day this run read so far
+      // ("<instant>|<YYYY-MM-DD>"); a bare instant carries none.
+      const [cursorAt, cursorThrough] = (request.cursor ?? "").split("|");
+      const readThrough =
+        cursorThrough && /^\d{4}-\d{2}-\d{2}$/.test(cursorThrough)
+          ? cursorThrough
+          : undefined;
       const startMs = Math.max(
-        startOfUtcDay(request.cursor ? Date.parse(request.cursor) : fromMs),
+        startOfUtcDay(cursorAt ? Date.parse(cursorAt) : fromMs),
         oldestMs,
       );
+      // Freshness (ADR 0025): the newest day with final data this run read,
+      // in Pacific Time. Google publishes final data only, two to three
+      // days behind, at no documented time: no next expected. A connection
+      // reads exactly one property, so its entry is the connection's: a
+      // URL-prefix property id can be longer than a freshness resource id.
+      const freshness = (through: string | undefined) => {
+        const entries = boundFreshness(
+          through === undefined
+            ? []
+            : [{ stream: PERFORMANCE_STREAM, dataThrough: through }],
+        );
+        return entries.length > 0 ? { freshness: entries } : {};
+      };
       // Where the next incremental sync starts: recent days are not final yet.
       const resumeAt = new Date(
         Math.max(
@@ -644,11 +689,18 @@ export function createSearchConsoleConnector(
         ),
       ).toISOString();
       if (
-        startMs >= endMs ||
-        (request.resources !== undefined &&
-          !request.resources.includes(siteUrl))
+        request.resources !== undefined &&
+        !request.resources.includes(siteUrl)
       ) {
         return { observations: [], nextCursor: resumeAt, done: true };
+      }
+      if (startMs >= endMs) {
+        return {
+          observations: [],
+          nextCursor: resumeAt,
+          ...freshness(readThrough),
+          done: true,
+        };
       }
       const chunkEnd = Math.min(chunkEndAfter(startMs), endMs);
       const api = client(context, runtime);
@@ -757,14 +809,25 @@ export function createSearchConsoleConnector(
         }
       }
 
+      // `dates` is sorted: its last day is this page's newest final day.
+      const through = [readThrough, dates.at(-1)]
+        .filter((date): date is string => date !== undefined)
+        .sort()
+        .at(-1);
       if (chunkEnd < endMs) {
+        const at = new Date(chunkEnd).toISOString();
         return {
           observations,
-          nextCursor: new Date(chunkEnd).toISOString(),
+          nextCursor: through === undefined ? at : `${at}|${through}`,
           done: false,
         };
       }
-      return { observations, nextCursor: resumeAt, done: true };
+      return {
+        observations,
+        nextCursor: resumeAt,
+        ...freshness(through),
+        done: true,
+      };
     },
   };
 }

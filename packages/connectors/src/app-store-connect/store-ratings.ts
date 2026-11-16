@@ -9,7 +9,11 @@ import type {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
+import { withBoundFreshness } from "../freshness.js";
 import { ITUNES_LOOKUP_URL, LOOKUP_BATCH_SIZE } from "./icons.js";
+
+/** The freshness stream of the rating snapshots (ADR 0025): continuous. */
+export const LISTING_RATINGS_STREAM = "listing_ratings";
 
 /** All-version ratings for one storefront; never a cross-store average. */
 export const storeRatingsDataset: SourceDatasetDefinition = {
@@ -133,6 +137,8 @@ export async function readStoreRatings(
   appIds: string[],
   storefront: string,
   capturedAt: string,
+  /** Called when an app's rating could not be read (no record for it). */
+  onIncomplete: () => void = () => {},
 ): Promise<DatasetRecord[]> {
   if (appIds.length === 0) return [];
   if (
@@ -162,7 +168,10 @@ export async function readStoreRatings(
   // A failed lookup (status, transport error, unexpected envelope) is no
   // observation: a record would replace the day's earlier good snapshot
   // under the upsert key, so none is emitted and that value stays.
-  if (results === undefined) return [];
+  if (results === undefined) {
+    onIncomplete();
+    return [];
+  }
   const byId = new Map<string, unknown[]>();
   for (const result of results) {
     if (typeof result !== "object" || result === null || !("trackId" in result))
@@ -176,7 +185,10 @@ export async function readStoreRatings(
       entries.length === 1 ? ratingEntry.safeParse(entries[0]) : null;
     const item = parsed?.success ? parsed.data : undefined;
     // An ambiguous or malformed answer for one app is no observation either.
-    if (entries.length > 1 || (entries.length === 1 && !item)) return [];
+    if (entries.length > 1 || (entries.length === 1 && !item)) {
+      onIncomplete();
+      return [];
+    }
     const count = item?.userRatingCount ?? null;
     const score = item?.averageUserRating;
     const rating = score !== undefined && score > 0 ? String(score) : null;
@@ -212,12 +224,19 @@ export async function readStoreRatings(
 
 const STATE_PREFIX = "store-ratings:";
 const LEGACY_PREFIX = "store-ratings-done:";
+/**
+ * As LEGACY_PREFIX, after a refresh that read every app's rating: the done
+ * result of the run then reports the listing ratings as read (ADR 0025).
+ */
+const READ_PREFIX = "store-ratings-read:";
 const stateSchema = z.object({
   refresh: z.uuid(),
   capturedAt: z.iso.datetime(),
   signature: z.string().regex(/^[a-f0-9]{64}$/),
   offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   continuation: z.string().optional(),
+  /** An app's rating could not be read during this refresh. */
+  incomplete: z.literal(true).optional(),
 });
 
 function encode(value: unknown): string {
@@ -247,18 +266,35 @@ export async function syncWithStoreRatings(
     legacy: (request: SyncRequest) => Promise<SyncResult>;
   },
 ): Promise<SyncResult> {
-  if (request.cursor?.startsWith(LEGACY_PREFIX)) {
+  const prefix = [LEGACY_PREFIX, READ_PREFIX].find((value) =>
+    request.cursor?.startsWith(value),
+  );
+  if (prefix !== undefined) {
     const cursor =
       z
         .string()
         .nullable()
-        .parse(decode(request.cursor.slice(LEGACY_PREFIX.length))) ?? undefined;
+        .parse(decode(request.cursor!.slice(prefix.length))) ?? undefined;
     const result = await options.legacy({ ...request, cursor });
     if (!result.done && !result.nextCursor)
       throw new Error("App Store sync omitted its checkpoint");
-    return result.done
-      ? result
-      : { ...result, nextCursor: LEGACY_PREFIX + encode(result.nextCursor) };
+    if (!result.done)
+      return { ...result, nextCursor: prefix + encode(result.nextCursor) };
+    // Listing ratings are a snapshot: "read" when every app's was (ADR 0025).
+    // The final assembly: the run's entries and this one are bounded
+    // together for the host, after which nothing is added.
+    return withBoundFreshness(
+      prefix === READ_PREFIX
+        ? {
+            ...result,
+            freshness: [
+              ...(result.freshness ?? []),
+              { stream: LISTING_RATINGS_STREAM },
+            ],
+          }
+        : result,
+      options.appIds,
+    );
   }
   const appIds = [...new Set(await options.appIds())].sort();
   const signature = createHash("sha256")
@@ -281,11 +317,15 @@ export async function syncWithStoreRatings(
   }
   const end = Math.min(state.offset + LOOKUP_BATCH_SIZE, appIds.length);
   const complete = end === appIds.length;
+  let incomplete = state.incomplete ?? false;
   const records = await readStoreRatings(
     runtime,
     appIds.slice(state.offset, end),
     options.storefront,
     state.capturedAt,
+    () => {
+      incomplete = true;
+    },
   );
   return {
     observations: [],
@@ -302,8 +342,14 @@ export async function syncWithStoreRatings(
       },
     ],
     nextCursor: complete
-      ? LEGACY_PREFIX + encode(state.continuation ?? null)
-      : STATE_PREFIX + encode({ ...state, offset: end }),
+      ? (incomplete ? LEGACY_PREFIX : READ_PREFIX) +
+        encode(state.continuation ?? null)
+      : STATE_PREFIX +
+        encode({
+          ...state,
+          offset: end,
+          ...(incomplete ? { incomplete: true } : {}),
+        }),
     done: false,
   };
 }

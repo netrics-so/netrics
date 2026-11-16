@@ -138,8 +138,17 @@ they can sit side by side in one workspace.
   API** in Apple Ads, unless another connection still uses the same key;
   the page says which.
 
-## When data arrives
+## When numbers arrive
 
+- Widgets show which day the numbers go up to
+  ([ADR 0025](../decisions/0025-data-freshness.md)). For Apple Ads that is
+  **yesterday in the ad account's time zone**, once a sync has read every
+  campaign: today is still running. The day is the ad account's, as in
+  Apple Ads; a viewer in another time zone sees the same date.
+- The last 3 days still change while Apple attributes installs; the widget
+  does not mark that, the values are replaced on each sync.
+- Apple names no time at which a day is complete, so netrics shows no
+  "next" time for Apple Ads; the connection syncs every 6 hours.
 - The first sync reads the last **12 months**, newest first, capped by what
   Apple keeps (_to be confirmed_ by #370). It reads whole calendar months
   in requests of at most 90 days.
