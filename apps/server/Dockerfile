@@ -13,11 +13,14 @@ RUN pnpm deploy --legacy --filter @netrics/server --prod /prod/server
 # Keep only what the server runs. Type declarations, source maps (the server
 # runs without --enable-source-maps), docs and package tests are never loaded,
 # and Node refuses to strip types under node_modules, so TypeScript sources
-# shipped by dependencies are dead weight too. The image size budget is
-# checked in CI.
+# shipped by dependencies are dead weight too. License, notice and copyright
+# files always stay: their licenses require them to ship with the code. The
+# image size budget is checked in CI.
 RUN cd /prod/server \
  && find . -type f \( -name '*.map' -o -name '*.ts' -o -name '*.mts' -o -name '*.cts' \
-      -o -name '*.md' -o -name '*.markdown' \) -delete \
+      -o -name '*.md' -o -name '*.markdown' \) \
+      ! -iname 'licen[cs]e*' ! -iname 'copying*' ! -iname 'notice*' \
+      ! -iname 'copyright*' ! -iname 'authors*' ! -iname 'patents*' -delete \
  && find node_modules/.pnpm -mindepth 3 -maxdepth 4 -type d \
       \( -name test -o -name tests -o -name __tests__ -o -name examples -o -name example \
       -o -name docs -o -name bench -o -name benchmark -o -name benchmarks \) \
