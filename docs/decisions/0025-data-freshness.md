@@ -1,0 +1,394 @@
+# 0025 — Data freshness: covered day, next expected, sync timing
+
+Status: accepted design (2026-11-16;
+[#701](https://github.com/netrics-so/netrics/issues/701), milestone 11.2).
+Implemented by #702 (SDK, storage, scheduler), #703 (connectors), #704
+(widget data and device payload), #705 (web) and #706 (netrics TV). It
+describes no shipped behaviour yet.
+
+Extends ADR 0015 (widgets), ADR 0018 section 5 (freshness footer) and
+ADR 0022 (models and their sources).
+
+## Context
+
+A widget shows when netrics last synced its connection, and nothing else
+about time. Metric widgets carry `updatedAt`, the connection's
+`lastSuccessAt` (`packages/contracts/src/index.ts:3047-3049`, `:3113-3115`);
+measure widgets carry `sourceHealth`, one entry per source connection with
+its status and `lastSuccessAt` (`packages/contracts/src/dashboard-data.ts:117-139`,
+built by `modelSourceHealth` in `apps/server/src/dashboards/data.ts:139`).
+The web footer words it as "updated 2 min ago · Source"
+(`apps/web/src/components/studio/widget-parts.tsx:56-75`). A widget is
+`stale` when the last success is older than three poll intervals, at least
+15 minutes (`apps/server/src/devices/dashboard.ts:123-127`).
+
+What a viewer cannot see:
+
+- **Which day the numbers cover.** A sync at 09:00 in Berlin has App Store
+  Connect sales up to the day before yesterday; at 21:30 it has yesterday.
+  "Updated 5 min ago" looks the same both times.
+- **When the next numbers come.** The publication rules live only in
+  connector code. App Store Connect's `latestReportDay()`
+  (`packages/connectors/src/app-store-connect/probes.ts:109-112`) expects
+  the Pacific Time day D from 12:00 PT on D+1, about 21:00 in Berlin.
+
+The cadence differs by kind of data, within one connector:
+
+| Connector         | Data                  | How it arrives                                                                 |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------ |
+| App Store Connect | Sales and proceeds    | Daily report per PT day, from about 12:00 PT the next day; last 3 days re-read |
+| App Store Connect | App Store analytics   | Daily instances; a day is complete two to three days later; 7 days re-read     |
+| App Store Connect | Reviews               | Continuously (Customer Support key)                                            |
+| App Store Connect | Listing ratings       | A snapshot per UTC day, taken at each sync                                     |
+| Google Play       | Installs, ratings     | Report files per package and month in Cloud Storage, days behind               |
+| Google Play       | Earnings              | Monthly files                                                                  |
+| Google Play       | Listing ratings       | A snapshot per UTC day, taken at each sync                                     |
+| Search Console    | Performance           | Final data two to three days behind (PT days); last 5 days re-read             |
+| Vercel            | Visitors, page views  | Counting live; today and yesterday re-read                                     |
+| Apple Ads         | Spend, taps, installs | Days of the ad account's own time zone; settles over a few days                |
+
+Syncs run on a fixed interval per connection: `poll_interval_seconds` on
+`connection_state`, copied from the manifest's `minRefreshIntervalSeconds`
+(`packages/connector-sdk/src/manifest.ts:308`): 6 h for App Store Connect,
+Google Play, Search Console and Apple Ads, 15 min for Vercel. The scheduler
+enqueues due connections and advances `next_due_at` by the interval
+(`apps/server/src/scheduler.ts:60-131`); a succeeded run sets
+`lastSuccessAt` and `nextDueAt = now + interval`
+(`apps/server/src/sync/engine.ts:1029-1047`); a failed run only counts
+`consecutiveFailures` and sets `authState` (`engine.ts:459-512`). Yesterday's
+App Store sales can therefore wait up to 6 h after Apple publishes them.
+The connection's cursor is opaque to the host and says nothing about
+coverage.
+
+`SyncResult` (`packages/connector-sdk/src/transport.ts:118-150`, SDK 0.2.12)
+has taken optional fields before (`reviews` in 0.2.8, `receivedDatasets` in
+0.2.12). tvOS decodes the device payload leniently
+(`apps/netrics-tv/NetricsKit/Sources/NetricsKit/ModelsV2.swift:47`), so new
+optional payload fields do not break released builds.
+
+## Decision
+
+### 1. Freshness streams in the manifest
+
+A **freshness stream** is a part of a connector's data that the provider
+publishes on one cadence. **SDK 0.2.13** adds the optional manifest field
+`freshnessStreams`:
+
+```ts
+freshnessStreams?: Array<{
+  key: string; // "sales"; unique in the manifest
+  name: string; // "Sales"; translatable like metric names (ADR 0016)
+  kind: "periodic" | "continuous";
+  timeZone?: string; // IANA zone of the provider's days; required for periodic
+  metrics?: string[]; // metric keys of this manifest
+  datasets?: string[]; // source dataset keys of this manifest
+}>;
+```
+
+- **periodic**: the provider publishes complete periods (a day, a month).
+  The stream has a last complete day and, usually, a time when the next
+  period is expected.
+- **continuous**: the provider changes the data at any time (reviews,
+  live visitor counts, rating snapshots). There is no "next period"; the
+  next check is the next sync.
+
+Validation: keys unique; every named metric and dataset exists; a metric or
+dataset belongs to at most one stream; a periodic stream has a valid
+`timeZone`, and a dataset in it that declares `reportingTimeZone` declares
+the same zone. Metrics and datasets in no stream have no freshness and
+behave as today. Membership is static: it never depends on credentials or
+configuration.
+
+The first streams (#703 confirms details against the provider's
+documentation and the connector code):
+
+| Connector         | Stream            | Kind       | Time zone               | Members                                          |
+| ----------------- | ----------------- | ---------- | ----------------------- | ------------------------------------------------ |
+| App Store Connect | `sales`           | periodic   | America/Los_Angeles     | sales metrics, `sales_rows`                      |
+| App Store Connect | `analytics`       | periodic   | America/Los_Angeles     | impressions, product page views, store downloads |
+| App Store Connect | `reviews`         | continuous | —                       | review metrics (and review text)                 |
+| App Store Connect | `listing_ratings` | continuous | —                       | `store_ratings`                                  |
+| Google Play       | `installs`        | periodic   | America/Los_Angeles     | `install_rows`                                   |
+| Google Play       | `earnings`        | periodic   | America/Los_Angeles     | `earning_rows`                                   |
+| Google Play       | `ratings`         | periodic   | America/Los_Angeles     | `rating_rows`                                    |
+| Google Play       | `listing_ratings` | continuous | —                       | `store_ratings`                                  |
+| Search Console    | `performance`     | periodic   | America/Los_Angeles     | all metrics                                      |
+| Vercel            | `traffic`         | continuous | —                       | all metrics                                      |
+| Apple Ads         | `ads`             | periodic   | per ad account (result) | all metrics                                      |
+
+Google Play's `report_status` dataset is bookkeeping and belongs to no
+stream. Apple Ads' manifest zone is a default; each ad account reports its
+own (section 2).
+
+### 2. What a done sync reports
+
+`SyncResult` gains an optional field, read from the **done** result only
+(as `receivedDatasets`; on a result with `done: false` it is ignored):
+
+```ts
+freshness?: Array<{
+  stream: string; // a declared stream key
+  resource?: string; // absent: the whole connection
+  dataThrough?: string; // YYYY-MM-DD, last complete day (periodic only)
+  timeZone?: string; // overrides the stream's zone for this entry
+  nextExpectedAt?: string; // ISO instant (UTC) the next period should be published
+}>;
+```
+
+- `dataThrough` is a **calendar date in the provider's reporting time
+  zone**, not an instant: the last day for which the stream's numbers are
+  complete as far as the provider publishes them. A day that is still
+  revised later (re-read days) counts once the provider has published it;
+  revisions are normal and not shown.
+- `nextExpectedAt` is when the period after `dataThrough` should be
+  published, by the connector's knowledge of the provider. It is reported
+  **even when it is already past**: a connector that finds yesterday's
+  report still missing at 14:00 PT reports `dataThrough` two days back and
+  `nextExpectedAt` 12:00 PT today. That is how the host knows the provider
+  is late. A connector that cannot estimate it (Search Console, Play
+  earnings until #703 finds a rule) leaves it out.
+- A **continuous** stream reports an entry with neither field: "this run
+  read it". Its freshness is the time of the run.
+- An entry means the run read that stream (and resource) completely. A
+  stream it did not read (no Customer Support key, analytics not enabled,
+  a resource whose read failed but did not fail the run) gets no entry.
+- Undeclared stream keys, `dataThrough` on a continuous stream, invalid
+  dates, zones or instants are contract violations, as an undeclared
+  dataset in `receivedDatasets` is. At most streams × (resources + 1)
+  entries, bounded like dataset pages.
+
+### 3. Granularity: connection or resource
+
+An entry without `resource` covers the whole connection; one with
+`resource` covers that resource (an app, a property, an ad account) and
+wins over the connection entry for it. A connector reports at the level
+the provider publishes at:
+
+- App Store Connect sales: one report per vendor for all apps, so one
+  connection entry. Analytics: per app, since each app has its own report
+  and some apps have none.
+- Google Play: per package. Search Console: per property. Apple Ads: per ad
+  account, with the account's `timeZone`.
+- Vercel and continuous streams in general: one connection entry.
+
+### 4. Storage
+
+A new tenant table `connection_freshness` (next free migration number):
+
+| Column             | Meaning                                                      |
+| ------------------ | ------------------------------------------------------------ |
+| `workspace_id`     | Tenant; RLS and explicit predicates as on `connection_state` |
+| `connection_id`    | Cascades on delete                                           |
+| `stream`           | Stream key                                                   |
+| `resource`         | Resource id, `''` for the connection entry                   |
+| `data_through`     | date, null for continuous streams                            |
+| `time_zone`        | IANA zone of `data_through`, null for continuous streams     |
+| `next_expected_at` | timestamptz, null when unknown or continuous                 |
+| `checked_at`       | The run that last reported this entry (its start time)       |
+| `advanced_at`      | When `data_through` last moved forward                       |
+
+Primary key `(connection_id, stream, resource)`; one row per entry, latest
+value wins. Rules:
+
+- Rows are written in the final ingest transaction of a **succeeded** run,
+  together with `lastSuccessAt` and the cursor, never without them.
+- A **failed** run writes nothing: the rows keep the last known coverage,
+  and the failure shows through the existing status (`outage`,
+  `auth_failed`, `stale`).
+- A **partial** run (a done result that omits a stream or resource)
+  leaves the omitted rows unchanged; their `checked_at` stays older, which
+  is what screens show.
+- **`data_through` never moves back.** A reported date earlier than the
+  stored one leaves `data_through`, `time_zone` and `next_expected_at` as
+  stored and only updates `checked_at` (a provider withdrawing a day, or a
+  connector bug, does not make screens claim less). A later date updates
+  all fields and `advanced_at`.
+- A backfill's done result is handled the same way.
+- Rows of streams the manifest no longer declares and of resources outside
+  the connection's selection are ignored on read and removed with the
+  connection. The table holds no personal data and needs no retention of
+  its own.
+
+### 5. Sync timing
+
+`poll_interval_seconds` stays the longest gap between syncs. Freshness can
+only make the next sync earlier, never later. After a succeeded run the
+engine computes `nextDueAt` from the stored rows of the connection's
+periodic streams (selected resources only), instead of `now + interval`:
+
+```
+grace = 10 min, floor = 15 min
+for each row with next_expected_at:
+  if next_expected_at + grace > now:   candidate = next_expected_at + grace
+  else (provider late, lateness = now − next_expected_at):
+    if lateness < interval:            candidate = now + clamp(lateness / 2, floor, 1 h)
+    else:                              no candidate (back to the interval)
+nextDueAt = max(now + floor, min(now + interval, min(candidates)))
+```
+
+- **Grace** covers the spread of a provider's publication; a connector that
+  knows the spread is wide reports a later `nextExpectedAt` instead.
+- **Floor**: never two syncs of a connection less than 15 minutes apart
+  through freshness (a manual sync still can).
+- **Late provider**: the checks thin out with the lateness (15 min, then
+  every half of the lateness, at most hourly), and stop once the provider
+  is a full interval late, so a wrong estimate costs at most a few extra
+  syncs a day. For App Store Connect that is a handful of extra report
+  reads, far inside the hourly limit (ADR 0014).
+- **Failures**: the rule applies only after a succeeded run. A failed run
+  leaves `next_due_at` where the scheduler put it (now + interval) and the
+  job queue retries as today; `consecutiveFailures` and the `auth_failed`
+  and `needs_reauthorization` skips in the scheduler are unchanged.
+- The scheduler keeps reading only `connection_state`
+  (`scheduler.ts:74-77`): the engine writes the computed `next_due_at`
+  there, so the scheduler role needs no new grant.
+- A sync reads every stream; there is no per-stream sync. An early sync
+  for sales also refreshes reviews.
+
+### 6. Which streams a widget depends on
+
+The host resolves a widget's **(connection, stream, resources)** set when
+it computes the widget's data:
+
+- **Metric widgets** (metric, gauge, line and the other connector metric
+  types): the stream that lists the widget's metric key in its
+  connector's manifest, on the widget's connection; resources from the
+  widget's resource scope or the slide scope (#707), else every selected
+  resource.
+- **Measure widgets**: the model's sources (ADR 0022). A source dataset
+  binding resolves to `data_datasets (connection_id, key)` and so to the
+  stream listing that dataset key; an `observation:<connection>:<metric>`
+  binding resolves through the metric definition to its key and stream.
+  `resources:` bindings (names only) and manual datasets have no stream.
+  Resources come from the slide scope when it names one, else every
+  selected resource. This extends `modelSourceHealth`, which already walks
+  the same bindings.
+- For each (connection, stream) the resource rows are used, and the
+  connection row for resources without one.
+
+A widget whose data depends on no stream with stored rows has no
+freshness, and shows `updatedAt` as today.
+
+### 7. Payload
+
+One optional object, `freshness`, on the data of every data widget: in
+`deviceWidgetDataShape` (device schemas 2 and 3; schema 1 tiles unchanged)
+and in `dashboardWidgetDataSchema` (measure widgets, web and device):
+
+```ts
+freshness?: {
+  kind: "periodic" | "continuous";
+  stream: string; // localized stream name, for lists that name it
+  fetchedAt: string; // instant: the oldest checked_at of the rows used
+  dataThrough?: string; // YYYY-MM-DD (periodic)
+  timeZone?: string; // zone of dataThrough (periodic)
+  nextExpectedAt?: string; // instant (periodic, when known)
+  late?: true; // the provider missed nextExpectedAt (below)
+  nextCheckAt?: string; // the connection's next_due_at
+};
+```
+
+When a widget depends on several rows, the summary is the **least fresh**
+one: among periodic rows the earliest `dataThrough` (the numbers are
+complete only up to it), ties broken by the earliest `nextExpectedAt`;
+`late` if any row with that date is late. Continuous rows count only when
+there is no periodic row. `fetchedAt` is the oldest `checked_at` of all
+rows used; `nextCheckAt` the earliest `next_due_at` of their connections.
+
+**Late** is decided from stored values, not the clock:
+`next_expected_at + grace < checked_at`, i.e. a sync after the expected
+time still did not find the period. The payload stays deterministic, so its
+version hash (the ETag) changes only when data or state change, and
+clients format every relative time ("10 min ago") themselves from the
+instants, as they do with `updatedAt`. `updatedAt` and `status` stay as
+they are for clients that do not know `freshness`.
+
+### 8. On screen
+
+The freshness line replaces the "updated … · Source" footer candidates
+(ADR 0018 section 5) when `freshness` is present, longest candidate first;
+narrow widgets drop parts from the end. English and German (ADR 0016):
+
+| Case                    | English                                                         | German                                                                   |
+| ----------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Periodic, next known    | Up to Nov 15 · fetched 10 min ago · next ~21:00                 | Bis 15. Nov. · abgerufen vor 10 Min. · nächste ~21:00                    |
+| Periodic, next unknown  | Up to Nov 13 · fetched 10 min ago                               | Bis 13. Nov. · abgerufen vor 10 Min.                                     |
+| Periodic, provider late | Up to Nov 14 · Nov 15 not published yet · checking again ~15:10 | Bis 14. Nov. · 15. Nov. noch nicht veröffentlicht · erneut prüfen ~15:10 |
+| Continuous              | Checked 10 min ago · next check ~14:30                          | Geprüft vor 10 Min. · nächste Prüfung ~14:30                             |
+
+Lists that cover several streams (a connection's page, a detail view)
+prefix the stream name: "Sales up to Nov 15 · next ~21:00", "Reviews
+checked 10 min ago · next check ~14:30". Widgets do not repeat it; their
+label already names the metric.
+
+Precedence, highest first:
+
+1. **Connection failing or stale** (`auth_failed`, `outage`, `stale`):
+   the existing warning notice. The line keeps only "Up to Nov 14" and
+   drops "next", since netrics may not fetch it.
+2. `backfilling` and `no_data`: as today.
+3. **Provider late**: the late wording in the normal muted footer
+   style. It is not a data warning: netrics works, the provider has not
+   published yet. No warning colour, no blinking dot, `status` stays `ok`.
+   "Checking again" is `nextCheckAt`.
+4. **Normal**: periodic or continuous wording.
+
+Formatting:
+
+- `dataThrough` is a date label in the provider's zone and is shown as
+  that date, never converted ("Nov 15" stays Nov 15 in Berlin). The zone is
+  not shown on widgets; detail views may add it ("Nov 15, Pacific Time").
+- `nextExpectedAt` and `nextCheckAt` are instants shown in the **viewer's
+  local time**: the browser's zone on the web, the device's zone on
+  netrics TV, not the workspace zone. Time only when it is today locally,
+  "tomorrow ~09:00" or the weekday within a week, a date beyond. 12- or
+  24-hour clock and the "~" follow the locale. An expected time already
+  past and not late reads "next any minute" / "nächste in Kürze".
+- `fetchedAt` is relative under a day ("10 min ago"), then a date, the
+  same rule as `updatedAt` today.
+- The strings live in the client catalogs (web messages, tvOS
+  localizations); the payload carries no worded freshness text.
+
+### 9. Connectors on older SDKs
+
+A connector that declares no streams or reports no `freshness` (any
+connector built for SDK 0.2.12 or earlier, and external connectors that
+have not adopted it) has no rows. Its widgets get no `freshness` object and
+show `updatedAt` as today; its syncs keep the fixed interval. The host does
+not guess coverage from stored observations: a missing day and a day
+without activity look the same there. A connector that declares streams
+but reports nothing for one has the same fallback for that stream.
+Connectors require `^0.2.13` only once they use the field; the host
+accepts manifests without it.
+
+## Alternatives considered
+
+- **Host-side publication rules per connector** (a table of "Apple: noon
+  PT"): rejected. The rules belong with the connector that knows its
+  provider, and must change with it.
+- **Derive coverage from the newest observation date**: rejected. Zero
+  days, missing days and partial days cannot be told apart.
+- **Per-metric freshness instead of streams**: rejected. Dozens of keys
+  with identical cadence; streams match how providers publish.
+- **`dataThrough` as an instant**: rejected. Providers publish calendar
+  days in their own zone; converting a day to the viewer's zone shifts it.
+- **Per-stream sync jobs**: rejected for now. One sync already reads
+  everything within the budget; splitting jobs changes cursors and
+  continuation (ADR 0023, 0024).
+- **"Late" as a stale-style warning**: rejected. The viewer cannot act on
+  it and netrics is not at fault.
+
+## Consequences
+
+- Every periodic number on a screen says which provider day it covers and
+  when the next one is due; App Store sales are fetched within about
+  10–25 minutes of Apple's usual publication time instead of up to 6 h.
+- More syncs per day for daily providers: one or two early syncs per
+  periodic stream and day, a few more on late days. Within provider limits
+  for the current connectors; a connector whose sync is expensive may
+  report `nextExpectedAt` less precisely.
+- The quality of "next" depends on connector estimates. A wrong estimate
+  shows "not published yet" until the period arrives, and costs at most a
+  few hourly checks.
+- One new tenant table, an SDK minor (0.2.13), an additive payload field.
+  Released tvOS builds ignore it; schema 1 tiles are unchanged.
