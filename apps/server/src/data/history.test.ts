@@ -372,6 +372,332 @@ describe("published definition history", () => {
     ]);
   });
 
+  it("tells whether a draft differs from its live release by content, not version (#697)", async () => {
+    const source = await service.saveManual(actor, {
+      definition: definition("unpublished-numbers"),
+      records: [{ values: { id: "a", amount: "1" } }],
+    });
+    const listed = async (id: string) =>
+      (await service.listPreparations(actor)).preparations.find(
+        (p) => p.id === id,
+      )!.hasUnpublishedChanges;
+    const g1 = graph(source.datasetId, "2"),
+      g2 = graph(source.datasetId, "5");
+    let prep = (
+      await service.savePreparation(actor, { name: "Marked", graph: g1 })
+    ).preparation;
+    // Never published: nothing to differ from.
+    expect(prep.hasUnpublishedChanges).toBe(false);
+    prep = (await service.publishPreparation(actor, prep.id, prep.version))
+      .preparation;
+    expect(prep.hasUnpublishedChanges).toBe(false);
+    const save = async (
+      input: { name?: string; graph: PreparationGraph; adopt?: boolean },
+      expected: boolean,
+    ) => {
+      prep = (
+        await service.savePreparation(
+          actor,
+          {
+            name: input.name ?? prep.name,
+            graph: input.graph,
+            version: prep.version,
+            ...(input.adopt ? { adoptLatestInputs: true } : {}),
+          },
+          prep.id,
+        )
+      ).preparation;
+      expect(prep.hasUnpublishedChanges).toBe(expected);
+      expect(await listed(prep.id)).toBe(expected);
+      expect(
+        (await service.getPreparation(actor, prep.id)).preparation
+          .hasUnpublishedChanges,
+      ).toBe(expected);
+    };
+    // A rename is not part of a release; the version still moves.
+    await save({ name: "Renamed", graph: g1 }, false);
+    expect(prep).toMatchObject({ version: 2, publishedVersion: 1 });
+    await save({ graph: g2 }, true);
+    // Saved back to the released graph.
+    await save({ graph: g1 }, false);
+    // Restoring the live release reads its inputs: equal.
+    prep = (
+      await service.restorePreparation(actor, prep.id, {
+        version: prep.version,
+        publishedVersion: 1,
+      })
+    ).preparation;
+    expect(prep).toMatchObject({ restoredFromVersion: 1 });
+    expect(prep.hasUnpublishedChanges).toBe(false);
+    // Published while restored: the release keeps reading v1's inputs.
+    await save({ graph: g2 }, true);
+    prep = (await service.publishPreparation(actor, prep.id, prep.version))
+      .preparation;
+    expect(prep.hasUnpublishedChanges).toBe(false);
+    await save({ name: "Renamed again", graph: g2 }, false);
+    // Its only input is a source, which no release pins: the latest inputs
+    // are the same.
+    await save({ graph: g2, adopt: true }, false);
+
+    // A model reading the preparation pins its published version.
+    const semantic = modelDefinition(`prepared:${prep.id}:output`);
+    let model = (
+      await service.saveModel(actor, {
+        name: "Marked model",
+        definition: semantic,
+      })
+    ).model;
+    model = (await service.publishModel(actor, model.id, model.version)).model;
+    const modelMark = async () => {
+      const listedModel = (await service.listModels(actor)).models.find(
+        (m) => m.id === model.id,
+      )!;
+      const got = (await service.getModel(actor, model.id)).model;
+      expect(got.hasUnpublishedChanges).toBe(listedModel.hasUnpublishedChanges);
+      return listedModel.hasUnpublishedChanges;
+    };
+    const saveModel = async (
+      definition: SemanticModelDefinition,
+      expected: boolean,
+      adoptLatestInputs = false,
+    ) => {
+      model = (
+        await service.saveModel(
+          actor,
+          {
+            name: "Renamed model",
+            definition,
+            version: model.version,
+            ...(adoptLatestInputs ? { adoptLatestInputs } : {}),
+          },
+          model.id,
+        )
+      ).model;
+      expect(model.hasUnpublishedChanges).toBe(expected);
+      expect(await modelMark()).toBe(expected);
+    };
+    expect(model.hasUnpublishedChanges).toBe(false);
+    await saveModel(semantic, false);
+    const changed = modelDefinition(`prepared:${prep.id}:output`);
+    changed.measures[0]!.name = "Grand total";
+    await saveModel(changed, true);
+    await saveModel(semantic, false);
+    expect(model).toMatchObject({ version: 4, publishedVersion: 1 });
+
+    // The preparation it reads is published again: the live release still
+    // reads the old version, so the model has unpublished changes, before
+    // and after a save that changes nothing (publishing would pin the new
+    // version).
+    prep = (await service.publishPreparation(actor, prep.id, prep.version))
+      .preparation;
+    expect(await modelMark()).toBe(true);
+    await saveModel(semantic, true);
+    // Restored from its release, it reads that release's pins again.
+    model = (
+      await service.restoreModel(actor, model.id, {
+        version: model.version,
+        publishedVersion: 1,
+      })
+    ).model;
+    expect(model.hasUnpublishedChanges).toBe(false);
+    await saveModel(semantic, false);
+    await saveModel(semantic, true, true);
+    // Published on the latest inputs: equal again.
+    model = (await service.publishModel(actor, model.id, model.version)).model;
+    expect(model.hasUnpublishedChanges).toBe(false);
+    await saveModel(semantic, false);
+
+    // Only sources count as inputs: names that look like a prepared source,
+    // a real one or a malformed one, never do.
+    const lookalike = `prepared:${prep.id}:output`,
+      malformed = `prepared:${"-".repeat(36)}:output`;
+    const named = modelDefinition(source.datasetId, "amount");
+    named.measures[0]!.name = lookalike;
+    named.measures.push({
+      ...named.measures[0]!,
+      id: "other",
+      name: malformed,
+    });
+    let reader = (
+      await service.saveModel(actor, { name: "Lookalike", definition: named })
+    ).model;
+    reader = (await service.publishModel(actor, reader.id, reader.version))
+      .model;
+    const namedGraph = graph(source.datasetId, "7");
+    namedGraph.nodes[1] = { ...namedGraph.nodes[1]!, name: lookalike } as never;
+    let other = (
+      await service.savePreparation(actor, {
+        name: "Lookalike preparation",
+        graph: namedGraph,
+      })
+    ).preparation;
+    other = (await service.publishPreparation(actor, other.id, other.version))
+      .preparation;
+    // The preparation they name is published again.
+    await save({ graph: g1 }, true);
+    prep = (await service.publishPreparation(actor, prep.id, prep.version))
+      .preparation;
+    reader = (
+      await service.saveModel(
+        actor,
+        { name: reader.name, definition: named, version: reader.version },
+        reader.id,
+      )
+    ).model;
+    expect(reader.hasUnpublishedChanges).toBe(false);
+    other = (
+      await service.savePreparation(
+        actor,
+        { name: other.name, graph: namedGraph, version: other.version },
+        other.id,
+      )
+    ).preparation;
+    expect(other.hasUnpublishedChanges).toBe(false);
+    expect(
+      (await service.listModels(actor)).models.find((m) => m.id === reader.id)!
+        .hasUnpublishedChanges,
+    ).toBe(false);
+  });
+
+  it("resolves a draft's inputs as publishing does: nested pins and any id case (#697)", async () => {
+    const source = await service.saveManual(actor, {
+      definition: definition("nested-pin-numbers"),
+      records: [{ values: { id: "a", amount: "1" } }],
+    });
+    let inner = (
+      await service.savePreparation(actor, {
+        name: "Nested inner",
+        graph: graph(source.datasetId, "2"),
+      })
+    ).preparation;
+    inner = (await service.publishPreparation(actor, inner.id, inner.version))
+      .preparation;
+    const outer = (
+      await service.savePreparation(actor, {
+        name: "Nested outer",
+        graph: graph(`prepared:${inner.id}:output`, "3"),
+      })
+    ).preparation;
+    await service.publishPreparation(actor, outer.id, outer.version);
+    // The inner preparation moves on; the outer one still pins v1 of it.
+    inner = (
+      await service.savePreparation(
+        actor,
+        {
+          name: inner.name,
+          graph: graph(source.datasetId, "4"),
+          version: inner.version,
+        },
+        inner.id,
+      )
+    ).preparation;
+    await service.publishPreparation(actor, inner.id, inner.version);
+    const mark = async (id: string) =>
+      (await service.listModels(actor)).models.find((m) => m.id === id)!
+        .hasUnpublishedChanges;
+
+    // A model reading both: the outer one's pin decides the inner version,
+    // for publishing and for the mark alike.
+    const both: SemanticModelDefinition = {
+      ...modelDefinition(`prepared:${outer.id}:output`, "scaled_again"),
+      datasets: [`prepared:${outer.id}:output`, `prepared:${inner.id}:output`],
+    };
+    let model = (
+      await service.saveModel(actor, { name: "Both", definition: both })
+    ).model;
+    model = (await service.publishModel(actor, model.id, model.version)).model;
+    expect(model.hasUnpublishedChanges).toBe(false);
+    expect(await mark(model.id)).toBe(false);
+
+    // A source named with an uppercase id reads the same preparation.
+    const upper = `prepared:${outer.id.toUpperCase()}:output`;
+    let shouting = (
+      await service.saveModel(actor, {
+        name: "Uppercase",
+        definition: modelDefinition(upper, "scaled_again"),
+      })
+    ).model;
+    shouting = (
+      await service.publishModel(actor, shouting.id, shouting.version)
+    ).model;
+    expect(shouting.hasUnpublishedChanges).toBe(false);
+    expect(await mark(shouting.id)).toBe(false);
+
+    // Definition and inputs are reported apart, so editors can combine them
+    // with their own comparison.
+    const flags = (m: {
+      hasUnpublishedChanges: boolean;
+      inputsDiffer: boolean;
+    }) => [m.hasUnpublishedChanges, m.inputsDiffer];
+    const renamed = structuredClone(both);
+    renamed.measures[0]!.name = "Renamed total";
+    model = (
+      await service.saveModel(
+        actor,
+        { name: model.name, definition: renamed, version: model.version },
+        model.id,
+      )
+    ).model;
+    expect(flags(model)).toEqual([true, false]);
+    // The outer preparation is published again: the model's inputs differ,
+    // also once its definition is saved back to the released one.
+    const current = (
+      await service.savePreparation(
+        actor,
+        {
+          name: outer.name,
+          graph: graph(`prepared:${inner.id}:output`, "5"),
+          version: (await service.getPreparation(actor, outer.id)).preparation
+            .version,
+        },
+        outer.id,
+      )
+    ).preparation;
+    await service.publishPreparation(actor, current.id, current.version);
+    expect(flags((await service.getModel(actor, model.id)).model)).toEqual([
+      true,
+      true,
+    ]);
+    model = (
+      await service.saveModel(
+        actor,
+        { name: model.name, definition: both, version: model.version },
+        model.id,
+      )
+    ).model;
+    expect(flags(model)).toEqual([true, true]);
+  });
+
+  it("resolves many independent inputs as the loader does, by depth (#697)", async () => {
+    const source = await service.saveManual(actor, {
+      definition: definition("many-inputs-numbers"),
+      records: [{ values: { id: "a", amount: "1" } }],
+    });
+    const outputs: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      const prep = (
+        await service.savePreparation(actor, {
+          name: `Many ${i}`,
+          graph: graph(source.datasetId, String(i + 1)),
+        })
+      ).preparation;
+      await service.publishPreparation(actor, prep.id, prep.version);
+      outputs.push(`prepared:${prep.id}:output`);
+    }
+    const wide: SemanticModelDefinition = {
+      ...modelDefinition(outputs[0]!),
+      datasets: outputs,
+    };
+    let model = (
+      await service.saveModel(actor, { name: "Wide", definition: wide })
+    ).model;
+    model = (await service.publishModel(actor, model.id, model.version)).model;
+    expect(model).toMatchObject({
+      hasUnpublishedChanges: false,
+      inputsDiffer: false,
+    });
+  });
+
   it("publishes a published preparation again with the current versions of its inputs, and changes nothing when they are current", async () => {
     const source = await service.saveManual(actor, {
       definition: definition("refresh-numbers"),

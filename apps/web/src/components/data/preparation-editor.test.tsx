@@ -55,6 +55,8 @@ describe("PreparationEditor", () => {
           projectId: null,
           version: 1,
           publishedVersion: null,
+          hasUnpublishedChanges: false,
+          inputsDiffer: false,
           updatedAt: "2026-11-01T00:00:00.000Z",
         }}
         onSaved={() => {}}
@@ -72,13 +74,15 @@ describe("PreparationEditor", () => {
     expect(html).toContain("Preparing preview…");
   });
   it.each([
-    ["en", 3, 3, "Published v3</p>"],
-    ["en", 4, 3, "Published v3 · Unpublished changes</p>"],
-    ["de", 4, 3, " · Unveröffentlichte Änderungen</p>"],
-    ["en", 2, null, "Not published</p>"],
+    ["en", 3, 3, false, "Published v3</p>"],
+    ["en", 4, 3, true, "Published v3 · Unpublished changes</p>"],
+    ["de", 4, 3, true, " · Unveröffentlichte Änderungen</p>"],
+    // Saved, but equal to the release by content (#697).
+    ["en", 4, 3, false, "Published v3</p>"],
+    ["en", 2, null, false, "Not published</p>"],
   ] as const)(
-    "marks a saved draft ahead of its release as unpublished (%s, v%i of v%s) (#632)",
-    (locale, version, publishedVersion, meta) => {
+    "marks a saved draft that differs from its release as unpublished (%s, v%i of v%s, %s) (#632, #697)",
+    (locale, version, publishedVersion, hasUnpublishedChanges, meta) => {
       const html = renderI18n(
         <PreparationEditor
           workspaceId="workspace"
@@ -90,6 +94,8 @@ describe("PreparationEditor", () => {
             projectId: null,
             version,
             publishedVersion,
+            hasUnpublishedChanges,
+            inputsDiffer: false,
             updatedAt: "2026-11-01T00:00:00.000Z",
           }}
           onSaved={() => {}}

@@ -453,6 +453,8 @@ export const dataEn = {
     dimensionLabel: "Display name column (optional)",
     dimensionLabelNone: "Use the value itself",
     dimensionName: "Dimension name",
+    dimensionNamePlaceholder: "e.g. Country",
+    unnamedDimension: "Unnamed dimension {number}",
     requiredScope: "Keep these dimensions separate",
     requiredScopeHelp:
       "This measure requires grouping by each chosen dimension, or filtering it to one value. Useful for ratings, snapshots and other values that cannot be combined.",

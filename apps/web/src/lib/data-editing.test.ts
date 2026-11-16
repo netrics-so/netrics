@@ -5,9 +5,9 @@ import {
   dataErrorLocation,
   parseEnteredTable,
   enteredValue,
+  graphSources,
   hasUnpublishedChanges,
   preparationAt,
-  releaseState,
 } from "./data-editing";
 import { previewPreparation } from "./data-api";
 import { DataProcessingError, type PreparationGraph } from "@netrics/domain";
@@ -287,6 +287,114 @@ describe("unpublished changes (#632)", () => {
       }),
     ).toBe(true);
   });
+  it("takes the server's word on the saved draft without unsaved edits (#697)", () => {
+    const known = {
+      version: 4,
+      publishedVersion: 3,
+      published: "A",
+      current: "A",
+      dirty: false,
+    };
+    // Same definition, but an input it pins was published again.
+    expect(
+      hasUnpublishedChanges({
+        ...known,
+        savedDiffers: true,
+        inputsDiffer: true,
+      }),
+    ).toBe(true);
+    expect(
+      hasUnpublishedChanges({
+        ...known,
+        savedDiffers: false,
+        inputsDiffer: false,
+      }),
+    ).toBe(false);
+  });
+  it("keeps differing inputs through unsaved edits, also undone ones (#697)", () => {
+    // Published as "A"; an input was published again since.
+    const republished = {
+      version: 3,
+      publishedVersion: 3,
+      savedDiffers: true,
+      inputsDiffer: true,
+      saved: "A",
+      published: "A",
+      dirty: true,
+    };
+    // A name-only edit: same definition.
+    expect(hasUnpublishedChanges({ ...republished, current: "A" })).toBe(true);
+    // A definition edit saved, then undone back to the published one.
+    expect(
+      hasUnpublishedChanges({
+        ...republished,
+        version: 4,
+        saved: "B",
+        current: "A",
+      }),
+    ).toBe(true);
+    // Without an input difference, undoing back to it clears the mark.
+    expect(
+      hasUnpublishedChanges({
+        ...republished,
+        inputsDiffer: false,
+        version: 4,
+        saved: "B",
+        current: "A",
+      }),
+    ).toBe(false);
+  });
+  it("trusts differing inputs only while the sources are the saved ones (#697)", () => {
+    // Published reading source A; switched to prepared source B and saved
+    // (the inputs differ), then undone back to A without saving.
+    const switched = {
+      version: 4,
+      publishedVersion: 3,
+      savedDiffers: true,
+      inputsDiffer: true,
+      saved: "reads B",
+      savedSources: graphSources({
+        nodes: [{ id: "s", type: "source", datasetId: "prepared:b:out" }],
+      }),
+      published: "reads A",
+      dirty: true,
+    };
+    const readsA = graphSources({
+      nodes: [{ id: "s", type: "source", datasetId: "a" }],
+    });
+    expect(
+      hasUnpublishedChanges({
+        ...switched,
+        current: "reads A",
+        currentSources: readsA,
+      }),
+    ).toBe(false);
+    // Still reading B, with another edit: the inputs still differ.
+    expect(
+      hasUnpublishedChanges({
+        ...switched,
+        current: "reads A",
+        currentSources: switched.savedSources,
+      }),
+    ).toBe(true);
+  });
+  it("takes a saved draft the server confirms equal as the published one (#697)", () => {
+    // Opened on a changed draft (published unknown), saved back to the
+    // released content: the server says equal.
+    const confirmed = {
+      version: 5,
+      publishedVersion: 3,
+      savedDiffers: false,
+      inputsDiffer: false,
+      saved: "A",
+      published: undefined,
+      dirty: true,
+    };
+    // A name-only edit keeps the definition: unmarked.
+    expect(hasUnpublishedChanges({ ...confirmed, current: "A" })).toBe(false);
+    // A definition edit is marked.
+    expect(hasUnpublishedChanges({ ...confirmed, current: "B" })).toBe(true);
+  });
   it("never marks an item that was never published", () => {
     expect(
       hasUnpublishedChanges({
@@ -298,28 +406,30 @@ describe("unpublished changes (#632)", () => {
       }),
     ).toBe(false);
   });
-  it("counts a switch to the latest inputs as a change from a restored release", () => {
-    // Published from a restore of v1: it reads v1's pinned inputs. "Use
-    // latest published inputs" keeps the definition and drops the pin.
-    const published = releaseState("A", 1);
+  it("counts a switch to other inputs when the server reports it (#697)", () => {
+    // Published from a restore of v1; "Use latest published inputs" keeps
+    // the definition. Only the server knows whether the inputs now differ.
+    const adopted = {
+      version: 3,
+      publishedVersion: 2,
+      published: "A",
+      current: "A",
+      saved: "A",
+      dirty: false,
+    };
     expect(
       hasUnpublishedChanges({
-        version: 3,
-        publishedVersion: 2,
-        published,
-        current: releaseState("A", null),
-        dirty: false,
+        ...adopted,
+        savedDiffers: true,
+        inputsDiffer: true,
       }),
     ).toBe(true);
     expect(
       hasUnpublishedChanges({
-        version: 3,
-        publishedVersion: 2,
-        published,
-        current: releaseState("A", 1),
-        dirty: false,
+        ...adopted,
+        savedDiffers: false,
+        inputsDiffer: false,
       }),
     ).toBe(false);
-    expect(releaseState("A", undefined)).toBe(releaseState("A", null));
   });
 });

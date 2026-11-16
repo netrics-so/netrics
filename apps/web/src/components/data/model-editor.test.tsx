@@ -14,8 +14,10 @@ import {
   ModelEditor,
   modelEditorState,
   modelImpact,
+  dimensionLabels,
   measureLabels,
   newAggregateMeasure,
+  newDimension,
   PreviewScopeHint,
   renameMeasure,
 } from "./model-editor";
@@ -100,6 +102,8 @@ const draft = (measures: SemanticModelDefinition["measures"]): ModelDraft => ({
   projectId: null,
   version: 1,
   publishedVersion: null,
+  hasUnpublishedChanges: false,
+  inputsDiffer: false,
   updatedAt: "2026-11-01T00:00:00.000Z",
 });
 const render = (
@@ -724,6 +728,59 @@ describe("model editor preview scope", () => {
   });
 });
 
+describe("model editor new dimensions (#698)", () => {
+  const withDimensions = (
+    dimensions: SemanticModelDefinition["dimensions"],
+  ): ModelDraft => ({
+    ...draft([revenue]),
+    definition: { ...definition([revenue]), dimensions },
+  });
+  const renderDimensions = (
+    dimensions: SemanticModelDefinition["dimensions"],
+    locale: "en" | "de" = "en",
+  ) =>
+    renderI18n(
+      <ModelEditor
+        workspaceId="workspace"
+        sources={[source]}
+        initial={withDimensions(dimensions)}
+        onSaved={() => {}}
+        onClose={() => {}}
+        onDirty={() => {}}
+      />,
+      locale,
+    );
+  it("starts a new dimension with an empty name and a placeholder, en and de", () => {
+    const added = newDimension("d1", "sales");
+    expect(added).toMatchObject({ name: "", datasetId: "sales", fieldId: "" });
+    const dimensions = [{ ...added, fieldId: "app" }];
+    const en = renderDimensions(dimensions);
+    expect(en).toMatch(/<input[^>]*placeholder="e.g. Country"[^>]*value=""/);
+    expect(en).not.toContain("Dimension name 1");
+    // The preview's grouping names it until it has a name.
+    expect(en).toContain("Unnamed dimension 1");
+    const de = renderDimensions(dimensions, "de");
+    expect(de).toMatch(/<input[^>]*placeholder="z. B. Land"[^>]*value=""/);
+    expect(de).not.toContain("Dimensionsname 1");
+    expect(de).toContain("Unbenannte Dimension 1");
+  });
+  it("numbers dimensions that have no name yet", () => {
+    const labels = dimensionLabels(
+      [
+        newDimension("a", "sales"),
+        { id: "b", name: "Country", datasetId: "sales", fieldId: "app" },
+        { ...newDimension("c", "sales"), name: "  " },
+      ],
+      (number) => `Unnamed dimension ${number}`,
+    );
+    expect([...labels.values()]).toEqual([
+      "Unnamed dimension 1",
+      "Country",
+      "Unnamed dimension 2",
+    ]);
+  });
+});
+
 describe("model editor new measures and aggregate columns (#631)", () => {
   const counted = {
     id: "orders",
@@ -827,12 +884,22 @@ describe("model editor new measures and aggregate columns (#631)", () => {
 });
 
 describe("model editor unpublished mark (#632)", () => {
-  const open = (version: number, publishedVersion: number | null) =>
+  const open = (
+    version: number,
+    publishedVersion: number | null,
+    hasUnpublishedChanges = version !== publishedVersion && !!publishedVersion,
+  ) =>
     renderI18n(
       <ModelEditor
         workspaceId="workspace"
         sources={[source]}
-        initial={{ ...draft([revenue]), version, publishedVersion }}
+        initial={{
+          ...draft([revenue]),
+          version,
+          publishedVersion,
+          hasUnpublishedChanges,
+          inputsDiffer: false,
+        }}
         onSaved={() => {}}
         onClose={() => {}}
         onDirty={() => {}}
@@ -842,5 +909,9 @@ describe("model editor unpublished mark (#632)", () => {
     expect(open(4, 3)).toContain("Unpublished changes");
     expect(open(3, 3)).not.toContain("Unpublished changes");
     expect(open(2, null)).not.toContain("Unpublished changes");
+  });
+  it("trusts the server on a saved draft equal to its release (#697)", () => {
+    expect(open(4, 3, false)).not.toContain("Unpublished changes");
+    expect(open(4, 3, true)).toContain("Unpublished changes");
   });
 });

@@ -458,6 +458,8 @@ export const dataDe: Catalog<typeof dataEn> = {
     dimensionLabel: "Spalte für Anzeigenamen (optional)",
     dimensionLabelNone: "Den Wert selbst anzeigen",
     dimensionName: "Dimensionsname",
+    dimensionNamePlaceholder: "z. B. Land",
+    unnamedDimension: "Unbenannte Dimension {number}",
     requiredScope: "Diese Dimensionen getrennt halten",
     requiredScopeHelp:
       "Diese Kennzahl erfordert eine Gruppierung nach jeder gewählten Dimension oder einen Filter auf genau einen Wert. Geeignet für Bewertungen, Momentaufnahmen und andere nicht kombinierbare Werte.",

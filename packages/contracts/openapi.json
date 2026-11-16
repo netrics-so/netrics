@@ -36409,6 +36409,12 @@
                               }
                             ]
                           },
+                          "hasUnpublishedChanges": {
+                            "type": "boolean"
+                          },
+                          "inputsDiffer": {
+                            "type": "boolean"
+                          },
                           "updatedAt": {
                             "type": "string",
                             "format": "date-time",
@@ -36422,6 +36428,8 @@
                           "projectId",
                           "version",
                           "publishedVersion",
+                          "hasUnpublishedChanges",
+                          "inputsDiffer",
                           "updatedAt"
                         ],
                         "additionalProperties": false
@@ -37840,6 +37848,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -37853,6 +37867,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -39606,6 +39622,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -39619,6 +39641,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -41044,6 +41068,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -41057,6 +41087,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -42211,6 +42243,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -42224,6 +42262,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -43093,6 +43133,12 @@
                               }
                             ]
                           },
+                          "hasUnpublishedChanges": {
+                            "type": "boolean"
+                          },
+                          "inputsDiffer": {
+                            "type": "boolean"
+                          },
                           "updatedAt": {
                             "type": "string",
                             "format": "date-time",
@@ -43106,6 +43152,8 @@
                           "projectId",
                           "version",
                           "publishedVersion",
+                          "hasUnpublishedChanges",
+                          "inputsDiffer",
                           "updatedAt"
                         ],
                         "additionalProperties": false
@@ -44530,6 +44578,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -44543,6 +44597,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -46514,6 +46570,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -46527,6 +46589,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -47958,6 +48022,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -47971,6 +48041,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -49128,6 +49200,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -49141,6 +49219,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -53110,6 +53190,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -53123,6 +53209,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -53991,6 +54079,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -54004,6 +54098,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -56036,6 +56132,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -56049,6 +56151,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false
@@ -56920,6 +57024,12 @@
                             }
                           ]
                         },
+                        "hasUnpublishedChanges": {
+                          "type": "boolean"
+                        },
+                        "inputsDiffer": {
+                          "type": "boolean"
+                        },
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -56933,6 +57043,8 @@
                         "projectId",
                         "version",
                         "publishedVersion",
+                        "hasUnpublishedChanges",
+                        "inputsDiffer",
                         "updatedAt"
                       ],
                       "additionalProperties": false

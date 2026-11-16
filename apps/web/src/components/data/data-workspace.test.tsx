@@ -57,6 +57,8 @@ describe("data lists follow the active project (#573)", () => {
       projectId: "00000000-0000-4000-8000-0000000000bb",
       version: 1,
       publishedVersion: null,
+      hasUnpublishedChanges: false,
+      inputsDiffer: false,
       updatedAt: "2026-11-14T00:00:00.000Z",
     };
     const html = renderI18n(
@@ -133,6 +135,8 @@ describe("store-template updates in data settings (11E)", () => {
     projectId: null,
     version: 1,
     publishedVersion: 1,
+    hasUnpublishedChanges: false,
+    inputsDiffer: false,
     updatedAt: "2026-11-14T00:00:00.000Z",
   };
   const install = {
@@ -290,4 +294,71 @@ describe("data workspace", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("12345678901234567890.12");
   });
+});
+
+describe("list marks for unpublished changes (#697)", () => {
+  const graph = { version: 1 as const, nodes: [], outputs: [] };
+  const definition = {
+    version: 1 as const,
+    datasets: [],
+    relationships: [],
+    dimensions: [],
+    measures: [],
+  };
+  const row = (
+    id: string,
+    name: string,
+    version: number,
+    publishedVersion: number | null,
+    hasUnpublishedChanges: boolean,
+  ) => ({
+    id: "00000000-0000-4000-8000-00000000000" + id,
+    name,
+    projectId: null,
+    version,
+    publishedVersion,
+    hasUnpublishedChanges,
+    inputsDiffer: false,
+    updatedAt: "2026-11-14T00:00:00.000Z",
+  });
+  const cell = (html: string, name: string) => {
+    const at = html.indexOf(name + "</button>");
+    return html.slice(at, html.indexOf("</tr>", at));
+  };
+  it.each(["preparations", "models"] as const)(
+    "follows the server, not the version, in %s, en and de",
+    (section) => {
+      const rows = [
+        row("1", "Saved equal", 5, 3, false),
+        row("2", "Saved changed", 5, 3, true),
+        row("3", "Live", 3, 3, false),
+      ];
+      const initial = {
+        sources: [],
+        preparations:
+          section === "preparations" ? rows.map((r) => ({ ...r, graph })) : [],
+        models:
+          section === "models" ? rows.map((r) => ({ ...r, definition })) : [],
+      };
+      for (const [locale, changed] of [
+        ["en", "Unpublished changes"],
+        ["de", "Unveröffentlichte Änderungen"],
+      ] as const) {
+        const html = renderI18n(
+          <DataWorkspace
+            workspaceId="workspace"
+            initial={initial}
+            initialSection={section}
+          />,
+          locale,
+        );
+        expect(cell(html, "Saved equal")).toContain(
+          locale === "en" ? "Published v3" : "v3",
+        );
+        expect(cell(html, "Saved equal")).not.toContain(changed);
+        expect(cell(html, "Saved changed")).toContain(changed);
+        expect(cell(html, "Live")).not.toContain(changed);
+      }
+    },
+  );
 });
