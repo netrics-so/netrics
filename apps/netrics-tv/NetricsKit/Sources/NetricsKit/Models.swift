@@ -191,6 +191,30 @@ public struct DeviceSelfResponse: Codable, Sendable, Equatable {
         public var rotation: Int?
         /** "screen" or "scroll" (#276); tvOS always shows screen view. Nil from older servers. */
         public var displayMode: String?
+        /** Whether the answer has `dashboardId` at all (null: none assigned); not encoded. */
+        public var reportsDashboard = true
+
+        private enum CodingKeys: String, CodingKey { case id, name, dashboardId, rotation, displayMode }
+
+        public init(
+            id: String, name: String, dashboardId: String? = nil, rotation: Int? = nil, displayMode: String? = nil
+        ) {
+            self.id = id
+            self.name = name
+            self.dashboardId = dashboardId
+            self.rotation = rotation
+            self.displayMode = displayMode
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            name = try c.decode(String.self, forKey: .name)
+            dashboardId = try c.decodeIfPresent(String.self, forKey: .dashboardId)
+            rotation = try c.decodeIfPresent(Int.self, forKey: .rotation)
+            displayMode = try c.decodeIfPresent(String.self, forKey: .displayMode)
+            reportsDashboard = c.contains(.dashboardId)
+        }
     }
 
     public var device: Device

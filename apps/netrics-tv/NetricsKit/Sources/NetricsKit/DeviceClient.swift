@@ -161,6 +161,23 @@ public actor DeviceClient {
     private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
     /** Whether `run()`'s poll loop is going (tests drive `tick()` by hand without it). */
     private var polling = false
+    /**
+     * The heartbeat saw another dashboard assigned than the one on screen
+     * (#739): polls ask without `If-None-Match` until one gets an answer.
+     */
+    private var pollUnconditionally = false
+    /**
+     * Bumped by every such request: an answer clears `pollUnconditionally`
+     * only when none came in while it was under way, so a conditional poll
+     * already in flight cannot take back a newer request with its 304.
+     */
+    private var unconditionalGeneration = 0
+    /**
+     * ...and the next step runs at once instead of after its wait: taken by
+     * one step of the poll loop, so a failure after it (a refresh that
+     * fails) waits its backoff as always.
+     */
+    private var pollWakeRequested = false
     private let sleep: @Sendable (Duration) async throws -> Void
 
     /** A wait of the run loop that a lifecycle change or a stop cuts short. */
@@ -374,6 +391,8 @@ public actor DeviceClient {
             // Pull to refresh: these callers get the answer of this step.
             let answering = refreshWaiters
             refreshWaiters = []
+            // This step answers a wake asked for before it.
+            pollWakeRequested = false
             let next = await tick()
             for continuation in answering { continuation.resume() }
             guard let delay = next else {
@@ -386,8 +405,8 @@ public actor DeviceClient {
                 await sendHeartbeat()
             }
             // Left and came back during the tick, or a refresh asked during
-            // it: go again at once.
-            if generation == lifecycleGeneration, refreshWaiters.isEmpty {
+            // it, or the heartbeat saw another dashboard: go again at once.
+            if generation == lifecycleGeneration, refreshWaiters.isEmpty, !pollWakeRequested {
                 await pause(delay, poll: true)
             }
         }
@@ -744,7 +763,9 @@ public actor DeviceClient {
                 guard at == epoch else { return superseded() }
             }
             let schema = requestSchema()
-            var response = try await getDashboard(schema: schema)
+            let conditional = !pollUnconditionally
+            let asked = unconditionalGeneration
+            var response = try await getDashboard(schema: schema, conditional: conditional)
             guard at == epoch else { return superseded() }
             if response.status == 401 {
                 // Expired early or rotated elsewhere: one refresh, one retry.
@@ -754,7 +775,7 @@ public actor DeviceClient {
                     enterPairing()
                     return await startPairing()
                 }
-                response = try await getDashboard(schema: schema)
+                response = try await getDashboard(schema: schema, conditional: conditional)
                 guard at == epoch else { return superseded() }
                 if response.status == 401 {
                     // A fresh token refused: the device was revoked.
@@ -763,6 +784,10 @@ public actor DeviceClient {
                 }
             }
             let confirmedAt = now()
+            if response.isSuccess || response.status == 304, unconditionalGeneration == asked {
+                // Answered, and no new mismatch came in meanwhile: back to conditional polls.
+                pollUnconditionally = false
+            }
             if response.status == 304, let payload = state.payload, payload.schema == schema {
                 failures = 0
                 update {
@@ -808,10 +833,10 @@ public actor DeviceClient {
         }
     }
 
-    private func getDashboard(schema: Int) async throws -> HTTPResponse {
+    private func getDashboard(schema: Int, conditional: Bool = true) async throws -> HTTPResponse {
         var headers = ["authorization": "Bearer \(credentials?.accessToken ?? "")"]
         // An ETag names one schema's answer: never offer it for the other.
-        if let etag, let payload = state.payload, payload.schema == schema {
+        if conditional, let etag, let payload = state.payload, payload.schema == schema {
             headers["if-none-match"] = etag
         }
         let path = schema == 1 ? "/v1/device/dashboard" : "/v1/device/dashboard?schema=\(schema)"
@@ -953,7 +978,24 @@ public actor DeviceClient {
                 try? store.saveDevice(device)
                 update { $0.device = device }
             }
+            if me.device.reportsDashboard, let payload = state.payload,
+                payload.dashboardId != me.device.dashboardId
+            {
+                pollNow()
+            }
         }
         return true
+    }
+
+    /**
+     * Another dashboard is assigned than the one on screen (#739): whatever
+     * answered the last polls (a 304 for the old ETag, or no poll at all),
+     * the next one runs now and asks without `If-None-Match`.
+     */
+    private func pollNow() {
+        pollUnconditionally = true
+        unconditionalGeneration += 1
+        pollWakeRequested = true
+        if let pollWait { wake(pollWait) }
     }
 }
