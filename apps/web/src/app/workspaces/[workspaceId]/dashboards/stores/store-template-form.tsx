@@ -329,6 +329,23 @@ export function StoreTemplateForm({
       setPending(null);
     }
   }
+  /**
+   * "Save them and apply": one pending operation from the save through the
+   * apply, so nothing in the page can close the question halfway while the
+   * continuation still applies and navigates.
+   */
+  async function saveIdentityAndApply() {
+    if (!install || !plan) return;
+    setPending("create");
+    setError(null);
+    if (!(await identityGuard?.current?.save())) {
+      // The identity shows why; the scope change waits.
+      setPending(null);
+      setAskIdentity(false);
+      return;
+    }
+    await applyScope(true);
+  }
   async function applyScope(confirmed = false) {
     if (!install || !plan) return;
     // Applying navigates on; unsaved app identity beside the form is asked
@@ -750,13 +767,7 @@ export function StoreTemplateForm({
             <button
               className="primary"
               disabled={!!pending}
-              onClick={() =>
-                void (async () => {
-                  if (await identityGuard?.current?.save())
-                    await applyScope(true);
-                  else setAskIdentity(false);
-                })()
-              }
+              onClick={() => void saveIdentityAndApply()}
             >
               {t("identitySaveAndApply")}
             </button>

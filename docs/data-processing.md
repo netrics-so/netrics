@@ -798,8 +798,14 @@ and the identity is read-only while it applies and opens the update.
   one of the product's apps had proceeds in the last 90 days: an App Store
   sales row with units × developer proceeds per unit above zero, or a Play
   earnings row with a positive amount (charges; fees and refunds are
-  negative), read from each source dataset's latest generation when the
-  products are read. Nothing is stored for auto, so it follows new reports.
+  negative), read when the products are read. Nothing is stored for auto, so
+  it follows new reports.
+
+The Products and mapping tables and the synced reports are read through the
+same data reader as dashboards, with the resolved policy's row budget,
+retention ceiling and stored expiry. "Use app icon" is offered for discovered
+apps only; an app only the reports or the mapping name has no icon to fetch.
+
 - **Website:** a project of a Vercel Web Analytics connection of the same
   workspace, checked when saved.
 

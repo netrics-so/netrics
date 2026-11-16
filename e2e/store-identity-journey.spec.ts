@@ -151,7 +151,27 @@ test("applying a scope change saves unsaved app identity first", async ({
   const ask = page.getByRole("alertdialog", { name: s.identityPending });
   await expect(ask).toBeVisible();
   await expect(page).toHaveURL(/\?install=/);
+  // Saving is held: the whole save-and-apply is one pending operation, so
+  // nothing can cancel it halfway (it would navigate anyway).
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(/\/installs\/[^/]+\/products$/, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    await held;
+    await route.continue();
+  });
   await ask.getByRole("button", { name: s.identitySaveAndApply }).click();
+  for (const name of [
+    s.identitySaveAndApply,
+    s.identityDiscardAndApply,
+    s.identityKeepEditing,
+  ])
+    await expect(ask.getByRole("button", { name })).toBeDisabled();
+  // The review's own apply button is busy too (it shows progress).
+  await expect(
+    page.getByRole("button", { name: u.apply, disabled: false }),
+  ).toHaveCount(0);
+  release();
 
   await expect(page).toHaveURL(
     `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`,
