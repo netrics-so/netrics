@@ -163,9 +163,15 @@ public actor DeviceClient {
     private var polling = false
     /**
      * The heartbeat saw another dashboard assigned than the one on screen
-     * (#739): the next poll runs at once and without `If-None-Match`.
+     * (#739): polls ask without `If-None-Match` until one gets an answer.
      */
     private var pollUnconditionally = false
+    /**
+     * ...and the next step runs at once instead of after its wait: taken by
+     * one step of the poll loop, so a failure after it (a refresh that
+     * fails) waits its backoff as always.
+     */
+    private var pollWakeRequested = false
     private let sleep: @Sendable (Duration) async throws -> Void
 
     /** A wait of the run loop that a lifecycle change or a stop cuts short. */
@@ -379,6 +385,8 @@ public actor DeviceClient {
             // Pull to refresh: these callers get the answer of this step.
             let answering = refreshWaiters
             refreshWaiters = []
+            // This step answers a wake asked for before it.
+            pollWakeRequested = false
             let next = await tick()
             for continuation in answering { continuation.resume() }
             guard let delay = next else {
@@ -392,7 +400,7 @@ public actor DeviceClient {
             }
             // Left and came back during the tick, or a refresh asked during
             // it, or the heartbeat saw another dashboard: go again at once.
-            if generation == lifecycleGeneration, refreshWaiters.isEmpty, !pollUnconditionally {
+            if generation == lifecycleGeneration, refreshWaiters.isEmpty, !pollWakeRequested {
                 await pause(delay, poll: true)
             }
         }
@@ -750,7 +758,6 @@ public actor DeviceClient {
             }
             let schema = requestSchema()
             let conditional = !pollUnconditionally
-            pollUnconditionally = false
             var response = try await getDashboard(schema: schema, conditional: conditional)
             guard at == epoch else { return superseded() }
             if response.status == 401 {
@@ -770,6 +777,10 @@ public actor DeviceClient {
                 }
             }
             let confirmedAt = now()
+            if response.isSuccess || response.status == 304 {
+                // Answered: back to conditional polls (a 304 here was asked for).
+                pollUnconditionally = false
+            }
             if response.status == 304, let payload = state.payload, payload.schema == schema {
                 failures = 0
                 update {
@@ -976,6 +987,7 @@ public actor DeviceClient {
      */
     private func pollNow() {
         pollUnconditionally = true
+        pollWakeRequested = true
         if let pollWait { wake(pollWait) }
     }
 }

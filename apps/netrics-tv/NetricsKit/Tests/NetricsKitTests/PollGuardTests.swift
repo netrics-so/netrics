@@ -141,6 +141,37 @@ private func staleDashboardRoute() -> Handler {
     }
 }
 
+@Suite struct AssignedDashboardBackoffTests {
+    /**
+     * The heartbeat sees another dashboard while the token must be refreshed
+     * and the token endpoint fails: one poll at once, then the usual backoff,
+     * not a loop without waits (Codex review of #752).
+     */
+    @Test func aFailingRefreshAfterTheMismatchKeepsTheBackoff() async throws {
+        let r = RunningClient(
+            // Due for a refresh from the start (2 min margin).
+            accessExpiresIn: 60,
+            cached: CachedDashboard(etag: "\"vA\"", payload: .v1(dashboard("vA")), updatedAt: T0)
+        ) { _ in
+            [
+                "POST /v1/device/token": { _ in HTTPResponse(status: 503) },
+                "GET /v1/device/dashboard": staleDashboardRoute(),
+                "GET /v1/device/me": { _ in me(dashboardId: otherDashboardID) },
+            ]
+        }
+        r.run()
+        // The first heartbeat (10 s) has seen the mismatch.
+        #expect(await eventually { r.count("GET /v1/device/me") >= 1 })
+        let before = r.count("POST /v1/device/token")
+        // 100 ms are 100 s on the client's clock: with the backoff (5, 10, 20,
+        // 40, 60 s) a handful of refreshes, never thousands.
+        try await Task.sleep(for: .milliseconds(100))
+        let refreshes = r.count("POST /v1/device/token") - before
+        #expect(refreshes <= 8, "\(refreshes) refreshes in 100 s")
+        #expect(await r.client.state.offline)
+    }
+}
+
 @Suite struct PollHealthTests {
     @Test func staleAfterTwiceTheRefreshWithoutAConfirmedPoll() {
         #expect(!PollHealth.isStale(updatedAt: nil, refreshAfterSec: 60, now: T0))
