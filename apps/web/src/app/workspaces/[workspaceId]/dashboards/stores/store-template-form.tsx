@@ -102,7 +102,12 @@ export function StoreTemplateForm({
   const [plan, setPlan] = useState<StoreTemplatePlan | null>(null),
     [decisions, setDecisions] = useState<Decisions>({}),
     [reloaded, setReloaded] = useState(false),
-    [askIdentity, setAskIdentity] = useState(false);
+    [askIdentity, setAskIdentity] = useState(false),
+    // A new dashboard whose apps did not all get a slide (#709).
+    [installed, setInstalled] = useState<{
+      dashboardId: string;
+      omittedApps: string[];
+    } | null>(null);
   const initialized = useRef(!!install || !!initialOptions);
   useLeaveGuard(dirty && !done, t("unsaved"));
   const applying = pending === "create" || (!!install && done);
@@ -205,6 +210,9 @@ export function StoreTemplateForm({
   );
   const scopeChoice = apps.find((app) => app.key === scope);
   const scopeGroup = groups.find((group) => group.keys.includes(scope));
+  /** About how many app slides a portfolio would have: products and lone apps. */
+  const productCount =
+    groups.length + apps.filter((app) => !assigned.has(app.key)).length;
   function update() {
     setDirty(true);
     setError(null);
@@ -411,9 +419,16 @@ export function StoreTemplateForm({
       });
       setDone(true);
       setDirty(false);
-      router.push(
-        `/workspaces/${workspaceId}/dashboards/${result.dashboardId}`,
-      );
+      // Apps past the dashboard's limits are named before moving on.
+      if (result.omittedApps?.length)
+        setInstalled({
+          dashboardId: result.dashboardId,
+          omittedApps: result.omittedApps,
+        });
+      else
+        router.push(
+          `/workspaces/${workspaceId}/dashboards/${result.dashboardId}`,
+        );
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
     } finally {
@@ -692,6 +707,20 @@ export function StoreTemplateForm({
             </button>
           </div>
         </>
+      ) : installed ? (
+        <section className="card stack">
+          <p className="notice" role="status">
+            {t("omittedApps", { apps: installed.omittedApps.join(", ") })}
+          </p>
+          <div className="actions">
+            <Link
+              className="button primary"
+              href={`/workspaces/${workspaceId}/dashboards/${installed.dashboardId}`}
+            >
+              {t("openDashboard")}
+            </Link>
+          </div>
+        </section>
       ) : install && plan ? (
         <ScopeReview
           plan={plan}
@@ -740,7 +769,13 @@ export function StoreTemplateForm({
             ).map((key) => (
               <li key={key}>{t(key)}</li>
             ))}
+            {mode === "portfolio" ? <li>{t("slidesDefinition")}</li> : null}
           </ul>
+          {mode === "portfolio" && productCount > 11 ? (
+            <p className="notice" role="status">
+              {t("tooManyApps", { count: productCount })}
+            </p>
+          ) : null}
           <p className="notice">{t("allHistory")}</p>
           <div className="actions">
             <button disabled={!!pending} onClick={() => setStep("edit")}>

@@ -65,6 +65,13 @@ export const dashboardsEn = {
       "Latest score for each store listing and country, never averaged across apps or stores. Apple: score and count captured from the App Store for your storefront. Google Play: the rating from Play Console rating reports (all countries), as of the latest report day; the report has no rating count. The public Play Store listing only provides app names and artwork.",
     missingDefinition:
       "Reports can arrive late. Known values remain visible as partial; pending and missing values are not zero. Unallocated account rows remain separate from apps.",
+    slidesDefinition:
+      "An overview slide of all apps, then one slide per app with its icon: revenue for paid apps, downloads, ratings, the latest App Store review and the linked website's visitors. Screens move through the slides on their own.",
+    tooManyApps:
+      "{count} apps: a dashboard shows at most 12 slides, so the first apps by name get a slide of their own and the others appear on the overview only.",
+    omittedApps:
+      "The dashboard is ready. A dashboard shows at most 12 slides and 48 data widgets, so these apps appear on the overview only: {apps}.",
+    openDashboard: "Open dashboard",
     create: "Create editable dashboard",
     creating: "Creating dashboard…",
     unsaved: "This dashboard setup has not been saved. Leave this page?",
@@ -84,6 +91,8 @@ export const dashboardsEn = {
     editUpdateFirst:
       "The template has an update for this dashboard. Review it first, then change the apps.",
     editOpenUpdate: "Open the update",
+    appSlidesUpdate:
+      "The app slides follow these apps and settings after a dashboard update.",
     editConnectionsHelp:
       "Your own changes to preparations, measures and widgets stay. What follows from the apps is regenerated: new connections arrive as drafts, removed ones are detached and kept.",
     editMapping:
@@ -194,6 +203,8 @@ export const dashboardsEn = {
     roleCannot:
       "A workspace editor, admin or owner can review and apply template updates.",
     versions: "Template version {from} → {to}",
+    appsChanged:
+      "Template version {version}: the app slides follow your apps and their settings.",
     unavailable:
       "Updates aren’t available for this dashboard. It was set up before templates had versions, and a store connection it used was deleted since, so netrics can’t tell your changes from the template’s. The dashboard keeps working as it is.",
     upToDate: "This dashboard is up to date with its template.",

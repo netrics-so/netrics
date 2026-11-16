@@ -1,5 +1,7 @@
 import { registerDataRoutes } from "./routes/data.js";
 import { registerStoreTemplateRoutes } from "./routes/store-templates.js";
+import { createConnectionService } from "./connections/service.js";
+import { createResourceIconService } from "./images/resource-icons.js";
 import type { StoreTemplateDefinition } from "./dashboards/store-template.js";
 import { registerDataPolicyRoutes } from "./routes/data-policy.js";
 import cors from "@fastify/cors";
@@ -215,6 +217,31 @@ export async function buildApp(
     policy: config.dataPolicy,
     ...(deps.now ? { now: deps.now } : {}),
   });
+  const oauthTokens =
+    deps.oauthTokens ??
+    createOAuthTokenService({
+      db,
+      credentialKeyring,
+      providers: oauthProviders,
+      ...(deps.oauthHttp ? { http: deps.oauthHttp } : {}),
+    });
+  // App slides fetch the icons their apps lack (#709) the way "Use app
+  // icon" does: through the connection, validated and stored.
+  const iconConnections = createConnectionService({
+    db,
+    registry,
+    credentialKeyring,
+    oauthProviders,
+    oauthTokens,
+    ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
+  });
+  const storeIcons = createResourceIconService({
+    db,
+    quota: config.imageQuota,
+    registry,
+    callConnection: (actor, connectionId, call) =>
+      iconConnections.callConnection(actor, connectionId, call),
+  });
   registerStoreTemplateRoutes(app, {
     authService,
     db,
@@ -222,6 +249,7 @@ export async function buildApp(
     policy: config.dataPolicy,
     ...(deps.now ? { now: deps.now } : {}),
     ...(deps.storeTemplate ? { template: deps.storeTemplate } : {}),
+    fetchIcons: (actor, sources) => storeIcons.fetchMissing(actor, sources),
   });
   registerThemeRoutes(app, { authService, db });
   registerGoalRoutes(app, {
@@ -246,14 +274,6 @@ export async function buildApp(
       ? { payloadCacheMs: deps.devicePayloadCacheMs }
       : {}),
   });
-  const oauthTokens =
-    deps.oauthTokens ??
-    createOAuthTokenService({
-      db,
-      credentialKeyring,
-      providers: oauthProviders,
-      ...(deps.oauthHttp ? { http: deps.oauthHttp } : {}),
-    });
   registerConnectionRoutes(app, {
     authService,
     db,

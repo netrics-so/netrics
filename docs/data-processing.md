@@ -821,6 +821,49 @@ product without a row has the defaults, so existing installs need no update.
 A composite foreign key binds the website connection to the row's workspace;
 deleting the connection clears only the link.
 
+### App slides (template version 4)
+
+[#709](https://github.com/netrics-so/netrics/issues/709) makes the App
+portfolio an overview plus one slide per app, for screens that advance on
+their own (auto advance is on).
+
+- **Overview** (first slide): version 3's tables (downloads by app and
+  store, proceeds by app and currency, ratings), plus revenue by app in the
+  workspace's display currency for each App Store connection (a connection
+  `table` of `proceeds`; models do not convert currencies) and website
+  visitors for each Vercel connection an app links (at most two of each).
+- **One slide per app**, scoped to it (the slide's `app` scope, #707), with
+  the app's icon as the slide's logo. Paid: revenue and downloads (connection
+  metrics of the app's App Store app over the last 30 days, with sparkline
+  and change: the trend), the website's visitors (`vercel.visitors` of the
+  linked project), ratings with their count (a measure table) and the latest
+  review. Free: the same without revenue. No linked website: no visitors
+  widget. An app without an App Store app (Google Play only) shows its
+  installs and proceeds per currency as measures and has no review. A
+  product in both stores shows its App Store app's numbers, titled "· App
+  Store"; the overview has both stores.
+- **Which app**: the latest review, revenue and downloads read the
+  product's first listed App Store app (from the mapping), not the slide
+  scope, which names a product. Connection widgets cannot apply model
+  filters; they exclude each shared filter with a reason.
+- **Limits**: apps are ordered by name; the first get a slide while the
+  dashboard stays within 12 slides and 48 data widgets (the overview
+  included). The install answers the others as `omittedApps` and the setup
+  names them; they appear on the overview only. Only apps a connection lists
+  get a slide. A dashboard fixed to one app keeps version 3's single slide.
+
+The identity is read when an install or update is built, never per device
+payload, and stored with the install's inputs (`apps`: name, paid or free,
+icon, App Store app, stores, website). An app added or removed, paid or
+free changed, a new icon or website, or a renamed product makes the install
+offer a template update (same version) whose plan shows the slide changes;
+customised dashboards follow the usual three-way rules, and nothing changes
+on screens before the updated copy is swapped in. A scope change builds
+from the current identity too. Before an install, a plan or an apply,
+icons the apps lack are fetched through the resource-icon path ("Use app
+icon"); an icon that cannot be fetched leaves the slide without a logo.
+Version 3 installs get version 4 through the template update.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

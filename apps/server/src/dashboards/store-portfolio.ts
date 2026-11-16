@@ -8,12 +8,14 @@ import type {
   ModelDimension,
   DashboardDataFilter,
 } from "@netrics/domain";
+import { createHash } from "node:crypto";
 import type { CreateDashboardRequest } from "@netrics/contracts";
+import { STUDIO_GRID, STUDIO_LIMITS } from "@netrics/domain";
 
 export type StoreConnectorId = "app-store-connect" | "google-play";
 export type StoreMetric = "downloads" | "proceeds" | "ratings";
 /** The store template versions this module builds (see store-template.ts). */
-export type StoreTemplateVersion = 1 | 2 | 3;
+export type StoreTemplateVersion = 1 | 2 | 3 | 4;
 export interface StoreTemplateSource {
   id: string;
   name: string;
@@ -74,6 +76,13 @@ export const storeTemplateCopy = (locale: Locale) =>
           "Bewertungen verwenden das Bewertungsland, nicht das Installations- oder Verkaufsland.",
         noStorefront:
           "Dieses Maß verwendet das Installations- oder Verkaufsland, nicht das Bewertungsland.",
+        revenue: "Erlöse, letzte 30 Tage",
+        revenueByApp: "Erlöse nach App, letzte 30 Tage",
+        downloadsRecent: "Downloads, letzte 30 Tage",
+        visitors: "Website-Besucher, letzte 30 Tage",
+        appStore: "App Store",
+        connectionOwn:
+          "Nutzt Metrik und Zeitraum seiner Verbindung, nicht die Filter der Store-Daten.",
       }
     : {
         name: "App portfolio",
@@ -116,6 +125,13 @@ export const storeTemplateCopy = (locale: Locale) =>
           "Ratings use the listing country rather than the install or sale country.",
         noStorefront:
           "This measure uses the install or sale country rather than the listing country.",
+        revenue: "Revenue, last 30 days",
+        revenueByApp: "Revenue by app, last 30 days",
+        downloadsRecent: "Downloads, last 30 days",
+        visitors: "Website visitors, last 30 days",
+        appStore: "App Store",
+        connectionOwn:
+          "Uses its connection's own metric and period, not the store data filters.",
       };
 
 const decimal = (value: string): DataExpression => ({
@@ -1050,13 +1066,22 @@ export function buildStoreDashboard(
   return buildStoreDashboardTemplate(name, models, locale, productId).request;
 }
 
-/** The store dashboard plus the template key of each widget, in reading order. */
+/**
+ * The store dashboard plus the template key of each widget, in reading
+ * order, and (version 4) of each slide, in position order.
+ */
 export function buildStoreDashboardTemplate(
   name: string,
   models: Record<StoreMetric, string>,
   locale: Locale,
   productId?: string,
-): { request: CreateDashboardRequest; widgetKeys: string[] } {
+  /** Version 4: the overview plus one slide per app (not for one app). */
+  portfolio?: StorePortfolio,
+): {
+  request: CreateDashboardRequest;
+  widgetKeys: string[];
+  slideKeys?: string[];
+} {
   const t = storeTemplateCopy(locale);
   const all = (dimensionId: string) =>
     Object.values(models).map((modelId) => ({ modelId, dimensionId }));
@@ -1134,6 +1159,8 @@ export function buildStoreDashboardTemplate(
     },
     options: { view: "table" as const, limit: 20 },
   });
+  if (portfolio && !productId)
+    return buildPortfolioSlides(name, t, filters, widget, portfolio);
   const request: CreateDashboardRequest = {
     name,
     settings: { showHeader: true, autoAdvance: false, dataFilters: filters },
@@ -1159,5 +1186,398 @@ export function buildStoreDashboardTemplate(
   return {
     request,
     widgetKeys: ["widget:downloads", "widget:proceeds", "widget:ratings"],
+  };
+}
+
+/**
+ * An app of a version 4 install as its slide needs it (#709), read from
+ * the product identity (#708) when the install or an update is built,
+ * never per device payload.
+ */
+export interface StoreAppIdentity {
+  /** The app filter's value: `product:<id>` or `<connectionId>:<appId>`. */
+  productId: string;
+  name: string;
+  /** Paid (revenue widgets) or free (none). */
+  paid: boolean;
+  /** The workspace image of its icon: the slide's logo. */
+  icon: string | null;
+  /** Its App Store app: revenue, downloads and the latest review. */
+  appStore: { connectionId: string; appId: string } | null;
+  /** The stores of its apps. */
+  stores: StoreConnectorId[];
+  /** Its website: the visitors widget. */
+  website: { connectionId: string; projectId: string } | null;
+}
+/** What version 4 builds the dashboard's slides from. */
+export interface StorePortfolio {
+  /** Every app that can have a slide, in slide order. */
+  apps: StoreAppIdentity[];
+  /** The install's App Store connections: revenue in the overview. */
+  appStore: { id: string; name: string }[];
+}
+
+/** Revenue and visitor tables of the overview (one per connection), at most. */
+const OVERVIEW_TABLES = 2;
+/** The connector widgets' period. */
+const RECENT = "last_30_days" as const;
+const ASC_PROCEEDS = "app_store_connect.proceeds",
+  ASC_DOWNLOADS = "app_store_connect.downloads",
+  VERCEL_VISITORS = "vercel.visitors";
+
+/** A short stable key of an app's slide and widgets. */
+export const appSlideKey = (productId: string) =>
+  "app-" + createHash("sha256").update(productId).digest("hex").slice(0, 16);
+
+/** The widgets an app's slide shows, in reading order. */
+export function appSlideWidgets(app: StoreAppIdentity): string[] {
+  return [
+    ...(app.paid ? ["revenue"] : []),
+    "downloads",
+    ...(app.website ? ["visitors"] : []),
+    "ratings",
+    ...(app.appStore ? ["review"] : []),
+  ];
+}
+
+/** The connections of the overview's revenue and visitor tables. */
+function overviewTables(portfolio: StorePortfolio) {
+  const websites = [
+    ...new Set(
+      portfolio.apps.flatMap((app) =>
+        app.website ? [app.website.connectionId] : [],
+      ),
+    ),
+  ].sort();
+  return {
+    revenue: [...portfolio.appStore]
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .slice(0, OVERVIEW_TABLES),
+    visitors: websites.slice(0, OVERVIEW_TABLES),
+  };
+}
+
+/**
+ * The apps that get a slide: the first ones in order while the dashboard
+ * stays within the Studio's limits (12 slides, 48 data widgets, the
+ * overview included); the rest are `omitted` and show in the overview only.
+ */
+export function storeAppSlides(portfolio: StorePortfolio): {
+  shown: StoreAppIdentity[];
+  omitted: StoreAppIdentity[];
+} {
+  const tables = overviewTables(portfolio);
+  let cost = 3 + tables.revenue.length + tables.visitors.length;
+  const shown: StoreAppIdentity[] = [],
+    omitted: StoreAppIdentity[] = [];
+  for (const app of portfolio.apps) {
+    const widgets = appSlideWidgets(app).length;
+    if (
+      omitted.length === 0 &&
+      shown.length < STUDIO_LIMITS.slides - 1 &&
+      cost + widgets <= STUDIO_LIMITS.dataWidgets
+    ) {
+      shown.push(app);
+      cost += widgets;
+    } else omitted.push(app);
+  }
+  return { shown, omitted };
+}
+
+type Slide = NonNullable<CreateDashboardRequest["slides"]>[number];
+type Widget = Slide["widgets"][number];
+type Unplaced = Widget extends infer W
+  ? W extends unknown
+    ? Omit<W, "x" | "w">
+    : never
+  : never;
+type Placed = { key: string; widget: Widget };
+
+/** One row of widgets over the grid's width, larger ones first. */
+function row(widgets: { key: string; widget: Unplaced }[]): Placed[] {
+  const count = widgets.length,
+    base = Math.floor(STUDIO_GRID.columns / count),
+    extra = STUDIO_GRID.columns - base * count;
+  let x = 0;
+  return widgets.map(({ key, widget }, index) => {
+    const w = index < extra ? base + 1 : base;
+    const placed = { key, widget: { ...widget, x, w } as Widget };
+    x += w;
+    return placed;
+  });
+}
+
+/**
+ * Version 4 (#709): the overview (version 3's tables, plus revenue in the
+ * display currency per App Store connection and visitors per linked Vercel
+ * connection), then one slide per app, scoped to it, with its icon as the
+ * slide's logo; screens advance on their own.
+ */
+function buildPortfolioSlides(
+  name: string,
+  t: ReturnType<typeof storeTemplateCopy>,
+  filters: DashboardDataFilter[],
+  measure: (
+    metric: StoreMetric,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    groupBy: string[],
+    measureIds: string[],
+  ) => Extract<Widget, { type: "measure" }>,
+  portfolio: StorePortfolio,
+): {
+  request: CreateDashboardRequest;
+  widgetKeys: string[];
+  slideKeys: string[];
+} {
+  // Connector widgets cannot apply the model filters: each excludes every
+  // shared filter, with the reason a viewer sees when one is active.
+  const filterExclusions = filters.map((filter) => ({
+    filterId: filter.id,
+    reason: t.connectionOwn,
+  }));
+  const connector = {
+    aggregation: "sum" as const,
+    period: RECENT,
+    displayCurrency: null,
+    filterExclusions,
+  };
+  const table = (
+    connectionId: string,
+    metricKey: string,
+    title: string,
+    y: number,
+  ): Unplaced => ({
+    type: "table",
+    y,
+    h: 4,
+    title,
+    connectionId,
+    metricKey,
+    ...connector,
+    dimensions: {},
+    options: {
+      groupBy: "resource",
+      limit: 5,
+      showChange: true,
+      showOthers: false,
+    },
+  });
+  const sized = (
+    widget: Extract<Widget, { type: "measure" }>,
+    view: "table" | "value",
+    limit: number,
+  ): Unplaced => {
+    const { x: _x, w: _w, ...rest } = widget;
+    return { ...rest, options: { view, limit } };
+  };
+  const tables = overviewTables(portfolio);
+  const several = portfolio.appStore.length > 1;
+  const overview: Placed[] = [
+    ...row([
+      {
+        key: "widget:downloads",
+        widget: sized(
+          measure("downloads", 0, 0, 0, 4, ["app", "store"], ["downloads"]),
+          "table",
+          20,
+        ),
+      },
+      {
+        key: "widget:proceeds",
+        widget: sized(
+          measure("proceeds", 0, 0, 0, 4, ["app", "currency"], ["proceeds"]),
+          "table",
+          20,
+        ),
+      },
+      ...tables.revenue.map((connection) => ({
+        key: `widget:revenue:${connection.id}`,
+        widget: table(
+          connection.id,
+          ASC_PROCEEDS,
+          several
+            ? `${t.revenueByApp} · ${connection.name}`.slice(0, 100)
+            : t.revenueByApp,
+          0,
+        ),
+      })),
+    ]),
+    ...row([
+      {
+        key: "widget:ratings",
+        widget: sized(
+          measure(
+            "ratings",
+            0,
+            4,
+            0,
+            4,
+            ["listing", "storefront"],
+            ["rating", "rating_count", "checked", "availability"],
+          ),
+          "table",
+          20,
+        ),
+      },
+      ...tables.visitors.map((connectionId) => ({
+        key: `widget:visitors:${connectionId}`,
+        widget: table(connectionId, VERCEL_VISITORS, t.visitors, 4),
+      })),
+    ]),
+  ];
+
+  const appSlide = (app: StoreAppIdentity) => {
+    const slideKey = appSlideKey(app.productId);
+    const key = (kind: string) => `widget:${slideKey}:${kind}`;
+    const store = app.appStore;
+    // A product in both stores shows its App Store app's numbers here and
+    // every store's in the overview.
+    const titled = (title: string) =>
+      app.stores.length > 1 ? `${title} · ${t.appStore}` : title;
+    const metric = (
+      connectionId: string,
+      metricKey: string,
+      resource: string,
+      title: string,
+    ): Unplaced => ({
+      type: "metric",
+      y: 0,
+      h: 3,
+      title,
+      connectionId,
+      metricKey,
+      ...connector,
+      dimensions: { resource },
+      options: { showSparkline: true, showChange: true },
+    });
+    const band: { key: string; widget: Unplaced }[] = [];
+    if (app.paid)
+      band.push({
+        key: key("revenue"),
+        widget: store
+          ? metric(
+              store.connectionId,
+              ASC_PROCEEDS,
+              store.appId,
+              titled(t.revenue),
+            )
+          : // Google Play only: proceeds per currency; no connection
+            // metric converts them.
+            sized(
+              measure("proceeds", 0, 0, 0, 3, ["currency"], ["proceeds"]),
+              "table",
+              5,
+            ),
+      });
+    if (store)
+      band.push({
+        key: key("downloads"),
+        widget: metric(
+          store.connectionId,
+          ASC_DOWNLOADS,
+          store.appId,
+          titled(t.downloadsRecent),
+        ),
+      });
+    else {
+      // Google Play only: user installs over the date filter's range.
+      const downloads = measure("downloads", 0, 0, 0, 3, [], ["downloads"]);
+      band.push({
+        key: key("downloads"),
+        widget: sized(
+          {
+            ...downloads,
+            binding: {
+              ...downloads.binding,
+              filter: call("eq", field("store"), text("google")),
+            },
+          },
+          "value",
+          20,
+        ),
+      });
+    }
+    if (app.website)
+      band.push({
+        key: key("visitors"),
+        widget: metric(
+          app.website.connectionId,
+          VERCEL_VISITORS,
+          app.website.projectId,
+          t.visitors,
+        ),
+      });
+    const lower: { key: string; widget: Unplaced }[] = [
+      {
+        key: key("ratings"),
+        widget: sized(
+          measure(
+            "ratings",
+            0,
+            3,
+            0,
+            5,
+            ["listing", "storefront"],
+            ["rating", "rating_count"],
+          ),
+          "table",
+          5,
+        ),
+      },
+    ];
+    if (store)
+      lower.push({
+        key: key("review"),
+        widget: {
+          type: "review",
+          y: 3,
+          h: 5,
+          title: null,
+          filterExclusions,
+          connectionId: store.connectionId,
+          dimensions: { resource: store.appId },
+          imageId: null,
+          options: { minRating: 1, requireText: true, showAuthor: true },
+        },
+      });
+    const widgets = [...row(band), ...row(lower)];
+    return {
+      key: `slide:${slideKey}`,
+      widgets,
+      slide: {
+        name: app.name.slice(0, STUDIO_LIMITS.slideNameLength),
+        logoImageId: app.icon,
+        scope: { app: { kind: "values" as const, values: [app.productId] } },
+        widgets: widgets.map((placed) => placed.widget),
+      } satisfies Slide,
+    };
+  };
+  const slides = [
+    {
+      key: "slide:0",
+      widgets: overview,
+      slide: {
+        name: t.name,
+        widgets: overview.map((placed) => placed.widget),
+      } satisfies Slide,
+    },
+    ...storeAppSlides(portfolio).shown.map(appSlide),
+  ];
+  return {
+    request: {
+      name,
+      settings: { showHeader: true, autoAdvance: true, dataFilters: filters },
+      slides: slides.map((entry) => entry.slide),
+    },
+    // Reading order: slide by slide, then top to bottom, left to right.
+    widgetKeys: slides.flatMap((entry) =>
+      [...entry.widgets]
+        .sort((a, b) => a.widget.y - b.widget.y || a.widget.x - b.widget.x)
+        .map((placed) => placed.key),
+    ),
+    slideKeys: slides.map((entry) => entry.key),
   };
 }

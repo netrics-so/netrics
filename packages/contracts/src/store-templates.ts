@@ -35,6 +35,12 @@ export const storeTemplateResultSchema = z.object({
     ratings: z.uuid(),
   }),
   preparationIds: z.array(z.uuid()),
+  /**
+   * The apps without a slide of their own (#709): a dashboard has at most
+   * 12 slides and 48 data widgets, so past them an app shows in the
+   * overview only. Missing when every app has its slide.
+   */
+  omittedApps: z.array(z.string()).optional(),
 });
 export type StoreTemplateResult = z.infer<typeof storeTemplateResultSchema>;
 export const storeTemplateOptionsSchema = z.object({

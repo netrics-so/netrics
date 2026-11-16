@@ -26,9 +26,10 @@ import { createStoreTemplateService } from "./store-template-service.js";
 import { createStoreTemplateUpdateService } from "./store-template-updates.js";
 import {
   // Version 2 is what this suite covers up to its last describe, which
-  // covers version 3 (the current one).
+  // covers version 3.
   storeTemplateV2 as storeTemplate,
   storeTemplateV1,
+  storeTemplateV3,
   type StoreTemplateDefinition,
 } from "./store-template.js";
 import { apple as appleFixture, google, inputs, now } from "./test-helpers.js";
@@ -805,11 +806,12 @@ describe(
         connections: connections.map((c) => c.id),
         groups: [],
       });
-      // The current template is version 3; the install keeps version 2.
+      // The template is version 3; the install keeps version 2.
       const updates = createStoreTemplateUpdateService({
         db,
         registry,
         now: () => new Date(now),
+        template: storeTemplateV3,
       });
       const { installs } = await updates.list(actor(workspaceId));
       expect(installs[0]).toMatchObject({

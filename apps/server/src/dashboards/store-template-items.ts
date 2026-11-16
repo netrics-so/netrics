@@ -856,6 +856,8 @@ export function normalizeTemplateDashboard(
   request: CreateDashboardRequest,
   widgetKeys: string[],
   idsToKeys: Map<string, string>,
+  /** The slides' keys in position order (version 4); else `slide:<index>`. */
+  slideKeys?: string[],
 ): NormalizedDashboard {
   const parsed = createDashboardRequestSchema.parse(request);
   const settings = parsed.settings ?? {};
@@ -917,7 +919,7 @@ export function normalizeTemplateDashboard(
       ...widgetKeys.map((key) => [`template:${key}`, key]),
       ...(parsed.slides ?? []).map((_, index) => [
         `template:slide:${index}`,
-        `slide:${index}`,
+        slideKeys?.[index] ?? `slide:${index}`,
       ]),
     ]),
     idsToKeys,

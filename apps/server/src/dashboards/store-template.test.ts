@@ -6,6 +6,7 @@ import {
   storeTemplateInputsSchema,
   storeTemplateV1,
   storeTemplateV2,
+  storeTemplateV3,
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
@@ -15,11 +16,17 @@ import {
   buildStoreDashboard,
   buildStoreModel,
   buildStorePreparation,
+  storeAppSlides,
   storeTemplateCopy,
+  type StoreAppIdentity,
   type StoreMetric,
 } from "./store-portfolio.js";
+import { storeAppIdentities } from "./store-template-products.js";
 import { apple, google } from "./test-helpers.js";
-import { preparationGraphSchema } from "@netrics/contracts";
+import {
+  createDashboardRequestSchema,
+  preparationGraphSchema,
+} from "@netrics/contracts";
 
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -76,6 +83,7 @@ const VERSION_HASHES: Record<number, string> = {
   1: "44be27ea317c1faf154c41abfc16711e055ca8c47c6e6220918bba59c701aa24",
   2: "79726e4b4472c40243627181269daf6f08dcd991b7d1e415d2aba7bc51727aa3",
   3: "803b151fd59622b368644799eed102cfe37f3632fbc2266f2f32a3ea221c6923",
+  4: "8e366c2a9c6beba378f2bd1b4813eee2fc5929ec99e3814ea9bec08ae984ec38",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -110,6 +118,12 @@ describe("versioned store template", () => {
       sha256(JSON.stringify(buildAll(fixtureInputs))),
     );
   });
+  it("keeps version 3 frozen after the template moves on", () => {
+    expect(storeTemplateV3.version).toBe(3);
+    expect(
+      sha256(JSON.stringify(buildAll(fixtureInputs, storeTemplateV3))),
+    ).toBe(VERSION_HASHES[3]);
+  });
   it("keeps version 2 frozen after the template moves on", () => {
     expect(storeTemplateV2.version).toBe(2);
     expect(
@@ -137,7 +151,7 @@ describe("versioned store template", () => {
   });
   it("adds the app label preparations in version 3 and changes proceeds sources and models, not the dashboard", () => {
     const v2 = buildAll(fixtureInputs, storeTemplateV2),
-      v3 = buildAll(fixtureInputs);
+      v3 = buildAll(fixtureInputs, storeTemplateV3);
     const v2Keys = v2.map((record) => record.key);
     const added = [
       "preparation:labels",
@@ -262,7 +276,7 @@ describe("versioned store template", () => {
     });
   });
   it("records the dashboard's widget keys in reading order and accepts its inputs", () => {
-    const dashboard = buildAll(fixtureInputs).at(-1)!;
+    const dashboard = buildAll(fixtureInputs, storeTemplateV3).at(-1)!;
     expect(dashboard).toMatchObject({
       kind: "dashboard",
       name: "App portfolio",
@@ -393,4 +407,262 @@ describe("version 1 against the install before versions", () => {
         );
       }
     });
+});
+
+describe("version 4: an overview and one slide per app (#709)", () => {
+  const vercel = "33333333-3333-4333-8333-333333333333";
+  const icon = (n: number) => uuidFor(`icon:${n}`);
+  /** Paid with a website, free in Play only, paid in both stores. */
+  const apps: StoreAppIdentity[] = [
+    {
+      productId: `${apple.id}:1001`,
+      name: "Focus",
+      paid: true,
+      icon: icon(1),
+      appStore: { connectionId: apple.id, appId: "1001" },
+      stores: ["app-store-connect"],
+      website: { connectionId: vercel, projectId: "prj_focus" },
+    },
+    {
+      productId: `${google.id}:com.timer`,
+      name: "Timer",
+      paid: false,
+      icon: null,
+      appStore: null,
+      stores: ["google-play"],
+      website: null,
+    },
+    {
+      productId: "product:example",
+      name: "Example",
+      paid: true,
+      icon: icon(3),
+      appStore: { connectionId: apple.id, appId: "2002" },
+      stores: ["app-store-connect", "google-play"],
+      website: null,
+    },
+  ];
+  const dashboardOf = (inputs: StoreTemplateInputs) => {
+    const record = buildAll(inputs).at(-1)!;
+    if (record.kind !== "dashboard") throw new Error("no dashboard");
+    return record;
+  };
+  const shape = (slide: { widgets: { type: string }[] }) =>
+    slide.widgets.map((widget) =>
+      widget.type === "measure"
+        ? `measure:${(widget as unknown as { binding: { measureIds: string[] } }).binding.measureIds.join("+")}`
+        : widget.type === "review"
+          ? "review"
+          : `${widget.type}:${(widget as unknown as { metricKey: string }).metricKey}`,
+    );
+
+  it("builds the overview, then each app's slide, scoped, with its icon", () => {
+    const dashboard = dashboardOf({ ...fixtureInputs, apps });
+    const request = createDashboardRequestSchema.parse(dashboard.request);
+    expect(request.settings?.autoAdvance).toBe(true);
+    const slides = request.slides!;
+    expect(slides.map((slide) => slide.name)).toEqual([
+      "App portfolio",
+      "Focus",
+      "Timer",
+      "Example",
+    ]);
+    expect(slides.map((slide) => slide.logoImageId ?? null)).toEqual([
+      null,
+      icon(1),
+      null,
+      icon(3),
+    ]);
+    expect(slides.map((slide) => slide.scope ?? {})).toEqual([
+      {},
+      ...apps.map((app) => ({
+        app: { kind: "values", values: [app.productId] },
+      })),
+    ]);
+    expect(slides.map(shape)).toEqual([
+      // Version 3's tables, revenue by app in the display currency, and
+      // the linked website's visitors.
+      [
+        "measure:downloads",
+        "measure:proceeds",
+        "table:app_store_connect.proceeds",
+        "measure:rating+rating_count+checked+availability",
+        "table:vercel.visitors",
+      ],
+      // Paid: revenue, downloads and visitors with their trend, ratings
+      // with their count, the latest review.
+      [
+        "metric:app_store_connect.proceeds",
+        "metric:app_store_connect.downloads",
+        "metric:vercel.visitors",
+        "measure:rating+rating_count",
+        "review",
+      ],
+      // Free, Google Play only, no website: no revenue, no review, no
+      // visitors.
+      ["measure:downloads", "measure:rating+rating_count"],
+      // Paid in both stores, no website: its App Store app's numbers.
+      [
+        "metric:app_store_connect.proceeds",
+        "metric:app_store_connect.downloads",
+        "measure:rating+rating_count",
+        "review",
+      ],
+    ]);
+    const focus = slides[1]!.widgets;
+    expect(focus.find((widget) => widget.type === "review")).toMatchObject({
+      connectionId: apple.id,
+      dimensions: { resource: "1001" },
+    });
+    expect(
+      focus.find(
+        (widget) =>
+          widget.type === "metric" && widget.metricKey === "vercel.visitors",
+      ),
+    ).toMatchObject({
+      connectionId: vercel,
+      dimensions: { resource: "prj_focus" },
+      options: { showSparkline: true, showChange: true },
+    });
+    // Connection widgets exclude every shared filter, with a reason.
+    for (const widget of slides.flatMap((slide) => slide.widgets))
+      if (widget.type !== "measure")
+        expect(
+          widget.filterExclusions?.map((exclusion) => exclusion.filterId),
+        ).toEqual(["app", "store", "day", "country", "currency", "storefront"]);
+    // A key per widget in reading order and per slide in position order.
+    expect(dashboard.widgetKeys).toHaveLength(
+      slides.flatMap((slide) => slide.widgets).length,
+    );
+    expect(new Set(dashboard.widgetKeys).size).toBe(
+      dashboard.widgetKeys.length,
+    );
+    expect(dashboard.slideKeys).toHaveLength(slides.length);
+    expect(dashboard.slideKeys![0]).toBe("slide:0");
+    expect(storeTemplateInputsSchema.parse({ ...fixtureInputs, apps })).toEqual(
+      { ...fixtureInputs, apps },
+    );
+  });
+
+  it("keeps a dashboard of one app as version 3 built it", () => {
+    const fixed = { ...fixtureInputs, fixedProduct: "product:x", apps: [] };
+    expect(dashboardOf(fixed).request).toEqual(
+      buildAll(fixed, storeTemplateV3).at(-1)!.kind === "dashboard" &&
+        (buildAll(fixed, storeTemplateV3).at(-1) as { request: unknown })
+          .request,
+    );
+  });
+
+  it("stops at 12 slides and 48 data widgets; the other apps are named", () => {
+    const free = (n: number): StoreAppIdentity => ({
+      productId: `${google.id}:app${String(n).padStart(2, "0")}`,
+      name: `App ${String(n).padStart(2, "0")}`,
+      paid: false,
+      icon: null,
+      appStore: null,
+      stores: ["google-play"],
+      website: null,
+    });
+    const many = Array.from({ length: 14 }, (_, n) => free(n));
+    const slides = storeAppSlides({ apps: many, appStore: [] });
+    expect(slides.shown.map((app) => app.name)).toEqual(
+      many.slice(0, 11).map((app) => app.name),
+    );
+    expect(slides.omitted.map((app) => app.name)).toEqual([
+      "App 11",
+      "App 12",
+      "App 13",
+    ]);
+    expect(
+      createDashboardRequestSchema.parse(
+        dashboardOf({ ...fixtureInputs, apps: many }).request,
+      ).slides,
+    ).toHaveLength(12);
+    // Paid App Store apps with a website take five data widgets each: the
+    // 48 data widgets end before the 12 slides do.
+    const paid = Array.from({ length: 11 }, (_, n) => ({
+      ...apps[0]!,
+      productId: `${apple.id}:${n}`,
+      name: `Paid ${String(n).padStart(2, "0")}`,
+    }));
+    const budget = storeAppSlides({
+      apps: paid,
+      appStore: [{ id: apple.id, name: apple.name }],
+    });
+    expect(budget.shown).toHaveLength(8);
+    expect(budget.omitted).toHaveLength(3);
+    const request = createDashboardRequestSchema.parse(
+      dashboardOf({ ...fixtureInputs, apps: paid }).request,
+    );
+    expect(
+      request.slides!.flatMap((slide) => slide.widgets).length,
+    ).toBeLessThanOrEqual(48);
+  });
+
+  it("reads the latest review of a product's App Store app, not of its first app", () => {
+    const [identity] = storeAppIdentities([
+      {
+        productId: "product:example",
+        name: "Example",
+        // Play first in the mapping; the App Store app is the second.
+        apps: [
+          {
+            connectionId: google.id,
+            appId: "com.example",
+            name: "Example",
+            connectorId: "google-play",
+          },
+          {
+            connectionId: apple.id,
+            appId: "2002",
+            name: "Example",
+            connectorId: "app-store-connect",
+          },
+        ],
+        icon: null,
+        iconSource: { connectionId: apple.id, resourceId: "2002" },
+        pricing: "auto",
+        hadProceeds: false,
+        paid: false,
+        notEditable: null,
+        website: null,
+      },
+      {
+        // Only the reports name it: no slide of its own.
+        productId: `${google.id}:com.reported`,
+        name: "com.reported",
+        apps: [
+          {
+            connectionId: google.id,
+            appId: "com.reported",
+            name: "com.reported",
+            connectorId: "google-play",
+          },
+        ],
+        icon: null,
+        iconSource: null,
+        pricing: "auto",
+        hadProceeds: false,
+        paid: false,
+        notEditable: null,
+        website: null,
+      },
+    ]);
+    expect(identity).toEqual({
+      productId: "product:example",
+      name: "Example",
+      paid: false,
+      icon: null,
+      appStore: { connectionId: apple.id, appId: "2002" },
+      stores: ["app-store-connect", "google-play"],
+      website: null,
+    });
+    const slide = createDashboardRequestSchema.parse(
+      dashboardOf({ ...fixtureInputs, apps: [identity!] }).request,
+    ).slides![1]!;
+    expect(slide.widgets.find((w) => w.type === "review")).toMatchObject({
+      connectionId: apple.id,
+      dimensions: { resource: "2002" },
+    });
+  });
 });

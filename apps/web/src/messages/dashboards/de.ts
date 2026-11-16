@@ -66,6 +66,13 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       "Neueste Bewertung je Store-Eintrag und Land, nie über Apps oder Stores gemittelt. Apple: Bewertung und Anzahl aus dem App Store für dein Land. Google Play: die Bewertung aus den Bewertungsberichten der Play Console (alle Länder), Stand des letzten Berichtstags; der Bericht enthält keine Anzahl. Der öffentliche Play-Store-Eintrag liefert nur App-Namen und Symbole.",
     missingDefinition:
       "Berichte können später eintreffen. Bekannte Werte bleiben als unvollständig sichtbar; ausstehende und fehlende Werte werden nicht als 0 behandelt. Nicht zugeordnete Kontozeilen bleiben von Apps getrennt.",
+    slidesDefinition:
+      "Eine Übersichtsfolie aller Apps, danach eine Folie je App mit ihrem Symbol: Erlöse bei kostenpflichtigen Apps, Downloads, Bewertungen, die neueste App-Store-Rezension und die Besucher der verknüpften Website. Bildschirme wechseln die Folien von selbst.",
+    tooManyApps:
+      "{count} Apps: Ein Dashboard zeigt höchstens 12 Folien. Die ersten Apps nach Name erhalten eine eigene Folie, die übrigen erscheinen nur in der Übersicht.",
+    omittedApps:
+      "Das Dashboard ist bereit. Ein Dashboard zeigt höchstens 12 Folien und 48 Daten-Widgets, daher erscheinen diese Apps nur in der Übersicht: {apps}.",
+    openDashboard: "Dashboard öffnen",
     create: "Bearbeitbares Dashboard erstellen",
     creating: "Dashboard wird erstellt…",
     unsaved:
@@ -86,6 +93,8 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     editUpdateFirst:
       "Die Vorlage hat ein Update für dieses Dashboard. Prüfe es zuerst und ändere danach die Apps.",
     editOpenUpdate: "Update öffnen",
+    appSlidesUpdate:
+      "Die App-Folien übernehmen diese Apps und Einstellungen mit einem Dashboard-Update.",
     editConnectionsHelp:
       "Deine eigenen Änderungen an Aufbereitungen, Kennzahlen und Widgets bleiben. Was sich aus den Apps ergibt, wird neu erzeugt: Neue Verbindungen kommen als Entwürfe, entfernte werden abgelöst und bleiben erhalten.",
     editMapping:
@@ -200,6 +209,8 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     roleCannot:
       "Ein Bearbeiter, Admin oder Inhaber des Workspaces kann Vorlagen-Updates prüfen und anwenden.",
     versions: "Vorlagenversion {from} → {to}",
+    appsChanged:
+      "Vorlagenversion {version}: Die App-Folien folgen deinen Apps und ihren Einstellungen.",
     unavailable:
       "Für dieses Dashboard sind keine Updates verfügbar. Es wurde eingerichtet, bevor Vorlagen Versionen hatten, und eine seiner Store-Verbindungen wurde seitdem gelöscht. Deshalb kann netrics deine Änderungen nicht von denen der Vorlage unterscheiden. Das Dashboard funktioniert weiter wie bisher.",
     upToDate: "Dieses Dashboard ist auf dem Stand seiner Vorlage.",
