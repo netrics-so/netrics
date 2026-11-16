@@ -189,10 +189,16 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
       [slide!.id, ...widgets.map((w) => w.id)].sort(),
     );
     expect(dashboard.widget_keys[slide!.id]).toBe("slide:0");
+    // The measure tables by their model; version 4's revenue by app in the
+    // display currency by its App Store connection. No app is listed yet:
+    // no app slides.
     for (const widget of widgets)
       expect(dashboard.widget_keys[widget.id]).toBe(
-        `widget:${Object.entries(installed.models).find(([, id]) => id === widget.model_id)![0]}`,
+        widget.model_id === null
+          ? `widget:revenue:${apple.id}`
+          : `widget:${Object.entries(installed.models).find(([, id]) => id === widget.model_id)![0]}`,
       );
+    expect(row!.inputs).toMatchObject({ apps: [] });
   });
   it("reuses the same request without duplicates or overwriting customer edits", async () => {
     expect(

@@ -5,6 +5,7 @@ import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   preparationGraphSchema,
   semanticModelDefinitionSchema,
+  storeTemplateResultSchema,
   type CreateDashboardRequest,
   type StoreTemplateApplyRequest,
   type StoreTemplateInstallList,
@@ -87,11 +88,17 @@ import {
   storeTemplateInputsSchema,
 } from "./store-template.js";
 import {
+  readStoreApps,
   STORE_SOURCE_DATASETS,
   storeSourceDatasets,
   storeTemplateSources,
   unmappedProductRow,
+  type StoreIconFetcher,
 } from "./store-template-service.js";
+import {
+  missingIconSources,
+  readStoreProducts,
+} from "./store-template-products.js";
 
 /**
  * "Update available" for store-template installs (template updates, 11E):
@@ -110,6 +117,8 @@ type UpdateRow = typeof schema.dataTemplateUpdates.$inferSelect;
 type PreparationRow = typeof schema.dataPreparations.$inferSelect;
 type ModelRow = typeof schema.dataModels.$inferSelect;
 type Kind = "preparation" | "model" | "dashboard";
+/** Where a plan's version 4 apps come from (withApps). */
+type Identity = "fresh" | "stored" | "lenient";
 
 function reject(code: string, status: 400 | 404 | 409): never {
   throw new DataServiceError(code, status);
@@ -201,6 +210,8 @@ const storedDashboardsSchema = z.array(
     copyWidgetKeys: z.record(z.string(), z.string()).optional(),
     /** The new template's dashboard in comparison form (once made). */
     templateOriginal: z.unknown().optional(),
+    /** The apps the copy was built from (version 4), its record's baseline. */
+    templateApps: z.array(z.unknown()).optional(),
     /** The record as it was before the swap, for swapping back. */
     previousOriginal: z.unknown().optional(),
     previousWidgetKeys: z.record(z.string(), z.string()).nullable().optional(),
@@ -218,12 +229,39 @@ type StoredDashboard = z.infer<typeof storedDashboardsSchema>[number];
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
+/** `value` with each image id of `replaced` swapped for its replacement. */
+function withIcons(
+  value: unknown,
+  replaced: ReadonlyMap<string, string | null>,
+): unknown {
+  if (!replaced.size) return value;
+  if (typeof value === "string")
+    return replaced.has(value) ? replaced.get(value) : value;
+  if (Array.isArray(value))
+    return value.map((entry) => withIcons(entry, replaced));
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        withIcons(entry, replaced),
+      ]),
+    );
+  return value;
+}
+
 /** A record's original in any of its stored shapes. */
 type Original =
   | { graph: PreparationGraph }
   | { definition: SemanticModelDefinition }
   /** New installs; `widgetKeys` (reading order) since template updates. */
-  | { request: CreateDashboardRequest; widgetKeys?: string[] }
+  | {
+      request: CreateDashboardRequest;
+      widgetKeys?: string[];
+      /** Version 4: the slides' keys in position order. */
+      slideKeys?: string[];
+      /** Version 4: the apps the slides were built from (builtApps). */
+      apps?: unknown[];
+    }
   /** Installs made before versions: the dashboard rows at migration time. */
   | { legacySnapshot: LegacyDashboardSnapshot }
   /** Already in comparison form (symbolic references). */
@@ -321,9 +359,12 @@ export function createStoreTemplateUpdateService(deps: {
   policy?: DataPolicy;
   /** The newest template; tests pass other versions. */
   template?: StoreTemplateDefinition;
+  /** Fetches missing app icons before a plan or an apply (version 4). */
+  fetchIcons?: StoreIconFetcher;
 }) {
   const template = deps.template ?? storeTemplate,
-    now = deps.now ?? (() => new Date());
+    now = deps.now ?? (() => new Date()),
+    policy = deps.policy ?? DEFAULT_DATA_POLICY;
 
   async function installRow(
     tx: Transaction,
@@ -353,6 +394,207 @@ export function createStoreTemplateUpdateService(deps: {
         ),
       )
       .orderBy(asc(schema.dataTemplateRecords.key));
+  }
+
+  /**
+   * The inputs with the apps version 4 builds its slides from: read now
+   * from the product identity ("fresh"; "lenient" keeps the given apps when
+   * the identity cannot be read), or as stored ("stored": what an applied
+   * update was reviewed with). Templates before version 4 have no apps.
+   */
+  async function withApps(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    inputs: StoreTemplateInputs,
+    identity: Identity,
+  ): Promise<StoreTemplateInputs> {
+    if (template.version < 4) return inputs;
+    if (identity === "stored")
+      return withCurrentIcons(tx, workspaceId, requestId, inputs);
+    const install = await installRow(tx, workspaceId, requestId);
+    if (!install) return inputs;
+    try {
+      const apps = await readStoreApps(
+        tx,
+        workspaceId,
+        requestId,
+        {
+          result: storeTemplateResultSchema.parse(install.result),
+          connections: inputs.connections,
+          fixedProduct: inputs.fixedProduct,
+        },
+        now(),
+        policy,
+      );
+      return { ...inputs, apps };
+    } catch (error) {
+      if (identity === "lenient" && error instanceof DataServiceError)
+        return inputs;
+      throw error;
+    }
+  }
+
+  /**
+   * Whether an install may have an update to offer: a newer version than
+   * some of its records, or (version 4) apps whose identity changed since
+   * it was built (an app added or removed, paid or free, icon, website,
+   * name). Whether the plan changes anything decides.
+   */
+  async function updateCandidate(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    install: InstallRow,
+    rows: RecordRow[],
+  ): Promise<boolean> {
+    if (isUpdateAvailable(install, rows, template.version)) return true;
+    if (template.version < 4) return false;
+    const stored = storeTemplateInputsSchema.safeParse(install.inputs);
+    if (!stored.success) return false;
+    const inputs = stored.data as StoreTemplateInputs;
+    const fresh = await withApps(tx, workspaceId, requestId, inputs, "lenient");
+    return !same(builtApps(rows) ?? inputs.apps ?? [], fresh.apps ?? []);
+  }
+
+  /**
+   * The apps the active dashboard's slides were built from (its record's
+   * original), not the install's inputs: an applied update stores its apps
+   * in the inputs at once, but the dashboard on screens keeps the old
+   * slides until its copy is swapped in, and again after a swap back or
+   * when the update is closed unswapped. Undefined before version 4.
+   */
+  function builtApps(rows: RecordRow[]): unknown[] | undefined {
+    const dashboard = rows.find(
+      (row) => row.kind === "dashboard" && row.detachedAt === null,
+    );
+    const apps = (dashboard?.original as { apps?: unknown } | null)?.apps;
+    return Array.isArray(apps) ? apps : undefined;
+  }
+
+  /**
+   * The stored apps with icons that still exist: the daily icon refresh
+   * replaces a changed icon with a new image (and removes the old one)
+   * wherever dashboards show it, not in the stored inputs. An icon gone
+   * since is the product's current one (none if it has none now).
+   */
+  async function withCurrentIcons(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    inputs: StoreTemplateInputs,
+  ): Promise<StoreTemplateInputs> {
+    const replaced = await iconReplacements(
+      tx,
+      workspaceId,
+      requestId,
+      inputs.apps,
+      inputs,
+    );
+    if (!replaced.size) return inputs;
+    return {
+      ...inputs,
+      apps: inputs.apps!.map((app) =>
+        app.icon && replaced.has(app.icon)
+          ? { ...app, icon: replaced.get(app.icon)! }
+          : app,
+      ),
+    };
+  }
+
+  /**
+   * The icons of `apps` the daily refresh replaced since (gone from the
+   * workspace's images) → the product's current icon (null: none now).
+   * Applied to the apps an update builds from (withCurrentIcons) and to
+   * the active dashboard's baseline alike, so a refreshed logo is never a
+   * change of either side.
+   */
+  async function iconReplacements(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    apps: readonly { productId: string; icon: string | null }[] | undefined,
+    inputs: StoreTemplateInputs,
+  ): Promise<Map<string, string | null>> {
+    const ids = [
+      ...new Set((apps ?? []).flatMap((app) => (app.icon ? [app.icon] : []))),
+    ];
+    if (!ids.length) return new Map();
+    const existing = new Set(
+      (
+        await tx
+          .select({ id: schema.workspaceImages.id })
+          .from(schema.workspaceImages)
+          .where(
+            and(
+              eq(schema.workspaceImages.workspaceId, workspaceId),
+              inArray(schema.workspaceImages.id, ids),
+            ),
+          )
+      ).map((row) => row.id),
+    );
+    if (ids.every((id) => existing.has(id))) return new Map();
+    const current = new Map(
+      (
+        (await withApps(tx, workspaceId, requestId, inputs, "lenient")).apps ??
+        []
+      ).map((app) => [app.productId, app.icon]),
+    );
+    return new Map(
+      (apps ?? []).flatMap((app) =>
+        app.icon && !existing.has(app.icon)
+          ? [[app.icon, current.get(app.productId) ?? null] as const]
+          : [],
+      ),
+    );
+  }
+
+  /**
+   * Fetches the icons the install's apps lack (version 4), before a plan
+   * or an apply reads them: app slides get their logo without "Use app
+   * icon". Best effort; outside the plan's transaction.
+   */
+  async function prefetchIcons(
+    actor: Actor,
+    requestId: string,
+    /** A scope change: the apps of the chosen scope, not the stored one. */
+    choice?: ScopeChoice,
+  ) {
+    if (!deps.fetchIcons || template.version < 4) return;
+    try {
+      const sources = await withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        async (tx) => {
+          const install = await installRow(tx, actor.workspaceId, requestId);
+          if (!install) return [];
+          // What the plan builds from: the chosen connections and app
+          // scope (read-only, nothing registered), else the stored ones.
+          const inputs = choice
+            ? await scopeInputs(tx, actor.workspaceId, requestId, choice, false)
+            : (install.inputs as StoreTemplateInputs | null);
+          if (!inputs || inputs.fixedProduct) return [];
+          return missingIconSources(
+            (
+              await readStoreProducts(
+                tx,
+                actor.workspaceId,
+                requestId,
+                now(),
+                policy,
+                {
+                  result: storeTemplateResultSchema.parse(install.result),
+                  connections: inputs.connections,
+                },
+              )
+            ).products,
+          );
+        },
+      );
+      if (sources.length) await deps.fetchIcons(actor, sources);
+    } catch {
+      // No icon: the slide has no logo.
+    }
   }
 
   /**
@@ -435,6 +677,8 @@ export function createStoreTemplateUpdateService(deps: {
     scope?: { inputs: StoreTemplateInputs },
     /** Register source datasets the stored inputs lack (applying). */
     register = false,
+    /** Which apps the plan builds version 4's slides from (withApps). */
+    identity: Identity = "fresh",
   ): Promise<ComputedPlan | null> {
     // Read-only: an install made before versions is completed in memory
     // (keys renamed, inputs derived); applying an update writes it.
@@ -445,9 +689,22 @@ export function createStoreTemplateUpdateService(deps: {
     );
     if (!completion.ok) return null;
     const install = (await installRow(tx, workspaceId, requestId))!;
-    const inputs =
+    const inputs = await withApps(
+      tx,
+      workspaceId,
+      requestId,
       scope?.inputs ??
-      (await withSourceDatasets(tx, workspaceId, completion.inputs, register));
+        (await withSourceDatasets(
+          tx,
+          workspaceId,
+          completion.inputs,
+          register,
+        )),
+      // A scope change always builds from the chosen connections' apps,
+      // and still works when their identity cannot be read (over the row
+      // limit, say): the apps then stay as they were built.
+      scope ? "lenient" : identity,
+    );
     let rows = (await recordRows(tx, workspaceId, requestId)).map((row) => {
       if (!completion.pending) return row;
       const key = completion.keys[row.key] ?? row.key;
@@ -503,6 +760,15 @@ export function createStoreTemplateUpdateService(deps: {
     }
     for (const row of rows) if (deleted(row)) replaced.push(row.key);
     rows = rows.filter((row) => !deleted(row));
+    // Icons of the active dashboard's baseline the refresh replaced since:
+    // read as the current ones, like the apps the update builds from.
+    const baselineIcons = await iconReplacements(
+      tx,
+      workspaceId,
+      requestId,
+      builtApps(rows) as StoreTemplateInputs["apps"],
+      inputs,
+    );
     const live = rows.filter(
       (row) => row.detachedAt === null && row.kind !== "dataset",
     );
@@ -565,6 +831,7 @@ export function createStoreTemplateUpdateService(deps: {
                 record.request,
                 record.widgetKeys,
                 idsToKeys,
+                record.slideKeys,
               ),
             );
     /** The dashboard version 1 builds for these inputs, as items. */
@@ -591,7 +858,11 @@ export function createStoreTemplateUpdateService(deps: {
         ).length,
       );
     const originalItems = (row: RecordRow): Items => {
-      const original = row.original as Original | null;
+      const original = (
+        row.kind === "dashboard"
+          ? withIcons(row.original, baselineIcons)
+          : row.original
+      ) as Original | null;
       if (original && "graph" in original && row.kind === "preparation")
         return preparationItems(row.key, original.graph, idsToKeys);
       if (original && "definition" in original && row.kind === "model")
@@ -612,7 +883,12 @@ export function createStoreTemplateUpdateService(deps: {
         }
         return dashboardItems(
           row.key,
-          normalizeTemplateDashboard(original.request, keys, idsToKeys),
+          normalizeTemplateDashboard(
+            original.request,
+            keys,
+            idsToKeys,
+            original.slideKeys,
+          ),
         );
       }
       if ("legacySnapshot" in original) {
@@ -732,11 +1008,26 @@ export function createStoreTemplateUpdateService(deps: {
       byRecord.set(key, [...(byRecord.get(key) ?? []), item]);
     }
     for (const record of plans) record.items = byRecord.get(record.key) ?? [];
+    // The install's newest update: an apply that changes no record (a
+    // dashboard-only update of the same version) still changes the basis,
+    // so the same plan applied twice is stale.
+    const [newest] = await tx
+      .select({ id: schema.dataTemplateUpdates.id })
+      .from(schema.dataTemplateUpdates)
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.requestId, requestId),
+        ),
+      )
+      .orderBy(desc(schema.dataTemplateUpdates.createdAt))
+      .limit(1);
     const basis = createHash("sha256")
       .update(
         JSON.stringify([
           // A scope plan is never the basis of an update, nor the reverse.
           scope ? "scope" : "update",
+          newest?.id ?? null,
           template.version,
           install.templateVersion,
           // The inputs the next version is built from (apps, scope, name).
@@ -777,9 +1068,17 @@ export function createStoreTemplateUpdateService(deps: {
     requestId: string,
     scope?: { inputs: StoreTemplateInputs },
     register = false,
+    identity: Identity = "fresh",
   ) {
     try {
-      return await computePlan(tx, workspaceId, requestId, scope, register);
+      return await computePlan(
+        tx,
+        workspaceId,
+        requestId,
+        scope,
+        register,
+        identity,
+      );
     } catch (error) {
       if (error instanceof BaselineUnavailable) return null;
       throw error;
@@ -798,6 +1097,8 @@ export function createStoreTemplateUpdateService(deps: {
     install: InstallRow,
     rows: RecordRow[],
   ): Promise<boolean> {
+    // A newer version only: a scope change builds from the apps' current
+    // identity itself, so changed app identity never holds it up.
     if (!isUpdateAvailable(install, rows, template.version)) return false;
     const computed = await planOrUnavailable(tx, workspaceId, requestId);
     return computed === null || changesAnything(computed.records);
@@ -1192,7 +1493,15 @@ export function createStoreTemplateUpdateService(deps: {
         ),
       });
     } else {
-      if (!isUpdateAvailable(install, rows, template.version))
+      if (
+        !(await updateCandidate(
+          tx,
+          actor.workspaceId,
+          requestId,
+          install,
+          rows,
+        ))
+      )
         reject("store_template_up_to_date", 409);
       // The plan the customer reviewed: source datasets the new version
       // reads as they were then (perhaps not registered yet).
@@ -1760,7 +2069,15 @@ export function createStoreTemplateUpdateService(deps: {
     if (view.drafts.some((draft) => !draft.published))
       reject("store_update_drafts_unpublished", 409);
     if (row.toVersion !== template.version) reject("store_update_stale", 409);
-    const plan = await planOrUnavailable(tx, actor.workspaceId, row.requestId);
+    // The apps as the apply stored them: what the customer reviewed.
+    const plan = await planOrUnavailable(
+      tx,
+      actor.workspaceId,
+      row.requestId,
+      undefined,
+      false,
+      "stored",
+    );
     if (!plan) reject("store_template_baseline_unavailable", 409);
     const record = plan.records.find(
       (candidate) =>
@@ -1851,7 +2168,9 @@ export function createStoreTemplateUpdateService(deps: {
                 next.request,
                 next.widgetKeys,
                 plan.idsToKeys,
+                next.slideKeys,
               ),
+              ...(plan.inputs.apps ? { templateApps: plan.inputs.apps } : {}),
             }
           : candidate,
       ),
@@ -2079,7 +2398,10 @@ export function createStoreTemplateUpdateService(deps: {
     if (direction === "swap") {
       await setRecord(tx, actor.workspaceId, row.requestId, key, {
         recordId: to,
-        original: { normalized: entry.templateOriginal },
+        original: {
+          normalized: entry.templateOriginal,
+          ...(entry.templateApps ? { apps: entry.templateApps } : {}),
+        },
         widgetKeys: entry.copyWidgetKeys ?? {},
         templateVersion: row.toVersion,
       });
@@ -2261,6 +2583,7 @@ export function createStoreTemplateUpdateService(deps: {
       requestId: string,
       body: StoreTemplateApplyRequest,
     ): Promise<StoreTemplateUpdate> {
+      await prefetchIcons(actor, requestId);
       try {
         return await retryOnSerializationFailure(
           () =>
@@ -2314,11 +2637,12 @@ export function createStoreTemplateUpdateService(deps: {
      * scope derives is `scope` (no conflict), the preparations of removed
      * connections are proposed for removal; read-only.
      */
-    scopePlan(
+    async scopePlan(
       actor: Actor,
       requestId: string,
       choice: ScopeChoice,
     ): Promise<StoreTemplatePlan> {
+      await prefetchIcons(actor, requestId, choice);
       return withWorkspace(
         deps.db,
         { workspaceId: actor.workspaceId, userId: actor.callerId },
@@ -2369,6 +2693,10 @@ export function createStoreTemplateUpdateService(deps: {
       requestId: string,
       body: StoreTemplateScopeRequest,
     ): Promise<StoreTemplateUpdate> {
+      await prefetchIcons(actor, requestId, {
+        connections: body.connections,
+        appScope: body.appScope,
+      });
       try {
         return await retryOnSerializationFailure(
           () =>
@@ -2429,11 +2757,21 @@ export function createStoreTemplateUpdateService(deps: {
               live
                 .filter((row) => row.kind === kind)
                 .map((row) => row.recordId);
-            const computed = isUpdateAvailable(install, rows, template.version)
+            const computed = (await updateCandidate(
+              tx,
+              actor.workspaceId,
+              install.requestId,
+              install,
+              rows,
+            ))
               ? await planOrUnavailable(
                   tx,
                   actor.workspaceId,
                   install.requestId,
+                  undefined,
+                  false,
+                  // A list never fails for one install's identity.
+                  "lenient",
                 )
               : undefined;
             // A plan that changes nothing is no update (#625).
@@ -2464,6 +2802,7 @@ export function createStoreTemplateUpdateService(deps: {
               templateVersion: install.templateVersion,
               latestVersion: template.version,
               updateAvailable,
+              newerVersion: isUpdateAvailable(install, rows, template.version),
               summary: updateAvailable ? (computed?.summary ?? null) : null,
               error:
                 computed === null
@@ -2483,7 +2822,8 @@ export function createStoreTemplateUpdateService(deps: {
         },
       );
     },
-    plan(actor: Actor, requestId: string): Promise<StoreTemplatePlan> {
+    async plan(actor: Actor, requestId: string): Promise<StoreTemplatePlan> {
+      await prefetchIcons(actor, requestId);
       return withWorkspace(
         deps.db,
         { workspaceId: actor.workspaceId, userId: actor.callerId },
@@ -2491,7 +2831,15 @@ export function createStoreTemplateUpdateService(deps: {
           const install = await installRow(tx, actor.workspaceId, requestId);
           if (!install) reject("store_template_not_found", 404);
           const rows = await recordRows(tx, actor.workspaceId, requestId);
-          if (!isUpdateAvailable(install, rows, template.version))
+          if (
+            !(await updateCandidate(
+              tx,
+              actor.workspaceId,
+              requestId,
+              install,
+              rows,
+            ))
+          )
             reject("store_template_up_to_date", 409);
           const computed = await planOrUnavailable(
             tx,

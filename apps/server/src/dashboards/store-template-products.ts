@@ -32,7 +32,7 @@ import {
 import { presentImage } from "../images/service.js";
 import { deriveInstallCompletion } from "./store-template-legacy.js";
 import { STORE_SOURCE_DATASETS } from "./store-template-service.js";
-import type { StoreConnectorId } from "./store-portfolio.js";
+import type { StoreAppIdentity, StoreConnectorId } from "./store-portfolio.js";
 
 /**
  * Product identity of a store-template install (#708): per product its
@@ -106,6 +106,11 @@ export async function readInstallData(
     since: string;
     now: Date;
     policy: DataPolicy;
+    /** The tables' rows when the caller just wrote them (an install). */
+    tables?: {
+      products: Record<string, unknown>[];
+      mapping: Record<string, unknown>[];
+    };
   },
 ) {
   // The policy's query timeout, as dashboard data reads set it.
@@ -125,8 +130,9 @@ export async function readInstallData(
       throw error;
     }
   };
-  const products = await rows(input.productDatasetId);
-  const mapping = await rows(input.mappingDatasetId);
+  const products =
+    input.tables?.products ?? (await rows(input.productDatasetId));
+  const mapping = input.tables?.mapping ?? (await rows(input.mappingDatasetId));
   const keys = [...new Set(Object.values(STORE_SOURCE_DATASETS).flat())];
   const sources = input.connectionIds.length
     ? await tx
@@ -346,6 +352,21 @@ async function resourceCatalog(
     );
 }
 
+/**
+ * What the products of an install are read from, when not the stored
+ * install: its tables and connections while it is being installed, or
+ * the connections a scope change chooses.
+ */
+export interface StoreProductSources {
+  result: { productDatasetId: string; mappingDatasetId: string };
+  connections: { id: string; connectorId: StoreConnectorId }[];
+  /** The Products and mapping rows, when the caller just wrote them. */
+  tables?: {
+    products: Record<string, unknown>[];
+    mapping: Record<string, unknown>[];
+  };
+}
+
 /** The install's product identities (see the module comment). */
 export async function readStoreProducts(
   tx: Transaction,
@@ -354,22 +375,34 @@ export async function readStoreProducts(
   now: Date,
   /** The deployment's data policy (NETRICS_DATA_POLICY). */
   defaults: DataPolicy = DEFAULT_DATA_POLICY,
+  sources?: StoreProductSources,
 ): Promise<StoreTemplateProducts> {
-  const [install] = await tx
-    .select({ result: schema.dataTemplateInstalls.result })
-    .from(schema.dataTemplateInstalls)
-    .where(
-      and(
-        eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
-        eq(schema.dataTemplateInstalls.requestId, requestId),
-      ),
+  let result: StoreProductSources["result"],
+    inputConnections: StoreProductSources["connections"];
+  if (sources) {
+    ({ result, connections: inputConnections } = sources);
+  } else {
+    const [install] = await tx
+      .select({ result: schema.dataTemplateInstalls.result })
+      .from(schema.dataTemplateInstalls)
+      .where(
+        and(
+          eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
+          eq(schema.dataTemplateInstalls.requestId, requestId),
+        ),
+      );
+    if (!install) reject("store_template_not_found", 404);
+    const completion = await deriveInstallCompletion(
+      tx,
+      workspaceId,
+      requestId,
     );
-  if (!install) reject("store_template_not_found", 404);
-  const completion = await deriveInstallCompletion(tx, workspaceId, requestId);
-  if (!completion.ok) reject("store_template_baseline_unavailable", 409);
-  const result = storeTemplateResultSchema.parse(install.result);
+    if (!completion.ok) reject("store_template_baseline_unavailable", 409);
+    result = storeTemplateResultSchema.parse(install.result);
+    inputConnections = completion.inputs.connections;
+  }
   const connections = new Map(
-    completion.inputs.connections.map((connection) => [
+    inputConnections.map((connection) => [
       connection.id,
       connection.connectorId,
     ]),
@@ -398,6 +431,7 @@ export async function readStoreProducts(
     dataApps,
     proceeds,
   } = await readInstallData(tx, workspaceId, {
+    ...(sources?.tables ? { tables: sources.tables } : {}),
     productDatasetId: result.productDatasetId,
     mappingDatasetId: result.mappingDatasetId,
     connectionIds,
@@ -693,4 +727,165 @@ export function createStoreProductService(deps: {
       );
     },
   };
+}
+
+/**
+ * The apps of an install as template version 4 builds their slides
+ * (#709), in slide order (by name, then product id): each product with an
+ * app its connection lists (an app only the reports or the mapping name
+ * has nothing to show on a slide of its own). Its App Store app is the
+ * first listed App Store app of the product (the mapping groups listings
+ * into products), its website one that is still listed; both are what the
+ * slide's connection widgets read.
+ */
+export function storeAppIdentities(
+  products: StoreTemplateProducts["products"],
+): StoreAppIdentity[] {
+  return products
+    .filter((product) => product.iconSource !== null && product.productId)
+    .map((product) => {
+      const source = product.iconSource!;
+      // iconSource is the first listed app, App Store first: an App Store
+      // app when the product has a listed one.
+      const sourceApp = product.apps.find(
+        (app) =>
+          app.connectionId === source.connectionId &&
+          app.appId === source.resourceId,
+      );
+      return {
+        productId: product.productId,
+        // A slide needs a name: an empty product name (valid in the
+        // editable Products table) falls back to its first app's name, then
+        // its id. The product itself keeps its name.
+        name: product.name.trim()
+          ? product.name
+          : (product.apps.find((app) => app.name.trim())?.name ??
+            product.apps[0]?.appId ??
+            product.productId),
+        paid: product.paid,
+        icon: product.icon?.id ?? null,
+        appStore:
+          sourceApp?.connectorId === "app-store-connect"
+            ? { connectionId: source.connectionId, appId: source.resourceId }
+            : null,
+        stores: [...new Set(product.apps.map((app) => app.connectorId))].sort(),
+        website:
+          product.website && product.website.name !== null
+            ? {
+                connectionId: product.website.connectionId,
+                projectId: product.website.projectId,
+              }
+            : null,
+      };
+    })
+    .sort((a, b) => {
+      const left = a.name.toLowerCase(),
+        right = b.name.toLowerCase();
+      return left < right
+        ? -1
+        : left > right
+          ? 1
+          : a.productId < b.productId
+            ? -1
+            : a.productId > b.productId
+              ? 1
+              : 0;
+    });
+}
+
+/** An app whose icon can be fetched, for a product without one. */
+export type StoreIconSource = { connectionId: string; resourceId: string };
+
+/** The icons the products lack and can fetch (their icon source). */
+export function missingIconSources(
+  products: StoreTemplateProducts["products"],
+): StoreIconSource[] {
+  return products.flatMap((product) =>
+    product.icon === null && product.iconSource ? [product.iconSource] : [],
+  );
+}
+
+/**
+ * The icons the products of an install about to be made lack and can
+ * fetch: its connections' listed apps, grouped as the request groups them
+ * (App Store app first, as the product identity resolves icons).
+ */
+export async function installIconSources(
+  tx: Transaction,
+  workspaceId: string,
+  input: {
+    connections: string[];
+    groups: { id: string; apps: { connectionId: string; appId: string }[] }[];
+  },
+  defaults: DataPolicy = DEFAULT_DATA_POLICY,
+): Promise<StoreIconSource[]> {
+  if (!input.connections.length) return [];
+  const rows = await tx
+    .select({
+      id: schema.connections.id,
+      connectorId: schema.connections.connectorId,
+    })
+    .from(schema.connections)
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        inArray(schema.connections.id, input.connections),
+      ),
+    );
+  const connectors = new Map<string, StoreConnectorId>();
+  for (const row of rows)
+    if (
+      row.connectorId === "app-store-connect" ||
+      row.connectorId === "google-play"
+    )
+      connectors.set(row.id, row.connectorId);
+  const policy = (await resolveDataPolicy(tx, workspaceId, defaults)).policy;
+  const resources = await resourceCatalog(
+    tx,
+    workspaceId,
+    [...connectors.keys()],
+    policy.queryRows,
+  );
+  const stored = new Set(
+    (await listResourceIcons(tx, workspaceId)).map((icon) =>
+      resourceNameKey(icon.connectionId!, icon.resourceId!),
+    ),
+  );
+  const products = resolveStoreProducts({
+    products: [],
+    mapping: input.groups.flatMap((group) =>
+      group.apps.map((app) => ({
+        app_key: app.connectionId + ":" + app.appId,
+        product_id: "product:" + group.id,
+      })),
+    ),
+    connectors,
+    apps: resources.map((resource) => ({
+      connectionId: resource.connectionId,
+      appId: resource.resourceId,
+      name: resource.name,
+      connectorId: connectors.get(resource.connectionId)!,
+    })),
+  });
+  const listed = new Set(
+    resources.map((r) => resourceNameKey(r.connectionId, r.resourceId)),
+  );
+  const sources: StoreIconSource[] = [];
+  for (const product of products) {
+    const ordered = [
+      ...product.apps.filter((app) => app.connectorId === "app-store-connect"),
+      ...product.apps.filter((app) => app.connectorId === "google-play"),
+    ].filter((app) => listed.has(resourceNameKey(app.connectionId, app.appId)));
+    if (
+      ordered.length &&
+      !ordered.some((app) =>
+        stored.has(resourceNameKey(app.connectionId, app.appId)),
+      )
+    )
+      sources.push({
+        connectionId: ordered[0]!.connectionId,
+        resourceId: ordered[0]!.appId,
+      });
+  }
+  return sources;
 }

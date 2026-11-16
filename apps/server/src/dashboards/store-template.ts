@@ -18,6 +18,7 @@ import {
   buildStoreModel,
   buildStorePreparation,
   storeTemplateCopy,
+  type StoreAppIdentity,
   type StoreConnectorId,
   type StoreMetric,
   type StoreTemplateVersion,
@@ -41,7 +42,13 @@ export const STORE_TEMPLATE_ID = "store_portfolio";
  * `preparation:labels` and a `preparation:labelled:<metric>` per metric,
  * which the models read.
  */
-export const STORE_TEMPLATE_VERSION = 3;
+/**
+ * 4: the overview plus one slide per app (#709), each scoped to the app
+ * with its icon as the slide's logo, paid and free layouts, auto advance.
+ * The apps are an input (`apps`), read from the product identity (#708)
+ * when an install or update is built; the data records are version 3's.
+ */
+export const STORE_TEMPLATE_VERSION = 4;
 
 export const storeMetrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
 
@@ -62,6 +69,28 @@ export const storeTemplateInputsSchema = z.object({
   fixedProduct: z.string().nullable(),
   /** Install-time product groups; seed for the mapping tables only, null for baseline installs. */
   groups: storeTemplateRequestSchema.shape.groups.unwrap().nullable(),
+  /**
+   * Version 4: the apps that can have a slide, in slide order, as their
+   * identity was when the install or its last update was built. Missing
+   * before version 4.
+   */
+  apps: z
+    .array(
+      z.object({
+        productId: z.string(),
+        name: z.string(),
+        paid: z.boolean(),
+        icon: z.uuid().nullable(),
+        appStore: z
+          .object({ connectionId: z.uuid(), appId: z.string() })
+          .nullable(),
+        stores: z.array(z.enum(["app-store-connect", "google-play"])),
+        website: z
+          .object({ connectionId: z.uuid(), projectId: z.string() })
+          .nullable(),
+      }),
+    )
+    .optional(),
 });
 export interface StoreTemplateInputs {
   name: string;
@@ -75,6 +104,7 @@ export interface StoreTemplateInputs {
   }[];
   fixedProduct: string | null;
   groups: StoreTemplateRequest["groups"] | null;
+  apps?: StoreAppIdentity[];
 }
 /**
  * Version 1 grammar: `preparation:source:<connectionId>:<metric>`,
@@ -106,6 +136,8 @@ export type StoreTemplateRecord =
       name: string;
       request: CreateDashboardRequest;
       widgetKeys: string[];
+      /** Version 4: the key of each slide, in position order. */
+      slideKeys?: string[];
     };
 export interface StoreTemplateDefinition {
   version: number;
@@ -309,7 +341,7 @@ const defineStoreTemplate = (
       };
     }
     if (key === "dashboard:portfolio") {
-      const { request, widgetKeys } = buildStoreDashboardTemplate(
+      const { request, widgetKeys, slideKeys } = buildStoreDashboardTemplate(
         inputs.name,
         {
           downloads: idOf(ids, "model:downloads"),
@@ -318,8 +350,16 @@ const defineStoreTemplate = (
         },
         inputs.locale,
         inputs.fixedProduct ?? undefined,
+        version >= 4 ? storePortfolio(inputs) : undefined,
       );
-      return { kind: "dashboard", key, name: inputs.name, request, widgetKeys };
+      return {
+        kind: "dashboard",
+        key,
+        name: inputs.name,
+        request,
+        widgetKeys,
+        ...(slideKeys ? { slideKeys } : {}),
+      };
     }
     throw new Error(`unknown store template key ${key}`);
   },
@@ -337,3 +377,15 @@ export const storeTemplate: StoreTemplateDefinition = defineStoreTemplate(
 export const storeTemplateV1: StoreTemplateDefinition = defineStoreTemplate(1);
 /** Version 2, frozen like version 1 (`store-template.test.ts`). */
 export const storeTemplateV2: StoreTemplateDefinition = defineStoreTemplate(2);
+/** Version 3, frozen like version 1 (`store-template.test.ts`). */
+export const storeTemplateV3: StoreTemplateDefinition = defineStoreTemplate(3);
+
+/** What version 4 builds the slides from: the apps and App Store accounts. */
+export function storePortfolio(inputs: StoreTemplateInputs) {
+  return {
+    apps: inputs.apps ?? [],
+    appStore: inputs.connections
+      .filter((connection) => connection.connectorId === "app-store-connect")
+      .map((connection) => ({ id: connection.id, name: connection.name })),
+  };
+}

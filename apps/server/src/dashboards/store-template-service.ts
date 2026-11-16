@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   createDashboardRequestSchema,
@@ -37,11 +37,18 @@ import {
 } from "../data/service.js";
 import { createDashboardService } from "./service.js";
 import {
+  storeAppSlides,
   storeTemplateCopy,
   type StoreTemplateSource,
   type StoreMetric,
   type StoreConnectorId,
 } from "./store-portfolio.js";
+import {
+  installIconSources,
+  readStoreProducts,
+  storeAppIdentities,
+  type StoreIconSource,
+} from "./store-template-products.js";
 import {
   storeTemplate,
   type StoreTemplateDefinition,
@@ -50,7 +57,64 @@ import {
   type StoreTemplateRecord,
   STORE_TEMPLATE_ID,
   storeTemplateInputsSchema,
+  storePortfolio,
 } from "./store-template.js";
+
+/**
+ * Fetches the icons of apps that have none through the validated
+ * resource-icon path (images/resource-icons.ts), so app slides get their
+ * logo without "Use app icon" (#709). Best effort: what cannot be fetched
+ * stays without an icon, and the slide without a logo.
+ */
+export type StoreIconFetcher = (
+  actor: { workspaceId: string; callerId: string },
+  sources: StoreIconSource[],
+) => Promise<void>;
+
+/**
+ * The apps of an install as version 4 builds their slides, read in tx
+ * from its tables and the connections' identity; none for a dashboard of
+ * one app (`fixedProduct`), which has no app slides. The data policy's
+ * statement timeout the read sets is restored after it.
+ */
+export async function readStoreApps(
+  tx: Transaction,
+  workspaceId: string,
+  requestId: string,
+  input: {
+    result: { productDatasetId: string; mappingDatasetId: string };
+    connections: { id: string; connectorId: StoreConnectorId }[];
+    fixedProduct: string | null;
+    /** The Products and mapping rows, when the caller just wrote them. */
+    tables?: {
+      products: Record<string, unknown>[];
+      mapping: Record<string, unknown>[];
+    };
+  },
+  now: Date,
+  policy: DataPolicy,
+) {
+  if (input.fixedProduct !== null) return [];
+  const [timeout] = await tx.execute(
+    sql`select current_setting('statement_timeout') as value`,
+  );
+  const products = await readStoreProducts(
+    tx,
+    workspaceId,
+    requestId,
+    now,
+    policy,
+    {
+      result: input.result,
+      connections: input.connections,
+      ...(input.tables ? { tables: input.tables } : {}),
+    },
+  );
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(timeout!.value)}, true)`,
+  );
+  return storeAppIdentities(products.products);
+}
 
 /**
  * Installs run one at a time, across workspaces (#604). An install is one
@@ -141,13 +205,14 @@ function normalize(input: StoreTemplateRequest) {
  * Widget id → widget template key of a dashboard the template just created:
  * its widgets in reading order (slide position, then y, x) are the
  * template's widgets in `widgetKeys` order; its slides in position order are
- * `slide:<index>`.
+ * `slideKeys` (version 4), else `slide:<index>`.
  */
 async function installedWidgetKeys(
   tx: Transaction,
   workspaceId: string,
   dashboardId: string,
   widgetKeys: string[],
+  slideKeys?: string[],
 ): Promise<Record<string, string>> {
   const widgets = await tx
     .select({ id: schema.dashboardWidgets.id })
@@ -184,7 +249,10 @@ async function installedWidgetKeys(
     )
     .orderBy(asc(schema.dashboardSlides.position));
   return Object.fromEntries([
-    ...slides.map((slide, index) => [slide.id, `slide:${index}`]),
+    ...slides.map((slide, index) => [
+      slide.id,
+      slideKeys?.[index] ?? `slide:${index}`,
+    ]),
     ...widgets.map((widget, index) => [widget.id, widgetKeys[index]!]),
   ]);
 }
@@ -335,6 +403,8 @@ export function createStoreTemplateService(deps: {
   recordChunk?: number;
   /** The wait for the install lock; tests pass small values. */
   installLockTimeoutMs?: number;
+  /** Fetches missing app icons before an install (version 4). */
+  fetchIcons?: StoreIconFetcher;
 }) {
   const now = deps.now ?? (() => new Date()),
     defaults = deps.policy ?? DEFAULT_DATA_POLICY,
@@ -431,6 +501,19 @@ export function createStoreTemplateService(deps: {
       const hash = createHash("sha256")
         .update(JSON.stringify(input))
         .digest("hex");
+      // App slides show the app's icon (version 4): icons the apps lack are
+      // fetched first, outside the install's transaction and lock.
+      if (deps.fetchIcons && template.version >= 4 && !input.appScope)
+        try {
+          const sources = await withWorkspace(
+            deps.db,
+            { workspaceId: actor.workspaceId, userId: actor.callerId },
+            (tx) => installIconSources(tx, actor.workspaceId, input, defaults),
+          );
+          if (sources.length) await deps.fetchIcons(actor, sources);
+        } catch {
+          // No icon: the slide has no logo; the install goes on.
+        }
       try {
         return await retryOnSerializationFailure(
           () =>
@@ -566,6 +649,27 @@ export function createStoreTemplateService(deps: {
                     : null,
                   groups: input.groups,
                 };
+                if (template.version >= 4)
+                  inputs.apps = await readStoreApps(
+                    tx,
+                    actor.workspaceId,
+                    input.requestId,
+                    {
+                      result: {
+                        productDatasetId: products.datasetId,
+                        mappingDatasetId: mapping.datasetId,
+                      },
+                      connections: sources,
+                      fixedProduct: inputs.fixedProduct,
+                      // As just written: not read back.
+                      tables: {
+                        products: productRows.map((row) => row.values),
+                        mapping: mappingRows.map((row) => row.values),
+                      },
+                    },
+                    now(),
+                    defaults,
+                  );
                 const ids = {
                   "dataset:mapping": mapping.datasetId,
                   "dataset:products": products.datasetId,
@@ -625,12 +729,17 @@ export function createStoreTemplateService(deps: {
                 }
                 if (!dashboardId)
                   throw new Error("store template without dashboard");
+                const omitted = storeAppSlides(storePortfolio(inputs)).omitted;
                 const result: StoreTemplateResult = {
                   dashboardId,
                   mappingDatasetId: mapping.datasetId,
                   productDatasetId: products.datasetId,
                   models,
                   preparationIds,
+                  // Apps past the dashboard's limits: the overview only.
+                  ...(omitted.length
+                    ? { omittedApps: omitted.map((app) => app.name) }
+                    : {}),
                 };
                 await tx.insert(schema.dataTemplateInstalls).values({
                   workspaceId: actor.workspaceId,
@@ -653,6 +762,9 @@ export function createStoreTemplateService(deps: {
                   dashboardRecord.kind === "dashboard"
                     ? dashboardRecord.widgetKeys
                     : [],
+                  dashboardRecord.kind === "dashboard"
+                    ? dashboardRecord.slideKeys
+                    : undefined,
                 );
                 const recordRows: (typeof schema.dataTemplateRecords.$inferInsert)[] =
                   [
@@ -673,6 +785,12 @@ export function createStoreTemplateService(deps: {
                               {
                                 request: record.request,
                                 widgetKeys: record.widgetKeys,
+                                ...(record.slideKeys
+                                  ? { slideKeys: record.slideKeys }
+                                  : {}),
+                                // The apps its slides were built from: what
+                                // a later app change is compared with.
+                                ...(inputs.apps ? { apps: inputs.apps } : {}),
                               },
                       widgetKeys:
                         record.kind === "dashboard"

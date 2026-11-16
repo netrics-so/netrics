@@ -22,7 +22,10 @@ import {
 } from "@netrics/contracts";
 import type { AuthService } from "../auth/index.js";
 import { createStoreProductService } from "../dashboards/store-template-products.js";
-import { createStoreTemplateService } from "../dashboards/store-template-service.js";
+import {
+  createStoreTemplateService,
+  type StoreIconFetcher,
+} from "../dashboards/store-template-service.js";
 import {
   createStoreTemplateUpdateService,
   StoreUpdateDecisionMissing,
@@ -79,6 +82,8 @@ export function registerStoreTemplateRoutes(
     policy?: DataPolicy;
     /** The newest store template; tests pass other versions. */
     template?: StoreTemplateDefinition;
+    /** Fetches the icons app slides lack (#709); none: no fetch. */
+    fetchIcons?: StoreIconFetcher;
   },
 ) {
   const service = createStoreTemplateService(deps),

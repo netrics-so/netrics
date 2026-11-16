@@ -23,6 +23,16 @@ export type UpdateDashboard = StoreTemplateUpdate["dashboards"][number];
 
 export const storeUpdatePath = (workspaceId: string, requestId: string) =>
   `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`;
+/**
+ * Whether an install's apps can change only after its update: a newer
+ * template version some record is not built from yet, the rule the server
+ * refuses scope changes by (store_template_update_available). An update
+ * that only follows changed apps (#709) leaves them editable.
+ */
+export const scopeNeedsUpdateFirst = (
+  install: Pick<StoreInstall, "updateAvailable" | "newerVersion" | "error">,
+) => install.updateAvailable && install.newerVersion && install.error === null;
+
 /** Where an install's connections and app scope are changed. */
 export const storeScopePath = (workspaceId: string, requestId: string) =>
   `/workspaces/${workspaceId}/dashboards/stores?install=${requestId}`;

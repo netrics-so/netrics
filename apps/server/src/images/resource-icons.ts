@@ -370,6 +370,86 @@ export function createResourceIconService(deps: ResourceIconServiceDeps) {
     },
 
     /**
+     * Fetches the icons of resources that have none yet, one connector call
+     * per connection (at most 50 resources each), through the same checks
+     * as `use`. Best effort (#709): a resource that is not the
+     * connection's, a provider failure or a full quota leaves it without
+     * an icon; nothing is thrown.
+     */
+    async fetchMissing(
+      actor: Actor,
+      resources: ReadonlyArray<{ connectionId: string; resourceId: string }>,
+    ): Promise<void> {
+      const byConnection = new Map<string, string[]>();
+      for (const resource of resources)
+        byConnection.set(resource.connectionId, [
+          ...(byConnection.get(resource.connectionId) ?? []),
+          resource.resourceId,
+        ]);
+      for (const [connectionId, ids] of byConnection) {
+        try {
+          const missing = await inWorkspace(actor, async (tx) => {
+            const connection = await findConnection(
+              tx,
+              actor.workspaceId,
+              connectionId,
+            );
+            const registered = connection
+              ? deps.registry.get(connection.row.connectorId)
+              : undefined;
+            if (!registered || !supportsResourceIcons(registered.connector))
+              return [];
+            const wanted: string[] = [];
+            for (const id of [...new Set(ids)].slice(0, 50))
+              if (
+                (await connectionHasResource(
+                  tx,
+                  actor.workspaceId,
+                  connectionId,
+                  id,
+                )) &&
+                !(await findResourceIcon(
+                  tx,
+                  actor.workspaceId,
+                  connectionId,
+                  id,
+                ))
+              )
+                wanted.push(id);
+            const names = await findResourceNames(
+              tx,
+              actor.workspaceId,
+              wanted.map((resourceId) => ({ connectionId, resourceId })),
+            );
+            return wanted.map((id) => ({
+              id,
+              name: names.get(resourceNameKey(connectionId, id)) ?? null,
+            }));
+          });
+          if (!missing.length) continue;
+          await deps.callConnection(
+            actor,
+            connectionId,
+            (connector, context, options) =>
+              fetchAndStoreIcons({
+                db: deps.db,
+                quota: deps.quota,
+                workspaceId: actor.workspaceId,
+                connectionId,
+                connector,
+                run: (call) => call(context, options),
+                resources: missing,
+                actorUserId: actor.callerId,
+                now: now(),
+              }),
+          );
+        } catch {
+          // The provider's error stays out of logs and answers: no icon.
+        }
+      }
+    },
+
+    /**
      * The icon of one resource as a workspace image: the stored one while
      * it is fresh, else fetched now. A provider failure answers the stored
      * icon if there is one (502 otherwise); no icon at all is 404.

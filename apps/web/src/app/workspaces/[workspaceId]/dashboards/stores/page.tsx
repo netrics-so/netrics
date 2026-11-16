@@ -11,7 +11,7 @@ import {
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
-import { storeUpdatePath } from "@/lib/store-updates";
+import { scopeNeedsUpdateFirst, storeUpdatePath } from "@/lib/store-updates";
 import { StoreInstallEditor } from "./store-install-editor";
 import { StoreTemplateForm } from "./store-template-form";
 export const dynamic = "force-dynamic";
@@ -44,8 +44,11 @@ export default async function StoreTemplatesPage({
         ).installs.find((entry) => entry.requestId === installId)
       : undefined;
     if (allowed && !install) notFound();
+    // A newer template version is reviewed first, as the server requires.
+    // An update that only follows changed apps (#709) leaves them editable.
+    const versionUpdate = !!install && scopeNeedsUpdateFirst(install);
     const [scope, options, products] =
-      install && install.error === null && !install.updateAvailable
+      install && install.error === null && !versionUpdate
         ? await Promise.all([
             readStoreTemplateScope(cookieHeader, workspaceId, installId),
             readStoreTemplateOptions(cookieHeader, workspaceId),
@@ -79,7 +82,7 @@ export default async function StoreTemplatesPage({
         </header>
         {!allowed ? (
           <p className="notice">{t("editRoleCannot")}</p>
-        ) : install?.updateAvailable && install.error === null ? (
+        ) : versionUpdate ? (
           <p className="notice">
             {t("editUpdateFirst")}{" "}
             <Link href={storeUpdatePath(workspaceId, installId)}>
@@ -87,12 +90,22 @@ export default async function StoreTemplatesPage({
             </Link>
           </p>
         ) : install && scope && options && products ? (
-          <StoreInstallEditor
-            workspaceId={workspaceId}
-            install={{ requestId: installId, name: install.name, scope }}
-            options={options}
-            products={products}
-          />
+          <>
+            {install.updateAvailable ? (
+              <p className="notice">
+                {t("appSlidesUpdate")}{" "}
+                <Link href={storeUpdatePath(workspaceId, installId)}>
+                  {t("editOpenUpdate")}
+                </Link>
+              </p>
+            ) : null}
+            <StoreInstallEditor
+              workspaceId={workspaceId}
+              install={{ requestId: installId, name: install.name, scope }}
+              options={options}
+              products={products}
+            />
+          </>
         ) : (
           <p className="notice">{t("editUnavailable")}</p>
         )}

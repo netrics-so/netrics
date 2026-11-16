@@ -23,7 +23,8 @@ import {
   type Items,
 } from "./store-template-items.js";
 import {
-  storeTemplate,
+  // Version 3: one slide of measure tables, which these tests build rows of.
+  storeTemplateV3 as storeTemplate,
   type StoreTemplateIds,
   type StoreTemplateInputs,
 } from "./store-template.js";

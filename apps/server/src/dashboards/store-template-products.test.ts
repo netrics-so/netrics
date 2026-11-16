@@ -21,6 +21,7 @@ import {
 } from "../test-db.js";
 import { createDataService } from "../data/service.js";
 import { createStoreTemplateService } from "./store-template-service.js";
+import { storeTemplateV3 } from "./store-template.js";
 import { createStoreProductService } from "./store-template-products.js";
 import { apple, google, now } from "./test-helpers.js";
 
@@ -185,6 +186,8 @@ beforeAll(async () => {
     db,
     registry,
     now: () => new Date(now),
+    // Made before 0079 (no app identity yet): version 3.
+    template: storeTemplateV3,
   }).install(actor(), {
     requestId,
     name: "App portfolio",
