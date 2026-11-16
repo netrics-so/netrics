@@ -36,12 +36,23 @@ export interface FreshnessManifests {
   get(connectorId: string): { manifest: ConnectorManifest } | undefined;
 }
 
-/** One part of a widget's data: a metric or a source dataset of a connection. */
+/**
+ * One part of a widget's data: a metric or a source dataset of a
+ * connection, or a stream by its key (review text, which no metric or
+ * dataset carries).
+ */
 export type FreshnessDependency = {
   connectionId: string;
   /** One resource; absent: every selected resource. */
   resource?: string | undefined;
-} & ({ metricKey: string } | { datasetKey: string });
+} & ({ metricKey: string } | { datasetKey: string } | { stream: string });
+
+/**
+ * The stream of a connector's review text (ADR 0025 section 1: App Store
+ * Connect's `reviews` stream holds the review metrics and the review text).
+ * Latest-review widgets depend on the stream with this key.
+ */
+export const REVIEWS_FRESHNESS_STREAM = "reviews";
 
 export interface WidgetFreshnessResult {
   /** Absent when the widget depends on no stream with stored rows. */
@@ -163,7 +174,9 @@ export function createFreshnessReader(
         const stream = connection.streams.find((stream) =>
           "metricKey" in dependency
             ? stream.metrics?.includes(dependency.metricKey)
-            : stream.datasets?.includes(dependency.datasetKey),
+            : "datasetKey" in dependency
+              ? stream.datasets?.includes(dependency.datasetKey)
+              : stream.key === dependency.stream,
         );
         if (!stream) continue;
         for (const row of streamRows(connection, stream, dependency.resource))
@@ -214,6 +227,23 @@ function streamRows(
 }
 
 const time = (date: Date | null) => date?.getTime() ?? null;
+
+/**
+ * Data with its freshness (ADR 0025 section 7): a provider overdue by a
+ * day turns `ok` into `stale`. Without freshness the data is returned as
+ * it is, so payloads of connectors without streams stay byte for byte.
+ */
+export function applyFreshness<T extends { status: string }>(
+  data: T,
+  found: WidgetFreshnessResult,
+): T {
+  if (!found.freshness && !found.overdue) return data;
+  return {
+    ...data,
+    ...(found.overdue && data.status === "ok" ? { status: "stale" } : {}),
+    ...(found.freshness ? { freshness: found.freshness } : {}),
+  };
+}
 
 /**
  * The least fresh of the rows used (ADR 0025 section 7): among periodic
@@ -327,7 +357,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * connection's dataset key, an observation binding through its metric
  * definition to the metric key. `resources:` bindings and manual datasets
  * have no stream. The resource is the one the slide scope names for the
- * connection, else every selected resource.
+ * connection, else the one a screen's scope names (#500), else every
+ * selected resource.
  */
 export async function modelFreshnessDependencies(
   tx: Transaction,
@@ -338,6 +369,8 @@ export async function modelFreshnessDependencies(
   },
   slideScope: SlideFilterScope,
   exclusions: readonly DashboardFilterExclusion[],
+  /** A paired screen's fixed scope; it can never be excluded. */
+  deviceScope: SlideFilterScope = {},
 ): Promise<FreshnessDependency[]> {
   const ids = new Set(Object.keys(release.bindings));
   for (const [preparationId, version] of Object.entries(
@@ -419,11 +452,13 @@ export async function modelFreshnessDependencies(
     }
   }
   return found.map(({ connectionId, key, metric }) => {
-    const scoped = slideScopeResource(slideScope, connectionId, exclusions);
-    const resource =
+    const named = (scoped: { resource?: string; conflict: boolean }) =>
       scoped.resource !== undefined && !scoped.conflict
         ? scoped.resource
         : undefined;
+    const resource =
+      named(slideScopeResource(slideScope, connectionId, exclusions)) ??
+      named(slideScopeResource(deviceScope, connectionId, []));
     return metric
       ? { connectionId, metricKey: key, resource }
       : { connectionId, datasetKey: key, resource };

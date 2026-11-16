@@ -17,7 +17,10 @@ import {
 } from "@netrics/database";
 import { DEFAULT_DATA_POLICY } from "@netrics/domain";
 
-import { queryDashboardData } from "./dashboards/data.js";
+import {
+  queryDashboardData,
+  queryDashboardMeasure,
+} from "./dashboards/data.js";
 import {
   createFreshnessReader,
   modelFreshnessDependencies,
@@ -748,6 +751,38 @@ describe("measure widget freshness (ADR 0025 §6)", () => {
       ),
     );
     expect(found.freshness).toMatchObject({ dataThrough: "2026-11-13" });
+  });
+
+  it("follows a screen's scope as it follows a slide's", async () => {
+    const data = await withWorkspace(db, { workspaceId }, (tx) =>
+      queryDashboardMeasure(
+        tx,
+        workspaceId,
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          binding: {
+            modelId,
+            measureIds: ["views"],
+            groupBy: [],
+            exclusions: [],
+          },
+          options: { view: "value", limit: 20 },
+        },
+        [],
+        {},
+        NOW,
+        DEFAULT_DATA_POLICY,
+        "en",
+        // The screen shows app-1 only (#500).
+        { app: { kind: "values", values: [`${c.periodic}:app-1`] } },
+        {},
+        createFreshnessReader(workspaceId, manifests),
+      ),
+    );
+    expect(data.freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+      fetchedAt: at(-5 * MINUTE).toISOString(),
+    });
   });
 });
 

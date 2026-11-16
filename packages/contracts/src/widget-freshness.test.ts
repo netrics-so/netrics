@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   dashboardWidgetDataSchema,
   deviceMetricDataSchema,
+  deviceReviewDataSchema,
+  latestReviewResponseSchema,
   deviceTileSchema,
   widgetFreshnessSchema,
 } from "./index.js";
@@ -70,6 +72,23 @@ describe("widget freshness", () => {
       stream: "Reviews",
       fetchedAt: periodic.fetchedAt,
     });
+  });
+
+  it("is on latest-review data, screens' and the Studio's", () => {
+    const checked = {
+      kind: "continuous",
+      stream: "Reviews",
+      fetchedAt: periodic.fetchedAt,
+    } as const;
+    const data = { status: "ok", updatedAt: null, review: null } as const;
+    expect(deviceReviewDataSchema.parse(data)).not.toHaveProperty("freshness");
+    expect(
+      deviceReviewDataSchema.parse({ ...data, freshness: checked }).freshness,
+    ).toEqual(checked);
+    expect(
+      latestReviewResponseSchema.parse({ ...data, freshness: checked })
+        .freshness,
+    ).toEqual(checked);
   });
 
   it("never reaches schema 1 tiles", () => {

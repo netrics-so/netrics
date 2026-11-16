@@ -419,6 +419,7 @@ export async function queryDashboardMeasure(
             await publishedModel(savepoint, workspaceId, input.binding.modelId),
             slideScope,
             input.binding.exclusions,
+            deviceScope,
           ),
         );
       const { policy } = await resolveDataPolicy(

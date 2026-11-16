@@ -8,7 +8,9 @@ import {
   slideScopedWidgets,
 } from "../dashboards/data.js";
 import {
+  applyFreshness,
   createFreshnessReader,
+  REVIEWS_FRESHNESS_STREAM,
   type FreshnessDependency,
   type FreshnessManifests,
   type FreshnessReader,
@@ -275,9 +277,7 @@ function metricDependency(
 
 /**
  * A data widget's data with its freshness (ADR 0025 section 7), the
- * least fresh of the streams it depends on. A provider overdue by a day
- * turns `ok` into `stale`. Without freshness the data is returned as it
- * is, so payloads of connectors without streams stay byte for byte.
+ * least fresh of the streams it depends on (`applyFreshness`).
  */
 async function withFreshness<T extends { status: DeviceTileStatus }>(
   tx: Transaction,
@@ -286,13 +286,7 @@ async function withFreshness<T extends { status: DeviceTileStatus }>(
   dependencies: readonly FreshnessDependency[],
 ): Promise<T> {
   if (!context.freshness) return data;
-  const found = await context.freshness.read(tx, dependencies);
-  if (!found.freshness && !found.overdue) return data;
-  return {
-    ...data,
-    ...(found.overdue && data.status === "ok" ? { status: "stale" } : {}),
-    ...(found.freshness ? { freshness: found.freshness } : {}),
-  };
+  return applyFreshness(data, await context.freshness.read(tx, dependencies));
 }
 
 /**
@@ -1410,7 +1404,19 @@ async function buildSlides(
           ),
           imageId: imageRef(widget.imageId),
           options: reviewOptions,
-          data: { status: found.status, updatedAt: found.updatedAt, review },
+          // The reviews stream of the widget's app (ADR 0025, #704).
+          data: await withFreshness(
+            tx,
+            context,
+            { status: found.status, updatedAt: found.updatedAt, review },
+            [
+              {
+                connectionId,
+                stream: REVIEWS_FRESHNESS_STREAM,
+                resource: resourceId ?? undefined,
+              },
+            ],
+          ),
         });
       } else if (widget.type === "text") {
         widgets.push({
