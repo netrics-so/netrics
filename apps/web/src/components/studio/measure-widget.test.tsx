@@ -364,3 +364,126 @@ describe("viewer interaction state with typed values", () => {
     expect(calls).toEqual([["price", null]]);
   });
 });
+
+describe("viewer wording on paired screens (#649)", () => {
+  const props = (
+    audience?: "editor" | "viewer",
+  ): Parameters<typeof MeasureWidgetView>[0] => ({
+    audience,
+    widget: {
+      title: "Downloads",
+      options: { view: "table", limit: 20 },
+      binding: { measureIds: ["downloads"], groupBy: ["app"] },
+    },
+    data: {
+      widgetId: "00000000-0000-4000-8000-000000000001",
+      status: "ok",
+      error: null,
+      exclusions: [],
+      metadata: {
+        modelId: "00000000-0000-4000-8000-000000000002",
+        modelName: "Downloads",
+        measures: [{ id: "downloads", name: "Downloads" }],
+        dimensions: [{ id: "app", name: "App", type: "string" }],
+      },
+      result: {
+        releaseId: null,
+        rows: [],
+        warnings: [{ code: "w", message: "w" }],
+        operations: 1,
+        provenance: [],
+        appliedFilter: null,
+        groupBy: [],
+        stale: true,
+      },
+    } as unknown as DashboardWidgetData,
+  });
+
+  it("keeps editor instructions in the dashboard and Studio", () => {
+    const html = renderI18n(<MeasureWidgetView {...props()} />);
+    expect(html).toContain("No rows in this preview.");
+    expect(html).toContain("1 data warning. Check the model preview.");
+  });
+
+  it("says what a wall screen can show, in English and German", () => {
+    const en = renderI18n(<MeasureWidgetView {...props("viewer")} />);
+    expect(en).toContain("No data yet");
+    expect(en).toContain("1 data warning");
+    expect(en).toContain("Last valid data");
+    expect(en).not.toContain("preview");
+    expect(en).not.toContain("Check");
+    const de = renderI18n(<MeasureWidgetView {...props("viewer")} />, "de");
+    expect(de).toContain("Noch keine Daten");
+    expect(de).toContain("1 Datenhinweis");
+    expect(de).toContain("Letzte gültige Daten");
+    expect(de).not.toContain("Vorschau");
+    expect(de).not.toContain("Prüfe");
+  });
+
+  /** The same tile with a data error, or sources needing attention. */
+  const failing = (
+    error: string | null,
+    audience?: "editor" | "viewer",
+  ): Parameters<typeof MeasureWidgetView>[0] => {
+    const base = props(audience);
+    return {
+      ...base,
+      data: {
+        ...base.data!,
+        error,
+        result: error ? null : base.data!.result,
+        sourceHealth: [
+          {
+            connectionId: ID(31),
+            name: "Apple team",
+            status: "needs_reauthorization",
+          },
+          { connectionId: ID(32), name: "Play account", status: "auth_failed" },
+          { connectionId: ID(33), name: "Second Play", status: "outage" },
+        ],
+      } as unknown as DashboardWidgetData,
+    };
+  };
+  const ID = (n: number) =>
+    `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  /** Editor instructions, in either language. */
+  const INSTRUCTION =
+    /Check|Reconnect|Update access|Try again|Prüfe|Verbinde|Aktualisiere|Versuche/;
+
+  it("keeps errors and source states free of instructions on wall screens", () => {
+    // The editor still gets the remedy.
+    const editor = renderI18n(
+      <MeasureWidgetView {...failing("data_source_pending")} />,
+    );
+    expect(editor).toContain("Reconnect Apple team");
+    expect(editor).toMatch(INSTRUCTION);
+    for (const locale of ["en", "de"] as const) {
+      for (const error of [
+        "data_source_pending",
+        "data_source_not_found",
+        "internal_error",
+        null,
+      ]) {
+        const html = renderI18n(
+          <MeasureWidgetView {...failing(error, "viewer")} />,
+          locale,
+        );
+        expect(html, `${locale} ${error}`).not.toMatch(INSTRUCTION);
+      }
+    }
+    const en = (error: string | null) =>
+      renderI18n(<MeasureWidgetView {...failing(error, "viewer")} />);
+    expect(en("data_source_pending")).toContain("Data not available yet");
+    expect(en("data_source_not_found")).toContain("Data not available");
+    expect(en("internal_error")).toContain("Data not available");
+    expect(en(null)).toContain("Imports from Apple team are paused.");
+    expect(en(null)).toContain("Imports from Play account are paused.");
+    expect(en(null)).toContain("Imports from Second Play are interrupted.");
+    const de = renderI18n(
+      <MeasureWidgetView {...failing("data_source_pending", "viewer")} />,
+      "de",
+    );
+    expect(de).toContain("Daten noch nicht verfügbar");
+    expect(de).toContain("Die Importe von Apple team sind pausiert.");
+  });
+});

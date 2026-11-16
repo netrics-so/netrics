@@ -445,3 +445,78 @@ describe("kiosk refresh countdown (ADR 0018, section 5)", () => {
     ).toBeNull();
   });
 });
+
+describe("kiosk wording for wall screens (#649)", () => {
+  /** A schema 3 slide with a measure tile whose connection has not synced. */
+  function withMeasure(locale: "en" | "de"): DeviceDashboardV3Response {
+    const payload = formats({ rotation: 0, displayMode: "screen" });
+    payload.locale = locale;
+    payload.slides[0]!.widgets = [
+      {
+        type: "measure",
+        id: ID(20),
+        x: 0,
+        y: 0,
+        w: 12,
+        h: 8,
+        min: STUDIO_MIN_WIDGET_SIZE.measure,
+        label: "Downloads",
+        measureIds: ["downloads"],
+        groupBy: ["app"],
+        options: { view: "table", limit: 20 },
+        data: {
+          widgetId: ID(20),
+          status: "ok",
+          error: null,
+          exclusions: [],
+          metadata: {
+            modelId: ID(21),
+            modelName: "Downloads",
+            measures: [{ id: "downloads", name: "Downloads" }],
+            dimensions: [{ id: "app", name: "App", type: "string" }],
+          },
+          result: {
+            releaseId: null,
+            rows: [],
+            warnings: [{ code: "w", message: "w" }],
+            operations: 1,
+            provenance: [],
+            appliedFilter: null,
+            groupBy: [],
+          },
+        },
+      } as unknown as DeviceDashboardV3Response["slides"][number]["widgets"][number],
+    ];
+    return payload;
+  }
+
+  it("shows measure tiles without editor instructions", () => {
+    const en = render(paired(withMeasure("en")));
+    expect(en).toContain("No data yet");
+    expect(en).toContain("1 data warning");
+    expect(en).not.toContain("No rows in this preview.");
+    expect(en).not.toContain("Check the model preview.");
+    const de = render(paired(withMeasure("de")));
+    expect(de).toContain("Noch keine Daten");
+    expect(de).toContain("1 Datenhinweis");
+    expect(de).not.toContain("Prüfe die Modellvorschau.");
+    // Scroll view: the same tiles, the same wording.
+    const scroll = withMeasure("en");
+    scroll.device = { rotation: 0, displayMode: "scroll" };
+    const scrolled = render(paired(scroll));
+    expect(scrolled).toContain("No data yet");
+    expect(scrolled).not.toContain("Check the model preview.");
+  });
+
+  it("puts the last update time in the slide header's offline note", () => {
+    // 10:00 UTC is 12:00 in Berlin, the payload's time zone.
+    const en = render(paired(slides("en"), true));
+    expect(en).toContain('class="studio-header"');
+    expect(en).toContain("Offline — last update 12:00");
+    const de = render(paired(slides("de"), true));
+    expect(de).toContain("Offline – letzte Aktualisierung 12:00");
+    // Before the first answer there is no time to show.
+    const never = { ...paired(slides("en"), true), updatedAt: null };
+    expect(render(never)).not.toContain("last update");
+  });
+});

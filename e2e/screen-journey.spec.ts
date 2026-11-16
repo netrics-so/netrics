@@ -131,6 +131,22 @@ test("a paired browser screen plays offline and changes only on publish or swap"
     const refreshMs =
       (JSON.parse((await served())[2]!) as { refreshAfterSec: number })
         .refreshAfterSec * 1000;
+    // Wall-screen wording (#649): the store has not synced, and the tiles
+    // say so as tvOS does, without the editor's instructions. Paired, the
+    // kiosk speaks the payload's language (the workspace's screen language).
+    const screenLocale = (
+      JSON.parse((await served())[2]!) as { locale: Locale }
+    ).locale;
+    const screenData = labels(screenLocale);
+    await expect(
+      kiosk.getByText(screenData.dashboard.viewer.noData).first(),
+    ).toBeVisible();
+    await expect(kiosk.getByText(screenData.noRows)).toHaveCount(0);
+    const instruction = /\{# [^.]+\. ([^}]+)\}/.exec(
+      screenData.dashboard.resultWarnings,
+    )![1]!;
+    await expect(kiosk.locator("body")).not.toContainText(instruction);
+
     /** Runs the kiosk's next dashboard poll and waits for its answer. */
     const poll = async () => {
       const answered = kiosk.waitForResponse(isDashboardPoll);
@@ -148,6 +164,15 @@ test("a paired browser screen plays offline and changes only on publish or swap"
     await failed;
     await expect(marker.first()).toBeVisible();
     await expect(original).toBeVisible();
+    // The slide header's note says when the screen last updated (#649).
+    const since = (
+      screenLocale === "de" ? screenDe : screenEn
+    ).screen.widget.offlineSince.split("{time}")[0]!;
+    await expect(kiosk.locator(".studio-header")).toContainText(
+      new RegExp(
+        `${since.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\d{1,2}:\\d{2}`,
+      ),
+    );
 
     // A reload while the API is unreachable: the stored dashboard plays.
     await kioskContext.setOffline(false);

@@ -322,6 +322,7 @@ function KioskSlides({
 }) {
   const idle = useIdle();
   const t = useT("screen.kiosk");
+  const locale = useLocale();
   const { theme, timeZone } = payload;
   const env = {
     timeZone,
@@ -347,6 +348,10 @@ function KioskSlides({
           logoImageId: dashboard.logo?.imageId ?? null,
           timeZone,
           offline: dashboard.showHeader && state.offline,
+          offlineSince:
+            state.updatedAt === null
+              ? null
+              : formatTime(state.updatedAt, timeZone, locale),
           refresh: kioskRefreshCycle(state, payload),
         }}
         images={state.images}

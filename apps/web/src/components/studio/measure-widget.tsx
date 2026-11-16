@@ -100,6 +100,7 @@ export function MeasureWidgetView({
   interaction,
   fontScale = 1,
   workspaceId,
+  audience = "editor",
 }: {
   widget: Pick<MeasureWidget, "title" | "options"> & {
     binding: Pick<MeasureWidget["binding"], "measureIds" | "groupBy">;
@@ -109,9 +110,16 @@ export function MeasureWidgetView({
   data: DashboardWidgetData | null;
   loading?: boolean;
   interaction?: MeasureInteraction;
+  /**
+   * Who reads it: "viewer" on paired screens (kiosk), where nobody can act
+   * on editor instructions ("Check the model preview."); short wording as
+   * on tvOS instead (#649). Defaults to the signed-in dashboard and Studio.
+   */
+  audience?: "editor" | "viewer";
 }) {
   const t = useT("data"),
     locale = useLocale();
+  const viewer = audience === "viewer";
   const [now, setNow] = useState(() => Date.now());
   const expiry = data?.result?.expiresAt;
   useEffect(() => {
@@ -193,11 +201,23 @@ export function MeasureWidgetView({
     ) : (
       text
     );
-  const error = expired
-    ? t("errors.expired")
+  const errorKey = expired
+    ? "expired"
     : data?.error
-      ? t(`errors.${dataErrorKey(new ApiError(400, data.error))}`)
+      ? dataErrorKey(new ApiError(400, data.error))
       : null;
+  // A wall screen says only the state: nobody there can check connections
+  // or preparations (#649).
+  const error =
+    errorKey === null
+      ? null
+      : viewer
+        ? t(
+            errorKey === "pending"
+              ? "dashboard.viewer.pending"
+              : "dashboard.viewer.unavailable",
+          )
+        : t(`errors.${errorKey}`);
   const fields: DataField[] = [
     ...widget.binding.groupBy.map((id) => {
       const dimension = data?.metadata?.dimensions.find(
@@ -300,7 +320,7 @@ export function MeasureWidgetView({
           {cellText(widget.binding.measureIds[0]!, cell)}
         </p>
       ) : rows.length === 0 ? (
-        <p>{t("noRows")}</p>
+        <p>{viewer ? t("dashboard.viewer.noData") : t("noRows")}</p>
       ) : widget.options.view === "table" || unsafe ? (
         <div className="sw-measure-table-scroll">
           <table className="sw-measure-table">
@@ -411,7 +431,9 @@ export function MeasureWidgetView({
         </p>
       ) : null}
       {data?.result?.stale ? (
-        <p className="sw-notice">{t("dashboard.staleModel")}</p>
+        <p className="sw-notice">
+          {t(viewer ? "dashboard.viewer.stale" : "dashboard.staleModel")}
+        </p>
       ) : null}
       {data?.result?.pendingSources?.length ? (
         <p className="sw-notice">{t("dashboard.pendingResult")}</p>
@@ -419,20 +441,27 @@ export function MeasureWidgetView({
       {rows.some((row) =>
         Object.values(row.measures).some((cell) => cell.status === "partial"),
       ) ? (
-        <p className="sw-notice">{t("dashboard.partialResult")}</p>
+        <p className="sw-notice">
+          {t(viewer ? "dashboard.viewer.partial" : "dashboard.partialResult")}
+        </p>
       ) : null}
       {data?.result?.warnings.length ? (
         <p className="sw-notice">
-          {t("dashboard.resultWarnings", {
-            count: data.result.warnings.length,
-          })}
+          {t(
+            viewer ? "dashboard.viewer.warnings" : "dashboard.resultWarnings",
+            {
+              count: data.result.warnings.length,
+            },
+          )}
         </p>
       ) : null}
       {data?.sourceHealth
         ?.filter((source) => source.status !== "ok")
         .map((source) => {
           const message = t(
-            `dashboard.${source.status === "needs_reauthorization" ? "sourceReconnect" : source.status === "auth_failed" ? "sourceAccess" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "sourceOutage"}`,
+            viewer
+              ? `dashboard.${source.status === "needs_reauthorization" || source.status === "auth_failed" ? "viewer.sourcePaused" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "viewer.sourceOutage"}`
+              : `dashboard.${source.status === "needs_reauthorization" ? "sourceReconnect" : source.status === "auth_failed" ? "sourceAccess" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "sourceOutage"}`,
             { name: source.name },
           );
           return (

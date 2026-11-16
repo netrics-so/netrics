@@ -45,6 +45,8 @@ export const screenEn = {
       failed: "This widget could not be shown",
       imageMissing: "Image not available",
       offline: "Offline",
+      offlineSince: "Offline — last update {time}",
+      offlineShort: "Offline · {time}",
       mayBeOutdated: "The numbers may be out of date",
       lineSummary: "{label}: {value}.",
       lineSummaryPrevious: "{label}: {value}, dashed line {comparison}.",

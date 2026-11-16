@@ -118,6 +118,7 @@ export function DeviceScrollWidget({
             options: widget.options,
           }}
           data={widget.data}
+          audience="viewer"
         />
       );
     case "metric":
