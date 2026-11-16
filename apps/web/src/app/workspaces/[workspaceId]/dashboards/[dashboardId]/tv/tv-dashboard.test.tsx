@@ -5,6 +5,11 @@ import { BUILTIN_THEMES } from "@netrics/domain";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 
+import {
+  failedWidgets,
+  loadDashboardData,
+} from "@/components/studio/dashboard-data-provider";
+
 import { TvDashboard } from "./tv-dashboard";
 
 vi.mock("next/navigation", () => ({
@@ -119,6 +124,13 @@ function dashboard(name: string, showHeader = true): Dashboard {
   } as unknown as Dashboard;
 }
 
+/** The dashboard's measure tile. */
+function measure() {
+  return dashboard("Downloads").slides[0]!.widgets[0] as Parameters<
+    typeof failedWidgets
+  >[0][number];
+}
+
 function render(
   locale: "en" | "de",
   board: Dashboard = dashboard("Downloads"),
@@ -190,15 +202,38 @@ describe("signed-in TV mode wording on wall screens (#681)", () => {
     expect(render("de")).toContain("Offline – letzte Aktualisierung 11:00");
   });
 
-  it("shortens the note before a long name is cut, as the kiosk does", () => {
+  it("shortens the note before the name is cut, as the kiosk does", () => {
     network.offline = true;
-    // A name that leaves no room for the long note beside the clock.
-    const long = dashboard(
-      "Unternehmenskennzahlen Vertrieb Marketing Service und Logistik Europa",
+    /** The header's offline note for a dashboard name (16:9). */
+    const noteFor = (name: string) =>
+      /<span class="studio-offline"><span aria-hidden="true">⚠<\/span> ([^<]*)<\/span>/.exec(
+        render("de", dashboard(name)),
+      )?.[1];
+    const words =
+      "Unternehmenskennzahlen Vertrieb Marketing Service Logistik Europa Nord".split(
+        " ",
+      );
+    // Room enough: the whole note.
+    expect(noteFor(words.slice(0, 4).join(" "))).toBe(
+      "Offline – letzte Aktualisierung 11:00",
     );
-    const de = render("de", long);
-    expect(de).not.toContain("letzte Aktualisierung");
-    expect(de).toMatch(/Offline( · 11:00)?</);
+    // The long note would cut the name: the short one.
+    expect(noteFor(words.slice(0, 6).join(" "))).toBe("Offline · 11:00");
+    // Not even that: just "Offline".
+    expect(noteFor(words.join(" "))).toBe("Offline");
+  });
+
+  it("keeps the last valid data on screen when a load fails", () => {
+    const failing = { ...measureData(null) };
+    data.widgets = failedWidgets(
+      [measure()],
+      new Map([[ID(10), failing]]),
+      true,
+    );
+    const en = render("en");
+    expect(en).toContain("Last valid data");
+    expect(en).not.toContain("Data not available");
+    expect(render("de")).toContain("Letzte gültige Daten");
   });
 
   it("marks the corner when the dashboard hides its header", () => {
@@ -206,5 +241,46 @@ describe("signed-in TV mode wording on wall screens (#681)", () => {
     const html = render("en", dashboard("Downloads", false));
     expect(html).not.toContain('class="studio-header"');
     expect(html).toContain("Offline — last update 11:00");
+  });
+});
+
+describe("the TV mode's data loads (#681)", () => {
+  const tile = () => measureData(null);
+  it("reports each successful load's time, and none for a failed one", async () => {
+    const times: number[] = [];
+    const loaded = await loadDashboardData(
+      async () => ({ widgets: [tile()] }),
+      (at) => times.push(at),
+      () => 1234,
+    );
+    expect(times).toEqual([1234]);
+    expect(loaded?.get(ID(10))).toEqual(tile());
+    const failed = await loadDashboardData(
+      () => Promise.reject(new TypeError("Failed to fetch")),
+      (at) => times.push(at),
+      () => 5678,
+    );
+    expect(failed).toBeNull();
+    expect(times).toEqual([1234]);
+  });
+
+  it("keeps last good results, marked stale, only on wall screens", () => {
+    const previous = new Map([[ID(10), tile()]]);
+    const kept = failedWidgets([measure()], previous, true).get(ID(10))!;
+    expect(kept.error).toBeNull();
+    expect(kept.result?.stale).toBe(true);
+    expect(kept.result?.warnings).toEqual(tile().result!.warnings);
+    // Editor surfaces show the failure.
+    expect(
+      failedWidgets([measure()], previous, false).get(ID(10)),
+    ).toMatchObject({ error: "data_storage_failed", result: null });
+    // Nothing loaded yet, or an error before: nothing to keep.
+    expect(failedWidgets([measure()], undefined, true).get(ID(10))?.error).toBe(
+      "data_storage_failed",
+    );
+    const errored = new Map([[ID(10), measureData("internal_error")]]);
+    expect(failedWidgets([measure()], errored, true).get(ID(10))?.error).toBe(
+      "data_storage_failed",
+    );
   });
 });

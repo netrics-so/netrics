@@ -31,8 +31,13 @@ test("TV mode speaks to the wall and says when it last updated", async ({
   await page.goto(`/workspaces/${workspaceId}/dashboards/${dashboardId}`);
   await expect(page.getByText(data.noRows).first()).toBeVisible();
 
-  await page.goto(`/workspaces/${workspaceId}/dashboards/${dashboardId}/tv`);
-  await expect(page.locator(".studio-header")).toBeVisible();
+  // A faked clock: the minute-long refresh cycles run on demand. 10:00:30
+  // UTC, so two minutes later the clock shows another minute.
+  await page.clock.install({ time: new Date("2026-11-16T10:00:30.000Z") });
+  const tv = `/workspaces/${workspaceId}/dashboards/${dashboardId}/tv`;
+  await page.goto(tv);
+  const header = page.locator(".studio-header");
+  await expect(header).toBeVisible();
   await expect(
     page.getByText(data.dashboard.viewer.noData).first(),
   ).toBeVisible();
@@ -42,13 +47,58 @@ test("TV mode speaks to the wall and says when it last updated", async ({
     data.dashboard.resultWarnings,
   )![1]!;
   await expect(page.locator(".slide-screen")).not.toContainText(instruction);
+  // The tiles' first load (after 100 ms).
+  await page.clock.runFor(1_000);
 
-  // Offline: the header's note carries the last update's time.
+  // Offline for more than a minute: the periodic refreshes find no server
+  // and leave the page alone (a failed refresh would navigate to the
+  // browser's error page), the tiles keep their last data, and the note
+  // says when that was: two minutes before the clock.
   await context.setOffline(true);
-  const since = screen.offlineSince.split("{time}")[0]!;
-  await expect(page.locator(".studio-header")).toContainText(
-    new RegExp(`${escape(since)}\\d{1,2}:\\d{2}`),
+  await page.clock.runFor(130_000);
+  await expect(page).toHaveURL(new RegExp(`${escape(tv)}$`));
+  await expect(header).toBeVisible();
+  const [before, after] = screen.offlineSince.split("{time}");
+  const note = header.locator(".studio-offline");
+  await expect(note).toHaveText(
+    new RegExp(`^⚠ ${escape(before!)}\\d{2}:\\d{2}${escape(after!)}$`),
   );
+  const minutes = (text: string) => {
+    const [h, m] = /(\d{2}):(\d{2})/.exec(text)!.slice(1).map(Number);
+    return h! * 60 + m!;
+  };
+  const clock = await header.locator(".studio-header-clock").innerText();
+  const noteText = await note.innerText();
+  expect((minutes(clock) - minutes(noteText) + 1440) % 1440).toBe(2);
+  await expect(
+    page.getByText(data.dashboard.viewer.stale).first(),
+  ).toBeVisible();
+  await expect(page.getByText(data.dashboard.viewer.unavailable)).toHaveCount(
+    0,
+  );
+
   await context.setOffline(false);
+  await page.clock.runFor(1_000);
   await expect(page.locator(".studio-offline")).toHaveCount(0);
+});
+
+/** The dashboard page refreshes alike, and stays when the network goes. */
+test("an offline dashboard page stays on screen past its refresh", async ({
+  page,
+  context,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const { workspaceId } = await startWorkspace(page, locale);
+  const { dashboardId } = await installWithConnections(page, workspaceId, {
+    name: "Desk",
+  });
+  await page.clock.install({ time: new Date("2026-11-16T10:00:30.000Z") });
+  const url = `/workspaces/${workspaceId}/dashboards/${dashboardId}`;
+  await page.goto(url);
+  await expect(page.locator(".studio-header")).toBeVisible();
+  await context.setOffline(true);
+  await page.clock.runFor(130_000);
+  await expect(page).toHaveURL(new RegExp(`${escape(url)}$`));
+  await expect(page.locator(".studio-header")).toBeVisible();
+  await context.setOffline(false);
 });

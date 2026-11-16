@@ -52,9 +52,11 @@ export function TvDashboard({
   connections: Record<string, TileConnection>;
 }) {
   // A wall screen runs for days: pick up slide edits and sync health.
-  useServerRefresh();
+  // A refresh only runs when the web app answers (#681).
+  const reachable = useServerRefresh();
   const idle = useIdle();
-  const offline = useOffline();
+  // Offline: no network, or a network that does not reach netrics.
+  const offline = useOffline() || !reachable;
   const t = useT("screen.tv");
   const note = useT("screen.widget");
   const locale = useLocale();
@@ -111,6 +113,7 @@ export function TvDashboard({
         widgets={dashboard.slides.flatMap((slide) => slide.widgets)}
         filters={dashboard.settings.dataFilters ?? []}
         onLoaded={setUpdatedAt}
+        keepLastGood
       >
         <SlidePlayer
           slides={slides}

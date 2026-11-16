@@ -18,12 +18,62 @@ const Context = createContext<{
   loading: boolean;
 } | null>(null);
 export const useDashboardData = () => useContext(Context);
+
+type MeasureWidget = Extract<DashboardWidget, { type: "measure" }>;
+
+/**
+ * One load of the dashboard's measure tiles: the tiles by id, and the
+ * load's time reported to `onLoaded`; null when the request failed.
+ */
+export async function loadDashboardData(
+  load: () => Promise<{ widgets: DashboardWidgetData[] }>,
+  onLoaded: (at: number) => void,
+  now: () => number = Date.now,
+): Promise<Map<string, DashboardWidgetData> | null> {
+  try {
+    const response = await load();
+    onLoaded(now());
+    return new Map(response.widgets.map((widget) => [widget.widgetId, widget]));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The tiles after a failed load: an error on each, or, with
+ * `keepLastGood` (wall screens, #681), each tile's last good result marked
+ * stale ("Last valid data"), as the kiosk keeps its payload.
+ */
+export function failedWidgets(
+  widgets: readonly MeasureWidget[],
+  previous: ReadonlyMap<string, DashboardWidgetData> | undefined,
+  keepLastGood: boolean,
+): Map<string, DashboardWidgetData> {
+  return new Map(
+    widgets.map((widget) => {
+      const last = keepLastGood ? previous?.get(widget.id) : undefined;
+      return [
+        widget.id,
+        last?.result && !last.error
+          ? { ...last, result: { ...last.result, stale: true } }
+          : {
+              widgetId: widget.id,
+              metadata: null,
+              result: null,
+              error: "data_storage_failed",
+              exclusions: widget.binding.exclusions,
+            },
+      ];
+    }),
+  );
+}
 export function DashboardDataProvider({
   workspaceId,
   widgets,
   filters = [],
   values = {},
   onLoaded,
+  keepLastGood = false,
   children,
 }: {
   workspaceId: string;
@@ -35,6 +85,13 @@ export function DashboardDataProvider({
    * note says when its data last updated (#681).
    */
   onLoaded?: (at: number) => void;
+  /**
+   * A failed load keeps each tile's last good result, marked stale ("Last
+   * valid data"), instead of an error on every tile: a wall screen that
+   * lost its network keeps its numbers, as the kiosk does (#681). Editor
+   * surfaces show the error.
+   */
+  keepLastGood?: boolean;
   children: ReactNode;
 }) {
   const loaded = useRef(onLoaded);
@@ -56,7 +113,7 @@ export function DashboardDataProvider({
   useEffect(() => {
     let alive = true;
     const input = JSON.parse(key) as {
-      widgets: Extract<DashboardWidget, { type: "measure" }>[];
+      widgets: MeasureWidget[];
       filters: DashboardDataFilter[];
       values: Record<string, DashboardFilterValue>;
     };
@@ -71,41 +128,29 @@ export function DashboardDataProvider({
           widgets: state.key === key ? state.widgets : new Map(),
           loading: true,
         }));
-      try {
-        const response = await previewDashboardMeasures(
-          workspaceId,
-          input.filters,
-          input.values,
-          input.widgets,
-        );
-        if (alive) {
-          setState({
-            key,
-            widgets: new Map(
-              response.widgets.map((widget) => [widget.widgetId, widget]),
-            ),
-            loading: false,
-          });
-          loaded.current?.(Date.now());
-        }
-      } catch {
-        if (alive)
-          setState({
-            key,
-            widgets: new Map(
-              input.widgets.map((widget) => [
-                widget.id,
-                {
-                  widgetId: widget.id,
-                  metadata: null,
-                  result: null,
-                  error: "data_storage_failed",
-                  exclusions: widget.binding.exclusions,
-                },
-              ]),
-            ),
-            loading: false,
-          });
+      const result = await loadDashboardData(
+        () =>
+          previewDashboardMeasures(
+            workspaceId,
+            input.filters,
+            input.values,
+            input.widgets,
+          ),
+        (at) => loaded.current?.(at),
+      );
+      if (!alive) return;
+      if (result) {
+        setState({ key, widgets: result, loading: false });
+      } else {
+        setState((state) => ({
+          key,
+          widgets: failedWidgets(
+            input.widgets,
+            state.key === key ? state.widgets : undefined,
+            keepLastGood,
+          ),
+          loading: false,
+        }));
       }
     }
     const first = setTimeout(() => void refresh(), 100),
@@ -115,7 +160,7 @@ export function DashboardDataProvider({
       clearTimeout(first);
       clearInterval(interval);
     };
-  }, [workspaceId, key]);
+  }, [workspaceId, key, keepLastGood]);
   return (
     <Context
       value={state.key === key ? state : { widgets: new Map(), loading: true }}
