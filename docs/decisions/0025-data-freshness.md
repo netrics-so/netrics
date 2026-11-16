@@ -290,6 +290,10 @@ it computes the widget's data:
   Resources come from the slide scope when it names one, else every
   selected resource. This extends `modelSourceHealth`, which already walks
   the same bindings.
+- **Latest-review widgets**: the connector's stream with key `reviews`;
+  no metric or dataset carries review text, so a connector that ingests
+  review text declares its reviews in a stream with that key. Resources as
+  for metric widgets.
 - For each (connection, stream) the resource rows are used, and the
   connection row for resources without one.
 
