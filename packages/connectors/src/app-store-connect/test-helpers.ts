@@ -37,6 +37,8 @@ export interface FakeTeam {
   reports?: Record<string, string | Uint8Array>;
   /** Days whose report is not published yet (404 "not available yet"). */
   pendingDays?: string[];
+  /** Days answering 404 with this error body (a wording Apple might use). */
+  notFoundDays?: Record<string, unknown>;
   /**
    * Days before this one (YYYY-MM-DD) are past Apple's retention: a 400
    * naming filter[reportDate].
@@ -241,6 +243,8 @@ export function createFakeAppStoreConnect(
           rate(),
         );
       }
+      const notFound = team.notFoundDays?.[date];
+      if (notFound !== undefined) return jsonResponse(404, notFound, rate());
       const report = team.reports?.[date];
       if (report !== undefined) return gzipResponse(report, rate());
       if (!(team.salesDays ?? []).includes(date)) {

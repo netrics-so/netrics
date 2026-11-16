@@ -432,10 +432,37 @@ As built (#191):
   Analytics has no backfill in this milestone.
 - **Incremental** syncs re-read the last 3 reporting days, so revisions
   upsert per ADR 0008.
-- **404 has two meanings.** A day whose report should exist (D + 1 at 12:00
-  PT has passed) and answers 404 is a day without sales: nothing is stored,
-  and the cursor moves on. A more recent day answering 404 is not yet
-  available: the cursor stays before it, and the next sync retries.
+- **404 has two meanings** (amended by #719). Apple answers both with
+  status 404 and code `NOT_FOUND`, and documents no 404 for
+  `GET /v1/salesReports` at all (its reference lists 200, 400, 401, 403
+  and 429). Only `detail` tells the two apart, as the recorded answers
+  show (`fixtures/error-not-found-*.json`; the second also in
+  [Apple's forum](https://developer.apple.com/forums/thread/667759)):
+  "There were no sales for the date specified." and "Report is not
+  available yet. Daily reports for the Americas are available by 5 am
+  Pacific Time; …". A day D is due from D + 1 at 12:00 PT.
+  - Before D is due, any 404 means not published yet: nothing is stored
+    for D, and the cursor stays before it.
+  - Once due, "no sales" is a day without sales: zeros are stored and
+    the cursor moves on.
+  - Once due, "not available yet" keeps D pending, whatever the time:
+    nothing is stored for D or any later day, the sales freshness keeps
+    `dataThrough` at D − 1, its `nextExpectedAt` (D + 1, 12:00 PT) has
+    passed, so the host shows Apple late and checks again every 30
+    minutes until Apple is a full interval late (ADR 0025 §5). The day is
+    stored normally once it arrives.
+  - Any other 404 wording is treated the same way, conservatively, and
+    logged (without Apple's text), so a change of wording shows up.
+  - **Bound.** A day stays pending for at most 7 days after it was due
+    (`LATE_REPORT_BOUND_DAYS`). From D + 8 at 12:00 PT, a 404 for D reads
+    as a day without sales whatever it says, so a report Apple never
+    publishes cannot hold back every later day. Apple documents no
+    delay beyond "generally by 8 a.m. PT"; a week leaves room for a long
+    outage, is short enough that one stuck day does not freeze a
+    dashboard for long, and lets a backfill pass an old day Apple calls
+    "not available". A report
+    that arrives after the bound is not read again by itself (the
+    incremental re-read covers the last 3 days); a backfill picks it up.
 - **Latency in the UI.** The connection and the tiles show "App Store sales
   arrive the next morning, Pacific Time; analytics about two days later".
   The last reporting day ingested comes from existing sync state.

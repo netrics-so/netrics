@@ -153,6 +153,29 @@ describe("App Store Connect freshness: the sales stream", () => {
     });
   });
 
+  it("after 12:00 PT, a report 'not available yet' keeps yesterday out and shows Apple late", async () => {
+    // 13:00 PDT, and Apple still answers 404 "not available yet" for 30
+    // September (#719): nothing is claimed for it, and the expected time
+    // stays at noon today, which has passed.
+    const result = await run("2026-10-01T20:00:00.000Z", {
+      team: { pendingDays: ["2026-09-30"] },
+    });
+    expect(freshnessEntry(result, SALES_STREAM)).toEqual({
+      stream: SALES_STREAM,
+      dataThrough: "2026-09-29",
+      expectedFrom: "2026-10-01T12:00:00.000Z",
+      nextExpectedAt: "2026-10-01T19:00:00.000Z",
+    });
+    // Published 30 minutes later: the next check moves on.
+    const later = await run("2026-10-01T20:30:00.000Z", {
+      team: { salesDays: ["2026-09-30"] },
+    });
+    expect(freshnessEntry(later, SALES_STREAM)).toMatchObject({
+      dataThrough: "2026-09-30",
+      nextExpectedAt: "2026-10-02T19:00:00.000Z",
+    });
+  });
+
   it("inside the expectedFrom window: a report Apple published early counts", async () => {
     // 07:00 PDT, and Apple has published 30 September already.
     const early = await run("2026-10-01T14:00:00.000Z", {

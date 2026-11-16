@@ -28,9 +28,11 @@ import { SALES_REPORT_VERSION } from "./sales-report.js";
 //   "filter[vendorNumber]", detail "Invalid vendor number specified. Try
 //   again." for a vendor number the team does not have
 //   (https://developer.apple.com/forums/thread/704777).
-// - 404 NOT_FOUND for a day without sales, or a report that is not
-//   available yet (https://developer.apple.com/forums/thread/667759): the
-//   key, role and vendor number were accepted, so it counts as success.
+// - 404 NOT_FOUND for a day without sales ("There were no sales for the
+//   date specified."), or a report that is not available yet ("Report is
+//   not available yet. …", https://developer.apple.com/forums/thread/667759):
+//   the key, role and vendor number were accepted, so it counts as success.
+//   The sync tells the two apart by `detail` (`salesNotFoundKind`).
 
 /** A probe's answer: a CheckResult whose failure always has a message. */
 export type ProbeResult = { ok: true } | { ok: false; message: string };

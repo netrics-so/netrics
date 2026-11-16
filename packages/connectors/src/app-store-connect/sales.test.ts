@@ -15,6 +15,7 @@ import {
   AppStoreConnectRateBudgetError,
   BACKFILL_DAYS,
   INCREMENTAL_LOOKBACK_DAYS,
+  LATE_REPORT_BOUND_DAYS,
   MAX_REPORT_BYTES,
   OTHERS,
   PRODUCT_TYPES,
@@ -27,6 +28,7 @@ import {
   parseSalesReport,
   productCategory,
   rowProceeds,
+  salesNotFoundKind,
   toMinorUnits,
 } from "./index.js";
 import {
@@ -1248,6 +1250,262 @@ describe("incremental syncs and the two meanings of 404", () => {
   });
 });
 
+describe("the two kinds of 404: no sales, or not published yet (#719)", () => {
+  // Apple answers both with 404 NOT_FOUND; only the detail tells them
+  // apart (fixtures/error-not-found-*.json, Apple's wording).
+  const NO_SALES = fixture("error-not-found-no-sales");
+  const NOT_AVAILABLE = fixture("error-not-found-not-available");
+  const UNKNOWN_404 = {
+    errors: [
+      {
+        status: "404",
+        code: "NOT_FOUND",
+        title: "The request expected results but none were found",
+        detail: "Some wording Apple has not used before.",
+      },
+    ],
+  };
+  const app = { resource: FIELD_NOTES };
+  const selection = { resources: [FIELD_NOTES] };
+  const published = (date: string) =>
+    reportFixture("sales-2026-09-28").replaceAll(
+      "09/28/2026",
+      `${date.slice(5, 7)}/${date.slice(8, 10)}/${date.slice(0, 4)}`,
+    );
+  // Sept 26 to 29 published; Sept 30 answers with the body under test.
+  const reports = Object.fromEntries(
+    ["2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29"].map((date) => [
+      date,
+      published(date),
+    ]),
+  );
+  const window = (now: number, from = "2026-09-26T00:00:00.000Z") =>
+    request(from, new Date(now).toISOString(), selection);
+  const daysOf = (result: SyncResult) =>
+    [
+      ...new Set(
+        result.observations.map((observation) =>
+          observation.sourceTimestamp.slice(0, 10),
+        ),
+      ),
+    ].sort();
+  const salesEntry = (result: SyncResult) =>
+    result.freshness?.find((entry) => entry.stream === "sales");
+
+  it("tells the recorded 404s apart by their detail, the code being the same", () => {
+    const first = (body: unknown) =>
+      (body as { errors: Array<Record<string, string>> }).errors[0]!;
+    expect(first(NO_SALES).code).toBe("NOT_FOUND");
+    expect(first(NOT_AVAILABLE).code).toBe("NOT_FOUND");
+    expect(salesNotFoundKind(first(NO_SALES))).toBe("no-sales");
+    expect(salesNotFoundKind(first(NOT_AVAILABLE))).toBe("not-available");
+    expect(salesNotFoundKind(first(UNKNOWN_404))).toBe("unknown");
+    expect(salesNotFoundKind({})).toBe("unknown");
+  });
+
+  it("after noon PT, 'no sales' for yesterday is a day without sales", async () => {
+    const api = fake({ reports, notFoundDays: { "2026-09-30": NO_SALES } });
+    const result = await connector(AFTERNOON).sync(
+      CONTEXT,
+      window(AFTERNOON),
+      api.runtime,
+    );
+    expect(valueOf(result.observations, "downloads", app, "2026-09-30")).toBe(
+      0,
+    );
+    expect(result.nextCursor).toBe("2026-09-28T00:00:00.000Z");
+    expect(salesEntry(result)).toMatchObject({
+      dataThrough: "2026-09-30",
+      nextExpectedAt: "2026-10-02T19:00:00.000Z",
+    });
+  });
+
+  it("after noon PT, 'not available yet' for yesterday keeps the day pending", async () => {
+    const api = fake({
+      reports,
+      notFoundDays: { "2026-09-30": NOT_AVAILABLE },
+    });
+    const result = await connector(AFTERNOON).sync(
+      CONTEXT,
+      window(AFTERNOON),
+      api.runtime,
+    );
+    // Nothing stored for Sept 30, not even zeros.
+    expect(daysOf(result)).toEqual([
+      "2026-09-26",
+      "2026-09-27",
+      "2026-09-28",
+      "2026-09-29",
+    ]);
+    expect(result.nextCursor).toBe("2026-09-27T00:00:00.000Z");
+    // Freshness stays at Sept 29; Sept 30 was due at 12:00 PDT today, which
+    // has passed: the host shows the source late and checks again.
+    const entry = salesEntry(result)!;
+    expect(entry).toMatchObject({
+      dataThrough: "2026-09-29",
+      nextExpectedAt: "2026-10-01T19:00:00.000Z",
+    });
+    expect(Date.parse(entry.nextExpectedAt!)).toBeLessThan(AFTERNOON);
+  });
+
+  it("before noon PT, any 404 keeps yesterday pending", async () => {
+    for (const body of [NO_SALES, NOT_AVAILABLE, UNKNOWN_404]) {
+      const api = fake({ reports, notFoundDays: { "2026-09-30": body } });
+      const result = await connector(NOW).sync(
+        CONTEXT,
+        window(NOW),
+        api.runtime,
+      );
+      expect(daysOf(result)).not.toContain("2026-09-30");
+      expect(result.nextCursor).toBe("2026-09-27T00:00:00.000Z");
+      // Due at noon today: not late yet.
+      const entry = salesEntry(result)!;
+      expect(entry).toMatchObject({
+        dataThrough: "2026-09-29",
+        nextExpectedAt: "2026-10-01T19:00:00.000Z",
+      });
+      expect(Date.parse(entry.nextExpectedAt!)).toBeGreaterThan(NOW);
+    }
+  });
+
+  it("'not available yet' for an older day keeps that day and every later one pending", async () => {
+    const api = fake({
+      reports: { ...reports, "2026-09-30": published("2026-09-30") },
+      notFoundDays: { "2026-09-28": NOT_AVAILABLE },
+    });
+    const result = await connector(AFTERNOON).sync(
+      CONTEXT,
+      window(AFTERNOON),
+      api.runtime,
+    );
+    expect(daysOf(result)).toEqual(["2026-09-26", "2026-09-27"]);
+    expect(result.nextCursor).toBe("2026-09-26T00:00:00.000Z");
+    expect(salesEntry(result)).toMatchObject({
+      dataThrough: "2026-09-27",
+      nextExpectedAt: "2026-09-29T19:00:00.000Z",
+    });
+  });
+
+  it("an unknown 404 after noon PT is pending, like 'not available yet'", async () => {
+    const log: string[] = [];
+    const api = fake({
+      reports,
+      notFoundDays: { "2026-09-30": UNKNOWN_404 },
+    });
+    const result = await connector(AFTERNOON, log).sync(
+      CONTEXT,
+      window(AFTERNOON),
+      api.runtime,
+    );
+    expect(daysOf(result)).not.toContain("2026-09-30");
+    expect(salesEntry(result)?.dataThrough).toBe("2026-09-29");
+    // Logged, without Apple's text, so a new wording gets noticed.
+    expect(log.some((line) => line.includes("404"))).toBe(true);
+    expect(log.join("\n")).not.toContain("Some wording");
+  });
+
+  it("a late day that arrives on a later check is stored normally and replaces nothing incorrectly", async () => {
+    const first = await connector(AFTERNOON).sync(
+      CONTEXT,
+      window(AFTERNOON),
+      fake({ reports, notFoundDays: { "2026-09-30": NOT_AVAILABLE } }).runtime,
+    );
+    expect(daysOf(first)).not.toContain("2026-09-30");
+
+    // The host checks again 30 minutes later; Apple has published it.
+    const later = AFTERNOON + 30 * 60 * 1000;
+    const second = await connector(later).sync(
+      CONTEXT,
+      request(first.nextCursor!, new Date(later).toISOString(), selection),
+      fake({
+        reports: { ...reports, "2026-09-30": published("2026-09-30") },
+      }).runtime,
+    );
+    expect(valueOf(second.observations, "downloads", app, "2026-09-30")).toBe(
+      15,
+    );
+    // The days both syncs emit carry the same values: nothing is replaced
+    // by zeros or counted twice.
+    const firstValues = new Map(
+      first.observations.map((observation) => [
+        observationKey(observation),
+        observation.value,
+      ]),
+    );
+    const overlap = second.observations.filter((observation) =>
+      firstValues.has(observationKey(observation)),
+    );
+    expect(overlap.length).toBeGreaterThan(0);
+    for (const observation of overlap) {
+      expect(observation.value).toBe(
+        firstValues.get(observationKey(observation)),
+      );
+    }
+    expect(second.nextCursor).toBe("2026-09-28T00:00:00.000Z");
+    expect(salesEntry(second)).toMatchObject({
+      dataThrough: "2026-09-30",
+      nextExpectedAt: "2026-10-02T19:00:00.000Z",
+    });
+  });
+
+  it("stays pending for up to 7 days after the day was due, then reads as a day without sales", async () => {
+    expect(LATE_REPORT_BOUND_DAYS).toBe(7);
+    // 13:00 PDT on 1 October: Sept 24 was due on Sept 25 at noon (6 days
+    // ago), Sept 23 on Sept 24 (7 days ago).
+    const all = Object.fromEntries(
+      Array.from({ length: 30 }, (_, index) => {
+        const date = `2026-09-${String(index + 1).padStart(2, "0")}`;
+        return [date, published(date)];
+      }),
+    );
+    for (const body of [NOT_AVAILABLE, UNKNOWN_404]) {
+      const pending = await connector(AFTERNOON).sync(
+        CONTEXT,
+        window(AFTERNOON, "2026-09-20T00:00:00.000Z"),
+        fake({ reports: all, notFoundDays: { "2026-09-24": body } }).runtime,
+      );
+      expect(daysOf(pending)).not.toContain("2026-09-24");
+      expect(daysOf(pending)).not.toContain("2026-09-30");
+      expect(salesEntry(pending)?.dataThrough).toBe("2026-09-23");
+
+      const settled = await connector(AFTERNOON).sync(
+        CONTEXT,
+        window(AFTERNOON, "2026-09-20T00:00:00.000Z"),
+        fake({ reports: all, notFoundDays: { "2026-09-23": body } }).runtime,
+      );
+      expect(
+        valueOf(settled.observations, "downloads", app, "2026-09-23"),
+      ).toBe(0);
+      expect(
+        valueOf(settled.observations, "downloads", app, "2026-09-30"),
+      ).toBe(15);
+      expect(salesEntry(settled)?.dataThrough).toBe("2026-09-30");
+    }
+  });
+
+  it("a day past the bound answering 'not available yet' does not block a backfill", async () => {
+    const api = fake({
+      reports: { "2026-09-29": published("2026-09-29") },
+      notFoundDays: { "2026-09-10": NOT_AVAILABLE },
+    });
+    const result = await connector(AFTERNOON).sync(
+      CONTEXT,
+      request("2026-09-01T00:00:00.000Z", new Date(AFTERNOON).toISOString(), {
+        ...selection,
+        mode: "backfill",
+      }),
+      api.runtime,
+    );
+    expect(valueOf(result.observations, "downloads", app, "2026-09-10")).toBe(
+      0,
+    );
+    expect(valueOf(result.observations, "downloads", app, "2026-09-29")).toBe(
+      15,
+    );
+    expect(salesEntry(result)?.dataThrough).toBe("2026-09-30");
+  });
+});
+
 // ─── Failures ───────────────────────────────────────────────────────────────
 
 describe("sync failures", () => {
@@ -1291,21 +1549,6 @@ describe("sync failures", () => {
       .catch((caught: unknown) => caught as Error);
     expect((error as Error).name).toBe("AccessTokenRejectedError");
     expect((error as Error).message).not.toContain("eyJ.other.token");
-  });
-
-  it("a 404 marked not available for an old day still counts as no sales", async () => {
-    // Apple's wording is not a contract (it says to branch on codes): only
-    // the time decides between the two meanings.
-    const api = fake({ pendingDays: ["2026-09-28"] });
-    const result = await connector().sync(CONTEXT, window, api.runtime);
-    expect(
-      valueOf(
-        result.observations,
-        "downloads",
-        { resource: FIELD_NOTES },
-        "2026-09-28",
-      ),
-    ).toBe(0);
   });
 
   it("requires a vendor number", async () => {
