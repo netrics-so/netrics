@@ -782,8 +782,12 @@ budgets still apply; paging does not claim warehouse-scale execution.
 of an install an icon, paid or free, and an optional website, set under "App
 identity" on the screen that changes the install's apps
 (`GET`/`PUT .../dashboard-templates/stores/installs/:requestId/products`). The
-products are those of the Products and mapping tables plus every app no
-product claims (product ID = its app key).
+products resolve exactly as the template's preparations resolve each row: an
+app's product is its mapping row's product ID, else its app key; the name is
+the product's Products row, else its first app's name, else the app ID. Every
+app of the install's connections is listed (no cut-off; past the workspace's
+query row limit the read answers 413). Unsaved identity changes are saved or
+discarded, in the page, before a scope change applies and opens the update.
 
 - **Icon:** the stored resource icon of the product's first App Store app,
   else Play app, that has one, resolved when read. The daily icon refresh

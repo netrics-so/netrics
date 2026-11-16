@@ -111,3 +111,59 @@ test("a customer sets an app to paid and links a website", async ({
     timer.getByLabel(s.website).locator("option:checked"),
   ).toHaveText("timer.example");
 });
+
+/**
+ * Unsaved app identity changes are not lost when the scope change applies
+ * and moves on to the update page: an in-page confirmation saves them (or
+ * discards them) first.
+ */
+test("applying a scope change saves unsaved app identity first", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const { storeTemplate: s, storeUpdate: u } = catalog(locale);
+
+  const { workspaceId } = await startWorkspace(page, locale);
+  const { requestId, connections } = await installWithConnections(
+    page,
+    workspaceId,
+  );
+  const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
+  try {
+    await sql`insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${connections.apple}, ${workspaceId}, '1001', 'Focus', 'app')`;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+
+  await page.goto(
+    `/workspaces/${workspaceId}/dashboards/stores?install=${requestId}`,
+  );
+  const focus = page.locator(`[data-product="${connections.apple}:1001"]`);
+  await focus.getByLabel(s.pricing).selectOption("free");
+  // Not saved; the scope change is reviewed and applied.
+  await page.getByRole("checkbox", { name: /Second Play/ }).check();
+  await page.getByRole("button", { name: s.reviewChanges }).click();
+  await page.getByRole("button", { name: u.apply }).click();
+
+  // The page stays and asks, in the page itself.
+  const ask = page.getByRole("alertdialog", { name: s.identityPending });
+  await expect(ask).toBeVisible();
+  await expect(page).toHaveURL(/\?install=/);
+  await ask.getByRole("button", { name: s.identitySaveAndApply }).click();
+
+  await expect(page).toHaveURL(
+    `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`,
+  );
+  const response = await page.request.get(
+    `/v1/workspaces/${workspaceId}/dashboard-templates/stores/installs/${requestId}/products`,
+  );
+  expect(response.status()).toBe(200);
+  const { products } = (await response.json()) as {
+    products: { productId: string; pricing: string }[];
+  };
+  expect(
+    products.find((p) => p.productId === `${connections.apple}:1001`),
+  ).toMatchObject({ pricing: "free" });
+});

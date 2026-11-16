@@ -121,6 +121,11 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     identitySave: "App-Identität speichern",
     identitySaving: "Wird gespeichert …",
     identitySaved: "App-Identität gespeichert.",
+    identityPending:
+      "Die App-Identität unten hat ungespeicherte Änderungen. Nach dem Übernehmen öffnet sich das Update.",
+    identitySaveAndApply: "Speichern und übernehmen",
+    identityDiscardAndApply: "Verwerfen und übernehmen",
+    identityKeepEditing: "Weiter bearbeiten",
   },
   dashboardsPage: {
     meta: "{count, plural, =0 {Noch keine Dashboards} one {# Dashboard} other {# Dashboards}}",

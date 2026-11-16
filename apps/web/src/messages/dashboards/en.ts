@@ -116,6 +116,11 @@ export const dashboardsEn = {
     identitySave: "Save app identity",
     identitySaving: "Saving…",
     identitySaved: "App identity saved.",
+    identityPending:
+      "The app identity below has unsaved changes. Applying opens the update next.",
+    identitySaveAndApply: "Save them and apply",
+    identityDiscardAndApply: "Discard them and apply",
+    identityKeepEditing: "Keep editing",
   },
   dashboardsPage: {
     meta: "{count, plural, =0 {No dashboards yet} one {# dashboard} other {# dashboards}}",

@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useId, useState } from "react";
+import { useEffect, useId, useState, type RefObject } from "react";
 import type {
   StoreProductPricing,
   StoreTemplateProducts,
@@ -20,6 +20,18 @@ const websiteValue = (website: Product["website"]) =>
   website ? `${website.connectionId}|${website.projectId}` : "";
 
 /**
+ * Unsaved app identity, for the scope form beside it: applying a scope
+ * change navigates with the router, which no leave guard sees, so the form
+ * asks in the page and saves or discards these first.
+ */
+export interface IdentityGuard {
+  dirty: boolean;
+  /** Saves the unsaved choices; false when saving failed (error shown). */
+  save: () => Promise<boolean>;
+  discard: () => void;
+}
+
+/**
  * The identity of an install's apps (#708): icon, paid or free and the
  * linked website, saved on their own (not through the scope review).
  */
@@ -27,10 +39,13 @@ export function StoreProductIdentity({
   workspaceId,
   requestId,
   initial,
+  guard,
 }: {
   workspaceId: string;
   requestId: string;
   initial: StoreTemplateProducts;
+  /** Kept current with the unsaved state (see IdentityGuard). */
+  guard?: RefObject<IdentityGuard | null>;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
@@ -60,7 +75,7 @@ export function StoreProductIdentity({
         : { ...rest, [product.productId]: next };
     });
   }
-  async function save() {
+  async function save(): Promise<boolean> {
     setPending("save");
     setError(null);
     setNotice(null);
@@ -85,12 +100,22 @@ export function StoreProductIdentity({
       );
       setChoices({});
       setNotice(t("identitySaved"));
+      return true;
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
+      return false;
     } finally {
       setPending(null);
     }
   }
+  useEffect(() => {
+    if (!guard) return;
+    guard.current = {
+      dirty: changed.length > 0,
+      save,
+      discard: () => setChoices({}),
+    };
+  });
   async function loadIcon(product: Product) {
     if (!product.iconSource) return;
     setPending("icon:" + product.productId);

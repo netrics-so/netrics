@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import type {
   StoreTemplateOptions,
   StoreTemplatePlan,
@@ -26,6 +26,7 @@ import {
   ReviewView,
   withChoice,
 } from "./updates/[requestId]/store-update-review";
+import type { IdentityGuard } from "./store-product-identity";
 
 type Choice = {
   key: string;
@@ -43,6 +44,7 @@ export function StoreTemplateForm({
   projectId = null,
   install,
   initialOptions = null,
+  identityGuard,
 }: {
   workspaceId: string;
   initialConnectionId?: string;
@@ -58,6 +60,8 @@ export function StoreTemplateForm({
   install?: { requestId: string; name: string; scope: StoreTemplateScope };
   /** Options read by the page, so the form starts without loading them. */
   initialOptions?: StoreTemplateOptions | null;
+  /** Edit mode: the app identity beside the form, saved before applying. */
+  identityGuard?: RefObject<IdentityGuard | null>;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
@@ -91,7 +95,8 @@ export function StoreTemplateForm({
     [requestId] = useState(() => install?.requestId ?? crypto.randomUUID());
   const [plan, setPlan] = useState<StoreTemplatePlan | null>(null),
     [decisions, setDecisions] = useState<Decisions>({}),
-    [reloaded, setReloaded] = useState(false);
+    [reloaded, setReloaded] = useState(false),
+    [askIdentity, setAskIdentity] = useState(false);
   const initialized = useRef(!!install || !!initialOptions);
   useLeaveGuard(dirty && !done, t("unsaved"));
   useEffect(() => {
@@ -314,8 +319,15 @@ export function StoreTemplateForm({
       setPending(null);
     }
   }
-  async function applyScope() {
+  async function applyScope(confirmed = false) {
     if (!install || !plan) return;
+    // Applying navigates on; unsaved app identity beside the form is asked
+    // about in the page first (#708).
+    if (!confirmed && identityGuard?.current?.dirty) {
+      setAskIdentity(true);
+      return;
+    }
+    setAskIdentity(false);
     setPending("create");
     setError(null);
     const chosen = chosenScope();
@@ -717,6 +729,42 @@ export function StoreTemplateForm({
           </div>
         </section>
       )}
+      {askIdentity ? (
+        <div
+          className="notice stack"
+          role="alertdialog"
+          aria-labelledby={`${id}-identity-pending`}
+        >
+          <p id={`${id}-identity-pending`}>{t("identityPending")}</p>
+          <div className="actions">
+            <button
+              className="primary"
+              disabled={!!pending}
+              onClick={() =>
+                void (async () => {
+                  if (await identityGuard?.current?.save())
+                    await applyScope(true);
+                  else setAskIdentity(false);
+                })()
+              }
+            >
+              {t("identitySaveAndApply")}
+            </button>
+            <button
+              disabled={!!pending}
+              onClick={() => {
+                identityGuard?.current?.discard();
+                void applyScope(true);
+              }}
+            >
+              {t("identityDiscardAndApply")}
+            </button>
+            <button disabled={!!pending} onClick={() => setAskIdentity(false)}>
+              {t("identityKeepEditing")}
+            </button>
+          </div>
+        </div>
+      ) : null}
       {error ? (
         <p className="error" role="alert">
           {error}

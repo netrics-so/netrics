@@ -11,7 +11,7 @@ import {
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import { storeUpdatePath } from "@/lib/store-updates";
-import { StoreProductIdentity } from "./store-product-identity";
+import { StoreInstallEditor } from "./store-install-editor";
 import { StoreTemplateForm } from "./store-template-form";
 export const dynamic = "force-dynamic";
 export default async function StoreTemplatesPage({
@@ -72,20 +72,12 @@ export default async function StoreTemplatesPage({
             </Link>
           </p>
         ) : install && scope && options && products ? (
-          <>
-            <StoreTemplateForm
-              workspaceId={workspaceId}
-              install={{ requestId: installId, name: install.name, scope }}
-              initialOptions={options}
-            />
-            <div className="store-template-form">
-              <StoreProductIdentity
-                workspaceId={workspaceId}
-                requestId={installId}
-                initial={products}
-              />
-            </div>
-          </>
+          <StoreInstallEditor
+            workspaceId={workspaceId}
+            install={{ requestId: installId, name: install.name, scope }}
+            options={options}
+            products={products}
+          />
         ) : (
           <p className="notice">{t("editUnavailable")}</p>
         )}
