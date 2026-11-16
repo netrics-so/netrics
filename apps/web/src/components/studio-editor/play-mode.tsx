@@ -133,7 +133,6 @@ export function PlayMode({
           header={{
             name: document.name.trim() || t("untitled"),
             logoImageId: settings.logoImageId,
-            timeZone: env.timeZone,
             refresh,
           }}
           images={env.images}

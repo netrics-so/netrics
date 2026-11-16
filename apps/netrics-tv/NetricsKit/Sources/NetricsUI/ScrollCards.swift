@@ -856,7 +856,7 @@ struct ScrollClockCard: View {
 
     var body: some View {
         let text = TVTime.clockWidget(
-            now, timeZone: options.timeZone ?? env.timeZone, hour12: options.hour12, showDate: options.showDate,
+            now, timeZone: options.zone(), hour12: options.hour12, showDate: options.showDate,
             dateStyle: options.dateStyle, showZone: options.showZone, language: env.language)
         VStack(spacing: CGFloat(ScrollGeometry.cardGap)) {
             Text(text.time)

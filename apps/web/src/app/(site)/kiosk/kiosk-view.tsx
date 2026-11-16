@@ -154,7 +154,7 @@ export function KioskScreen({ state }: { state: KioskState }) {
         ) : (
           <Message title={t("noDashboardTitle")}>
             {t("noDashboardText")}
-            <OfflineMarker state={state} timeZone={state.dashboard.timeZone} />
+            <OfflineMarker state={state} />
           </Message>
         )}
       </RotatedScreen>
@@ -228,13 +228,8 @@ function PairingScreen({ state }: { state: KioskState }) {
   );
 }
 
-function OfflineMarker({
-  state,
-  timeZone,
-}: {
-  state: KioskState;
-  timeZone: string;
-}) {
+/** The offline note; its last update in the viewer's zone (#736). */
+function OfflineMarker({ state }: { state: KioskState }) {
   const t = useT("screen.kiosk");
   const locale = useLocale();
   if (!state.offline) {
@@ -244,7 +239,7 @@ function OfflineMarker({
     <span className="kiosk-offline" role="status" title={state.lastError ?? ""}>
       {state.updatedAt
         ? t("offlineSince", {
-            time: clockTime(state.updatedAt, timeZone, locale),
+            time: clockTime(state.updatedAt, locale),
           })
         : t("offline")}
     </span>
@@ -338,12 +333,11 @@ function KioskSlides({
         header={{
           name: dashboard.name,
           logoImageId: dashboard.logo?.imageId ?? null,
-          timeZone,
           offline: dashboard.showHeader && state.offline,
           offlineSince:
             state.updatedAt === null
               ? null
-              : clockTime(state.updatedAt, timeZone, locale),
+              : clockTime(state.updatedAt, locale),
           refresh: kioskRefreshCycle(state, payload),
         }}
         images={state.images}
@@ -355,7 +349,7 @@ function KioskSlides({
       {/* With the header the marker is in it; without, in the corner. */}
       {state.offline && !dashboard.showHeader ? (
         <div className="slide-screen-status">
-          <OfflineMarker state={state} timeZone={timeZone} />
+          <OfflineMarker state={state} />
         </div>
       ) : null}
     </div>
@@ -395,7 +389,7 @@ function KioskScroll({
         }))}
         tokens={theme.tokens}
         images={state.images}
-        toolbar={<OfflineMarker state={state} timeZone={timeZone} />}
+        toolbar={<OfflineMarker state={state} />}
         renderWidget={(widget, size) => (
           <DeviceScrollWidget widget={widget} env={env} size={size} />
         )}
@@ -411,7 +405,7 @@ function KioskDashboard({
   state: KioskState;
   dashboard: DeviceDashboardResponse;
 }) {
-  const clock = useClock(dashboard.timeZone);
+  const clock = useClock();
   const t = useT("screen.kiosk");
   const locale = useLocale();
   return (
@@ -420,7 +414,7 @@ function KioskDashboard({
       tileCount={dashboard.tiles.length}
       meta={
         <>
-          <OfflineMarker state={state} timeZone={dashboard.timeZone} />
+          <OfflineMarker state={state} />
           <span>{clock}</span>
         </>
       }

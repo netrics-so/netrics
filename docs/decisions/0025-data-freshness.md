@@ -391,7 +391,13 @@ Formatting:
 - **The viewer's time zone, nothing else.** Every time on screen is in the
   zone of the person in front of it: the browser's zone on the web, the
   device's zone on netrics TV, not the workspace zone. No zone is ever
-  named, on widgets or in detail views.
+  named, on widgets or in detail views. The same holds for the screen's
+  header clock, the offline note's last update and a clock widget without
+  a zone of its own (#736): the payload marks such a clock
+  `followsViewer` and keeps sending the workspace zone in `timeZone` for
+  builds that predate the flag. The workspace zone only defines data days
+  (goals, "today", measures); new workspaces start in the creator's
+  browser zone.
 - `dataThrough` is the provider's reporting day, shown as that date
   without a zone label and never converted: a Pacific day spans two local
   days in Berlin (09:00 to 09:00), so there is no local date to convert it

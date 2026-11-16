@@ -662,7 +662,6 @@ describe("slide canvas", () => {
           name: "Wurfel",
           slideName: "Sales",
           logoImageId: ID(50),
-          timeZone: "Europe/Berlin",
           offline: true,
         }}
         images={env.images}
@@ -751,7 +750,6 @@ describe("slide canvas", () => {
           name: "Wurfel",
           slideName: null,
           logoImageId: null,
-          timeZone: "UTC",
         }}
         images={new Map()}
         renderWidget={() => null}

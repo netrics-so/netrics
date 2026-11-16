@@ -417,8 +417,11 @@ export function DeviceWidgetView({
         <LiveClockWidget
           {...common}
           options={widget.options}
-          timeZone={widget.options.timeZone}
-          workspaceTimeZone={env.timeZone}
+          // Without its own zone the server sends the workspace's for
+          // older screens and `followsViewer`: the viewer's zone (#736).
+          timeZone={
+            widget.options.followsViewer ? null : widget.options.timeZone
+          }
         />
       );
     case "countdown":

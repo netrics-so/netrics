@@ -318,6 +318,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       doneTextHelp: "Bis zu 40 Zeichen. Leer zeigt „Jetzt“.",
       timeZone: "Zeitzone",
       workspaceZone: "Workspace ({zone})",
+      viewerZone: "Ortszeit des Bildschirms",
       hours: "Stunden",
       hours24: "24 Stunden (14:05)",
       hours12: "12 Stunden (2:05 PM)",

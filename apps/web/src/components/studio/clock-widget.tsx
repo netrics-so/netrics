@@ -5,7 +5,11 @@ import { useEffect, useState } from "react";
 import { clockLayout, type ClockDateStyle } from "@netrics/domain";
 
 import { useLocale } from "@/lib/i18n/client";
-import { clockText, msUntilNextMinute } from "@/lib/studio-clock";
+import {
+  clockText,
+  msUntilNextMinute,
+  viewerTimeZone,
+} from "@/lib/studio-clock";
 import { contentBox, u, type ScreenPlacement } from "@/lib/studio-render";
 
 /**
@@ -100,11 +104,13 @@ export function ClockWidgetView(props: ClockWidgetViewProps) {
   );
 }
 
-/** A clock that ticks on its own, in its zone or the workspace's. */
+/**
+ * A clock that ticks on its own, in its zone or, without one, the viewer's
+ * (#736): never the workspace's, which only counts data days.
+ */
 export function LiveClockWidget(
   props: Omit<ClockWidgetViewProps, "now" | "timeZone"> & {
     timeZone: string | null;
-    workspaceTimeZone: string;
   },
 ) {
   const now = useNow();
@@ -112,7 +118,7 @@ export function LiveClockWidget(
     <ClockWidgetView
       {...props}
       now={now}
-      timeZone={props.timeZone ?? props.workspaceTimeZone}
+      timeZone={props.timeZone ?? viewerTimeZone()}
     />
   );
 }

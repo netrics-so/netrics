@@ -307,6 +307,7 @@ export const studioEn = {
       clock: "Clock",
       timeZone: "Time zone",
       workspaceZone: "Workspace ({zone})",
+      viewerZone: "Local time of the screen",
       hours: "Hours",
       hours24: "24-hour (14:05)",
       hours12: "12-hour (2:05 PM)",

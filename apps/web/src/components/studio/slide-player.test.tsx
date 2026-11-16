@@ -166,7 +166,7 @@ function render(
       transition={transition}
       tokens={tokens}
       showHeader
-      header={{ name: "Wurfel", logoImageId: LOGO, timeZone: "Europe/Berlin" }}
+      header={{ name: "Wurfel", logoImageId: LOGO }}
       images={images}
       renderWidget={(widget) => <DeviceWidgetView widget={widget} env={env} />}
       empty={<p>Nothing to show</p>}
@@ -338,7 +338,7 @@ describe("SlidePlayer in screen view on any screen (ADR 0017, #281)", () => {
           transition="none"
           tokens={tokens}
           showHeader
-          header={{ name, logoImageId: null, timeZone: "UTC" }}
+          header={{ name, logoImageId: null }}
           images={images}
           renderWidget={(widget) => (
             <DeviceWidgetView widget={widget} env={env} />
@@ -367,7 +367,7 @@ describe("SlidePlayer in screen view on any screen (ADR 0017, #281)", () => {
         transition="none"
         tokens={tokens}
         showHeader
-        header={{ name: "App-Portfolio", logoImageId: null, timeZone: "UTC" }}
+        header={{ name: "App-Portfolio", logoImageId: null }}
         images={images}
         renderWidget={(widget) => (
           <DeviceWidgetView widget={widget} env={env} />
@@ -431,7 +431,6 @@ describe("SlidePlayer in screen view on any screen (ADR 0017, #281)", () => {
         header={{
           name: "Wurfel growth across all app stores",
           logoImageId: null,
-          timeZone: "UTC",
           offline: true,
           offlineSince: "12:00",
         }}
@@ -457,7 +456,7 @@ describe("SlidePlayer in screen view on any screen (ADR 0017, #281)", () => {
           transition="none"
           tokens={tokens}
           showHeader
-          header={{ name: "Wurfel", logoImageId: null, timeZone: "UTC" }}
+          header={{ name: "Wurfel", logoImageId: null }}
           images={images}
           renderWidget={(widget) => (
             <DeviceWidgetView widget={widget} env={env} />
@@ -598,7 +597,6 @@ describe("SlidePlayer polish (ADR 0018 section 5, #309)", () => {
         header={{
           name: "Wurfel",
           logoImageId: null,
-          timeZone: "UTC",
           ...header,
         }}
         images={images}
@@ -717,7 +715,6 @@ describe("SlidePlayer enter motion (ADR 0018 section 6, #310)", () => {
           name: "Wurfel",
           slideName: "Sales",
           logoImageId: null,
-          timeZone: "Europe/Berlin",
         }}
         images={images}
         renderWidget={(widget) => (

@@ -116,7 +116,7 @@ public struct ScrollDashboardView: View {
             // "Offline — last update 14:05", as the TV's header.
             Text(
                 state.offline
-                    ? TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: payload.timeZone, language: language)
+                    ? TVTime.offlineMarker(updatedAt: state.updatedAt, language: language)
                     : L10n.tr("Live", language)
             )
                 .font(.system(size: CGFloat(0.875 * rem)))

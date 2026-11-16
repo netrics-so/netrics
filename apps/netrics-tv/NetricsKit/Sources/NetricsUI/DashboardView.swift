@@ -45,12 +45,13 @@ public struct DashboardView: View {
                 .lineLimit(1)
             Spacer()
             if state.offline {
-                Text(TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: dashboard.timeZone, language: language))
+                Text(TVTime.offlineMarker(updatedAt: state.updatedAt, language: language))
                     .font(.system(size: height * 0.018))
                     .foregroundStyle(Theme.warning)
             }
             TimelineView(.periodic(from: .now, by: 15)) { context in
-                Text(TVTime.clock(context.date, timeZone: dashboard.timeZone, language: language))
+                // The device's zone, not the workspace's (#736).
+                Text(TVTime.headerClock(context.date, language: language))
                     .font(.system(size: height * 0.022).monospacedDigit())
                     .foregroundStyle(Theme.muted)
             }

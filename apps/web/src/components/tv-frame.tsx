@@ -13,24 +13,19 @@ export function clockLocale(locale: string): string {
 }
 
 /**
- * A moment as the screen clock shows it ("12:00"), in the workspace's zone:
- * the offline note's last update on the kiosk and in TV mode (#649, #681).
+ * A moment as the screen clock shows it ("12:00"), in the viewer's zone
+ * (#736): the offline note's last update on the kiosk and in TV mode (#649,
+ * #681).
  */
-export function clockTime(
-  epochMs: number,
-  timeZone: string,
-  locale: string,
-): string {
+export function clockTime(epochMs: number, locale: string): string {
   return new Intl.DateTimeFormat(clockLocale(locale), {
-    timeZone,
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(epochMs));
 }
 
-function formatClock(timeZone: string, locale: string): string {
+function formatClock(locale: string): string {
   return new Intl.DateTimeFormat(clockLocale(locale), {
-    timeZone,
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -40,20 +35,17 @@ function formatClock(timeZone: string, locale: string): string {
 }
 
 /**
- * The time in the workspace's zone and the screen's language, updated
+ * The time in the viewer's zone (#736) and the screen's language, updated
  * every 15 seconds.
  */
-export function useClock(timeZone: string): string {
+export function useClock(): string {
   const locale = useLocale();
-  const [now, setNow] = useState(() => formatClock(timeZone, locale));
+  const [now, setNow] = useState(() => formatClock(locale));
   useEffect(() => {
-    setNow(formatClock(timeZone, locale));
-    const timer = setInterval(
-      () => setNow(formatClock(timeZone, locale)),
-      15_000,
-    );
+    setNow(formatClock(locale));
+    const timer = setInterval(() => setNow(formatClock(locale)), 15_000);
     return () => clearInterval(timer);
-  }, [timeZone, locale]);
+  }, [locale]);
   return now;
 }
 

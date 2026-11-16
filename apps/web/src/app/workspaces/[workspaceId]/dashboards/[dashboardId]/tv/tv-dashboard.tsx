@@ -70,7 +70,7 @@ export function TvDashboard({
   useEffect(() => {
     setUpdatedAt(Date.now());
   }, [dashboard, metrics, connections]);
-  const offlineSince = clockTime(updatedAt, timeZone, locale);
+  const offlineSince = clockTime(updatedAt, locale);
 
   const env: StudioEnv = useMemo(
     () => ({
@@ -126,7 +126,6 @@ export function TvDashboard({
           header={{
             name: dashboard.name,
             logoImageId: logoImageId(settings),
-            timeZone,
             offline,
             offlineSince,
             refresh,

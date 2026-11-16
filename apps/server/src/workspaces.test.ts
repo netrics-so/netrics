@@ -1171,3 +1171,39 @@ describe("self removal", () => {
     );
   });
 });
+
+// #736: a new workspace counts its data days in the creator's zone, which
+// the web app sends from the browser. A zone the server does not know (an
+// old or unusual browser) must not block creating the workspace: UTC.
+describe("time zone at creation", () => {
+  const create = async (payload: Record<string, unknown>) => {
+    const created = await call(world.app, {
+      method: "POST",
+      url: "/v1/workspaces",
+      cookie: cookies.outsider,
+      payload,
+    });
+    expect(created.statusCode).toBe(200);
+    const { id } = workspaceResponseSchema.parse(created.json()).workspace;
+    const detail = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${id}`,
+      cookie: cookies.outsider,
+    });
+    return workspaceResponseSchema.parse(detail.json()).workspace.timeZone;
+  };
+
+  it("stores the zone the creator's browser sent", async () => {
+    expect(await create({ name: "Berlin", timeZone: "Europe/Berlin" })).toBe(
+      "Europe/Berlin",
+    );
+  });
+
+  it("falls back to UTC for an unknown zone or none", async () => {
+    expect(await create({ name: "Mars", timeZone: "Mars/Olympus" })).toBe(
+      "UTC",
+    );
+    expect(await create({ name: "Blank", timeZone: "" })).toBe("UTC");
+    expect(await create({ name: "None" })).toBe("UTC");
+  });
+});

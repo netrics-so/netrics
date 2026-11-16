@@ -1,6 +1,6 @@
 // The clock widget and the slide header's clock (ADR 0015, section 2): the
 // time, and optionally the date (short or long) and the zone line (ADR 0019,
-// section 9), in the workspace's time zone or the widget's own.
+// section 9), in the viewer's time zone or the widget's own (#736).
 
 import { zoneLabel, type ClockDateStyle } from "@netrics/domain";
 
@@ -82,6 +82,15 @@ export function clockText(
   }
   const zone = options.showZone ? zoneLabel(options.timeZone, date) : null;
   return { time, date: day, zone };
+}
+
+/**
+ * The zone of the person in front of the screen: the browser's (ADR 0025
+ * §8, #736). Clocks show it; the workspace's zone only counts data days.
+ * Before hydration it is the server's; the clock corrects itself on mount.
+ */
+export function viewerTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
 /** Milliseconds until the next minute starts: the clock ticks on it. */

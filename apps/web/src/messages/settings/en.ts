@@ -20,7 +20,7 @@ export const settingsEn = {
       rename: "Rename",
       timeZone: "Time zone",
       timeZoneHint:
-        "Dashboards count “today” and daily numbers in this time zone.",
+        "Dashboards count “today”, daily numbers and goals in this time zone. Clocks on screens show the local time of the device or browser.",
     },
     currency: {
       title: "Currency",
