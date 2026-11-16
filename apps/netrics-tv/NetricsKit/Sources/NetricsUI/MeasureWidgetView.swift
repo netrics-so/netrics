@@ -26,12 +26,8 @@ struct MeasureWidgetView: View {
         VStack(alignment: .leading, spacing: env.pt(12)) {
             Text(label).font(font(36, .semibold)).foregroundStyle(env.colors.label).lineLimit(
                 scroll ? nil : 2)
-            if data.error != nil || expired {
-                Text(
-                    KitStrings.text(
-                        data.error == "data_source_pending" && !expired ? .noDataYet : .noticeOutage,
-                        env.language)
-                ).font(font(24)).foregroundStyle(env.colors.muted)
+            if let error = data.viewerError(expired: expired, language: env.language) {
+                Text(error).font(font(24)).foregroundStyle(env.colors.muted)
             } else if options.view == "value" {
                 Text(
                     measureIds.first.map { data.text(rows.first?.measures[$0], measure: $0, language: env.language) } ?? "—"
@@ -56,7 +52,7 @@ struct MeasureWidgetView: View {
                 }
             }
             if data.result?.stale == true {
-                Text(env.language == .de ? "Letzte gültige Daten" : "Last valid data")
+                Text(KitStrings.text(.measureStale, env.language))
                     .font(font(24)).foregroundStyle(env.colors.muted)
             }
             if let total = data.result?.totalRows, total > rows.count {
@@ -79,15 +75,13 @@ struct MeasureWidgetView: View {
             if data.result?.pendingSources?.isEmpty == false {
                 Text(KitStrings.text(.sourceReportsPending, env.language)).font(font(24)).foregroundStyle(env.colors.muted)
             }
-            if data.result?.warnings.isEmpty == false
-                || rows.contains(where: { $0.measures.values.contains(where: { $0.status == "partial" }) })
-            {
-                Text(env.language == .de ? "Datenhinweise: Prüfe das Modell." : "Data warnings: check the model.")
-                    .font(font(24)).foregroundStyle(env.colors.muted)
+            // A wall screen's wording: the state, not the editor's remedy (#676).
+            // Partial data and the warning count: two different lines at most.
+            ForEach(data.viewerWarnings(rows: rows, language: env.language), id: \.self) { notice in
+                Text(notice).font(font(24)).foregroundStyle(env.colors.muted)
             }
-            ForEach((data.sourceHealth ?? []).filter { $0.status != "ok" }, id: \.connectionId) { source in
-                Text("\(source.name): \(KitStrings.text(source.status == "needs_reauthorization" || source.status == "auth_failed" ? .sourceAccess : source.status == "paused" ? .sourcePaused : source.status == "pending" ? .noticeFirstSync : .noticeOutage, env.language))")
-                    .font(font(24)).foregroundStyle(env.colors.muted)
+            ForEach(data.viewerSourceNotices(language: env.language)) { notice in
+                Text(notice.text).font(font(24)).foregroundStyle(env.colors.muted)
             }
             ForEach(data.exclusions, id: \.filterId) { exclusion in
                 Text(exclusion.reason).font(font(24)).foregroundStyle(env.colors.muted)

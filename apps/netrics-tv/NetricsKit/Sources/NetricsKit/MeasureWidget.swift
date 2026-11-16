@@ -230,6 +230,63 @@ public struct MeasureWidgetData: Codable, Sendable, Equatable {
     public var error: String?
     public var exclusions: [MeasureExclusion]
 }
+/**
+ * What a measure tile says about its state on a wall screen, worded as the
+ * web kiosk's viewer wording (`audience="viewer"`, #649, #676): the state
+ * only, since nobody at a TV can check a model or reconnect a source.
+ */
+extension MeasureWidgetData {
+    /// The line instead of the data when the request failed or the result
+    /// expired: "Data not available yet" while the source has not imported,
+    /// else "Data not available"; nil with data to show.
+    public func viewerError(expired: Bool, language: ScreenLanguage) -> String? {
+        guard error != nil || expired else { return nil }
+        return KitStrings.text(
+            error == "data_source_pending" && !expired ? .measurePending : .measureUnavailable, language)
+    }
+    /// "Some source data is missing." for partial cells, then "2 data
+    /// warnings" for the result's warnings.
+    public func viewerWarnings(rows: [MeasureResultRow], language: ScreenLanguage) -> [String] {
+        var lines: [String] = []
+        if rows.contains(where: { $0.measures.values.contains { $0.status == "partial" } }) {
+            lines.append(KitStrings.text(.measurePartial, language))
+        }
+        if let count = result?.warnings.count, count > 0 {
+            lines.append(
+                KitStrings.text(count == 1 ? .measureWarningOne : .measureWarningOther, language, count))
+        }
+        return lines
+    }
+    /// One line per source that is not ok, worded as the web's viewer
+    /// branch: "Imports from Apple team are paused." when its access expired
+    /// or was rejected, "… interrupted." on an outage, and the collection
+    /// pause or first import by name. Keyed by connection and state, so two
+    /// connections with the same name stay two lines.
+    public func viewerSourceNotices(language: ScreenLanguage) -> [MeasureNotice] {
+        (sourceHealth ?? []).filter { $0.status != "ok" }.map { source in
+            let key: KitText =
+                switch source.status {
+                case "needs_reauthorization", "auth_failed": .measureSourcePaused
+                case "paused": .measureSourceCollectionPaused
+                case "pending": .measureSourcePending
+                default: .measureSourceOutage
+                }
+            return MeasureNotice(
+                id: "\(source.connectionId)|\(source.status)", text: KitStrings.text(key, language, source.name))
+        }
+    }
+}
+
+/** A line under a measure tile, with an id that is unique on the tile. */
+public struct MeasureNotice: Sendable, Equatable, Identifiable {
+    public var id: String
+    public var text: String
+    public init(id: String, text: String) {
+        self.id = id
+        self.text = text
+    }
+}
+
 extension MeasureWidgetData {
     /// A measure cell as displayed, honouring the measure's metadata.
     public func text(

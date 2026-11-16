@@ -439,6 +439,58 @@ func v3Response(version: String = "v3-1") -> HTTPResponse {
 }
 
 @Suite struct HeaderFitTests {
+    @Test func showsTheDashboardNameOnceWhenTheSlideRepeatsIt() {
+        // The web's repeatsName (#622, #676): case and outer spaces aside.
+        let fit = StudioLayout.headerFit(
+            name: "App-Portfolio", slideName: " app-portfolio ", format: .widescreen, logoAspect: nil)
+        #expect(!fit.showSlideName && fit.fits)
+        #expect(StudioLayout.repeatsName("INFO", "info"))
+        #expect(StudioLayout.repeatsName(" App-Portfolio ", "app-portfolio"))
+        #expect(!StudioLayout.repeatsName("Café", "Cafe"))
+        #expect(!StudioLayout.repeatsName(nil, "App"))
+        #expect(!StudioLayout.repeatsName("", ""))
+        // JavaScript's trim() also drops the byte order mark.
+        #expect(StudioLayout.repeatsName("\u{FEFF}Sales\u{FEFF}", "sales"))
+        // A different slide name still shows.
+        #expect(
+            StudioLayout.headerFit(name: "App-Portfolio", slideName: "Downloads", format: .widescreen, logoAspect: nil)
+                .showSlideName)
+    }
+
+    @Test func takesTheOfflineNotesRoomFromTheNames() {
+        typealias M = StudioHeaderMetrics
+        let note = "⚠ Offline – letzte Aktualisierung 12:00"
+        let without = StudioLayout.headerFit(name: "A", slideName: nil, format: .tall, logoAspect: nil)
+        let with = StudioLayout.headerFit(name: "A", slideName: nil, format: .tall, logoAspect: nil, meta: note)
+        #expect(abs((without.width - with.width) - (StudioLayout.estimateTextWidth(note, fontSize: M.meta) + M.clockSpace)) < 1e-9)
+    }
+
+    @Test func shortensTheOfflineNoteBeforeTheNameIsCut() {
+        // 10:00 UTC is 11:00 in Berlin in November.
+        let at = Date(timeIntervalSince1970: 1_794_823_200)  // 2026-11-16T10:00:00Z
+        func note(_ name: String, _ format: ScreenFormat, _ language: ScreenLanguage = .de, updated: Date? = at)
+            -> String
+        {
+            StudioLayout.offlineNote(
+                name: name, slideName: nil, format: format, logoAspect: nil, updatedAt: updated,
+                timeZone: "Europe/Berlin", language: language)
+        }
+        #expect(note("Wurfel", .widescreen) == "Offline – letzte Aktualisierung 11:00")
+        #expect(note("Wurfel", .widescreen, .en) == "Offline — last update 11:00")
+        // 9:16: the long note would cut the name; the short one keeps it whole.
+        let name = "Wurfel growth across all app stores"
+        #expect(
+            !StudioLayout.headerFit(
+                name: name, slideName: nil, format: .tall, logoAspect: nil,
+                meta: "⚠ Offline – letzte Aktualisierung 11:00"
+            ).fits)
+        #expect(note(name, .tall) == "Offline · 11:00")
+        // A name that needs both lines: just "Offline".
+        #expect(note("Unternehmenskennzahlen Vertrieb und Marketing Europa", .tall) == "Offline")
+        // No confirmed update: just "Offline".
+        #expect(note("Wurfel", .widescreen, updated: nil) == "Offline")
+    }
+
     @Test func keepsShortNamesOnOneLineWithTheSlideName() {
         for format in ScreenFormat.allCases {
             let fit = StudioLayout.headerFit(name: "Overview", slideName: "Sales", format: format, logoAspect: 1)
