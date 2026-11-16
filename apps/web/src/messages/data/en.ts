@@ -444,6 +444,11 @@ export const dataEn = {
     requiredScopeHelp:
       "This measure requires grouping by each chosen dimension, or filtering it to one value. Useful for ratings, snapshots and other values that cannot be combined.",
     measureName: "Measure name",
+    measureNamePlaceholder: "e.g. Revenue",
+    unnamedMeasure: "Unnamed measure {number}",
+    unfitColumn: "{name} (does not fit)",
+    unfitColumnHint:
+      "{name} does not fit {aggregate}. Choose another column or aggregation; until then, previewing this measure fails.",
     measureKind: "Calculation",
     aggregateMeasure: "Aggregate a column",
     formulaMeasure: "Calculate from measures",

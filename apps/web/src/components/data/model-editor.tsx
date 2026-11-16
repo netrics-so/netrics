@@ -192,6 +192,50 @@ export async function modelImpact(
   return { impact, changedWidgetIds };
 }
 
+/**
+ * A new measure: a count with an empty name, which the name field's
+ * placeholder explains. A prefilled name had to be deleted first (#631).
+ */
+export function newAggregateMeasure(
+  id: string,
+  datasetId: string,
+  /** The aggregate's own name, which the API requires to be non-empty. */
+  aggregateName: string,
+): Extract<ModelMeasure, { kind: "aggregate" }> {
+  return {
+    id,
+    name: "",
+    kind: "aggregate",
+    datasetId,
+    aggregate: { id, name: aggregateName, op: "count" },
+  };
+}
+/**
+ * Renames a measure. An aggregate's own name follows, as the aggregate
+ * fields already make it, so a measure named only after its aggregate was
+ * edited never keeps an empty aggregate name.
+ */
+export function renameMeasure(
+  measure: ModelMeasure,
+  name: string,
+): ModelMeasure {
+  return measure.kind === "aggregate"
+    ? { ...measure, name, aggregate: { ...measure.aggregate, name } }
+    : { ...measure, name };
+}
+/**
+ * How pickers name each measure: its name, or "Unnamed measure 1", "…2" in
+ * order for measures not named yet, so two of them stay apart.
+ */
+export function measureLabels(
+  measures: readonly ModelMeasure[],
+  unnamed: (number: number) => string,
+): Map<string, string> {
+  let count = 0;
+  return new Map(
+    measures.map((m) => [m.id, m.name.trim() || unnamed(++count)]),
+  );
+}
 export function ModelEditor({
   workspaceId,
   sources: sourceCatalog,
@@ -269,6 +313,8 @@ export function ModelEditor({
     [previewState, setPreviewState] = useState("");
   // The draft and query the shown preview ran with.
   const [previewed, setPreviewed] = useState<ModelPreviewQuery | null>(null);
+  // The measure just added, whose empty name field takes the focus.
+  const [addedMeasureId, setAddedMeasureId] = useState<string | null>(null);
   const [busy, setBusy] = useState<
     "preview" | "save" | "publish" | "history" | null
   >(null);
@@ -613,22 +659,16 @@ export function ModelEditor({
     }
   }
   function addMeasure() {
-    const datasetId = definition.datasets[0]!,
-      id = newDataId();
+    const id = newDataId();
     change({
       measures: [
         ...definition.measures,
-        {
-          id,
-          name: t("measureName") + " " + (definition.measures.length + 1),
-          kind: "aggregate",
-          datasetId,
-          aggregate: { id, name: t("count"), op: "count" },
-        },
+        newAggregateMeasure(id, definition.datasets[0]!, t("count")),
       ],
     });
     setMeasureIds((ids) => [...ids, id]);
     setGroupBy((current) => withMeasureScope(definition, [id], current));
+    setAddedMeasureId(id);
   }
   const timeDimensions = timeDimensionCandidates(definition, fieldsFor);
   const dependents = (id: string) => measureDependents(definition, id);
@@ -668,9 +708,12 @@ export function ModelEditor({
     id: d.id,
     name: d.name,
   }));
+  const labels = measureLabels(definition.measures, (number) =>
+    t("unnamedMeasure", { number }),
+  );
   const measureFields: DataField[] = definition.measures.map((m) => ({
     id: m.id,
-    name: m.name,
+    name: labels.get(m.id)!,
     type: "decimal",
     nullable: true,
   }));
@@ -1162,11 +1205,13 @@ export function ModelEditor({
                   <input
                     required
                     maxLength={100}
+                    placeholder={t("measureNamePlaceholder")}
+                    autoFocus={measure.id === addedMeasureId}
                     value={measure.name}
                     onChange={(e) =>
                       changeMeasure(
                         measure.id,
-                        { ...measure, name: e.target.value },
+                        renameMeasure(measure, e.target.value),
                         `measure:${measure.id}:name`,
                       )
                     }
@@ -1402,7 +1447,9 @@ export function ModelEditor({
                 <>
                   <WindowedMeasureFields
                     measure={measure}
-                    baseMeasures={windowBaseCandidates(definition, measure)}
+                    baseMeasures={windowBaseCandidates(definition, measure).map(
+                      (m) => ({ ...m, name: labels.get(m.id) ?? m.name }),
+                    )}
                     timeDimensions={timeDimensions}
                     onChange={(next) => changeMeasure(measure.id, next)}
                   />

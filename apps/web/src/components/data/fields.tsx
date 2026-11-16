@@ -1,11 +1,12 @@
 "use client";
 import { useId, useState } from "react";
-import type {
-  DataField,
-  AggregateDefinition,
-  ModelDimension,
-  ModelMeasure,
-  ModelWindowUnit,
+import {
+  aggregateAcceptsField,
+  type DataField,
+  type AggregateDefinition,
+  type ModelDimension,
+  type ModelMeasure,
+  type ModelWindowUnit,
 } from "@netrics/domain";
 import { useT } from "@/lib/i18n/client";
 import {
@@ -22,6 +23,7 @@ export function ColumnSelect({
   empty = false,
   disabled = false,
   describedBy,
+  unfit,
 }: {
   label: string;
   fields: DataField[];
@@ -30,6 +32,8 @@ export function ColumnSelect({
   empty?: boolean;
   disabled?: boolean;
   describedBy?: string;
+  /** The stored column, kept as a choice although it no longer fits. */
+  unfit?: { id: string; label: string };
 }) {
   const id = useId(),
     t = useT("data");
@@ -50,9 +54,24 @@ export function ColumnSelect({
             {f.name}
           </option>
         ))}
+        {unfit ? <option value={unfit.id}>{unfit.label}</option> : null}
       </select>
     </div>
   );
+}
+/**
+ * The stored column of an aggregate that its operation cannot read, e.g. a
+ * sum of text saved before the picker offered only fitting columns. It stays
+ * shown, so the model can still be saved; previewing it fails (#631).
+ */
+export function unfitAggregateField(
+  value: AggregateDefinition,
+  fields: readonly DataField[],
+): DataField | undefined {
+  const field = fields.find((f) => f.id === value.fieldId);
+  return field && !aggregateAcceptsField(value.op, field.type)
+    ? field
+    : undefined;
 }
 export function ColumnChecks({
   label,
@@ -87,6 +106,22 @@ export function ColumnChecks({
     </fieldset>
   );
 }
+/** Switches the operation; a column the new one cannot read is dropped (#631). */
+export function changeAggregateOperation(
+  value: AggregateDefinition,
+  op: AggregateDefinition["op"],
+  fields: readonly DataField[],
+): AggregateDefinition {
+  const field = fields.find((f) => f.id === value.fieldId);
+  return {
+    ...value,
+    op,
+    fieldId:
+      field && !aggregateAcceptsField(op, field.type)
+        ? undefined
+        : value.fieldId,
+  };
+}
 export function AggregateFields({
   fields,
   value,
@@ -100,7 +135,9 @@ export function AggregateFields({
 }) {
   const t = useT("data"),
     opId = useId(),
-    nameId = useId();
+    nameId = useId(),
+    unfitId = useId();
+  const unfit = unfitAggregateField(value, fields);
   const operations = [
     "sum",
     "count",
@@ -132,10 +169,13 @@ export function AggregateFields({
           id={opId}
           value={value.op}
           onChange={(e) =>
-            onChange({
-              ...value,
-              op: e.target.value as AggregateDefinition["op"],
-            })
+            onChange(
+              changeAggregateOperation(
+                value,
+                e.target.value as AggregateDefinition["op"],
+                fields,
+              ),
+            )
           }
         >
           {operations.map((op) => (
@@ -147,13 +187,30 @@ export function AggregateFields({
       </div>
       <ColumnSelect
         label={t("field")}
-        fields={fields}
+        fields={fields.filter((f) => aggregateAcceptsField(value.op, f.type))}
+        {...(unfit
+          ? {
+              unfit: {
+                id: unfit.id,
+                label: t("unfitColumn", { name: unfit.name }),
+              },
+              describedBy: unfitId,
+            }
+          : {})}
         value={value.fieldId ?? ""}
         empty={value.op === "count"}
         onChange={(fieldId) =>
           onChange({ ...value, fieldId: fieldId || undefined })
         }
       />
+      {unfit ? (
+        <p className="help" id={unfitId}>
+          {t("unfitColumnHint", {
+            name: unfit.name,
+            aggregate: t(value.op === "last" ? "lastAggregate" : value.op),
+          })}
+        </p>
+      ) : null}
       {value.op === "last" ? (
         <ColumnSelect
           label={t("orderBy")}

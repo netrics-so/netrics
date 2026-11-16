@@ -450,6 +450,11 @@ export const dataDe: Catalog<typeof dataEn> = {
     requiredScopeHelp:
       "Diese Kennzahl erfordert eine Gruppierung nach jeder gewählten Dimension oder einen Filter auf genau einen Wert. Geeignet für Bewertungen, Momentaufnahmen und andere nicht kombinierbare Werte.",
     measureName: "Kennzahlname",
+    measureNamePlaceholder: "z. B. Umsatz",
+    unnamedMeasure: "Unbenannte Kennzahl {number}",
+    unfitColumn: "{name} (passt nicht)",
+    unfitColumnHint:
+      "{name} passt nicht zu {aggregate}. Wähle eine andere Spalte oder Aggregation; bis dahin schlägt die Vorschau dieser Kennzahl fehl.",
     measureKind: "Berechnung",
     aggregateMeasure: "Spalte aggregieren",
     formulaMeasure: "Aus Kennzahlen berechnen",
