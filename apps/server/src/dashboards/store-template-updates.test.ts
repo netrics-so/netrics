@@ -1693,6 +1693,87 @@ describe("applying a store-template update", { timeout: TIMEOUT_MS }, () => {
     ).toEqual([]);
   });
 
+  it("builds anew what the customer deleted, so no draft reads a deleted record (#671)", async () => {
+    const { workspaceId, requestId, installed } = await installIn([
+      "app-store-connect",
+    ]);
+    // The dashboard deleted, the install's models and preparations can go.
+    expect(
+      (
+        await dashboardService().remove(
+          actor(workspaceId),
+          installed.dashboardId,
+        )
+      ).ok,
+    ).toBe(true);
+    const data = createDataService(db, () => new Date(now));
+    const owned = { ...actor(workspaceId), role: "owner" as const };
+    const records =
+      await owner`select key, kind, record_id from data_template_records
+      where request_id=${requestId} and kind in ('preparation', 'model')`;
+    const deleted = new Set<string>();
+    // Users first: models, then what reads other preparations.
+    for (let round = 0; deleted.size < records.length && round < 5; round++)
+      for (const record of records) {
+        if (deleted.has(record.record_id as string)) continue;
+        await data
+          .remove(
+            owned,
+            record.kind as "preparation" | "model",
+            record.record_id as string,
+          )
+          .then(
+            () => deleted.add(record.record_id as string),
+            () => undefined,
+          );
+      }
+    expect(deleted.size).toBe(records.length);
+
+    const extra = await addConnection(workspaceId, requestId);
+    const plan = await updates(v2).plan(actor(workspaceId), requestId);
+    const update = await updates(v2).apply(actor(workspaceId), requestId, {
+      basis: plan.basis,
+      decisions: choices(plan, "template"),
+    });
+    // Every draft reads only preparations that exist.
+    const existing = new Set(
+      (
+        await owner`select id from data_preparations where workspace_id=${workspaceId}`
+      ).map((row) => row.id as string),
+    );
+    const reads = (value: unknown) =>
+      strings(value)
+        .filter((v) => v.startsWith("prepared:"))
+        .map((v) => v.split(":")[1]!);
+    expect(update.drafts.length).toBeGreaterThan(0);
+    for (const draft of update.drafts) {
+      const [row] =
+        draft.kind === "preparation"
+          ? await owner`select graph as value from data_preparations where id=${draft.recordId}`
+          : await owner`select definition as value from data_models where id=${draft.recordId}`;
+      expect(row, draft.key).toBeDefined();
+      for (const id of reads(row!.value))
+        expect(existing.has(id), `${draft.key} reads ${id}`).toBe(true);
+    }
+    // The keys point at records that exist; the deleted ones are gone.
+    const after =
+      await owner`select key, kind, record_id from data_template_records
+      where request_id=${requestId} and kind in ('preparation', 'model')`;
+    for (const record of after)
+      expect(deleted.has(record.record_id as string), record.key).toBe(false);
+    expect(
+      after.some((r) => r.key === `preparation:source:${extra.id}:downloads`),
+    ).toBe(true);
+    // The Apple source the deleted append read is built anew too.
+    expect(
+      after.some(
+        (r) =>
+          (r.key as string).startsWith("preparation:source:") &&
+          !(r.key as string).includes(extra.id),
+      ),
+    ).toBe(true);
+  });
+
   it("applies to an install made before versions with the plan read before", async () => {
     const { workspaceId, requestId } = await installIn([
       "app-store-connect",

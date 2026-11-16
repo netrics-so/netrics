@@ -231,6 +231,63 @@ export function collectDataImpact(
   };
 }
 
+/**
+ * What uses `target` directly, from the same graph as the publish impact:
+ * preparations whose draft or live version reads it, models whose draft,
+ * live release or pins read it, and for a model the dashboards bound to it
+ * (a widget or a shared filter mapping). Unlike `collectDataImpact` it
+ * stops at the first step: these are what must go before `target` can be
+ * deleted (#671). `extraDashboards` adds dashboards the graph cannot read
+ * (a widget whose binding no longer parses).
+ */
+export function collectDataUsers(
+  graph: ImpactGraph,
+  target: { kind: "preparation" | "model"; id: string },
+  extraDashboards: readonly string[] = [],
+): Pick<DataImpact, "preparations"> & {
+  models: Array<{ id: string; name: string }>;
+  dashboards: Array<{ id: string; name: string }>;
+} {
+  const preparations =
+    target.kind === "preparation"
+      ? graph.preparations
+          .filter(
+            (prep) =>
+              prep.id !== target.id &&
+              (prep.draftReads.includes(target.id) ||
+                prep.publishedReads.includes(target.id)),
+          )
+          .map(({ id, name }) => ({ id, name }))
+      : [];
+  const models =
+    target.kind === "preparation"
+      ? graph.models
+          .filter((model) =>
+            [
+              ...preparationsRead(model.draft),
+              ...preparationsRead(model.released),
+              ...Object.keys(model.releasePins),
+            ].includes(target.id),
+          )
+          .map(({ id, name }) => ({ id, name }))
+      : [];
+  const bound = new Set<string>(extraDashboards);
+  if (target.kind === "model") {
+    for (const widget of graph.widgets)
+      if (widget.modelId === target.id) bound.add(widget.dashboardId);
+    for (const { dashboardId, modelId } of graph.filterModels)
+      if (modelId === target.id) bound.add(dashboardId);
+  }
+  const dashboards = graph.dashboards
+    .filter((d) => bound.has(d.id))
+    .map(({ id, name }) => ({ id, name }));
+  return {
+    preparations: preparations.sort(byName),
+    models: models.sort(byName),
+    dashboards: dashboards.sort(byName),
+  };
+}
+
 /** Empties the lists the caller may not open, counting them in `hidden` instead. */
 export function redactDataImpact(
   impact: Collected,

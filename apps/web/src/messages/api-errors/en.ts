@@ -173,6 +173,8 @@ export const apiErrorsEn = {
       "Pick a currency for this amount: amounts in different currencies are not added up.",
     metric_not_per_currency:
       "This metric is not an amount in several currencies.",
+    dashboard_model_deleted:
+      "A widget uses a model that was deleted in the meantime. Remove the widget or bind it to another model, then save again.",
     compare_measure_model_not_found:
       "A compare widget uses a model this workspace doesn’t have. Use its metrics again.",
     compare_measure_not_found:

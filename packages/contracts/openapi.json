@@ -39974,6 +39974,288 @@
             }
           }
         }
+      },
+      "delete": {
+        "summary": "Delete with every version and draft (409 data_in_use names what still uses it)",
+        "tags": [
+          "data"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "fieldId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "nodeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "fieldId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "nodeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "usedBy": {
+                      "type": "object",
+                      "properties": {
+                        "preparations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "dashboards": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "storeTemplates": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "requestId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "requestId",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "hidden": {
+                          "type": "object",
+                          "properties": {
+                            "preparations": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "models": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "dashboards": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "preparations",
+                            "models",
+                            "dashboards"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "preparations",
+                        "models",
+                        "dashboards",
+                        "storeTemplates",
+                        "hidden"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Conflict"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Took too long; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Took too long; try again later"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/workspaces/{workspaceId}/data/preparations/{id}/publish": {
@@ -46457,6 +46739,288 @@
                   ],
                   "additionalProperties": false,
                   "description": "Request body too large"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Took too long; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Took too long; try again later"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete with every version and draft (409 data_in_use names what still uses it)",
+        "tags": [
+          "data"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for workspaces the caller is not a member of)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "fieldId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "nodeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Not found (also for workspaces the caller is not a member of)"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "fieldId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "nodeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "usedBy": {
+                      "type": "object",
+                      "properties": {
+                        "preparations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "dashboards": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "storeTemplates": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "requestId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "requestId",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "hidden": {
+                          "type": "object",
+                          "properties": {
+                            "preparations": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "models": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "dashboards": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "preparations",
+                            "models",
+                            "dashboards"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "preparations",
+                        "models",
+                        "dashboards",
+                        "storeTemplates",
+                        "hidden"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Conflict"
                 }
               }
             }

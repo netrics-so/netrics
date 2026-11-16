@@ -11,7 +11,11 @@ import {
 import type { Database } from "@netrics/database";
 import type { AuthService } from "../auth/index.js";
 import { createCompareMeasureService } from "../data/compare-measure.js";
-import { createDataService, DataServiceError } from "../data/service.js";
+import {
+  createDataService,
+  DataInUseError,
+  DataServiceError,
+} from "../data/service.js";
 import {
   parseBody,
   resolveAccess,
@@ -64,6 +68,13 @@ export function registerDataRoutes(
     try {
       return await operation(access);
     } catch (error) {
+      if (error instanceof DataInUseError)
+        return reply.code(409).send(
+          contracts.dataInUseResponseSchema.parse({
+            error: "data_in_use",
+            usedBy: error.usedBy,
+          }),
+        );
       if (error instanceof DataServiceError)
         return sendDataError(reply, error.status, error.code, {
           nodeId: error.nodeId,
@@ -683,6 +694,34 @@ export function registerDataRoutes(
                 resourceId,
                 input.projectId,
               );
+            }),
+        );
+        scope.delete(
+          `/workspaces/:workspaceId/data/${kind}/:id`,
+          {
+            schema: routeSchema({
+              summary:
+                "Delete with every version and draft (409 data_in_use names what still uses it)",
+              tags: ["data"],
+              errors: [403, 404, 409, 503],
+              errorSchemas: {
+                404: contracts.dataErrorResponseSchema,
+                409: contracts.dataErrorResponseSchema.extend({
+                  usedBy: contracts.dataUsersSchema.optional(),
+                }),
+              },
+            }),
+          },
+          (request, reply) =>
+            execute(request, reply, "data:delete", async (actor) => {
+              const resourceId = id(request, reply);
+              if (!resourceId) return;
+              await service.remove(
+                actor,
+                kind === "preparations" ? "preparation" : "model",
+                resourceId,
+              );
+              return reply.code(204).send();
             }),
         );
         scope.post(

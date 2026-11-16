@@ -194,12 +194,14 @@ import {
   createThemeRequestSchema,
   themeErrorResponseSchema,
   dataErrorResponseSchema,
+  dataUsersSchema,
   themeListResponseSchema,
   themeResponseSchema,
   updateThemeRequestSchema,
   type CreateThemeRequest,
   type ThemeErrorResponse,
   type DataErrorResponse,
+  type DataUsers,
   type ThemeListResponse,
   type ThemeResponse,
   type UpdateThemeRequest,
@@ -226,7 +228,7 @@ export class ApiError extends Error {
     public readonly details: Omit<
       ThemeErrorResponse & DataErrorResponse & StoreTemplateErrorDetails,
       "error"
-    > = {},
+    > & { usedBy?: DataUsers } = {},
   ) {
     super(code);
     this.name = "ApiError";
@@ -300,9 +302,10 @@ async function readErrorCode(response: Response): Promise<string> {
 
 const detailedErrorResponseSchema = themeErrorResponseSchema
   .extend(dataErrorResponseSchema.shape)
-  .extend(storeTemplateDashboardErrorSchema.shape);
+  .extend(storeTemplateDashboardErrorSchema.shape)
+  .extend({ usedBy: dataUsersSchema.optional() });
 
-async function readError(response: Response): Promise<ApiError> {
+export async function readError(response: Response): Promise<ApiError> {
   try {
     const { error, ...details } = detailedErrorResponseSchema.parse(
       await response.json(),
