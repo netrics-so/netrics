@@ -396,13 +396,13 @@ interface StoredRelease {
   dependencies: unknown;
 }
 /**
- * Whether a draft differs from its live release by content (#697): its
- * definition (the name is not part of a release), or the dependencies
+ * How a draft differs from its live release by content (#697): its
+ * definition (the name is not part of a release), and the dependencies
  * publishing it would record, resolved by the loader's own code: a restored
  * draft starts from that release's pins, others read the current published
  * versions. So a republished input marks its readers, and a saved draft
- * equal to the release (every save bumps the version) is not marked. A
- * draft whose inputs no longer resolve counts as changed.
+ * equal to the release (every save bumps the version) is not marked.
+ * Inputs that no longer resolve, or a missing release, count as changed.
  */
 async function differsFromRelease(
   tx: Transaction,
@@ -412,9 +412,10 @@ async function differsFromRelease(
   /** The release the draft was restored from; null when not restored. */
   restored: StoredRelease | undefined | null,
   shared: Pick<SharedLoads, "preparations" | "versions">,
-): Promise<boolean> {
-  if (!release || restored === undefined) return true;
-  if (stable(draft.content) !== stable(release.content)) return true;
+): Promise<{ definition: boolean; inputs: boolean }> {
+  if (!release) return { definition: true, inputs: true };
+  const definition = stable(draft.content) !== stable(release.content);
+  if (restored === undefined) return { definition, inputs: true };
   let effective: Dependencies;
   try {
     effective = await resolveDependencies(
@@ -425,13 +426,15 @@ async function differsFromRelease(
       shared,
     );
   } catch (error) {
-    if (error instanceof DataServiceError) return true;
+    if (error instanceof DataServiceError) return { definition, inputs: true };
     throw error;
   }
-  return (
-    stable(effective.prepared) !==
-    stable((release.dependencies as Dependencies | null)?.prepared ?? {})
-  );
+  return {
+    definition,
+    inputs:
+      stable(effective.prepared) !==
+      stable((release.dependencies as Dependencies | null)?.prepared ?? {}),
+  };
 }
 type DraftRow = {
   id: string;
@@ -452,7 +455,7 @@ async function unpublishedChanges(
   ) => Promise<
     { id: string; version: number; content: unknown; dependencies: unknown }[]
   >,
-): Promise<boolean[]> {
+): Promise<{ hasUnpublishedChanges: boolean; inputsDiffer: boolean }[]> {
   const keys = rows.flatMap((row): [string, number][] =>
     row.publishedVersion
       ? [
@@ -472,11 +475,11 @@ async function unpublishedChanges(
   );
   // Preparation rows and versions, read once for the whole list.
   const shared = { preparations: new Map(), versions: new Map() };
-  const changed: boolean[] = [];
-  for (const row of rows)
-    changed.push(
-      !!row.publishedVersion &&
-        (await differsFromRelease(
+  const changed: { hasUnpublishedChanges: boolean; inputsDiffer: boolean }[] =
+    [];
+  for (const row of rows) {
+    const differs = row.publishedVersion
+      ? await differsFromRelease(
           tx,
           workspaceId,
           row,
@@ -485,8 +488,13 @@ async function unpublishedChanges(
             ? releases.get(row.id + ":" + row.restoredFromVersion)
             : null,
           shared,
-        )),
-    );
+        )
+      : { definition: false, inputs: false };
+    changed.push({
+      hasUnpublishedChanges: differs.definition || differs.inputs,
+      inputsDiffer: differs.inputs,
+    });
+  }
   return changed;
 }
 async function preparationViews(
@@ -525,7 +533,7 @@ async function preparationViews(
   );
   return rows.map((row, i) => ({
     ...preparationView(row),
-    hasUnpublishedChanges: changed[i]!,
+    ...changed[i]!,
   }));
 }
 async function modelViews(
@@ -564,7 +572,7 @@ async function modelViews(
   );
   return rows.map((row, i) => ({
     ...modelView(row),
-    hasUnpublishedChanges: changed[i]!,
+    ...changed[i]!,
   }));
 }
 async function preparationViewIn(
@@ -929,11 +937,14 @@ async function resolveDependencies(
   shared: Pick<SharedLoads, "preparations" | "versions">,
 ): Promise<Dependencies> {
   const dependencies: Dependencies = { prepared: { ...pins?.prepared } };
-  const visited = new Set<string>();
+  // As the loader: a source resolved once is done; `visiting` is the chain
+  // being resolved, with the loader's cycle check and depth limit.
+  const resolved = new Set<string>(),
+    visiting = new Set<string>();
   const visit = async (id: string): Promise<void> => {
-    if (!id.startsWith("prepared:") || visited.has(id)) return;
-    if (visited.size >= 20) fail("data_dependency_cycle");
-    visited.add(id);
+    if (!id.startsWith("prepared:") || resolved.has(id)) return;
+    if (visiting.has(id) || visiting.size >= 20) fail("data_dependency_cycle");
+    visiting.add(id);
     const { graph } = await resolvePreparedSource(
       tx,
       workspaceId,
@@ -943,6 +954,8 @@ async function resolveDependencies(
     );
     for (const node of graph.nodes)
       if (node.type === "source") await visit(node.datasetId);
+    visiting.delete(id);
+    resolved.add(id);
   };
   for (const source of sources) await visit(source);
   return dependencies;

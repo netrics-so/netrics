@@ -58,6 +58,7 @@ describe("data lists follow the active project (#573)", () => {
       version: 1,
       publishedVersion: null,
       hasUnpublishedChanges: false,
+      inputsDiffer: false,
       updatedAt: "2026-11-14T00:00:00.000Z",
     };
     const html = renderI18n(
@@ -135,6 +136,7 @@ describe("store-template updates in data settings (11E)", () => {
     version: 1,
     publishedVersion: 1,
     hasUnpublishedChanges: false,
+    inputsDiffer: false,
     updatedAt: "2026-11-14T00:00:00.000Z",
   };
   const install = {
@@ -316,6 +318,7 @@ describe("list marks for unpublished changes (#697)", () => {
     version,
     publishedVersion,
     hasUnpublishedChanges,
+    inputsDiffer: false,
     updatedAt: "2026-11-14T00:00:00.000Z",
   });
   const cell = (html: string, name: string) => {

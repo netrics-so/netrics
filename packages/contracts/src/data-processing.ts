@@ -354,6 +354,13 @@ export const preparationViewSchema = z.object({
    * or inputs, not the name. False when never published (#697).
    */
   hasUnpublishedChanges: z.boolean(),
+  /**
+   * Whether publishing would pin other versions of the preparations it reads
+   * than the live release does (one was published again, or the draft
+   * switched inputs). Part of `hasUnpublishedChanges`; editors combine it
+   * with their own definition comparison (#697).
+   */
+  inputsDiffer: z.boolean(),
   updatedAt: z.iso.datetime(),
 });
 export const preparationResponseSchema = z.object({
@@ -375,6 +382,13 @@ export const modelViewSchema = z.object({
    * or inputs, not the name. False when never published (#697).
    */
   hasUnpublishedChanges: z.boolean(),
+  /**
+   * Whether publishing would pin other versions of the preparations it reads
+   * than the live release does (one was published again, or the draft
+   * switched inputs). Part of `hasUnpublishedChanges`; editors combine it
+   * with their own definition comparison (#697).
+   */
+  inputsDiffer: z.boolean(),
   updatedAt: z.iso.datetime(),
 });
 export const modelResponseSchema = z.object({ model: modelViewSchema });

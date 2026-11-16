@@ -265,37 +265,27 @@ export function* referenceRecordPages<
 }
 
 /**
- * What a release is compared by: the definition's signature and which
- * inputs it reads, the latest published ones (null) or those of the release
- * it was restored from. "Use latest published inputs" changes only the
- * latter, and still differs from a restored release (#632).
- */
-export function releaseState(
-  definition: string,
-  restoredFromVersion: number | null | undefined,
-): string {
-  return JSON.stringify([definition, restoredFromVersion ?? null]);
-}
-/**
- * Whether an editor marks "Unpublished changes" (#632): what it shows
- * differs from the published definition. `published` is that definition's
- * signature when the editor knows it (opened at the published version, or
- * published or restored it since), so undoing back to it clears the mark.
- * Otherwise the saved draft counts when the server says it differs from the
- * release (#697; without that word, any saved draft ahead of it), and so do
- * unsaved edits. Without unsaved edits the server's word wins: only it knows
- * whether the inputs a release pinned were published again since. When the
- * saved definition equals the published one and the server still says it
- * differs, the inputs differ, and edits to the definition keep that mark.
- * When the server confirms the saved draft equals the release, the saved
- * definition is the published one for later edits, even in an editor that
- * did not know it. Never-published items say "Not published" instead.
+ * Whether an editor marks "Unpublished changes" (#632, #697). The server
+ * reports the saved draft's difference from its live release, and
+ * separately whether the inputs publishing would pin differ (an input was
+ * published again, or the draft switched inputs): only it can resolve
+ * those. Without unsaved edits its word decides. With them, differing
+ * inputs mark regardless, and otherwise the shown definition is compared
+ * with the published one: `published` when the editor knows it (opened at
+ * or equal to the release, or published or restored it since), or the saved
+ * definition once the server confirmed it equal. So undoing back to the
+ * published definition clears the mark, but never hides an input change.
+ * Without a known published definition, any unsaved edit counts. Signatures
+ * are of the definition alone; the name is not part of a release.
+ * Never-published items say "Not published" instead.
  */
 export function hasUnpublishedChanges(state: {
   version: number | undefined;
   publishedVersion: number | null | undefined;
   /** The server's word on whether the saved draft differs from the release. */
   savedDiffers?: boolean | undefined;
+  /** The server's word on whether its inputs differ from the release's. */
+  inputsDiffer?: boolean | undefined;
   /** The saved draft's definition signature, in the same form. */
   saved?: string | undefined;
   /** The published definition's signature, when known. */
@@ -306,15 +296,10 @@ export function hasUnpublishedChanges(state: {
   dirty: boolean;
 }): boolean {
   if (!state.publishedVersion) return false;
-  if (!state.dirty && state.savedDiffers !== undefined)
-    return state.savedDiffers;
+  if (!state.dirty)
+    return state.savedDiffers ?? state.version !== state.publishedVersion;
+  if (state.inputsDiffer) return true;
   const published =
     state.published ?? (state.savedDiffers === false ? state.saved : undefined);
-  if (published === undefined)
-    return (
-      (state.savedDiffers ?? state.version !== state.publishedVersion) ||
-      state.dirty
-    );
-  const inputsDiffer = state.savedDiffers === true && state.saved === published;
-  return inputsDiffer || state.current !== published;
+  return published === undefined || state.current !== published;
 }

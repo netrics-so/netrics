@@ -38,7 +38,6 @@ import {
   dataErrorKey,
   hasUnpublishedChanges,
   newDataId,
-  releaseState,
 } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import {
@@ -352,33 +351,24 @@ export function ModelEditor({
       [name, definition, expressionDrafts],
     ),
     queryState = canonicalJson({ measureIds, groupBy, filterText });
-  // The published definition and its inputs, when known: undoing back to
-  // them clears the "Unpublished changes" mark. The name is not part of a
-  // release.
+  // The published definition, when known: undoing back to it clears the
+  // "Unpublished changes" mark (the server reports differing inputs
+  // separately). The name is not part of a release.
   const [publishedState, setPublishedState] = useState(() =>
     // The server says whether a saved draft equals the release (#697).
     initial?.publishedVersion &&
     (initial.publishedVersion === initial.version ||
       initial.hasUnpublishedChanges === false)
-      ? releaseState(
-          modelEditorState("", initial.definition, {}),
-          initial.restoredFromVersion,
-        )
+      ? modelEditorState("", initial.definition, {})
       : undefined,
   );
   const definitionState = useMemo(
     () => modelEditorState("", definition, expressionDrafts),
     [definition, expressionDrafts],
   );
-  // The saved draft's definition and inputs, in the published state's form.
+  // The saved draft's definition, in the published state's form.
   const savedRelease = useMemo(
-    () =>
-      record
-        ? releaseState(
-            modelEditorState("", record.definition, {}),
-            record.restoredFromVersion,
-          )
-        : undefined,
+    () => (record ? modelEditorState("", record.definition, {}) : undefined),
     [record],
   );
   const dirty = current !== savedState,
@@ -664,10 +654,7 @@ export function ModelEditor({
           );
           setRecord(published.model);
           setPublishedState(
-            releaseState(
-              modelEditorState("", published.model.definition, {}),
-              published.model.restoredFromVersion,
-            ),
+            modelEditorState("", published.model.definition, {}),
           );
           onSaved(published.model);
         },
@@ -704,12 +691,7 @@ export function ModelEditor({
       setRecord(next);
       // Restoring the live release shows the published definition.
       if (version !== undefined && version === record.publishedVersion)
-        setPublishedState(
-          releaseState(
-            modelEditorState("", next.definition, {}),
-            next.restoredFromVersion,
-          ),
-        );
+        setPublishedState(modelEditorState("", next.definition, {}));
       setName(next.name);
       setEdits(
         startHistory({ definition: next.definition, expressionDrafts: {} }),
@@ -834,12 +816,10 @@ export function ModelEditor({
               version: record?.version,
               publishedVersion: record?.publishedVersion,
               savedDiffers: record?.hasUnpublishedChanges,
+              inputsDiffer: record?.inputsDiffer,
               saved: savedRelease,
               published: publishedState,
-              current: releaseState(
-                definitionState,
-                record?.restoredFromVersion,
-              ),
+              current: definitionState,
               dirty,
             })
               ? " · " + t("changed")

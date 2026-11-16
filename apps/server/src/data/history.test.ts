@@ -622,6 +622,80 @@ describe("published definition history", () => {
     ).model;
     expect(shouting.hasUnpublishedChanges).toBe(false);
     expect(await mark(shouting.id)).toBe(false);
+
+    // Definition and inputs are reported apart, so editors can combine them
+    // with their own comparison.
+    const flags = (m: {
+      hasUnpublishedChanges: boolean;
+      inputsDiffer: boolean;
+    }) => [m.hasUnpublishedChanges, m.inputsDiffer];
+    const renamed = structuredClone(both);
+    renamed.measures[0]!.name = "Renamed total";
+    model = (
+      await service.saveModel(
+        actor,
+        { name: model.name, definition: renamed, version: model.version },
+        model.id,
+      )
+    ).model;
+    expect(flags(model)).toEqual([true, false]);
+    // The outer preparation is published again: the model's inputs differ,
+    // also once its definition is saved back to the released one.
+    const current = (
+      await service.savePreparation(
+        actor,
+        {
+          name: outer.name,
+          graph: graph(`prepared:${inner.id}:output`, "5"),
+          version: (await service.getPreparation(actor, outer.id)).preparation
+            .version,
+        },
+        outer.id,
+      )
+    ).preparation;
+    await service.publishPreparation(actor, current.id, current.version);
+    expect(flags((await service.getModel(actor, model.id)).model)).toEqual([
+      true,
+      true,
+    ]);
+    model = (
+      await service.saveModel(
+        actor,
+        { name: model.name, definition: both, version: model.version },
+        model.id,
+      )
+    ).model;
+    expect(flags(model)).toEqual([true, true]);
+  });
+
+  it("resolves many independent inputs as the loader does, by depth (#697)", async () => {
+    const source = await service.saveManual(actor, {
+      definition: definition("many-inputs-numbers"),
+      records: [{ values: { id: "a", amount: "1" } }],
+    });
+    const outputs: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      const prep = (
+        await service.savePreparation(actor, {
+          name: `Many ${i}`,
+          graph: graph(source.datasetId, String(i + 1)),
+        })
+      ).preparation;
+      await service.publishPreparation(actor, prep.id, prep.version);
+      outputs.push(`prepared:${prep.id}:output`);
+    }
+    const wide: SemanticModelDefinition = {
+      ...modelDefinition(outputs[0]!),
+      datasets: outputs,
+    };
+    let model = (
+      await service.saveModel(actor, { name: "Wide", definition: wide })
+    ).model;
+    model = (await service.publishModel(actor, model.id, model.version)).model;
+    expect(model).toMatchObject({
+      hasUnpublishedChanges: false,
+      inputsDiffer: false,
+    });
   });
 
   it("publishes a published preparation again with the current versions of its inputs, and changes nothing when they are current", async () => {

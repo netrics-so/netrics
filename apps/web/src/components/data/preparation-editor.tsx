@@ -22,7 +22,6 @@ import {
   dataErrorKey,
   dataErrorLocation,
   hasUnpublishedChanges,
-  releaseState,
 } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import { DataTable } from "./data-table";
@@ -148,31 +147,29 @@ export function PreparationEditor({
   const current = useMemo(() => canonicalJson({ name, graph }), [name, graph]),
     dirty = current !== savedState || (!record && graph.nodes.length > 0);
   const graphSignature = useMemo(() => canonicalJson(graph), [graph]);
-  // The published graph and its inputs, when known: undoing back to them
-  // clears the mark.
+  // The published graph, when known: undoing back to it clears the mark
+  // (the server reports differing inputs separately).
   const [publishedGraph, setPublishedGraph] = useState(() =>
     // The server says whether a saved draft equals the release (#697).
     initial?.publishedVersion &&
     (initial.publishedVersion === initial.version ||
       initial.hasUnpublishedChanges === false)
-      ? releaseState(canonicalJson(initial.graph), initial.restoredFromVersion)
+      ? canonicalJson(initial.graph)
       : undefined,
   );
-  // The saved draft's graph and inputs, in the published state's form.
+  // The saved draft's graph, in the published state's form.
   const savedRelease = useMemo(
-    () =>
-      record
-        ? releaseState(canonicalJson(record.graph), record.restoredFromVersion)
-        : undefined,
+    () => (record ? canonicalJson(record.graph) : undefined),
     [record],
   );
   const unpublishedChanges = hasUnpublishedChanges({
     version: record?.version,
     publishedVersion: record?.publishedVersion,
     savedDiffers: record?.hasUnpublishedChanges,
+    inputsDiffer: record?.inputsDiffer,
     saved: savedRelease,
     published: publishedGraph,
-    current: releaseState(graphSignature, record?.restoredFromVersion),
+    current: graphSignature,
     dirty,
   });
   const formOpen = adding || !!editing || removing;
@@ -321,12 +318,7 @@ export function PreparationEditor({
             draft.version,
           );
           setRecord(published.preparation);
-          setPublishedGraph(
-            releaseState(
-              canonicalJson(published.preparation.graph),
-              published.preparation.restoredFromVersion,
-            ),
-          );
+          setPublishedGraph(canonicalJson(published.preparation.graph));
           onSaved(published.preparation);
         },
       });
@@ -364,9 +356,7 @@ export function PreparationEditor({
       setRecord(next);
       // Restoring the live release shows the published graph.
       if (version !== undefined && version === record.publishedVersion)
-        setPublishedGraph(
-          releaseState(canonicalJson(next.graph), next.restoredFromVersion),
-        );
+        setPublishedGraph(canonicalJson(next.graph));
       setName(next.name);
       setGraphHistory(startHistory(next.graph));
       setSavedState(canonicalJson({ name: next.name, graph: next.graph }));

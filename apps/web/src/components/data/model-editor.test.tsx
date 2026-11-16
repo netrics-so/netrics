@@ -103,6 +103,7 @@ const draft = (measures: SemanticModelDefinition["measures"]): ModelDraft => ({
   version: 1,
   publishedVersion: null,
   hasUnpublishedChanges: false,
+  inputsDiffer: false,
   updatedAt: "2026-11-01T00:00:00.000Z",
 });
 const render = (
@@ -897,6 +898,7 @@ describe("model editor unpublished mark (#632)", () => {
           version,
           publishedVersion,
           hasUnpublishedChanges,
+          inputsDiffer: false,
         }}
         onSaved={() => {}}
         onClose={() => {}}

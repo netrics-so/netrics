@@ -56,6 +56,7 @@ describe("PreparationEditor", () => {
           version: 1,
           publishedVersion: null,
           hasUnpublishedChanges: false,
+          inputsDiffer: false,
           updatedAt: "2026-11-01T00:00:00.000Z",
         }}
         onSaved={() => {}}
@@ -94,6 +95,7 @@ describe("PreparationEditor", () => {
             version,
             publishedVersion,
             hasUnpublishedChanges,
+            inputsDiffer: false,
             updatedAt: "2026-11-01T00:00:00.000Z",
           }}
           onSaved={() => {}}
