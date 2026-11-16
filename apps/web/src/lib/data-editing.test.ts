@@ -5,7 +5,9 @@ import {
   dataErrorLocation,
   parseEnteredTable,
   enteredValue,
+  hasUnpublishedChanges,
   preparationAt,
+  releaseState,
 } from "./data-editing";
 import { previewPreparation } from "./data-api";
 import { DataProcessingError, type PreparationGraph } from "@netrics/domain";
@@ -251,5 +253,73 @@ describe("data error location", () => {
       fieldId: "f",
     });
     expect(dataErrorLocation(new Error("x"))).toEqual({});
+  });
+});
+
+describe("unpublished changes (#632)", () => {
+  const published = { version: 3, publishedVersion: 3, published: "A" };
+  it("compares the shown definition with the published one", () => {
+    expect(
+      hasUnpublishedChanges({ ...published, current: "B", dirty: true }),
+    ).toBe(true);
+    // Undone back to the published definition: no mark, though the editor
+    // still differs from what it last saved.
+    expect(
+      hasUnpublishedChanges({
+        ...published,
+        version: 4,
+        current: "A",
+        dirty: true,
+      }),
+    ).toBe(false);
+  });
+  it("counts a saved draft ahead of an unknown release, and unsaved edits", () => {
+    const unknown = { version: 4, publishedVersion: 3, published: undefined };
+    expect(
+      hasUnpublishedChanges({ ...unknown, current: "A", dirty: false }),
+    ).toBe(true);
+    expect(
+      hasUnpublishedChanges({
+        ...unknown,
+        version: 3,
+        current: "A",
+        dirty: true,
+      }),
+    ).toBe(true);
+  });
+  it("never marks an item that was never published", () => {
+    expect(
+      hasUnpublishedChanges({
+        version: 2,
+        publishedVersion: null,
+        published: undefined,
+        current: "A",
+        dirty: true,
+      }),
+    ).toBe(false);
+  });
+  it("counts a switch to the latest inputs as a change from a restored release", () => {
+    // Published from a restore of v1: it reads v1's pinned inputs. "Use
+    // latest published inputs" keeps the definition and drops the pin.
+    const published = releaseState("A", 1);
+    expect(
+      hasUnpublishedChanges({
+        version: 3,
+        publishedVersion: 2,
+        published,
+        current: releaseState("A", null),
+        dirty: false,
+      }),
+    ).toBe(true);
+    expect(
+      hasUnpublishedChanges({
+        version: 3,
+        publishedVersion: 2,
+        published,
+        current: releaseState("A", 1),
+        dirty: false,
+      }),
+    ).toBe(false);
+    expect(releaseState("A", undefined)).toBe(releaseState("A", null));
   });
 });

@@ -34,7 +34,12 @@ import {
   type ModelDraft,
   type ModelResult,
 } from "@/lib/data-api";
-import { dataErrorKey, newDataId } from "@/lib/data-editing";
+import {
+  dataErrorKey,
+  hasUnpublishedChanges,
+  newDataId,
+  releaseState,
+} from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import {
   AggregateFields,
@@ -335,6 +340,21 @@ export function ModelEditor({
       [name, definition, expressionDrafts],
     ),
     queryState = canonicalJson({ measureIds, groupBy, filterText });
+  // The published definition and its inputs, when known: undoing back to
+  // them clears the "Unpublished changes" mark. The name is not part of a
+  // release.
+  const [publishedState, setPublishedState] = useState(() =>
+    initial && initial.publishedVersion === initial.version
+      ? releaseState(
+          modelEditorState("", initial.definition, {}),
+          initial.restoredFromVersion,
+        )
+      : undefined,
+  );
+  const definitionState = useMemo(
+    () => modelEditorState("", definition, expressionDrafts),
+    [definition, expressionDrafts],
+  );
   const dirty = current !== savedState,
     fresh = previewState === current + queryState;
   // The required dimensions the chosen preview neither groups by nor filters
@@ -603,7 +623,6 @@ export function ModelEditor({
         return;
       }
       const outcome = await publishAfterConfirmation({
-        existed: !!record,
         save,
         confirm: (draft) =>
           confirmation.ask(() =>
@@ -616,6 +635,12 @@ export function ModelEditor({
             draft.version,
           );
           setRecord(published.model);
+          setPublishedState(
+            releaseState(
+              modelEditorState("", published.model.definition, {}),
+              published.model.restoredFromVersion,
+            ),
+          );
           onSaved(published.model);
         },
       });
@@ -649,6 +674,14 @@ export function ModelEditor({
           : await restoreModel(workspaceId, record.id, record.version, version);
       const next = saved.model;
       setRecord(next);
+      // Restoring the live release shows the published definition.
+      if (version !== undefined && version === record.publishedVersion)
+        setPublishedState(
+          releaseState(
+            modelEditorState("", next.definition, {}),
+            next.restoredFromVersion,
+          ),
+        );
       setName(next.name);
       setEdits(
         startHistory({ definition: next.definition, expressionDrafts: {} }),
@@ -767,7 +800,18 @@ export function ModelEditor({
             {record?.publishedVersion
               ? t("published", { version: record.publishedVersion })
               : t("unpublished")}
-            {dirty ? " · " + t("changed") : ""}
+            {hasUnpublishedChanges({
+              version: record?.version,
+              publishedVersion: record?.publishedVersion,
+              published: publishedState,
+              current: releaseState(
+                definitionState,
+                record?.restoredFromVersion,
+              ),
+              dirty,
+            })
+              ? " · " + t("changed")
+              : ""}
           </p>
         </div>
         <div className="data-form-actions">
