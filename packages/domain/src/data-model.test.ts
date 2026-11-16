@@ -113,6 +113,48 @@ const model: SemanticModelDefinition = {
 };
 
 describe("shared semantic query context", () => {
+  it("does not warn about a measure that rounds on purpose (#645)", () => {
+    const ratio = (id: string, rounded: boolean) => {
+      const divide: DataExpression = {
+        kind: "call",
+        fn: "divide",
+        args: [field("apple-downloads"), field("play-downloads")],
+      };
+      return {
+        id,
+        name: id,
+        kind: "formula" as const,
+        expression: rounded
+          ? ({
+              kind: "call",
+              fn: "round",
+              args: [divide, { kind: "literal", type: "integer", value: 2 }],
+            } as DataExpression)
+          : divide,
+      };
+    };
+    const query = (id: string) =>
+      querySemanticModel(
+        {
+          ...model,
+          measures: [
+            ...model.measures,
+            ratio("rounded", true),
+            ratio("unrounded", false),
+          ],
+        },
+        sources,
+        { measureIds: [id], groupBy: ["app"] },
+      );
+    // App B: 3 / 7 has no finite decimal.
+    const rounded = query("rounded");
+    expect(rounded.rows.map((row) => row.measures.rounded?.value)).toEqual([
+      "6",
+      "0.43",
+    ]);
+    expect(rounded.warnings).not.toContain("decimal_rounded");
+    expect(query("unrounded").warnings).toContain("decimal_rounded");
+  });
   it("marks aggregates and dependent formulas partial when reported values are missing", () => {
     const incomplete: DataTable = {
       ...apple,

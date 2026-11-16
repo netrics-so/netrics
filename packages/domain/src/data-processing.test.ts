@@ -134,6 +134,178 @@ describe("exact decimal calculations", () => {
     expect(() => exactDecimal("add", "1e20", "1")).toThrow("decimal_invalid");
   });
 });
+describe("explicit rounding (#645)", () => {
+  const ratio: DataField[] = [
+    { id: "revenue", name: "Revenue", type: "decimal", nullable: true },
+    { id: "orders", name: "Orders", type: "integer", nullable: true },
+    { id: "cost", name: "Cost", type: "decimal", nullable: true },
+    { id: "paid", name: "Paid", type: "boolean", nullable: true },
+    { id: "share", name: "Share", type: "number", nullable: true },
+  ];
+  const run = (
+    expression: DataExpression,
+    row: Record<string, unknown> = {
+      revenue: "10",
+      orders: 3,
+      cost: "1.25",
+      paid: true,
+      share: 0.5,
+    },
+  ) => {
+    const budget = new ProcessingBudget();
+    const cell = compileRowExpression(expression, ratio).evaluate(row, budget);
+    return { value: cell.value, warnings: [...budget.warnings] };
+  };
+  const divide = call("divide", field("revenue"), field("orders"));
+  const round = (e: DataExpression, digits: number) =>
+    call("round", e, lit("integer", digits));
+
+  it("does not warn when a formula rounds on purpose", () => {
+    expect(run(round(divide, 2))).toEqual({ value: "3.33", warnings: [] });
+    expect(run(round(lit("decimal", "1.255"), 2))).toEqual({
+      value: "1.26",
+      warnings: [],
+    });
+    // Rounded once more after an explicit rounding: still asked for.
+    expect(
+      run(round(call("multiply", round(divide, 2), lit("decimal", "1.5")), 1)),
+    ).toEqual({ value: "5", warnings: [] });
+  });
+
+  it("does not warn for exact steps between the quotient and the ROUND", () => {
+    const quiet = (expression: DataExpression, value: string) =>
+      expect(run(expression)).toEqual({ value, warnings: [] });
+    // The usual percentage.
+    quiet(round(call("multiply", divide, lit("integer", 100)), 1), "333.3");
+    quiet(round(call("add", divide, field("cost")), 2), "4.58");
+    quiet(round(call("subtract", field("cost"), divide), 2), "-2.08");
+    quiet(
+      round(call("if", field("paid"), divide, lit("decimal", "0")), 2),
+      "3.33",
+    );
+    quiet(round(call("coalesce", divide, lit("decimal", "0")), 2), "3.33");
+    quiet(round(call("abs", call("negate", divide)), 2), "3.33");
+    quiet(round(call("to_decimal", divide), 2), "3.33");
+  });
+
+  it("keeps the error bound small along a long chain", () => {
+    let chain: DataExpression = divide;
+    for (let i = 0; i < 14; i++)
+      chain = call("multiply", chain, lit("decimal", "2"));
+    const compiled = compileRowExpression(round(chain, 2), ratio);
+    const started = performance.now();
+    for (let i = 0; i < 500; i++)
+      expect(
+        compiled.evaluate(
+          {
+            revenue: String(10 + i),
+            orders: 3,
+            cost: null,
+            paid: null,
+            share: null,
+          },
+          new ProcessingBudget(),
+        ).value,
+      ).toBeTypeOf("string");
+    // Bounds kept as unreduced fractions doubled their digits per step and
+    // took about 24 ms a row here; in units of 10^-40 they stay small.
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(run(round(chain, 2))).toEqual({ value: "54613.33", warnings: [] });
+  });
+
+  it("still warns about precision lost without being asked", () => {
+    expect(run(divide)).toEqual({
+      value: "3.333333333333333333",
+      warnings: ["decimal_rounded"],
+    });
+    // The rounded quotient is used again before the explicit rounding.
+    expect(
+      run(round(call("divide", divide, lit("integer", 7)), 2)).warnings,
+    ).toEqual(["decimal_rounded"]);
+    // An unrounded result next to a rounded one keeps its warning.
+    expect(
+      run(
+        call(
+          "add",
+          round(divide, 2),
+          call("divide", lit("integer", 1), lit("integer", 3)),
+        ),
+      ).warnings,
+    ).toEqual(["decimal_rounded"]);
+    // A quotient that IF turns into a number is no longer the decimal its
+    // bound describes: TO_DECIMAL of it keeps the warning.
+    const seventh = call("divide", lit("decimal", "1"), lit("decimal", "7"));
+    expect(
+      run(
+        round(
+          call(
+            "to_decimal",
+            call("if", lit("boolean", true), seventh, field("share")),
+          ),
+          17,
+        ),
+      ).warnings,
+    ).toContain("decimal_rounded");
+    expect(
+      run(
+        round(
+          call("to_decimal", call("coalesce", seventh, field("share"))),
+          17,
+        ),
+      ).warnings,
+    ).toContain("decimal_rounded");
+    // Two roundings on the way: the error is not traced.
+    expect(
+      run(round(call("divide", field("revenue"), divide), 2)).warnings,
+    ).toEqual(["decimal_rounded"]);
+    expect(
+      run(
+        round(
+          call("add", divide, call("divide", field("cost"), field("orders"))),
+          2,
+        ),
+      ).warnings,
+    ).toEqual(["decimal_rounded"]);
+    // Multiplied up, the error of the 18th place reaches the cents: the
+    // product 33333333333333333330 is 3.33 off the exact value.
+    expect(
+      run(
+        round(
+          call("multiply", divide, lit("decimal", "10000000000000000000")),
+          2,
+        ),
+      ),
+    ).toEqual({ value: "33333333333333333330", warnings: ["decimal_rounded"] });
+    // A rounded condition decides which value is taken.
+    expect(
+      run(
+        round(
+          call(
+            "if",
+            call("gt", divide, lit("decimal", "3.333333333333333333")),
+            lit("decimal", "1"),
+            lit("decimal", "0"),
+          ),
+          0,
+        ),
+      ).warnings,
+    ).toEqual(["decimal_rounded"]);
+    // Halfway only after rounding to 18 places: 0.0149999…9667 becomes
+    // 0.015, which ROUND(…, 2) takes to 0.02 where the exact value is 0.01.
+    expect(
+      run(
+        round(
+          call(
+            "divide",
+            lit("decimal", "0.044999999999999999"),
+            lit("integer", 3),
+          ),
+          2,
+        ),
+      ),
+    ).toEqual({ value: "0.02", warnings: ["decimal_rounded"] });
+  });
+});
 describe("typed row expressions", () => {
   it.each([
     [true, true, true],

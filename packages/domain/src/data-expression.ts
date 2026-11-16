@@ -142,6 +142,18 @@ export function attributeDataError(error: unknown, nodeId: string): unknown {
 export class ProcessingBudget {
   operations = 0;
   readonly warnings = new Set<string>();
+  /** Results rounded to the supported 18 decimal places so far. */
+  decimalRoundings = 0;
+  /**
+   * Decimal cells of this run that may differ from the exact result: a
+   * bound on the difference, and how many roundings it accounts for. A
+   * ROUND whose operand stays within one rounding step drops the warning
+   * (#645); a rounding the bound misses leaves the warning in place.
+   */
+  readonly decimalErrors = new WeakMap<
+    object,
+    { error: bigint; roundings: number }
+  >();
   readonly maximum: number;
   readonly maxRows: number;
   readonly maxOutputBytes: number;
@@ -208,17 +220,39 @@ function halfEven(
   if (remainder * 2n > d || (remainder * 2n === d && q % 2n !== 0n)) q++;
   return { units: negative ? -q : q, rounded: remainder !== 0n };
 }
+/**
+ * Error bounds of decimal results are counted in units of 10^-40, rounded
+ * up: a bound that grows a little only warns more, and its size stays fixed
+ * however long the calculation (#645).
+ */
+const BOUND_SCALE = 40;
+const BOUND_ONE = 10n ** BigInt(BOUND_SCALE);
+/** Half a unit in the 18th place: the most a half-even rounding there moves. */
+const HALF_ULP = 5n * 10n ** BigInt(BOUND_SCALE - 19);
+const ceilDiv = (n: bigint, d: bigint) => (n + d - 1n) / d;
+const magnitude = (d: Decimal): bigint => (d.units < 0n ? -d.units : d.units);
+/** |x| · bound, in bound units, rounded up. */
+const scaleBound = (x: Decimal, bound: bigint): bigint =>
+  bound === 0n ? 0n : ceilDiv(magnitude(x) * bound, power(x.scale));
+
+/** Precision lost that nobody asked for: beyond the supported 18 places. */
+function implicitlyRounded(budget: ProcessingBudget) {
+  budget.warnings.add("decimal_rounded");
+  budget.decimalRoundings++;
+}
+/** An explicit ROUND to `maximumScale` places warns of nothing. */
 function decimalText(
   input: Decimal,
   budget: ProcessingBudget,
   maximumScale = 18,
+  explicit = false,
 ): string {
   let { units, scale } = input;
   if (scale > maximumScale) {
     const rounded = halfEven(units, power(scale - maximumScale));
     units = rounded.units;
+    if (rounded.rounded && !explicit) implicitlyRounded(budget);
     scale = maximumScale;
-    if (rounded.rounded) budget.warnings.add("decimal_rounded");
   }
   while (scale > 0 && units % 10n === 0n) {
     units /= 10n;
@@ -275,7 +309,7 @@ export function exactDecimal(
         a.units * power(b.scale + 18),
         b.units * power(a.scale),
       );
-      if (result.rounded) budget.warnings.add("decimal_rounded");
+      if (result.rounded) implicitlyRounded(budget);
       return decimalText({ units: result.units, scale: 18 }, budget);
     }
   }
@@ -492,6 +526,74 @@ export interface CompiledExpression {
   evaluate(row: DataRow, budget?: ProcessingBudget): DataCell;
 }
 
+/** Steps an error bound passes through on its way to ROUND (and IF branches). */
+const BOUND_STEPS: ReadonlySet<string> = new Set([
+  "add",
+  "subtract",
+  "multiply",
+  "divide",
+  "coalesce",
+  "negate",
+  "abs",
+  "to_decimal",
+]);
+/** `to` keeps the error bound of `from` (the same decimal, or its sign changed). */
+function carry(budget: ProcessingBudget, from: DataCell, to: DataCell) {
+  const bound = budget.decimalErrors.get(from);
+  // A decimal made a number (an IF next to a number column) is no longer
+  // the value the bound describes.
+  if (bound && to.type === "decimal" && typeof to.value === "string")
+    budget.decimalErrors.set(to, bound);
+  return to;
+}
+
+/**
+ * The error bound of `cell = x fn y` from the operands' bounds (an operand
+ * without one is exact) and this operation's own `roundings` (at most half
+ * a unit in the 18th place). A quotient whose divisor may be zero within
+ * its bound, or a value rounded more than once, gets none: its roundings
+ * stay unaccounted for, and a ROUND of it keeps the warning. Exact
+ * arithmetic of exact operands returns before any work.
+ */
+function boundError(
+  budget: ProcessingBudget,
+  cell: DataCell,
+  fn: "add" | "subtract" | "multiply" | "divide",
+  xText: string,
+  yText: string,
+  a: DataCell,
+  b: DataCell,
+  roundings: number,
+) {
+  const ba = budget.decimalErrors.get(a),
+    bb = budget.decimalErrors.get(b);
+  // Only one rounding is traced to ROUND: a value rounded again on its way
+  // keeps its warning.
+  if ((ba?.roundings ?? 0) + (bb?.roundings ?? 0) + roundings !== 1) return;
+  const ea = ba?.error ?? 0n,
+    eb = bb?.error ?? 0n;
+  let error: bigint;
+  if (fn === "add" || fn === "subtract" || (ea === 0n && eb === 0n))
+    error = ea + eb;
+  else {
+    const x = decimal(xText),
+      y = decimal(yText);
+    if (fn === "multiply")
+      error =
+        scaleBound(x, eb) + scaleBound(y, ea) + ceilDiv(ea * eb, BOUND_ONE);
+    else {
+      // |x/y - X/Y| <= (|x|·eb + |y|·ea) / (|y|·(|y| - eb)), when |y| > eb.
+      const uy = magnitude(y);
+      const margin = uy * BOUND_ONE - eb * power(y.scale);
+      if (margin <= 0n) return;
+      const top = scaleBound(x, eb) + scaleBound(y, ea);
+      error = ceilDiv(top * power(2 * y.scale) * BOUND_ONE, uy * margin);
+    }
+  }
+  error += HALF_ULP * BigInt(roundings);
+  budget.decimalErrors.set(cell, { error, roundings: 1 });
+}
+
 /** Compile once, before reading rows. Never eval user code or interpolate SQL. */
 export function compileRowExpression(
   expression: DataExpression,
@@ -503,7 +605,16 @@ export function compileRowExpression(
     result: ExpressionType;
     run: (row: DataRow, budget: ProcessingBudget) => DataCell;
   };
-  const compile = (expr: DataExpression, depth: number): Node => {
+  /**
+   * `traced`: the node feeds a ROUND through steps that carry an error
+   * bound, so its decimal results record one (#645). Elsewhere nothing is
+   * recorded and nothing is paid for it.
+   */
+  const compile = (
+    expr: DataExpression,
+    depth: number,
+    traced = false,
+  ): Node => {
     if (++nodes > PROCESSING_LIMITS.nodes || depth > PROCESSING_LIMITS.depth)
       dataFail("expression_complexity_limit");
     if (!expr || typeof expr !== "object") dataFail("expression_invalid");
@@ -581,9 +692,17 @@ export function compileRowExpression(
       expr.args.length > 20
     )
       dataFail("expression_invalid");
-    const args = expr.args.map((arg) => compile(arg, depth + 1));
-    const types = args.map((arg) => arg.result);
     const fn = expr.fn;
+    const args = expr.args.map((arg, index) =>
+      compile(
+        arg,
+        depth + 1,
+        fn === "round"
+          ? index === 0
+          : traced && (BOUND_STEPS.has(fn) || (fn === "if" && index > 0)),
+      ),
+    );
+    const types = args.map((arg) => arg.result);
     const arity = (min: number, max = min) => {
       if (args.length < min || args.length > max)
         dataFail("expression_arity_invalid");
@@ -750,6 +869,8 @@ export function compileRowExpression(
       result,
       run: (row, budget) => {
         budget.tick();
+        const roundings = budget.decimalRoundings,
+          warned = fn === "round" && budget.warnings.has("decimal_rounded");
         const at = (index: number) => args[index]!.run(row, budget);
         const promote = (cell: DataCell): DataCell => ({
           ...cell,
@@ -777,11 +898,14 @@ export function compileRowExpression(
                   ? Number(cell.value)
                   : cell.value,
         });
-        if (fn === "if") return promote(at(at(0).value === true ? 1 : 2));
+        // The chosen value keeps its error bound.
+        const chosen = (cell: DataCell) =>
+          traced ? carry(budget, cell, promote(cell)) : promote(cell);
+        if (fn === "if") return chosen(at(at(0).value === true ? 1 : 2));
         if (fn === "coalesce") {
           for (const arg of args) {
             const cell = arg.run(row, budget);
-            if (cell.value !== null) return promote(cell);
+            if (cell.value !== null) return chosen(cell);
           }
           return {
             value: null,
@@ -857,15 +981,30 @@ export function compileRowExpression(
             a.currency !== b.currency
           )
             dataFail("expression_units_incompatible");
-          if (result.type === "decimal")
-            return out(
-              exactDecimal(
-                fn as "add" | "subtract" | "multiply" | "divide",
-                toDecimal(a.value, a.type),
-                toDecimal(b!.value, b!.type),
-                budget,
-              ),
+          if (result.type === "decimal") {
+            const before = budget.decimalRoundings;
+            const x = toDecimal(a.value, a.type),
+              y = toDecimal(b!.value, b!.type);
+            const value = exactDecimal(
+              fn as "add" | "subtract" | "multiply" | "divide",
+              x,
+              y,
+              budget,
             );
+            const cell = out(value);
+            if (traced && value !== null)
+              boundError(
+                budget,
+                cell,
+                fn as "add" | "subtract" | "multiply" | "divide",
+                x,
+                y,
+                a,
+                b!,
+                budget.decimalRoundings - before,
+              );
+            return cell;
+          }
           const x = Number(a.value),
             y = Number(b!.value);
           if (fn === "divide" && y === 0) {
@@ -917,18 +1056,23 @@ export function compileRowExpression(
         if (fn === "negate" || fn === "abs") {
           if (a.type === "decimal") {
             const d = decimal(a.value);
-            return out(
-              decimalText(
-                {
-                  units:
-                    fn === "negate"
-                      ? -d.units
-                      : d.units < 0n
+            // ||x| - |X|| <= |x - X|: the bound carries over.
+            return carry(
+              budget,
+              a,
+              out(
+                decimalText(
+                  {
+                    units:
+                      fn === "negate"
                         ? -d.units
-                        : d.units,
-                  scale: d.scale,
-                },
-                budget,
+                        : d.units < 0n
+                          ? -d.units
+                          : d.units,
+                    scale: d.scale,
+                  },
+                  budget,
+                ),
               ),
             );
           }
@@ -942,8 +1086,30 @@ export function compileRowExpression(
           const scale = b!.value as number;
           if (scale < 0 || scale > 18)
             dataFail("expression_round_scale_invalid");
-          if (a.type === "decimal")
-            return out(decimalText(decimal(a.value), budget, scale));
+          if (a.type === "decimal") {
+            const text = decimalText(decimal(a.value), budget, scale, true);
+            // ROUND(DIVIDE(a, b), 2): when every value the exact operand
+            // can have (within the bound of the roundings before) rounds to
+            // the same result, nothing was lost that the formula did not
+            // ask to lose (#645). Near a halfway point they may not.
+            const bound = budget.decimalErrors.get(a);
+            if (
+              bound &&
+              budget.decimalRoundings - roundings === bound.roundings
+            ) {
+              const x = decimal(a.value);
+              const at40 = x.units * power(BOUND_SCALE - x.scale);
+              const step = power(BOUND_SCALE - scale);
+              if (
+                halfEven(at40 - bound.error, step).units ===
+                halfEven(at40 + bound.error, step).units
+              ) {
+                budget.decimalRoundings = roundings;
+                if (!warned) budget.warnings.delete("decimal_rounded");
+              }
+            }
+            return out(text);
+          }
           return out(
             Math.round((a.value as number) * 10 ** scale) / 10 ** scale,
           );
@@ -982,7 +1148,7 @@ export function compileRowExpression(
             budget.warnings.add("number_converted_to_decimal");
           const text = String(a.value);
           decimal(text);
-          return out(text);
+          return traced ? carry(budget, a, out(text)) : out(text);
         }
         if (fn === "to_number" || fn === "to_integer") {
           if (typeof a.value !== "number" && typeof a.value !== "string")

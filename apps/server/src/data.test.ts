@@ -649,6 +649,51 @@ describe("data API authorization and contract", () => {
       (await call("POST", "/models/preview", stranger, body)).statusCode,
     ).toBe(404);
   });
+  it("does not warn about a measure that rounds on purpose (#645)", async () => {
+    const draft = modelResponseSchema.parse(
+      (await call("GET", `/models/${modelId}`, editor)).json(),
+    ).model;
+    const third = {
+      kind: "call",
+      fn: "divide",
+      args: [
+        { kind: "field", fieldId: "total" },
+        { kind: "literal", type: "integer", value: 3 },
+      ],
+    };
+    const query = async (id: string) => {
+      const preview = await call("POST", "/models/preview", editor, {
+        definition: {
+          ...draft.definition,
+          measures: [
+            ...draft.definition.measures,
+            {
+              id: "rounded",
+              name: "Rounded",
+              kind: "formula",
+              expression: {
+                kind: "call",
+                fn: "round",
+                args: [third, { kind: "literal", type: "integer", value: 2 }],
+              },
+            },
+            { id: "third", name: "Third", kind: "formula", expression: third },
+          ],
+        },
+        query: { measureIds: [id], groupBy: [] },
+      });
+      expect(preview.statusCode, preview.body).toBe(200);
+      return modelQueryResponseSchema.parse(preview.json());
+    };
+    const rounded = await query("rounded");
+    expect(rounded.rows[0]?.measures.rounded).toMatchObject({
+      value: "4.17",
+      status: "ok",
+    });
+    expect(rounded.warnings).not.toContain("decimal_rounded");
+    // 12.5 / 3 cut at 18 places, not asked for: still a data warning.
+    expect((await query("third")).warnings).toContain("decimal_rounded");
+  });
   it("binds pinned pages to the authenticated caller and reauthorizes every continuation", async () => {
     const source = await call("POST", "/manual", editor, {
       ...manual,
