@@ -167,3 +167,56 @@ test("applying a scope change saves unsaved app identity first", async ({
     products.find((p) => p.productId === `${connections.apple}:1001`),
   ).toMatchObject({ pricing: "free" });
 });
+
+/**
+ * While the scope change is applied (and the page moves on), app identity
+ * cannot be edited: such an edit would be lost with the navigation.
+ */
+test("app identity is locked while a scope change applies", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const { storeTemplate: s, storeUpdate: u } = catalog(locale);
+
+  const { workspaceId } = await startWorkspace(page, locale);
+  const { requestId, connections } = await installWithConnections(
+    page,
+    workspaceId,
+  );
+  const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
+  try {
+    await sql`insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${connections.apple}, ${workspaceId}, '1001', 'Focus', 'app')`;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+
+  await page.goto(
+    `/workspaces/${workspaceId}/dashboards/stores?install=${requestId}`,
+  );
+  const pricing = page
+    .locator(`[data-product="${connections.apple}:1001"]`)
+    .getByLabel(s.pricing);
+  await expect(pricing).toBeEnabled();
+  await page.getByRole("checkbox", { name: /Second Play/ }).check();
+  await page.getByRole("button", { name: s.reviewChanges }).click();
+
+  // Hold the scope change until the lock is checked.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(/\/installs\/[^/]+\/scope$/, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    await held;
+    await route.continue();
+  });
+  await page.getByRole("button", { name: u.apply }).click();
+  await expect(pricing).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: s.identitySave }),
+  ).toBeDisabled();
+  release();
+  await expect(page).toHaveURL(
+    `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`,
+  );
+});

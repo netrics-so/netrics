@@ -120,4 +120,20 @@ describe("store product identity", () => {
     expect(html).toContain("verbinde zuerst Vercel Web Analytics");
     expect(html).toContain(`href="/workspaces/${W}/sources"`);
   });
+
+  it("is read-only while a scope change applies", () => {
+    const html = renderI18n(
+      <StoreProductIdentity
+        workspaceId={W}
+        requestId={REQUEST}
+        initial={products}
+        locked
+      />,
+    );
+    const controls = [...html.matchAll(/<(select|button)[^>]*>/g)].map(
+      (match) => match[0],
+    );
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) expect(control).toContain('disabled=""');
+  });
 });

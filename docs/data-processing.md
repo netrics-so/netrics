@@ -785,9 +785,11 @@ identity" on the screen that changes the install's apps
 products resolve exactly as the template's preparations resolve each row: an
 app's product is its mapping row's product ID, else its app key; the name is
 the product's Products row, else its first app's name, else the app ID. Every
-app of the install's connections is listed (no cut-off; past the workspace's
-query row limit the read answers 413). Unsaved identity changes are saved or
-discarded, in the page, before a scope change applies and opens the update.
+app of the install's connections is listed, discovered or only named by the
+synced reports (no cut-off; past the query row limit of the deployment's data
+policy and the workspace's overrides the read answers 413). Unsaved identity
+changes are saved or discarded, in the page, before a scope change applies,
+and the identity is read-only while it applies and opens the update.
 
 - **Icon:** the stored resource icon of the product's first App Store app,
   else Play app, that has one, resolved when read. The daily icon refresh

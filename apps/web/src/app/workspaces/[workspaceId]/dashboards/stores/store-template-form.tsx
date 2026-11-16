@@ -45,6 +45,7 @@ export function StoreTemplateForm({
   install,
   initialOptions = null,
   identityGuard,
+  onApplying,
 }: {
   workspaceId: string;
   initialConnectionId?: string;
@@ -62,6 +63,11 @@ export function StoreTemplateForm({
   initialOptions?: StoreTemplateOptions | null;
   /** Edit mode: the app identity beside the form, saved before applying. */
   identityGuard?: RefObject<IdentityGuard | null>;
+  /**
+   * Edit mode: whether a scope change is being applied, through the
+   * navigation that follows it (the identity beside the form is locked).
+   */
+  onApplying?: (applying: boolean) => void;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
@@ -99,6 +105,10 @@ export function StoreTemplateForm({
     [askIdentity, setAskIdentity] = useState(false);
   const initialized = useRef(!!install || !!initialOptions);
   useLeaveGuard(dirty && !done, t("unsaved"));
+  const applying = pending === "create" || (!!install && done);
+  useEffect(() => {
+    onApplying?.(applying);
+  }, [applying, onApplying]);
   useEffect(() => {
     if (initialOptions && revision === 0) return;
     let alive = true;

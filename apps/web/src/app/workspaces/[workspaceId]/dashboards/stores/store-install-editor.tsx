@@ -1,5 +1,5 @@
 "use client";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type {
   StoreTemplateOptions,
   StoreTemplateProducts,
@@ -27,7 +27,8 @@ export function StoreInstallEditor({
   options: StoreTemplateOptions;
   products: StoreTemplateProducts;
 }) {
-  const guard = useRef<IdentityGuard | null>(null);
+  const guard = useRef<IdentityGuard | null>(null),
+    [applying, setApplying] = useState(false);
   return (
     <>
       <StoreTemplateForm
@@ -35,6 +36,7 @@ export function StoreInstallEditor({
         install={install}
         initialOptions={options}
         identityGuard={guard}
+        onApplying={setApplying}
       />
       <div className="store-template-form">
         <StoreProductIdentity
@@ -42,6 +44,7 @@ export function StoreInstallEditor({
           requestId={install.requestId}
           initial={products}
           guard={guard}
+          locked={applying}
         />
       </div>
     </>

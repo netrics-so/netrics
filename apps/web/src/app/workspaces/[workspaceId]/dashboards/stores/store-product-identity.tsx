@@ -40,12 +40,15 @@ export function StoreProductIdentity({
   requestId,
   initial,
   guard,
+  locked = false,
 }: {
   workspaceId: string;
   requestId: string;
   initial: StoreTemplateProducts;
   /** Kept current with the unsaved state (see IdentityGuard). */
   guard?: RefObject<IdentityGuard | null>;
+  /** Read-only while the scope change beside it applies and navigates. */
+  locked?: boolean;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
@@ -55,7 +58,8 @@ export function StoreProductIdentity({
     [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
-  const changed = Object.keys(choices);
+  const changed = Object.keys(choices),
+    busy = !!pending || locked;
   useLeaveGuard(changed.length > 0, t("unsaved"));
   const choiceOf = (product: Product): Choice =>
     choices[product.productId] ?? {
@@ -192,7 +196,7 @@ export function StoreProductIdentity({
               <div className="actions">
                 <button
                   type="button"
-                  disabled={!!pending}
+                  disabled={busy}
                   onClick={() => void loadIcon(product)}
                 >
                   {pending === "icon:" + product.productId
@@ -206,7 +210,7 @@ export function StoreProductIdentity({
               <select
                 id={`${id}-pricing-${index}`}
                 value={choice.pricing}
-                disabled={!!pending}
+                disabled={busy}
                 onChange={(event) =>
                   choose(product, {
                     pricing: event.target.value as StoreProductPricing,
@@ -228,9 +232,7 @@ export function StoreProductIdentity({
               <select
                 id={`${id}-website-${index}`}
                 value={choice.website}
-                disabled={
-                  !!pending || (!data.websites.length && !choice.website)
-                }
+                disabled={busy || (!data.websites.length && !choice.website)}
                 onChange={(event) =>
                   choose(product, { website: event.target.value })
                 }
@@ -268,7 +270,7 @@ export function StoreProductIdentity({
         <button
           type="button"
           className="primary"
-          disabled={!!pending || !changed.length}
+          disabled={busy || !changed.length}
           onClick={() => void save()}
         >
           {pending === "save" ? t("identitySaving") : t("identitySave")}
