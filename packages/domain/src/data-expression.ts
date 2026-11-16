@@ -142,6 +142,13 @@ export function attributeDataError(error: unknown, nodeId: string): unknown {
 export class ProcessingBudget {
   operations = 0;
   readonly warnings = new Set<string>();
+  /** Results rounded to the supported 18 decimal places so far. */
+  decimalRoundings = 0;
+  /**
+   * The last cell whose own operation rounded to 18 places from exact
+   * operands: an explicit ROUND of it asked for that rounding (#645).
+   */
+  lastPlaceRounding: unknown = undefined;
   readonly maximum: number;
   readonly maxRows: number;
   readonly maxOutputBytes: number;
@@ -208,17 +215,24 @@ function halfEven(
   if (remainder * 2n > d || (remainder * 2n === d && q % 2n !== 0n)) q++;
   return { units: negative ? -q : q, rounded: remainder !== 0n };
 }
+/** Precision lost that nobody asked for: beyond the supported 18 places. */
+function implicitlyRounded(budget: ProcessingBudget) {
+  budget.warnings.add("decimal_rounded");
+  budget.decimalRoundings++;
+}
+/** An explicit ROUND to `maximumScale` places warns of nothing. */
 function decimalText(
   input: Decimal,
   budget: ProcessingBudget,
   maximumScale = 18,
+  explicit = false,
 ): string {
   let { units, scale } = input;
   if (scale > maximumScale) {
     const rounded = halfEven(units, power(scale - maximumScale));
     units = rounded.units;
+    if (rounded.rounded && !explicit) implicitlyRounded(budget);
     scale = maximumScale;
-    if (rounded.rounded) budget.warnings.add("decimal_rounded");
   }
   while (scale > 0 && units % 10n === 0n) {
     units /= 10n;
@@ -275,7 +289,7 @@ export function exactDecimal(
         a.units * power(b.scale + 18),
         b.units * power(a.scale),
       );
-      if (result.rounded) budget.warnings.add("decimal_rounded");
+      if (result.rounded) implicitlyRounded(budget);
       return decimalText({ units: result.units, scale: 18 }, budget);
     }
   }
@@ -750,6 +764,8 @@ export function compileRowExpression(
       result,
       run: (row, budget) => {
         budget.tick();
+        const roundings = budget.decimalRoundings,
+          warned = budget.warnings.has("decimal_rounded");
         const at = (index: number) => args[index]!.run(row, budget);
         const promote = (cell: DataCell): DataCell => ({
           ...cell,
@@ -857,8 +873,9 @@ export function compileRowExpression(
             a.currency !== b.currency
           )
             dataFail("expression_units_incompatible");
-          if (result.type === "decimal")
-            return out(
+          if (result.type === "decimal") {
+            const before = budget.decimalRoundings;
+            const cell = out(
               exactDecimal(
                 fn as "add" | "subtract" | "multiply" | "divide",
                 toDecimal(a.value, a.type),
@@ -866,6 +883,11 @@ export function compileRowExpression(
                 budget,
               ),
             );
+            // Rounded here, from operands that were exact.
+            if (budget.decimalRoundings > before && before === roundings)
+              budget.lastPlaceRounding = cell;
+            return cell;
+          }
           const x = Number(a.value),
             y = Number(b!.value);
           if (fn === "divide" && y === 0) {
@@ -942,8 +964,23 @@ export function compileRowExpression(
           const scale = b!.value as number;
           if (scale < 0 || scale > 18)
             dataFail("expression_round_scale_invalid");
-          if (a.type === "decimal")
-            return out(decimalText(decimal(a.value), budget, scale));
+          if (a.type === "decimal") {
+            const text = decimalText(decimal(a.value), budget, scale, true);
+            // ROUND(DIVIDE(a, b), 2): the operand's own rounding to 18
+            // places is below the places asked for, so nothing was lost
+            // that the formula did not ask to lose (#645). Unless the
+            // operand sits exactly halfway at those places: rounding twice
+            // may then differ from rounding the exact value once.
+            const fraction = String(a.value).split(".")[1] ?? "";
+            if (
+              a === budget.lastPlaceRounding &&
+              !(fraction.length === scale + 1 && fraction.endsWith("5"))
+            ) {
+              budget.decimalRoundings = roundings;
+              if (!warned) budget.warnings.delete("decimal_rounded");
+            }
+            return out(text);
+          }
           return out(
             Math.round((a.value as number) * 10 ** scale) / 10 ** scale,
           );
