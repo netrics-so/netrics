@@ -575,6 +575,16 @@ async function modelViews(
     ...changed[i]!,
   }));
 }
+/**
+ * A view straight after publishing: the draft is its live release, read
+ * through the inputs just pinned, so it differs in neither definition nor
+ * inputs. Spares the publish path the resolution the lists run (#697).
+ */
+function publishedView<T extends object>(
+  view: T,
+): T & { hasUnpublishedChanges: boolean; inputsDiffer: boolean } {
+  return { ...view, hasUnpublishedChanges: false, inputsDiffer: false };
+}
 async function preparationViewIn(
   tx: Transaction,
   workspaceId: string,
@@ -2833,7 +2843,7 @@ export function createDataService(
         const republish = row.publishedVersion === expected;
         if (republish && row.restoredFromVersion)
           return {
-            preparation: await preparationViewIn(tx, actor.workspaceId, row),
+            preparation: publishedView(preparationView(row)),
           };
         const restored = row.restoredFromVersion
           ? await preparationPublication(
@@ -2877,7 +2887,7 @@ export function createDataService(
             ) === stable(loader.dependencies.prepared)
           )
             return {
-              preparation: await preparationViewIn(tx, actor.workspaceId, row),
+              preparation: publishedView(preparationView(row)),
             };
           preparationChanged(id);
           const [bumped] = await tx
@@ -2936,7 +2946,7 @@ export function createDataService(
           .returning();
         await audit(tx, actor, "data.preparation_published", id);
         return {
-          preparation: await preparationViewIn(tx, actor.workspaceId, updated!),
+          preparation: publishedView(preparationView(updated!)),
         };
       }),
     listModels: (actor: DataActor, filter: ProjectFilter = {}) =>
@@ -3149,7 +3159,7 @@ export function createDataService(
         // keeps its inputs) nothing changes.
         const republish = row.publishedVersion === expected;
         if (republish && row.restoredFromVersion)
-          return { model: await modelViewIn(tx, actor.workspaceId, row) };
+          return { model: publishedView(modelView(row)) };
         const restored = row.restoredFromVersion
           ? await modelPublication(
               tx,
@@ -3190,7 +3200,7 @@ export function createDataService(
               (release.dependencies as Dependencies | null)?.prepared ?? {},
             ) === stable(loader.dependencies.prepared)
           )
-            return { model: await modelViewIn(tx, actor.workspaceId, row) };
+            return { model: publishedView(modelView(row)) };
           const [bumped] = await tx
             .update(schema.dataModels)
             .set({ version: row.version + 1, updatedAt: now })
@@ -3225,7 +3235,7 @@ export function createDataService(
           )
           .returning();
         await audit(tx, actor, "data.model_published", id);
-        return { model: await modelViewIn(tx, actor.workspaceId, updated!) };
+        return { model: publishedView(modelView(updated!)) };
       }),
     query: async (
       actor: DataActor,
