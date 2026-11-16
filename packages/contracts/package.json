@@ -6,7 +6,6 @@
   "type": "module",
   "files": [
     "dist",
-    "openapi.json",
     "!dist/**/*.test.*",
     "!dist/**/test-db.*",
     "!dist/**/test-helpers.*",
