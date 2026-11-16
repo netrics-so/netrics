@@ -83,6 +83,16 @@ public final class DeviceSession {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
+    /** The build number (CFBundleVersion), which every upload to the App Store raises. */
+    public static var appBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+    }
+
+    /** "0.3.1 (42)": the Apple TV settings and menu (#737), and what the menu hint is kept by. */
+    public static var appVersionAndBuild: String {
+        MenuHint.versionKey(version: appVersion, build: appBuild)
+    }
+
     /** An Apple TV, for the texts that name the device ("This TV"). */
     public var isTV: Bool { platform == .tvos }
 

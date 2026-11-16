@@ -240,17 +240,17 @@ and checks the sizes.
 
 One codebase, three kinds of device. What differs, and where:
 
-|                     | Apple TV (`NetricsTV`)                                | iPad (`NetricsTVTouch`)                                                                    | iPhone (`NetricsTVTouch`)                                                                                              |
-| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| Reports platform    | `tvos`                                                | `ipados`                                                                                   | `ios`                                                                                                                  |
-| View                | Screen view only; the web shows the mode fixed        | Screen view by default; `display_mode = scroll` gives the scroll view                      | Portrait: scroll view; landscape: screen view (`21x9`); `display_mode = screen` keeps screen view in portrait (`9x16`) |
-| Format and rotation | 16:9 screen, turned by the device's rotation setting  | From the window's size (4:3, 3:4, any window); rotation setting ignored                    | Follows the phone; rotation setting ignored                                                                            |
-| Screen stays on     | While paired (`isIdleTimerDisabled`)                  | Screen view in the foreground only (`TouchScreen.keepsScreenOn`)                           | In screen view in the foreground (landscape, or the screen setting); scroll view follows Auto-Lock                     |
-| Input               | Siri Remote: left/right, Play/Pause, press and hold   | Swipe, tap a widget for details, tap elsewhere for pause and settings (#414)               | Same as iPad in screen view; scroll view: tap a card, settings button                                                  |
-| Pairing extras      | Code, URL, QR code                                    | Also "Open approval page", "Share link", "Copy code"                                       | Same as iPad                                                                                                           |
-| Demo                | Back (Menu) or the press-and-hold menu leaves         | "Leave demo" button                                                                        | "Leave demo" button                                                                                                    |
-| Lifecycle           | Scene phase passed to the session (`deviceLifecycle`) | Same: no polling in the background, refresh on return                                      | Same                                                                                                                   |
-| Kiosk setup         | Nothing needed                                        | Guided Access or Single App Mode: [the guide](../../docs/guides/ipad-on-a-wall-or-desk.md) | A desk stand: `display_mode = screen` and the guide's iPhone section                                                   |
+|                     | Apple TV (`NetricsTV`)                                     | iPad (`NetricsTVTouch`)                                                                    | iPhone (`NetricsTVTouch`)                                                                                              |
+| ------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Reports platform    | `tvos`                                                     | `ipados`                                                                                   | `ios`                                                                                                                  |
+| View                | Screen view only; the web shows the mode fixed             | Screen view by default; `display_mode = scroll` gives the scroll view                      | Portrait: scroll view; landscape: screen view (`21x9`); `display_mode = screen` keeps screen view in portrait (`9x16`) |
+| Format and rotation | 16:9 screen, turned by the device's rotation setting       | From the window's size (4:3, 3:4, any window); rotation setting ignored                    | Follows the phone; rotation setting ignored                                                                            |
+| Screen stays on     | While paired (`isIdleTimerDisabled`)                       | Screen view in the foreground only (`TouchScreen.keepsScreenOn`)                           | In screen view in the foreground (landscape, or the screen setting); scroll view follows Auto-Lock                     |
+| Input               | Siri Remote: left/right, Play/Pause, press (menu) and hold | Swipe, tap a widget for details, tap elsewhere for pause and settings (#414)               | Same as iPad in screen view; scroll view: tap a card, settings button                                                  |
+| Pairing extras      | Code, URL, QR code                                         | Also "Open approval page", "Share link", "Copy code"                                       | Same as iPad                                                                                                           |
+| Demo                | Back (Menu) or the press-and-hold menu leaves              | "Leave demo" button                                                                        | "Leave demo" button                                                                                                    |
+| Lifecycle           | Scene phase passed to the session (`deviceLifecycle`)      | Same: no polling in the background, refresh on return                                      | Same                                                                                                                   |
+| Kiosk setup         | Nothing needed                                             | Guided Access or Single App Mode: [the guide](../../docs/guides/ipad-on-a-wall-or-desk.md) | A desk stand: `display_mode = screen` and the guide's iPhone section                                                   |
 
 The details are in "How it works" below; the wall and desk setup of an iPad
 (Guided Access, Single App Mode, Auto-Lock, power, mounting, OLED) is in
@@ -408,6 +408,16 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   rows stack (label, then value and Δ), where the web keeps its columns.
 - **Remote.** On a slide dashboard, left and right change the slide (or page) and
   Play/Pause pauses the rotation ("Paused" in the header).
+- **Menu (#737).** A single press of the clickpad on the dashboard shows a
+  small menu at the bottom, as the system's video players do: Pause or
+  Resume (when the slides rotate), Settings and the app version
+  (`RemoteMenu`). It hides 5 s after the last press, or on Back; while it
+  shows, Back closes it instead of leaving the app. It turns with the
+  content and moves focus as the settings do (`FocusGrid`). Press and hold
+  and Play/Pause stay shortcuts. "Press the clickpad for the menu" shows
+  for a few seconds 8 s after the dashboard appears, after a pairing and
+  once per app version and build (`MenuHint`, kept in the user defaults).
+  The demo keeps its own menu (press and hold).
 - **iPhone and iPad (#411).** The pairing screen also opens `approveUrl`
   in Safari ("Open approval page"; the web session approves, the app never
   sees a user credential), shares it, and copies the code. Back in the
@@ -434,9 +444,12 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   payloads are generated by `packages/contracts/src/tv-demo-payload.test.ts`,
   which also parses them with the zod schema 3 contract; `pnpm demo:tv`
   rewrites them. `DemoDashboardTests` decodes them in Swift.
-- **Settings.** Press and hold the clickpad on the dashboard, or press
-  Play/Pause where there is nothing to rotate (one slide, or a schema 1
-  dashboard). The pairing screen has a Settings button. Unpair revokes the
+- **Settings.** Settings in the clickpad menu, press and hold the
+  clickpad on the dashboard, or press Play/Pause where there is nothing to
+  rotate (one slide, or a schema 1 dashboard). The pairing screen has a
+  Settings button. On Apple TV they show the app's version and build
+  ("0.3.1 (42)") and, once read, the server's version from its info
+  (`GET /v1/server`, `DeviceState.serverVersion`). Unpair revokes the
   device on the server (`POST /v1/device/me/revoke`, #407), then clears the
   Keychain and the cache and shows a new netrics cloud code; offline or on
   an older server (404) it unpairs locally only. Once paired,

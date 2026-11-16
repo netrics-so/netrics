@@ -3,9 +3,10 @@ import NetricsUI
 import SwiftUI
 
 /**
- * Reached with the Siri Remote (press and hold the clickpad, or Play/Pause
- * on the dashboard; the Settings button while pairing). Shows what this TV
- * is connected to; Unpair clears the Keychain and the cache and starts
+ * Reached with the Siri Remote (Settings in the menu a single press of the
+ * clickpad shows, press and hold the clickpad, or Play/Pause where nothing
+ * rotates; the Settings button while pairing). Shows what this TV is
+ * connected to, the app's version and build and the server's version; Unpair clears the Keychain and the cache and starts
  * pairing with netrics cloud again (another server is one button away).
  *
  * Once paired, settings turn with the content by the device's rotation
@@ -89,7 +90,10 @@ struct SettingsView: View {
                     }
                 }
                 Row(label: L10n.tr("This TV", language), value: state.device?.name ?? (state.phase == .pairing ? L10n.tr("Not paired yet", language) : "—"), narrow: narrow)
-                Row(label: L10n.tr("App version", language), value: DeviceSession.appVersion, narrow: narrow)
+                Row(label: L10n.tr("App version", language), value: DeviceSession.appVersionAndBuild, narrow: narrow)
+                if let version = state.serverVersion {
+                    Row(label: L10n.tr("Server version", language), value: version, narrow: narrow)
+                }
                 // No browser on Apple TV: the address to open on another device (#547).
                 Row(label: L10n.tr("Privacy policy", language), value: PrivacyPolicy.displayAddress(language), narrow: narrow)
                 if let error = state.lastError, state.offline {

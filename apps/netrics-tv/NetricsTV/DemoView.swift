@@ -20,7 +20,8 @@ struct DemoView: View {
     var body: some View {
         Group {
             if let payload = state.dashboardV2 {
-                SlideshowView(state: state, payload: payload, images: model.images, openSettings: { showMenu = true })
+                SlideshowView(
+                    state: state, payload: payload, images: model.images, menu: false, openSettings: { showMenu = true })
             }
         }
         .environment(\.demoMode, true)
