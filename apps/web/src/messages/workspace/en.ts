@@ -294,6 +294,10 @@ export const workspaceEn = {
       credentialsNone: "none",
       appStoreAbout: "About App Store Connect data",
       latestReportingDay: "Latest reporting day",
+      /** The connection's freshness streams (ADR 0025). */
+      freshnessTitle: "Data freshness",
+      freshnessHelp:
+        "How far each kind of data reaches and when the next is due. Times are in your time zone.",
       noneYet: "None yet",
       appStoreTiming:
         "Sales arrive the next morning, Pacific Time (Apple publishes a day’s report by about 8 a.m. PT); App Store analytics follow about two days later. Reporting days are Pacific Time days, not your workspace’s time zone. Proceeds are kept in each currency Apple reports.",

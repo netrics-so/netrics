@@ -10,6 +10,7 @@ import {
 
 import type {
   CompareMeasureReading,
+  ConnectionFreshnessStream,
   Goal,
   LatestReviewRequest,
   LatestReviewResponse,
@@ -21,6 +22,7 @@ import type { CompareFormat, CompareMeasureBinding } from "@netrics/domain";
 
 import {
   apiErrorMessage,
+  fetchConnectionFreshness,
   fetchGoal,
   queryLatestReview,
   queryMetric,
@@ -306,6 +308,23 @@ function subscribeReviews(listener: () => void): () => void {
 }
 
 /**
+ * What a latest-review widget asks for. Its `resource` is the widget's app,
+ * which on a scoped slide is the app the slide names (`scopedSlide`, #707):
+ * the route resolves the review and its freshness (ADR 0025) for that app
+ * only, and for every app without one.
+ */
+export function latestReviewRequest(widget: ReviewWidget): LatestReviewRequest {
+  return {
+    ...(widget.dimensions.resource
+      ? { resource: widget.dimensions.resource }
+      : {}),
+    minRating: widget.options.minRating,
+    requireText: widget.options.requireText,
+    showAuthor: widget.options.showAuthor,
+  };
+}
+
+/**
  * A latest-review widget's review (ADR 0019 section 12): the newest that
  * matches its options and is not hidden, with the id "Hide this review"
  * takes. `reloadReviews` reloads every one at once.
@@ -322,14 +341,7 @@ export function useLatestReviewData(
   );
   const key = JSON.stringify({
     connectionId: widget.connectionId,
-    request: {
-      ...(widget.dimensions.resource
-        ? { resource: widget.dimensions.resource }
-        : {}),
-      minRating: widget.options.minRating,
-      requireText: widget.options.requireText,
-      showAuthor: widget.options.showAuthor,
-    },
+    request: latestReviewRequest(widget),
     version,
   });
   const load = useCallback(() => {
@@ -340,4 +352,34 @@ export function useLatestReviewData(
     return queryLatestReview(workspaceId, connectionId, request);
   }, [workspaceId, key]);
   return usePolled(load, refreshMs, `review|${workspaceId}|${key}`);
+}
+
+/** A status board's sources' freshness streams, by connection id. */
+export type ConnectionStreams = Readonly<
+  Record<string, ConnectionFreshnessStream[]>
+>;
+
+/**
+ * The freshness streams of a status board's sources (ADR 0025), from each
+ * connection's detail; refreshed with the other widgets. A connection
+ * whose detail fails to load lists no streams; the board stays as it is.
+ */
+export function useConnectionStreams(
+  workspaceId: string,
+  connectionIds: readonly string[],
+  refreshMs = WIDGET_REFRESH_MS,
+): WidgetData<ConnectionStreams> {
+  const key = JSON.stringify([...connectionIds].sort());
+  const load = useCallback(async () => {
+    const ids = JSON.parse(key) as string[];
+    const streams = await Promise.all(
+      ids.map((id) =>
+        fetchConnectionFreshness(workspaceId, id).catch(
+          () => [] as ConnectionFreshnessStream[],
+        ),
+      ),
+    );
+    return Object.fromEntries(ids.map((id, index) => [id, streams[index]!]));
+  }, [workspaceId, key]);
+  return usePolled(load, refreshMs, `streams|${workspaceId}|${key}`);
 }

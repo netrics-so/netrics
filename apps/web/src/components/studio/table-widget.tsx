@@ -2,7 +2,11 @@
 
 import { useRef } from "react";
 
-import type { DeviceTileStatus, MetricPeriod } from "@netrics/contracts";
+import type {
+  DeviceTileStatus,
+  WidgetFreshness,
+  MetricPeriod,
+} from "@netrics/contracts";
 import { othersLabel, type StudioPlacement } from "@netrics/domain";
 
 import { displayUnit } from "@/lib/format-metric";
@@ -26,6 +30,7 @@ import {
   dataSurfaceOf,
   statusClass,
   useFooterCandidates,
+  useFreshnessNotice,
 } from "./widget-parts";
 
 export type TableWidget = Extract<DataWidget, { type: "table" }>;
@@ -42,6 +47,8 @@ export interface TableWidgetViewProps {
   source?: string | null;
   /** The data's last successful sync, for the footer; null: unknown. */
   updatedAt?: string | null;
+  /** How far the numbers reach (ADR 0025); absent: the updatedAt footer. */
+  freshness?: WidgetFreshness | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -55,12 +62,18 @@ export interface TableWidgetViewProps {
  * and only then end with an ellipsis; values are never cut (the compact
  * form first). Rows rise into place on slide enter.
  */
-export function TableWidgetView(props: TableWidgetViewProps) {
+export function TableWidgetView(input: TableWidgetViewProps) {
+  const props = useFreshnessNotice(input);
   const locale = useLocale();
   const t = useT("screen.widget");
   const rowsRef = useRef<HTMLOListElement>(null);
   useRowRise(rowsRef);
-  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  const candidates = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const layout = tableWidgetLayout({
     label: props.label,
     period: props.period,
@@ -84,6 +97,7 @@ export function TableWidgetView(props: TableWidgetViewProps) {
         small={small}
         source={props.source}
         updatedAt={props.updatedAt}
+        freshness={props.freshness}
         placement={props.placement}
         showHeader={props.showHeader}
         fontScale={props.fontScale}

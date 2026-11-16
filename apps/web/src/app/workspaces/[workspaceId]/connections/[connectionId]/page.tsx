@@ -18,6 +18,7 @@ import { AddAdAccountPanel } from "./add-ad-account-panel";
 import { SignedKeyPanel } from "./signed-key-panel";
 import { RetentionSettings } from "./retention-settings";
 import { ConnectionProject } from "./connection-project";
+import { ConnectionFreshness } from "./connection-freshness";
 import {
   getConnection,
   getConnectionRetention,
@@ -124,6 +125,14 @@ export default async function ConnectionDetailPage({
     ...metrics
       .filter((metric) => metric.connectionId === connectionId)
       .map((metric) => metric.dimensionNames),
+  );
+  // Resource names for the freshness entries reported per app (ADR 0025).
+  const resourceNames: Record<string, string> = Object.fromEntries(
+    observations.flatMap((observation) =>
+      observation.resourceName && observation.dimensions.resource
+        ? [[observation.dimensions.resource, observation.resourceName]]
+        : [],
+    ),
   );
   const connector = connectors.find((c) => c.id === connection.connectorId);
   const canUpdate = can(role, "connections:update");
@@ -356,6 +365,12 @@ export default async function ConnectionDetailPage({
           />
         ) : null}
       </div>
+
+      <ConnectionFreshness
+        streams={detail.freshness}
+        nextCheckAt={connection.state.nextDueAt}
+        resourceNames={resourceNames}
+      />
 
       {keyStrategy ? (
         <SignedKeyPanel

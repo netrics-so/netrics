@@ -2,7 +2,11 @@
 
 import { useRef } from "react";
 
-import type { DeviceTileStatus, DeviceWidget } from "@netrics/contracts";
+import type {
+  DeviceTileStatus,
+  WidgetFreshness,
+  DeviceWidget,
+} from "@netrics/contracts";
 import {
   RESOURCE_DIMENSION,
   reviewWidgetLabel,
@@ -11,7 +15,7 @@ import {
 } from "@netrics/domain";
 
 import { useLocale, useT } from "@/lib/i18n/client";
-import { u } from "@/lib/studio-render";
+import { footerLine, u } from "@/lib/studio-render";
 import {
   reviewAuthorLine,
   reviewStars,
@@ -31,10 +35,13 @@ import { liveDataState } from "./metric-widget";
 import { useLatestReviewData } from "./use-widget-data";
 import {
   DataStateWidget,
+  WidgetFooter,
   WidgetLabel,
   WidgetNotice,
   dataSurfaceOf,
   statusClass,
+  useFooterCandidates,
+  useFreshnessNotice,
 } from "./widget-parts";
 
 export interface ReviewWidgetViewProps {
@@ -47,6 +54,8 @@ export interface ReviewWidgetViewProps {
   status?: DeviceTileStatus;
   source?: string | null;
   updatedAt?: string | null;
+  /** How far the numbers reach (ADR 0025); absent: the updatedAt footer. */
+  freshness?: WidgetFreshness | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -89,18 +98,36 @@ export function ReviewStars({
  * and the author line "Marta P. · Germany · 2 hr. ago" (the age from this
  * device's clock). One review, no rotation; the parts rise on slide enter.
  */
-export function ReviewWidgetView(props: ReviewWidgetViewProps) {
+export function ReviewWidgetView(input: ReviewWidgetViewProps) {
+  const props = useFreshnessNotice(input);
   const locale = useLocale();
   const t = useT("screen.widget");
   const now = useNow();
   const ref = useRef<HTMLElement>(null);
   useRowRise(ref);
   const reading = props.reading;
+  // The freshness line (ADR 0025) takes the notice's line when there is
+  // no notice; without freshness the widget has no footer, as before.
+  const candidates = useFooterCandidates(
+    null,
+    null,
+    props.freshness,
+    props.status,
+  );
+  const footer =
+    props.notice || !props.freshness
+      ? null
+      : footerLine(candidates, {
+          type: "review",
+          placement: props.placement,
+          showHeader: props.showHeader,
+          fontScale: props.fontScale,
+        });
   const layout = reviewWidgetLayout({
     label: props.label,
     reading,
     icon: props.icon !== null,
-    notice: props.notice !== null,
+    notice: props.notice !== null || footer !== null,
     placement: props.placement,
     showHeader: props.showHeader,
     fontScale: props.fontScale,
@@ -117,6 +144,7 @@ export function ReviewWidgetView(props: ReviewWidgetViewProps) {
         small={small}
         source={props.source}
         updatedAt={props.updatedAt}
+        freshness={props.freshness}
         placement={props.placement}
         showHeader={props.showHeader}
         fontScale={props.fontScale}
@@ -197,6 +225,8 @@ export function ReviewWidgetView(props: ReviewWidgetViewProps) {
         <WidgetNotice size={small} stale={props.status === "stale"}>
           {props.notice}
         </WidgetNotice>
+      ) : footer ? (
+        <WidgetFooter size={small}>{footer}</WidgetFooter>
       ) : null}
     </article>
   );
@@ -226,6 +256,7 @@ export function deviceReviewReading(
         : deviceTileNotice(data.status, data.updatedAt, locale),
     status: data.status,
     updatedAt: data.updatedAt,
+    freshness: data.freshness ?? null,
   };
 }
 
@@ -269,6 +300,7 @@ export function useLiveReview(
     status,
     source: connection?.name ?? null,
     updatedAt: connection?.state.lastSuccessAt ?? null,
+    freshness: data?.freshness ?? null,
     loading,
   };
 }

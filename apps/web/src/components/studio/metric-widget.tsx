@@ -6,6 +6,7 @@ import type {
   DeviceTileStatus,
   MetricAggregation,
   MetricPeriod,
+  WidgetFreshness,
   WorkspaceMetric,
 } from "@netrics/contracts";
 import {
@@ -46,6 +47,7 @@ import {
   dataSurfaceOf,
   statusClass,
   useFooterCandidates,
+  useFreshnessNotice,
 } from "./widget-parts";
 
 const ARROWS = { up: "▲", down: "▼", flat: "■" } as const;
@@ -65,6 +67,8 @@ export interface MetricWidgetViewProps {
   source: string | null;
   /** The data's last successful sync, for the footer; null: unknown. */
   updatedAt?: string | null;
+  /** How far the numbers reach (ADR 0025); absent: the updatedAt footer. */
+  freshness?: WidgetFreshness | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -178,13 +182,19 @@ export function countFormat(
  * The metric widget: today's tile (label, value, change, sparkline) on the
  * studio grid, sized by studioLayout and coloured by the theme tokens.
  */
-export function MetricWidgetView(props: MetricWidgetViewProps) {
+export function MetricWidgetView(input: MetricWidgetViewProps) {
+  const props = useFreshnessNotice(input);
   const { reading, period } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
   const { change, changeLine, comparison, periodText, full, compact } =
     metricTexts(props, locale, t);
-  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  const candidates = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   // The footer takes the source line's slot; a notice replaces it.
   const footer = props.notice
     ? null
@@ -223,6 +233,7 @@ export function MetricWidgetView(props: MetricWidgetViewProps) {
         small={layout.sizes.small}
         source={props.source}
         updatedAt={props.updatedAt}
+        freshness={props.freshness}
         placement={props.placement}
         showHeader={props.showHeader}
         fontScale={props.fontScale}

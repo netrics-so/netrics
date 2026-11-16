@@ -75,6 +75,7 @@ export function deviceMetricReading(
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
     status: data.status,
     updatedAt: data.updatedAt,
+    freshness: data.freshness ?? null,
     source: null,
     options: widget.options,
   };
@@ -114,6 +115,7 @@ export function deviceLineReading(
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
     status: data.status,
     updatedAt: data.updatedAt,
+    freshness: data.freshness ?? null,
     options: widget.options,
   };
 }
@@ -143,6 +145,7 @@ export function deviceBarReading(
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
     status: data.status,
     updatedAt: data.updatedAt,
+    freshness: data.freshness ?? null,
   };
 }
 
@@ -177,6 +180,7 @@ export function deviceTableReading(
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
     status: data.status,
     updatedAt: data.updatedAt,
+    freshness: data.freshness ?? null,
   };
 }
 
@@ -227,6 +231,7 @@ export function deviceCompareReading(
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
     status: data.status,
     updatedAt: data.updatedAt,
+    freshness: data.freshness ?? null,
   };
 }
 
@@ -264,6 +269,7 @@ export function deviceGaugeReading(
     notice: deviceTileNotice(data.status, data.updatedAt, locale),
     status: data.status,
     updatedAt: data.updatedAt,
+    freshness: data.freshness ?? null,
     timeZone,
   };
 }

@@ -9,6 +9,8 @@ import { useLocale, useT } from "@/lib/i18n/client";
 import { dataErrorKey } from "@/lib/data-editing";
 import { ApiError } from "@/lib/api";
 import { formatPercentChange } from "@/lib/format-metric";
+import { freshnessParts, type FreshnessClock } from "@/lib/freshness";
+import { useNow } from "./clock-widget";
 import {
   currencyExponent,
   displayMeasureAmount,
@@ -93,6 +95,42 @@ export function formatMeasureCell(
         ? `${text} ★`
         : text;
 }
+/** Source states that are the measure widget's warnings (precedence 1). */
+const FAILING_SOURCES = new Set([
+  "auth_failed",
+  "needs_reauthorization",
+  "outage",
+]);
+
+/**
+ * A measure widget's freshness line (ADR 0025 section 8), as parts to
+ * drop from the end: none without freshness, for a failed read or without
+ * data (precedence 2); only the covered day under a warning (a failing
+ * source or a stale widget), in the warning style when the provider is
+ * overdue; else the normal or late wording, muted.
+ */
+export function measureFreshnessLine(
+  data: DashboardWidgetData | null,
+  clock: FreshnessClock,
+): { parts: string[]; warning: boolean } | null {
+  const freshness = data?.freshness;
+  if (!data || !freshness || data.error || data.status === "no_data") {
+    return null;
+  }
+  const failing =
+    data.status === "stale" ||
+    data.status === "outage" ||
+    (data.sourceHealth ?? []).some((source) =>
+      FAILING_SOURCES.has(source.status),
+    );
+  const parts = freshnessParts(freshness, clock, { warning: failing });
+  if (parts.length === 0) return null;
+  return {
+    parts,
+    warning: data.status === "stale" && freshness.late === true,
+  };
+}
+
 export function MeasureWidgetView({
   widget,
   data,
@@ -120,6 +158,8 @@ export function MeasureWidgetView({
   const t = useT("data"),
     locale = useLocale();
   const viewer = audience === "viewer";
+  // Relative times in the freshness line, worded anew every minute.
+  const clock = useNow();
   const [now, setNow] = useState(() => Date.now());
   const expiry = data?.result?.expiresAt;
   useEffect(() => {
@@ -201,6 +241,9 @@ export function MeasureWidgetView({
     ) : (
       text
     );
+  const freshness = expired
+    ? null
+    : measureFreshnessLine(data, { locale, now: clock.getTime() });
   const errorKey = expired
     ? "expired"
     : data?.error
@@ -478,6 +521,23 @@ export function MeasureWidgetView({
             </p>
           );
         })}
+      {freshness ? (
+        <p
+          className={
+            freshness.warning
+              ? "sw-measure-freshness sw-notice"
+              : "sw-measure-freshness"
+          }
+          title={freshness.parts.join(" · ")}
+          suppressHydrationWarning
+        >
+          {/* Whole parts only: those that do not fit wrap out of sight,
+              so a narrow widget drops them from the end. */}
+          {freshness.parts.map((part, index) => (
+            <span key={index}>{index === 0 ? part : ` · ${part}`}</span>
+          ))}
+        </p>
+      ) : null}
       {data?.exclusions.map((exclusion) => (
         <p className="sw-measure-scope" key={exclusion.filterId}>
           {exclusion.reason}

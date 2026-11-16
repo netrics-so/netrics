@@ -1119,6 +1119,7 @@ export function StudioEditor({
                 unreadable={unreadable.byWidget.get(widget.id)}
                 currency={currency}
                 connections={connections}
+                {...(slide?.scope ? { slideScope: slide.scope } : {})}
                 dispatch={dispatch}
                 onUploadImage={onUploadImage}
                 onDeleteImage={onDeleteImage}

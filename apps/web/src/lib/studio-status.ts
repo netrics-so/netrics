@@ -15,6 +15,11 @@ import {
   type StatusLayout,
 } from "@netrics/domain";
 
+import {
+  freshnessCandidates,
+  type FreshnessClock,
+  type StreamFreshness,
+} from "./freshness";
 import { webTranslator } from "./i18n/catalogs";
 import type { StudioConnection } from "./studio-widgets";
 import {
@@ -137,10 +142,50 @@ export interface StatusRowView {
   truncated: boolean;
 }
 
+/** A source's streams, by connection id (signed-in pages; ADR 0025). */
+export type StatusStreams = Readonly<
+  Record<string, readonly StreamFreshness[]>
+>;
+
+/** A stream row under its source: "Sales up to Nov 15 · next ~9:00 PM". */
+export interface StatusStreamRow {
+  key: string;
+  text: string;
+  /** Late by a day or more: the warning colour. */
+  overdue: boolean;
+}
+
+/**
+ * A stream's line for a list: the stream's name first, its parts dropped
+ * from the end until it fits one line of `fit` (when given); null when not
+ * even the first part fits. Overdue: only the covered day and the late
+ * wording, as widgets word a warning.
+ */
+export function statusStreamText(
+  stream: StreamFreshness,
+  clock: FreshnessClock,
+  fit?: { width: number; size: number },
+): string | null {
+  const candidates = freshnessCandidates(stream.freshness, clock, {
+    stream: true,
+    warning: stream.overdue,
+  });
+  return (
+    candidates.find(
+      (text) => !fit || wrappedLineCount(text, fit.width, fit.size) <= 1,
+    ) ?? null
+  );
+}
+
 export interface StatusWidgetLayout {
   label: WidgetLabelLayout;
   status: StatusLayout;
   rows: StatusRowView[];
+  /**
+   * Stream rows under each shown source, by connection id: only in rows
+   * the sources leave free, so a source is never hidden for a stream.
+   */
+  streams: Record<string, StatusStreamRow[]>;
   /** The last row, "+N more", when items do not fit; its tone is the worst hidden one's. */
   more: { count: number; tone: StatusTone } | null;
   footer: string;
@@ -161,6 +206,8 @@ const TONE_RANK: Readonly<Record<StatusTone, number>> = {
 export function statusWidgetLayout(input: {
   label: string;
   items: readonly StatusItem[];
+  /** Each source's streams; absent: none listed (as on paired screens). */
+  streams?: StatusStreams;
   showAge: boolean;
   placement: ScreenPlacement;
   showHeader: boolean;
@@ -194,6 +241,33 @@ export function statusWidgetLayout(input: {
       truncated: fitted.truncated,
     };
   });
+  // Streams take the rows the sources leave free, in the sources' order;
+  // the line spans the name and age columns at the smallest size.
+  const streams: Record<string, StatusStreamRow[]> = {};
+  let spare = more > 0 ? 0 : status.rowCapacity - shown;
+  const fit = {
+    width:
+      status.columns.name +
+      (status.columns.age > 0 ? status.columns.age + status.columns.gap : 0),
+    size: status.sizes.age,
+  };
+  for (const item of input.items.slice(0, shown)) {
+    for (const stream of input.streams?.[item.connectionId] ?? []) {
+      if (spare <= 0) break;
+      const text = statusStreamText(
+        stream,
+        { locale: input.locale, now: input.now },
+        fit,
+      );
+      if (text === null) continue;
+      (streams[item.connectionId] ??= []).push({
+        key: stream.freshness.stream,
+        text,
+        overdue: stream.overdue,
+      });
+      spare -= 1;
+    }
+  }
   const hidden = input.items.slice(shown);
   const worst = hidden
     .map((item) => statusTone(item.status))
@@ -208,6 +282,7 @@ export function statusWidgetLayout(input: {
     label: labelLayout(input.label, box.width, sizes),
     status,
     rows,
+    streams,
     more:
       more > 0
         ? {

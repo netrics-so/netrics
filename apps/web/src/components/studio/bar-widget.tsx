@@ -1,6 +1,6 @@
 "use client";
 
-import type { DeviceTileStatus } from "@netrics/contracts";
+import type { DeviceTileStatus, WidgetFreshness } from "@netrics/contracts";
 import { othersLabel, type StudioPlacement } from "@netrics/domain";
 
 import { displayUnit, formatValue } from "@/lib/format-metric";
@@ -28,6 +28,7 @@ import {
   dataSurfaceOf,
   statusClass,
   useFooterCandidates,
+  useFreshnessNotice,
 } from "./widget-parts";
 
 export interface BarReading {
@@ -47,6 +48,8 @@ export interface BarWidgetViewProps {
   source?: string | null;
   /** The data's last successful sync, for the footer; null: unknown. */
   updatedAt?: string | null;
+  /** How far the numbers reach (ADR 0025); absent: the updatedAt footer. */
+  freshness?: WidgetFreshness | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -59,11 +62,17 @@ export interface BarWidgetViewProps {
  * to the minimum before anything is cut; when the bars do not fit, the
  * smallest groups join "Others".
  */
-export function BarWidgetView(props: BarWidgetViewProps) {
+export function BarWidgetView(input: BarWidgetViewProps) {
+  const props = useFreshnessNotice(input);
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
-  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  const candidates = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const { layout, footer } = chartWidgetLayoutWithFooter(
     {
       type: "bar",
@@ -91,6 +100,7 @@ export function BarWidgetView(props: BarWidgetViewProps) {
         small={layout.sizes.small}
         source={props.source}
         updatedAt={props.updatedAt}
+        freshness={props.freshness}
         placement={props.placement}
         showHeader={props.showHeader}
         fontScale={props.fontScale}
