@@ -93,6 +93,7 @@ import {
 } from "@netrics/domain";
 
 import { resolveThemeTokens } from "../themes/service.js";
+import { lockModelsForMappings } from "../data/service.js";
 import { compareBindingProblem } from "./compare-measure.js";
 import { presentSummaries } from "./summaries.js";
 import { copyLayouts, rebaseSlides, resolveSlideLayouts } from "./layouts.js";
@@ -1125,6 +1126,11 @@ const IMAGE_REFERENCE_KEYS = [
 
 /** A foreign key violation on one of the image references. */
 function isImageReferenceError(error: unknown): boolean {
+  return isReferenceError(error, IMAGE_REFERENCE_KEYS);
+}
+
+/** A foreign key violation on one of `keys`. */
+function isReferenceError(error: unknown, keys: readonly string[]): boolean {
   if (!hasSqlstate(error, "23503")) {
     return false;
   }
@@ -1133,9 +1139,8 @@ function isImageReferenceError(error: unknown): boolean {
     const constraint = (current as { constraint_name?: unknown })
       .constraint_name;
     if (
-      (typeof constraint === "string" &&
-        IMAGE_REFERENCE_KEYS.includes(constraint)) ||
-      IMAGE_REFERENCE_KEYS.some(
+      (typeof constraint === "string" && keys.includes(constraint)) ||
+      keys.some(
         (key) => current instanceof Error && current.message.includes(key),
       )
     ) {
@@ -1226,6 +1231,10 @@ async function validateDataBindings(
     const ids = new Set(filters.map((filter) => filter.id));
     if (ids.size !== filters.length)
       return fail(400, "dashboard_filter_ids_not_unique");
+    // Mappings name models without a foreign key: a model delete runs
+    // entirely before or after these checks (#671).
+    if (filters.some((filter) => filter.mappings.length))
+      await lockModelsForMappings(tx);
     const storedFilters = new Map(
       (stored ? dashboardDataFiltersSchema.parse(stored.dataFilters) : []).map(
         (filter) => [filter.id, filter],
@@ -1700,6 +1709,11 @@ export function createDashboardService(deps: {
     } catch (error) {
       if (isImageReferenceError(error)) {
         return fail<DashboardView>(400, "image_not_found");
+      }
+      // A model deleted while the save ran (#671): its widgets cannot be
+      // kept; the next save reads the model as gone.
+      if (isReferenceError(error, ["dashboard_widgets_model_fk"])) {
+        return fail<DashboardView>(409, "dashboard_model_deleted");
       }
       throw error;
     }

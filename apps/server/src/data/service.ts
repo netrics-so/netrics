@@ -68,6 +68,7 @@ import {
   withSessionAdvisoryLock,
   type Database,
   type ProjectFilter,
+  type TableLocks,
   type Transaction,
 } from "@netrics/database";
 import {
@@ -87,6 +88,31 @@ export class DataServiceError extends Error {
     super(code);
     this.name = "DataServiceError";
   }
+}
+/**
+ * Deleting a model (#671) waits for every transaction writing data_models,
+ * and holds off new ones, before its snapshot. A dashboard save takes ROW
+ * EXCLUSIVE on data_models before it checks shared-filter mappings
+ * (lockModelsForMappings), which have no foreign key: so the delete's
+ * check sees every mapping saved before it, and a save after it finds the
+ * model gone. A row lock alone would not do: a serializable delete whose
+ * snapshot predates the save's commit would still read the dashboards
+ * without the new mapping. Past the timeout the delete answers 409
+ * version_conflict.
+ */
+export const MODEL_DELETE_LOCK = {
+  tables: [schema.dataModels],
+  mode: "share row exclusive",
+  timeoutMs: 5_000,
+} satisfies TableLocks;
+/**
+ * Takes ROW EXCLUSIVE on data_models, the lock every model write takes, so
+ * a concurrent model delete (MODEL_DELETE_LOCK) runs entirely before or
+ * after the caller's mapping checks. Read committed callers only: their
+ * next statements see a delete that committed while they waited.
+ */
+export async function lockModelsForMappings(tx: Transaction) {
+  await tx.execute(sql`lock table ${schema.dataModels} in row exclusive mode`);
 }
 /** A preparation or model to delete is still used (409 data_in_use, #671). */
 export class DataInUseError extends DataServiceError {
@@ -1161,6 +1187,8 @@ export function createDataService(
     fn: (tx: Transaction, now: Date) => Promise<T>,
     handle: Pick<Database, "transaction"> = db,
     isolationLevel: "serializable" | "read committed" = "serializable",
+    /** Table locks taken before the snapshot (withWorkspace lockTables). */
+    lockTables?: TableLocks,
   ): Promise<T> => {
     if (
       batch &&
@@ -1215,7 +1243,7 @@ export function createDataService(
               );
               return fn(tx, clock());
             },
-            { isolationLevel },
+            { isolationLevel, ...(lockTables ? { lockTables } : {}) },
           ),
         isTransactionHandle(handle) ? { attempts: 1 } : {},
       );
@@ -1235,6 +1263,8 @@ export function createDataService(
       if (error instanceof DatasetStoreError)
         fail(error.code, datasetStoreStatus(error.code));
       if (hasSqlstate(error, "23505")) fail("version_conflict", 409);
+      // A table lock not granted in time (lockTables): busy, try again.
+      if (hasSqlstate(error, "55P03")) fail("version_conflict", 409);
       return fail("data_storage_failed", 503);
     }
   };
@@ -1570,9 +1600,10 @@ export function createDataService(
    * The store-template installs `id` belongs to (#671): a record of the
    * install that is not detached, of an install whose dashboard still
    * exists, or a draft of the install's open update. An install whose
-   * dashboard was deleted shows nothing any more, and its updates skip
-   * records deleted since; without that exception a template item could
-   * never be deleted, as installs are never removed.
+   * dashboard was deleted shows nothing any more, and its next update
+   * builds a record deleted since anew where the template still builds it
+   * (store-template-updates.ts, computePlan); without that exception a
+   * template item could never be deleted, as installs are never removed.
    */
   const templateUsers = async (
     tx: Transaction,
@@ -1672,89 +1703,95 @@ export function createDataService(
     kind: "preparation" | "model",
     id: string,
   ) =>
-    run(actor, async (tx) => {
-      const row =
-        kind === "preparation"
-          ? await findPreparation(tx, actor.workspaceId, id, true)
-          : await findDataModel(tx, actor.workspaceId, id, true);
-      // Widgets the impact graph cannot read (a binding that no longer
-      // parses) still hold the model's foreign key.
-      const unreadable =
-        kind === "model"
-          ? await tx
-              .select({ dashboardId: schema.dashboardWidgets.dashboardId })
-              .from(schema.dashboardWidgets)
+    run(
+      actor,
+      async (tx) => {
+        const row =
+          kind === "preparation"
+            ? await findPreparation(tx, actor.workspaceId, id, true)
+            : await findDataModel(tx, actor.workspaceId, id, true);
+        // Widgets the impact graph cannot read (a binding that no longer
+        // parses) still hold the model's foreign key.
+        const unreadable =
+          kind === "model"
+            ? await tx
+                .select({ dashboardId: schema.dashboardWidgets.dashboardId })
+                .from(schema.dashboardWidgets)
+                .where(
+                  and(
+                    eq(schema.dashboardWidgets.workspaceId, actor.workspaceId),
+                    eq(schema.dashboardWidgets.modelId, id),
+                  ),
+                )
+            : [];
+        const users = collectDataUsers(
+          await loadImpactGraph(tx, actor.workspaceId),
+          { kind, id },
+          unreadable.map((widget) => widget.dashboardId),
+        );
+        const storeTemplates = await templateUsers(
+          tx,
+          actor.workspaceId,
+          kind,
+          id,
+        );
+        if (
+          users.preparations.length ||
+          users.models.length ||
+          users.dashboards.length ||
+          storeTemplates.length
+        ) {
+          const data = can(actor.role, "data:edit"),
+            dashboards = can(actor.role, "dashboards:view");
+          throw new DataInUseError({
+            preparations: data ? users.preparations : [],
+            models: data ? users.models : [],
+            dashboards: dashboards ? users.dashboards : [],
+            storeTemplates: dashboards ? storeTemplates : [],
+            hidden: {
+              preparations: data ? 0 : users.preparations.length,
+              models: data ? 0 : users.models.length,
+              dashboards: dashboards
+                ? 0
+                : users.dashboards.length + storeTemplates.length,
+            },
+          });
+        }
+        if (kind === "preparation") preparationChanged(id);
+        try {
+          if (kind === "preparation")
+            await tx
+              .delete(schema.dataPreparations)
               .where(
                 and(
-                  eq(schema.dashboardWidgets.workspaceId, actor.workspaceId),
-                  eq(schema.dashboardWidgets.modelId, id),
+                  eq(schema.dataPreparations.workspaceId, actor.workspaceId),
+                  eq(schema.dataPreparations.id, id),
                 ),
-              )
-          : [];
-      const users = collectDataUsers(
-        await loadImpactGraph(tx, actor.workspaceId),
-        { kind, id },
-        unreadable.map((widget) => widget.dashboardId),
-      );
-      const storeTemplates = await templateUsers(
-        tx,
-        actor.workspaceId,
-        kind,
-        id,
-      );
-      if (
-        users.preparations.length ||
-        users.models.length ||
-        users.dashboards.length ||
-        storeTemplates.length
-      ) {
-        const data = can(actor.role, "data:edit"),
-          dashboards = can(actor.role, "dashboards:view");
-        throw new DataInUseError({
-          preparations: data ? users.preparations : [],
-          models: data ? users.models : [],
-          dashboards: dashboards ? users.dashboards : [],
-          storeTemplates: dashboards ? storeTemplates : [],
-          hidden: {
-            preparations: data ? 0 : users.preparations.length,
-            models: data ? 0 : users.models.length,
-            dashboards: dashboards
-              ? 0
-              : users.dashboards.length + storeTemplates.length,
-          },
+              );
+          else
+            await tx
+              .delete(schema.dataModels)
+              .where(
+                and(
+                  eq(schema.dataModels.workspaceId, actor.workspaceId),
+                  eq(schema.dataModels.id, id),
+                ),
+              );
+        } catch (error) {
+          // A widget saved concurrently holds the model's foreign key: a
+          // conflict, and the next try names it.
+          if (hasSqlstate(error, "23503")) fail("version_conflict", 409);
+          throw error;
+        }
+        await audit(tx, actor, `data.${kind}_deleted`, id, {
+          name: row.name,
+          publishedVersion: row.publishedVersion,
         });
-      }
-      if (kind === "preparation") preparationChanged(id);
-      try {
-        if (kind === "preparation")
-          await tx
-            .delete(schema.dataPreparations)
-            .where(
-              and(
-                eq(schema.dataPreparations.workspaceId, actor.workspaceId),
-                eq(schema.dataPreparations.id, id),
-              ),
-            );
-        else
-          await tx
-            .delete(schema.dataModels)
-            .where(
-              and(
-                eq(schema.dataModels.workspaceId, actor.workspaceId),
-                eq(schema.dataModels.id, id),
-              ),
-            );
-      } catch (error) {
-        // A widget saved concurrently holds the model's foreign key: a
-        // conflict, and the next try names it.
-        if (hasSqlstate(error, "23503")) fail("version_conflict", 409);
-        throw error;
-      }
-      await audit(tx, actor, `data.${kind}_deleted`, id, {
-        name: row.name,
-        publishedVersion: row.publishedVersion,
-      });
-    });
+      },
+      db,
+      "serializable",
+      kind === "model" ? MODEL_DELETE_LOCK : undefined,
+    );
   return {
     listSources,
     setProject,

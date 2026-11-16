@@ -33,6 +33,9 @@ export const dataEn = {
       cancel: "Cancel",
       deleting: "Deleting…",
       deleted: "“{name}” was deleted.",
+      alreadyDeleted: "“{name}” had already been deleted.",
+      forbidden:
+        "Only workspace owners and admins can delete preparations and models.",
       inUse:
         "“{name}” is still used, so it can’t be deleted. Remove it from these first:",
       preparation: "Preparation “{name}”",

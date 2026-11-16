@@ -199,7 +199,7 @@ export function DataWorkspace({
   const confirmation = useConfirmation();
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteResult, setDeleteResult] = useState<
-    | { kind: "deleted"; name: string }
+    | { kind: "deleted" | "alreadyDeleted"; name: string }
     | { kind: "inUse"; name: string; usedBy: DataUsers }
     | { kind: "failed"; message: string }
     | null
@@ -223,12 +223,10 @@ export function DataWorkspace({
     if (!confirmed) return;
     setDeleting(id);
     setDeleteResult(null);
-    try {
-      await deleteDataItem(
-        workspaceId,
-        kind === "preparation" ? "preparations" : "models",
-        id,
-      );
+    const gone = (result: {
+      kind: "deleted" | "alreadyDeleted";
+      name: string;
+    }) => {
       setData((value) => ({
         ...value,
         preparations: value.preparations.filter((p) => p.id !== id),
@@ -238,16 +236,33 @@ export function DataWorkspace({
         setDirty(false);
         setEditor(null);
       }
-      setDeleteResult({ kind: "deleted", name });
+      setDeleteResult(result);
       void refresh();
-    } catch (failure) {
-      setDeleteResult(
-        failure instanceof ApiError &&
-          failure.code === "data_in_use" &&
-          failure.details.usedBy
-          ? { kind: "inUse", name, usedBy: failure.details.usedBy }
-          : { kind: "failed", message: t(`errors.${dataErrorKey(failure)}`) },
+    };
+    try {
+      await deleteDataItem(
+        workspaceId,
+        kind === "preparation" ? "preparations" : "models",
+        id,
       );
+      gone({ kind: "deleted", name });
+    } catch (failure) {
+      const outcome = deleteFailure(failure);
+      if (outcome.kind === "gone")
+        // Deleted already (another tab, another member): gone all the same.
+        gone({ kind: "alreadyDeleted", name });
+      else
+        setDeleteResult(
+          outcome.kind === "inUse"
+            ? { kind: "inUse", name, usedBy: outcome.usedBy }
+            : {
+                kind: "failed",
+                message:
+                  outcome.kind === "forbidden"
+                    ? t("delete.forbidden")
+                    : t(`errors.${dataErrorKey(failure)}`),
+              },
+        );
     } finally {
       setDeleting(null);
     }
@@ -451,9 +466,10 @@ export function DataWorkspace({
         );
       })}
       {confirmation.dialog}
-      {deleteResult?.kind === "deleted" ? (
+      {deleteResult?.kind === "deleted" ||
+      deleteResult?.kind === "alreadyDeleted" ? (
         <p className="notice" role="status">
-          {t("delete.deleted", { name: deleteResult.name })}
+          {t(`delete.${deleteResult.kind}`, { name: deleteResult.name })}
         </p>
       ) : deleteResult?.kind === "failed" ? (
         <p className="error" role="alert">
@@ -884,4 +900,20 @@ export function DataInUseNotice({
       </ul>
     </section>
   );
+}
+
+/** What a refused delete means for the page (#671). */
+export function deleteFailure(
+  failure: unknown,
+):
+  | { kind: "gone" }
+  | { kind: "inUse"; usedBy: DataUsers }
+  | { kind: "forbidden" }
+  | { kind: "other" } {
+  if (!(failure instanceof ApiError)) return { kind: "other" };
+  if (failure.status === 404) return { kind: "gone" };
+  if (failure.status === 403) return { kind: "forbidden" };
+  if (failure.code === "data_in_use" && failure.details.usedBy)
+    return { kind: "inUse", usedBy: failure.details.usedBy };
+  return { kind: "other" };
 }

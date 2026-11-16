@@ -429,7 +429,7 @@ describe("deleting preparations and models", () => {
     expect(users.dashboards).toEqual([{ id: board, name: "Store portfolio" }]);
 
     // The dashboard deleted: the install shows nothing any more, so its
-    // model can go (template updates skip records deleted since).
+    // model can go (a later template update builds it anew).
     expect(
       (await call("DELETE", `/dashboards/${board}`, owner)).statusCode,
     ).toBe(204);
@@ -523,5 +523,118 @@ describe("deleting preparations and models", () => {
     expect(
       (await call("DELETE", "/data/models/not-a-uuid", owner)).statusCode,
     ).toBe(404);
+  });
+});
+
+const filterBody = (name: string, modelId: string) => ({
+  name,
+  settings: {
+    dataFilters: [
+      {
+        id: "label",
+        name: "Label",
+        type: "string",
+        mode: "values",
+        defaultValue: null,
+        mappings: [{ modelId, dimensionId: "label" }],
+      },
+    ],
+  },
+  slides: [{ widgets: [] }],
+});
+const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
+/**
+ * A raw transaction (as the owner, standing in for a concurrent request):
+ * `before` runs, then `meanwhile` starts; 300 ms later `after` runs and the
+ * transaction commits. Answers what `meanwhile` answered.
+ */
+async function whileHolding<T>(
+  before: (sql: postgres.TransactionSql) => Promise<unknown>,
+  meanwhile: () => Promise<T>,
+  after: (sql: postgres.TransactionSql) => Promise<unknown> = async () => {},
+): Promise<T> {
+  let result!: Promise<T>;
+  await admin.begin(async (sql) => {
+    await before(sql);
+    result = meanwhile();
+    await pause(300);
+    await after(sql);
+  });
+  return result;
+}
+
+describe("a model delete racing a dashboard save (#671)", () => {
+  it("waits for a save in flight and then names the mapping it wrote", async () => {
+    const m = await model(owner, "Raced", await source(owner));
+    const other = await model(owner, "Placeholder", await source(owner));
+    const saved = await call(
+      "POST",
+      "/dashboards",
+      owner,
+      filterBody("Late board", other),
+    );
+    expect(saved.statusCode, saved.body).toBe(200);
+    const board = saved.json().dashboard.id as string;
+    // The save holds the lock it takes before checking mappings, and
+    // writes the mapping after the delete started.
+    const deleted = await whileHolding(
+      (sql) => sql`lock table data_models in row exclusive mode`,
+      () => call("DELETE", `/data/models/${m}`, owner),
+      (sql) => sql`update dashboards
+        set data_filters = replace(data_filters::text, ${other}, ${m})::jsonb
+        where id = ${board}`,
+    );
+    expect(inUse(deleted).dashboards).toEqual([
+      { id: board, name: "Late board" },
+    ]);
+    expect(await count("data_models", "id", m)).toBe(1);
+  });
+
+  it("makes a save wait for a delete in flight, then refuses the mapping", async () => {
+    const m = await model(owner, "Going", await source(owner));
+    const saved = await whileHolding(
+      async (sql) => {
+        await sql`lock table data_models in share row exclusive mode`;
+        await sql`delete from data_models where id = ${m}`;
+      },
+      () => call("POST", "/dashboards", owner, filterBody("Too late", m)),
+    );
+    expect(saved.statusCode, saved.body).toBe(400);
+    expect(saved.json().error).toBe("data_model_not_published");
+  });
+
+  it("answers 409 when a widget's model is deleted while the save runs", async () => {
+    const m = await model(owner, "Vanishing", await source(owner));
+    // The delete is not committed yet when the save checks the model; the
+    // widget's foreign key then refuses the save.
+    const saved = await whileHolding(
+      (sql) => sql`delete from data_models where id = ${m}`,
+      () =>
+        call("POST", "/dashboards", owner, {
+          name: "Orphan",
+          slides: [
+            {
+              widgets: [
+                {
+                  type: "measure",
+                  x: 0,
+                  y: 0,
+                  w: 6,
+                  h: 3,
+                  binding: {
+                    modelId: m,
+                    measureIds: ["spend"],
+                    groupBy: [],
+                    exclusions: [],
+                  },
+                  options: { view: "value", limit: 20 },
+                },
+              ],
+            },
+          ],
+        }),
+    );
+    expect(saved.statusCode, saved.body).toBe(409);
+    expect(saved.json().error).toBe("dashboard_model_deleted");
   });
 });

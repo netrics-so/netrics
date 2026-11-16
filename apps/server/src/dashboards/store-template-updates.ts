@@ -271,7 +271,11 @@ interface ComputedPlan {
   classifyOptions: ClassifyOptions;
   /** Scope change: detached keys the new scope builds again, by state. */
   reattached: string[];
-  /** Same, but their record was deleted since: built anew. */
+  /**
+   * Preparation and model keys whose record was deleted since (#671), live
+   * or detached: dropped from the install, and built anew where the
+   * template builds them.
+   */
   replaced: string[];
 }
 
@@ -458,44 +462,47 @@ export function createStoreTemplateUpdateService(deps: {
     });
     const reattached: string[] = [],
       replaced: string[] = [];
+    // Preparations and models deleted since (#671), tracked or detached:
+    // their keys are built anew where the template builds them, so nothing
+    // the update writes reads a record that no longer exists.
+    const exists = new Set<string>();
+    for (const [table, kind] of [
+      [schema.dataPreparations, "preparation"],
+      [schema.dataModels, "model"],
+    ] as const) {
+      const ids = rows
+        .filter((row) => row.kind === kind)
+        .map((row) => row.recordId);
+      if (ids.length)
+        for (const found of await tx
+          .select({ id: table.id })
+          .from(table)
+          .where(
+            and(eq(table.workspaceId, workspaceId), inArray(table.id, ids)),
+          ))
+          exists.add(found.id);
+    }
+    const deleted = (row: RecordRow) =>
+      (row.kind === "preparation" || row.kind === "model") &&
+      !exists.has(row.recordId);
     if (scope) {
       // A connection added back: the records detached when it was removed
-      // are the install's again, as the customer left them; one deleted
-      // since is built anew.
+      // are the install's again, as the customer left them.
       const keys = new Set(template.keys(inputs));
-      const back = rows.filter(
-        (row) =>
+      for (const row of rows)
+        if (
           row.detachedAt !== null &&
           keys.has(row.key) &&
-          (row.kind === "preparation" || row.kind === "model"),
-      );
-      const exists = new Set<string>();
-      for (const [table, kind] of [
-        [schema.dataPreparations, "preparation"],
-        [schema.dataModels, "model"],
-      ] as const) {
-        const ids = back
-          .filter((row) => row.kind === kind)
-          .map((row) => row.recordId);
-        if (ids.length)
-          for (const found of await tx
-            .select({ id: table.id })
-            .from(table)
-            .where(
-              and(eq(table.workspaceId, workspaceId), inArray(table.id, ids)),
-            ))
-            exists.add(found.id);
-      }
-      for (const row of back)
-        (exists.has(row.recordId) ? reattached : replaced).push(row.key);
-      rows = rows.flatMap((row) =>
-        !back.includes(row)
-          ? [row]
-          : exists.has(row.recordId)
-            ? [{ ...row, detachedAt: null }]
-            : [],
+          (row.kind === "preparation" || row.kind === "model") &&
+          !deleted(row)
+        )
+          reattached.push(row.key);
+      rows = rows.map((row) =>
+        reattached.includes(row.key) ? { ...row, detachedAt: null } : row,
       );
     }
+    for (const row of rows) if (deleted(row)) replaced.push(row.key);
+    rows = rows.filter((row) => !deleted(row));
     const live = rows.filter(
       (row) => row.detachedAt === null && row.kind !== "dataset",
     );

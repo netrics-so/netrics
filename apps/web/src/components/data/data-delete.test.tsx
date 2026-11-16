@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderI18n } from "@/lib/i18n/test-render";
 import { ApiError } from "@/lib/api";
 import { deleteDataItem } from "@/lib/data-api";
-import { DataInUseNotice, DataWorkspace } from "./data-workspace";
+import {
+  DataInUseNotice,
+  DataWorkspace,
+  deleteFailure,
+} from "./data-workspace";
 
 // Deleting preparations and models (#671).
 
@@ -147,5 +151,37 @@ describe("deleteDataItem", () => {
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).code).toBe("data_in_use");
     expect((failure as ApiError).details.usedBy).toEqual(usedBy);
+  });
+});
+
+describe("a refused delete", () => {
+  it("reads 404 as already gone, 403 as not allowed, 409 with its users", () => {
+    expect(deleteFailure(new ApiError(404, "data_model_not_found"))).toEqual({
+      kind: "gone",
+    });
+    expect(deleteFailure(new ApiError(403, "forbidden"))).toEqual({
+      kind: "forbidden",
+    });
+    const usedBy = {
+      preparations: [],
+      models: [],
+      dashboards: [{ id: BOARD, name: "Sales" }],
+      storeTemplates: [],
+      hidden: { preparations: 0, models: 0, dashboards: 0 },
+    };
+    expect(deleteFailure(new ApiError(409, "data_in_use", { usedBy }))).toEqual(
+      { kind: "inUse", usedBy },
+    );
+    expect(deleteFailure(new ApiError(409, "version_conflict"))).toEqual({
+      kind: "other",
+    });
+    expect(deleteFailure(new TypeError("offline"))).toEqual({ kind: "other" });
+  });
+
+  it("says who may delete, in en and de", async () => {
+    const { dataEn } = await import("@/messages/data/en");
+    const { dataDe } = await import("@/messages/data/de");
+    expect(dataEn.data.delete.forbidden).toContain("owners and admins");
+    expect(dataDe.data.delete.forbidden).toContain("Inhaber und Admins");
   });
 });

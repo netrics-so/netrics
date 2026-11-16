@@ -186,6 +186,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Wähl eine Währung für diesen Betrag: Beträge in verschiedenen Währungen werden nicht addiert.",
     metric_not_per_currency:
       "Diese Metrik ist kein Betrag in mehreren Währungen.",
+    dashboard_model_deleted:
+      "Ein Widget nutzt ein Modell, das inzwischen gelöscht wurde. Entferne das Widget oder verknüpfe es mit einem anderen Modell und speichere dann erneut.",
     compare_measure_model_not_found:
       "Ein Vergleichs-Widget nutzt ein Modell, das es in diesem Workspace nicht gibt. Nutze wieder seine Metriken.",
     compare_measure_not_found:
