@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  compareMeasureReadingSchema,
   dashboardWidgetDataSchema,
+  deviceStatusDataSchema,
+  deviceStatusStreamSchema,
+  goalReadResponseSchema,
+  metricBreakdownResponseSchema,
+  metricQueryResponseSchema,
   deviceMetricDataSchema,
   deviceReviewDataSchema,
   latestReviewResponseSchema,
@@ -104,5 +110,54 @@ describe("widget freshness", () => {
     expect(ok({ dataThrough: "2026-11-14T00:00:00Z" })).toBe(false);
     expect(ok({ nextExpectedAt: "21:00" })).toBe(false);
     expect(ok({ kind: "weekly" })).toBe(false);
+  });
+});
+
+// Signed-in live queries and the status board (#727): additive optional
+// fields only.
+describe("live query and status board freshness", () => {
+  it("is optional on metric queries, breakdowns and goal reads", () => {
+    for (const schema of [
+      metricQueryResponseSchema,
+      metricBreakdownResponseSchema,
+      goalReadResponseSchema,
+    ]) {
+      expect(schema.shape.freshness.safeParse(undefined).success).toBe(true);
+      expect(schema.shape.status.safeParse(undefined).success).toBe(true);
+      expect(schema.shape.freshness.parse(periodic)).toEqual(periodic);
+      // Only the overdue rule's "stale" is sent; never "ok".
+      expect(schema.shape.status.safeParse("stale").success).toBe(true);
+      expect(schema.shape.status.safeParse("ok").success).toBe(false);
+    }
+    expect(
+      compareMeasureReadingSchema.shape.freshness.safeParse(undefined).success,
+    ).toBe(true);
+  });
+
+  it("lists a source's streams on the status board", () => {
+    const item = {
+      connectionId: "11111111-1111-4111-8111-111111111111",
+      name: "Apps",
+      status: "ok",
+      lastSuccessAt: null,
+    } as const;
+    const data = { status: "ok", items: [item] } as const;
+    expect(deviceStatusDataSchema.parse(data).items[0]).not.toHaveProperty(
+      "streams",
+    );
+    const stream = { key: "sales", ...periodic, overdue: true } as const;
+    expect(
+      deviceStatusDataSchema.parse({
+        ...data,
+        items: [{ ...item, streams: [stream] }],
+      }).items[0]!.streams,
+    ).toEqual([stream]);
+    // Without next times (credentials failed): still a stream.
+    const { nextExpectedAt: _n, nextCheckAt: _c, ...skipped } = stream;
+    expect(deviceStatusStreamSchema.safeParse(skipped).success).toBe(true);
+    expect(deviceStatusStreamSchema.safeParse(periodic).success).toBe(false);
+    expect(
+      deviceStatusStreamSchema.safeParse({ ...stream, overdue: false }).success,
+    ).toBe(false);
   });
 });

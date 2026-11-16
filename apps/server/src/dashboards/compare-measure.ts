@@ -332,7 +332,7 @@ export async function readCompareMeasure(
     policy?: DataPolicy;
     locale?: "en" | "de";
     sources?: CompareSourceContext;
-    /** Reads the model's sources' freshness (ADR 0025): device payloads. */
+    /** Reads the model's sources' freshness (ADR 0025): screens and browsers. */
     freshness?: FreshnessReader;
   } = {},
 ): Promise<CompareMeasureReading & { freshness?: WidgetFreshness }> {

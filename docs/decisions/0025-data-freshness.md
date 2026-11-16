@@ -337,6 +337,19 @@ time ("10 min ago") themselves from the instants, as they do with
 `updatedAt`. `updatedAt` stays as it is for clients that do not know
 `freshness`.
 
+The signed-in live queries (#727) carry the same object: the metric
+query and the breakdown (metric, line, bar, table and unbound compare
+widgets), a goal read (gauges) and the bound compare reading. The query's
+`resource` filter, which browsers set from the slide scope, picks the
+rows as on screens. These responses have no data status of their own, so
+an overdue row adds `status: "stale"` instead. A status board item
+(device schemas 2 and 3) lists `streams`: per stream with stored rows,
+this object over every selected resource's rows plus the stream `key` and
+`overdue: true` when a row used is overdue. A connection whose credentials
+failed or need reauthorization is not scheduled, so its streams carry no
+`nextExpectedAt` or `nextCheckAt`. The connection page's `freshness[]`
+lists the same rows (selected resources and the connection entry).
+
 ### 8. On screen
 
 The freshness line replaces the "updated … · Source" footer candidates
