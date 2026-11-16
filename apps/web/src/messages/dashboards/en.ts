@@ -110,6 +110,10 @@ export const dashboardsEn = {
     identityEmpty: "No apps yet. They appear once a connection has synced.",
     useIcon: "Use app icon",
     iconLoading: "Getting icon…",
+    iconsMissing:
+      "{count, plural, one {# app icon could not be loaded.} other {# app icons could not be loaded.}}",
+    iconsRetry: "Retry",
+    iconsRetrying: "Loading icons…",
     pricing: "Paid or free",
     pricingAutoPaid: "Automatic (now paid: proceeds in the last 90 days)",
     pricingAutoFree: "Automatic (now free: no proceeds in the last 90 days)",

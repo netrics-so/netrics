@@ -13,6 +13,7 @@ import {
   dashboardTemplateOptionsResponseSchema,
   errorResponseSchema,
   imageResponseSchema,
+  storeTemplateProductsSchema,
   resourceIconListResponseSchema,
   workspaceResponseSchema,
   type Dashboard,
@@ -319,7 +320,7 @@ function expectError(response: InjectResponse, status: number, error: string) {
   expect(errorResponseSchema.parse(response.json()).error).toBe(error);
 }
 
-async function runSync(id: string) {
+async function runSync(id: string, workspace = workspaceId) {
   const handlers = createJobHandlers({
     registry: registry(),
     credentialKeyring: KEYRING,
@@ -330,7 +331,7 @@ async function runSync(id: string) {
     job: {
       id: randomUUID(),
       kind: "connection.sync",
-      workspaceId,
+      workspaceId: workspace,
       connectionId: id,
       payload: {},
       runAt: new Date(),
@@ -864,5 +865,124 @@ describe("dashboard templates", () => {
         "Overview",
       );
     });
+  });
+});
+
+describe("app slide icons that could not be fetched (#740)", () => {
+  let storeWorkspaceId: string;
+  let storeConnectionId: string;
+  const requestId = randomUUID();
+  const productsPath = `/dashboard-templates/stores/installs/${requestId}/products`;
+  const productsOf = (response: InjectResponse) => {
+    expect(response.statusCode, response.body).toBe(200);
+    return storeTemplateProductsSchema.parse(response.json()).products;
+  };
+  const iconOf = (products: ReturnType<typeof productsOf>, appId: string) =>
+    products.find((product) => product.apps.some((app) => app.appId === appId))!
+      .icon;
+
+  beforeAll(async () => {
+    storeWorkspaceId = await newWorkspace(owner, "App portfolio");
+    const created = await call(
+      owner,
+      "POST",
+      "/connections",
+      {
+        connectorId: "app-store-connect",
+        name: "Portfolio team",
+        config: { vendorNumber: TEAM.vendorNumbers[0] },
+        credentials: {
+          issuerId: TEAM.issuerId,
+          keyId: TEAM.keyId,
+          privateKey: TEAM.key.privateKeyPem,
+        },
+      },
+      storeWorkspaceId,
+    );
+    expect(created.statusCode, created.body).toBe(200);
+    storeConnectionId = connectionResponseSchema.parse(created.json())
+      .connection.id;
+    await runSync(storeConnectionId, storeWorkspaceId);
+  });
+
+  it("logs a failed fetch without the provider's words, and retries it from the apps page", async () => {
+    const before = logs.length;
+    apple.failing = true;
+    try {
+      const installed = await call(
+        owner,
+        "POST",
+        "/dashboard-templates/stores",
+        {
+          requestId,
+          name: "App portfolio",
+          connections: [storeConnectionId],
+          groups: [],
+        },
+        storeWorkspaceId,
+      );
+      expect(installed.statusCode, installed.body).toBe(200);
+    } finally {
+      apple.failing = false;
+    }
+    // One structured warning per connection: its id, how many icons were
+    // asked for and the error's class; nothing Apple answered.
+    const warnings = logs
+      .slice(before)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.msg === "resource icons could not be fetched");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      level: 40,
+      connectionId: storeConnectionId,
+      count: 4,
+      errorClass: expect.stringMatching(/^[A-Za-z_]+$/),
+    });
+    const logged = logs.slice(before).join("\n");
+    expect(logged).not.toMatch(/lookup|answered|mzstatic|itunes/i);
+
+    // The apps page sees the apps without an icon that can be fetched.
+    const missing = productsOf(
+      await call(owner, "GET", productsPath, undefined, storeWorkspaceId),
+    );
+    expect(missing).toHaveLength(4);
+    expect(
+      missing.filter((product) => !product.icon && product.iconSource),
+    ).toHaveLength(4);
+
+    // Retry: the same validated fetch, for every app at once.
+    const retried = productsOf(
+      await call(
+        owner,
+        "POST",
+        `${productsPath}/icons`,
+        undefined,
+        storeWorkspaceId,
+      ),
+    );
+    expect(iconOf(retried, WURFEL)).not.toBeNull();
+    expect(iconOf(retried, PAPERSTAND)).not.toBeNull();
+    // Not on the App Store and no build the Sales key may read: none.
+    expect(iconOf(retried, UNRELEASED)).toBeNull();
+    // What the page reads afterwards is the same.
+    expect(
+      productsOf(
+        await call(owner, "GET", productsPath, undefined, storeWorkspaceId),
+      ),
+    ).toEqual(retried);
+  });
+
+  it("lets only editors retry", async () => {
+    expectError(
+      await call(
+        stranger,
+        "POST",
+        `${productsPath}/icons`,
+        undefined,
+        storeWorkspaceId,
+      ),
+      404,
+      "workspace_not_found",
+    );
   });
 });

@@ -31,7 +31,10 @@ import {
 } from "../data/service.js";
 import { presentImage } from "../images/service.js";
 import { deriveInstallCompletion } from "./store-template-legacy.js";
-import { STORE_SOURCE_DATASETS } from "./store-template-service.js";
+import {
+  STORE_SOURCE_DATASETS,
+  type StoreIconFetcher,
+} from "./store-template-service.js";
 import type { StoreAppIdentity, StoreConnectorId } from "./store-portfolio.js";
 
 /**
@@ -584,17 +587,35 @@ export function createStoreProductService(deps: {
   now?: () => Date;
   /** The deployment's data policy (NETRICS_DATA_POLICY). */
   policy?: DataPolicy;
+  /** Fetches missing app icons (the install's fetch); none: no fetch. */
+  fetchIcons?: StoreIconFetcher;
 }) {
   const now = deps.now ?? (() => new Date()),
     policy = deps.policy ?? DEFAULT_DATA_POLICY;
+  const read = (actor: Actor, requestId: string) =>
+    withWorkspace(
+      deps.db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      (tx) =>
+        readStoreProducts(tx, actor.workspaceId, requestId, now(), policy),
+    );
   return {
-    read(actor: Actor, requestId: string): Promise<StoreTemplateProducts> {
-      return withWorkspace(
-        deps.db,
-        { workspaceId: actor.workspaceId, userId: actor.callerId },
-        (tx) =>
-          readStoreProducts(tx, actor.workspaceId, requestId, now(), policy),
+    read,
+    /**
+     * Fetches the icons the products lack and can fetch (#740), the same
+     * validated fetch an install and an update run (best effort, failures
+     * logged there), outside a transaction; answers the products after.
+     */
+    async retryIcons(
+      actor: Actor,
+      requestId: string,
+    ): Promise<StoreTemplateProducts> {
+      const sources = missingIconSources(
+        (await read(actor, requestId)).products,
       );
+      if (sources.length && deps.fetchIcons)
+        await deps.fetchIcons(actor, sources);
+      return read(actor, requestId);
     },
     /**
      * Sets the listed products' pricing and website. A product back at the

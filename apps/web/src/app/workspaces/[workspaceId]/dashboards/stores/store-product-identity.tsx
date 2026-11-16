@@ -10,6 +10,7 @@ import {
   apiErrorMessage,
   fetchResourceIcon,
   getStoreTemplateProducts,
+  retryStoreTemplateIcons,
   saveStoreTemplateProducts,
 } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -146,10 +147,39 @@ export function StoreProductIdentity({
       setPending(null);
     }
   }
+  async function retryIcons() {
+    setPending("icons");
+    setError(null);
+    setNotice(null);
+    try {
+      setData(await retryStoreTemplateIcons(workspaceId, requestId));
+    } catch (cause) {
+      setError(apiErrorMessage(cause, locale));
+    } finally {
+      setPending(null);
+    }
+  }
+  // Apps without an icon although one can be fetched: the fetch at
+  // install or update failed (#740).
+  const iconsMissing = data.products.filter(
+    (product) => !product.icon && product.iconSource,
+  ).length;
   return (
     <section className="card stack store-product-identity">
       <h2>{t("identity")}</h2>
       <p className="muted">{t("identityHelp")}</p>
+      {iconsMissing ? (
+        <div className="actions">
+          <p className="help">{t("iconsMissing", { count: iconsMissing })}</p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void retryIcons()}
+          >
+            {pending === "icons" ? t("iconsRetrying") : t("iconsRetry")}
+          </button>
+        </div>
+      ) : null}
       {!data.products.length ? (
         <p className="muted">{t("identityEmpty")}</p>
       ) : null}

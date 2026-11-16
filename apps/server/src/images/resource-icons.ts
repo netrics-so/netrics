@@ -309,6 +309,29 @@ export interface ResourceIconServiceDeps {
     { ok: true; value: T } | { ok: false; status: 400 | 404; error: string }
   >;
   now?: () => Date;
+  /** Warnings of failed fetches (fetchMissing); pino-compatible. */
+  log?: IconLog;
+}
+
+/** Where fetchMissing reports a failure: structured, without data. */
+export interface IconLog {
+  warn(fields: Record<string, unknown>, message: string): void;
+}
+
+/**
+ * The class of a failed icon fetch for the log: the connector's error
+ * class (inside ResourceIconFetchError) or a setup problem's code, never
+ * a message, a body or a URL.
+ */
+export function iconErrorClass(error: unknown): string {
+  const inner = error instanceof ResourceIconFetchError ? error.cause : error;
+  const name =
+    typeof inner === "string"
+      ? inner
+      : inner instanceof Error
+        ? inner.name
+        : typeof inner;
+  return /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(name) ? name : "Error";
 }
 
 export function createResourceIconService(deps: ResourceIconServiceDeps) {
@@ -374,7 +397,8 @@ export function createResourceIconService(deps: ResourceIconServiceDeps) {
      * per connection (at most 50 resources each), through the same checks
      * as `use`. Best effort (#709): a resource that is not the
      * connection's, a provider failure or a full quota leaves it without
-     * an icon; nothing is thrown.
+     * an icon; nothing is thrown. A failure is logged as a warning with
+     * the connection, the number of icons and the error's class (#740).
      */
     async fetchMissing(
       actor: Actor,
@@ -387,6 +411,12 @@ export function createResourceIconService(deps: ResourceIconServiceDeps) {
           resource.resourceId,
         ]);
       for (const [connectionId, ids] of byConnection) {
+        const warn = (count: number, error: unknown) =>
+          deps.log?.warn(
+            { connectionId, count, errorClass: iconErrorClass(error) },
+            "resource icons could not be fetched",
+          );
+        let count = Math.min(new Set(ids).size, 50);
         try {
           const missing = await inWorkspace(actor, async (tx) => {
             const connection = await findConnection(
@@ -427,7 +457,8 @@ export function createResourceIconService(deps: ResourceIconServiceDeps) {
             }));
           });
           if (!missing.length) continue;
-          await deps.callConnection(
+          count = missing.length;
+          const called = await deps.callConnection(
             actor,
             connectionId,
             (connector, context, options) =>
@@ -441,10 +472,24 @@ export function createResourceIconService(deps: ResourceIconServiceDeps) {
                 resources: missing,
                 actorUserId: actor.callerId,
                 now: now(),
+                // An icon the image checks or the quota refused.
+                log: (reason) =>
+                  deps.log?.warn(
+                    {
+                      connectionId,
+                      count: 1,
+                      errorClass: "ResourceIconNotStored",
+                      reason,
+                    },
+                    "resource icons could not be fetched",
+                  ),
               }),
           );
-        } catch {
-          // The provider's error stays out of logs and answers: no icon.
+          // The connection cannot be called (its code, e.g. no credentials).
+          if (!called.ok) warn(count, called.error);
+        } catch (error) {
+          // The provider's words stay out of logs and answers: its class.
+          warn(count, error);
         }
       }
     },
