@@ -60,8 +60,6 @@ export const workspaceEn = {
     cannotCreateConnections:
       "Your role cannot create connections in this workspace.",
     projects: "Projects",
-    noProjects: "No projects yet.",
-    cannotCreateProjects: "Your role cannot create projects in this workspace.",
     viewerHint: {
       text: "You can view this workspace. To add sources, edit data or change dashboards, ask an owner or admin for editor access.",
       team: "Find them on the Team page.",
@@ -78,8 +76,6 @@ export const workspaceEn = {
       "{total, plural, =0 {No screens yet} one {# screen · {online} online} other {# screens · {online} online}}",
     sourceCount:
       "{count, plural, =0 {No sources yet} one {# source} other {# sources}}",
-    projectsHint:
-      "Projects group the apps and sites your connections report on.",
     home: {
       metaTitle: "Home · netrics",
       dashboards: "Dashboards",

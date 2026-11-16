@@ -145,6 +145,19 @@ describe("dashboards page (#304)", () => {
     expect(html).toContain("dashboards-template--overview");
   });
 
+  it("says when archived projects hide every dashboard (#640)", () => {
+    const html = render({ dashboards: [], hiddenInArchived: 1 });
+    expect(html).toContain("No dashboards yet");
+    expect(html).toContain("1 dashboard is in an archived project.");
+    expect(html).toContain(
+      `<a href="/workspaces/${WORKSPACE}/settings/projects">Manage projects</a>`,
+    );
+    expect(render({ dashboards: [], hiddenInArchived: 2 }, "de")).toContain(
+      "2 Dashboards liegen in archivierten Projekten.",
+    );
+    expect(render({ dashboards: [] })).not.toContain("archived project");
+  });
+
   it("has a friendly empty state", () => {
     const html = render({ dashboards: [] });
     expect(html).toContain("No dashboards yet");

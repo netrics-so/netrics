@@ -55,6 +55,7 @@ export function DashboardsBrowser({
   storeInstalls = [],
   archived = [],
   readOnlyNote = null,
+  hiddenInArchived = 0,
 }: {
   workspaceId: string;
   dashboards: DashboardCardData[];
@@ -72,6 +73,8 @@ export function DashboardsBrowser({
   projectId?: string | null;
   /** Its name, for the empty state; null under "All projects". */
   projectName?: string | null;
+  /** Dashboards hidden because their project is archived (#640). */
+  hiddenInArchived?: number;
   canCreate: boolean;
   canEdit: boolean;
   title: string;
@@ -215,6 +218,14 @@ export function DashboardsBrowser({
       ) : dashboards.length === 0 ? (
         <div className="dashboards-empty">
           <h2>{t("empty.title")}</h2>
+          {hiddenInArchived > 0 ? (
+            <p>
+              {t("empty.hiddenInArchived", { count: hiddenInArchived })}{" "}
+              <Link href={`/workspaces/${workspaceId}/settings/projects`}>
+                {t("projects.summary")}
+              </Link>
+            </p>
+          ) : null}
           <p>{canCreate ? t("empty.text") : t("empty.readOnly")}</p>
         </div>
       ) : (

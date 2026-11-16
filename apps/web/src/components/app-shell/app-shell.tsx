@@ -372,6 +372,12 @@ function ProjectSwitcher({
         ))}
       </select>
       {failed ? <ProjectSwitchError outcome={failed} /> : null}
+      <Link
+        href={workspacePath(workspaceId, "settings/projects")}
+        className="project-switcher-manage"
+      >
+        {t("manageProjects")}
+      </Link>
     </div>
   );
 }

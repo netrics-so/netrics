@@ -126,20 +126,19 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     empty: {
       title: "Noch keine Dashboards",
       text: "Starte oben mit einer Vorlage. Die Übersicht füllt sich mit den Zahlen deiner Quellen.",
+      hiddenInArchived:
+        "{count, plural, one {# Dashboard liegt in einem archivierten Projekt.} other {# Dashboards liegen in archivierten Projekten.}}",
       readOnly: "In diesem Workspace hat noch niemand ein Dashboard angelegt.",
     },
     emptyFilter: "In diesem Projekt gibt es noch keine Dashboards.",
     projects: {
       summary: "Projekte verwalten",
-      count:
-        "{count, plural, =0 {noch keine} one {# Projekt} other {# Projekte}}",
-      archive: "Archivieren",
-      unarchive: "Aus dem Archiv holen",
+      overview:
+        "Projekte: {active, plural, =0 {keine aktiven} other {# aktiv}}{archived, plural, =0 {} other { · # archiviert}}.",
       archived: "Archiviert",
-      archiveHint:
-        "Archivierte Projekte und ihre Inhalte sind in Listen und Auswahlen ausgeblendet. Bildschirme zeigen ihre Dashboards weiter an.",
-      archiveNamed: "{name} archivieren",
-      unarchiveNamed: "{name} aus dem Archiv holen",
+      saving: "Wird gespeichert …",
+      savedTo: "In {name} gespeichert",
+      savedNone: "Gespeichert: kein Projekt",
       project: "Projekt",
       noProject: "Kein Projekt",
     },
