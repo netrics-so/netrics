@@ -115,5 +115,32 @@ export const screenEn = {
       lastSync: "Last sync {time}",
       never: "never",
     },
+    /**
+     * How far a widget's numbers reach (ADR 0025 section 8): the
+     * provider's last complete day, when netrics last read it and when the
+     * next one is due, in the viewer's time zone. Parts join with " · ".
+     */
+    freshness: {
+      upTo: "Up to {date}",
+      streamUpTo: "{stream} up to {date}",
+      fetched: "fetched {time}",
+      fetchedOn: "fetched {date}",
+      next: "next {when}",
+      nextSoon: "next any minute",
+      notPublished: "{period} not published yet",
+      checkingAgain: "checking again {when}",
+      checkingSoon: "checking again any minute",
+      checked: "Checked {time}",
+      checkedOn: "Checked {date}",
+      streamChecked: "{stream} checked {time}",
+      streamCheckedOn: "{stream} checked {date}",
+      nextCheck: "next check {when}",
+      nextCheckSoon: "next check any minute",
+      notChecked: "{stream} not checked yet",
+      /** An expected time: "~9:00 PM", "tomorrow ~9:00 AM", "~Nov 18". */
+      at: "~{time}",
+      dayAt: "{day} ~{time}",
+      onDate: "~{date}",
+    },
   },
 } as const;

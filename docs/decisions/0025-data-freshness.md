@@ -351,6 +351,9 @@ narrow widgets drop parts from the end. English and German (ADR 0016):
 | Periodic, provider late | Up to Nov 14 · Nov 15 not published yet · checking again ~15:10 | Bis 14. Nov. · 15. Nov. noch nicht veröffentlicht · erneut prüfen ~15:10 |
 | Continuous              | Checked 10 min ago · next check ~14:30                          | Geprüft vor 10 Min. · nächste Prüfung ~14:30                             |
 
+The table writes every time on a 24-hour clock; screens follow the
+locale's clock, so English reads "~9:00 PM" and German "~21:00".
+
 Lists that cover several streams (a connection's page, a detail view)
 prefix the stream name: "Sales up to Nov 15 · next ~21:00", "Reviews
 checked 10 min ago · next check ~14:30". Widgets do not repeat it; their

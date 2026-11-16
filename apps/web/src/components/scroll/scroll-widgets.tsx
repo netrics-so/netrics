@@ -58,6 +58,7 @@ import {
   WidgetFooter,
   WidgetNotice,
   useFooterCandidates,
+  useFreshnessNotice,
 } from "@/components/studio/widget-parts";
 import {
   comparisonLabel,
@@ -80,6 +81,7 @@ import { clockText } from "@/lib/studio-clock";
 import {
   statusAgeText,
   statusFooterText,
+  statusStreamText,
   statusTone,
 } from "@/lib/studio-status";
 import { countdownTargetAt, countdownView } from "@/lib/studio-countdown";
@@ -158,13 +160,19 @@ function ScrollValue({
 }
 
 /** The metric card: label, period, value, change, sparkline, source. */
-export function ScrollMetricCard(props: MetricReadingProps & ScrollCardSize) {
+export function ScrollMetricCard(input: MetricReadingProps & ScrollCardSize) {
+  const props = useFreshnessNotice(input);
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
   const texts = metricTexts(props, locale, t);
   const units = cardUnits(props.width, props.rootPx);
-  const [footer] = useFooterCandidates(props.updatedAt, props.source);
+  const [footer] = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   return (
     <article
       className="sw scroll-card scroll-card--metric"
@@ -220,12 +228,18 @@ export function ScrollMetricCard(props: MetricReadingProps & ScrollCardSize) {
  * The line card: label, value and the chart, 16:9 of the card's width
  * within 200–360 px (`scrollChartHeight`).
  */
-export function ScrollLineCard(props: LineReadingProps & ScrollCardSize) {
+export function ScrollLineCard(input: LineReadingProps & ScrollCardSize) {
+  const props = useFreshnessNotice(input);
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
   const units = cardUnits(props.width, props.rootPx);
-  const [footer] = useFooterCandidates(props.updatedAt, props.source);
+  const [footer] = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const approx = reading?.approximate && reading.value !== null ? "≈ " : "";
   const full = reading
     ? `${approx}${formatValue(reading.value, reading.unit, locale)}`
@@ -305,11 +319,17 @@ export function ScrollLineCard(props: LineReadingProps & ScrollCardSize) {
  * "Others". Labels wrap in full; nothing is folded away for lack of room
  * (the card grows instead).
  */
-export function ScrollBarCard(props: BarReadingProps & ScrollCardSize) {
+export function ScrollBarCard(input: BarReadingProps & ScrollCardSize) {
+  const props = useFreshnessNotice(input);
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
-  const [footer] = useFooterCandidates(props.updatedAt, props.source);
+  const [footer] = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const approx = reading?.approximate ? "≈ " : "";
   const rows = reading
     ? [
@@ -520,11 +540,17 @@ export function ScrollImageCard({
  * Others when it shows them. Labels and values are shown in full; the card
  * grows instead of cutting anything.
  */
-export function ScrollTableCard(props: TableReadingProps & ScrollCardSize) {
+export function ScrollTableCard(input: TableReadingProps & ScrollCardSize) {
+  const props = useFreshnessNotice(input);
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
-  const [footer] = useFooterCandidates(props.updatedAt, props.source);
+  const [footer] = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const rows = reading ? tableRowTexts(reading, props.options, locale) : [];
   const shown = rows.filter((row) => !row.others).length;
   const columns = {
@@ -627,7 +653,7 @@ export function ScrollStatusCard(props: StatusReadingProps & ScrollCardSize) {
           className="sw-status-rows scroll-status-rows"
           style={{ fontSize: u(SCROLL_TYPE.resource) }}
         >
-          {props.items.map((item) => (
+          {props.items.map((item) => [
             <li
               key={item.connectionId}
               className={`sw-status-row ${statusTone(item.status)}`}
@@ -658,8 +684,36 @@ export function ScrollStatusCard(props: StatusReadingProps & ScrollCardSize) {
                   {statusAgeText(item.lastSuccessAt, now, locale)}
                 </span>
               ) : null}
-            </li>
-          ))}
+            </li>,
+            ...(props.streams?.[item.connectionId] ?? []).map((stream) => (
+              <li
+                key={`${item.connectionId}:${stream.freshness.stream}`}
+                className="sw-status-row sw-status-stream-row"
+              >
+                <span
+                  className="sw-status-dot"
+                  style={{ width: u(14), height: u(14), visibility: "hidden" }}
+                  aria-hidden="true"
+                />
+                <span
+                  className={
+                    stream.overdue
+                      ? "sw-status-stream stale"
+                      : "sw-status-stream"
+                  }
+                  style={{ fontSize: u(SCROLL_TYPE.small) }}
+                  suppressHydrationWarning
+                >
+                  {statusStreamText(
+                    stream,
+                    { locale, now },
+                    undefined,
+                    item.status,
+                  )}
+                </span>
+              </li>
+            )),
+          ])}
         </ol>
       )}
       {props.items.length > 0 ? (
@@ -675,12 +729,18 @@ export function ScrollStatusCard(props: StatusReadingProps & ScrollCardSize) {
  * The compare card (ADR 0019 section 10): the operands with their
  * captions, then the ratio with its label and change; one column wide.
  */
-export function ScrollCompareCard(props: CompareReadingProps & ScrollCardSize) {
+export function ScrollCompareCard(input: CompareReadingProps & ScrollCardSize) {
+  const props = useFreshnessNotice(input);
   const { reading, options } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
   const [footer] = compareFooterCandidates(
-    useFooterCandidates(props.updatedAt, props.source),
+    useFooterCandidates(
+      props.updatedAt,
+      props.source,
+      props.freshness,
+      props.status,
+    ),
     locale,
   );
   const units = cardUnits(props.width, props.rootPx);
@@ -805,13 +865,19 @@ const SCROLL_RING_MAX = 240;
  * the percent or the value inside, the progress line and the footer, in
  * one column.
  */
-export function ScrollGaugeCard(props: GaugeReadingProps & ScrollCardSize) {
+export function ScrollGaugeCard(input: GaugeReadingProps & ScrollCardSize) {
+  const props = useFreshnessNotice(input);
   const locale = useLocale();
   const t = useT("screen.widget");
   const now = useNow();
   const valueRef = useRef<HTMLSpanElement>(null);
   const units = cardUnits(props.width, props.rootPx);
-  const [footer] = useFooterCandidates(props.updatedAt, props.source);
+  const [footer] = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const texts = props.reading
     ? gaugeTexts(props.reading, props.options, now, props.timeZone, locale)
     : null;
@@ -917,11 +983,19 @@ function LiveScrollGauge({
  * title and the whole text (the card grows; nothing is cut), the author
  * line. States read as on a slide, in words.
  */
-export function ScrollReviewCard(props: ReviewReadingProps & ScrollCardSize) {
+export function ScrollReviewCard(input: ReviewReadingProps & ScrollCardSize) {
+  const props = useFreshnessNotice(input);
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
   const now = useNow();
+  // Only with freshness (ADR 0025): a review card had no footer before.
+  const [footer] = useFooterCandidates(
+    null,
+    null,
+    props.freshness,
+    props.status,
+  );
   const state =
     props.status === "auth_failed"
       ? t("reviewsPaused")
@@ -985,6 +1059,8 @@ export function ScrollReviewCard(props: ReviewReadingProps & ScrollCardSize) {
         <WidgetNotice size={SCROLL_TYPE.small} stale={props.status === "stale"}>
           {props.notice}
         </WidgetNotice>
+      ) : footer && state === null ? (
+        <WidgetFooter size={SCROLL_TYPE.small}>{footer}</WidgetFooter>
       ) : null}
     </article>
   );

@@ -2,7 +2,7 @@
 
 import { useRef, type CSSProperties, type RefObject } from "react";
 
-import type { DeviceTileStatus } from "@netrics/contracts";
+import type { DeviceTileStatus, WidgetFreshness } from "@netrics/contracts";
 import { wrappedLineCount, type StudioPlacement } from "@netrics/domain";
 
 import { displayUnit } from "@/lib/format-metric";
@@ -30,6 +30,7 @@ import {
   dataSurfaceOf,
   statusClass,
   useFooterCandidates,
+  useFreshnessNotice,
 } from "./widget-parts";
 
 export interface GaugeWidgetViewProps {
@@ -46,6 +47,8 @@ export interface GaugeWidgetViewProps {
   source?: string | null;
   /** The data's last successful sync, for the footer; null: unknown. */
   updatedAt?: string | null;
+  /** How far the numbers reach (ADR 0025); absent: the updatedAt footer. */
+  freshness?: WidgetFreshness | null;
   /** The zone the goal's period is in: the workspace's. */
   timeZone: string;
   placement: StudioPlacement;
@@ -144,11 +147,17 @@ export function GaugeRing({
  * surface tinted towards it (never on stale data). A deleted goal shows
  * "Goal deleted". The ring draws and the number counts up on slide enter.
  */
-export function GaugeWidgetView(props: GaugeWidgetViewProps) {
+export function GaugeWidgetView(input: GaugeWidgetViewProps) {
+  const props = useFreshnessNotice(input);
   const locale = useLocale();
   const t = useT("screen.widget");
   const now = useNow();
-  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  const candidates = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const texts = props.reading
     ? gaugeTexts(props.reading, props.options, now, props.timeZone, locale)
     : null;
@@ -203,6 +212,7 @@ export function GaugeWidgetView(props: GaugeWidgetViewProps) {
         small={gauge.sizes.footer}
         source={props.source}
         updatedAt={props.updatedAt}
+        freshness={props.freshness}
         placement={props.placement}
         showHeader={props.showHeader}
         fontScale={props.fontScale}

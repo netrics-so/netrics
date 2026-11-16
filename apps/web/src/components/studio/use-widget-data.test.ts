@@ -1,10 +1,51 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { DashboardSlide } from "@netrics/contracts";
+
+import { scopedSlide, type ReviewWidget } from "@/lib/studio-widgets";
+
 import {
   SHARED_LOAD_MS,
   clearSharedLoads,
+  latestReviewRequest,
   sharedLoad,
 } from "./use-widget-data";
+
+describe("latest-review request (#705)", () => {
+  const CONNECTION = "00000000-0000-4000-8000-000000000009";
+  const widget = {
+    id: "00000000-0000-4000-8000-000000000001",
+    type: "review",
+    title: null,
+    x: 0,
+    y: 0,
+    w: 4,
+    h: 3,
+    connectionId: CONNECTION,
+    dimensions: {},
+    imageId: null,
+    options: { minRating: 1, requireText: false, showAuthor: true },
+  } as unknown as ReviewWidget;
+  const slide = (scope: DashboardSlide["scope"]) =>
+    ({ widgets: [widget], scope }) as unknown as DashboardSlide;
+
+  it("sends the app of the slide's scope as resource", () => {
+    const scoped = scopedSlide(
+      slide({ app: { kind: "values", values: [`${CONNECTION}:123`] } }),
+    ).widgets[0] as ReviewWidget;
+    expect(latestReviewRequest(scoped)).toEqual({
+      resource: "123",
+      minRating: 1,
+      requireText: false,
+      showAuthor: true,
+    });
+  });
+
+  it("sends no resource for an unscoped slide (all apps)", () => {
+    const unscoped = scopedSlide(slide({})).widgets[0] as ReviewWidget;
+    expect(latestReviewRequest(unscoped)).not.toHaveProperty("resource");
+  });
+});
 
 // Copies of one widget share their loads (#284): "All formats" shows a
 // slide in every format at once, and each copy would query alone.

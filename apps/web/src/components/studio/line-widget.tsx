@@ -2,7 +2,11 @@
 
 import { useId, useRef, type CSSProperties } from "react";
 
-import type { DeviceTileStatus, MetricPeriod } from "@netrics/contracts";
+import type {
+  DeviceTileStatus,
+  WidgetFreshness,
+  MetricPeriod,
+} from "@netrics/contracts";
 import type { StudioPlacement } from "@netrics/domain";
 
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -40,6 +44,7 @@ import {
   dataSurfaceOf,
   statusClass,
   useFooterCandidates,
+  useFreshnessNotice,
 } from "./widget-parts";
 
 export interface LineReading {
@@ -63,6 +68,8 @@ export interface LineWidgetViewProps {
   source?: string | null;
   /** The data's last successful sync, for the footer; null: unknown. */
   updatedAt?: string | null;
+  /** How far the numbers reach (ADR 0025); absent: the updatedAt footer. */
+  freshness?: WidgetFreshness | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -75,7 +82,8 @@ export interface LineWidgetViewProps {
  * dashed behind it, value and period labels on the axes (at least 24
  * units). Drawn as SVG in canvas units, so text sizes are exact.
  */
-export function LineWidgetView(props: LineWidgetViewProps) {
+export function LineWidgetView(input: LineWidgetViewProps) {
+  const props = useFreshnessNotice(input);
   const { reading } = props;
   const locale = useLocale();
   const t = useT("screen.widget");
@@ -88,7 +96,12 @@ export function LineWidgetView(props: LineWidgetViewProps) {
   const compact = reading
     ? `${approx}${formatCompactValue(reading.value, reading.unit, locale)}`
     : full;
-  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  const candidates = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const fitted = chartWidgetLayoutWithFooter(
     {
       type: "line",
@@ -125,6 +138,7 @@ export function LineWidgetView(props: LineWidgetViewProps) {
         small={layout.sizes.small}
         source={props.source}
         updatedAt={props.updatedAt}
+        freshness={props.freshness}
         placement={props.placement}
         showHeader={props.showHeader}
         fontScale={props.fontScale}

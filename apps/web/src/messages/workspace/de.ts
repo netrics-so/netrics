@@ -307,6 +307,9 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       credentialsNone: "keine",
       appStoreAbout: "Über die Daten aus App Store Connect",
       latestReportingDay: "Neuester Berichtstag",
+      freshnessTitle: "Datenstand",
+      freshnessHelp:
+        "Wie weit jede Art von Daten reicht und wann die nächsten fällig sind. Zeiten in deiner Zeitzone.",
       noneYet: "Noch keiner",
       appStoreTiming:
         "Verkäufe kommen am nächsten Morgen pazifischer Zeit (Apple veröffentlicht den Bericht eines Tages bis etwa 8 Uhr PT); App-Store-Analysen folgen etwa zwei Tage später. Berichtstage sind Tage in pazifischer Zeit, nicht in der Zeitzone deines Workspaces. Erlöse werden in jeder Währung aufbewahrt, die Apple meldet.",

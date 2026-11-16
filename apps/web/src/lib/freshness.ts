@@ -1,0 +1,365 @@
+import type {
+  ConnectionFreshnessStream,
+  DeviceTileStatus,
+  WidgetFreshness,
+} from "@netrics/contracts";
+import type { Locale } from "@netrics/domain";
+
+import { webTranslator } from "./i18n/catalogs";
+import { relativeTimeIn } from "./relative-time";
+
+// How far a widget's numbers reach, in words (ADR 0025 section 8). The
+// payload carries instants and the provider's day; everything here is
+// worded on the client, in the viewer's time zone, from the client clock.
+
+/** Who reads it, and when: the viewer's language, zone and clock. */
+export interface FreshnessClock {
+  locale: Locale;
+  now: number;
+  /** IANA zone of the viewer; undefined: the browser's own. */
+  timeZone?: string;
+}
+
+const SEPARATOR = " · ";
+const DAY_MS = 86_400_000;
+
+/** The calendar day of an instant in a zone, as days since 1970-01-01. */
+function localDay(instant: number, clock: FreshnessClock): number {
+  // Numeric parts in Latin digits, whatever the language writes.
+  const parts = new Intl.DateTimeFormat(clock.locale, {
+    timeZone: clock.timeZone,
+    numberingSystem: "latn",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(instant);
+  const value = (type: string) =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return Date.UTC(value("year"), value("month") - 1, value("day")) / DAY_MS;
+}
+
+/** A provider's day (YYYY-MM-DD) as a UTC instant, to format as itself. */
+function providerDay(date: string): Date {
+  return new Date(`${date}T00:00:00Z`);
+}
+
+/**
+ * A provider's day ("Nov 15", "15. Nov.") or, for a monthly stream, its
+ * month ("October", "October 2025" when not the current year). Never
+ * converted to the viewer's zone: it is the provider's label.
+ */
+function periodText(
+  date: string,
+  monthly: boolean,
+  clock: FreshnessClock,
+): string {
+  const day = providerDay(date);
+  if (!monthly) {
+    return new Intl.DateTimeFormat(clock.locale, {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(day);
+  }
+  const currentYear = new Date(
+    localDay(clock.now, clock) * DAY_MS,
+  ).getUTCFullYear();
+  return new Intl.DateTimeFormat(clock.locale, {
+    month: "long",
+    ...(day.getUTCFullYear() !== currentYear ? { year: "numeric" } : {}),
+    timeZone: "UTC",
+  }).format(day);
+}
+
+/** The period after a provider's day: the next day, or the next month. */
+function nextPeriod(date: string, monthly: boolean): string {
+  const day = providerDay(date);
+  const next = monthly
+    ? new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth() + 1, 1))
+    : new Date(day.getTime() + DAY_MS);
+  return next.toISOString().slice(0, 10);
+}
+
+/**
+ * An expected instant in the viewer's zone: "~9:00 PM" today, "tomorrow
+ * ~9:00 AM", "Wed ~9:00 AM" within a week, "~Nov 23" beyond. Null when it
+ * is already past (the caller says "any minute") or does not parse.
+ */
+export function expectedWhen(
+  iso: string,
+  clock: FreshnessClock,
+): string | null {
+  const instant = Date.parse(iso);
+  if (Number.isNaN(instant) || instant <= clock.now) return null;
+  const t = webTranslator(clock.locale, "screen.freshness");
+  const { locale, timeZone } = clock;
+  const days = localDay(instant, clock) - localDay(clock.now, clock);
+  const time = new Intl.DateTimeFormat(locale, {
+    timeStyle: "short",
+    timeZone,
+  }).format(instant);
+  if (days <= 0) return t("at", { time });
+  if (days === 1) {
+    const day = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+      1,
+      "day",
+    );
+    return t("dayAt", { day, time });
+  }
+  if (days < 7) {
+    const day = new Intl.DateTimeFormat(locale, {
+      weekday: "short",
+      timeZone,
+    }).format(instant);
+    return t("dayAt", { day, time });
+  }
+  const date = new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    timeZone,
+  }).format(instant);
+  return t("onDate", { date });
+}
+
+/** "10 min. ago" under a day, else the date ("Nov 14"); null: unknown. */
+function fetchedTime(
+  iso: string,
+  clock: FreshnessClock,
+): { time: string } | { date: string } | null {
+  const instant = Date.parse(iso);
+  if (Number.isNaN(instant)) return null;
+  if (clock.now - instant < DAY_MS) {
+    const time = relativeTimeIn(iso, clock.locale, clock.now, "short");
+    return time ? { time } : null;
+  }
+  return {
+    date: new Intl.DateTimeFormat(clock.locale, {
+      month: "short",
+      day: "numeric",
+      timeZone: clock.timeZone,
+    }).format(instant),
+  };
+}
+
+export interface FreshnessPartsOptions {
+  /** Prefix the stream's name, for lists of several streams. */
+  stream?: boolean;
+  /** Say when netrics last read a periodic stream; default true. */
+  fetched?: boolean;
+  /**
+   * Under a warning (failing or stale connection): only the covered day,
+   * with the late wording when late; no "fetched", no "next".
+   */
+  warning?: boolean;
+  /**
+   * Syncs are paused until the connection is reconnected (the scheduler
+   * skips it): no "next", "checking again" or "next check".
+   */
+  paused?: boolean;
+}
+
+/**
+ * The parts of a freshness line, most important first, so a narrow widget
+ * drops them from the end: "Up to Nov 15", "fetched 10 min. ago",
+ * "next ~9:00 PM"; for a late provider "Up to Nov 14", "Nov 15 not
+ * published yet", "checking again ~3:10 PM"; for a continuous stream
+ * "Checked 10 min. ago", "next check ~2:30 PM".
+ */
+export function freshnessParts(
+  freshness: WidgetFreshness,
+  clock: FreshnessClock,
+  options: FreshnessPartsOptions = {},
+): string[] {
+  const t = webTranslator(clock.locale, "screen.freshness");
+  const stream = options.stream ? freshness.stream : null;
+  const parts: string[] = [];
+  if (freshness.kind === "continuous") {
+    if (options.warning) return [];
+    const fetched = fetchedTime(freshness.fetchedAt, clock);
+    if (fetched) {
+      parts.push(
+        "time" in fetched
+          ? stream
+            ? t("streamChecked", { stream, time: fetched.time })
+            : t("checked", { time: fetched.time })
+          : stream
+            ? t("streamCheckedOn", { stream, date: fetched.date })
+            : t("checkedOn", { date: fetched.date }),
+      );
+    }
+    if (freshness.nextCheckAt && !options.paused) {
+      const when = expectedWhen(freshness.nextCheckAt, clock);
+      parts.push(when ? t("nextCheck", { when }) : t("nextCheckSoon"));
+    }
+    return parts;
+  }
+  const monthly = freshness.period === "month";
+  if (freshness.dataThrough) {
+    const date = periodText(freshness.dataThrough, monthly, clock);
+    parts.push(
+      stream ? t("streamUpTo", { stream, date }) : t("upTo", { date }),
+    );
+  }
+  if (freshness.late && freshness.dataThrough) {
+    parts.push(
+      t("notPublished", {
+        period: periodText(
+          nextPeriod(freshness.dataThrough, monthly),
+          monthly,
+          clock,
+        ),
+      }),
+    );
+    if (options.warning) return parts;
+    if (freshness.nextCheckAt && !options.paused) {
+      const when = expectedWhen(freshness.nextCheckAt, clock);
+      parts.push(when ? t("checkingAgain", { when }) : t("checkingSoon"));
+    }
+    return parts;
+  }
+  if (options.warning) return parts;
+  if (options.fetched ?? true) {
+    const fetched = fetchedTime(freshness.fetchedAt, clock);
+    if (fetched) {
+      parts.push(
+        "time" in fetched
+          ? t("fetched", { time: fetched.time })
+          : t("fetchedOn", { date: fetched.date }),
+      );
+    }
+  }
+  if (freshness.nextExpectedAt && !options.paused) {
+    const when = expectedWhen(freshness.nextExpectedAt, clock);
+    parts.push(when ? t("next", { when }) : t("nextSoon"));
+  }
+  return parts;
+}
+
+/** Every prefix of the parts, longest first: footer candidates. */
+export function partsCandidates(parts: readonly string[]): string[] {
+  return parts.map((_, index) =>
+    parts.slice(0, parts.length - index).join(SEPARATOR),
+  );
+}
+
+/** The freshness line's candidates, longest first (ADR 0018 section 5). */
+export function freshnessCandidates(
+  freshness: WidgetFreshness,
+  clock: FreshnessClock,
+  options: FreshnessPartsOptions = {},
+): string[] {
+  return partsCandidates(freshnessParts(freshness, clock, options));
+}
+
+/** The statuses whose warning notice comes before the freshness line. */
+export function isWarningStatus(status: DeviceTileStatus | undefined): boolean {
+  return status === "stale" || status === "outage" || status === "auth_failed";
+}
+
+/**
+ * A widget's warning notice with its freshness (precedence 1): a provider
+ * overdue by a day (a stale widget whose stream is late) says so in the
+ * late wording; any other warning keeps its notice and adds the covered
+ * day. Without a warning or freshness the notice is unchanged.
+ */
+export function freshnessNotice(
+  notice: string | null,
+  status: DeviceTileStatus | undefined,
+  freshness: WidgetFreshness | null | undefined,
+  clock: FreshnessClock,
+): string | null {
+  if (!freshness || !isWarningStatus(status)) return notice;
+  const parts = freshnessParts(freshness, clock, { warning: true });
+  if (parts.length === 0) return notice;
+  if (status === "stale" && freshness.late) return parts.join(SEPARATOR);
+  return notice ? [notice, parts[0]!].join(SEPARATOR) : parts.join(SEPARATOR);
+}
+
+/** One stream of a connection as a line: its freshness, and whether overdue. */
+export interface StreamFreshness {
+  freshness: WidgetFreshness;
+  /** Late by a day or more: the warning style (ADR 0025 section 7). */
+  overdue: boolean;
+}
+
+type FreshnessEntry = ConnectionFreshnessStream["entries"][number];
+
+/** One entry of a connection's stream (`GET /connections/:id`) as a line. */
+export function entryFreshness(
+  stream: Pick<ConnectionFreshnessStream, "name" | "kind" | "period">,
+  entry: FreshnessEntry,
+  nextCheckAt: string | null,
+): StreamFreshness {
+  return {
+    freshness: {
+      kind: stream.kind,
+      stream: stream.name,
+      fetchedAt: entry.checkedAt,
+      ...(stream.kind === "periodic"
+        ? {
+            ...(entry.dataThrough ? { dataThrough: entry.dataThrough } : {}),
+            ...(stream.period === "month" ? { period: "month" as const } : {}),
+            ...(entry.nextExpectedAt
+              ? { nextExpectedAt: entry.nextExpectedAt }
+              : {}),
+            ...(entry.late ? { late: true as const } : {}),
+          }
+        : {}),
+      ...(nextCheckAt ? { nextCheckAt } : {}),
+    },
+    overdue: entry.overdue,
+  };
+}
+
+/**
+ * Whether `a` is less fresh than `b`, as the server decides it for widgets:
+ * an unknown day first, else the earlier day; on the same day the earlier
+ * known next time (a known time wins over an unknown one).
+ */
+function lessFresh(a: FreshnessEntry, b: FreshnessEntry): boolean {
+  if (a.dataThrough !== b.dataThrough) {
+    if (a.dataThrough === null) return true;
+    if (b.dataThrough === null) return false;
+    return a.dataThrough < b.dataThrough;
+  }
+  const ea = a.nextExpectedAt === null ? null : Date.parse(a.nextExpectedAt);
+  const eb = b.nextExpectedAt === null ? null : Date.parse(b.nextExpectedAt);
+  if (ea === eb || ea === null) return false;
+  if (eb === null) return true;
+  return ea < eb;
+}
+
+/**
+ * A connection's stream as one line, by the rule widgets follow (ADR 0025
+ * section 7): the least fresh entry (the earliest day, ties broken by the
+ * earliest next), late or overdue when any entry with that day is;
+ * fetched at the oldest check. Null before any run reported it.
+ */
+export function streamFreshness(
+  stream: ConnectionFreshnessStream,
+  nextCheckAt: string | null,
+): StreamFreshness | null {
+  const [first, ...rest] = stream.entries;
+  if (!first) return null;
+  const least = rest.reduce(
+    (worst, entry) => (lessFresh(entry, worst) ? entry : worst),
+    first,
+  );
+  const same = stream.entries.filter(
+    (entry) => entry.dataThrough === least.dataThrough,
+  );
+  const oldest = stream.entries.reduce(
+    (min, entry) => (entry.checkedAt < min ? entry.checkedAt : min),
+    first.checkedAt,
+  );
+  return entryFreshness(
+    stream,
+    {
+      ...least,
+      checkedAt: oldest,
+      late: same.some((entry) => entry.late),
+      overdue: same.some((entry) => entry.overdue),
+    },
+    nextCheckAt,
+  );
+}

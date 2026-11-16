@@ -1,8 +1,13 @@
 import type { ReactNode } from "react";
 
-import type { DeviceTileStatus } from "@netrics/contracts";
+import type { DeviceTileStatus, WidgetFreshness } from "@netrics/contracts";
 import type { Locale, StudioPlacement } from "@netrics/domain";
 
+import {
+  freshnessCandidates,
+  freshnessNotice,
+  isWarningStatus,
+} from "@/lib/freshness";
 import type { WebTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { relativeTimeIn } from "@/lib/relative-time";
@@ -57,6 +62,11 @@ export function WidgetLabel({ layout }: { layout: WidgetLabelLayout }) {
  * The footer's candidates, longest first: "updated 2 min. ago · Stripe",
  * "updated 2 min. ago", "Stripe" (ADR 0018 section 5). The time is the
  * data's last successful sync, worded by Intl in the viewer's language.
+ *
+ * With `freshness` (ADR 0025 section 8) the freshness line replaces them:
+ * "Up to Nov 15 · fetched 10 min. ago · next ~9:00 PM", dropping parts
+ * from the end; under a warning status only the covered day. Times are in
+ * the viewer's (browser's) time zone.
  */
 export function footerCandidates(
   updatedAt: string | null | undefined,
@@ -64,7 +74,18 @@ export function footerCandidates(
   locale: Locale,
   t: WebTranslator<"screen.widget">,
   now: number = Date.now(),
+  freshness?: WidgetFreshness | null,
+  status?: DeviceTileStatus,
 ): string[] {
+  // Backfilling and no data stay as today (precedence 2).
+  if (freshness && status !== "backfilling" && status !== "no_data") {
+    const fresh = freshnessCandidates(
+      freshness,
+      { locale, now },
+      { warning: isWarningStatus(status) },
+    );
+    if (fresh.length > 0) return fresh;
+  }
   const time = relativeTimeIn(updatedAt ?? null, locale, now, "short");
   const name = source?.trim() || null;
   const candidates: string[] = [];
@@ -78,11 +99,46 @@ export function footerCandidates(
 export function useFooterCandidates(
   updatedAt: string | null | undefined,
   source: string | null | undefined,
+  freshness?: WidgetFreshness | null,
+  status?: DeviceTileStatus,
 ): string[] {
   const locale = useLocale();
   const t = useT("screen.widget");
   const now = useNow();
-  return footerCandidates(updatedAt, source, locale, t, now.getTime());
+  return footerCandidates(
+    updatedAt,
+    source,
+    locale,
+    t,
+    now.getTime(),
+    freshness,
+    status,
+  );
+}
+
+/**
+ * A data widget's props with its warning notice worded with its freshness
+ * (ADR 0025 section 8, precedence 1): an overdue provider in the late
+ * wording, any other warning with the covered day. Unchanged without
+ * freshness.
+ */
+export function useFreshnessNotice<
+  P extends {
+    notice: string | null;
+    status?: DeviceTileStatus;
+    freshness?: WidgetFreshness | null;
+  },
+>(props: P): P {
+  const locale = useLocale();
+  const now = useNow();
+  if (!props.freshness) return props;
+  return {
+    ...props,
+    notice: freshnessNotice(props.notice, props.status, props.freshness, {
+      locale,
+      now: now.getTime(),
+    }),
+  };
 }
 
 /** The freshness footer: one muted line at the bottom of the widget. */
@@ -189,6 +245,7 @@ export function DataStateWidget({
   small,
   source,
   updatedAt,
+  freshness,
   placement,
   showHeader,
   fontScale,
@@ -203,6 +260,8 @@ export function DataStateWidget({
   small: number;
   source: string | null | undefined;
   updatedAt: string | null | undefined;
+  /** Auth failed: the footer keeps the covered day (ADR 0025). */
+  freshness?: WidgetFreshness | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -214,7 +273,12 @@ export function DataStateWidget({
 }) {
   const t = useT("screen.widget");
   // The source is in "Reconnect …": the footer says when it last worked.
-  const candidates = useFooterCandidates(updatedAt, null);
+  const candidates = useFooterCandidates(
+    updatedAt,
+    null,
+    freshness,
+    surface === "auth_failed" ? "auth_failed" : undefined,
+  );
   const name = source?.trim() || null;
   if (surface === "auth_failed") {
     const footer = footerLine(candidates, {

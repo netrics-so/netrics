@@ -67,10 +67,11 @@ import {
 import { compareMeasureSource } from "@/lib/compare-measure";
 import { fitCheck } from "@/lib/studio-fit-check";
 import type { UnreadableLabel } from "@/lib/studio-readability";
-import type {
-  DataWidget,
-  ReviewWidget,
-  StudioConnection,
+import {
+  scopedSlide,
+  type DataWidget,
+  type ReviewWidget,
+  type StudioConnection,
 } from "@/lib/studio-widgets";
 import { hideReview } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api";
@@ -187,6 +188,11 @@ export interface WidgetPanelProps {
    * connections a latest review can bind (those with reviews).
    */
   connections?: Readonly<Record<string, StudioConnection>>;
+  /**
+   * The scope of the widget's slide (#707): a latest review's "Hide this
+   * review" acts on the review the canvas shows, that of the slide's app.
+   */
+  slideScope?: import("@netrics/domain").SlideFilterScope;
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
   /** Resolves to null when deleted, else why not. */
@@ -474,6 +480,7 @@ function ReviewFields({
   metrics,
   images,
   connections,
+  slideScope,
   dispatch,
   onUploadImage,
 }: WidgetPanelProps & { widget: ReviewWidget }) {
@@ -493,7 +500,12 @@ function ReviewFields({
   );
   const { resources } = useResources(workspaceId, appMetric);
   const resourceId = widget.dimensions[RESOURCE_DIMENSION] ?? "";
-  const { data } = useLatestReviewData(workspaceId, widget);
+  // As the canvas reads it: on a scoped slide, the slide's app (#705).
+  const shown = slideScope
+    ? (scopedSlide({ scope: slideScope, widgets: [widget] })
+        .widgets[0] as ReviewWidget)
+    : widget;
+  const { data } = useLatestReviewData(workspaceId, shown);
   const [hiding, setHiding] = useState(false);
   const [hideState, setHideState] = useState<string | null>(null);
   const reviewId = data?.review?.id ?? null;

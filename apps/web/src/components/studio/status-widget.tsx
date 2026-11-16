@@ -11,10 +11,14 @@ import {
   liveStatusItems,
   statusWidgetLayout,
   type StatusItem,
+  type StatusStreams,
 } from "@/lib/studio-status";
 import type { StudioEnv, StudioWidget } from "@/lib/studio-widgets";
 
+import { streamFreshness, type StreamFreshness } from "@/lib/freshness";
+
 import { useNow } from "./clock-widget";
+import { useConnectionStreams } from "./use-widget-data";
 import { useRowRise } from "./enter-motion";
 import { WidgetFooter, WidgetLabel } from "./widget-parts";
 
@@ -25,6 +29,11 @@ export interface StatusReadingProps {
   options: { showAge: boolean };
   /** Attention first, then by name (the server's or `liveStatusItems`). */
   items: readonly StatusItem[];
+  /**
+   * Each source's freshness streams (ADR 0025), listed under it where
+   * rows are free; signed-in pages only, paired screens have none.
+   */
+  streams?: StatusStreams;
 }
 
 export interface StatusWidgetViewProps extends StatusReadingProps {
@@ -50,6 +59,7 @@ export function StatusWidgetView(props: StatusWidgetViewProps) {
   const layout = statusWidgetLayout({
     label: props.label,
     items: props.items,
+    ...(props.streams ? { streams: props.streams } : {}),
     showAge: props.options.showAge,
     placement: props.placement,
     showHeader: props.showHeader,
@@ -82,7 +92,7 @@ export function StatusWidgetView(props: StatusWidgetViewProps) {
           className="sw-status-rows"
           style={{ fontSize: u(status.sizes.cell) }}
         >
-          {layout.rows.map((item, index) => (
+          {layout.rows.map((item, index) => [
             <li
               key={item.connectionId}
               className={`sw-status-row ${item.tone}`}
@@ -117,8 +127,33 @@ export function StatusWidgetView(props: StatusWidgetViewProps) {
                   {item.age}
                 </span>
               ) : null}
-            </li>
-          ))}
+            </li>,
+            ...(layout.streams[item.connectionId] ?? []).map((stream) => (
+              <li
+                key={`${item.connectionId}:${stream.key}`}
+                className="sw-status-row sw-status-stream-row"
+                data-rise={index}
+                style={row}
+              >
+                <span
+                  className="sw-status-dot"
+                  style={{ ...dot, visibility: "hidden" }}
+                  aria-hidden="true"
+                />
+                <span
+                  className={
+                    stream.overdue
+                      ? "sw-status-stream stale"
+                      : "sw-status-stream"
+                  }
+                  style={{ fontSize: u(status.sizes.age) }}
+                  suppressHydrationWarning
+                >
+                  {stream.text}
+                </span>
+              </li>
+            )),
+          ])}
           {layout.more ? (
             <li
               className={`sw-status-row sw-status-more ${layout.more.tone}`}
@@ -164,10 +199,24 @@ export function useLiveStatus(
       ),
     [env.connections, widget.options.connectionIds, minute],
   );
+  const ids = useMemo(() => items.map((item) => item.connectionId), [items]);
+  const { data } = useConnectionStreams(env.workspaceId, ids);
+  const streams = useMemo(() => {
+    if (!data) return undefined;
+    const lines: Record<string, StreamFreshness[]> = {};
+    for (const [id, list] of Object.entries(data)) {
+      const nextCheckAt = env.connections[id]?.state.nextDueAt ?? null;
+      lines[id] = list
+        .map((stream) => streamFreshness(stream, nextCheckAt))
+        .filter((line): line is StreamFreshness => line !== null);
+    }
+    return lines;
+  }, [data, env.connections]);
   return {
     label: widget.title ?? sourcesLabel(locale),
     options: widget.options,
     items,
+    ...(streams ? { streams } : {}),
   };
 }
 

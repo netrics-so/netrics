@@ -2611,6 +2611,37 @@ a.health-badge:hover {
   color: var(--t-warning);
 }
 
+/* A source's freshness stream (ADR 0025): one muted line under it. */
+.sw-status-stream {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--t-muted);
+  white-space: nowrap;
+}
+
+.sw-status-stream.stale {
+  color: var(--t-warning);
+}
+
+/* A connection's freshness streams (ADR 0025): one line per stream. */
+.freshness-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.freshness-overdue {
+  color: var(--warning-text);
+}
+
+/* Scroll cards grow: the line wraps instead of dropping parts. */
+.scroll-status-rows .sw-status-stream {
+  white-space: normal;
+}
+
 .sw-status-more .sw-status-name {
   color: var(--t-muted);
 }
@@ -5270,6 +5301,27 @@ a.button.primary:hover {
   margin: 0;
   font-size: calc(var(--u, 1px) * 24 * var(--measure-scale, 1));
   color: var(--t-muted);
+}
+/* The freshness line (ADR 0025): one line; parts that do not fit wrap
+   onto a hidden second line, so a narrow widget drops them from the end. */
+.sw-measure-freshness {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: calc(var(--u, 1px) * 24 * var(--measure-scale, 1));
+  line-height: 1.3;
+  max-height: 1.3em;
+  overflow: hidden;
+  color: var(--t-muted);
+}
+.sw-measure-freshness > span {
+  white-space: pre;
+}
+/* A provider overdue by a day: the stale warning (ADR 0025 section 8), in
+   the theme's warning colour (at least 4.5:1 on the surface in every
+   built-in theme). */
+.sw-measure .sw-measure-freshness--overdue {
+  color: var(--t-warning);
 }
 .sw-measure-table-scroll {
   overflow: auto;

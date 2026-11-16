@@ -1454,6 +1454,22 @@ export function queryLatestReview(
   );
 }
 
+/**
+ * A connection's freshness streams (ADR 0025), from the browser: the
+ * `freshness` of its detail. Empty for connectors that declare none.
+ */
+export async function fetchConnectionFreshness(
+  workspaceId: string,
+  connectionId: string,
+): Promise<ConnectionDetailResponse["freshness"]> {
+  const detail = await browserSend(
+    connectionDetailResponseSchema,
+    "GET",
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
+  );
+  return detail.freshness;
+}
+
 /** "Hide this review": no widget shows it again (dashboards:update). */
 export async function hideReview(
   workspaceId: string,

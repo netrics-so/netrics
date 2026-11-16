@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { DeviceTileStatus, MetricPeriod } from "@netrics/contracts";
+import type {
+  DeviceTileStatus,
+  WidgetFreshness,
+  MetricPeriod,
+} from "@netrics/contracts";
 import {
   amountCurrency,
   compareRatioUnit,
@@ -45,6 +49,7 @@ import {
   dataSurfaceOf,
   statusClass,
   useFooterCandidates,
+  useFreshnessNotice,
 } from "./widget-parts";
 
 export type CompareWidget = Extract<DataWidget, { type: "compare" }>;
@@ -66,6 +71,8 @@ export interface CompareWidgetViewProps {
   source?: string | null;
   /** The older side's last successful sync, for the footer. */
   updatedAt?: string | null;
+  /** How far the numbers reach (ADR 0025); absent: the updatedAt footer. */
+  freshness?: WidgetFreshness | null;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -95,9 +102,15 @@ function operandCount(
  * chart colour with its label and change, and "derived · updated …".
  * Operands and the ratio count up on slide enter.
  */
-export function CompareWidgetView(props: CompareWidgetViewProps) {
+export function CompareWidgetView(input: CompareWidgetViewProps) {
+  const props = useFreshnessNotice(input);
   const locale = useLocale();
-  const candidates = useFooterCandidates(props.updatedAt, props.source);
+  const candidates = useFooterCandidates(
+    props.updatedAt,
+    props.source,
+    props.freshness,
+    props.status,
+  );
   const layout = compareWidgetLayout({
     label: props.label,
     period: props.period,
@@ -146,6 +159,7 @@ export function CompareWidgetView(props: CompareWidgetViewProps) {
         small={sizes.small}
         source={props.source}
         updatedAt={props.updatedAt}
+        freshness={props.freshness}
         placement={props.placement}
         showHeader={props.showHeader}
         fontScale={props.fontScale}
