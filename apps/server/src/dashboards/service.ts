@@ -11,6 +11,7 @@ import {
 import {
   barWidgetOptionsSchema,
   dashboardDataFiltersSchema,
+  slideFilterScopeSchema,
   dashboardWidgetInputSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
@@ -1312,10 +1313,11 @@ async function validateDataBindings(
     // A slide's scope names the dashboard's filters and restricts something
     // with each (#707).
     for (const slide of slides) {
-      const scope = slideScopeOf(slide);
-      if (JSON.stringify(scope) !== JSON.stringify(slide.scope ?? {}))
-        return fail(400, "slide_scope_value_invalid");
-      validateSlideFilterScope(filters, scope);
+      // Parsed, not compared as JSON: a scope from a template-update copy
+      // has its keys in another order (#707).
+      const scope = slideFilterScopeSchema.safeParse(slide.scope ?? {});
+      if (!scope.success) return fail(400, "slide_scope_value_invalid");
+      validateSlideFilterScope(filters, scope.data);
     }
     for (const { widget, scope } of slides.flatMap((slide) =>
       slide.widgets.map((widget) => ({ widget, scope: slideScopeOf(slide) })),

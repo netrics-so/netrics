@@ -1999,7 +1999,11 @@ describe("the updated dashboard copy", { timeout: TIMEOUT_MS }, () => {
   });
 
   it("keeps each slide's scope and logo in the copy (#707)", async () => {
-    const scope = { app: { kind: "values", values: ["store:app-1"] } };
+    const scope = {
+      app: { kind: "values", values: ["store:app-1"] },
+      // A range, whose keys the update's comparison form sorts.
+      day: { kind: "range", from: "2026-10-01", to: "2026-10-31" },
+    };
     let logoImageId = "";
     const { workspaceId, update } = await appliedUpdate(v2, async (install) => {
       const [image] = await owner`
