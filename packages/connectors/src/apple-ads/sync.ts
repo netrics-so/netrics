@@ -4,6 +4,7 @@ import type {
   SyncResult,
 } from "@netrics/connector-sdk";
 
+import { boundFreshness } from "../freshness.js";
 import { AppleAdsApiError, type AppleAdsClient } from "./api.js";
 import {
   APPLE_ADS_DIMENSIONS,
@@ -910,10 +911,14 @@ export async function syncCampaignPage(
     const timeZone = new Intl.DateTimeFormat("en-US", {
       timeZone: options.timeZone,
     }).resolvedOptions().timeZone;
+    // The final assembly: within what the host accepts, never failing it.
+    const freshness = boundFreshness([
+      { stream: ADS_STREAM, dataThrough, timeZone },
+    ]);
     return {
       observations,
       nextCursor: resume,
-      freshness: [{ stream: ADS_STREAM, dataThrough, timeZone }],
+      ...(freshness.length > 0 ? { freshness } : {}),
       done: true,
     };
   }

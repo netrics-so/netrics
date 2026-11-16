@@ -28,9 +28,7 @@ import {
   ANALYTICS_STREAM,
   syncAnalyticsApps,
 } from "./analytics-sync.js";
-import { FRESHNESS_LIMITS } from "@netrics/connector-sdk";
-
-import { PACIFIC_TIME_ZONE, boundFreshness } from "../freshness.js";
+import { PACIFIC_TIME_ZONE, withBoundFreshness } from "../freshness.js";
 import { ANALYTICS_SOURCE_TYPES, OTHER_SOURCE } from "./analytics-report.js";
 import { ARTWORK_HOSTS, ITUNES_LOOKUP_HOST, appIcons } from "./icons.js";
 import { checkKey, vendorNumberOf } from "./probes.js";
@@ -902,7 +900,17 @@ export function createAppStoreConnectConnector(
     },
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
-      if (!ratings) return syncLegacy(context, request, runtime);
+      if (!ratings)
+        return withBoundFreshness(
+          await syncLegacy(context, request, runtime),
+          async () =>
+            request.resources ??
+            (
+              await listApps(
+                createAppStoreConnectClient(runtime.fetch, token(context)),
+              )
+            ).map((app) => app.id),
+        );
       return syncWithStoreRatings(request, runtime, {
         storefront: ratingStorefront(context.config),
         now: now(),
@@ -941,15 +949,9 @@ export function createAppStoreConnectConnector(
       salesCursor: string,
       run: RunFreshness,
     ): Promise<SyncResult> => {
-      // Within the host's bound, whatever the number of apps (the app list
-      // is read only when the per-app entries would exceed it).
-      const entries = freshnessOf(run);
-      const freshness = boundFreshness(
-        entries,
-        entries.length > FRESHNESS_LIMITS.entries
-          ? await appIdsOf()
-          : undefined,
-      );
+      // Unbounded here: the connector's final assembly bounds the entries
+      // together with the listing entry (withBoundFreshness).
+      const freshness = freshnessOf(run);
       return {
         ...result,
         nextCursor: salesCursor,

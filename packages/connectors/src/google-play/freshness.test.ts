@@ -115,6 +115,51 @@ describe("Google Play freshness", () => {
     ).toBe("2026-10-03");
   });
 
+  it("reports no earnings month when one app's partition was not ingested", async () => {
+    // Alpha's turn is refused (403); Beta's turn, later, reads the report.
+    const fake = fakePlay();
+    const object = "earnings/earnings_202610.zip";
+    fake.privateStatus.set(object, 403);
+    const connector = createGooglePlayConnector({ now: () => TEST_NOW });
+    let cursor: string | undefined;
+    let done: SyncResult | undefined;
+    const statuses: unknown[][] = [];
+    for (let page = 0; page < 200 && !done; page++) {
+      const result = syncResultSchema.parse(
+        await connector.sync(
+          context,
+          {
+            mode: "backfill",
+            from: "2026-10-01T00:00:00.000Z",
+            to: new Date(TEST_NOW).toISOString(),
+            resources: [ALPHA, BETA],
+            cursor,
+          },
+          fake.runtime,
+        ),
+      );
+      for (const dataset of result.datasetPages ?? [])
+        if (dataset.datasetKey === "report_status") {
+          const row = dataset.records[0]!.values;
+          if (
+            row.report_type !== "earnings" ||
+            row.report_month !== "2026-10-01"
+          )
+            continue;
+          statuses.push([row.app_id, row.availability]);
+          if (row.app_id === ALPHA) fake.privateStatus.delete(object);
+        }
+      if (result.done) done = result;
+      cursor = result.nextCursor;
+    }
+    expect(statuses).toEqual([
+      [ALPHA, "permission_missing"],
+      [BETA, "available"],
+    ]);
+    expectValidFreshness(googlePlayManifest, done);
+    expect(freshnessEntry(done!, PLAY_STREAMS.earnings)).toBeUndefined();
+  });
+
   it("reports no earnings for an unreadable earnings report", async () => {
     const fake = fakePlay();
     fake.put(

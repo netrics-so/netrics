@@ -6,9 +6,28 @@ import {
   FRESHNESS_LIMITS,
   freshnessEntrySchema,
   type FreshnessEntry,
+  type SyncResult,
 } from "@netrics/connector-sdk";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A done result with its freshness bounded (boundFreshness): for the final
+ * assembly of a connector's result, after which nothing is appended. The
+ * resources are asked for only when the entries exceed the bound.
+ */
+export async function withBoundFreshness(
+  result: SyncResult,
+  resources: () => Promise<readonly string[]>,
+): Promise<SyncResult> {
+  if (!result.done || result.freshness === undefined) return result;
+  const { freshness: entries, ...rest } = result;
+  const freshness = boundFreshness(
+    entries,
+    entries.length > FRESHNESS_LIMITS.entries ? await resources() : undefined,
+  );
+  return freshness.length > 0 ? { ...rest, freshness } : rest;
+}
 
 /**
  * Freshness is optional metadata: it must never fail a sync that works

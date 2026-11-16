@@ -112,6 +112,8 @@ const stateSchema = z.object({
       ratings: z.record(z.string(), z.iso.date()).optional(),
       /** The last day of the newest complete earnings month read. */
       earnings: z.iso.date().optional(),
+      /** An earnings task (key) one of whose app partitions was not ingested. */
+      earningsIncomplete: z.string().optional(),
       /** Every app's listing snapshot was read. */
       listing: z.boolean().optional(),
     })
@@ -153,7 +155,7 @@ function laterDay(a: string | undefined, b: string): string {
 }
 
 /**
- * What a task whose app partition was published completely confirms: an
+ * What a task's completed app partition confirms, if it was ingested: an
  * install or rating report its newest day for that app; an earnings report,
  * once its last app is done, the last day of its month, if that month is
  * over in Pacific Time (a running month's file would be partial).
@@ -165,11 +167,18 @@ function confirmed(
   frame: Frame,
   nowMs: number,
 ): RunFreshness | undefined {
+  if (frame.availability !== "available")
+    // A partition that was not ingested: an earnings month is complete only
+    // when every app partition of its task was (the report is read per
+    // turn, so one turn can be refused and a later one succeed).
+    return task.kind === "earnings"
+      ? { ...run, earningsIncomplete: task.key }
+      : run;
   if (task.kind === "earnings") {
     const last = frame.apps.at(-1) === app;
     const over =
       task.month.slice(0, 7) < dateInZone(nowMs, PACIFIC_TIME_ZONE).slice(0, 7);
-    if (!last || !over) return run;
+    if (!last || !over || run?.earningsIncomplete === task.key) return run;
     return {
       ...run,
       earnings: laterDay(run?.earnings, lastDayOfMonth(task.month)),
@@ -1075,13 +1084,12 @@ export async function syncPlayReports(
   const nextApp = complete
     ? frame.apps[frame.apps.indexOf(app) + 1]
     : undefined;
-  const done: State =
-    complete && frame.availability === "available"
-      ? {
-          ...state,
-          fresh: confirmed(state.fresh, task, app, frame, options.now),
-        }
-      : state;
+  const done: State = complete
+    ? {
+        ...state,
+        fresh: confirmed(state.fresh, task, app, frame, options.now),
+      }
+    : state;
   const next: State = !complete
     ? { ...state, offset, previous, digest, source }
     : nextApp

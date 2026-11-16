@@ -461,6 +461,31 @@ describe("vercel freshness", () => {
     expect(freshnessEntry(done, TRAFFIC_STREAM)?.dataThrough).toBeUndefined();
   });
 
+  it("reports no traffic when a selected project was not read", async () => {
+    const window = {
+      mode: "incremental" as const,
+      from: "2024-12-30T00:00:00.000Z",
+      to: `${TODAY}T12:00:00.000Z`,
+    };
+    // Web Analytics is off for gamma: nothing of it is read.
+    for (const resources of [["prj_gamma"], ["prj_alpha", "prj_gamma"]]) {
+      const { pages } = await syncAll(fake().runtime, { ...window, resources });
+      expect(pages.at(-1)!.done).toBe(true);
+      expect(pages.at(-1)!.freshness).toBeUndefined();
+    }
+    // A selected project the token no longer lists.
+    const gone = await syncAll(fake().runtime, {
+      ...window,
+      resources: ["prj_alpha", "prj_deleted"],
+    });
+    expect(gone.pages.at(-1)!.freshness).toBeUndefined();
+    const read = await syncAll(fake().runtime, {
+      ...window,
+      resources: ["prj_alpha", "prj_beta"],
+    });
+    expect(read.pages.at(-1)!.freshness).toEqual([{ stream: TRAFFIC_STREAM }]);
+  });
+
   it("declares every metric in one continuous stream", () => {
     expect(vercelManifest.freshnessStreams).toEqual([
       expect.objectContaining({ key: TRAFFIC_STREAM, kind: "continuous" }),

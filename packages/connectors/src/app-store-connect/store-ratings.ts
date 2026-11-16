@@ -9,6 +9,7 @@ import type {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
+import { withBoundFreshness } from "../freshness.js";
 import { ITUNES_LOOKUP_URL, LOOKUP_BATCH_SIZE } from "./icons.js";
 
 /** The freshness stream of the rating snapshots (ADR 0025): continuous. */
@@ -280,15 +281,20 @@ export async function syncWithStoreRatings(
     if (!result.done)
       return { ...result, nextCursor: prefix + encode(result.nextCursor) };
     // Listing ratings are a snapshot: "read" when every app's was (ADR 0025).
-    return prefix === READ_PREFIX
-      ? {
-          ...result,
-          freshness: [
-            ...(result.freshness ?? []),
-            { stream: LISTING_RATINGS_STREAM },
-          ],
-        }
-      : result;
+    // The final assembly: the run's entries and this one are bounded
+    // together for the host, after which nothing is added.
+    return withBoundFreshness(
+      prefix === READ_PREFIX
+        ? {
+            ...result,
+            freshness: [
+              ...(result.freshness ?? []),
+              { stream: LISTING_RATINGS_STREAM },
+            ],
+          }
+        : result,
+      options.appIds,
+    );
   }
   const appIds = [...new Set(await options.appIds())].sort();
   const signature = createHash("sha256")

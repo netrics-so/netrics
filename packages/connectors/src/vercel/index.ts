@@ -12,6 +12,8 @@ import type {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
+import { boundFreshness } from "../freshness.js";
+
 import {
   VercelApiError,
   createVercelClient,
@@ -486,6 +488,15 @@ export function createVercelConnector(
           (!request.resources || request.resources.includes(project.id)),
       );
 
+      // Freshness only when every selected project is read (ADR 0025): a
+      // project without Web Analytics, or one the token no longer lists,
+      // is skipped, and the connection entry would cover it too.
+      const everySelectedRead =
+        request.resources === undefined ||
+        request.resources.every((id) =>
+          projects.some((project) => project.id === id),
+        );
+
       const observations: Observation[] = [];
       let planStart: number | null = null;
       const inWindow = (timestamp: string) => {
@@ -594,12 +605,15 @@ export function createVercelConnector(
           done: false,
         };
       }
-      // Every project's numbers were read up to today (ADR 0025): the
-      // continuous stream is fresh as of this run.
+      // Every selected project's numbers were read up to today (ADR 0025):
+      // the continuous stream is fresh as of this run.
+      const freshness = boundFreshness(
+        everySelectedRead ? [{ stream: TRAFFIC_STREAM }] : [],
+      );
       return {
         observations,
         nextCursor: resumeAt,
-        freshness: [{ stream: TRAFFIC_STREAM }],
+        ...(freshness.length > 0 ? { freshness } : {}),
         done: true,
       };
     },
