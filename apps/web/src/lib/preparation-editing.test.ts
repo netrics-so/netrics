@@ -756,34 +756,55 @@ describe("the editor's reaction to a rejected step change (#652)", () => {
   it("keeps a proposal only for an open form, with the sample out of date", () => {
     expect(preparationChangeRejection("proposal", true)).toEqual({
       proposal: true,
-      sampleCurrent: false,
+      previewStale: null,
       banner: "keep",
     });
   });
   it("leaves a rejected reorder's unchanged sample current, with the message in the banner", () => {
     expect(preparationChangeRejection("proposal", false)).toEqual({
       proposal: false,
-      sampleCurrent: true,
+      previewStale: false,
       banner: "step",
     });
   });
   it("drops an earlier proposal when a later failure names no step", () => {
     expect(preparationChangeRejection("form", true)).toEqual({
       proposal: false,
-      sampleCurrent: true,
+      previewStale: false,
       banner: "clear",
     });
     expect(preparationChangeRejection("form", false)).toEqual({
       proposal: false,
-      sampleCurrent: true,
+      previewStale: false,
       banner: "keep",
     });
   });
   it("marks the sample out of date when the change applies with another step failing", () => {
     expect(preparationChangeRejection("applied", true)).toEqual({
       proposal: false,
-      sampleCurrent: false,
+      previewStale: null,
       banner: "keep",
     });
+  });
+  it("keeps an earlier out-of-date mark when a change is refused (#654)", () => {
+    // The graph already had a failing step; the refused move left it so.
+    expect(preparationChangeRejection("proposal", false, true)).toEqual({
+      proposal: false,
+      previewStale: true,
+      banner: "step",
+    });
+    expect(preparationChangeRejection("form", false, true)).toMatchObject({
+      previewStale: true,
+    });
+    expect(preparationChangeRejection("form", true, true)).toMatchObject({
+      previewStale: true,
+    });
+    // An applied change or an open proposal keeps the check's own mark.
+    expect(
+      preparationChangeRejection("applied", false, false).previewStale,
+    ).toBeNull();
+    expect(
+      preparationChangeRejection("proposal", true, false).previewStale,
+    ).toBeNull();
   });
 });
