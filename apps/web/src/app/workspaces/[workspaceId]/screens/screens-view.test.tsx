@@ -41,7 +41,6 @@ function item(overrides: Partial<ScreenItem> & { device: Device }): ScreenItem {
     handheld: false,
     heartbeat: null,
     screenLine: null,
-    paired: "Sep 1, 2026",
     scopeLine: null,
     filters: [],
     ...overrides,

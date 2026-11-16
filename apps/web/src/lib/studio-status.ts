@@ -217,6 +217,8 @@ export function statusWidgetLayout(input: {
   fontScale: number;
   now: number;
   locale: Locale;
+  /** The viewer's zone, for the streams' times (#749). */
+  timeZone: string;
 }): StatusWidgetLayout {
   const box = contentBox(input.placement, input.showHeader);
   const status = statusLayout({
@@ -259,7 +261,7 @@ export function statusWidgetLayout(input: {
       if (spare <= 0) break;
       const text = statusStreamText(
         stream,
-        { locale: input.locale, now: input.now },
+        { locale: input.locale, now: input.now, timeZone: input.timeZone },
         fit,
         item.status,
       );

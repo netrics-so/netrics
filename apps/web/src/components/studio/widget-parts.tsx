@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 
 import type { DeviceTileStatus, WidgetFreshness } from "@netrics/contracts";
-import type { Locale, StudioPlacement } from "@netrics/domain";
+import type { StudioPlacement } from "@netrics/domain";
 
 import {
   freshnessCandidates,
   freshnessNotice,
   isWarningStatus,
+  type FreshnessClock,
 } from "@/lib/freshness";
 import type { WebTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -17,6 +18,7 @@ import {
   type FittedLabel,
   type WidgetLabelLayout,
 } from "@/lib/studio-render";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 import { useNow } from "./clock-widget";
 
@@ -66,24 +68,22 @@ export function WidgetLabel({ layout }: { layout: WidgetLabelLayout }) {
  * With `freshness` (ADR 0025 section 8) the freshness line replaces them:
  * "Up to Nov 15 · fetched 10 min. ago · next ~9:00 PM", dropping parts
  * from the end; under a warning status only the covered day. Times are in
- * the viewer's (browser's) time zone.
+ * the viewer's time zone (`clock.timeZone`, #749).
  */
 export function footerCandidates(
   updatedAt: string | null | undefined,
   source: string | null | undefined,
-  locale: Locale,
+  clock: FreshnessClock,
   t: WebTranslator<"screen.widget">,
-  now: number = Date.now(),
   freshness?: WidgetFreshness | null,
   status?: DeviceTileStatus,
 ): string[] {
+  const { locale, now } = clock;
   // Backfilling and no data stay as today (precedence 2).
   if (freshness && status !== "backfilling" && status !== "no_data") {
-    const fresh = freshnessCandidates(
-      freshness,
-      { locale, now },
-      { warning: isWarningStatus(status) },
-    );
+    const fresh = freshnessCandidates(freshness, clock, {
+      warning: isWarningStatus(status),
+    });
     if (fresh.length > 0) return fresh;
   }
   const time = relativeTimeIn(updatedAt ?? null, locale, now, "short");
@@ -105,12 +105,12 @@ export function useFooterCandidates(
   const locale = useLocale();
   const t = useT("screen.widget");
   const now = useNow();
+  const timeZone = useViewerTimeZone();
   return footerCandidates(
     updatedAt,
     source,
-    locale,
+    { locale, now: now.getTime(), timeZone },
     t,
-    now.getTime(),
     freshness,
     status,
   );
@@ -131,12 +131,14 @@ export function useFreshnessNotice<
 >(props: P): P {
   const locale = useLocale();
   const now = useNow();
+  const timeZone = useViewerTimeZone();
   if (!props.freshness) return props;
   return {
     ...props,
     notice: freshnessNotice(props.notice, props.status, props.freshness, {
       locale,
       now: now.getTime(),
+      timeZone,
     }),
   };
 }

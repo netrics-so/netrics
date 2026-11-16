@@ -88,9 +88,14 @@ const day: DashboardDataFilter = {
 
 describe("filter chips show locale dates (#619)", () => {
   it("formats day and timestamp values, other values as they are", () => {
-    expect(filterValueText(day, "2026-01-01", "de")).toBe("01.01.2026");
-    expect(filterValueText(day, "2026-01-01", "en")).toBe("Jan 1, 2026");
-    expect(filterValueText({ type: "string" }, "2026-01-01", "de")).toBe(
+    expect(filterValueText(day, "2026-01-01", "de", "UTC")).toBe("01.01.2026");
+    expect(filterValueText(day, "2026-01-01", "en", "UTC")).toBe("Jan 1, 2026");
+    // A day is a calendar day, never converted to the viewer's zone (#749).
+    for (const zone of ["Pacific/Auckland", "America/Los_Angeles"])
+      expect(filterValueText(day, "2026-01-01", "en", zone)).toBe(
+        "Jan 1, 2026",
+      );
+    expect(filterValueText({ type: "string" }, "2026-01-01", "de", "UTC")).toBe(
       "2026-01-01",
     );
   });

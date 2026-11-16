@@ -15,7 +15,17 @@ const format = (
   currency?: string,
   locale = "en",
   unit?: string,
-) => formatMeasureCell(value, type, currency, locale, "True", "False", unit);
+) =>
+  formatMeasureCell(
+    value,
+    type,
+    currency,
+    locale,
+    "True",
+    "False",
+    unit,
+    "UTC",
+  );
 describe("semantic value display", () => {
   it("preserves exact decimal amounts beyond IEEE-754 precision and localizes separators", () => {
     expect(format("9007199254740993.12", "decimal", "EUR")).toBe(
@@ -51,9 +61,11 @@ describe("locale dates and rounded ratings (#619)", () => {
   it("formats days and timestamps for the locale instead of ISO text", () => {
     expect(format("2026-01-07", "date", undefined, "de")).toBe("07.01.2026");
     expect(format("2026-01-07", "date", undefined, "en")).toBe("Jan 7, 2026");
+    // In the viewer's zone, here UTC (#749).
     const at = new Intl.DateTimeFormat("de", {
       dateStyle: "medium",
       timeStyle: "short",
+      timeZone: "UTC",
     }).format(new Date("2026-01-07T09:15:00.000Z"));
     expect(
       format("2026-01-07T09:15:00.000Z", "timestamp", undefined, "de"),

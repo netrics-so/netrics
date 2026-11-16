@@ -16,6 +16,7 @@ import {
 } from "@/lib/signed-key";
 import { apiErrorMessage, generateKeyPair } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 const PEM_PLACEHOLDER =
   "-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----";
@@ -432,6 +433,8 @@ function GeneratedKeyPairField({
   children: ReactNode;
 }) {
   const locale = useLocale();
+  // The pair's expiry, in the viewer's zone (#749).
+  const timeZone = useViewerTimeZone();
   const t = useT("connections.signedKey.keyPair");
   const id = useId();
   const [mode, setMode] = useState<"generate" | "existing">("generate");
@@ -523,6 +526,7 @@ function GeneratedKeyPairField({
               expires: new Date(pair.expiresAt).toLocaleString(locale, {
                 dateStyle: "medium",
                 timeStyle: "short",
+                timeZone,
               }),
             })}
           </p>

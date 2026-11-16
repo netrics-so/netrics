@@ -6,6 +6,18 @@ import {
 } from "@/lib/data-api";
 import { dataErrorKey } from "@/lib/data-editing";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
+
+/** When a version was published, in the viewer's zone (#749). */
+export function PublicationTime({ at }: { at: string }) {
+  const locale = useLocale();
+  const timeZone = useViewerTimeZone();
+  return (
+    <time dateTime={at}>
+      {new Date(at).toLocaleString(locale, { timeZone })}
+    </time>
+  );
+}
 
 export function DefinitionHistory({
   workspaceId,
@@ -28,8 +40,7 @@ export function DefinitionHistory({
   onRestore: (version: number) => Promise<void>;
   onAdoptLatest: () => Promise<void>;
 }) {
-  const t = useT("data"),
-    locale = useLocale();
+  const t = useT("data");
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState<History | null>(null);
   const [loading, setLoading] = useState(false);
@@ -125,11 +136,7 @@ export function DefinitionHistory({
                           </span>
                         ) : null}
                         <p className="page-meta">
-                          <time dateTime={publication.createdAt}>
-                            {new Date(publication.createdAt).toLocaleString(
-                              locale,
-                            )}
-                          </time>
+                          <PublicationTime at={publication.createdAt} />
                         </p>
                       </div>
                       <button

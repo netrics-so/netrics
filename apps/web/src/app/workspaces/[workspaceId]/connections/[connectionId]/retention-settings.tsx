@@ -12,6 +12,7 @@ import {
 } from "../retention-fields";
 import { apiErrorMessage, updateConnectionRetention } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 interface RetentionSettingsProps {
   workspaceId: string;
@@ -38,6 +39,8 @@ export function RetentionSettings({
   setup = false,
 }: RetentionSettingsProps) {
   const locale = useLocale();
+  // The day it was chosen, in the viewer's zone (#749).
+  const timeZone = useViewerTimeZone();
   const t = useT("connections.retention");
   const common = useT("common");
   const router = useRouter();
@@ -69,7 +72,7 @@ export function RetentionSettings({
   }
 
   const date = retention.chosenAt
-    ? new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
+    ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone }).format(
         new Date(retention.chosenAt),
       )
     : null;

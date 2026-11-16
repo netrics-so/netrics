@@ -14,6 +14,7 @@ import {
   type StatusStreams,
 } from "@/lib/studio-status";
 import type { StudioEnv, StudioWidget } from "@/lib/studio-widgets";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 import { streamFreshness, type StreamFreshness } from "@/lib/freshness";
 
@@ -55,6 +56,7 @@ export function StatusWidgetView(props: StatusWidgetViewProps) {
   const locale = useLocale();
   const t = useT("screen.widget");
   const now = useNow();
+  const timeZone = useViewerTimeZone();
   const rowsRef = useRef<HTMLOListElement>(null);
   useRowRise(rowsRef);
   const layout = statusWidgetLayout({
@@ -67,6 +69,7 @@ export function StatusWidgetView(props: StatusWidgetViewProps) {
     fontScale: props.fontScale,
     now: now.getTime(),
     locale,
+    timeZone,
   });
   const { status } = layout;
   const row = {

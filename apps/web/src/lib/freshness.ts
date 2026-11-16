@@ -17,8 +17,11 @@ import { relativeTimeIn } from "./relative-time";
 export interface FreshnessClock {
   locale: Locale;
   now: number;
-  /** IANA zone of the viewer; undefined: the browser's own. */
-  timeZone?: string;
+  /**
+   * IANA zone of the viewer (`useViewerTimeZone`, #749): always given, so a
+   * server render never words a time in the server's zone.
+   */
+  timeZone: string;
 }
 
 const SEPARATOR = " · ";

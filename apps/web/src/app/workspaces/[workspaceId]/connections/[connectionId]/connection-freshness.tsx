@@ -4,12 +4,15 @@ import type {
   ConnectionAuthState,
   ConnectionFreshnessStream,
 } from "@netrics/contracts";
-import type { Locale } from "@netrics/domain";
-
 import { useNow } from "@/components/studio/clock-widget";
-import { entryFreshness, freshnessParts } from "@/lib/freshness";
+import {
+  entryFreshness,
+  freshnessParts,
+  type FreshnessClock,
+} from "@/lib/freshness";
 import { webTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 export interface FreshnessLine {
   key: string;
@@ -26,14 +29,13 @@ export interface FreshnessLine {
  * line per entry, the stream's name first ("Sales up to Nov 15 · next
  * ~9:00 PM", "Reviews checked 10 min. ago · next check ~2:30 PM"), the
  * connection's entry before its resources'; "not checked yet" before any
- * run reported the stream. In the viewer's time zone (the browser's, or
- * `timeZone` in tests).
+ * run reported the stream. In the viewer's time zone (#749).
  */
 export function freshnessLines(
   streams: readonly ConnectionFreshnessStream[],
   nextCheckAt: string | null,
   resourceNames: Readonly<Record<string, string>>,
-  clock: { locale: Locale; now: number; timeZone?: string },
+  clock: FreshnessClock,
   /**
    * The connection's auth state: while it needs new credentials or a
    * reconnect, the scheduler skips it, so no line promises a next check.
@@ -96,15 +98,13 @@ export function ConnectionFreshness({
   const locale = useLocale();
   const t = useT("connections.detail");
   const now = useNow();
+  const timeZone = useViewerTimeZone();
   if (streams.length === 0) return null;
   const lines = freshnessLines(
     streams,
     nextCheckAt,
     resourceNames,
-    {
-      locale,
-      now: now.getTime(),
-    },
+    { locale, now: now.getTime(), timeZone },
     authState,
   );
   return (

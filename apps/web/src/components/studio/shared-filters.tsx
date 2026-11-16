@@ -16,14 +16,19 @@ import {
 import { loadDimensionValues } from "@/lib/dashboard-data-api";
 import { enteredValue } from "@/lib/data-editing";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
-/** A filter value as shown: days and timestamps in the locale's format. */
+/**
+ * A filter value as shown: days and timestamps in the locale's format; a
+ * timestamp in the viewer's zone (#749), a day as it is.
+ */
 export function filterValueText(
   filter: Pick<DashboardDataFilter, "type">,
   value: unknown,
   locale: string,
+  timeZone: string,
 ): string {
-  return formatDataDate(value, filter.type, locale) ?? String(value);
+  return formatDataDate(value, filter.type, locale, timeZone) ?? String(value);
 }
 export function DashboardFilterInput({
   filter,
@@ -43,6 +48,7 @@ export function DashboardFilterInput({
   const id = useId(),
     t = useT("data.dashboard"),
     locale = useLocale(),
+    timeZone = useViewerTimeZone(),
     [text, setText] = useState(""),
     [error, setError] = useState(false);
   const [browse, setBrowse] = useState(initialBrowse),
@@ -237,7 +243,7 @@ export function DashboardFilterInput({
                           ? t("unmatched")
                           : typeof raw === "boolean"
                             ? t(raw ? "yes" : "no")
-                            : filterValueText(filter, raw, locale))}
+                            : filterValueText(filter, raw, locale, timeZone))}
                     </button>
                   </li>
                 ))}
@@ -280,7 +286,7 @@ export function DashboardFilterInput({
               value:
                 raw === null
                   ? t("unmatched")
-                  : filterValueText(filter, raw, locale),
+                  : filterValueText(filter, raw, locale, timeZone),
             })}
           >
             {labelCache[JSON.stringify(raw)] ||
@@ -288,7 +294,7 @@ export function DashboardFilterInput({
                 ? t("unmatched")
                 : typeof raw === "boolean"
                   ? t(raw ? "yes" : "no")
-                  : filterValueText(filter, raw, locale))}{" "}
+                  : filterValueText(filter, raw, locale, timeZone))}{" "}
             ×
           </button>
         ))}
@@ -395,6 +401,7 @@ function CompactFilter({
 }) {
   const t = useT("data.dashboard"),
     locale = useLocale(),
+    timeZone = useViewerTimeZone(),
     id = useId(),
     [left, setLeft] = useState(0);
   const controlRef = useRef<HTMLDivElement>(null),
@@ -490,7 +497,7 @@ function CompactFilter({
     value === null
       ? t("allValues")
       : value.kind === "range"
-        ? `${value.from == null ? "…" : filterValueText(filter, value.from, locale)} – ${value.to == null ? "…" : filterValueText(filter, value.to, locale)}`
+        ? `${value.from == null ? "…" : filterValueText(filter, value.from, locale, timeZone)} – ${value.to == null ? "…" : filterValueText(filter, value.to, locale, timeZone)}`
         : value.values.length
           ? value.values
               .map(
@@ -500,7 +507,7 @@ function CompactFilter({
                     ? t("unmatched")
                     : typeof value === "boolean"
                       ? t(value ? "yes" : "no")
-                      : filterValueText(filter, value, locale)),
+                      : filterValueText(filter, value, locale, timeZone)),
               )
               .join(", ")
           : t("allValues");
