@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { workspaceImageSchema } from "./images.js";
 const app = z.strictObject({
   connectionId: z.uuid(),
   appId: z.string().trim().min(1).max(65536),
@@ -279,3 +280,104 @@ export const storeTemplateCopyRequestSchema = z.strictObject({
    */
   discardCopyEdits: z.boolean().optional(),
 });
+/**
+ * Paid or free of a product (#708): `auto` (default) is paid when one of
+ * its apps had proceeds in the last 90 days (App Store sales rows with
+ * developer proceeds, Google Play earnings rows with a positive amount).
+ */
+export const storeProductPricingSchema = z.enum(["auto", "paid", "free"]);
+/**
+ * The longest product id that can have settings (characters). The tables
+ * accept longer free-text ids; such a product is listed as not editable
+ * (`store_product_id_too_long`) and a save of it answers 400 with that code.
+ */
+export const STORE_PRODUCT_ID_MAX = 500;
+export type StoreProductPricing = z.infer<typeof storeProductPricingSchema>;
+/** A Vercel Web Analytics project (a resource of a Vercel connection). */
+const storeProductWebsiteSchema = z.strictObject({
+  connectionId: z.uuid(),
+  projectId: z.string().trim().min(1).max(1024),
+});
+/**
+ * The product identities of an install (#708): every product of its
+ * products table plus each app of its connections no product claims, with
+ * the owner's settings and what they resolve to. `icon` is the stored
+ * resource icon of the product's first App Store app, else Play app, that
+ * has one; it follows the daily icon refresh. `iconSource` is the app whose
+ * icon to fetch while there is none (POST /resource-icons). `paid` is the
+ * effective value: `pricing` unless `auto`, then `hadProceeds`. `websites`
+ * are the workspace's Vercel connections and their projects to choose from.
+ */
+export const storeTemplateProductsSchema = z.object({
+  requestId: z.uuid(),
+  products: z.array(
+    z.object({
+      productId: z.string(),
+      name: z.string(),
+      apps: z.array(
+        z.object({
+          connectionId: z.uuid(),
+          appId: z.string(),
+          name: z.string(),
+          connectorId: z.enum(["app-store-connect", "google-play"]),
+        }),
+      ),
+      icon: workspaceImageSchema.nullable(),
+      iconSource: z
+        .object({ connectionId: z.uuid(), resourceId: z.string() })
+        .nullable(),
+      pricing: storeProductPricingSchema,
+      hadProceeds: z.boolean(),
+      paid: z.boolean(),
+      /**
+       * Why the product's settings cannot be saved; null when they can. An
+       * id longer than STORE_PRODUCT_ID_MAX, or empty (valid in the tables).
+       */
+      notEditable: z
+        .enum(["store_product_id_too_long", "store_product_id_empty"])
+        .nullable(),
+      /** `name` is null when the project is no longer listed. */
+      website: z
+        .object({
+          connectionId: z.uuid(),
+          projectId: z.string(),
+          name: z.string().nullable(),
+        })
+        .nullable(),
+    }),
+  ),
+  websites: z.array(
+    z.object({
+      connectionId: z.uuid(),
+      name: z.string(),
+      projects: z.array(z.object({ id: z.string(), name: z.string() })),
+    }),
+  ),
+});
+export type StoreTemplateProducts = z.infer<typeof storeTemplateProductsSchema>;
+/**
+ * Changing product settings: each listed product gets its pricing and
+ * website (null: none); products not listed keep theirs. The website must be
+ * a project of a Vercel connection of the same workspace (400
+ * store_website_invalid); the product one of the install's (400
+ * store_product_unknown).
+ */
+export const storeTemplateProductsRequestSchema = z.strictObject({
+  products: z
+    .array(
+      z.strictObject({
+        /**
+         * At most STORE_PRODUCT_ID_MAX characters; a longer id answers 400
+         * store_product_id_too_long (the transport bound is the tables').
+         */
+        productId: z.string().min(1).max(65600),
+        pricing: storeProductPricingSchema,
+        website: storeProductWebsiteSchema.nullable(),
+      }),
+    )
+    .min(1)
+    .max(1000),
+});
+export type StoreTemplateProductsRequest = z.infer<
+  typeof storeTemplateProductsRequestSchema
+>;

@@ -95,6 +95,34 @@ export const dashboardsEn = {
     scopeUnchanged:
       "These are the apps the dashboard already uses. Change a connection or the app first.",
     templateCard: "Apple and Google Play, ready to customize",
+    identity: "App identity",
+    identityHelp:
+      "The icon, paid or free, and the website of each app, for the app slides. Saved on their own, without a review.",
+    identityEmpty: "No apps yet. They appear once a connection has synced.",
+    useIcon: "Use app icon",
+    iconLoading: "Getting icon…",
+    pricing: "Paid or free",
+    pricingAutoPaid: "Automatic (now paid: proceeds in the last 90 days)",
+    pricingAutoFree: "Automatic (now free: no proceeds in the last 90 days)",
+    pricingPaid: "Paid",
+    pricingFree: "Free",
+    pricingHelp:
+      "Automatic counts an app as paid while it had proceeds in the last 90 days. A free app’s slide leaves revenue out.",
+    website: "Website",
+    websiteNone: "No website",
+    websiteMissing: "Project no longer available",
+    websiteConnect:
+      "To show visitors per app, connect Vercel Web Analytics first.",
+    identitySave: "Save app identity",
+    identitySaving: "Saving…",
+    identitySaved: "App identity saved.",
+    identityPending:
+      "The app identity below has unsaved changes. Applying opens the update next.",
+    identitySaveAndApply: "Save them and apply",
+    identityDiscardAndApply: "Discard them and apply",
+    identityKeepEditing: "Keep editing",
+    identityTooLarge:
+      "App identity can’t be shown: these connections have more apps or website projects than this workspace’s row limit allows. You can still change the apps above, for example remove a connection.",
   },
   dashboardsPage: {
     meta: "{count, plural, =0 {No dashboards yet} one {# dashboard} other {# dashboards}}",

@@ -176,6 +176,65 @@ const PAGE_ADMISSION_WAIT_MS = 30_000;
 function fail(code: string, status: 400 | 404 | 409 | 413 | 503 = 400): never {
   throw new DataServiceError(code, status);
 }
+/**
+ * A dataset's newest generation, or the requested one: the generation every
+ * reader of a dataset reads (callers decide what an expired one means).
+ */
+export async function currentGeneration(
+  tx: Transaction,
+  workspaceId: string,
+  datasetId: string,
+  requested?: string,
+) {
+  const [generation] = await tx
+    .select()
+    .from(schema.dataGenerations)
+    .where(
+      and(
+        eq(schema.dataGenerations.workspaceId, workspaceId),
+        eq(schema.dataGenerations.datasetId, datasetId),
+        ...(requested ? [eq(schema.dataGenerations.id, requested)] : []),
+      ),
+    )
+    .orderBy(desc(schema.dataGenerations.sequence))
+    .limit(1);
+  return generation;
+}
+
+/**
+ * The records of a generation a reader may return: not past their stored
+ * expiry and, under the policy's retention ceiling, collected within it.
+ * The data loader, manual-table reads and bounded aggregates over records
+ * (the store template's product identity) share it.
+ */
+export function readableRecords(
+  workspaceId: string,
+  generationId: string,
+  now: Date,
+  policy: Pick<DataPolicy, "maxRetentionDays">,
+) {
+  return and(
+    eq(schema.dataRecords.workspaceId, workspaceId),
+    eq(schema.dataRecords.generationId, generationId),
+    or(
+      isNull(schema.dataRecords.expiresAt),
+      gt(schema.dataRecords.expiresAt, now),
+    ),
+    ...(policy.maxRetentionDays === null
+      ? []
+      : [
+          gt(
+            schema.dataRecords.collectedAt,
+            new Date(
+              Math.max(
+                -62135596800000,
+                now.getTime() - policy.maxRetentionDays * 86400000,
+              ),
+            ),
+          ),
+        ]),
+  );
+}
 export interface DataActor {
   workspaceId: string;
   callerId: string;
@@ -939,18 +998,12 @@ export function createDataLoader(
         );
       if (!dataset) fail("data_source_not_found", 404);
       const requested = options.generations?.[id];
-      const [generation] = await tx
-        .select()
-        .from(schema.dataGenerations)
-        .where(
-          and(
-            eq(schema.dataGenerations.workspaceId, workspaceId),
-            eq(schema.dataGenerations.datasetId, id),
-            ...(requested ? [eq(schema.dataGenerations.id, requested)] : []),
-          ),
-        )
-        .orderBy(desc(schema.dataGenerations.sequence))
-        .limit(1);
+      const generation = await currentGeneration(
+        tx,
+        workspaceId,
+        id,
+        requested,
+      );
       if (!generation) {
         // A source that once published data is never reinterpreted as a first
         // import after retention/GC. Snapshot fallback must also stay exact.
@@ -1016,29 +1069,7 @@ export function createDataLoader(
       const recordQuery = tx
         .select()
         .from(schema.dataRecords)
-        .where(
-          and(
-            eq(schema.dataRecords.workspaceId, workspaceId),
-            eq(schema.dataRecords.generationId, generation.id),
-            or(
-              isNull(schema.dataRecords.expiresAt),
-              gt(schema.dataRecords.expiresAt, now),
-            ),
-            ...(policy.maxRetentionDays !== null
-              ? [
-                  gt(
-                    schema.dataRecords.collectedAt,
-                    new Date(
-                      Math.max(
-                        -62135596800000,
-                        now.getTime() - policy.maxRetentionDays * 86400000,
-                      ),
-                    ),
-                  ),
-                ]
-              : []),
-          ),
-        )
+        .where(readableRecords(workspaceId, generation.id, now, policy))
         .orderBy(asc(schema.dataRecords.recordKey));
       const records = await (policy.queryRows === null
         ? recordQuery
@@ -1915,20 +1946,12 @@ export function createDataService(
             ),
           );
         if (!dataset) fail("data_source_not_found", 404);
-        const [generation] = await tx
-          .select()
-          .from(schema.dataGenerations)
-          .where(
-            and(
-              eq(schema.dataGenerations.workspaceId, actor.workspaceId),
-              eq(schema.dataGenerations.datasetId, id),
-              ...(input.generationId
-                ? [eq(schema.dataGenerations.id, input.generationId)]
-                : []),
-            ),
-          )
-          .orderBy(desc(schema.dataGenerations.sequence))
-          .limit(1);
+        const generation = await currentGeneration(
+          tx,
+          actor.workspaceId,
+          id,
+          input.generationId,
+        );
         if (input.generationId && !generation)
           fail("data_snapshot_unavailable", 409);
         if (dataset.hasPublishedData && !generation)
@@ -1965,26 +1988,11 @@ export function createDataService(
             total: 0,
             offset: input.offset,
           };
-        const eligible = and(
-          eq(schema.dataRecords.workspaceId, actor.workspaceId),
-          eq(schema.dataRecords.generationId, generation.id),
-          or(
-            isNull(schema.dataRecords.expiresAt),
-            gt(schema.dataRecords.expiresAt, now),
-          ),
-          ...(policy.maxRetentionDays === null
-            ? []
-            : [
-                gt(
-                  schema.dataRecords.collectedAt,
-                  new Date(
-                    Math.max(
-                      -62135596800000,
-                      now.getTime() - policy.maxRetentionDays * 86400000,
-                    ),
-                  ),
-                ),
-              ]),
+        const eligible = readableRecords(
+          actor.workspaceId,
+          generation.id,
+          now,
+          policy,
         );
         const [count] = await tx
           .select({ count: sql<number>`count(*)::int` })

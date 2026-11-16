@@ -2,14 +2,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 import {
+  ApiError,
   listStoreTemplateInstalls,
   listWorkspaces,
   readStoreTemplateOptions,
+  readStoreTemplateProducts,
   readStoreTemplateScope,
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import { storeUpdatePath } from "@/lib/store-updates";
+import { StoreInstallEditor } from "./store-install-editor";
 import { StoreTemplateForm } from "./store-template-form";
 export const dynamic = "force-dynamic";
 export default async function StoreTemplatesPage({
@@ -41,13 +44,28 @@ export default async function StoreTemplatesPage({
         ).installs.find((entry) => entry.requestId === installId)
       : undefined;
     if (allowed && !install) notFound();
-    const [scope, options] =
+    const [scope, options, products] =
       install && install.error === null && !install.updateAvailable
         ? await Promise.all([
             readStoreTemplateScope(cookieHeader, workspaceId, installId),
             readStoreTemplateOptions(cookieHeader, workspaceId),
+            // App identity failing (e.g. over the row limit) must not take
+            // the scope editor with it: the section explains it in place.
+            readStoreTemplateProducts(
+              cookieHeader,
+              workspaceId,
+              installId,
+            ).then(
+              (value) => ({ value }),
+              (error: unknown) => ({
+                error:
+                  error instanceof ApiError
+                    ? { status: error.status, code: error.code }
+                    : { status: 503, code: "data_operation_failed" },
+              }),
+            ),
           ])
-        : [null, null];
+        : [null, null, null];
     return (
       <div className="area-page store-template-page">
         <header className="page-header">
@@ -68,11 +86,12 @@ export default async function StoreTemplatesPage({
               {t("editOpenUpdate")}
             </Link>
           </p>
-        ) : install && scope && options ? (
-          <StoreTemplateForm
+        ) : install && scope && options && products ? (
+          <StoreInstallEditor
             workspaceId={workspaceId}
             install={{ requestId: installId, name: install.name, scope }}
-            initialOptions={options}
+            options={options}
+            products={products}
           />
         ) : (
           <p className="notice">{t("editUnavailable")}</p>

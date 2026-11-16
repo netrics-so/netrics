@@ -10,11 +10,15 @@ import {
   storeTemplateInstallListSchema,
   storeTemplateOptionsSchema,
   storeTemplatePlanSchema,
+  storeTemplateProductsRequestSchema,
+  storeTemplateProductsSchema,
   storeTemplateRequestSchema,
   storeTemplateResultSchema,
   storeTemplateScopeRequestSchema,
   storeTemplateScopeSchema,
   storeTemplateUpdateSchema,
+  type StoreTemplateProducts,
+  type StoreTemplateProductsRequest,
   type StoreTemplateScope,
   type StoreTemplateScopeRequest,
   type StoreTemplateApplyRequest,
@@ -1654,6 +1658,45 @@ export function readStoreTemplateScope(
     storeTemplateScopeSchema,
     cookieHeader,
     `${storesPath(workspaceId)}/installs/${requestId}/scope`,
+  );
+}
+/** An install's products: icon, paid or free and website (server). */
+export function readStoreTemplateProducts(
+  cookieHeader: string,
+  workspaceId: string,
+  requestId: string,
+): Promise<StoreTemplateProducts> {
+  return serverGet(
+    storeTemplateProductsSchema,
+    cookieHeader,
+    `${storesPath(workspaceId)}/installs/${requestId}/products`,
+  );
+}
+/** An install's products, from the browser. */
+export function getStoreTemplateProducts(
+  workspaceId: string,
+  requestId: string,
+): Promise<StoreTemplateProducts> {
+  return browserSend(
+    storeTemplateProductsSchema,
+    "GET",
+    `${storesPath(workspaceId)}/installs/${requestId}/products`,
+  );
+}
+/**
+ * Sets paid or free and the website of the listed products; 400
+ * store_website_invalid or store_product_unknown.
+ */
+export function saveStoreTemplateProducts(
+  workspaceId: string,
+  requestId: string,
+  body: StoreTemplateProductsRequest,
+): Promise<StoreTemplateProducts> {
+  return browserSend(
+    storeTemplateProductsSchema,
+    "PUT",
+    `${storesPath(workspaceId)}/installs/${requestId}/products`,
+    storeTemplateProductsRequestSchema.parse(body),
   );
 }
 /** The plan of changing an install's connections or app scope. */

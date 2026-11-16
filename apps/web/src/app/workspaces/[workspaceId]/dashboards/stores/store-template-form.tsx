@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import type {
   StoreTemplateOptions,
   StoreTemplatePlan,
@@ -26,6 +26,7 @@ import {
   ReviewView,
   withChoice,
 } from "./updates/[requestId]/store-update-review";
+import type { IdentityGuard } from "./store-product-identity";
 
 type Choice = {
   key: string;
@@ -43,6 +44,8 @@ export function StoreTemplateForm({
   projectId = null,
   install,
   initialOptions = null,
+  identityGuard,
+  onApplying,
 }: {
   workspaceId: string;
   initialConnectionId?: string;
@@ -58,6 +61,13 @@ export function StoreTemplateForm({
   install?: { requestId: string; name: string; scope: StoreTemplateScope };
   /** Options read by the page, so the form starts without loading them. */
   initialOptions?: StoreTemplateOptions | null;
+  /** Edit mode: the app identity beside the form, saved before applying. */
+  identityGuard?: RefObject<IdentityGuard | null>;
+  /**
+   * Edit mode: whether a scope change is being applied, through the
+   * navigation that follows it (the identity beside the form is locked).
+   */
+  onApplying?: (applying: boolean) => void;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
@@ -91,9 +101,14 @@ export function StoreTemplateForm({
     [requestId] = useState(() => install?.requestId ?? crypto.randomUUID());
   const [plan, setPlan] = useState<StoreTemplatePlan | null>(null),
     [decisions, setDecisions] = useState<Decisions>({}),
-    [reloaded, setReloaded] = useState(false);
+    [reloaded, setReloaded] = useState(false),
+    [askIdentity, setAskIdentity] = useState(false);
   const initialized = useRef(!!install || !!initialOptions);
   useLeaveGuard(dirty && !done, t("unsaved"));
+  const applying = pending === "create" || (!!install && done);
+  useEffect(() => {
+    onApplying?.(applying);
+  }, [applying, onApplying]);
   useEffect(() => {
     if (initialOptions && revision === 0) return;
     let alive = true;
@@ -314,8 +329,32 @@ export function StoreTemplateForm({
       setPending(null);
     }
   }
-  async function applyScope() {
+  /**
+   * "Save them and apply": one pending operation from the save through the
+   * apply, so nothing in the page can close the question halfway while the
+   * continuation still applies and navigates.
+   */
+  async function saveIdentityAndApply() {
     if (!install || !plan) return;
+    setPending("create");
+    setError(null);
+    if (!(await identityGuard?.current?.save())) {
+      // The identity shows why; the scope change waits.
+      setPending(null);
+      setAskIdentity(false);
+      return;
+    }
+    await applyScope(true);
+  }
+  async function applyScope(confirmed = false) {
+    if (!install || !plan) return;
+    // Applying navigates on; unsaved app identity beside the form is asked
+    // about in the page first (#708).
+    if (!confirmed && identityGuard?.current?.dirty) {
+      setAskIdentity(true);
+      return;
+    }
+    setAskIdentity(false);
     setPending("create");
     setError(null);
     const chosen = chosenScope();
@@ -717,6 +756,36 @@ export function StoreTemplateForm({
           </div>
         </section>
       )}
+      {askIdentity ? (
+        <div
+          className="notice stack"
+          role="alertdialog"
+          aria-labelledby={`${id}-identity-pending`}
+        >
+          <p id={`${id}-identity-pending`}>{t("identityPending")}</p>
+          <div className="actions">
+            <button
+              className="primary"
+              disabled={!!pending}
+              onClick={() => void saveIdentityAndApply()}
+            >
+              {t("identitySaveAndApply")}
+            </button>
+            <button
+              disabled={!!pending}
+              onClick={() => {
+                identityGuard?.current?.discard();
+                void applyScope(true);
+              }}
+            >
+              {t("identityDiscardAndApply")}
+            </button>
+            <button disabled={!!pending} onClick={() => setAskIdentity(false)}>
+              {t("identityKeepEditing")}
+            </button>
+          </div>
+        </div>
+      ) : null}
       {error ? (
         <p className="error" role="alert">
           {error}

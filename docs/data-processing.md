@@ -776,6 +776,51 @@ zero and exact decimal strings remain distinct. The UI renders 50 rows at a time
 but currently holds the whole editable table in browser memory. Source and query
 budgets still apply; paging does not claim warehouse-scale execution.
 
+### App identity
+
+[#708](https://github.com/netrics-so/netrics/issues/708) gives each product
+of an install an icon, paid or free, and an optional website, set under "App
+identity" on the screen that changes the install's apps
+(`GET`/`PUT .../dashboard-templates/stores/installs/:requestId/products`). The
+products resolve exactly as the template's preparations resolve each row: an
+app's product is its mapping row's product ID, else its app key; the name is
+the product's Products row, else its first app's name, else the app ID. Every
+app of the install's connections is listed, discovered or only named by the
+synced reports (no cut-off; past the query row limit of the deployment's data
+policy and the workspace's overrides the read answers 413). Unsaved identity
+changes are saved or discarded, in the page, before a scope change applies,
+and the identity is read-only while it applies and opens the update.
+
+- **Icon:** the stored resource icon of the product's first App Store app,
+  else Play app, that has one, resolved when read. The daily icon refresh
+  replaces it in place; "Use app icon" fetches it the first time.
+- **Paid or free:** `auto` (default), `paid` or `free`. Auto is paid while
+  one of the product's apps had proceeds in the last 90 days: an App Store
+  sales row with units × developer proceeds per unit above zero, or a Play
+  earnings row with a positive amount (charges; fees and refunds are
+  negative), read when the products are read. Nothing is stored for auto, so
+  it follows new reports.
+
+The Products and mapping tables and the synced reports are read through the
+same data reader as dashboards, with the resolved policy's row budget,
+retention ceiling and stored expiry. "Use app icon" is offered for discovered
+apps only; an app only the reports or the mapping name has no icon to fetch.
+
+- **Website:** a project of a Vercel Web Analytics connection of the same
+  workspace, checked when saved.
+
+A product ID longer than 500 characters, or empty, is valid in the tables
+but cannot have settings: it is listed as not editable, and saving it
+answers 400 `store_product_id_too_long`.
+
+The settings are rows of `data_template_products` (migration 0079, forced
+RLS), not fields of the Products table: apps without a product have no row
+there, a website typed into that freely editable table could not be checked
+against the workspace, and new fields would change every install's table. A
+product without a row has the defaults, so existing installs need no update.
+A composite foreign key binds the website connection to the row's workspace;
+deleting the connection clears only the link.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

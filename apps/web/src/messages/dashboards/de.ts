@@ -97,6 +97,37 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     scopeUnchanged:
       "Das sind die Apps, die das Dashboard schon nutzt. Ändere zuerst eine Verbindung oder die App.",
     templateCard: "Apple und Google Play, bereit zum Anpassen",
+    identity: "App-Identität",
+    identityHelp:
+      "Icon, kostenpflichtig oder kostenlos und Website jeder App, für die App-Folien. Wird direkt gespeichert, ohne Prüfung.",
+    identityEmpty:
+      "Noch keine Apps. Sie erscheinen, sobald eine Verbindung synchronisiert hat.",
+    useIcon: "App-Icon verwenden",
+    iconLoading: "Icon wird geholt …",
+    pricing: "Kostenpflichtig oder kostenlos",
+    pricingAutoPaid:
+      "Automatisch (jetzt kostenpflichtig: Erlöse in den letzten 90 Tagen)",
+    pricingAutoFree:
+      "Automatisch (jetzt kostenlos: keine Erlöse in den letzten 90 Tagen)",
+    pricingPaid: "Kostenpflichtig",
+    pricingFree: "Kostenlos",
+    pricingHelp:
+      "Automatisch zählt eine App als kostenpflichtig, solange sie in den letzten 90 Tagen Erlöse hatte. Die Folie einer kostenlosen App lässt den Umsatz weg.",
+    website: "Website",
+    websiteNone: "Keine Website",
+    websiteMissing: "Projekt nicht mehr verfügbar",
+    websiteConnect:
+      "Um Besucher pro App zu zeigen, verbinde zuerst Vercel Web Analytics.",
+    identitySave: "App-Identität speichern",
+    identitySaving: "Wird gespeichert …",
+    identitySaved: "App-Identität gespeichert.",
+    identityPending:
+      "Die App-Identität unten hat ungespeicherte Änderungen. Nach dem Übernehmen öffnet sich das Update.",
+    identitySaveAndApply: "Speichern und übernehmen",
+    identityDiscardAndApply: "Verwerfen und übernehmen",
+    identityKeepEditing: "Weiter bearbeiten",
+    identityTooLarge:
+      "Die App-Identität kann nicht angezeigt werden: Diese Verbindungen haben mehr Apps oder Website-Projekte, als das Zeilenlimit dieses Workspaces erlaubt. Die Apps oben kannst du weiter ändern, zum Beispiel eine Verbindung entfernen.",
   },
   dashboardsPage: {
     meta: "{count, plural, =0 {Noch keine Dashboards} one {# Dashboard} other {# Dashboards}}",

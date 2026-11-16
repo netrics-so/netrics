@@ -7,6 +7,14 @@ export const apiErrorsEn = {
   apiErrors: {
     store_mapping_duplicate: "Each app can belong to only one linked product.",
     store_scope_invalid: "Choose an app from one of the selected connections.",
+    store_website_invalid:
+      "Choose a project of a Vercel connection of this workspace.",
+    store_product_id_too_long:
+      "This product ID is too long for app identity settings (at most 500 characters). Shorten it in the Products and mapping tables to set paid or free and the website.",
+    store_product_id_empty:
+      "This product has an empty ID. Give it an ID in the Products and mapping tables to set paid or free and the website.",
+    store_product_unknown:
+      "This app no longer belongs to the dashboard. Reload the page.",
     store_template_request_reused:
       "This setup was already submitted. Open your dashboards or start a new setup.",
     store_template_removed:
