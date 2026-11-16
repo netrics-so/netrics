@@ -149,6 +149,12 @@ describe("project switcher (#573)", () => {
     expect(all).toContain('<option value="" selected="">All projects</option>');
   });
 
+  it("hides the switcher without projects", () => {
+    const html = render(BASE);
+    expect(html).not.toContain(">Project</label>");
+    expect(html).not.toContain("All projects");
+  });
+
   it("mounts the page afresh when the active project changes (#641)", () => {
     const page = <p>page</p>;
     const keyOf = (projectId: string | null) =>
@@ -160,12 +166,6 @@ describe("project switcher (#573)", () => {
     expect(render(BASE, { activeProjectId: A })).toContain(
       '<p id="page">page</p>',
     );
-  });
-
-  it("hides the switcher without projects", () => {
-    const html = render(BASE);
-    expect(html).not.toContain(">Project</label>");
-    expect(html).not.toContain("All projects");
   });
 
   it("speaks German", () => {
