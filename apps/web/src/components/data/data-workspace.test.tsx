@@ -86,6 +86,37 @@ describe("data lists follow the active project (#573)", () => {
   });
 });
 
+describe("reference tables are workspace-wide (#644)", () => {
+  const reference = {
+    id: "00000000-0000-4000-8000-0000000000d1",
+    name: "App mapping",
+    kind: "manual" as const,
+    fields: [],
+    generationId: null,
+    rowCount: 2,
+    schemaVersion: 1,
+    aggregated: false,
+    expiresAt: null,
+    connectionId: null,
+  };
+  const render = (activeProjectId: string | null, locale: "en" | "de" = "en") =>
+    renderI18n(
+      <DataWorkspace
+        workspaceId="workspace"
+        initial={{ sources: [reference], preparations: [], models: [] }}
+        projects={[{ id: A, name: "Alpha", archivedAt: null }]}
+        activeProjectId={activeProjectId}
+      />,
+      locale,
+    );
+
+  it("marks them as shared inside a project", () => {
+    expect(render(A)).toContain("Reference table · in all projects");
+    expect(render(A, "de")).toContain("Referenztabelle · in allen Projekten");
+    expect(render(null)).not.toContain("in all projects");
+  });
+});
+
 describe("store-template updates in data settings (11E)", () => {
   const REQUEST = "00000000-0000-4000-8000-0000000000f1";
   const MODEL = "00000000-0000-4000-8000-0000000000c1";

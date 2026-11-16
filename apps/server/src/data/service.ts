@@ -2984,6 +2984,9 @@ async function filterSourcesByProject(
   const unassignedVisible =
     filter.project === "all" || filter.unassigned === "include";
   return items.filter((item) => {
+    // Reference tables are workspace-wide (#644): shared lookups such as
+    // an app mapping, listed and offered inside every project.
+    if (item.kind === "manual") return true;
     const projectId = item.id.startsWith("prepared:")
       ? (preparationProjects.get(item.id.split(":")[1]!) ?? null)
       : item.connectionId
