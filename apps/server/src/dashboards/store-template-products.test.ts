@@ -69,6 +69,7 @@ async function ingest(
   source: typeof apple,
   key: string,
   rows: DataRow[],
+  refresh = "",
 ): Promise<void> {
   const definition = registry
     .get(source.connectorId)!
@@ -81,7 +82,7 @@ async function ingest(
       page: {
         datasetKey: key,
         schemaVersion: definition.version,
-        refreshKey: "report-" + key,
+        refreshKey: "report-" + key + refresh,
         pageKey: "page-1",
         previousPageKey: null,
         complete: true,
@@ -248,6 +249,9 @@ describe("store product identity", { timeout: 20_000 }, () => {
       apps: [{ connectionId: google.id, appId: "com.example.reported" }],
       hadProceeds: true,
       paid: true,
+      // Not a discovered resource: the icon service would not find it.
+      iconSource: null,
+      icon: null,
     });
     expect(read.products[0]).toMatchObject({
       name: "Example app",
@@ -514,5 +518,41 @@ describe("store product identity", { timeout: 20_000 }, () => {
     expect(
       (await withRows(null).read(actor(), requestId)).products.length,
     ).toBeGreaterThan(600);
+  });
+
+  it("leaves out records past the deployment's retention ceiling", async () => {
+    const later = new Date(Date.parse(now) + 10 * 86_400_000);
+    const read = await createStoreProductService({
+      db,
+      now: () => later,
+      policy: { ...DEFAULT_DATA_POLICY, maxRetentionDays: 5 },
+    }).read(actor(), requestId);
+    // Beta's earnings were collected 10 days ago: beyond 5 days, unread.
+    expect(
+      read.products.find((product) => product.productId === beta),
+    ).toMatchObject({ hadProceeds: false });
+  });
+
+  it("bounds the apps of the synced reports by the row budget", async () => {
+    const products = () =>
+      createStoreProductService({
+        db,
+        now: () => new Date(now),
+        policy: { ...DEFAULT_DATA_POLICY, queryRows: 605 },
+      });
+    // The discovered catalog alone fits.
+    await products().read(actor(), requestId);
+    await ingest(
+      google,
+      "earning_rows",
+      Array.from({ length: 700 }, (_, index) => ({
+        app_id: `com.example.report${index}`,
+        merchant_amount: "1.00",
+      })),
+      "-many",
+    );
+    await expect(products().read(actor(), requestId)).rejects.toThrow(
+      "data_source_row_limit",
+    );
   });
 });

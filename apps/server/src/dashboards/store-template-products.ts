@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   storeTemplateResultSchema,
   type StoreProductPricing,
@@ -22,7 +22,7 @@ import {
   exceedsDataPolicy,
   type DataPolicy,
 } from "@netrics/domain";
-import { DataServiceError } from "../data/service.js";
+import { createDataLoader, DataServiceError } from "../data/service.js";
 import { presentImage } from "../images/service.js";
 import { deriveInstallCompletion } from "./store-template-legacy.js";
 import { STORE_SOURCE_DATASETS } from "./store-template-service.js";
@@ -60,138 +60,121 @@ function reject(code: string, status: 400 | 404 | 409 | 413 = 400): never {
   throw new DataServiceError(code, status);
 }
 
-/** The values of a dataset's latest generation (manual tables). */
-async function latestRecords(
-  tx: Transaction,
-  workspaceId: string,
-  datasetId: string,
-  now: Date,
-): Promise<Record<string, unknown>[]> {
-  const [generation] = await tx
-    .select({ id: schema.dataGenerations.id })
-    .from(schema.dataGenerations)
-    .where(
-      and(
-        eq(schema.dataGenerations.workspaceId, workspaceId),
-        eq(schema.dataGenerations.datasetId, datasetId),
-        or(
-          isNull(schema.dataGenerations.expiresAt),
-          gt(schema.dataGenerations.expiresAt, now),
-        ),
-      ),
-    )
-    .orderBy(desc(schema.dataGenerations.sequence))
-    .limit(1);
-  if (!generation) return [];
-  const rows = await tx
-    .select({ values: schema.dataRecords.values })
-    .from(schema.dataRecords)
-    .where(
-      and(
-        eq(schema.dataRecords.workspaceId, workspaceId),
-        eq(schema.dataRecords.generationId, generation.id),
-        or(
-          isNull(schema.dataRecords.expiresAt),
-          gt(schema.dataRecords.expiresAt, now),
-        ),
-      ),
-    )
-    .orderBy(asc(schema.dataRecords.recordKey));
-  return rows.map((row) => row.values as Record<string, unknown>);
-}
-
-/** A decimal text as numeric; null (not an error) for anything else. */
-const decimal = (text: ReturnType<typeof sql>) =>
-  sql`(case when ${text} ~ '^-?[0-9]+([.][0-9]+)?$' then (${text})::numeric end)`;
-
-/**
- * App keys (`<connectionId>:<appId>`) of the connections' apps with
- * proceeds since `since` (a day, YYYY-MM-DD): App Store sales rows whose
- * units × developer proceeds per unit is positive, Google Play earnings
- * rows with a positive amount (charges; fees and refunds are negative).
- * Read from each source dataset's latest generation, which holds every
- * current row.
- */
-export async function appsWithProceeds(
-  tx: Transaction,
-  workspaceId: string,
-  connectionIds: string[],
-  since: string,
-  now: Date,
-): Promise<Set<string>> {
-  if (!connectionIds.length) return new Set();
-  const at = now.toISOString();
-  const rows = await tx.execute(sql`
-    select distinct d.connection_id, r."values"->>'app_id' as app_id
-    from data_datasets d
-    join lateral (
-      select g.id from data_generations g
-      where g.workspace_id = ${workspaceId} and g.dataset_id = d.id
-        and (g.expires_at is null or g.expires_at > ${at}::timestamptz)
-      order by g.sequence desc limit 1
-    ) g on true
-    join data_records r
-      on r.workspace_id = ${workspaceId} and r.generation_id = g.id
-     and (r.expires_at is null or r.expires_at > ${at}::timestamptz)
-    where d.workspace_id = ${workspaceId} and d.kind = 'source'
-      and d.connection_id in (${sql.join(
-        connectionIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
-      and (
-        (d.key = 'sales_rows'
-          and r."values"->>'day' >= ${since}
-          and ${decimal(sql`r."values"->>'units'`)}
-            * ${decimal(sql`r."values"->>'developer_proceeds_per_unit'`)} > 0)
-        or (d.key = 'earning_rows'
-          and r."values"->>'transaction_day' >= ${since}
-          and ${decimal(sql`r."values"->>'merchant_amount'`)} > 0)
-      )`);
-  return new Set(
-    rows.map((row) => `${row.connection_id as string}:${row.app_id as string}`),
-  );
+/** The sign of a decimal value (string or number); 0 for anything else. */
+function decimalSign(value: unknown): -1 | 0 | 1 {
+  const text =
+    typeof value === "string"
+      ? value
+      : typeof value === "number" && Number.isFinite(value)
+        ? String(value)
+        : "";
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
+  if (!match || /^0*$/.test(match[2]! + (match[3] ?? ""))) return 0;
+  return match[1] ? -1 : 1;
 }
 
 /**
- * The apps of the connections' synced source rows the template reads
- * (STORE_SOURCE_DATASETS), from each dataset's latest generation.
+ * Sources whose data is gone or not there yet read as no rows: the identity
+ * then shows no proceeds and no report-only apps for them, as the
+ * dashboards show no data. Row-limit and other failures still fail.
  */
-export async function appsInData(
+const NO_DATA = new Set([
+  "data_source_expired",
+  "data_source_history_unavailable",
+  "data_source_not_found",
+]);
+
+/**
+ * What the install's tables and synced reports say, read through the data
+ * reader (createDataLoader) that dashboards and queries use, so the same
+ * guarantees hold: the resolved policy's row budget (413
+ * data_source_row_limit), its retention ceiling on collected records, and
+ * stored expiry of generations and records.
+ *
+ * - `products`, `mapping`: the rows of the install's Products and mapping
+ *   tables.
+ * - `dataApps`: the apps the synced source rows name (STORE_SOURCE_DATASETS).
+ * - `proceeds`: app keys with proceeds since `since` (YYYY-MM-DD): App Store
+ *   sales rows whose units and developer proceeds per unit are both
+ *   positive or both negative (a positive product), Play earnings rows with
+ *   a positive amount (charges; fees and refunds are negative).
+ */
+export async function readInstallData(
   tx: Transaction,
   workspaceId: string,
-  connectionIds: string[],
-  now: Date,
-): Promise<{ connectionId: string; appId: string }[]> {
-  if (!connectionIds.length) return [];
-  const at = now.toISOString(),
-    keys = [...new Set(Object.values(STORE_SOURCE_DATASETS).flat())];
-  const rows = await tx.execute(sql`
-    select distinct d.connection_id, r."values"->>'app_id' as app_id
-    from data_datasets d
-    join lateral (
-      select g.id from data_generations g
-      where g.workspace_id = ${workspaceId} and g.dataset_id = d.id
-        and (g.expires_at is null or g.expires_at > ${at}::timestamptz)
-      order by g.sequence desc limit 1
-    ) g on true
-    join data_records r
-      on r.workspace_id = ${workspaceId} and r.generation_id = g.id
-     and (r.expires_at is null or r.expires_at > ${at}::timestamptz)
-    where d.workspace_id = ${workspaceId} and d.kind = 'source'
-      and d.connection_id in (${sql.join(
-        connectionIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
-      and d.key in (${sql.join(
-        keys.map((key) => sql`${key}`),
-        sql`, `,
-      )})
-      and coalesce(r."values"->>'app_id', '') <> ''
-    order by 1, 2`);
-  return rows.map((row) => ({
-    connectionId: row.connection_id as string,
-    appId: row.app_id as string,
-  }));
+  input: {
+    productDatasetId: string;
+    mappingDatasetId: string;
+    connectionIds: string[];
+    since: string;
+    now: Date;
+    policy: DataPolicy;
+  },
+) {
+  const loader = createDataLoader(tx, workspaceId, input.now, {
+    policy: input.policy,
+    allowPendingResults: true,
+  });
+  const rows = async (datasetId: string) => {
+    try {
+      return (await loader.load(datasetId)).rows;
+    } catch (error) {
+      if (error instanceof DataServiceError && NO_DATA.has(error.code))
+        return [];
+      throw error;
+    }
+  };
+  const products = await rows(input.productDatasetId);
+  const mapping = await rows(input.mappingDatasetId);
+  const keys = [...new Set(Object.values(STORE_SOURCE_DATASETS).flat())];
+  const sources = input.connectionIds.length
+    ? await tx
+        .select({
+          id: schema.dataDatasets.id,
+          connectionId: schema.dataDatasets.connectionId,
+          key: schema.dataDatasets.key,
+        })
+        .from(schema.dataDatasets)
+        .where(
+          and(
+            eq(schema.dataDatasets.workspaceId, workspaceId),
+            eq(schema.dataDatasets.kind, "source"),
+            inArray(schema.dataDatasets.connectionId, input.connectionIds),
+            inArray(schema.dataDatasets.key, keys),
+          ),
+        )
+        .orderBy(
+          asc(schema.dataDatasets.connectionId),
+          asc(schema.dataDatasets.key),
+        )
+    : [];
+  const dataApps = new Map<string, { connectionId: string; appId: string }>(),
+    proceeds = new Set<string>();
+  for (const source of sources) {
+    const connectionId = source.connectionId!;
+    for (const row of await rows(source.id)) {
+      const appId = row.app_id;
+      if (typeof appId !== "string" || !appId) continue;
+      const key = connectionId + ":" + appId;
+      if (!dataApps.has(key)) dataApps.set(key, { connectionId, appId });
+      if (
+        source.key === "sales_rows" &&
+        typeof row.day === "string" &&
+        row.day >= input.since &&
+        decimalSign(row.units) * decimalSign(row.developer_proceeds_per_unit) >
+          0
+      )
+        proceeds.add(key);
+      if (
+        source.key === "earning_rows" &&
+        typeof row.transaction_day === "string" &&
+        row.transaction_day >= input.since &&
+        decimalSign(row.merchant_amount) > 0
+      )
+        proceeds.add(key);
+    }
+  }
+  return { products, mapping, dataApps: [...dataApps.values()], proceeds };
 }
 
 /** An app of an install's connections, as the products resolve it. */
@@ -363,19 +346,6 @@ export async function readStoreProducts(
     ]),
   );
   const connectionIds = [...connections.keys()];
-  // One after another: the queries share the transaction's connection.
-  const productRows = await latestRecords(
-    tx,
-    workspaceId,
-    result.productDatasetId,
-    now,
-  );
-  const mappingRows = await latestRecords(
-    tx,
-    workspaceId,
-    result.mappingDatasetId,
-    now,
-  );
   const policy = (await resolveDataPolicy(tx, workspaceId, defaults)).policy;
   const resources = await resourceCatalog(
     tx,
@@ -393,16 +363,21 @@ export async function readStoreProducts(
         eq(schema.dataTemplateProducts.requestId, requestId),
       ),
     );
-  const proceeds = await appsWithProceeds(
-    tx,
-    workspaceId,
+  const {
+    products: productRows,
+    mapping: mappingRows,
+    dataApps,
+    proceeds,
+  } = await readInstallData(tx, workspaceId, {
+    productDatasetId: result.productDatasetId,
+    mappingDatasetId: result.mappingDatasetId,
     connectionIds,
-    new Date(now.getTime() - PROCEEDS_WINDOW_DAYS * 86_400_000)
+    since: new Date(now.getTime() - PROCEEDS_WINDOW_DAYS * 86_400_000)
       .toISOString()
       .slice(0, 10),
     now,
-  );
-  const dataApps = await appsInData(tx, workspaceId, connectionIds, now);
+    policy,
+  });
   const products = resolveStoreProducts({
     products: productRows,
     mapping: mappingRows,
@@ -415,6 +390,11 @@ export async function readStoreProducts(
     })),
     dataApps,
   });
+  const discovered = new Set(
+    resources.map(
+      (resource) => resource.connectionId + ":" + resource.resourceId,
+    ),
+  );
   const iconOf = new Map<string, ImageRow>();
   for (const icon of icons) {
     const key = resourceNameKey(icon.connectionId!, icon.resourceId!);
@@ -444,6 +424,11 @@ export async function readStoreProducts(
       const iconApp = ordered.find((app) =>
         iconOf.has(resourceNameKey(app.connectionId, app.appId)),
       );
+      // The icon service fetches icons of discovered resources only; an
+      // app only the reports or the mapping name offers none.
+      const iconSource = ordered.find((app) =>
+        discovered.has(app.connectionId + ":" + app.appId),
+      );
       const setting = settingOf.get(productId);
       const pricing = (setting?.pricing ?? "auto") as StoreProductPricing;
       const hadProceeds = product.apps.some((app) =>
@@ -458,10 +443,10 @@ export async function readStoreProducts(
               iconOf.get(resourceNameKey(iconApp.connectionId, iconApp.appId))!,
             )
           : null,
-        iconSource: ordered[0]
+        iconSource: iconSource
           ? {
-              connectionId: ordered[0].connectionId,
-              resourceId: ordered[0].appId,
+              connectionId: iconSource.connectionId,
+              resourceId: iconSource.appId,
             }
           : null,
         pricing,
