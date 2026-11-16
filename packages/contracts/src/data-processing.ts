@@ -17,6 +17,23 @@ const id = z
   .regex(/^[a-z][a-z0-9_.-]{0,99}$/)
   .refine((v) => !["constructor", "prototype", "__proto__"].includes(v));
 export const dataSourceIdSchema = z.string().min(1).max(240);
+/**
+ * The warning of a preview or query that reads a connection's source
+ * dataset whose history may be incomplete (#635): a backfill of the
+ * connection waits or runs, or none has read the dataset at its current
+ * schema version yet (e.g. a connector update added it). Earlier days may
+ * be missing until the backfill finishes; the connection page says more.
+ */
+export const SOURCE_HISTORY_INCOMPLETE_WARNING = "source_history_incomplete";
+/**
+ * Warning codes of a preview or query result. Clients show the codes they
+ * know and count the others.
+ */
+const dataWarningsSchema = z
+  .array(z.string())
+  .describe(
+    `Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or ${SOURCE_HISTORY_INCOMPLETE_WARNING} while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others.`,
+  );
 export const dataFieldViewSchema = z.object({
   id,
   name: z.string().min(1).max(100),
@@ -267,7 +284,7 @@ export const dataPreviewResponseSchema = z.object({
   fields: z.array(dataFieldViewSchema),
   rows: z.array(z.record(z.string(), z.unknown())).max(100),
   truncated: z.boolean(),
-  warnings: z.array(z.string()),
+  warnings: dataWarningsSchema,
 });
 const draftContextSchema = z.strictObject({
   id: z.uuid(),
@@ -420,7 +437,7 @@ export const modelQueryResponseSchema = z.object({
       }),
     )
     .max(1000),
-  warnings: z.array(z.string()),
+  warnings: dataWarningsSchema,
   operations: z.number().int().nonnegative(),
   provenance: z.array(
     z.object({ datasetId: z.string(), generationId: z.string() }),
@@ -482,7 +499,7 @@ export const preparationPreviewResponseSchema = z.object({
       truncated: z.boolean(),
     }),
   ),
-  warnings: z.array(z.string()),
+  warnings: dataWarningsSchema,
   rejectedRows: z.number().int().nonnegative(),
 });
 export const preparationPreviewRequestSchema = z.strictObject({

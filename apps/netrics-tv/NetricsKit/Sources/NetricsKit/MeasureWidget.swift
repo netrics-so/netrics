@@ -259,6 +259,9 @@ extension MeasureWidgetData {
  * only, since nobody at a TV can check a model or reconnect a source.
  */
 extension MeasureWidgetData {
+    /// The warning of a result that reads a source whose history is still
+    /// loading or incomplete (#635; SOURCE_HISTORY_INCOMPLETE_WARNING).
+    public static let sourceHistoryIncomplete = "source_history_incomplete"
     /// The line instead of the data when the request failed or the result
     /// expired: "Data not available yet" while the source has not imported,
     /// else "Data not available"; nil with data to show.
@@ -267,14 +270,20 @@ extension MeasureWidgetData {
         return KitStrings.text(
             error == "data_source_pending" && !expired ? .measurePending : .measureUnavailable, language)
     }
-    /// "Some source data is missing." for partial cells, then "2 data
-    /// warnings" for the result's warnings.
+    /// "Some source data is missing." for partial cells, "History
+    /// incomplete." while a source's history still loads (#635), then "2
+    /// data warnings" for the result's other warnings.
     public func viewerWarnings(rows: [MeasureResultRow], language: ScreenLanguage) -> [String] {
         var lines: [String] = []
         if rows.contains(where: { $0.measures.values.contains { $0.status == "partial" } }) {
             lines.append(KitStrings.text(.measurePartial, language))
         }
-        if let count = result?.warnings.count, count > 0 {
+        let warnings = result?.warnings ?? []
+        if warnings.contains(Self.sourceHistoryIncomplete) {
+            lines.append(KitStrings.text(.measureHistoryIncomplete, language))
+        }
+        let count = warnings.filter { $0 != Self.sourceHistoryIncomplete }.count
+        if count > 0 {
             lines.append(
                 KitStrings.text(count == 1 ? .measureWarningOne : .measureWarningOther, language, count))
         }

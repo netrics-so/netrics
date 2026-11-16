@@ -432,6 +432,35 @@ describe("viewer wording on paired screens (#649)", () => {
     expect(de).not.toContain("Prüfe");
   });
 
+  it("says when a source's history is still loading (#635)", () => {
+    const loading = (audience?: "editor" | "viewer") => {
+      const base = props(audience);
+      return {
+        ...base,
+        data: {
+          ...base.data!,
+          result: {
+            ...base.data!.result!,
+            warnings: ["source_history_incomplete"],
+          },
+        },
+      };
+    };
+    const editor = renderI18n(<MeasureWidgetView {...loading()} />);
+    expect(editor).toContain(
+      "History incomplete: a source is still loading earlier days, so they may be missing.",
+    );
+    // Its own note, not counted as another warning.
+    expect(editor).not.toContain("data warning");
+    const viewer = renderI18n(<MeasureWidgetView {...loading("viewer")} />);
+    expect(viewer).toContain(
+      "History incomplete. Earlier days may be missing.",
+    );
+    const de = renderI18n(<MeasureWidgetView {...loading("viewer")} />, "de");
+    expect(de).toContain("Verlauf unvollständig. Frühere Tage können fehlen.");
+    expect(de).not.toContain("Datenhinweis");
+  });
+
   /** The same tile with a data error, or sources needing attention. */
   const failing = (
     error: string | null,

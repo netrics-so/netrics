@@ -38,6 +38,7 @@ export type {
 } from "./context.js";
 export {
   claimJobs,
+  DEFAULT_BACKFILLS_PER_APP,
   completeJob,
   deferJob,
   enqueueJob,
@@ -576,6 +577,7 @@ export {
   lockWorkspaceBackfills,
   markHistoryReloadRequested,
   queueDatasetBackfill,
+  sourceHistoryIncomplete,
   storedDatasetsMissingBackfill,
 } from "./dataset-backfill.js";
 export type {

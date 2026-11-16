@@ -19,6 +19,7 @@ import {
   manualDatasetPageInputSchema,
   preparationGraphSchema,
   semanticModelDefinitionSchema,
+  SOURCE_HISTORY_INCOMPLETE_WARNING,
   type DataImpact,
   type DataImpactTarget,
   type DataUsers,
@@ -61,6 +62,7 @@ import {
   isTransactionHandle,
   retryOnSerializationFailure,
   resolveDataPolicy,
+  sourceHistoryIncomplete,
   isPooledDatabase,
   processSessionLocks,
   SessionLockQueue,
@@ -273,6 +275,28 @@ function readPageToken(token: string): PageToken {
     sessionId: sessionId!,
     offset: Number(offset),
   };
+}
+/**
+ * The key a snapshot's generation map holds next to a source's pinned
+ * generation when that source's history was incomplete as it was pinned
+ * (#635). A pinned read says what the source was then, not what its
+ * connection's backfill says now: a page session that started before the
+ * backfill finished still lacks the history on its later pages. Never a
+ * dataset id, so generation lookups and pin checks ignore it.
+ */
+const historyIncompletePin = (datasetId: string) =>
+  "history_incomplete:" + datasetId;
+/** The generation map a snapshot stores: the pins and their history marks. */
+function snapshotGenerations(
+  loader: {
+    generations: Readonly<Record<string, string>>;
+    historyIncomplete: ReadonlySet<string>;
+  },
+  generations: Record<string, string> = { ...loader.generations },
+): Record<string, string> {
+  for (const id of loader.historyIncomplete)
+    if (generations[id]) generations[historyIncompletePin(id)] = "1";
+  return generations;
 }
 function writePageToken(token: PageToken) {
   return token.releaseId + ":" + token.sessionId + ":" + token.offset;
@@ -656,6 +680,8 @@ export function createDataLoader(
   const generations: Record<string, string> = { ...seed?.generations };
   const bindings: Record<string, DataField[]> = { ...seed?.bindings };
   const warnings = new Set<string>(seed?.warnings);
+  /** Sources whose connection's history is incomplete (#635). */
+  const historyIncompleteSources = new Set<string>(seed?.historyIncomplete);
   const policy = options.policy ?? { ...DEFAULT_DATA_POLICY };
   const budget = new ProcessingBudget(policy.queryOperations, {
     rows: policy.queryRows,
@@ -670,7 +696,12 @@ export function createDataLoader(
    * warnings of this source itself: not what the load added to this
    * loader's set, which may already hold them from another source.
    */
-  const share = (id: string, table: DataTable, historyIncomplete = false) =>
+  const share = (
+    id: string,
+    table: DataTable,
+    historyIncomplete = false,
+    backfillIncomplete = false,
+  ) =>
     shareable(id)?.set(id, {
       table,
       view: views.get(id)!,
@@ -678,6 +709,7 @@ export function createDataLoader(
       warnings: [
         ...(table.pendingSources?.length ? ["data_source_pending"] : []),
         ...(historyIncomplete ? ["retained_source_history_incomplete"] : []),
+        ...(backfillIncomplete ? [SOURCE_HISTORY_INCOMPLETE_WARNING] : []),
       ],
     });
   const load = async (id: string): Promise<DataTable> => {
@@ -694,13 +726,16 @@ export function createDataLoader(
     ) {
       validateDataTable(shared.table, budget);
       shared.warnings.forEach((warning) => warnings.add(warning));
+      if (shared.warnings.includes(SOURCE_HISTORY_INCOMPLETE_WARNING))
+        historyIncompleteSources.add(id);
       if (shared.generationId) generations[id] = shared.generationId;
       views.set(id, shared.view);
       bindings[id] = shared.table.fields;
       tables.set(id, shared.table);
       return shared.table;
     }
-    let historyIncomplete = false;
+    let historyIncomplete = false,
+      backfillIncomplete = false;
     visiting.add(id);
     let result: DataTable;
     if (id.startsWith("prepared:")) {
@@ -1081,6 +1116,25 @@ export function createDataLoader(
         warnings.add("retained_source_history_incomplete");
         historyIncomplete = true;
       }
+      // A connection's history still loading or not read by a backfill
+      // yet (#635): earlier days may be missing, not zero. A pinned
+      // generation is as incomplete as it was when it was pinned.
+      if (
+        dataset.kind === "source" &&
+        dataset.connectionId &&
+        (requested
+          ? options.generations?.[historyIncompletePin(id)] !== undefined
+          : await sourceHistoryIncomplete(tx, {
+              workspaceId,
+              connectionId: dataset.connectionId,
+              key: dataset.key,
+              schemaVersion: generation.schemaVersion,
+            }))
+      ) {
+        warnings.add(SOURCE_HISTORY_INCOMPLETE_WARNING);
+        historyIncompleteSources.add(id);
+        backfillIncomplete = true;
+      }
       const expiry = records.reduce<Date | null>((min, row) => {
         const policyExpiry =
           policy.maxRetentionDays === null
@@ -1121,7 +1175,7 @@ export function createDataLoader(
     bindings[id] = result.fields;
     visiting.delete(id);
     tables.set(id, result);
-    share(id, result, historyIncomplete);
+    share(id, result, historyIncomplete, backfillIncomplete);
     return result;
   };
   return {
@@ -1133,6 +1187,7 @@ export function createDataLoader(
     generations,
     bindings,
     warnings,
+    historyIncomplete: historyIncompleteSources,
     budget,
   };
 }
@@ -1148,6 +1203,7 @@ interface LoaderState {
   generations: Readonly<Record<string, string>>;
   bindings: Readonly<Record<string, DataField[]>>;
   warnings: ReadonlySet<string>;
+  historyIncomplete?: ReadonlySet<string>;
 }
 /** Loads shared by the loaders of one batch (#668). */
 export interface SharedLoads {
@@ -3457,7 +3513,7 @@ export async function queryDataModel(
         ) &&
         policy.querySnapshotSeconds !== 0
       ) {
-        const generations = { ...execution.loader.generations };
+        const generations = snapshotGenerations(execution.loader);
         for (const table of execution.loader.tables.values())
           for (const source of table.provenance ?? [])
             if (source.datasetId.startsWith("prepared:"))
@@ -3554,7 +3610,7 @@ export async function queryDataModel(
             workspaceId: workspaceId,
             releaseId: release.id,
             queryKey,
-            generations: execution.loader.generations,
+            generations: snapshotGenerations(execution.loader),
             expiresAt,
             updatedAt: now,
           })
@@ -3564,7 +3620,7 @@ export async function queryDataModel(
               schema.dataModelQuerySnapshots.queryKey,
             ],
             set: {
-              generations: execution.loader.generations,
+              generations: snapshotGenerations(execution.loader),
               expiresAt,
               updatedAt: now,
             },

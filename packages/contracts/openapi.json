@@ -13544,7 +13544,8 @@
                                     "type": "array",
                                     "items": {
                                       "type": "string"
-                                    }
+                                    },
+                                    "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                                   },
                                   "operations": {
                                     "type": "integer",
@@ -14932,7 +14933,8 @@
                                     "type": "array",
                                     "items": {
                                       "type": "string"
-                                    }
+                                    },
+                                    "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                                   },
                                   "operations": {
                                     "type": "integer",
@@ -33408,7 +33410,8 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                     }
                   },
                   "required": [
@@ -38756,7 +38759,8 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                     },
                     "rejectedRows": {
                       "type": "integer",
@@ -45613,7 +45617,8 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                     },
                     "operations": {
                       "type": "integer",
@@ -50487,7 +50492,8 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                     },
                     "operations": {
                       "type": "integer",
@@ -51044,7 +51050,8 @@
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                     },
                     "operations": {
                       "type": "integer",
@@ -69052,7 +69059,8 @@
                                                       "type": "array",
                                                       "items": {
                                                         "type": "string"
-                                                      }
+                                                      },
+                                                      "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                                                     },
                                                     "operations": {
                                                       "type": "integer",
@@ -73276,7 +73284,8 @@
                                                       "type": "array",
                                                       "items": {
                                                         "type": "string"
-                                                      }
+                                                      },
+                                                      "description": "Warning codes, e.g. data_source_pending, retained_source_history_incomplete, or source_history_incomplete while a source's history is still loading or incomplete (a backfill waits, runs, or has not read it yet). Clients show the codes they know and count the others."
                                                     },
                                                     "operations": {
                                                       "type": "integer",

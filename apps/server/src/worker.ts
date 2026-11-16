@@ -10,6 +10,7 @@ import {
   completeJob,
   deferJob,
   createDatabase,
+  DEFAULT_BACKFILLS_PER_APP,
   failJob,
   heartbeat,
   renewJobLease,
@@ -69,6 +70,11 @@ export interface WorkerDeps {
   handlers?: Record<string, JobHandler>;
   workerId?: string;
   concurrency?: number;
+  /**
+   * Backfills of one connector's OAuth connections running at a time across
+   * workspaces (#635); 0 is no cap. Default DEFAULT_BACKFILLS_PER_APP.
+   */
+  backfillsPerApp?: number;
   /** Idle sleep between claim attempts. */
   pollMs?: number;
   /** Running jobs locked longer than this are reclaimed (worker crash). */
@@ -91,6 +97,7 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
   const handlers = deps.handlers ?? createJobHandlers();
   const workerId = deps.workerId ?? `worker:${hostname()}:${process.pid}`;
   const concurrency = deps.concurrency ?? 4;
+  const backfillsPerApp = deps.backfillsPerApp ?? DEFAULT_BACKFILLS_PER_APP;
   const pollMs = deps.pollMs ?? 1000;
   const staleAfterSeconds = deps.staleAfterSeconds ?? 300;
   const heartbeatMs = deps.heartbeatMs ?? 5000;
@@ -231,6 +238,7 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
       workerId,
       capacity,
       staleAfterSeconds,
+      backfillsPerApp,
     );
     for (const job of jobs) {
       const promise = executeJob(job).finally(() => {
@@ -339,6 +347,7 @@ export async function startWorker(config: Config): Promise<void> {
       }),
     }),
     concurrency: config.workerConcurrency,
+    backfillsPerApp: config.workerBackfillsPerApp,
     pollMs: config.workerPollMs,
     logger,
   });

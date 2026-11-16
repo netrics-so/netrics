@@ -571,8 +571,20 @@ another.
 over each connection's own poll interval. At most one automatic backfill per
 workspace waits or runs at a time, because connections in a workspace often
 share a provider key and its hourly limit (ADR 0014). The others ask again on
-their next run. Provider quotas shared across workspaces, such as a hosted
-OAuth app's (Google), are not covered by this throttle.
+their next run.
+
+**Shared provider apps.** An OAuth app has one quota for every workspace that
+connects through it, e.g. the hosted service's Google app (#635). The worker
+therefore claims at most `WORKER_BACKFILLS_PER_APP` (default 4, `0` for no
+cap) `connection.backfill` jobs of OAuth connections per connector and OAuth
+provider at a time, across all workspaces. This covers first imports,
+automatic backfills and "Reload history" alike. A backfill that hands over to
+a continuation keeps its slot until it finishes; among continuing backfills
+the older go first. The others wait in the queue and start as slots free up.
+Incremental syncs are not capped, and connections with their own API keys are
+limited per workspace only. The cap is part of `claim_jobs` (migration 0080),
+which runs as the owner and reads only the connector and provider of the
+connection. Set the same value on every worker.
 
 **Connections from before #617.** These have no record yet, and the first check
 derives one. A stored dataset counts as read if a succeeded backfill run
@@ -585,7 +597,16 @@ hands over to a continuation writes `continued`, a failed attempt `failed`.
 window, as before.
 
 **Visibility.** The connection page says when the history is still loading. It
-names the stored datasets whose history is incomplete.
+names the stored datasets whose history is incomplete. Data page previews
+(sources and preparations), model queries and dashboard tiles carry the
+warning `source_history_incomplete` while a source dataset they read belongs
+to a connection whose backfill waits or runs, or whose backfill record lacks
+the dataset at the schema version of its stored rows (#635). The Data page,
+dashboard tiles and paired screens show it as a short "History incomplete"
+note. A connection without a record (a connector without backfills) shows no
+note. A snapshot (pinned pages, the last valid result) records which of its
+pinned sources were incomplete, so a read of a pinned generation keeps the
+state it had when it was pinned, not the connection's state now.
 
 **Reload history.** Members with `connections:update` can press "Reload
 history" (`POST …/connections/{id}/backfill`). It is audited with the member,

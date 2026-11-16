@@ -2,7 +2,11 @@
 import Link from "next/link";
 import { useDashboardData } from "./dashboard-data-provider";
 import { useEffect, useState, type CSSProperties } from "react";
-import type { DashboardWidget, DashboardWidgetData } from "@netrics/contracts";
+import {
+  SOURCE_HISTORY_INCOMPLETE_WARNING,
+  type DashboardWidget,
+  type DashboardWidgetData,
+} from "@netrics/contracts";
 import type { StudioEnv } from "@/lib/studio-widgets";
 import { previewDashboardMeasures } from "@/lib/dashboard-data-api";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -185,6 +189,15 @@ export function MeasureWidgetView({
     ? new Date(data.result.expiresAt).getTime() <= now
     : false;
   const rows = expired ? [] : (data?.result?.rows ?? []);
+  // A source still loading its history gets its own note (#635); the other
+  // warnings are counted.
+  const warnings = data?.result?.warnings ?? [];
+  const historyIncomplete = warnings.includes(
+    SOURCE_HISTORY_INCOMPLETE_WARNING,
+  );
+  const otherWarnings = warnings.filter(
+    (warning) => warning !== SOURCE_HISTORY_INCOMPLETE_WARNING,
+  );
   const label =
     widget.title ??
     (data?.metadata
@@ -496,12 +509,21 @@ export function MeasureWidgetView({
           {t(viewer ? "dashboard.viewer.partial" : "dashboard.partialResult")}
         </p>
       ) : null}
-      {data?.result?.warnings.length ? (
+      {historyIncomplete ? (
+        <p className="sw-notice">
+          {t(
+            viewer
+              ? "dashboard.viewer.historyIncomplete"
+              : "dashboard.historyIncomplete",
+          )}
+        </p>
+      ) : null}
+      {otherWarnings.length ? (
         <p className="sw-notice">
           {t(
             viewer ? "dashboard.viewer.warnings" : "dashboard.resultWarnings",
             {
-              count: data.result.warnings.length,
+              count: otherWarnings.length,
             },
           )}
         </p>

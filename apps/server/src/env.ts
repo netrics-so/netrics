@@ -10,6 +10,7 @@ import {
   dataPolicyOverrideSchema,
   parseDataPolicyDefaults,
 } from "@netrics/contracts";
+import { DEFAULT_BACKFILLS_PER_APP } from "@netrics/database";
 
 import { Secret } from "./secret.js";
 
@@ -148,6 +149,15 @@ const envSchema = z
     // Worker: idle sleep between claim attempts and max parallel jobs.
     WORKER_POLL_MS: z.coerce.number().int().min(10).default(1000),
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+    // Worker: backfills of one connector's OAuth connections that run at a
+    // time across all workspaces, which share the OAuth app's quota (#635);
+    // 0 removes the cap.
+    WORKER_BACKFILLS_PER_APP: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1000)
+      .default(DEFAULT_BACKFILLS_PER_APP),
     // better-auth session signing secret (>= 32 chars).
     BETTER_AUTH_SECRET: z.string().min(32).optional(),
     // Instance master key for credential envelopes (base64, 32 bytes decoded).
@@ -355,6 +365,7 @@ const envSchema = z
     schedulerPollMs: env.SCHEDULER_POLL_MS,
     workerPollMs: env.WORKER_POLL_MS,
     workerConcurrency: env.WORKER_CONCURRENCY,
+    workerBackfillsPerApp: env.WORKER_BACKFILLS_PER_APP,
     betterAuthSecret: env.BETTER_AUTH_SECRET ?? DEV_BETTER_AUTH_SECRET,
     appEncryptionKey: env.APP_ENCRYPTION_KEY ?? DEV_APP_ENCRYPTION_KEY,
     appEncryptionKeysPrevious: env.APP_ENCRYPTION_KEYS_PREVIOUS,

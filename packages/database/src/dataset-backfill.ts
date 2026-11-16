@@ -125,6 +125,57 @@ export async function connectionBackfillState(
 }
 
 /**
+ * Whether a connection's source dataset may lack history (#635), for the
+ * Data page and dashboard tiles that read it: a backfill of the connection
+ * waits or runs, or the backfill record lacks the dataset at the schema
+ * version its stored rows have (`schemaVersion`), e.g. after a connector
+ * update added it and before a backfill read it. A connection without a
+ * record (before #617, or a connector without backfills, which never
+ * writes one) is complete unless a backfill waits or runs.
+ */
+export async function sourceHistoryIncomplete(
+  tx: Transaction,
+  input: {
+    workspaceId: string;
+    connectionId: string;
+    key: string;
+    schemaVersion: number;
+  },
+): Promise<boolean> {
+  const { workspaceId, connectionId } = input;
+  const [state] = await tx
+    .select({
+      backfilled: schema.connectionState.backfilledDatasets,
+      backfilling: exists(
+        tx
+          .select({ one: sql`1` })
+          .from(schema.jobs)
+          .where(
+            and(
+              eq(schema.jobs.workspaceId, workspaceId),
+              eq(schema.jobs.connectionId, connectionId),
+              eq(schema.jobs.kind, "connection.backfill"),
+              inArray(schema.jobs.status, [...ACTIVE_BACKFILL]),
+            ),
+          ),
+      ),
+    })
+    .from(schema.connectionState)
+    .where(
+      and(
+        eq(schema.connectionState.workspaceId, workspaceId),
+        eq(schema.connectionState.connectionId, connectionId),
+      ),
+    );
+  if (!state) return false;
+  if (state.backfilling) return true;
+  return (
+    state.backfilled !== null &&
+    state.backfilled[input.key] !== input.schemaVersion
+  );
+}
+
+/**
  * The record for a connection from before #617 (backfilled_datasets null),
  * derived from what is stored. A declared dataset counts as backfilled when
  * a succeeded backfill run finished after its declared schema version was
@@ -288,7 +339,8 @@ export type DatasetBackfillOutcome =
  *   (`workspace_busy`): connections of a workspace often share one
  *   provider key and its rate limit (ADR 0014), and a connector update
  *   reaches every connection at once. The next incremental run asks again.
- *   Provider quotas shared across workspaces are not covered.
+ *   Provider quotas shared across workspaces (an OAuth app) are capped
+ *   when the worker claims backfills (claimJobs, #635).
  * - The datasets queued for are recorded with the time and a count. The
  *   same set is queued again once, a day later (the first backfill failed,
  *   or ran on a worker without them), then no more: no retry on every
