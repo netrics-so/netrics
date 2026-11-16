@@ -619,6 +619,14 @@ async function runSync(
       ).forConnection(binding)
     : undefined;
 
+  // Connector log lines (SDK 0.2.14, #638), already sanitized by the
+  // runtime, attributed to this connection, run (jobId) and attempt.
+  const connectorLog = log.child({ source: "connector" });
+  const executeOptions: ExecuteOptions = {
+    ...deps.executeOptions,
+    log: ({ level, connector: connectorId, message, fields }) =>
+      connectorLog[level]({ connector: connectorId, fields }, message),
+  };
   /**
    * Runs one connector call with this connection's credentials: stored
    * credentials, for OAuth a valid access token (one retry with a refreshed
@@ -633,7 +641,7 @@ async function runSync(
       ? callWithSignedKey({
           key: signedKey,
           ...(signedKeyCache ? { cache: signedKeyCache } : {}),
-          ...(deps.executeOptions ? { options: deps.executeOptions } : {}),
+          options: executeOptions,
           call: (tokenCredentials, options) =>
             call({ ...context, credentials: { ...tokenCredentials } }, options),
           ...(rejected ? { rejected } : {}),
@@ -643,7 +651,7 @@ async function runSync(
             tokens: deps.oauthTokens,
             binding,
             requiredScopes: oauthStrategy.scopes,
-            ...(deps.executeOptions ? { options: deps.executeOptions } : {}),
+            options: executeOptions,
             call: (oauthCredentials, options) =>
               call(
                 { ...context, credentials: { ...oauthCredentials } },
@@ -651,7 +659,7 @@ async function runSync(
               ),
             ...(rejected ? { rejected } : {}),
           })
-        : call(context, deps.executeOptions ?? {});
+        : call(context, executeOptions);
 
   /**
    * Records an OAuth token failure or a refused signed key; returns the

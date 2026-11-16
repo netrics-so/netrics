@@ -1,4 +1,5 @@
 import type {
+  ConnectorLogger,
   Observation,
   ReviewWindow,
   SyncReview,
@@ -487,7 +488,7 @@ export async function syncReviewApps(
     now: number;
     from: string;
     maxDays: number;
-    log: (message: string) => void;
+    log: ConnectorLogger;
   },
 ): Promise<{
   observations: Observation[];
@@ -515,8 +516,9 @@ export async function syncReviewApps(
       result = await readAppReviews(client, appId, window.readFrom);
     } catch (error) {
       if (isRateLimited(error)) {
-        options.log(
+        options.log.info(
           "App Store reviews postponed: the reviews key's hourly request budget is used up",
+          { app: appId },
         );
         return done(true);
       }
@@ -526,15 +528,17 @@ export async function syncReviewApps(
           : error instanceof Error
             ? error.name
             : "Error";
-      options.log(
+      options.log.warn(
         `App Store reviews of app ${appId} skipped: ${message.slice(0, 300)}`,
+        { app: appId },
       );
       skipped += 1;
       continue;
     }
     if (result.status === "refused") {
-      options.log(
+      options.log.warn(
         `${REVIEWS_PAUSED_MESSAGE} (HTTP ${result.httpStatus} for app ${appId})`,
+        { app: appId, status: result.httpStatus },
       );
       return done(true);
     }
@@ -542,13 +546,15 @@ export async function syncReviewApps(
     if (result.truncatedAt !== undefined) {
       // The oldest day read may be incomplete: keep only later days.
       emitFrom = Math.max(emitFrom, result.truncatedAt + DAY_MS);
-      options.log(
+      options.log.info(
         `App Store reviews of app ${appId}: more than ${MAX_REVIEW_PAGES * REVIEWS_PAGE_SIZE} reviews in the window; days before ${new Date(emitFrom).toISOString().slice(0, 10)} were not read again`,
+        { app: appId, readFrom: new Date(emitFrom).toISOString().slice(0, 10) },
       );
     }
     if (result.unreadable > 0) {
-      options.log(
+      options.log.info(
         `App Store reviews of app ${appId}: ${result.unreadable} reviews without a readable creation date were not counted`,
+        { app: appId, unreadable: result.unreadable },
       );
     }
     observations.push(

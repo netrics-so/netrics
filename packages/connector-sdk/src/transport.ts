@@ -34,6 +34,14 @@ export const syncRequestSchema = z
     mode: syncModeSchema,
     from: z.iso.datetime({ offset: false }),
     to: z.iso.datetime({ offset: false }),
+    /**
+     * The `nextCursor` this connector returned earlier, exactly as returned.
+     * The cursor is opaque to the host (#638): it stores the string and
+     * hands it back unchanged, and never rewrites or migrates it. The
+     * connector owns its shape and versioning, so a connector that changes
+     * its cursor format must still read (or deliberately restart from) every
+     * shape it ever returned, for example by prefixing a version tag.
+     */
     cursor: z.string().min(1).optional(),
     resources: z.array(z.string().min(1)).optional(),
   })
@@ -154,7 +162,12 @@ export const syncResultSchema = z.object({
   /**
    * Where the next request continues. The host commits each page with its
    * cursor as a checkpoint, so a cursor returned with done=false may come
-   * back in a later run (after a failure) with a later `to`.
+   * back in a later run (after a failure) with a later `to`. Opaque to the
+   * host: see SyncRequest.cursor. The host only compares it with the
+   * request's cursor (an unchanged cursor on done=false is a contract
+   * violation) and, for an incremental run, uses a stored cursor that
+   * Date.parse reads as a date as the start of the next window. A done
+   * result without one stores the window's end instead.
    */
   nextCursor: z.string().min(1).optional(),
   done: z.boolean(),

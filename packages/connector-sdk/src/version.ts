@@ -18,7 +18,8 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.12: optional SyncResult.receivedDatasets (#666).
 // 0.2.13: optional manifest freshnessStreams and done-SyncResult freshness
 // (ADR 0025, #702).
-export const SDK_VERSION = "0.2.13";
+// 0.2.14: optional runtime.log, a structured connector logger (#638).
+export const SDK_VERSION = "0.2.14";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

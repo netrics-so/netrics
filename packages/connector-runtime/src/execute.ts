@@ -28,6 +28,7 @@ import {
   createEgressFetch,
   type EgressOptions,
 } from "./egress.js";
+import { createConnectorLogger, type ConnectorLogSink } from "./log.js";
 import { redactConnectorError, redactCredentialValues } from "./redact.js";
 
 /** Time budget per connector call (one check, discover, or sync page). */
@@ -42,6 +43,12 @@ export interface ExecuteOptions {
    * sees no bodies or headers.
    */
   onResponse?: (status: number) => void;
+  /**
+   * Receives the sanitized lines connector code writes to runtime.log
+   * (SDK 0.2.14, #638). The host attributes them to the connection and run.
+   * Without a sink, connector log lines are dropped.
+   */
+  log?: ConnectorLogSink;
   /** Tests only: reach a local fixture provider (see EgressOptions). */
   egress?: Pick<
     EgressOptions,
@@ -90,6 +97,7 @@ function classifyConnectorError(
  */
 async function withRuntime<T>(
   connector: Connector,
+  context: ConnectionContext,
   options: ExecuteOptions,
   call: (runtime: ConnectorRuntime) => Promise<T>,
 ): Promise<T> {
@@ -110,6 +118,12 @@ async function withRuntime<T>(
         }
       : egressFetch,
     signal: controller.signal,
+    log: createConnectorLogger({
+      connectorId: connector.manifest.id,
+      credentials: context.credentials,
+      sink: options.log,
+      active: () => !controller.signal.aborted,
+    }),
     ...(options.datasetStaging
       ? { datasetStaging: options.datasetStaging(controller.signal) }
       : {}),
@@ -290,7 +304,7 @@ export async function executeSync(
   assertContextIsPlain(context);
   let raw: unknown;
   try {
-    raw = await withRuntime(connector, options, (runtime) =>
+    raw = await withRuntime(connector, context, options, (runtime) =>
       connector.sync(context, parsedRequest.data, runtime),
     );
   } catch (error) {
@@ -315,6 +329,7 @@ export async function executeCheck(
   try {
     raw = await withRuntime(
       connector,
+      context,
       { timeoutMs: 15_000, ...options },
       (runtime) => connector.check(context, runtime),
     );
@@ -352,6 +367,7 @@ export async function executeDiscover(
   try {
     raw = await withRuntime(
       connector,
+      context,
       { timeoutMs: 15_000, ...options },
       (runtime) => connector.discover(context, runtime),
     );
@@ -407,6 +423,7 @@ export async function executeResourceIcons(
   try {
     raw = await withRuntime(
       connector,
+      context,
       { timeoutMs: 30_000, ...options },
       (runtime) => resourceIcons(context, parsedRequest.data, runtime),
     );

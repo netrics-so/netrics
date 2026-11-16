@@ -68,6 +68,42 @@ export interface ConnectorRuntime {
    * incremental writes (`begin`) since 0.2.11.
    */
   datasetStaging?: ConnectorDatasetStaging;
+  /**
+   * Optional (SDK 0.2.14, #638): a structured logger for notes that carry
+   * no data, such as why an item was skipped or parked. The host attributes
+   * every entry to the connection and run, and drops or redacts anything
+   * secret-like (see ConnectorLogger). Hosts before 0.2.14 pass none, so
+   * call it as `runtime.log?.info(...)` or fall back to your own.
+   */
+  log?: ConnectorLogger;
+}
+
+export type ConnectorLogLevel = "debug" | "info" | "warn" | "error";
+
+/** A field value: scalars only, no objects, arrays or raw records. */
+export type ConnectorLogValue = string | number | boolean | null;
+
+export type ConnectorLogFields = Readonly<Record<string, ConnectorLogValue>>;
+
+/**
+ * Structured log lines for connector code (SDK 0.2.14). A line is a short
+ * message plus a few scalar fields, e.g.
+ * `runtime.log?.info("report not published yet", { app: appId, day })`.
+ *
+ * Log only what is safe to read in an operator's log: ids, dates, counts,
+ * status codes. Never tokens, credentials, personal data or provider
+ * payloads. The host enforces part of this: it drops fields that are not
+ * scalars, replaces the value of every field whose name looks secret-like
+ * (secret, token, password, credential, key, authorization, cookie) with
+ * "[redacted]", strips the connection's credential values from messages
+ * and string fields, truncates long strings and limits fields per line and
+ * lines per call. Logging never throws and never fails a call.
+ */
+export interface ConnectorLogger {
+  debug(message: string, fields?: ConnectorLogFields): void;
+  info(message: string, fields?: ConnectorLogFields): void;
+  warn(message: string, fields?: ConnectorLogFields): void;
+  error(message: string, fields?: ConnectorLogFields): void;
 }
 
 /** Host-assigned identity; metadata must contain no credentials or raw records. */
