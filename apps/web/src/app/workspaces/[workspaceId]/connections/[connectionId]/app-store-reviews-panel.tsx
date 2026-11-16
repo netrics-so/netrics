@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import {
   REMOVE_REVIEWS_KEY,
+  REVIEWS_KEY_CHANGED_EVENT,
   reviewsKeyGuide,
   reviewsKeyCredentials,
   reviewsKeyStrategy,
@@ -98,6 +99,19 @@ export function AppStoreReviewsPanel({
     }
   }, [canUpdate, load]);
 
+  // The analytics card stored a key it was offered (#715).
+  useEffect(() => {
+    if (!canUpdate) {
+      return;
+    }
+    const reload = () => {
+      setOutcome(null);
+      void load();
+    };
+    window.addEventListener(REVIEWS_KEY_CHANGED_EVENT, reload);
+    return () => window.removeEventListener(REVIEWS_KEY_CHANGED_EVENT, reload);
+  }, [canUpdate, load]);
+
   function close() {
     setOpen(false);
     setValues(emptyKeyValues(keyStrategy));
@@ -170,6 +184,9 @@ export function AppStoreReviewsPanel({
   return (
     <div className="card" id="app-store-reviews">
       <h2>{t("title")}</h2>
+      <p>
+        <strong>{t("lead")}</strong>
+      </p>
       <p className="muted">{t("intro")}</p>
 
       {!canUpdate ? <p className="muted">{t("askToAdd")}</p> : null}

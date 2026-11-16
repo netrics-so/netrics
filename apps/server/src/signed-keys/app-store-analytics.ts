@@ -31,14 +31,35 @@ import type { SignedKey, SignedKeyHttp } from "./registry.js";
 export const MAX_ANALYTICS_APPS = 50;
 
 export const ADMIN_ROLE_MESSAGE =
-  "This key cannot request App Store analytics: only a team key with the Admin role can, once. The key netrics stores (Sales) cannot. Use a temporary Admin key and revoke it afterwards.";
+  "This key cannot request App Store analytics: only a team key with the Admin role can, once. Use a temporary Admin key and revoke it afterwards.";
+/**
+ * The whole step refused for the key's role (#715), as codes the web app
+ * words in the user's language: a key that is not Admin, the connection's
+ * own Sales key, or the reviews key it already stores.
+ */
+export const ADMIN_ROLE_REQUIRED = "app_store_analytics_admin_required";
+export const SALES_KEY_CANNOT_REQUEST = "app_store_analytics_sales_key";
+export const REVIEWS_KEY_CANNOT_REQUEST = "app_store_analytics_reviews_key";
 export const ADMIN_KEY_REFUSED_MESSAGE =
   "App Store Connect refused this key: it was revoked, or the issuer ID, key ID and private key do not belong together.";
 const UNREACHABLE_MESSAGE =
   "App Store Connect could not be reached to enable analytics. Try again in a few minutes.";
 
 export type AnalyticsResult<T> =
-  { ok: true; value: T } | { ok: false; message: string };
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      message: string;
+      /** The key's role cannot request reports (Apple's 403). */
+      role?: true;
+    };
+
+/** A failed step, marked when the key's role was the reason. */
+function failed(message: string): { ok: false; message: string; role?: true } {
+  return message === ADMIN_ROLE_MESSAGE
+    ? { ok: false, message, role: true }
+    : { ok: false, message };
+}
 
 /** The client of one step: tokens minted from the key, all recorded. */
 function clientOf(key: SignedKey, http: SignedKeyHttp, tokens: string[]) {
@@ -105,7 +126,7 @@ export async function enableAppStoreAnalytics(input: {
   try {
     apps = await listApps(client);
   } catch (error) {
-    return { ok: false, message: refusal(error) ?? UNREACHABLE_MESSAGE };
+    return failed(refusal(error) ?? UNREACHABLE_MESSAGE);
   }
   const targets = targetApps(apps, input.selection).slice(
     0,
@@ -128,7 +149,7 @@ export async function enableAppStoreAnalytics(input: {
         outcomes.every((entry) => entry.outcome !== "created")
       ) {
         // Nothing was requested yet: the whole step failed.
-        return { ok: false, message: stop };
+        return failed(stop);
       }
       outcomes.push({
         appId: app.id,

@@ -84474,6 +84474,25 @@
                     },
                     "keysUrl": {
                       "type": "string"
+                    },
+                    "reviewsKeyOffer": {
+                      "type": "object",
+                      "properties": {
+                        "keyId": {
+                          "type": "string"
+                        },
+                        "replacesKeyId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "keyId",
+                        "replacesKeyId"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [

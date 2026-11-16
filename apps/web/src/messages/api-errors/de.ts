@@ -234,6 +234,12 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Die Verbindung wird gerade geändert. Versuch es gleich noch einmal.",
     analytics_unsupported:
       "App-Store-Analysen gibt es nur für App-Store-Connect-Verbindungen mit hochgeladenem Schlüssel.",
+    app_store_analytics_admin_required:
+      "Mit diesem Schlüssel lassen sich keine App-Store-Analysen anfordern: Das kann nur ein Teamschlüssel mit der Rolle Admin, einmalig. Verwende einen temporären Admin-Schlüssel und widerrufe ihn danach.",
+    app_store_analytics_sales_key:
+      "Das ist der Sales-Schlüssel, den netrics schon speichert. Er liest die Analyseberichte, kann sie aber nicht anfordern: Das kann nur ein Teamschlüssel mit der Rolle Admin, einmalig. Verwende einen temporären Admin-Schlüssel und widerrufe ihn danach.",
+    app_store_analytics_reviews_key:
+      "Das ist der Customer-Support-Schlüssel, den netrics schon für Bewertungen und Rezensionen speichert. Mit ihm lassen sich keine App-Store-Analysen anfordern: Das kann nur ein Teamschlüssel mit der Rolle Admin, einmalig. Verwende einen temporären Admin-Schlüssel und widerrufe ihn danach.",
     requestFailed: "Anfrage fehlgeschlagen ({code}).",
     invalidInput: "Prüf deine Eingaben – ein Feld fehlt oder ist ungültig.",
     generic: "Etwas ist schiefgelaufen.",

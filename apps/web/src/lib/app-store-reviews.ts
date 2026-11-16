@@ -94,3 +94,10 @@ export function reviewsKeyCredentials(
 
 /** Removing the reviews key: `{ reviews: null }`. */
 export const REMOVE_REVIEWS_KEY = { reviews: null } as const;
+
+/**
+ * Sent on `window` when another card of the page stored the reviews key
+ * (#715: the analytics form's offer), so the reviews card reads its
+ * status again.
+ */
+export const REVIEWS_KEY_CHANGED_EVENT = "netrics:app-store-reviews-key";

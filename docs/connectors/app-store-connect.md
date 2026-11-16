@@ -265,6 +265,19 @@ When a request already exists (made by hand or by another tool), nothing is
 needed: the card shows the app as requested, and the step is skipped.
 Running the step again creates nothing new.
 
+**A key without the Admin role** is refused, and nothing is requested. The
+form says when it is the Sales key netrics stores, or the reviews key it
+stores. A key of the same team that cannot request reports but passes the
+[reviews key's checks](#add-a-customer-support-key) (it reads reviews and
+is not Admin) is usually the Customer Support key meant for ratings and
+reviews (#715). The form then asks "This is a Customer Support key — use it
+for ratings and reviews?", or offers **Replace** when the connection already
+has a reviews key. Until you answer, the key exists only in your browser's
+memory, as in this form otherwise; on confirm the browser sends it as the
+reviews key, which is checked again and stored as under
+[Add a Customer Support key](#add-a-customer-support-key). Keep that key:
+netrics uses it from then on.
+
 | State on the card                         | Meaning                                                                                 |
 | ----------------------------------------- | --------------------------------------------------------------------------------------- |
 | Not enabled                               | No `ONGOING` request for the app: use **Enable App Store analytics**.                   |
@@ -602,19 +615,19 @@ give netrics its own key.
 
 ## When something goes wrong
 
-| What you see                                                                           | What to do                                                                                                |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| "the issuer ID, key ID and private key do not belong together, or the key was revoked" | Check the three values, or create a new team key and upload it.                                           |
-| "This key cannot read sales reports"                                                   | The key's role lacks sales access. Create a team key with the Sales role (roles cannot be changed later). |
-| "App Store Connect does not know vendor number …"                                      | Copy the vendor number from Payments and Financial Reports.                                               |
-| "requires an agreement that is missing or has expired"                                 | The Account Holder accepts the latest agreements in App Store Connect (Business).                         |
-| "Upload a new App Store Connect key"                                                   | The key was revoked or its access removed after connecting. Upload a new key on the connection page.      |
-| "hourly request limit" / "not answering"                                               | Nothing: netrics retries automatically.                                                                   |
-| "This key cannot request App Store analytics"                                          | Enabling analytics needs a team key with the Admin role, once. Use a temporary one and revoke it after.   |
-| "App Store analytics paused — enable again"                                            | Apple stopped the report request. Enable App Store analytics again with a temporary Admin key.            |
-| "This key cannot read ratings and reviews"                                             | The reviews key needs the Customer Support role. Create one and add it on the connection page.            |
-| "This key can also read sales reports, so it has the Admin role"                       | netrics does not store Admin keys. Create a Customer Support key; revoke the Admin key if it was for us.  |
-| "App Store reviews paused — upload a new reviews key"                                  | Apple refused the reviews key (revoked or role changed). Upload a new Customer Support key; sales go on.  |
+| What you see                                                                           | What to do                                                                                                                                                                 |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "the issuer ID, key ID and private key do not belong together, or the key was revoked" | Check the three values, or create a new team key and upload it.                                                                                                            |
+| "This key cannot read sales reports"                                                   | The key's role lacks sales access. Create a team key with the Sales role (roles cannot be changed later).                                                                  |
+| "App Store Connect does not know vendor number …"                                      | Copy the vendor number from Payments and Financial Reports.                                                                                                                |
+| "requires an agreement that is missing or has expired"                                 | The Account Holder accepts the latest agreements in App Store Connect (Business).                                                                                          |
+| "Upload a new App Store Connect key"                                                   | The key was revoked or its access removed after connecting. Upload a new key on the connection page.                                                                       |
+| "hourly request limit" / "not answering"                                               | Nothing: netrics retries automatically.                                                                                                                                    |
+| "This key cannot request App Store analytics"                                          | Enabling analytics needs a team key with the Admin role, once. Use a temporary one and revoke it after. A Customer Support key is offered for ratings and reviews instead. |
+| "App Store analytics paused — enable again"                                            | Apple stopped the report request. Enable App Store analytics again with a temporary Admin key.                                                                             |
+| "This key cannot read ratings and reviews"                                             | The reviews key needs the Customer Support role. Create one and add it on the connection page.                                                                             |
+| "This key can also read sales reports, so it has the Admin role"                       | netrics does not store Admin keys. Create a Customer Support key; revoke the Admin key if it was for us.                                                                   |
+| "App Store reviews paused — upload a new reviews key"                                  | Apple refused the reviews key (revoked or role changed). Upload a new Customer Support key; sales go on.                                                                   |
 
 ## App icons
 
