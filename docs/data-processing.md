@@ -831,7 +831,12 @@ their own (auto advance is on).
   store, proceeds by app and currency, ratings), plus revenue by app in the
   workspace's display currency for each App Store connection (a connection
   `table` of `proceeds`; models do not convert currencies) and website
-  visitors for each Vercel connection an app links (at most two of each).
+  visitors for each Vercel connection an app links: at most two of each and
+  three in all, so the overview's tables fit two rows of at most three,
+  each the four columns a table needs. A connection table's title is the
+  longest of its wordings that stays readable in every format at every
+  theme font scale (with several App Store connections, the connection's
+  name), and it lists three rows.
 - **One slide per app**, scoped to it (the slide's `app` scope, #707), with
   the app's icon as the slide's logo. Paid: revenue and downloads (connection
   metrics of the app's App Store app over the last 30 days, with sparkline
@@ -858,7 +863,12 @@ icon, App Store app, stores, website). An app added or removed, paid or
 free changed, a new icon or website, or a renamed product makes the install
 offer a template update (same version) whose plan shows the slide changes;
 customised dashboards follow the usual three-way rules, and nothing changes
-on screens before the updated copy is swapped in. The comparison is with
+on screens before the updated copy is swapped in. The install list says
+`newerVersion` while a record is not built from the latest version (an
+update applied but not swapped in, closed or swapped back): the apps
+cannot change before that update, as for any version update; an update
+that only follows changed apps leaves them editable. A scope change fetches
+the missing icons of the apps it would show. The comparison is with
 the apps the active dashboard was built from (stored with its template
 record), so an update closed before its swap, or swapped back, is offered
 again. A slide's name is the product's name, else (an empty name is valid

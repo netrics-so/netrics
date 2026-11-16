@@ -246,7 +246,7 @@ export function StoreUpdateReview({
     <div className="store-update">
       {confirmation.dialog}
       <p className="store-update-versions muted">
-        {install.templateVersion === install.latestVersion
+        {!install.newerVersion
           ? // The same version, rebuilt for changed apps (#709).
             t("appsChanged", { version: install.latestVersion })
           : t("versions", {

@@ -474,6 +474,66 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
       ).toEqual([]);
   });
 
+  it("says a newer version is still to be swapped in after a closed v3 → v4 update", async () => {
+    const requestId = randomUUID();
+    await install(storeTemplateV3, requestId);
+    const plan = await updates().plan(actor(), requestId);
+    const update = await updates().apply(actor(), requestId, {
+      basis: plan.basis,
+      decisions: decisions(plan),
+    });
+    await updates().closeUpdate(actor(), requestId, update.id);
+    const listed = (await updates().list(actor())).installs.find(
+      (entry) => entry.requestId === requestId,
+    )!;
+    // The install is at version 4, its dashboard record still at 3: the
+    // apps page asks for the update first, as scopePlan does.
+    expect(listed).toMatchObject({
+      templateVersion: 4,
+      latestVersion: 4,
+      updateAvailable: true,
+      newerVersion: true,
+    });
+    await expect(
+      updates().scopePlan(actor(), requestId, {
+        connections: [apple.id, google.id],
+        appScope: null,
+      }),
+    ).rejects.toThrow("store_template_update_available");
+  });
+
+  it("fetches the icons of the apps a scope change adds", async () => {
+    // App Store only at first, then Google Play too.
+    const narrow = randomUUID();
+    await installs().install(actor(), {
+      requestId: narrow,
+      name: "App Store apps",
+      connections: [apple.id],
+      groups: [],
+    });
+    fetched.length = 0;
+    await updates().scopePlan(actor(), narrow, {
+      connections: [apple.id, google.id],
+      appScope: null,
+    });
+    expect(fetched).toContain(`${google.id}:com.notes`);
+    // A dashboard of one app (no slides, no fetch) becomes a portfolio.
+    const fixed = randomUUID();
+    await installs().install(actor(), {
+      requestId: fixed,
+      name: "Notes only",
+      connections: [apple.id],
+      groups: [],
+      appScope: { connectionId: apple.id, appId: "1002" },
+    });
+    fetched.length = 0;
+    await updates().scopePlan(actor(), fixed, {
+      connections: [apple.id],
+      appScope: null,
+    });
+    expect(fetched).toContain(`${apple.id}:1002`);
+  });
+
   it("lets a scope change build from changed apps instead of holding it up", async () => {
     const requestId = randomUUID();
     await install(storeTemplate, requestId);

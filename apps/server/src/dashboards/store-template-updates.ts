@@ -505,7 +505,12 @@ export function createStoreTemplateUpdateService(deps: {
    * or an apply reads them: app slides get their logo without "Use app
    * icon". Best effort; outside the plan's transaction.
    */
-  async function prefetchIcons(actor: Actor, requestId: string) {
+  async function prefetchIcons(
+    actor: Actor,
+    requestId: string,
+    /** A scope change: the apps of the chosen scope, not the stored one. */
+    choice?: ScopeChoice,
+  ) {
     if (!deps.fetchIcons || template.version < 4) return;
     try {
       const sources = await withWorkspace(
@@ -513,8 +518,13 @@ export function createStoreTemplateUpdateService(deps: {
         { workspaceId: actor.workspaceId, userId: actor.callerId },
         async (tx) => {
           const install = await installRow(tx, actor.workspaceId, requestId);
-          const inputs = install?.inputs as StoreTemplateInputs | null;
-          if (!install || inputs?.fixedProduct) return [];
+          if (!install) return [];
+          // What the plan builds from: the chosen connections and app
+          // scope (read-only, nothing registered), else the stored ones.
+          const inputs = choice
+            ? await scopeInputs(tx, actor.workspaceId, requestId, choice, false)
+            : (install.inputs as StoreTemplateInputs | null);
+          if (!inputs || inputs.fixedProduct) return [];
           return missingIconSources(
             (
               await readStoreProducts(
@@ -523,6 +533,10 @@ export function createStoreTemplateUpdateService(deps: {
                 requestId,
                 now(),
                 policy,
+                {
+                  result: storeTemplateResultSchema.parse(install.result),
+                  connections: inputs.connections,
+                },
               )
             ).products,
           );
@@ -2551,7 +2565,7 @@ export function createStoreTemplateUpdateService(deps: {
       requestId: string,
       choice: ScopeChoice,
     ): Promise<StoreTemplatePlan> {
-      await prefetchIcons(actor, requestId);
+      await prefetchIcons(actor, requestId, choice);
       return withWorkspace(
         deps.db,
         { workspaceId: actor.workspaceId, userId: actor.callerId },
@@ -2602,7 +2616,10 @@ export function createStoreTemplateUpdateService(deps: {
       requestId: string,
       body: StoreTemplateScopeRequest,
     ): Promise<StoreTemplateUpdate> {
-      await prefetchIcons(actor, requestId);
+      await prefetchIcons(actor, requestId, {
+        connections: body.connections,
+        appScope: body.appScope,
+      });
       try {
         return await retryOnSerializationFailure(
           () =>
@@ -2708,6 +2725,7 @@ export function createStoreTemplateUpdateService(deps: {
               templateVersion: install.templateVersion,
               latestVersion: template.version,
               updateAvailable,
+              newerVersion: isUpdateAvailable(install, rows, template.version),
               summary: updateAvailable ? (computed?.summary ?? null) : null,
               error:
                 computed === null

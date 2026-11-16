@@ -207,6 +207,7 @@ function install(overrides: Partial<StoreInstall> = {}): StoreInstall {
     name: "App portfolio",
     templateVersion: 1,
     latestVersion: 2,
+    newerVersion: true,
     updateAvailable: true,
     summary,
     error: null,

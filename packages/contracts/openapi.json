@@ -57752,6 +57752,9 @@
                           "updateAvailable": {
                             "type": "boolean"
                           },
+                          "newerVersion": {
+                            "type": "boolean"
+                          },
                           "summary": {
                             "anyOf": [
                               {
@@ -58220,6 +58223,7 @@
                           "templateVersion",
                           "latestVersion",
                           "updateAvailable",
+                          "newerVersion",
                           "summary",
                           "error",
                           "dashboardIds",

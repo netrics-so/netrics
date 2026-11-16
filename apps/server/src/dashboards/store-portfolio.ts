@@ -10,7 +10,12 @@ import type {
 } from "@netrics/domain";
 import { createHash } from "node:crypto";
 import type { CreateDashboardRequest } from "@netrics/contracts";
-import { STUDIO_GRID, STUDIO_LIMITS } from "@netrics/domain";
+import {
+  STUDIO_FONT_SCALES,
+  STUDIO_GRID,
+  STUDIO_LIMITS,
+  slideFormatWarnings,
+} from "@netrics/domain";
 
 export type StoreConnectorId = "app-store-connect" | "google-play";
 export type StoreMetric = "downloads" | "proceeds" | "ratings";
@@ -78,6 +83,8 @@ export const storeTemplateCopy = (locale: Locale) =>
           "Dieses Maß verwendet das Installations- oder Verkaufsland, nicht das Bewertungsland.",
         revenue: "Erlöse, letzte 30 Tage",
         revenueByApp: "Erlöse nach App, letzte 30 Tage",
+        revenueShort: "Erlöse",
+        visitorsShort: "Website-Besucher",
         downloadsRecent: "Downloads, letzte 30 Tage",
         visitors: "Website-Besucher, letzte 30 Tage",
         appStore: "App Store",
@@ -127,6 +134,8 @@ export const storeTemplateCopy = (locale: Locale) =>
           "This measure uses the install or sale country rather than the listing country.",
         revenue: "Revenue, last 30 days",
         revenueByApp: "Revenue by app, last 30 days",
+        revenueShort: "Revenue",
+        visitorsShort: "Website visitors",
         downloadsRecent: "Downloads, last 30 days",
         visitors: "Website visitors, last 30 days",
         appStore: "App Store",
@@ -1219,6 +1228,10 @@ export interface StorePortfolio {
 
 /** Revenue and visitor tables of the overview (one per connection), at most. */
 const OVERVIEW_TABLES = 2;
+/** Connection tables of the overview in all, at most. */
+const OVERVIEW_CONNECTION_TABLES = 3;
+/** Rows a connection table of the overview asks for: what fits at h 4. */
+const OVERVIEW_TABLE_ROWS = 3;
 /** The connector widgets' period. */
 const RECENT = "last_30_days" as const;
 const ASC_PROCEEDS = "app_store_connect.proceeds",
@@ -1249,11 +1262,17 @@ function overviewTables(portfolio: StorePortfolio) {
       ),
     ),
   ].sort();
+  const revenue = [...portfolio.appStore]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, OVERVIEW_TABLES);
   return {
-    revenue: [...portfolio.appStore]
-      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-      .slice(0, OVERVIEW_TABLES),
-    visitors: websites.slice(0, OVERVIEW_TABLES),
+    revenue,
+    // The overview holds six tables (two rows of three, each at least four
+    // columns wide): three of the models, three of the connections.
+    visitors: websites.slice(
+      0,
+      Math.min(OVERVIEW_TABLES, OVERVIEW_CONNECTION_TABLES - revenue.length),
+    ),
   };
 }
 
@@ -1360,7 +1379,7 @@ function buildPortfolioSlides(
     dimensions: {},
     options: {
       groupBy: "resource",
-      limit: 5,
+      limit: OVERVIEW_TABLE_ROWS,
       showChange: true,
       showOthers: false,
     },
@@ -1375,8 +1394,10 @@ function buildPortfolioSlides(
   };
   const tables = overviewTables(portfolio);
   const several = portfolio.appStore.length > 1;
-  const overview: Placed[] = [
-    ...row([
+  // In reading order, then two rows of at most three (each at least the
+  // four columns a table needs): the model tables, revenue per App Store
+  // connection, ratings, visitors per Vercel connection.
+  const tablesInOrder: { key: string; widget: Unplaced }[] = [
       {
         key: "widget:downloads",
         widget: sized(
@@ -1404,8 +1425,6 @@ function buildPortfolioSlides(
           0,
         ),
       })),
-    ]),
-    ...row([
       {
         key: "widget:ratings",
         widget: sized(
@@ -1426,8 +1445,79 @@ function buildPortfolioSlides(
         key: `widget:visitors:${connectionId}`,
         widget: table(connectionId, VERCEL_VISITORS, t.visitors, 4),
       })),
-    ]),
+    ],
+    first = Math.min(3, tablesInOrder.length - 1),
+    at = (items: typeof tablesInOrder, y: number) =>
+      items.map(({ key, widget }) => ({
+        key,
+        widget: { ...widget, y, h: 4 } as Unplaced,
+      }));
+  const placed: Placed[] = [
+    ...row(at(tablesInOrder.slice(0, first), 0)),
+    ...row(at(tablesInOrder.slice(first), 4)),
   ];
+  // A connection table's title, the longest that leaves it readable in
+  // every format at every theme font scale (its rows and label fit).
+  const titles = new Map<string, string[]>([
+    ...tables.revenue.map((connection): [string, string[]] => [
+      `widget:revenue:${connection.id}`,
+      several
+        ? [
+            `${t.revenueByApp} · ${connection.name}`,
+            `${t.revenueShort} · ${connection.name}`,
+            connection.name,
+          ].map((title) => title.slice(0, 100))
+        : [t.revenueByApp, t.revenueShort],
+    ]),
+    ...tables.visitors.map((connectionId): [string, string[]] => [
+      `widget:visitors:${connectionId}`,
+      [t.visitors, t.visitorsShort],
+    ]),
+  ]);
+  const readable = (widgets: Placed[], key: string) => {
+    const slide = {
+      name: t.name,
+      layouts: {},
+      widgets: widgets.map(({ key, widget }) => ({
+        id: key,
+        type: widget.type,
+        x: widget.x,
+        y: widget.y,
+        w: widget.w,
+        h: widget.h,
+        label: widget.type === "table" ? (widget.title ?? null) : null,
+        rows: widget.type === "table" ? widget.options.limit : null,
+      })),
+    };
+    return STUDIO_FONT_SCALES.every((fontScale) =>
+      slideFormatWarnings(slide, {
+        primaryFormat: "16x9",
+        fontScale,
+        showHeader: true,
+        dashboardName: name,
+        logoAspect: null,
+      }).every(
+        (warning) =>
+          warning.severity !== "attention" || warning.widgetId !== key,
+      ),
+    );
+  };
+  const overview = placed.map((entry) => {
+    const candidates = titles.get(entry.key);
+    if (!candidates) return entry;
+    const titled = (title: string) => ({
+      key: entry.key,
+      widget: { ...entry.widget, title } as Widget,
+    });
+    return (
+      candidates.map(titled).find((candidate) =>
+        readable(
+          placed.map((other) => (other.key === entry.key ? candidate : other)),
+          entry.key,
+        ),
+      ) ?? titled(candidates.at(-1)!)
+    );
+  });
 
   const appSlide = (app: StoreAppIdentity) => {
     const slideKey = appSlideKey(app.productId);

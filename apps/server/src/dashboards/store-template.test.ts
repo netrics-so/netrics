@@ -22,6 +22,7 @@ import {
   type StoreMetric,
 } from "./store-portfolio.js";
 import { storeAppIdentities } from "./store-template-products.js";
+import { slideFormatWarnings, slideLayoutProblem } from "@netrics/domain";
 import { apple, google } from "./test-helpers.js";
 import {
   createDashboardRequestSchema,
@@ -83,7 +84,7 @@ const VERSION_HASHES: Record<number, string> = {
   1: "44be27ea317c1faf154c41abfc16711e055ca8c47c6e6220918bba59c701aa24",
   2: "79726e4b4472c40243627181269daf6f08dcd991b7d1e415d2aba7bc51727aa3",
   3: "803b151fd59622b368644799eed102cfe37f3632fbc2266f2f32a3ea221c6923",
-  4: "8e366c2a9c6beba378f2bd1b4813eee2fc5929ec99e3814ea9bec08ae984ec38",
+  4: "a0b7378f8af8f7c9b07da278d4187d3af3b88198cb075d9c66ee14dd5affc014",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -664,6 +665,101 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       connectionId: apple.id,
       dimensions: { resource: "2002" },
     });
+  });
+
+  it("fits the overview for 1, 2 and more App Store and Vercel connections", () => {
+    const uuid = (label: string) => uuidFor(label);
+    for (const appStore of [1, 2, 3])
+      for (const vercel of [0, 1, 2, 3])
+        for (const locale of ["en", "de"] as const) {
+          const asc = Array.from({ length: appStore }, (_, n) => ({
+            ...appleSource,
+            id: uuid(`asc:${n}`),
+            name: `App Store account ${n + 1}`,
+          }));
+          const apps: StoreAppIdentity[] = Array.from(
+            { length: 4 },
+            (_, n) => ({
+              productId: `${asc[n % appStore]!.id}:${n}`,
+              name: `App ${n}`,
+              paid: true,
+              icon: null,
+              appStore: { connectionId: asc[n % appStore]!.id, appId: `${n}` },
+              stores: ["app-store-connect"],
+              website:
+                n < vercel
+                  ? { connectionId: uuid(`vercel:${n}`), projectId: `prj_${n}` }
+                  : null,
+            }),
+          );
+          // Google Play only, paid, with a website: three measure and
+          // metric widgets in its top row.
+          apps.push({
+            productId: `${google.id}:com.play`,
+            name: "Play app",
+            paid: true,
+            icon: null,
+            appStore: null,
+            stores: ["google-play"],
+            website: { connectionId: uuid("vercel:0"), projectId: "prj_play" },
+          });
+          const request = createDashboardRequestSchema.parse(
+            dashboardOf({
+              ...fixtureInputs,
+              locale,
+              connections: [
+                ...asc,
+                {
+                  id: google.id,
+                  name: google.name,
+                  connectorId: google.connectorId,
+                  datasets: google.datasets,
+                },
+              ],
+              apps,
+            }).request,
+          );
+          const where = `${appStore} App Store, ${vercel} Vercel, ${locale}`;
+          const overview = request.slides![0]!;
+          // Every connection's table up to the caps: three in all.
+          expect(overview.widgets.length, where).toBe(
+            3 +
+              Math.min(appStore, 2) +
+              Math.min(Math.max(vercel, 1), 3 - Math.min(appStore, 2), 2),
+          );
+          for (const slide of request.slides!) {
+            expect(slideLayoutProblem(slide.widgets), where).toBeNull();
+            const widgets = slide.widgets.map((widget, index) => ({
+              id: `w${index}`,
+              type: widget.type,
+              x: widget.x,
+              y: widget.y,
+              w: widget.w,
+              h: widget.h,
+              label:
+                widget.type === "metric" || widget.type === "table"
+                  ? (widget.title ?? null)
+                  : null,
+              rows: widget.type === "table" ? widget.options.limit : null,
+            }));
+            for (const fontScale of [1, 1.3])
+              expect(
+                slideFormatWarnings(
+                  { name: slide.name ?? null, widgets, layouts: {} },
+                  {
+                    primaryFormat: "16x9",
+                    fontScale,
+                    showHeader: true,
+                    dashboardName: request.name,
+                    logoAspect: null,
+                  },
+                )
+                  .filter((warning) => warning.severity === "attention")
+                  .map((warning) => `${warning.format} ${warning.code}`),
+                `${where} ${slide.name} at ${fontScale}`,
+              ).toEqual([]);
+          }
+        }
   });
 
   it("never builds a blank slide name: the first app's name, then its id", () => {

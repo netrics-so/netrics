@@ -191,6 +191,13 @@ export const storeTemplateInstallListSchema = z.object({
       templateVersion: z.number().int(),
       latestVersion: z.number().int(),
       updateAvailable: z.boolean(),
+      /**
+       * Some record (the dashboard among them) is not built from the
+       * latest version yet: an update applied but not swapped in, closed
+       * or swapped back. Its apps cannot change before that update. False
+       * when the update only follows changed apps (#709).
+       */
+      newerVersion: z.boolean(),
       summary: storeTemplateUpdateSummarySchema.nullable(),
       error: z.enum(["store_template_baseline_unavailable"]).nullable(),
       dashboardIds: z.array(z.uuid()),

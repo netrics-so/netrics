@@ -140,6 +140,7 @@ describe("store-template updates in data settings (11E)", () => {
     name: "App portfolio",
     templateVersion: 1,
     latestVersion: 2,
+    newerVersion: true,
     updateAvailable: true,
     summary: {
       measures: { added: 1, changed: 2, removed: 0 },

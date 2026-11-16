@@ -11,7 +11,7 @@ import {
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
-import { storeUpdatePath } from "@/lib/store-updates";
+import { scopeNeedsUpdateFirst, storeUpdatePath } from "@/lib/store-updates";
 import { StoreInstallEditor } from "./store-install-editor";
 import { StoreTemplateForm } from "./store-template-form";
 export const dynamic = "force-dynamic";
@@ -44,11 +44,9 @@ export default async function StoreTemplatesPage({
         ).installs.find((entry) => entry.requestId === installId)
       : undefined;
     if (allowed && !install) notFound();
-    // A newer template version is reviewed first. An update of the same
-    // version only follows changed apps (#709): the apps stay editable.
-    const versionUpdate =
-      !!install?.updateAvailable &&
-      install.templateVersion < install.latestVersion;
+    // A newer template version is reviewed first, as the server requires.
+    // An update that only follows changed apps (#709) leaves them editable.
+    const versionUpdate = !!install && scopeNeedsUpdateFirst(install);
     const [scope, options, products] =
       install && install.error === null && !versionUpdate
         ? await Promise.all([
@@ -84,7 +82,7 @@ export default async function StoreTemplatesPage({
         </header>
         {!allowed ? (
           <p className="notice">{t("editRoleCannot")}</p>
-        ) : versionUpdate && install?.error === null ? (
+        ) : versionUpdate ? (
           <p className="notice">
             {t("editUpdateFirst")}{" "}
             <Link href={storeUpdatePath(workspaceId, installId)}>

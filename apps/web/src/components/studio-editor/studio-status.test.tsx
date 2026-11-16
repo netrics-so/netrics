@@ -115,6 +115,7 @@ describe("store-template updates in the Studio (11E)", () => {
       name: "App portfolio",
       templateVersion: 2,
       latestVersion: 2,
+      newerVersion: true,
       updateAvailable: true,
       summary: null,
       error: null,
