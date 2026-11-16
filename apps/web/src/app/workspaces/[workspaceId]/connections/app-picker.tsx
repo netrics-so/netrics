@@ -113,10 +113,15 @@ export function AppPicker({
                 />
                 <span>
                   {resource.name}
-                  <small className="help">
-                    {resource.id}
-                    {missing.includes(resource.id) ? ` · ${t("unlisted")}` : ""}
-                  </small>
+                  {resource.name !== resource.id ||
+                  missing.includes(resource.id) ? (
+                    <small className="help">
+                      {resource.name !== resource.id ? resource.id : null}
+                      {missing.includes(resource.id)
+                        ? `${resource.name !== resource.id ? " · " : ""}${t("unlisted")}`
+                        : ""}
+                    </small>
+                  ) : null}
                 </span>
               </label>
             ))}

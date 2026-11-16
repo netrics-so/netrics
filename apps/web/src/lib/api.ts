@@ -492,9 +492,12 @@ export function listObservations(
   cookieHeader: string,
   workspaceId: string,
   connectionId: string,
-  query: { metricKey?: string; limit?: number } = {},
+  query: { metricKey?: string; limit?: number; nonZero?: boolean } = {},
 ): Promise<ObservationListResponse> {
   const params = new URLSearchParams();
+  if (query.nonZero) {
+    params.set("nonZero", "true");
+  }
   if (query.metricKey) {
     params.set("metricKey", query.metricKey);
   }

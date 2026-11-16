@@ -1170,6 +1170,11 @@ export const observationListQuerySchema = z.object({
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(200),
+  /**
+   * "true" leaves out observations whose value is 0 (#623), so a list of the
+   * latest values shows what changed rather than days without activity.
+   */
+  nonZero: z.enum(["true", "false"]).optional(),
 });
 export type ObservationListQuery = z.infer<typeof observationListQuerySchema>;
 

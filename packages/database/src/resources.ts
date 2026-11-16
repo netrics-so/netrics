@@ -44,8 +44,8 @@ export interface DiscoveredResourceName {
 }
 
 /**
- * Records the names discover reported. Known resources get the new name;
- * resources missing from this discovery keep their last name, since their
+ * Records the names discover reported. Known resources get the new name,
+ * unless discover only repeated the ID; resources missing from this discovery keep their last name, since their
  * observations stay. A row is keyed by its kind too (#394): an app, a
  * campaign and an ad group with one provider ID keep their own names.
  */
@@ -91,7 +91,9 @@ export async function upsertConnectionResources(
           schema.connectionResources.kind,
         ],
         set: {
-          name: sql`excluded.name`,
+          // A discover that could only report the ID (#623: Google Play
+          // without the Reporting API) keeps the name an earlier one stored.
+          name: sql`case when excluded.name = excluded.resource_id then connection_resources.name else excluded.name end`,
           discoveredAt: sql`excluded.discovered_at`,
         },
       });

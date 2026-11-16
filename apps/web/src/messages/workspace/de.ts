@@ -345,6 +345,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       },
       latestObservations: "Neueste Messwerte",
       noObservations: "Noch keine Messwerte eingelesen.",
+      zeroObservationsHidden: "Werte von 0 werden nicht aufgeführt.",
+      onlyZeroObservations: "Alle bisherigen Messwerte sind 0.",
       observations: {
         metric: "Metrik",
         resource: "Ressource",

@@ -81115,6 +81115,18 @@
           },
           {
             "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "nonZero",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "in": "path",
