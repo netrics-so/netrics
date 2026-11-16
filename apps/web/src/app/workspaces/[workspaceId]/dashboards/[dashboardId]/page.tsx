@@ -25,6 +25,7 @@ import { StoreUpdateNote } from "@/components/studio-editor/studio-status";
 import { resolveDashboardTheme } from "@/lib/studio-theme";
 import { referencedImageIds } from "@/lib/studio-widgets";
 
+import { ViewerHint } from "../../viewer-hint";
 import { DashboardView } from "./dashboard-view";
 import type { TileConnection } from "./metric-tile";
 
@@ -141,6 +142,9 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         canEdit={!archived && can(membership.role, "dashboards:update")}
         canDuplicate={can(membership.role, "dashboards:create")}
         canDelete={!archived && can(membership.role, "dashboards:delete")}
+        readOnlyNote={
+          <ViewerHint role={membership.role} workspaceId={workspaceId} />
+        }
       />
     </div>
   );

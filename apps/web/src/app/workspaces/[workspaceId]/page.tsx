@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { can } from "@netrics/domain";
 
 import { OAuthOutcomeBanner } from "./connections/oauth-outcome";
+import { ViewerHint } from "./viewer-hint";
 import {
   getWorkspace,
   listConnections,
@@ -197,6 +198,7 @@ export default async function WorkspaceHomePage({
             </Link>
           ) : null}
         </div>
+        <ViewerHint role={role} workspaceId={workspaceId} />
       </section>
     </div>
   );

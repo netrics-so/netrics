@@ -611,6 +611,13 @@ button.danger:hover:not(:disabled) {
   font-size: var(--size-13);
 }
 
+/* Why a viewer sees no actions (#636): quiet, where the actions would be. */
+.viewer-hint {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--size-13);
+  color: var(--text-2);
+}
 .role-badge {
   font-size: var(--size-12);
   font-weight: 600;
