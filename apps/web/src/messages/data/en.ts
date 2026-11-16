@@ -119,6 +119,18 @@ export const dataEn = {
         "Showing the last valid data. Check the model and its sources.",
       resultWarnings:
         "{count, plural, one {# data warning. Check the model preview.} other {# data warnings. Check the model preview.}}",
+      /**
+       * The same states on a paired screen (kiosk), where nobody can act on
+       * editor instructions; worded as tvOS words them (#649).
+       */
+      viewer: {
+        noData: "No data yet",
+        stale: "Last valid data",
+        partial: "Some source data is missing.",
+        warnings:
+          "{count, plural, one {# data warning} other {# data warnings}}",
+        sourceOutage: "Imports from {name} are interrupted.",
+      },
       views: {
         value: "Value",
         table: "Table",

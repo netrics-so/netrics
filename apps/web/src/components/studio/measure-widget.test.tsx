@@ -364,3 +364,59 @@ describe("viewer interaction state with typed values", () => {
     expect(calls).toEqual([["price", null]]);
   });
 });
+
+describe("viewer wording on paired screens (#649)", () => {
+  const props = (
+    audience?: "editor" | "viewer",
+  ): Parameters<typeof MeasureWidgetView>[0] => ({
+    audience,
+    widget: {
+      title: "Downloads",
+      options: { view: "table", limit: 20 },
+      binding: { measureIds: ["downloads"], groupBy: ["app"] },
+    },
+    data: {
+      widgetId: "00000000-0000-4000-8000-000000000001",
+      status: "ok",
+      error: null,
+      exclusions: [],
+      metadata: {
+        modelId: "00000000-0000-4000-8000-000000000002",
+        modelName: "Downloads",
+        measures: [{ id: "downloads", name: "Downloads" }],
+        dimensions: [{ id: "app", name: "App", type: "string" }],
+      },
+      result: {
+        releaseId: null,
+        rows: [],
+        warnings: [{ code: "w", message: "w" }],
+        operations: 1,
+        provenance: [],
+        appliedFilter: null,
+        groupBy: [],
+        stale: true,
+      },
+    } as unknown as DashboardWidgetData,
+  });
+
+  it("keeps editor instructions in the dashboard and Studio", () => {
+    const html = renderI18n(<MeasureWidgetView {...props()} />);
+    expect(html).toContain("No rows in this preview.");
+    expect(html).toContain("1 data warning. Check the model preview.");
+  });
+
+  it("says what a wall screen can show, in English and German", () => {
+    const en = renderI18n(<MeasureWidgetView {...props("viewer")} />);
+    expect(en).toContain("No data yet");
+    expect(en).toContain("1 data warning");
+    expect(en).toContain("Last valid data");
+    expect(en).not.toContain("preview");
+    expect(en).not.toContain("Check");
+    const de = renderI18n(<MeasureWidgetView {...props("viewer")} />, "de");
+    expect(de).toContain("Noch keine Daten");
+    expect(de).toContain("1 Datenhinweis");
+    expect(de).toContain("Letzte gültige Daten");
+    expect(de).not.toContain("Vorschau");
+    expect(de).not.toContain("Prüfe");
+  });
+});

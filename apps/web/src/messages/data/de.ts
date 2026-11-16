@@ -127,6 +127,14 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Letzte gültige Daten werden angezeigt. Prüfe das Modell und seine Quellen.",
       resultWarnings:
         "{count, plural, one {# Datenhinweis. Prüfe die Modellvorschau.} other {# Datenhinweise. Prüfe die Modellvorschau.}}",
+      viewer: {
+        noData: "Noch keine Daten",
+        stale: "Letzte gültige Daten",
+        partial: "Einige Quelldaten fehlen.",
+        warnings:
+          "{count, plural, one {# Datenhinweis} other {# Datenhinweise}}",
+        sourceOutage: "Die Importe von {name} sind unterbrochen.",
+      },
       views: {
         value: "Wert",
         table: "Tabelle",

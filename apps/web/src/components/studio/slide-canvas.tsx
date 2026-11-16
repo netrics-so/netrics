@@ -184,6 +184,11 @@ export interface SlideHeaderInfo {
   /** Shown when the screen has lost its connection. */
   offline?: boolean;
   /**
+   * The time of the last successful update ("17:22"), shown with the
+   * offline marker when known, as tvOS and the kiosk's own marker (#649).
+   */
+  offlineSince?: string | null;
+  /**
    * The data's refresh cadence: the header counts down to the next
    * refresh where there is room (TV mode, kiosk, Play; not the Studio).
    */
@@ -384,7 +389,10 @@ function SlideHeader({
         ) : null}
         {header.offline ? (
           <span className="studio-offline">
-            <span aria-hidden="true">⚠</span> {t("offline")}
+            <span aria-hidden="true">⚠</span>{" "}
+            {header.offlineSince
+              ? t("offlineSince", { time: header.offlineSince })
+              : t("offline")}
           </span>
         ) : null}
         <HeaderClock timeZone={header.timeZone} />
