@@ -10,7 +10,11 @@ import {
 } from "react";
 
 import type { DashboardSlide } from "@netrics/contracts";
-import type { LayoutWidget, ThemeTokens } from "@netrics/domain";
+import {
+  repeatsName,
+  type LayoutWidget,
+  type ThemeTokens,
+} from "@netrics/domain";
 
 import { WidgetBoundary, useOffline } from "@/components/studio/slide-canvas";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -145,6 +149,9 @@ export function ScrollView<W extends LayoutWidget>({
           const background = slideBackground(slide);
           const image = background ? images.get(background.imageId) : null;
           const sectionId = `${baseId}-slide-${index}`;
+          // A slide named like the dashboard (a template's only slide) has
+          // no heading of its own: the h1 names its section (#622).
+          const repeated = repeatsName(slide.name, name);
           const byId = new Map(slide.widgets.map((w) => [w.id, w]));
           return (
             <section
@@ -152,7 +159,7 @@ export function ScrollView<W extends LayoutWidget>({
               className={
                 image ? "scroll-section has-background" : "scroll-section"
               }
-              aria-labelledby={sectionId}
+              aria-labelledby={repeated ? headingId : sectionId}
             >
               {background && image ? (
                 <>
@@ -171,9 +178,11 @@ export function ScrollView<W extends LayoutWidget>({
                   />
                 </>
               ) : null}
-              <h2 id={sectionId} className="scroll-section-heading">
-                {slideTitle(slide, index, locale)}
-              </h2>
+              {repeated ? null : (
+                <h2 id={sectionId} className="scroll-section-heading">
+                  {slideTitle(slide, index, locale)}
+                </h2>
+              )}
               {layout.items.length === 0 ? (
                 <p className="scroll-card scroll-empty">{t("slideEmpty")}</p>
               ) : (

@@ -209,6 +209,18 @@ describe("scroll view (ADR 0017, section 5)", () => {
     expect(html).not.toContain("Hidden");
   });
 
+  it("leaves out a slide heading that repeats the dashboard name (#622)", () => {
+    const html = render([slide(0, " wurfel "), slide(1, "Sales")]);
+    const headings = [
+      ...html.matchAll(/<h2[^>]*class="scroll-section-heading"[^>]*>([^<]*)</g),
+    ].map((match) => match[1]);
+    expect(headings).toEqual(["Sales"]);
+    expect(text(html).match(/wurfel/gi)).toHaveLength(1);
+    // The repeated slide's section is named by the dashboard's h1.
+    const h1 = /<h1 id="([^"]+)"/.exec(html)![1];
+    expect(html).toContain(`aria-labelledby="${h1}"`);
+  });
+
   it("names nameless slides in German", () => {
     const html = render([slide(0, null)], { locale: "de" });
     expect(html).toContain(">Folie 1</h2>");

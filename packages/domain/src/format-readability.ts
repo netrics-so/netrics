@@ -172,9 +172,23 @@ export const NARROW_HEADER_FORMATS: readonly ScreenFormat[] = ["3x4", "9x16"];
 /** The widest clock text the header reserves room for. */
 const CLOCK_SAMPLE = "12:00 PM";
 
-/** Two names read the same: equal ignoring case (in any locale). */
-const sameName = (a: string, b: string): boolean =>
-  a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
+/**
+ * Whether a slide name repeats the dashboard name: equal ignoring case and
+ * outer spaces (#622). Compared in a fixed locale ("und"), so the server and
+ * every browser (a Turkish one with its dotted and dotless i) agree.
+ */
+export function repeatsName(
+  slideName: string | null | undefined,
+  dashboardName: string,
+): boolean {
+  const slide = slideName?.trim() ?? "";
+  return (
+    slide !== "" &&
+    slide.localeCompare(dashboardName.trim(), "und", {
+      sensitivity: "accent",
+    }) === 0
+  );
+}
 
 export interface HeaderFit {
   /** The width the names share, in units. */
@@ -232,7 +246,7 @@ export function headerFit(input: {
   const slideName = input.slideName?.trim() ?? "";
   const showSlideName =
     slideName !== "" &&
-    !sameName(slideName, name) &&
+    !repeatsName(slideName, name) &&
     nameLines === 1 &&
     estimateTextWidth(name, m.name, "semibold") +
       m.gap +

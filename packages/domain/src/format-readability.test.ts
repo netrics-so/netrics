@@ -7,6 +7,7 @@ import {
   formatWarnings,
   formatsNeedingAttention,
   headerFit,
+  repeatsName,
   slideFormatWarnings,
   textWidgetFit,
   type FormatWarningItem,
@@ -587,6 +588,15 @@ describe("headerFit", () => {
         logoAspect: null,
       }).showSlideName,
     ).toBe(true);
+  });
+
+  it("compares names the same in every runtime locale (repeatsName)", () => {
+    // A fixed locale: Turkish casing rules (I / ı) never decide.
+    expect(repeatsName("INFO", "info")).toBe(true);
+    expect(repeatsName(" App-Portfolio ", "app-portfolio")).toBe(true);
+    expect(repeatsName("Café", "Cafe")).toBe(false);
+    expect(repeatsName(null, "App")).toBe(false);
+    expect(repeatsName("", "")).toBe(false);
   });
 
   it("counts the logo's width at its aspect ratio", () => {
