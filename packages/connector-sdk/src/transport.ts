@@ -1,6 +1,8 @@
 import { datasetPageSchema, DATASET_LIMITS } from "./datasets.js";
 import { z } from "zod";
 
+import { freshnessEntrySchema, FRESHNESS_LIMITS } from "./freshness.js";
+
 const opaqueRecordSchema = z.record(z.string(), z.unknown());
 
 export const connectionContextSchema = z.object({
@@ -138,6 +140,16 @@ export const syncResultSchema = z.object({
   receivedDatasets: z
     .array(z.string().min(1).max(200))
     .max(DATASET_LIMITS.datasets)
+    .optional(),
+  /**
+   * Optional (SDK 0.2.13, ADR 0025), read from a done result only: one
+   * entry per declared freshness stream (and resource) this run read
+   * completely. A stream it did not read gets no entry. Ignored on a
+   * result with done=false.
+   */
+  freshness: z
+    .array(freshnessEntrySchema)
+    .max(FRESHNESS_LIMITS.entries)
     .optional(),
   /**
    * Where the next request continues. The host commits each page with its

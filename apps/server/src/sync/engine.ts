@@ -74,6 +74,7 @@ import {
   type SignedKeyTokenStore,
 } from "../signed-keys/token-store.js";
 
+import { recordFreshness, selectedResourcesOf } from "./freshness.js";
 import { createDatasetStaging } from "./staging.js";
 
 /** First-ever incremental sync with no cursor and no last success. */
@@ -534,13 +535,7 @@ async function runSync(
   // `resources: []` and collects no resource-scoped data, while the
   // credential check still runs and the run succeeds (the connection stays
   // healthy; the dashboard shows it as paused).
-  const rawSelection = connection.config.resourceSelection;
-  const selectedResources =
-    Array.isArray(rawSelection) &&
-    (rawSelection.length > 0 || manifest.supportsResourceSelection === true) &&
-    rawSelection.every((entry) => typeof entry === "string" && entry !== "")
-      ? (rawSelection as string[])
-      : undefined;
+  const selectedResources = selectedResourcesOf(connection.config, manifest);
 
   if (mode === "backfill" && !manifest.supportsBackfill) {
     const error = new Error(
@@ -913,6 +908,7 @@ async function runSync(
     > = {};
     let finalObservations: Observation[] = [];
     let finalReviews: Pick<SyncResult, "reviews" | "reviewWindows"> = {};
+    let finalFreshness: NonNullable<SyncResult["freshness"]> = [];
     let finalCursor = startCursor;
     if (window.from < window.to) {
       let cursor = startCursor ?? undefined;
@@ -967,6 +963,7 @@ async function runSync(
           finalObservations = result.observations;
           finalDatasetPages = result;
           finalReviews = result;
+          finalFreshness = result.freshness ?? [];
           finalCursor = result.nextCursor ?? iso(window.to);
           break;
         }
@@ -1020,6 +1017,17 @@ async function runSync(
       await ingestDatasets(tx, finalDatasetPages);
       await receiveDatasets(tx, finalDatasetPages);
       await ingestReviews(tx, finalReviews);
+      // Freshness (ADR 0025 §4) commits with lastSuccessAt and the cursor,
+      // and the next sync follows from the stored rows (§5).
+      const nextDueAt = await recordFreshness(tx, {
+        workspaceId,
+        connectionId,
+        manifest,
+        entries: finalFreshness,
+        selectedResources,
+        pollIntervalSeconds,
+        now,
+      });
 
       // Cursor advancement commits in this same transaction as the
       // observation inserts — never without them.
@@ -1030,7 +1038,7 @@ async function runSync(
           workspaceId,
           pollIntervalSeconds,
           lastSuccessAt: now,
-          nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
+          nextDueAt,
           cursor: finalCursor,
           ...backfillMarker,
           ...backfillRecordInsert,
@@ -1042,7 +1050,7 @@ async function runSync(
           target: schema.connectionState.connectionId,
           set: {
             lastSuccessAt: now,
-            nextDueAt: new Date(now.getTime() + pollIntervalSeconds * 1000),
+            nextDueAt,
             cursor: finalCursor,
             ...backfillMarker,
             ...backfillRecordSet,

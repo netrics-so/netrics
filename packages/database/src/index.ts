@@ -313,6 +313,14 @@ export type {
   NamedResource,
 } from "./resources.js";
 export {
+  listConnectionFreshness,
+  recordConnectionFreshness,
+} from "./freshness.js";
+export type {
+  ConnectionFreshnessInput,
+  ConnectionFreshnessRow,
+} from "./freshness.js";
+export {
   consumeOAuthAuthorization,
   findConnectionOAuth,
   insertOAuthAuthorization,

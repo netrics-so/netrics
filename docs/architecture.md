@@ -328,6 +328,17 @@ keeps loading on every 0.2.x runtime.
 | 0.2.10 | Optional durable dataset staging (ADR 0023)                       |
 | 0.2.11 | Optional incremental staging, `datasetStaging.begin` (ADR 0024)   |
 | 0.2.12 | Optional `receivedDatasets` in a final `SyncResult` (#666)        |
+| 0.2.13 | Optional `freshnessStreams` and a final `freshness` (ADR 0025)    |
+
+Since SDK 0.2.13 a manifest may group its metrics and datasets into
+`freshnessStreams` (periodic, with the provider's time zone, or continuous),
+and a done `SyncResult` reports per stream, and optionally per resource,
+the last complete provider day (`dataThrough`) and when the next period is
+expected (`expectedFrom`, `nextExpectedAt`). The host stores it in
+`connection_freshness` with the run's success, never moves `dataThrough`
+back, and schedules the next sync earlier when a period is due
+([ADR 0025](./decisions/0025-data-freshness.md)). `expectValidFreshness`
+in `@netrics/connector-sdk/testing` checks a result in connector tests.
 
 ### Connector translations
 

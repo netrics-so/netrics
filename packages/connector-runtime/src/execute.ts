@@ -4,6 +4,7 @@ import {
   CURRENCY_MINOR_UNIT,
   RESOURCE_ICON_MAX_BYTES,
   checkResultSchema,
+  freshnessProblem,
   resourceIconsRequestSchema,
   resourceIconsResultSchema,
   resourceSchema,
@@ -202,6 +203,20 @@ function validateSyncResult(
   for (const key of result.receivedDatasets ?? [])
     if (!manifest.datasets?.some((dataset) => dataset.key === key))
       throw new ContractViolationError("Undeclared source dataset");
+  // Freshness counts only on the done result (ADR 0025 section 2); on
+  // other pages it is ignored once it is well-formed.
+  if (result.done) {
+    const problem = freshnessProblem(
+      manifest.freshnessStreams,
+      result.freshness,
+    );
+    if (problem)
+      throw new ContractViolationError(
+        `connector "${manifest.id}": ${problem}`,
+      );
+  } else {
+    delete result.freshness;
+  }
   const metrics = new Map(
     manifest.metrics.map((metric) => [metric.key, metric]),
   );

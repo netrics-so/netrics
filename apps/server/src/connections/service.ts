@@ -71,6 +71,7 @@ import {
   latestObservationByResource,
   listConnections as listConnectionRows,
   listObservations as listObservationRows,
+  listConnectionFreshness,
   listRecentSyncRuns,
   releaseOAuthGrant,
   requestConnectionBackfill,
@@ -135,6 +136,7 @@ import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   presentConnection,
   presentConnectionDetail,
+  presentFreshness,
   presentSyncRun,
   toStateView,
 } from "./present.js";
@@ -2203,7 +2205,19 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           connectionId,
         );
         const incomplete = await incompleteHistory(tx, loaded, registry);
-        return { ...loaded, syncRuns, signedKey, backfill, incomplete };
+        const freshness = await listConnectionFreshness(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        return {
+          ...loaded,
+          syncRuns,
+          signedKey,
+          backfill,
+          incomplete,
+          freshness,
+        };
       });
       if (!found) {
         return fail(404, NOT_FOUND);
@@ -2217,6 +2231,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         ),
         syncRuns: found.syncRuns.map(presentSyncRun),
         history: historyView(found, found.backfill, found.incomplete, registry),
+        freshness: presentFreshness(
+          registry,
+          found.row,
+          found.freshness,
+          actor.locale,
+        ),
       });
     },
 

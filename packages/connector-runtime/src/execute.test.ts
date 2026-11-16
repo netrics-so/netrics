@@ -867,3 +867,75 @@ it("does not accept a successful final sync with an incomplete dataset page", as
     ),
   ).rejects.toThrow("Final sync page contains an incomplete dataset refresh");
 });
+
+describe("freshness (SDK 0.2.13, ADR 0025 §2)", () => {
+  const manifest: ConnectorManifest = {
+    ...demoManifest,
+    freshnessStreams: [
+      {
+        key: "traffic",
+        name: "Traffic",
+        kind: "periodic",
+        timeZone: "UTC",
+        metrics: [demoManifest.metrics[0]!.key],
+      },
+      { key: "live", name: "Live", kind: "continuous" },
+    ],
+  };
+  const run = (connectorManifest: ConnectorManifest, result: object) =>
+    executeSync(
+      connectorWith(connectorManifest, () => ({ observations: [], ...result })),
+      baseContext,
+      request,
+    );
+
+  it("passes declared entries of a done result through", async () => {
+    const freshness = [
+      {
+        stream: "traffic",
+        dataThrough: "2024-01-01",
+        nextExpectedAt: "2024-01-02T06:00:00.000Z",
+      },
+      { stream: "live" },
+    ];
+    await expect(run(manifest, { freshness, done: true })).resolves.toEqual(
+      expect.objectContaining({ freshness }),
+    );
+  });
+
+  it("refuses undeclared streams and dates on continuous streams", async () => {
+    await expect(
+      run(manifest, { freshness: [{ stream: "sales" }], done: true }),
+    ).rejects.toThrow(ContractViolationError);
+    await expect(
+      run(demoManifest, { freshness: [{ stream: "traffic" }], done: true }),
+    ).rejects.toThrow(/undeclared freshness stream "traffic"/);
+    await expect(
+      run(manifest, {
+        freshness: [{ stream: "live", dataThrough: "2024-01-01" }],
+        done: true,
+      }),
+    ).rejects.toThrow(/continuous/);
+    await expect(
+      run(manifest, {
+        freshness: [{ stream: "traffic", dataThrough: "2024-1-1" }],
+        done: true,
+      }),
+    ).rejects.toThrow(ContractViolationError);
+  });
+
+  it("ignores freshness on a page that is not final", async () => {
+    const result = await run(demoManifest, {
+      freshness: [{ stream: "anything" }],
+      nextCursor: "c",
+      done: false,
+    });
+    expect(result.freshness).toBeUndefined();
+  });
+
+  it("keeps working for connectors without streams or freshness", async () => {
+    await expect(run(demoManifest, { done: true })).resolves.toMatchObject({
+      done: true,
+    });
+  });
+});

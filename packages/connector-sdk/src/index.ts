@@ -4,3 +4,4 @@ export * from "./semver.js";
 export * from "./transport.js";
 export * from "./version.js";
 export * from "./datasets.js";
+export * from "./freshness.js";

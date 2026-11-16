@@ -7,7 +7,11 @@ import type {
   ConnectorResponse,
   ConnectorRuntime,
 } from "../connector.js";
-import { connectorManifestSchema } from "../manifest.js";
+import { freshnessProblem, type FreshnessEntry } from "../freshness.js";
+import {
+  connectorManifestSchema,
+  type ConnectorManifest,
+} from "../manifest.js";
 import type {
   ConnectionContext,
   Observation,
@@ -106,6 +110,40 @@ export function gzipFixtureResponse(
     "content-type": "application/a-gzip",
     ...headers,
   });
+}
+
+/**
+ * Asserts that a done SyncResult's `freshness` (SDK 0.2.13, ADR 0025) is
+ * what the host accepts: well-formed entries for declared streams only, at
+ * most one per stream and resource, nothing but the stream on a continuous
+ * one. A result without freshness passes. Returns the parsed entries.
+ */
+export function expectValidFreshness(
+  manifest: Pick<ConnectorManifest, "freshnessStreams">,
+  result: unknown,
+): FreshnessEntry[] {
+  const parsed = syncResultSchema.safeParse(result);
+  expect(
+    parsed.success,
+    parsed.success ? undefined : `invalid sync result: ${parsed.error.message}`,
+  ).toBe(true);
+  const entries = parsed.data?.freshness ?? [];
+  expect(freshnessProblem(manifest.freshnessStreams, entries)).toBeNull();
+  return entries;
+}
+
+/**
+ * The freshness entry of a done result for a stream (and resource; absent
+ * means the connection entry), for assertions in connector tests.
+ */
+export function freshnessEntry(
+  result: { freshness?: FreshnessEntry[] | undefined },
+  stream: string,
+  resource?: string,
+): FreshnessEntry | undefined {
+  return result.freshness?.find(
+    (entry) => entry.stream === stream && entry.resource === resource,
+  );
 }
 
 function indexByIdentity(observations: Observation[]) {
@@ -253,6 +291,7 @@ export function runConnectorContractTests(
         expect(pages).toBeLessThanOrEqual(MAX_CURSOR_PAGES);
       }
       expect(result.done).toBe(true);
+      expectValidFreshness(connector.manifest, result);
       if (result.observations.length > 0) {
         expect(result.nextCursor).toBeDefined();
       }

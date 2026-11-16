@@ -33,6 +33,8 @@ export interface ConnectorTranslation {
   credentials?: Readonly<Record<string, FieldTranslation>>;
   /** The credential setup steps, one for each English step. */
   setupSteps?: readonly string[];
+  /** Freshness stream names by stream key (ADR 0025). */
+  freshnessStreams?: Readonly<Record<string, string>>;
 }
 
 /** Translations by locale ("de"). English is the manifest itself. */
@@ -107,6 +109,19 @@ export function localizedMetric(
       ? translated.description
       : metric.description,
   };
+}
+
+/** A freshness stream's name in the locale, else its English name (ADR 0025). */
+export function localizedFreshnessStreamName(
+  manifest: Pick<TranslatableManifest, "translations">,
+  stream: { key: string; name: string },
+  locale: string,
+): string {
+  const translated = entryOf(
+    connectorTranslation(manifest.translations, locale)?.freshnessStreams,
+    stream.key,
+  );
+  return nonEmpty(translated) ? translated : stream.name;
 }
 
 /**

@@ -16,7 +16,9 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.10: optional durable dataset staging and page provenance (ADR 0023).
 // 0.2.11: optional incremental staging, datasetStaging.begin (ADR 0024).
 // 0.2.12: optional SyncResult.receivedDatasets (#666).
-export const SDK_VERSION = "0.2.12";
+// 0.2.13: optional manifest freshnessStreams and done-SyncResult freshness
+// (ADR 0025, #702).
+export const SDK_VERSION = "0.2.13";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

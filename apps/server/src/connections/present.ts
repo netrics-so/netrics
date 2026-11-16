@@ -1,6 +1,7 @@
 import type {
   ConnectionAuthReason,
   ConnectionAuthState,
+  ConnectionFreshnessStream,
   ConnectionHealth,
   ConnectionSignedKeyView,
   ConnectionStateView,
@@ -8,14 +9,23 @@ import type {
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   DEFAULT_LOCALE,
+  isFreshnessLate,
+  isFreshnessOverdue,
+  localizedFreshnessStreamName,
   localizedManifest,
   type Locale,
 } from "@netrics/domain";
 import type {
+  ConnectionFreshnessRow,
   ConnectionStateRow,
   ConnectionWithState,
   SyncRunRow,
 } from "@netrics/database";
+
+import {
+  relevantFreshnessRows,
+  selectedResourcesOf,
+} from "../sync/freshness.js";
 
 // Shapes connection rows into API responses. Credentials never leave the
 // database row: responses only say whether there are any.
@@ -113,4 +123,42 @@ export function presentSyncRun(run: SyncRunRow) {
     errorMessage: run.errorMessage,
     observationsWritten: run.observationsWritten,
   };
+}
+
+/**
+ * The connector's freshness streams with the connection's stored rows
+ * (ADR 0025), for the connection's page: declared streams in manifest
+ * order, rows of selected resources only, the connection entry first.
+ */
+export function presentFreshness(
+  registry: ConnectorRegistry,
+  row: ConnectionWithState["row"],
+  rows: readonly ConnectionFreshnessRow[],
+  locale: Locale = DEFAULT_LOCALE,
+): ConnectionFreshnessStream[] {
+  const manifest = registry.get(row.connectorId)?.manifest;
+  const streams = manifest?.freshnessStreams ?? [];
+  if (!manifest || streams.length === 0) return [];
+  const relevant = relevantFreshnessRows(
+    rows,
+    streams,
+    selectedResourcesOf(row.config as Record<string, unknown>, manifest),
+  );
+  return streams.map((stream) => ({
+    key: stream.key,
+    name: localizedFreshnessStreamName(manifest, stream, locale),
+    kind: stream.kind,
+    period: stream.period ?? "day",
+    entries: relevant
+      .filter((entry) => entry.stream.key === stream.key)
+      .map(({ row: stored }) => ({
+        resource: stored.resource === "" ? null : stored.resource,
+        dataThrough: stored.dataThrough,
+        nextExpectedAt: stored.nextExpectedAt?.toISOString() ?? null,
+        checkedAt: stored.checkedAt.toISOString(),
+        advancedAt: stored.advancedAt?.toISOString() ?? null,
+        late: isFreshnessLate(stored),
+        overdue: isFreshnessOverdue(stored),
+      })),
+  }));
 }

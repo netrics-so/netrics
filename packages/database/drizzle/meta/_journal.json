@@ -547,6 +547,13 @@
       "when": 1794831988862,
       "tag": "0077_slide_scope_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1794835275107,
+      "tag": "0078_connection_freshness",
+      "breakpoints": true
     }
   ]
 }
