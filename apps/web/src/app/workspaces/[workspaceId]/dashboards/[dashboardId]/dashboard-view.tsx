@@ -4,7 +4,7 @@ import { DashboardFilters } from "@/components/studio/shared-filters";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { Dashboard, WorkspaceMetric } from "@netrics/contracts";
 import type { DisplayMode } from "@netrics/domain";
@@ -53,6 +53,7 @@ export function DashboardView({
   timeZone,
   images,
   initialMode = null,
+  readOnlyNote = null,
 }: {
   workspaceId: string;
   dashboard: Dashboard;
@@ -69,6 +70,8 @@ export function DashboardView({
   canDelete: boolean;
   /** Tests: the mode to render with, instead of the browser's default. */
   initialMode?: DisplayMode | null;
+  /** Why Studio and the other actions are missing, for viewers (#636). */
+  readOnlyNote?: ReactNode;
 }) {
   const locale = useLocale();
   const t = useT("dashboard");
@@ -209,6 +212,7 @@ export function DashboardView({
           <h1>{dashboard.name}</h1>
           {actions}
         </div>
+        {readOnlyNote}
         {errorBox}
         <div className="card">
           <p>{t("empty")}</p>
@@ -240,6 +244,7 @@ export function DashboardView({
   if (mode === "scroll") {
     return (
       <>
+        {readOnlyNote}
         {errorBox}
         {filterBar}
         <DashboardDataProvider
@@ -270,6 +275,7 @@ export function DashboardView({
         <h1>{dashboard.name}</h1>
         {actions}
       </div>
+      {readOnlyNote}
       {errorBox}
       {filterBar}
       {mode === "screen" ? (

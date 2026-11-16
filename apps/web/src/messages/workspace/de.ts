@@ -73,7 +73,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       "Deine Rolle kann in diesem Workspace keine Projekte anlegen.",
     viewerHint: {
       text: "Du kannst diesen Workspace ansehen. Um Quellen hinzuzufügen, Daten zu bearbeiten oder Dashboards zu ändern, bitte einen Inhaber oder Admin um Bearbeiter-Zugang.",
-      team: "Wer das ist, steht auf der Team-Seite",
+      team: "Du findest sie auf der Team-Seite.",
     },
     pages: {
       dashboards: "Dashboards",

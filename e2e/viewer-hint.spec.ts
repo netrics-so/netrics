@@ -5,11 +5,13 @@ import postgres from "postgres";
 import { workspaceDe } from "../apps/web/src/messages/workspace/de.ts";
 import { workspaceEn } from "../apps/web/src/messages/workspace/en.ts";
 import { type Locale } from "./support/labels.ts";
+import { ORIGIN } from "./support/origin.ts";
 import { startWorkspace } from "./support/session.ts";
 
 // A viewer learns why actions are missing (#636): on the home, Sources and
-// Dashboards pages a short note names the role and who can change it, with
-// a link to the Team page. Owners see no such note.
+// Dashboards pages and on a dashboard's own page, a short note names the
+// role and who can change it, with a link to the Team page. Owners see no
+// such note.
 
 const ownerUrl = () =>
   process.env.DATABASE_MIGRATION_URL ??
@@ -49,8 +51,21 @@ test("viewers see why actions are missing", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(note).toHaveCount(0);
 
+  const created = await page.request.post(
+    `/v1/workspaces/${workspaceId}/dashboards`,
+    { headers: { origin: ORIGIN }, data: { name: "Overview", slides: [] } },
+  );
+  expect(created.status(), await created.text()).toBe(200);
+  const dashboardId = ((await created.json()) as { dashboard: { id: string } })
+    .dashboard.id;
+
   await becomeViewer(workspaceId);
-  for (const area of ["", "/sources", "/dashboards"]) {
+  for (const area of [
+    "",
+    "/sources",
+    "/dashboards",
+    `/dashboards/${dashboardId}`,
+  ]) {
     await page.goto(`/workspaces/${workspaceId}${area}`);
     await expect(note).toBeVisible();
   }
