@@ -90,12 +90,19 @@ export default async function ConnectionDetailPage({
   const [
     { connectors },
     { observations },
+    { observations: changed },
     { metrics },
     retentionResult,
     { projects },
   ] = await Promise.all([
     listConnectors(cookieHeader),
     listObservations(cookieHeader, workspaceId, connectionId, { limit: 100 }),
+    // The list leaves out values of 0 (#623): days without downloads or
+    // reviews would otherwise bury the values that changed.
+    listObservations(cookieHeader, workspaceId, connectionId, {
+      limit: 100,
+      nonZero: true,
+    }),
     listWorkspaceMetrics(cookieHeader, workspaceId),
     getConnectionRetention(cookieHeader, workspaceId, connectionId),
     listProjects(cookieHeader, workspaceId),
@@ -592,60 +599,65 @@ export default async function ConnectionDetailPage({
           <h2>{t("latestObservations")}</h2>
           {observations.length === 0 ? (
             <p className="muted">{t("noObservations")}</p>
+          ) : changed.length === 0 ? (
+            <p className="muted">{t("onlyZeroObservations")}</p>
           ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{t("observations.metric")}</th>
-                  <th>{t("observations.resource")}</th>
-                  <th>{t("observations.breakdown")}</th>
-                  <th>{t("observations.day")}</th>
-                  <th>{t("observations.value")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {observations.map((observation) => (
-                  <tr
-                    key={`${observation.metricKey}/${observation.seriesKey}/${observation.sourceTimestamp}`}
-                  >
-                    <td title={observation.metricKey}>
-                      {metricNames.get(observation.metricKey) ??
-                        observation.metricKey}
-                    </td>
-                    <td
-                      className="muted"
-                      title={
-                        observation.resourceName
-                          ? observation.dimensions.resource
-                          : undefined
-                      }
-                    >
-                      {observation.resourceName ??
-                        observation.dimensions.resource ??
-                        "—"}
-                    </td>
-                    <td>
-                      {observationBreakdown(observation.dimensions).map(
-                        ([dimension, value]) => (
-                          <div key={dimension}>
-                            <span className="muted">
-                              {dimensionNames[dimension] ?? dimension}
-                            </span>{" "}
-                            {value}
-                          </div>
-                        ),
-                      )}
-                    </td>
-                    <td className="muted nowrap">
-                      {observation.sourceTimestamp.slice(0, 10)}
-                    </td>
-                    <td className="nowrap">
-                      {numbers.format(observation.value)}
-                    </td>
+            <>
+              <p className="muted">{t("zeroObservationsHidden")}</p>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t("observations.metric")}</th>
+                    <th>{t("observations.resource")}</th>
+                    <th>{t("observations.breakdown")}</th>
+                    <th>{t("observations.day")}</th>
+                    <th>{t("observations.value")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {changed.map((observation) => (
+                    <tr
+                      key={`${observation.metricKey}/${observation.seriesKey}/${observation.sourceTimestamp}`}
+                    >
+                      <td title={observation.metricKey}>
+                        {metricNames.get(observation.metricKey) ??
+                          observation.metricKey}
+                      </td>
+                      <td
+                        className="muted"
+                        title={
+                          observation.resourceName
+                            ? observation.dimensions.resource
+                            : undefined
+                        }
+                      >
+                        {observation.resourceName ??
+                          observation.dimensions.resource ??
+                          "—"}
+                      </td>
+                      <td>
+                        {observationBreakdown(observation.dimensions).map(
+                          ([dimension, value]) => (
+                            <div key={dimension}>
+                              <span className="muted">
+                                {dimensionNames[dimension] ?? dimension}
+                              </span>{" "}
+                              {value}
+                            </div>
+                          ),
+                        )}
+                      </td>
+                      <td className="muted nowrap">
+                        {observation.sourceTimestamp.slice(0, 10)}
+                      </td>
+                      <td className="nowrap">
+                        {numbers.format(observation.value)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       ) : null}

@@ -628,6 +628,52 @@ describe("engine run and observations", () => {
     expect(detail.syncRuns[0]!.observationsWritten).toBeGreaterThan(0);
   });
 
+  it("leaves out values of 0 when asked, for the latest observations list (#623)", async () => {
+    const url = `/v1/workspaces/${w1Id}/connections/${connectionId}/observations?metricKey=demo.signups&limit=10`;
+    const before = observationListResponseSchema.parse(
+      (
+        await call(world.app, { method: "GET", url, cookie: cookies.viewer })
+      ).json(),
+    ).observations;
+    expect(before).toHaveLength(10);
+    // The newest three signups were 0.
+    const zeroed = before.slice(0, 3).map((o) => o.sourceTimestamp);
+    await world.admin`
+      update observations o set value = 0
+      from metric_definitions m
+      where m.id = o.metric_definition_id and m.key = 'demo.signups'
+        and o.connection_id = ${connectionId}::uuid
+        and o.source_timestamp = any(${zeroed}::timestamptz[])`;
+    const list = async (query: string) =>
+      observationListResponseSchema.parse(
+        (
+          await call(world.app, {
+            method: "GET",
+            url: url + query,
+            cookie: cookies.viewer,
+          })
+        ).json(),
+      ).observations;
+    const all = await list("");
+    expect(all.filter((o) => o.value === 0).length).toBeGreaterThanOrEqual(3);
+    const changed = await list("&nonZero=true");
+    expect(changed).toHaveLength(10);
+    expect(changed.every((o) => o.value !== 0)).toBe(true);
+    expect(changed.map((o) => o.sourceTimestamp)).not.toContain(zeroed[0]);
+    expect((await list("&nonZero=false")).map((o) => o.value)).toEqual(
+      all.map((o) => o.value),
+    );
+    expectError(
+      await call(world.app, {
+        method: "GET",
+        url: url + "&nonZero=yes",
+        cookie: cookies.viewer,
+      }),
+      400,
+      "invalid_request",
+    );
+  });
+
   it("names only the resources the connector named, from this connection", async () => {
     // demo-site-2 loses its name; another connection's name for the same id
     // must not stand in for it.

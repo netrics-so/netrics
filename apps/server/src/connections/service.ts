@@ -744,9 +744,33 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           executeDiscover(connector, context, options),
         validated.value,
       );
-      return discovered.ok
-        ? ok({ check: checked.value, resources: discovered.value, selection })
-        : discovered;
+      if (!discovered.ok) return discovered;
+      // A connector that cannot name an app right now (Google Play without
+      // the Reporting API lists package names) keeps the name an earlier
+      // sync stored, so the picker shows app names (#623).
+      const unnamed = discovered.value.filter(
+        (resource) => resource.name === resource.id,
+      );
+      const stored = unnamed.length
+        ? await inWorkspace(actor, (tx) =>
+            findResourceNames(
+              tx,
+              actor.workspaceId,
+              unnamed.map((resource) => ({
+                connectionId,
+                resourceId: resource.id,
+              })),
+            ),
+          )
+        : new Map<string, string>();
+      const resources = discovered.value.map((resource) => {
+        const name =
+          resource.name === resource.id
+            ? stored.get(resourceNameKey(connectionId, resource.id))
+            : undefined;
+        return name ? { ...resource, name } : resource;
+      });
+      return ok({ check: checked.value, resources, selection });
     } catch (error) {
       return existing.oauth
         ? oauthCallFailure(error)
@@ -3024,6 +3048,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             ...(query.from ? { from: new Date(query.from) } : {}),
             ...(query.to ? { to: new Date(query.to) } : {}),
             limit: query.limit,
+            ...(query.nonZero === "true" ? { nonZero: true } : {}),
           },
         );
         // The names the connector reported for the resources (#196).

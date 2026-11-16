@@ -329,6 +329,8 @@ export const workspaceEn = {
       },
       latestObservations: "Latest observations",
       noObservations: "No observations ingested yet.",
+      zeroObservationsHidden: "Values of 0 are not listed.",
+      onlyZeroObservations: "Every observation so far is 0.",
       observations: {
         metric: "Metric",
         resource: "Resource",

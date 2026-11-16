@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lte, max, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, max, ne, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -360,6 +360,8 @@ export interface ObservationFilter {
   from?: Date;
   to?: Date;
   limit: number;
+  /** Leave out observations whose value is 0 (#623). */
+  nonZero?: boolean;
 }
 
 export interface ObservationRow {
@@ -405,6 +407,7 @@ export async function listObservations(
         filter.to
           ? lte(schema.observations.sourceTimestamp, filter.to)
           : undefined,
+        filter.nonZero ? ne(schema.observations.value, 0) : undefined,
       ),
     )
     .orderBy(desc(schema.observations.sourceTimestamp))
