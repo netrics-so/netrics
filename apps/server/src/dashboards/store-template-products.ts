@@ -22,7 +22,12 @@ import {
   exceedsDataPolicy,
   type DataPolicy,
 } from "@netrics/domain";
-import { createDataLoader, DataServiceError } from "../data/service.js";
+import {
+  createDataLoader,
+  currentGeneration,
+  DataServiceError,
+  readableRecords,
+} from "../data/service.js";
 import { presentImage } from "../images/service.js";
 import { deriveInstallCompletion } from "./store-template-legacy.js";
 import { STORE_SOURCE_DATASETS } from "./store-template-service.js";
@@ -60,18 +65,9 @@ function reject(code: string, status: 400 | 404 | 409 | 413 = 400): never {
   throw new DataServiceError(code, status);
 }
 
-/** The sign of a decimal value (string or number); 0 for anything else. */
-function decimalSign(value: unknown): -1 | 0 | 1 {
-  const text =
-    typeof value === "string"
-      ? value
-      : typeof value === "number" && Number.isFinite(value)
-        ? String(value)
-        : "";
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
-  if (!match || /^0*$/.test(match[2]! + (match[3] ?? ""))) return 0;
-  return match[1] ? -1 : 1;
-}
+/** A decimal text as numeric; null (not an error) for anything else. */
+const decimal = (text: ReturnType<typeof sql>) =>
+  sql`(case when ${text} ~ '^-?[0-9]+([.][0-9]+)?$' then (${text})::numeric end)`;
 
 /**
  * Sources whose data is gone or not there yet read as no rows: the identity
@@ -111,6 +107,10 @@ export async function readInstallData(
     policy: DataPolicy;
   },
 ) {
+  // The policy's query timeout, as dashboard data reads set it.
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(input.policy.queryTimeoutMs ?? 0)}, true)`,
+  );
   const loader = createDataLoader(tx, workspaceId, input.now, {
     policy: input.policy,
     allowPendingResults: true,
@@ -148,33 +148,59 @@ export async function readInstallData(
           asc(schema.dataDatasets.key),
         )
     : [];
-  const dataApps = new Map<string, { connectionId: string; appId: string }>(),
+  // The synced reports can be large (a year of App Store sales of a few
+  // apps is ~200,000 rows): one bounded aggregate per dataset instead of
+  // loading the rows. The data loader has no filter or column pushdown, so
+  // the aggregate shares its generation choice (currentGeneration) and
+  // record eligibility (readableRecords: stored expiry, retention ceiling)
+  // and the policy's row budget applies to the apps it returns.
+  const dataApps: { connectionId: string; appId: string }[] = [],
     proceeds = new Set<string>();
+  const appId = sql<string>`${schema.dataRecords.values}->>'app_id'`,
+    value = (field: string) => sql`${schema.dataRecords.values}->>${field}`;
   for (const source of sources) {
-    const connectionId = source.connectionId!;
-    for (const row of await rows(source.id)) {
-      const appId = row.app_id;
-      if (typeof appId !== "string" || !appId) continue;
-      const key = connectionId + ":" + appId;
-      if (!dataApps.has(key)) dataApps.set(key, { connectionId, appId });
-      if (
-        source.key === "sales_rows" &&
-        typeof row.day === "string" &&
-        row.day >= input.since &&
-        decimalSign(row.units) * decimalSign(row.developer_proceeds_per_unit) >
-          0
+    const generation = await currentGeneration(tx, workspaceId, source.id);
+    // None yet, or expired: no rows, as dashboards show none.
+    if (
+      !generation ||
+      (generation.expiresAt && generation.expiresAt <= input.now)
+    )
+      continue;
+    const paid =
+      source.key === "sales_rows"
+        ? sql`${value("day")} >= ${input.since}
+            and sign(${decimal(value("units"))})
+              * sign(${decimal(value("developer_proceeds_per_unit"))}) > 0`
+        : source.key === "earning_rows"
+          ? sql`${value("transaction_day")} >= ${input.since}
+              and ${decimal(value("merchant_amount"))} > 0`
+          : sql`false`;
+    const query = tx
+      .select({
+        appId,
+        proceeds: sql<boolean>`coalesce(bool_or(${paid}), false)`,
+      })
+      .from(schema.dataRecords)
+      .where(
+        and(
+          readableRecords(workspaceId, generation.id, input.now, input.policy),
+          sql`coalesce(${appId}, '') <> ''`,
+        ),
       )
-        proceeds.add(key);
-      if (
-        source.key === "earning_rows" &&
-        typeof row.transaction_day === "string" &&
-        row.transaction_day >= input.since &&
-        decimalSign(row.merchant_amount) > 0
-      )
-        proceeds.add(key);
+      .groupBy(appId)
+      .orderBy(appId);
+    const apps = await (input.policy.queryRows === null
+      ? query
+      : query.limit(input.policy.queryRows + 1));
+    if (exceedsDataPolicy(apps.length, input.policy.queryRows))
+      reject("data_source_row_limit", 413);
+    for (const app of apps) {
+      const key = source.connectionId! + ":" + app.appId;
+      dataApps.push({ connectionId: source.connectionId!, appId: app.appId });
+      if (app.proceeds) proceeds.add(key);
     }
   }
-  return { products, mapping, dataApps: [...dataApps.values()], proceeds };
+  return { products, mapping, dataApps, proceeds };
 }
 
 /** An app of an install's connections, as the products resolve it. */

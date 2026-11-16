@@ -555,4 +555,62 @@ describe("store product identity", { timeout: 20_000 }, () => {
       "data_source_row_limit",
     );
   });
+
+  it(
+    "reads a year of App Store sales for a small portfolio with the default policy",
+    { timeout: 120_000 },
+    async () => {
+      // 4 apps × 150 territories × 365 days = 219,000 rows, more than the
+      // default 100,000-row query budget; only app "a" had proceeds, on
+      // the last day. Written as one generation straight into the store.
+      const [dataset] = await owner`select id from data_datasets
+        where workspace_id=${workspaceId} and connection_id=${apple.id}
+          and kind='source' and key='sales_rows'`;
+      const [next] = await owner`select coalesce(max(sequence),0)+1 as sequence,
+          max(schema_version) as version
+        from data_generations where dataset_id=${dataset!.id}`;
+      const [generation] = await owner`insert into data_generations
+          (dataset_id, workspace_id, schema_version, refresh_key,
+           source_started_at, sequence, row_count)
+        values (${dataset!.id}, ${workspaceId}, ${next!.version},
+          'year-of-sales', ${now}, ${next!.sequence}, 219000)
+        returning id`;
+      await owner`insert into data_records
+          (generation_id, workspace_id, record_key, collected_at, values)
+        select ${generation!.id}, ${workspaceId},
+          app || ':' || d::date || ':' || t, ${now}::timestamptz,
+          jsonb_build_object(
+            'app_id', app, 'day', d::date::text, 'row_id', t::text,
+            'sku', 'SKU', 'product_type', '1F', 'units', '3',
+            'developer_proceeds_per_unit',
+              case when app = 'a' and d::date = '2026-11-04' then '0.70'
+                   else '0' end,
+            'currency', 'USD', 'country', 'C' || t, 'device', 'iPhone',
+            'provider_fields', '{}'::jsonb)
+        from unnest(array['a','b','c','d']) as app,
+          generate_series('2025-11-05'::date, '2026-11-04'::date,
+            interval '1 day') as d,
+          generate_series(1, 150) as t`;
+      const started = performance.now();
+      const read = await createStoreProductService({
+        db,
+        now: () => new Date(now),
+      }).read(actor(), requestId);
+      const elapsed = performance.now() - started;
+      console.log(
+        `identity read over 219,000 sales rows: ${Math.round(elapsed)} ms`,
+      );
+      expect(
+        read.products.find((product) => product.productId === group),
+      ).toMatchObject({ hadProceeds: true });
+      // The other three apps are in the reports only: listed, no proceeds.
+      for (const app of ["b", "c", "d"])
+        expect(
+          read.products.find(
+            (product) => product.productId === apple.id + ":" + app,
+          ),
+        ).toMatchObject({ hadProceeds: false });
+      expect(elapsed).toBeLessThan(10_000);
+    },
+  );
 });
