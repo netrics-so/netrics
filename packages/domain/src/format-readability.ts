@@ -223,6 +223,11 @@ export function headerFit(input: {
   format: ScreenFormat;
   /** Width / height of the logo image, or null without a logo. */
   logoAspect: number | null;
+  /**
+   * Text shown beside the clock at its size (the offline note), which
+   * takes its room from the names; none by default.
+   */
+  meta?: string | null;
 }): HeaderFit {
   const m = STUDIO_HEADER_METRICS;
   const aspect =
@@ -236,7 +241,8 @@ export function headerFit(input: {
     2 * m.padding -
     (aspect === null ? 0 : m.logo * aspect + m.gap) -
     (2 * m.gap + m.clockSpace) -
-    estimateTextWidth(CLOCK_SAMPLE, m.meta);
+    estimateTextWidth(CLOCK_SAMPLE, m.meta) -
+    (input.meta ? estimateTextWidth(input.meta, m.meta) + m.clockSpace : 0);
   const maxNameLines = NARROW_HEADER_FORMATS.includes(input.format) ? 2 : 1;
   const name = input.name.trim();
   const nameLines = Math.max(

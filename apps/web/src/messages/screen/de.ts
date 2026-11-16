@@ -75,6 +75,7 @@ export const screenDe: Catalog<typeof screenEn> = {
       imageMissing: "Bild nicht verfügbar",
       offline: "Offline",
       offlineSince: "Offline – letzte Aktualisierung {time}",
+      offlineShort: "Offline · {time}",
       mayBeOutdated: "Die Zahlen sind eventuell nicht aktuell",
       lineSummary: "{label}: {value}.",
       lineSummaryPrevious: "{label}: {value}, gestrichelt {comparison}.",

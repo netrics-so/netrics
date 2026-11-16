@@ -134,6 +134,9 @@ export const dataDe: Catalog<typeof dataEn> = {
         warnings:
           "{count, plural, one {# Datenhinweis} other {# Datenhinweise}}",
         sourceOutage: "Die Importe von {name} sind unterbrochen.",
+        sourcePaused: "Die Importe von {name} sind pausiert.",
+        pending: "Daten noch nicht verfügbar",
+        unavailable: "Daten nicht verfügbar",
       },
       views: {
         value: "Wert",

@@ -130,6 +130,11 @@ export const dataEn = {
         warnings:
           "{count, plural, one {# data warning} other {# data warnings}}",
         sourceOutage: "Imports from {name} are interrupted.",
+        /** Access expired or was rejected: the state, not the remedy. */
+        sourcePaused: "Imports from {name} are paused.",
+        /** The data request failed: not yet imported, or not available. */
+        pending: "Data not available yet",
+        unavailable: "Data not available",
       },
       views: {
         value: "Value",

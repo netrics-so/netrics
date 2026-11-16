@@ -296,6 +296,24 @@ function countdownFits(
 }
 
 /**
+ * The header's offline note, as long as the dashboard name still fits in
+ * its lines (one, or two in narrow formats; `headerFit`): "Offline — last
+ * update 12:00", else "Offline · 12:00", else "Offline" (#649). The name is
+ * never cut for the time.
+ */
+export function offlineNoteFor(
+  input: Omit<Parameters<typeof headerFit>[0], "meta">,
+  /** "Offline", then the notes with the time, longest first. */
+  bare: string,
+  withTime: readonly string[],
+): string {
+  return (
+    withTime.find((note) => headerFit({ ...input, meta: `⚠ ${note}` }).fits) ??
+    bare
+  );
+}
+
+/**
  * The header band: logo, dashboard name, slide name (and page), clock. The
  * format's header rule (`headerFit`, ADR 0017 section 6) decides: in narrow
  * formats (3:4, 9:16) the dashboard name wraps to two lines before it is
@@ -316,11 +334,27 @@ function SlideHeader({
   const logo = header.logoImageId ? images.get(header.logoImageId) : null;
   const t = useT("screen.widget");
   const tPlayer = useT("screen.player");
-  const fit = headerFit({
+  const base = {
     name: header.name,
     slideName: header.slideName,
     format,
     logoAspect: logo && logo.height > 0 ? logo.width / logo.height : null,
+  };
+  const offlineNote = header.offline
+    ? offlineNoteFor(
+        base,
+        t("offline"),
+        header.offlineSince
+          ? [
+              t("offlineSince", { time: header.offlineSince }),
+              t("offlineShort", { time: header.offlineSince }),
+            ]
+          : [],
+      )
+    : null;
+  const fit = headerFit({
+    ...base,
+    meta: offlineNote ? `⚠ ${offlineNote}` : null,
   });
   const wrap = fit.maxNameLines > 1;
   const slideName =
@@ -389,10 +423,7 @@ function SlideHeader({
         ) : null}
         {header.offline ? (
           <span className="studio-offline">
-            <span aria-hidden="true">⚠</span>{" "}
-            {header.offlineSince
-              ? t("offlineSince", { time: header.offlineSince })
-              : t("offline")}
+            <span aria-hidden="true">⚠</span> {offlineNote}
           </span>
         ) : null}
         <HeaderClock timeZone={header.timeZone} />

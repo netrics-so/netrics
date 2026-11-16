@@ -201,11 +201,23 @@ export function MeasureWidgetView({
     ) : (
       text
     );
-  const error = expired
-    ? t("errors.expired")
+  const errorKey = expired
+    ? "expired"
     : data?.error
-      ? t(`errors.${dataErrorKey(new ApiError(400, data.error))}`)
+      ? dataErrorKey(new ApiError(400, data.error))
       : null;
+  // A wall screen says only the state: nobody there can check connections
+  // or preparations (#649).
+  const error =
+    errorKey === null
+      ? null
+      : viewer
+        ? t(
+            errorKey === "pending"
+              ? "dashboard.viewer.pending"
+              : "dashboard.viewer.unavailable",
+          )
+        : t(`errors.${errorKey}`);
   const fields: DataField[] = [
     ...widget.binding.groupBy.map((id) => {
       const dimension = data?.metadata?.dimensions.find(
@@ -447,7 +459,9 @@ export function MeasureWidgetView({
         ?.filter((source) => source.status !== "ok")
         .map((source) => {
           const message = t(
-            `dashboard.${source.status === "needs_reauthorization" ? "sourceReconnect" : source.status === "auth_failed" ? "sourceAccess" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : viewer ? "viewer.sourceOutage" : "sourceOutage"}`,
+            viewer
+              ? `dashboard.${source.status === "needs_reauthorization" || source.status === "auth_failed" ? "viewer.sourcePaused" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "viewer.sourceOutage"}`
+              : `dashboard.${source.status === "needs_reauthorization" ? "sourceReconnect" : source.status === "auth_failed" ? "sourceAccess" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "sourceOutage"}`,
             { name: source.name },
           );
           return (

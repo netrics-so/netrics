@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DeviceSlide, DeviceWidget } from "@netrics/contracts";
-import { BUILTIN_THEMES, type ThemeTokens } from "@netrics/domain";
+import { BUILTIN_THEMES, headerFit, type ThemeTokens } from "@netrics/domain";
 
 import { RotatedScreen } from "@/components/screen-rotation";
 import { renderI18n } from "@/lib/i18n/test-render";
@@ -10,7 +10,11 @@ import { widgetBoxStyle } from "@/lib/studio-render";
 
 import { DeviceWidgetView, type DeviceWidgetEnv } from "./device-widget";
 import { MetricWidgetView } from "./metric-widget";
-import { SlideCanvas, type SlideHeaderInfo } from "./slide-canvas";
+import {
+  offlineNoteFor,
+  SlideCanvas,
+  type SlideHeaderInfo,
+} from "./slide-canvas";
 import { SlidePlayer } from "./slide-player";
 
 const ID = (n: number) =>
@@ -373,6 +377,74 @@ describe("SlidePlayer in screen view on any screen (ADR 0017, #281)", () => {
     );
     expect(html.match(/>App-Portfolio</g)).toHaveLength(1);
     expect(html).not.toContain("studio-header-slide");
+  });
+
+  it("shortens the offline note before the dashboard name is cut (#649)", () => {
+    const notes = [
+      "Offline – letzte Aktualisierung 12:00",
+      "Offline · 12:00",
+    ] as const;
+    const at = (format: "16x9" | "9x16", name: string) =>
+      offlineNoteFor(
+        { name, slideName: null, format, logoAspect: null },
+        "Offline",
+        notes,
+      );
+    const fit = (name: string, note: string) =>
+      headerFit({
+        name,
+        slideName: null,
+        format: "9x16",
+        logoAspect: null,
+        meta: `⚠ ${note}`,
+      });
+    // Room enough: the whole note.
+    expect(at("16x9", "Wurfel")).toBe(notes[0]);
+    // 9:16: the long note would cut the name; the short one keeps it whole
+    // in its two lines.
+    const name = "Wurfel growth across all app stores";
+    expect(fit(name, notes[0]).fits).toBe(false);
+    expect(at("9x16", name)).toBe(notes[1]);
+    expect(fit(name, notes[1])).toMatchObject({ nameLines: 2, fits: true });
+    // A name that needs both lines: just "Offline", as before.
+    const long = "Unternehmenskennzahlen Vertrieb und Marketing Europa";
+    expect(at("9x16", long)).toBe("Offline");
+    expect(fit(long, "Offline")).toMatchObject({ nameLines: 2, fits: true });
+    // No time known: just "Offline".
+    expect(
+      offlineNoteFor(
+        { name, slideName: null, format: "9x16", logoAspect: null },
+        "Offline",
+        [],
+      ),
+    ).toBe("Offline");
+  });
+
+  it("renders the short offline note in a portrait header", () => {
+    const html = renderI18n(
+      <SlidePlayer
+        slides={[slide(1, "", [])]}
+        autoAdvance
+        transition="none"
+        tokens={tokens}
+        showHeader
+        header={{
+          name: "Wurfel growth across all app stores",
+          logoImageId: null,
+          timeZone: "UTC",
+          offline: true,
+          offlineSince: "12:00",
+        }}
+        images={images}
+        renderWidget={(widget) => (
+          <DeviceWidgetView widget={widget} env={env} />
+        )}
+        screen={{ width: 1080, height: 1920 }}
+      />,
+      "de",
+    );
+    expect(html).toContain("Offline · 12:00");
+    expect(html).not.toContain("letzte Aktualisierung");
   });
 
   it("lays out a kiosk turned by 90° in its rotated format", () => {

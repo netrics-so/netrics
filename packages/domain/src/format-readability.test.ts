@@ -599,6 +599,23 @@ describe("headerFit", () => {
     expect(repeatsName("", "")).toBe(false);
   });
 
+  it("takes the room of text beside the clock from the names (#649)", () => {
+    const m = STUDIO_HEADER_METRICS;
+    const input = {
+      name: "A",
+      slideName: null,
+      format: "9x16",
+      logoAspect: null,
+    } as const;
+    const note = "⚠ Offline – letzte Aktualisierung 12:00";
+    expect(
+      headerFit(input).width - headerFit({ ...input, meta: note }).width,
+    ).toBeCloseTo(estimateTextWidth(note, m.meta) + m.clockSpace);
+    expect(headerFit({ ...input, meta: null }).width).toBe(
+      headerFit(input).width,
+    );
+  });
+
   it("counts the logo's width at its aspect ratio", () => {
     const m = STUDIO_HEADER_METRICS;
     const without = headerFit({
