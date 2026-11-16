@@ -267,10 +267,24 @@ public enum TileNotices {
     public static let outage = KitStrings.text(.noticeOutage)
     public static let firstSync = KitStrings.text(.noticeFirstSync)
 
-    /** The notice for a tile; nil when it is fresh. */
+    /**
+     * The notice for a tile; nil when it is fresh. With freshness (ADR 0025
+     * section 8) a stale or unreachable tile's notice names the day its
+     * numbers reach, and a provider overdue by a day says so instead.
+     */
     public static func notice(
-        status: DeviceTileStatus, updatedAt: String?, now: Date = Date(), language: ScreenLanguage = .en
+        status: DeviceTileStatus, updatedAt: String?, freshness: WidgetFreshness? = nil, now: Date = Date(),
+        language: ScreenLanguage = .en, timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
     ) -> String? {
+        let notice = plainNotice(status: status, updatedAt: updatedAt, now: now, language: language)
+        guard let freshness else { return notice }
+        return FreshnessText(language: language, timeZone: timeZone, region: region)
+            .notice(freshness, status: status, notice: notice, now: now)
+    }
+
+    static func plainNotice(status: DeviceTileStatus, updatedAt: String?, now: Date, language: ScreenLanguage)
+        -> String?
+    {
         switch status {
         case .authFailed:
             return KitStrings.text(.noticeAuthFailed, language)

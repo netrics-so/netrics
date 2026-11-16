@@ -181,8 +181,11 @@ struct FooterLine: View {
 }
 
 /** A data widget's notice: its connection's state, or that it could not load. */
-func dataNotice(status: DeviceTileStatus, updatedAt: String?, unit: String?, language: ScreenLanguage) -> String? {
-    if let notice = TileNotices.notice(status: status, updatedAt: updatedAt, language: language) {
+func dataNotice(
+    status: DeviceTileStatus, updatedAt: String?, freshness: WidgetFreshness? = nil, unit: String?,
+    language: ScreenLanguage
+) -> String? {
+    if let notice = TileNotices.notice(status: status, updatedAt: updatedAt, freshness: freshness, language: language) {
         return notice
     }
     return unit == nil ? KitStrings.text(.couldNotLoad, language) : nil
@@ -223,6 +226,8 @@ struct DataStateView: View {
     /** The layout's smallest text size (at least 24 units). */
     let small: Double
     let updatedAt: String?
+    /** Replaces "updated …" in the footer (ADR 0025): the day only, since the source is failing. */
+    var freshness: WidgetFreshness? = nil
     let placement: ScreenPlacement
     let env: WidgetEnv
     let now: Date
@@ -253,7 +258,9 @@ struct DataStateView: View {
             }
             if surface == .authFailed,
                 let footer = WidgetFooter.line(
-                    WidgetFooter.candidates(updatedAt: updatedAt, source: nil, now: now, language: env.language),
+                    WidgetFooter.candidates(
+                        updatedAt: updatedAt, freshness: freshness, status: .authFailed, source: nil, now: now,
+                        language: env.language),
                     type: type, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                     unitBox: placement.unitBox)
             {
@@ -299,7 +306,7 @@ struct MetricWidgetView: View {
                         KitStrings.text(.noDataToCompare, env.language, comparison),
                         KitStrings.text(.noComparison, env.language), nil
                     ))
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: env.language)
         let note = ConversionFormat.note(data.conversion, language: env.language)
         // The footer takes the slot under the numbers (the web's source
         // line); a notice replaces it, and without a footer the conversion
@@ -308,7 +315,7 @@ struct MetricWidgetView: View {
             notice != nil
             ? nil
             : WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: env.language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: env.language),
                 type: .metric, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox)
         let slot = footer ?? note
@@ -320,7 +327,7 @@ struct MetricWidgetView: View {
 
         if let surface = DataSurface(data.status) {
             DataStateView(
-                surface: surface, type: .metric, label: layout.label, small: layout.small, updatedAt: data.updatedAt,
+                surface: surface, type: .metric, label: layout.label, small: layout.small, updatedAt: data.updatedAt, freshness: data.freshness,
                 placement: placement, env: env, now: now)
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -442,11 +449,11 @@ struct LineWidgetView: View {
         let approx = approximate ? "≈ " : ""
         let full = data.unit == nil ? "—" : approx + MetricFormat.value(data.value, unit: unit, language: env.language)
         let compact = data.unit == nil ? "—" : approx + MetricFormat.compactValue(data.value, unit: unit, language: env.language)
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: env.language)
         let fitted = WidgetFooter.chartLayout(
             type: .line, label: label, value: (full, compact), notice: notice,
             footer: WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: env.language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: env.language),
                 type: .line, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox),
             placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
@@ -457,7 +464,7 @@ struct LineWidgetView: View {
 
         if let surface = DataSurface(data.status) {
             DataStateView(
-                surface: surface, type: .line, label: layout.label, small: layout.small, updatedAt: data.updatedAt,
+                surface: surface, type: .line, label: layout.label, small: layout.small, updatedAt: data.updatedAt, freshness: data.freshness,
                 placement: placement, env: env, now: now)
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -625,11 +632,11 @@ struct BarWidgetView: View {
     var body: some View {
         let unit = data.unit ?? "count"
         let approx = data.conversion != nil ? "≈ " : ""
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: env.language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: env.language)
         let fitted = WidgetFooter.chartLayout(
             type: .bar, label: label, value: nil, notice: notice,
             footer: WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: env.language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: env.language),
                 type: .bar, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox),
             placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
@@ -642,7 +649,7 @@ struct BarWidgetView: View {
 
         if let surface = DataSurface(data.status) {
             DataStateView(
-                surface: surface, type: .bar, label: layout.label, small: layout.small, updatedAt: data.updatedAt,
+                surface: surface, type: .bar, label: layout.label, small: layout.small, updatedAt: data.updatedAt, freshness: data.freshness,
                 placement: placement, env: env, now: now)
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -785,19 +792,19 @@ struct TableWidgetView: View {
             label: label, width: box.width, height: box.height, fontScale: env.fontScale,
             values: rows.map { StudioLayout.TableValueText(full: $0.full, compact: $0.compact) },
             showChange: options.showChange)
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: language)
         let footer =
             notice != nil
             ? nil
             : WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: language),
                 type: .table, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox)
         let small = sizes[.any] ?? StudioLayout.Minimum.any
 
         if let surface = DataSurface(data.status) {
             DataStateView(
-                surface: surface, type: .table, label: labelLayout, small: small, updatedAt: data.updatedAt,
+                surface: surface, type: .table, label: labelLayout, small: small, updatedAt: data.updatedAt, freshness: data.freshness,
                 placement: placement, env: env, now: now)
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -1070,16 +1077,20 @@ struct ReviewWidgetView: View {
         let labelLayout = StudioRender.labelLayout(label, width: box.width, sizes: sizes)
         let notice =
             data.status == .stale || data.status == .outage
-            ? TileNotices.notice(status: data.status, updatedAt: data.updatedAt, language: language) : nil
+            ? TileNotices.notice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, language: language) : nil
         let review = data.review
+        // The freshness line takes the notice's slot (ADR 0025, #706).
+        let footer = ReviewText.footer(
+            data, notice: notice != nil, placement: placement.cells, showHeader: env.showHeader,
+            fontScale: env.fontScale, unitBox: placement.unitBox, now: now, language: language)
         let layout = StudioLayout.reviewLayout(
             label: label, width: box.width, height: box.height, fontScale: env.fontScale, icon: icon != nil,
-            title: review?.title, body: review?.body, notice: notice != nil)
+            title: review?.title, body: review?.body, notice: notice != nil || footer != nil)
         let small = layout.sizes.author
 
         if let surface = DataSurface(data.status) {
             DataStateView(
-                surface: surface, type: .review, label: labelLayout, small: small, updatedAt: data.updatedAt,
+                surface: surface, type: .review, label: labelLayout, small: small, updatedAt: data.updatedAt, freshness: data.freshness,
                 placement: placement, env: env, now: now,
                 texts: ReviewText.surfaceTexts(surface, language: language))
         } else {
@@ -1139,6 +1150,9 @@ struct ReviewWidgetView: View {
                 }
                 if let notice {
                     NoticeLine(text: notice, size: small, env: env, stale: data.status == .stale)
+                        .padding(.top, env.pt(StudioLayout.ReviewSpacing.stack))
+                } else if let footer {
+                    FooterLine(text: footer, size: small, env: env)
                         .padding(.top, env.pt(StudioLayout.ReviewSpacing.stack))
                 }
             }
@@ -1225,13 +1239,13 @@ struct CompareWidgetView: View {
             label: label, width: box.width, height: box.height, fontScale: env.fontScale, numerator: numerator,
             denominator: denominator, ratio: ratioText, ratioLabel: ratioLabel, change: changeText)
         let notice = dataNotice(
-            status: data.status, updatedAt: data.updatedAt,
+            status: data.status, updatedAt: data.updatedAt, freshness: data.freshness,
             unit: data.numerator.unit == nil || data.denominator.unit == nil ? nil : "count", language: language)
         let footer =
             notice != nil || !layout.showFooter
             ? nil
             : WidgetFooter.line(
-                CompareText.footerCandidates(updatedAt: data.updatedAt, now: now, language: language),
+                CompareText.footerCandidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, now: now, language: language),
                 type: .compare, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox)
         let small = layout.sizes.small
@@ -1242,7 +1256,7 @@ struct CompareWidgetView: View {
 
         if let surface = DataSurface(data.status) {
             DataStateView(
-                surface: surface, type: .compare, label: labelLayout, small: small, updatedAt: data.updatedAt,
+                surface: surface, type: .compare, label: labelLayout, small: small, updatedAt: data.updatedAt, freshness: data.freshness,
                 placement: placement, env: env, now: now)
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -1448,12 +1462,12 @@ struct GaugeWidgetView: View {
             label: label, width: box.width, height: box.height, fontScale: env.fontScale,
             value: StudioLayout.TableValueText(full: full, compact: compact), suffix: suffix, progress: progressLine)
         let labelLayout = StudioRender.labelLayout(label, width: layout.textWidth, sizes: sizes)
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: language)
         let footer =
             notice != nil || !layout.showFooter
             ? nil
             : WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, source: nil, now: now, language: language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: language),
                 type: .gauge, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox)
         let shown = layout.compact ? compact : full
@@ -1462,7 +1476,7 @@ struct GaugeWidgetView: View {
             GoalDeletedView(label: labelLayout, small: small, env: env)
         } else if let surface = DataSurface(data.status) {
             DataStateView(
-                surface: surface, type: .gauge, label: labelLayout, small: small, updatedAt: data.updatedAt,
+                surface: surface, type: .gauge, label: labelLayout, small: small, updatedAt: data.updatedAt, freshness: data.freshness,
                 placement: placement, env: env, now: now)
         } else {
             let accent = reachedColors ? env.colors.up : env.colors.text

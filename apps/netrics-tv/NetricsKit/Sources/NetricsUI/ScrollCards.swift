@@ -221,8 +221,13 @@ struct ScrollBottomLine: View {
 }
 
 /** The first footer candidate ("updated 2 min. ago"): the scroll view wraps instead of choosing a shorter one. */
-private func scrollFooter(_ updatedAt: String?, now: Date, language: ScreenLanguage) -> String? {
-    WidgetFooter.candidates(updatedAt: updatedAt, source: nil, now: now, language: language).first
+private func scrollFooter(
+    _ updatedAt: String?, _ freshness: WidgetFreshness?, status: DeviceTileStatus, now: Date,
+    language: ScreenLanguage
+) -> String? {
+    WidgetFooter.candidates(
+        updatedAt: updatedAt, freshness: freshness, status: status, source: nil, now: now, language: language
+    ).first
 }
 
 // MARK: Metric
@@ -247,7 +252,7 @@ struct ScrollMetricCard: View {
             delta: data.change.delta, ratio: data.change.ratio, unit: unit, language: language)
         let comparison = MetricFormat.comparisonLabel(data.period, language: language)
         let tone = change.map { MetricFormat.tone($0.direction, better: data.better) } ?? .flat
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: language)
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
             ScrollMutedLine(text: MetricFormat.subtitle(data.tile(id: "", label: label), language: language), env: env)
@@ -278,7 +283,7 @@ struct ScrollMetricCard: View {
             }
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: scrollFooter(data.updatedAt, now: now, language: language), env: env)
+                footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language), env: env)
         }
     }
 
@@ -313,7 +318,7 @@ struct ScrollLineCard: View {
         let previous = options.showPrevious ? Array(data.previous.prefix(data.values.count)) : []
         let domain = StudioRender.lineDomain(values: data.values, previous: previous)
         let chartHeight = ScrollGeometry.chartHeight(width: units * Double(env.u))
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: language)
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
             ScrollValueText(
@@ -332,7 +337,7 @@ struct ScrollLineCard: View {
             .padding(.top, 8)
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: scrollFooter(data.updatedAt, now: now, language: language), env: env)
+                footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language), env: env)
         }
     }
 }
@@ -365,7 +370,7 @@ struct ScrollBarCard: View {
                 [Row(label: $0.label.isEmpty ? KitStrings.text(.others, language) : $0.label, value: $0.value, others: true)]
             } ?? [])
         let top = rows.map(\.value).reduce(0, Swift.max)
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: language)
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
             if data.unit == nil {
@@ -399,7 +404,7 @@ struct ScrollBarCard: View {
             }
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: scrollFooter(data.updatedAt, now: now, language: language), env: env)
+                footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language), env: env)
         }
     }
 }
@@ -446,7 +451,7 @@ struct ScrollTableCard: View {
                             change: options.showChange ? ("", env.colors.muted) : nil, others: true)
                     ]
                 } ?? [] : [])
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: language)
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
             ScrollMutedLine(
@@ -525,7 +530,7 @@ struct ScrollTableCard: View {
             }
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: scrollFooter(data.updatedAt, now: now, language: language), env: env)
+                footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language), env: env)
         }
     }
 
@@ -639,7 +644,7 @@ struct ScrollCompareCard: View {
             MetricFormat.tone(MetricFormat.Direction(rawValue: $0.direction.rawValue) ?? .flat, better: data.better)
         }
         let notice = dataNotice(
-            status: data.status, updatedAt: data.updatedAt,
+            status: data.status, updatedAt: data.updatedAt, freshness: data.freshness,
             unit: data.numerator.unit == nil || data.denominator.unit == nil ? nil : "count", language: language)
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
@@ -673,7 +678,7 @@ struct ScrollCompareCard: View {
             }
             ScrollBottomLine(
                 notice: notice, stale: stale,
-                footer: CompareText.footerCandidates(updatedAt: data.updatedAt, now: now, language: language).first,
+                footer: CompareText.footerCandidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, now: now, language: language).first,
                 env: env)
         }
     }
@@ -718,7 +723,7 @@ struct ScrollGaugeCard: View {
             unit: unit, approx: approx, language: language)
         let ring = ScrollGeometry.ring(units: units, suffix: suffix)
         let value = ScrollGeometry.ringValue(full: full, compact: compact, room: ring.room)
-        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, unit: data.unit, language: language)
+        let notice = dataNotice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, unit: data.unit, language: language)
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
             if data.goal == nil {
@@ -759,7 +764,7 @@ struct ScrollGaugeCard: View {
                     .foregroundStyle(reached ? env.colors.up : env.colors.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollBottomLine(
-                    notice: notice, stale: stale, footer: scrollFooter(data.updatedAt, now: now, language: language),
+                    notice: notice, stale: stale, footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language),
                     env: env)
             }
         }
@@ -788,7 +793,7 @@ struct ScrollReviewCard: View {
             }
         let notice =
             data.status == .stale || data.status == .outage
-            ? TileNotices.notice(status: data.status, updatedAt: data.updatedAt, language: language) : nil
+            ? TileNotices.notice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, language: language) : nil
         VStack(alignment: .leading, spacing: CGFloat(ScrollGeometry.cardGap)) {
             ScrollLabel(label: label, env: env)
             if let review = data.review, state == nil {
@@ -820,7 +825,11 @@ struct ScrollReviewCard: View {
             } else {
                 ScrollMutedLine(text: state ?? "…", env: env)
             }
-            ScrollBottomLine(notice: notice, stale: data.status == .stale, footer: nil, env: env)
+            // The review cadence (ADR 0025, #706); without freshness nothing, as before.
+            ScrollBottomLine(
+                notice: notice, stale: data.status == .stale,
+                footer: ReviewText.scrollFooter(data, now: now, language: language),
+                env: env)
         }
         .accessibilityElement(children: .combine)
     }

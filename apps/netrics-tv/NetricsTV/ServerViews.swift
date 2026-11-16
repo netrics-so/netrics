@@ -14,7 +14,7 @@ struct ConnectingCloudView: View {
     var body: some View {
         VStack(spacing: 48) {
             Spacer()
-            Text("netrics")
+            Text(verbatim: Brand.name)
                 .font(.system(size: 88, weight: .semibold))
                 .foregroundStyle(Theme.text)
             StatusLine(
@@ -51,7 +51,7 @@ private struct StatusLine: View {
             } else if let error {
                 Text(error).foregroundStyle(Theme.down)
             } else {
-                Text(" ")
+                Text(verbatim: " ")
             }
         }
         .font(.system(size: 28))
@@ -78,7 +78,9 @@ struct ServerEntryView: View {
                 .font(.system(size: 30))
                 .foregroundStyle(Theme.muted)
 
-            TextField("netrics.example.com", text: $address)
+            TextField(text: $address, prompt: Text(verbatim: "netrics.example.com")) {
+                Text(L10n.tr("Address", language))
+            }
                 .textContentType(.URL)
                 .keyboardType(.URL)
                 .autocorrectionDisabled()

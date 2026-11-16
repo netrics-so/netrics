@@ -256,6 +256,39 @@ public enum DataSurface: String, Sendable, Equatable {
 // MARK: - Latest review (ADR 0019 section 12)
 
 public enum ReviewText {
+    /** The scroll card's freshness line (the first candidate; the card wraps); nil without freshness. */
+    public static func scrollFooter(
+        _ data: ReviewWidgetData, now: Date = Date(), language: ScreenLanguage = .en, timeZone: TimeZone = .current,
+        region: Locale = .autoupdatingCurrent
+    ) -> String? {
+        guard let freshness = data.freshness else { return nil }
+        // A paused or failing source never promises the next check.
+        return WidgetFooter.candidates(
+            updatedAt: nil, freshness: freshness, status: data.status, source: nil, now: now, language: language,
+            timeZone: timeZone, region: region
+        ).first
+    }
+
+    /**
+     * The freshness line of a latest-review widget (ADR 0025, #706): its
+     * stream is continuous, "Checked 10 min. ago · next check ~15:46". It
+     * takes the slot a notice would use, so `reviewLayout(notice: true)`
+     * sizes it and the layout shared with the web is unchanged. Nil while a
+     * notice shows, without freshness, or when no candidate fits one line.
+     */
+    public static func footer(
+        _ data: ReviewWidgetData, notice: Bool, placement: StudioPlacement, showHeader: Bool, fontScale: Double,
+        unitBox: StudioCanvas? = nil, now: Date = Date(), language: ScreenLanguage = .en,
+        timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+    ) -> String? {
+        guard !notice, let freshness = data.freshness else { return nil }
+        return WidgetFooter.line(
+            WidgetFooter.candidates(
+                updatedAt: nil, freshness: freshness, status: data.status, source: nil, now: now,
+                language: language, timeZone: timeZone, region: region),
+            type: .review, placement: placement, showHeader: showHeader, fontScale: fontScale, unitBox: unitBox)
+    }
+
     /**
      * A review widget's surface lines: "App Store reviews paused — upload a
      * new reviews key" and its hint instead of "Reconnect …"; "No reviews
@@ -340,11 +373,19 @@ public enum WidgetFooter {
 
     /**
      * The footer's candidates, longest first: "updated 2 min. ago · Stripe",
-     * "updated 2 min. ago", "Stripe".
+     * "updated 2 min. ago", "Stripe". With freshness (ADR 0025 section 8)
+     * the freshness line replaces them: "Up to Nov 15 · fetched 10 min. ago
+     * · next ~21:00", dropping parts from the end; `status` picks its form.
      */
     public static func candidates(
-        updatedAt: String?, source: String?, now: Date = Date(), language: ScreenLanguage = .en
+        updatedAt: String?, freshness: WidgetFreshness? = nil, status: DeviceTileStatus = .ok, source: String?,
+        now: Date = Date(), language: ScreenLanguage = .en, timeZone: TimeZone = .current,
+        region: Locale = .autoupdatingCurrent
     ) -> [String] {
+        if let freshness {
+            return FreshnessText(language: language, timeZone: timeZone, region: region)
+                .footer(freshness, status: status, now: now)
+        }
         let time = relativeTime(updatedAt, now: now, language: language)
         let name = source.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
         var result: [String] = []
