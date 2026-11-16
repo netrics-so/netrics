@@ -818,6 +818,8 @@ export function ModelEditor({
               savedDiffers: record?.hasUnpublishedChanges,
               inputsDiffer: record?.inputsDiffer,
               saved: savedRelease,
+              savedSources: JSON.stringify(record?.definition.datasets),
+              currentSources: JSON.stringify(definition.datasets),
               published: publishedState,
               current: definitionState,
               dirty,

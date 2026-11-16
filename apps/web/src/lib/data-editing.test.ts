@@ -5,6 +5,7 @@ import {
   dataErrorLocation,
   parseEnteredTable,
   enteredValue,
+  graphSources,
   hasUnpublishedChanges,
   preparationAt,
 } from "./data-editing";
@@ -342,6 +343,40 @@ describe("unpublished changes (#632)", () => {
         current: "A",
       }),
     ).toBe(false);
+  });
+  it("trusts differing inputs only while the sources are the saved ones (#697)", () => {
+    // Published reading source A; switched to prepared source B and saved
+    // (the inputs differ), then undone back to A without saving.
+    const switched = {
+      version: 4,
+      publishedVersion: 3,
+      savedDiffers: true,
+      inputsDiffer: true,
+      saved: "reads B",
+      savedSources: graphSources({
+        nodes: [{ id: "s", type: "source", datasetId: "prepared:b:out" }],
+      }),
+      published: "reads A",
+      dirty: true,
+    };
+    const readsA = graphSources({
+      nodes: [{ id: "s", type: "source", datasetId: "a" }],
+    });
+    expect(
+      hasUnpublishedChanges({
+        ...switched,
+        current: "reads A",
+        currentSources: readsA,
+      }),
+    ).toBe(false);
+    // Still reading B, with another edit: the inputs still differ.
+    expect(
+      hasUnpublishedChanges({
+        ...switched,
+        current: "reads A",
+        currentSources: switched.savedSources,
+      }),
+    ).toBe(true);
   });
   it("takes a saved draft the server confirms equal as the published one (#697)", () => {
     // Opened on a changed draft (published unknown), saved back to the

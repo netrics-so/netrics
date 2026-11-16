@@ -264,13 +264,22 @@ export function* referenceRecordPages<
   if (page.length || !records.length) yield page;
 }
 
+/** The sources a preparation graph reads, in order, as a signature. */
+export function graphSources(graph: Pick<PreparationGraph, "nodes">): string {
+  return JSON.stringify(
+    graph.nodes.flatMap((node) =>
+      node.type === "source" ? [node.datasetId] : [],
+    ),
+  );
+}
 /**
  * Whether an editor marks "Unpublished changes" (#632, #697). The server
  * reports the saved draft's difference from its live release, and
  * separately whether the inputs publishing would pin differ (an input was
  * published again, or the draft switched inputs): only it can resolve
  * those. Without unsaved edits its word decides. With them, differing
- * inputs mark regardless, and otherwise the shown definition is compared
+ * inputs mark while the shown definition reads the same sources as the
+ * saved one (the server resolved those), and otherwise the shown definition is compared
  * with the published one: `published` when the editor knows it (opened at
  * or equal to the release, or published or restored it since), or the saved
  * definition once the server confirmed it equal. So undoing back to the
@@ -288,6 +297,9 @@ export function hasUnpublishedChanges(state: {
   inputsDiffer?: boolean | undefined;
   /** The saved draft's definition signature, in the same form. */
   saved?: string | undefined;
+  /** The sources the saved and the shown definition read, as signatures. */
+  savedSources?: string | undefined;
+  currentSources?: string | undefined;
   /** The published definition's signature, when known. */
   published: string | undefined;
   /** The shown definition's signature, in the same form. */
@@ -298,7 +310,8 @@ export function hasUnpublishedChanges(state: {
   if (!state.publishedVersion) return false;
   if (!state.dirty)
     return state.savedDiffers ?? state.version !== state.publishedVersion;
-  if (state.inputsDiffer) return true;
+  if (state.inputsDiffer && state.currentSources === state.savedSources)
+    return true;
   const published =
     state.published ?? (state.savedDiffers === false ? state.saved : undefined);
   return published === undefined || state.current !== published;

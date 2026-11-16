@@ -21,6 +21,7 @@ import {
   preparationAt,
   dataErrorKey,
   dataErrorLocation,
+  graphSources,
   hasUnpublishedChanges,
 } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
@@ -168,6 +169,8 @@ export function PreparationEditor({
     savedDiffers: record?.hasUnpublishedChanges,
     inputsDiffer: record?.inputsDiffer,
     saved: savedRelease,
+    savedSources: record ? graphSources(record.graph) : undefined,
+    currentSources: graphSources(graph),
     published: publishedGraph,
     current: graphSignature,
     dirty,
