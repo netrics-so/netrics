@@ -1263,6 +1263,15 @@ async function validateDataBindings(
         .flatMap((slide) => slide.widgets)
         .map((widget) => [widget.id, widget]),
     );
+    // The scope each stored widget's slide had (#707).
+    const storedScopes = new Map(
+      (stored?.slides ?? []).flatMap((slide) =>
+        slide.widgets.map((widget) => [
+          widget.id,
+          JSON.stringify(slideScopeOf(slide)),
+        ]),
+      ),
+    );
     // Filters added, removed or edited by this save; widgets of an affected
     // model are re-validated against them.
     const changedFilters = [
@@ -1323,6 +1332,7 @@ async function validateDataBindings(
           JSON.stringify(
             measureWidgetOptionsSchema.safeParse(previous.options).data,
           ) === JSON.stringify(options) &&
+          storedScopes.get(previous.id) === JSON.stringify(scope) &&
           !changedFilters.some(
             (filter) =>
               !storedFilters.has(filter.id) ||
@@ -1345,6 +1355,7 @@ async function validateDataBindings(
               filters,
               binding,
               options,
+              scope,
             );
           } catch (error) {
             // With its saved defaults this comparison has no period: ask the
@@ -1619,6 +1630,10 @@ export async function createUpdatedDashboardCopy(
       backgroundImageId:
         (value.backgroundImageId as string | undefined) ?? null,
       backgroundDim: (value.backgroundDim as number | undefined) ?? 0,
+      // The slide's own logo and scope (#707), checked with the images and
+      // the bindings below.
+      logoImageId: (value.logoImageId as string | undefined) ?? null,
+      scope: (value.scope as Record<string, unknown> | undefined) ?? {},
       widgets: widgets.map((widget) => ({ ...widget, id: randomUUID() })),
       layouts: layouts.value,
     });

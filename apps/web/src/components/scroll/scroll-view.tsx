@@ -157,6 +157,15 @@ export function ScrollView<W extends LayoutWidget>({
           const slideLogo = slide.logoImageId
             ? images.get(slide.logoImageId)
             : null;
+          const logo = slideLogo ? (
+            <img
+              className="scroll-section-logo"
+              src={slideLogo.url}
+              alt=""
+              width={slideLogo.width}
+              height={slideLogo.height}
+            />
+          ) : null;
           const byId = new Map(slide.widgets.map((w) => [w.id, w]));
           return (
             <section
@@ -183,17 +192,15 @@ export function ScrollView<W extends LayoutWidget>({
                   />
                 </>
               ) : null}
-              {repeated ? null : (
+              {repeated ? (
+                // No heading repeating the name (#622), but the slide's
+                // own logo still shows (#707).
+                logo ? (
+                  <div className="scroll-section-heading">{logo}</div>
+                ) : null
+              ) : (
                 <h2 id={sectionId} className="scroll-section-heading">
-                  {slideLogo ? (
-                    <img
-                      className="scroll-section-logo"
-                      src={slideLogo.url}
-                      alt=""
-                      width={slideLogo.width}
-                      height={slideLogo.height}
-                    />
-                  ) : null}
+                  {logo}
                   {slideTitle(slide, index, locale)}
                 </h2>
               )}

@@ -224,6 +224,9 @@ export async function validateDashboardMeasure(
   filters: DashboardDataFilter[],
   binding: MeasureWidgetBinding,
   options: { view: "value" | "table" | "bar" | "line"; limit: number },
+  /** The scope of the widget's slide (#707): a range there can give a
+   * window its period. */
+  slideScope: SlideFilterScope = {},
 ) {
   validateMeasureView(options.view, binding);
   // A declared click target must be a filter this widget follows, on a
@@ -266,7 +269,15 @@ export async function validateDashboardMeasure(
     )
   )
     throw new DataServiceError("dashboard_filter_window_unsupported");
-  const query = dashboardModelQuery(filters, {}, binding, options.limit);
+  const query = dashboardModelQuery(
+    filters,
+    {},
+    binding,
+    options.limit,
+    "first",
+    {},
+    slideScope,
+  );
   // Validate the shape and filter paths using the published schema, even with no current rows.
   const tables = new Map(
     Object.entries(model.bindings).map(([id, fields]) => [
@@ -384,6 +395,7 @@ export async function queryDashboardMeasure(
         filters,
         input.binding,
         input.options,
+        slideScope,
       );
       sourceHealth = await modelSourceHealth(
         savepoint,

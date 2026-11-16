@@ -310,6 +310,47 @@ describe("shared dashboard filters", () => {
       false,
     );
     expect(slideScopeConflicts(filters, values("FR"), {})).toBe(false);
+    // Values compare as the query compares them, by the filter's type.
+    const typed: DashboardDataFilter[] = [
+      {
+        id: "price",
+        name: "Price",
+        type: "decimal",
+        mode: "values",
+        mappings: [],
+        defaultValue: null,
+      },
+      {
+        id: "at",
+        name: "At",
+        type: "timestamp",
+        mode: "values",
+        mappings: [],
+        defaultValue: null,
+      },
+    ];
+    const one = (id: string, ...values: unknown[]) => ({
+      [id]: { kind: "values" as const, values },
+    });
+    expect(
+      slideScopeConflicts(typed, one("price", "1.0"), one("price", "1.00")),
+    ).toBe(false);
+    expect(
+      slideScopeConflicts(typed, one("price", "1.0"), one("price", "1.01")),
+    ).toBe(true);
+    expect(
+      slideScopeConflicts(
+        typed,
+        one("at", "2026-11-01T00:00:00Z"),
+        one("at", "2026-11-01T00:00:00.000Z"),
+      ),
+    ).toBe(false);
+    expect(
+      slideScopeConflicts(typed, one("price", null), one("price", null, "2")),
+    ).toBe(false);
+    expect(
+      slideScopeConflicts(typed, one("price", null), one("price", "2")),
+    ).toBe(true);
     expect(slideScopeConflicts(filters, {}, values("DE"))).toBe(false);
     const days = (from: string | null, to: string | null) => ({
       day: { kind: "range" as const, from, to },

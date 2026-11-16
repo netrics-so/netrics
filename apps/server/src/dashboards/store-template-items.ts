@@ -708,6 +708,9 @@ const slideValue = (slide: Record<string, unknown>) =>
     enabled: slide.enabled ?? true,
     backgroundImageId: slide.backgroundImageId,
     backgroundDim: slide.backgroundDim || null,
+    // The slide's own logo and scope (#707); none compares as absent.
+    logoImageId: slide.logoImageId,
+    scope: slide.scope,
   });
 
 /** Dashboard rows as stored: findDashboard's result or a migrated snapshot. */
@@ -883,6 +886,8 @@ export function normalizeTemplateDashboard(
         enabled: slide.enabled ?? true,
         backgroundImageId: slide.background?.imageId ?? null,
         backgroundDim: slide.background?.dim ?? 0,
+        logoImageId: slide.logoImageId ?? null,
+        scope: slide.scope ?? {},
         widgets: [...slide.widgets]
           .sort((a, b) => a.y - b.y || a.x - b.x)
           .map((widget) => {

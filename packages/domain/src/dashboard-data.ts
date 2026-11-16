@@ -201,8 +201,12 @@ export function slideScopeConflicts(
     if (!a || !b) return false;
     if (a.kind === "values" && b.kind === "values")
       return !a.values.some((value) =>
-        b.values.some(
-          (other) => JSON.stringify(value) === JSON.stringify(other),
+        b.values.some((other) =>
+          // As the query compares them: by the filter's type ("1.0" is
+          // "1.00"); null (unmatched) only matches null.
+          value === null || other === null
+            ? value === other
+            : compareDataValues(filter.type, value, other) === 0,
         ),
       );
     if (a.kind === "range" && b.kind === "range") {
