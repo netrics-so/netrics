@@ -15,6 +15,7 @@ import {
   AppStoreConnectApiError,
   ascErrorBody,
   type AppStoreConnectClient,
+  type AscErrorBody,
 } from "./api.js";
 import {
   SALES_REPORT_FILTERS,
@@ -146,9 +147,36 @@ function startOfNextMonth(ms: number): number {
 type DayReport = SalesRow[] | "pending" | "expired";
 
 /**
- * Reads one reporting day. A 404 for a day whose report should exist (D + 1
- * at 12:00 PT has passed) is a day without sales; for a more recent day it
- * is a report not published yet (ADR 0014, "404 has two meanings").
+ * Days a report can be late after it was due (D + 1 at 12:00 PT) and still
+ * keep its day pending (ADR 0014, "404 has two meanings"). From D + 1 + 7
+ * at 12:00 PT, a 404 for D reads as a day without sales whatever it says,
+ * so a report Apple never publishes cannot hold back the days after it.
+ */
+export const LATE_REPORT_BOUND_DAYS = 7;
+
+/**
+ * What a 404 of `GET /v1/salesReports` says. Apple answers both meanings
+ * with status 404 and code NOT_FOUND; only `detail` tells them apart:
+ * "There were no sales for the date specified." or "Report is not
+ * available yet. …" (fixtures/error-not-found-*.json). Any other wording
+ * is "unknown".
+ */
+export type SalesNotFound = "no-sales" | "not-available" | "unknown";
+
+export function salesNotFoundKind(body: AscErrorBody): SalesNotFound {
+  const detail = body.detail ?? "";
+  if (/\bno sales\b/i.test(detail)) return "no-sales";
+  if (/\bnot available yet\b/i.test(detail)) return "not-available";
+  return "unknown";
+}
+
+/**
+ * Reads one reporting day. A 404 before the day is due (D + 1 at 12:00 PT)
+ * is a report not published yet. Once due, a 404 saying "no sales" is a
+ * day without sales; one saying "not available yet", or anything else,
+ * keeps the day pending for up to `LATE_REPORT_BOUND_DAYS` after it was
+ * due, and then reads as a day without sales (ADR 0014, "404 has two
+ * meanings").
  */
 async function readDay(
   client: AppStoreConnectClient,
@@ -156,6 +184,7 @@ async function readDay(
   dayMs: number,
   latestMs: number,
   oldestKeptMs: number,
+  unrecognised: () => void,
 ): Promise<DayReport> {
   const response = await client.request(
     "/v1/salesReports",
@@ -170,7 +199,11 @@ async function readDay(
     return parseSalesReport(inflateReport(response.bytes()));
   }
   if (response.status === 404) {
-    return dayMs <= latestMs ? [] : "pending";
+    const kind = salesNotFoundKind(ascErrorBody(response));
+    if (kind === "unknown") unrecognised();
+    if (dayMs > latestMs) return "pending";
+    if (kind === "no-sales") return [];
+    return dayMs + LATE_REPORT_BOUND_DAYS * DAY_MS <= latestMs ? [] : "pending";
   }
   const body = ascErrorBody(response);
   if (
@@ -341,20 +374,33 @@ async function readSalesPage(
   const days: number[] = [];
   for (let ms = readFrom; ms < readTo; ms += DAY_MS) days.push(ms);
 
+  let unrecognised = false;
   const reports = await mapLimited(days, REPORT_CONCURRENCY, (dayMs) =>
-    readDay(client, options.vendorNumber, dayMs, latestMs, oldestKeptMs),
+    readDay(client, options.vendorNumber, dayMs, latestMs, oldestKeptMs, () => {
+      unrecognised = true;
+    }),
   );
+  if (unrecognised) {
+    options.log(
+      `App Store sales report: a 404 with an unrecognised message; the day stays pending for up to ${LATE_REPORT_BOUND_DAYS} days after it was due`,
+    );
+  }
   const published = new Map<number, SalesRow[]>();
   let pendingMs: number | undefined;
   /** The day after the newest day Apple no longer serves, if any. */
   let servedFromMs: number | undefined;
   days.forEach((dayMs, index) => {
     const report = reports[index]!;
-    if (report === "pending") {
+    if (report === "pending" && dayMs >= startMs) {
       pendingMs ??= dayMs;
     } else if (pendingMs === undefined) {
-      // An expired day reads as a day without sales for the metrics.
-      published.set(dayMs, report === "expired" ? [] : report);
+      // An expired day reads as a day without sales for the metrics; so
+      // does a pending day before the window, read only for the ranking
+      // (it is not emitted, and must not move the cursor back).
+      published.set(
+        dayMs,
+        report === "expired" || report === "pending" ? [] : report,
+      );
       if (report === "expired")
         servedFromMs = Math.max(servedFromMs ?? 0, dayMs + DAY_MS);
     }

@@ -197,11 +197,13 @@ day is due ([ADR 0025](../decisions/0025-data-freshness.md)).
 - **Sales** for a Pacific Time day D are published by Apple the next day,
   generally by 8 a.m. PT. netrics counts on them from **12:00 PT on D + 1**
   (21:00 in Berlin in winter): until then a missing report means "not
-  published yet", afterwards a day without sales. From **05:00 PT** on, the
-  connection checks every 30 minutes until the day has arrived, so a report
-  Apple publishes early is picked up within about 40 minutes instead of at
-  the next 6-hour sync. 05:00 PT is netrics' assumption of the earliest
-  usual publication; Apple documents no earliest time.
+  published yet", afterwards Apple's message decides between a day without
+  sales and a report that is late (see "Reporting days and latency"). From
+  **05:00 PT** on, the connection checks every 30 minutes until the day
+  has arrived, so a report Apple publishes early is picked up within about
+  40 minutes instead of at the next 6-hour sync. 05:00 PT is netrics'
+  assumption of the earliest usual publication; Apple documents no
+  earliest time.
 - Sales are one report for the whole vendor number, so every app of the
   connection has the same "up to" day.
 - **App Store analytics**, once enabled, start 1–2 days after the request.
@@ -567,8 +569,20 @@ How report rows become values:
 - Apple publishes day D the next morning (generally by 8 a.m. Pacific Time).
   netrics expects D from 12:00 Pacific Time on D + 1. Until then, a missing
   report means "not published yet": netrics keeps its place and asks again
-  on the next sync. After that, a missing report means the day had no sales,
-  and netrics stores zeros for it.
+  on the next sync. After that, it goes by Apple's answer (both are a 404
+  `NOT_FOUND`; the message differs):
+  - "There were no sales for the date specified": the day had no sales,
+    and netrics stores zeros for it.
+  - "Report is not available yet", or a message netrics does not know:
+    Apple is late. netrics stores nothing for that day, the screen shows
+    the data up to the day before and "not published yet", and netrics
+    checks again every 30 minutes (then at the usual interval once Apple
+    is a full interval late). When the report arrives, it is stored like
+    any other day.
+  - A day still missing 7 days after it was due counts as a day without
+    sales (zeros), so one report Apple never publishes cannot hold back
+    the days after it. If Apple publishes it even later, a new backfill
+    reads it.
 - Every sync reads the last 3 reporting days again, so Apple's corrections
   replace the stored values instead of adding to them.
 - The first sync goes back **365 days**, Apple's retention for daily

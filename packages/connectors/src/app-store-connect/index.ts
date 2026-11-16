@@ -176,6 +176,7 @@ export {
 export {
   BACKFILL_DAYS,
   INCREMENTAL_LOOKBACK_DAYS,
+  LATE_REPORT_BOUND_DAYS,
   OTHERS,
   REPORT_CONCURRENCY,
   SALES_CUTOFF_HOUR_PT,
@@ -185,6 +186,8 @@ export {
   TOP_TERRITORIES,
   UNKNOWN,
   salesFreshness,
+  salesNotFoundKind,
+  type SalesNotFound,
 } from "./sales-sync.js";
 export { LISTING_RATINGS_STREAM } from "./store-ratings.js";
 
