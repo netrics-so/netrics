@@ -229,6 +229,26 @@ type StoredDashboard = z.infer<typeof storedDashboardsSchema>[number];
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
+/** `value` with each image id of `replaced` swapped for its replacement. */
+function withIcons(
+  value: unknown,
+  replaced: ReadonlyMap<string, string | null>,
+): unknown {
+  if (!replaced.size) return value;
+  if (typeof value === "string")
+    return replaced.has(value) ? replaced.get(value) : value;
+  if (Array.isArray(value))
+    return value.map((entry) => withIcons(entry, replaced));
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        withIcons(entry, replaced),
+      ]),
+    );
+  return value;
+}
+
 /** A record's original in any of its stored shapes. */
 type Original =
   | { graph: PreparationGraph }
@@ -464,12 +484,42 @@ export function createStoreTemplateUpdateService(deps: {
     requestId: string,
     inputs: StoreTemplateInputs,
   ): Promise<StoreTemplateInputs> {
-    const ids = [
-      ...new Set(
-        (inputs.apps ?? []).flatMap((app) => (app.icon ? [app.icon] : [])),
+    const replaced = await iconReplacements(
+      tx,
+      workspaceId,
+      requestId,
+      inputs.apps,
+      inputs,
+    );
+    if (!replaced.size) return inputs;
+    return {
+      ...inputs,
+      apps: inputs.apps!.map((app) =>
+        app.icon && replaced.has(app.icon)
+          ? { ...app, icon: replaced.get(app.icon)! }
+          : app,
       ),
+    };
+  }
+
+  /**
+   * The icons of `apps` the daily refresh replaced since (gone from the
+   * workspace's images) → the product's current icon (null: none now).
+   * Applied to the apps an update builds from (withCurrentIcons) and to
+   * the active dashboard's baseline alike, so a refreshed logo is never a
+   * change of either side.
+   */
+  async function iconReplacements(
+    tx: Transaction,
+    workspaceId: string,
+    requestId: string,
+    apps: readonly { productId: string; icon: string | null }[] | undefined,
+    inputs: StoreTemplateInputs,
+  ): Promise<Map<string, string | null>> {
+    const ids = [
+      ...new Set((apps ?? []).flatMap((app) => (app.icon ? [app.icon] : []))),
     ];
-    if (!ids.length) return inputs;
+    if (!ids.length) return new Map();
     const existing = new Set(
       (
         await tx
@@ -483,21 +533,20 @@ export function createStoreTemplateUpdateService(deps: {
           )
       ).map((row) => row.id),
     );
-    if (ids.every((id) => existing.has(id))) return inputs;
+    if (ids.every((id) => existing.has(id))) return new Map();
     const current = new Map(
       (
         (await withApps(tx, workspaceId, requestId, inputs, "lenient")).apps ??
         []
       ).map((app) => [app.productId, app.icon]),
     );
-    return {
-      ...inputs,
-      apps: inputs.apps!.map((app) =>
+    return new Map(
+      (apps ?? []).flatMap((app) =>
         app.icon && !existing.has(app.icon)
-          ? { ...app, icon: current.get(app.productId) ?? null }
-          : app,
+          ? [[app.icon, current.get(app.productId) ?? null] as const]
+          : [],
       ),
-    };
+    );
   }
 
   /**
@@ -711,6 +760,15 @@ export function createStoreTemplateUpdateService(deps: {
     }
     for (const row of rows) if (deleted(row)) replaced.push(row.key);
     rows = rows.filter((row) => !deleted(row));
+    // Icons of the active dashboard's baseline the refresh replaced since:
+    // read as the current ones, like the apps the update builds from.
+    const baselineIcons = await iconReplacements(
+      tx,
+      workspaceId,
+      requestId,
+      builtApps(rows) as StoreTemplateInputs["apps"],
+      inputs,
+    );
     const live = rows.filter(
       (row) => row.detachedAt === null && row.kind !== "dataset",
     );
@@ -800,7 +858,11 @@ export function createStoreTemplateUpdateService(deps: {
         ).length,
       );
     const originalItems = (row: RecordRow): Items => {
-      const original = row.original as Original | null;
+      const original = (
+        row.kind === "dashboard"
+          ? withIcons(row.original, baselineIcons)
+          : row.original
+      ) as Original | null;
       if (original && "graph" in original && row.kind === "preparation")
         return preparationItems(row.key, original.graph, idsToKeys);
       if (original && "definition" in original && row.kind === "model")
@@ -946,11 +1008,26 @@ export function createStoreTemplateUpdateService(deps: {
       byRecord.set(key, [...(byRecord.get(key) ?? []), item]);
     }
     for (const record of plans) record.items = byRecord.get(record.key) ?? [];
+    // The install's newest update: an apply that changes no record (a
+    // dashboard-only update of the same version) still changes the basis,
+    // so the same plan applied twice is stale.
+    const [newest] = await tx
+      .select({ id: schema.dataTemplateUpdates.id })
+      .from(schema.dataTemplateUpdates)
+      .where(
+        and(
+          eq(schema.dataTemplateUpdates.workspaceId, workspaceId),
+          eq(schema.dataTemplateUpdates.requestId, requestId),
+        ),
+      )
+      .orderBy(desc(schema.dataTemplateUpdates.createdAt))
+      .limit(1);
     const basis = createHash("sha256")
       .update(
         JSON.stringify([
           // A scope plan is never the basis of an update, nor the reverse.
           scope ? "scope" : "update",
+          newest?.id ?? null,
           template.version,
           install.templateVersion,
           // The inputs the next version is built from (apps, scope, name).

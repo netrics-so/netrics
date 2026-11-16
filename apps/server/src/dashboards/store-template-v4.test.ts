@@ -691,4 +691,60 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     const copy = await readDashboard(copied.dashboards[0]!.copyId!);
     expect(copy.slides[1]!.logoImageId).toBe(focusIcon);
   });
+
+  it("refuses the same app update applied twice as stale", async () => {
+    const requestId = randomUUID();
+    await install(storeTemplate, requestId);
+    await products().update(actor(), requestId, {
+      products: [{ productId: focus, pricing: "free", website: null }],
+    });
+    const plan = await updates().plan(actor(), requestId);
+    const body = { basis: plan.basis, decisions: decisions(plan) };
+    await updates().apply(actor(), requestId, body);
+    // A double click or a second tab: the first update stays.
+    await expect(updates().apply(actor(), requestId, body)).rejects.toThrow(
+      "store_update_stale",
+    );
+  });
+
+  it("makes the copy of a renamed app after the refresh replaced its icon", async () => {
+    const requestId = randomUUID();
+    await install(storeTemplate, requestId);
+    // Focus is renamed: its slide's name changes in the update.
+    await withWorkspace(db, { workspaceId }, (tx) =>
+      upsertConnectionResources(tx, {
+        workspaceId,
+        connectionId: apple.id,
+        resources: [{ id: "1001", name: "Focus Pro", kind: "app" }],
+        now: at(),
+      }),
+    );
+    const plan = await updates().plan(actor(), requestId);
+    const update = await updates().apply(actor(), requestId, {
+      basis: plan.basis,
+      decisions: decisions(plan),
+    });
+    // Before the copy, the daily refresh replaces Focus's icon.
+    const content = Buffer.from("an icon refreshed again");
+    const [fresh] = await owner`insert into workspace_images
+        (workspace_id, name, content_type, bytes, width, height, sha256,
+         content, origin, connection_id, resource_id, created_at)
+      values (${workspaceId}, 'App icon', 'image/png', ${content.length}, 64,
+        64, ${createHash("sha256").update(content).digest("hex")}, ${content},
+        'resource_icon', ${apple.id}, '1001', ${now})
+      returning id`;
+    await withWorkspace(db, { workspaceId }, (tx) =>
+      replaceImageReferences(tx, workspaceId, focusIcon, fresh!.id as string),
+    );
+    await owner`delete from workspace_images where id = ${focusIcon}`;
+    focusIcon = fresh!.id as string;
+    const copied = await updates().createCopy(
+      actor(),
+      update.id,
+      "dashboard:portfolio",
+    );
+    const copy = await readDashboard(copied.dashboards[0]!.copyId!);
+    const slide = copy.slides.find((s) => s.name === "Focus Pro")!;
+    expect(slide.logoImageId).toBe(focusIcon);
+  });
 });
