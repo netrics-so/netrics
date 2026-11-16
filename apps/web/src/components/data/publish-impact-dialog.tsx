@@ -4,18 +4,17 @@ import type { DataImpact } from "@netrics/contracts";
 import { useT } from "@/lib/i18n/client";
 
 /**
- * Saves (when needed), then asks before publishing. A record that existed
- * before this publish is confirmed with the impact list; a new one has no
- * dependents and publishes directly. Answers whether it published.
+ * Saves (when needed), then asks before publishing, with the impact list.
+ * Every publish asks, a first one too ("Nothing uses this yet"), so
+ * preparations and models behave alike (#632). Answers whether it published.
  */
 export async function publishAfterConfirmation<T>(steps: {
-  existed: boolean;
   save: () => Promise<T>;
   confirm: (saved: T) => Promise<boolean>;
   publish: (saved: T) => Promise<void>;
 }): Promise<"published" | "cancelled"> {
   const saved = await steps.save();
-  if (steps.existed && !(await steps.confirm(saved))) return "cancelled";
+  if (!(await steps.confirm(saved))) return "cancelled";
   await steps.publish(saved);
   return "published";
 }

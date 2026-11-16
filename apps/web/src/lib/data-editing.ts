@@ -263,3 +263,27 @@ export function* referenceRecordPages<
   }
   if (page.length || !records.length) yield page;
 }
+
+/**
+ * Whether an editor marks "Unpublished changes" (#632): what it shows
+ * differs from the published definition. `published` is that definition's
+ * signature when the editor knows it (opened at the published version, or
+ * published or restored it since), so undoing back to it clears the mark.
+ * Otherwise a saved draft ahead of the release counts, as in the lists, and
+ * so do unsaved edits. Never-published items say "Not published" instead.
+ */
+export function hasUnpublishedChanges(state: {
+  version: number | undefined;
+  publishedVersion: number | null | undefined;
+  /** The published definition's signature, when known. */
+  published: string | undefined;
+  /** The shown definition's signature, in the same form. */
+  current: string;
+  /** Unsaved edits. */
+  dirty: boolean;
+}): boolean {
+  if (!state.publishedVersion) return false;
+  return state.published === undefined
+    ? state.version !== state.publishedVersion || state.dirty
+    : state.current !== state.published;
+}

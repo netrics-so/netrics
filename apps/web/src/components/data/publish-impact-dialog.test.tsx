@@ -174,11 +174,10 @@ describe("PublishImpactDialog", () => {
 });
 
 describe("publishAfterConfirmation", () => {
-  const steps = (confirmed: boolean, existed = true) => {
+  const steps = (confirmed: boolean) => {
     const order: string[] = [];
     return {
       order,
-      existed,
       save: vi.fn(async () => {
         order.push("save");
         return { id: "saved", version: 2 };
@@ -193,7 +192,7 @@ describe("publishAfterConfirmation", () => {
     };
   };
 
-  it("publishes an existing record only after Confirm", async () => {
+  it("publishes only after Confirm", async () => {
     const s = steps(true);
     expect(await publishAfterConfirmation(s)).toBe("published");
     expect(s.order).toEqual(["save", "confirm", "publish"]);
@@ -208,10 +207,12 @@ describe("publishAfterConfirmation", () => {
     expect(s.publish).not.toHaveBeenCalled();
   });
 
-  it("publishes a record that was never saved directly", async () => {
-    const s = steps(false, false);
-    expect(await publishAfterConfirmation(s)).toBe("published");
-    expect(s.order).toEqual(["save", "publish"]);
-    expect(s.confirm).not.toHaveBeenCalled();
+  it("asks before a first publish too, as for a saved record (#632)", async () => {
+    // A record that was never saved used to publish without asking, so a
+    // new preparation skipped the confirmation a saved model showed.
+    const s = { ...steps(false), existed: false };
+    expect(await publishAfterConfirmation(s)).toBe("cancelled");
+    expect(s.order).toEqual(["save", "confirm"]);
+    expect(s.publish).not.toHaveBeenCalled();
   });
 });

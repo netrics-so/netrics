@@ -21,6 +21,7 @@ import {
   preparationAt,
   dataErrorKey,
   dataErrorLocation,
+  hasUnpublishedChanges,
 } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import { DataTable } from "./data-table";
@@ -143,6 +144,19 @@ export function PreparationEditor({
   const current = useMemo(() => canonicalJson({ name, graph }), [name, graph]),
     dirty = current !== savedState || (!record && graph.nodes.length > 0);
   const graphSignature = useMemo(() => canonicalJson(graph), [graph]);
+  // The published graph, when known: undoing back to it clears the mark.
+  const [publishedGraph, setPublishedGraph] = useState(() =>
+    initial && initial.publishedVersion === initial.version
+      ? canonicalJson(initial.graph)
+      : undefined,
+  );
+  const unpublishedChanges = hasUnpublishedChanges({
+    version: record?.version,
+    publishedVersion: record?.publishedVersion,
+    published: publishedGraph,
+    current: graphSignature,
+    dirty,
+  });
   const formOpen = adding || !!editing || removing;
   // While a failed change's form is open, the list shows the proposed graph.
   const listGraph = formOpen && proposal ? proposal : graph;
@@ -274,7 +288,6 @@ export function PreparationEditor({
         return;
       }
       const outcome = await publishAfterConfirmation({
-        existed: !!record,
         save,
         confirm: (draft) =>
           confirmation.ask(async () => ({
@@ -290,6 +303,7 @@ export function PreparationEditor({
             draft.version,
           );
           setRecord(published.preparation);
+          setPublishedGraph(canonicalJson(published.preparation.graph));
           onSaved(published.preparation);
         },
       });
@@ -325,6 +339,9 @@ export function PreparationEditor({
             );
       const next = result.preparation;
       setRecord(next);
+      // Restoring the live release shows the published graph.
+      if (version !== undefined && version === record.publishedVersion)
+        setPublishedGraph(canonicalJson(next.graph));
       setName(next.name);
       setGraphHistory(startHistory(next.graph));
       setSavedState(canonicalJson({ name: next.name, graph: next.graph }));
@@ -560,7 +577,7 @@ export function PreparationEditor({
             {record?.publishedVersion
               ? t("published", { version: record.publishedVersion })
               : t("unpublished")}
-            {dirty ? " · " + t("changed") : ""}
+            {unpublishedChanges ? " · " + t("changed") : ""}
           </p>
         </div>
         <div className="data-form-actions">

@@ -825,3 +825,22 @@ describe("model editor new measures and aggregate columns (#631)", () => {
     expect(de).toContain("App passt nicht zu Summe.");
   });
 });
+
+describe("model editor unpublished mark (#632)", () => {
+  const open = (version: number, publishedVersion: number | null) =>
+    renderI18n(
+      <ModelEditor
+        workspaceId="workspace"
+        sources={[source]}
+        initial={{ ...draft([revenue]), version, publishedVersion }}
+        onSaved={() => {}}
+        onClose={() => {}}
+        onDirty={() => {}}
+      />,
+    );
+  it("marks a saved draft ahead of its release, not the release itself", () => {
+    expect(open(4, 3)).toContain("Unpublished changes");
+    expect(open(3, 3)).not.toContain("Unpublished changes");
+    expect(open(2, null)).not.toContain("Unpublished changes");
+  });
+});
