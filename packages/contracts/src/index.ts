@@ -1106,10 +1106,55 @@ export const connectionHistorySchema = z.object({
 });
 export type ConnectionHistory = z.infer<typeof connectionHistorySchema>;
 
+/**
+ * How far one freshness stream of a connection reaches (ADR 0025), for the
+ * connection's page: one entry for the whole connection (`resource` null)
+ * and one per resource the connector reports separately. Times are
+ * instants; `dataThrough` is the provider's day, never converted.
+ */
+export const connectionFreshnessEntrySchema = z.object({
+  /** null: the whole connection. */
+  resource: z.string().nullable(),
+  /** YYYY-MM-DD, the last complete provider day; null for continuous streams. */
+  dataThrough: z.iso.date().nullable(),
+  /** When the period after dataThrough should be published, when known. */
+  nextExpectedAt: z.iso.datetime().nullable(),
+  /** When the last succeeded run read the stream. */
+  checkedAt: z.iso.datetime(),
+  /** When dataThrough last moved forward. */
+  advancedAt: z.iso.datetime().nullable(),
+  /** A sync after nextExpectedAt (plus grace) still did not find the period. */
+  late: z.boolean(),
+  /** Late by 24 hours or more: shown as the stale warning. */
+  overdue: z.boolean(),
+});
+export type ConnectionFreshnessEntry = z.infer<
+  typeof connectionFreshnessEntrySchema
+>;
+
+export const connectionFreshnessStreamSchema = z.object({
+  key: z.string().min(1),
+  /** The stream's name in the reader's language ("Sales"). */
+  name: z.string().min(1),
+  kind: z.enum(["periodic", "continuous"]),
+  /** "month" for streams published by calendar month. */
+  period: z.enum(["day", "month"]),
+  /** Empty until a succeeded run reports the stream. */
+  entries: z.array(connectionFreshnessEntrySchema),
+});
+export type ConnectionFreshnessStream = z.infer<
+  typeof connectionFreshnessStreamSchema
+>;
+
 export const connectionDetailResponseSchema = z.object({
   connection: connectionDetailSchema,
   syncRuns: z.array(syncRunSchema),
   history: connectionHistorySchema,
+  /**
+   * The connector's freshness streams (ADR 0025), in manifest order. Empty
+   * for connectors that declare none.
+   */
+  freshness: z.array(connectionFreshnessStreamSchema),
 });
 export type ConnectionDetailResponse = z.infer<
   typeof connectionDetailResponseSchema

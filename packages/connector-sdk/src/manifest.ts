@@ -1,6 +1,11 @@
 import { sourceDatasetSchema, DATASET_LIMITS } from "./datasets.js";
 import { z } from "zod";
 
+import {
+  freshnessStreamSchema,
+  FRESHNESS_LIMITS,
+  type FreshnessStream,
+} from "./freshness.js";
 import { parseRange } from "./semver.js";
 
 /**
@@ -213,6 +218,10 @@ export const manifestTranslationSchema = z.strictObject({
   credentials: z.record(z.string().min(1), fieldTranslationSchema).optional(),
   /** The credential setup steps, one for each English step. */
   setupSteps: z.array(z.string().min(1)).min(1).max(8).optional(),
+  /** Freshness stream names by stream key (SDK 0.2.13, ADR 0025). */
+  freshnessStreams: z
+    .record(z.string().min(1), z.string().min(1).max(100))
+    .optional(),
 });
 export type ManifestTranslation = z.infer<typeof manifestTranslationSchema>;
 
@@ -269,6 +278,80 @@ function propertyKeys(schema: unknown): Set<string> {
   );
 }
 
+/**
+ * ADR 0025 section 1: stream keys are unique, every named metric and
+ * dataset exists and belongs to at most one stream, and a dataset in a
+ * periodic stream that declares a reporting zone declares the stream's.
+ */
+function checkFreshnessStreams(
+  manifest: {
+    metrics: readonly { key: string }[];
+    datasets?: readonly { key: string; reportingTimeZone?: string }[];
+    freshnessStreams?: readonly FreshnessStream[];
+  },
+  context: z.RefinementCtx,
+): void {
+  const streams = manifest.freshnessStreams;
+  if (!streams?.length) return;
+  const problem = (message: string, path: PropertyKey[]) =>
+    context.addIssue({ code: "custom", message, path });
+  const metricKeys = new Set(manifest.metrics.map((metric) => metric.key));
+  const datasets = new Map(
+    (manifest.datasets ?? []).map((dataset) => [dataset.key, dataset]),
+  );
+  const keys = new Set<string>();
+  const metricOwner = new Map<string, string>();
+  const datasetOwner = new Map<string, string>();
+  streams.forEach((stream, index) => {
+    const path = ["freshnessStreams", index];
+    if (keys.has(stream.key))
+      problem(`freshness stream keys must be unique ("${stream.key}")`, [
+        ...path,
+        "key",
+      ]);
+    keys.add(stream.key);
+    for (const metric of stream.metrics ?? []) {
+      if (!metricKeys.has(metric))
+        problem(
+          `freshness stream "${stream.key}" names unknown metric "${metric}"`,
+          [...path, "metrics"],
+        );
+      const owner = metricOwner.get(metric);
+      if (owner !== undefined)
+        problem(
+          `metric "${metric}" belongs to freshness streams "${owner}" and "${stream.key}"`,
+          [...path, "metrics"],
+        );
+      metricOwner.set(metric, stream.key);
+    }
+    for (const key of stream.datasets ?? []) {
+      const dataset = datasets.get(key);
+      if (!dataset)
+        problem(
+          `freshness stream "${stream.key}" names unknown dataset "${key}"`,
+          [...path, "datasets"],
+        );
+      else if (
+        stream.kind === "periodic" &&
+        stream.timeZone !== undefined &&
+        dataset.reportingTimeZone !== undefined &&
+        dataset.reportingTimeZone !== stream.timeZone
+      )
+        problem(
+          `dataset "${key}" reports in ${dataset.reportingTimeZone}, freshness stream "${stream.key}" in ${stream.timeZone}`,
+          [...path, "datasets"],
+        );
+      const owner = datasetOwner.get(key);
+      if (owner !== undefined)
+        problem(
+          `dataset "${key}" belongs to freshness streams "${owner}" and "${stream.key}"`,
+          [...path, "datasets"],
+        );
+      datasetOwner.set(key, stream.key);
+    }
+  });
+}
+
 export const connectorManifestSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -319,6 +402,15 @@ export const connectorManifestSchema = z
      * hosts show the English values for anything not translated.
      */
     translations: manifestTranslationsSchema.optional(),
+    /**
+     * Parts of the data the provider publishes on one cadence, with the
+     * metrics and datasets in each (SDK 0.2.13, ADR 0025). Optional; a
+     * done SyncResult reports their `freshness`.
+     */
+    freshnessStreams: z
+      .array(freshnessStreamSchema)
+      .max(FRESHNESS_LIMITS.streams)
+      .optional(),
   })
   .refine(
     (manifest) =>
@@ -334,6 +426,7 @@ export const connectorManifestSchema = z
         code: "custom",
         message: "A connector must declare metrics or datasets",
       });
+    checkFreshnessStreams(manifest, context);
     if (!manifest.translations) {
       return;
     }
@@ -394,6 +487,13 @@ export const connectorManifestSchema = z
         Object.keys(translation.config ?? {}),
         configKeys,
         "config field",
+      );
+      unknownKeys(
+        locale,
+        "freshnessStreams",
+        Object.keys(translation.freshnessStreams ?? {}),
+        new Set((manifest.freshnessStreams ?? []).map((stream) => stream.key)),
+        "freshness stream",
       );
       unknownKeys(
         locale,

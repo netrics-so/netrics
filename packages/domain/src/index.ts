@@ -39,3 +39,4 @@ export * from "./data-formula-completion.js";
 export * from "./data-policy.js";
 
 export * from "./dashboard-data.js";
+export * from "./freshness.js";

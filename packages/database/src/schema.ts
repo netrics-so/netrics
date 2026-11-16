@@ -534,6 +534,55 @@ export const connectionResources = pgTable(
   ],
 );
 
+// How far a connection's data reaches per freshness stream (ADR 0025 §4,
+// #702): one row per connection × stream × resource ('' for the connection
+// entry), written with a succeeded run's final commit. data_through is the
+// provider's last complete day in time_zone and never moves back; the
+// expected times drive the next sync (§5). No personal data; the rows go
+// with the connection.
+export const connectionFreshness = pgTable(
+  "connection_freshness",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    stream: text("stream").notNull(),
+    resource: text("resource").notNull().default(""),
+    dataThrough: date("data_through", { mode: "string" }),
+    timeZone: text("time_zone"),
+    expectedFrom: timestamp("expected_from", { withTimezone: true }),
+    nextExpectedAt: timestamp("next_expected_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+    advancedAt: timestamp("advanced_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.connectionId, table.stream, table.resource],
+    }),
+    foreignKey({
+      name: "connection_freshness_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    index("connection_freshness_workspace_idx").on(table.workspaceId),
+    check(
+      "connection_freshness_stream_length",
+      sql`char_length(${table.stream}) between 1 and 64`,
+    ),
+    check(
+      "connection_freshness_resource_length",
+      sql`char_length(${table.resource}) <= 200`,
+    ),
+    check(
+      "connection_freshness_zone_with_date",
+      sql`(${table.dataThrough} is null) = (${table.timeZone} is null)`,
+    ),
+    check(
+      "connection_freshness_expected_order",
+      sql`${table.expectedFrom} is null or (${table.nextExpectedAt} is not null and ${table.expectedFrom} <= ${table.nextExpectedAt})`,
+    ),
+  ],
+);
+
 // Recent customer reviews with their text (ADR 0019 §11, #334), for the
 // latest-review widget. The nickname is personal data and the text user
 // content: lengths are capped in the database, the hourly maintenance keeps
