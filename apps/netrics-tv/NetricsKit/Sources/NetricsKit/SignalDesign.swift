@@ -706,6 +706,62 @@ public enum StatusBoard {
         return Rows(shown: Array(items.prefix(fit.shown)), more: fit.more, moreTone: moreTone)
     }
 
+    /** A stream's line under its source on a status board. */
+    public struct StreamRow: Sendable, Equatable {
+        public var key: String
+        public var text: String
+        /** Late by a day or more: the warning colour. */
+        public var overdue: Bool
+    }
+
+    /** Syncs of a source whose credentials failed are paused: no next times. */
+    static func paused(_ item: StatusItem) -> Bool { item.status == .authFailed }
+
+    /**
+     * A stream's line in full, for the scroll card and the detail sheet,
+     * which wrap; nil when there is nothing to say.
+     */
+    public static func streamLine(
+        _ stream: StatusStream, of item: StatusItem, now: Date = Date(), language: ScreenLanguage = .en,
+        timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+    ) -> String? {
+        FreshnessText(language: language, timeZone: timeZone, region: region)
+            .streamCandidates(stream, paused: paused(item), now: now).first
+    }
+
+    /**
+     * The stream rows of a board at its size (web: `statusWidgetLayout`):
+     * only the rows the sources leave free, in the sources' order, so a
+     * source is never hidden for a stream, and none beside "+N more". Each
+     * line spans the name and age columns at the age size and drops parts
+     * from the end to fit one line; a stream with no line that fits is left
+     * out. Keyed by connection id.
+     */
+    public static func streamRows(
+        _ items: [StatusItem], layout: StudioLayout.StatusLayout, now: Date = Date(),
+        language: ScreenLanguage = .en, timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+    ) -> [String: [StreamRow]] {
+        let fit = StudioLayout.statusRowsShown(items: items.count, rowCapacity: layout.rowCapacity)
+        var spare = fit.more > 0 ? 0 : layout.rowCapacity - fit.shown
+        let width = layout.columns.name + (layout.columns.age > 0 ? layout.columns.age + layout.columns.gap : 0)
+        let text = FreshnessText(language: language, timeZone: timeZone, region: region)
+        var result: [String: [StreamRow]] = [:]
+        for item in items.prefix(fit.shown) {
+            for stream in item.streams {
+                guard spare > 0 else { break }
+                guard
+                    let line = text.streamCandidates(stream, paused: paused(item), now: now).first(where: {
+                        StudioLayout.wrappedLineCount($0, maxWidth: width, fontSize: layout.sizes.age) <= 1
+                    })
+                else { continue }
+                result[item.connectionId, default: []].append(
+                    StreamRow(key: stream.key, text: line, overdue: stream.overdue))
+                spare -= 1
+            }
+        }
+        return result
+    }
+
     /**
      * "4 connected · 1 failing · 1 delayed", dropping counts from the end
      * until it fits one line of `width` units at `size` (when given).

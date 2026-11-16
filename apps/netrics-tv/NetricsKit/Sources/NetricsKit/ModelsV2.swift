@@ -749,6 +749,44 @@ public enum StatusItemStatus: String, OpenAPIEnum {
     public static var fallback: StatusItemStatus { .backfilling }
 }
 
+/**
+ * One freshness stream of a source on a status board (#727,
+ * deviceStatusStreamSchema): the widget freshness fields plus its key and
+ * whether it is overdue by a day.
+ */
+public struct StatusStream: Codable, Sendable, Equatable {
+    public var key: String
+    public var freshness: WidgetFreshness
+    /** Late by a day or more: the warning style. */
+    public var overdue: Bool
+
+    public init(key: String, freshness: WidgetFreshness, overdue: Bool = false) {
+        self.key = key
+        self.freshness = freshness
+        self.overdue = overdue
+    }
+
+    private enum CodingKeys: String, CodingKey { case key, overdue }
+
+    /** Throws without a key or readable freshness, so a lossy list drops it. */
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = try c.decode(String.self, forKey: .key)
+        guard !key.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .key, in: c, debugDescription: "Empty key")
+        }
+        freshness = try WidgetFreshness(from: decoder)
+        overdue = c.lenient(Bool.self, .overdue) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try freshness.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(key, forKey: .key)
+        if overdue { try c.encode(true, forKey: .overdue) }
+    }
+}
+
 /** One source on a status board. */
 public struct StatusItem: Codable, Sendable, Equatable {
     public var connectionId: String
@@ -756,15 +794,21 @@ public struct StatusItem: Codable, Sendable, Equatable {
     public var status: StatusItemStatus
     /** The last successful sync (ISO 8601); the age is computed on screen. */
     public var lastSuccessAt: String?
+    /** Its freshness streams in manifest order (#727); empty from servers before it. */
+    public var streams: [StatusStream]
 
-    public init(connectionId: String, name: String, status: StatusItemStatus, lastSuccessAt: String?) {
+    public init(
+        connectionId: String, name: String, status: StatusItemStatus, lastSuccessAt: String?,
+        streams: [StatusStream] = []
+    ) {
         self.connectionId = connectionId
         self.name = name
         self.status = status
         self.lastSuccessAt = lastSuccessAt
+        self.streams = streams
     }
 
-    private enum CodingKeys: String, CodingKey { case connectionId, name, status, lastSuccessAt }
+    private enum CodingKeys: String, CodingKey { case connectionId, name, status, lastSuccessAt, streams }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -772,6 +816,7 @@ public struct StatusItem: Codable, Sendable, Equatable {
         name = try c.decode(String.self, forKey: .name)
         status = c.lenient(StatusItemStatus.self, .status) ?? .fallback
         lastSuccessAt = c.lenient(String.self, .lastSuccessAt)
+        streams = c.lossyArray(StatusStream.self, .streams)
     }
 }
 
