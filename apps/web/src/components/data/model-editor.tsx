@@ -223,6 +223,19 @@ export function renameMeasure(
     ? { ...measure, name, aggregate: { ...measure.aggregate, name } }
     : { ...measure, name };
 }
+/**
+ * How pickers name each measure: its name, or "Unnamed measure 1", "…2" in
+ * order for measures not named yet, so two of them stay apart.
+ */
+export function measureLabels(
+  measures: readonly ModelMeasure[],
+  unnamed: (number: number) => string,
+): Map<string, string> {
+  let count = 0;
+  return new Map(
+    measures.map((m) => [m.id, m.name.trim() || unnamed(++count)]),
+  );
+}
 export function ModelEditor({
   workspaceId,
   sources: sourceCatalog,
@@ -695,9 +708,12 @@ export function ModelEditor({
     id: d.id,
     name: d.name,
   }));
+  const labels = measureLabels(definition.measures, (number) =>
+    t("unnamedMeasure", { number }),
+  );
   const measureFields: DataField[] = definition.measures.map((m) => ({
     id: m.id,
-    name: m.name.trim() || t("unnamedMeasure"),
+    name: labels.get(m.id)!,
     type: "decimal",
     nullable: true,
   }));
@@ -1431,7 +1447,9 @@ export function ModelEditor({
                 <>
                   <WindowedMeasureFields
                     measure={measure}
-                    baseMeasures={windowBaseCandidates(definition, measure)}
+                    baseMeasures={windowBaseCandidates(definition, measure).map(
+                      (m) => ({ ...m, name: labels.get(m.id) ?? m.name }),
+                    )}
                     timeDimensions={timeDimensions}
                     onChange={(next) => changeMeasure(measure.id, next)}
                   />

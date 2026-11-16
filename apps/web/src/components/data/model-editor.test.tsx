@@ -14,11 +14,12 @@ import {
   ModelEditor,
   modelEditorState,
   modelImpact,
+  measureLabels,
   newAggregateMeasure,
   PreviewScopeHint,
   renameMeasure,
 } from "./model-editor";
-import { changeAggregateOperation } from "./fields";
+import { changeAggregateOperation, unfitAggregateField } from "./fields";
 
 const source: DataSource = {
   id: "sales",
@@ -738,10 +739,10 @@ describe("model editor new measures and aggregate columns (#631)", () => {
     const en = render([added]);
     expect(en).toMatch(/<input[^>]*placeholder="e.g. Revenue"[^>]*value=""/);
     // The preview's measure list names it until it has a name.
-    expect(en).toContain("Unnamed measure");
+    expect(en).toContain("Unnamed measure 1");
     const de = render([added], "de");
     expect(de).toMatch(/<input[^>]*placeholder="z. B. Umsatz"[^>]*value=""/);
-    expect(de).toContain("Unbenannte Kennzahl");
+    expect(de).toContain("Unbenannte Kennzahl 1");
   });
   it("keeps the aggregate's name with the measure's", () => {
     const renamed = renameMeasure(
@@ -782,5 +783,45 @@ describe("model editor new measures and aggregate columns (#631)", () => {
     expect(changeAggregateOperation(byApp, "max", source.fields).fieldId).toBe(
       "app",
     );
+  });
+  it("numbers measures that have no name yet", () => {
+    const labels = measureLabels(
+      [
+        newAggregateMeasure("a", "sales", "Count"),
+        revenue,
+        newAggregateMeasure("b", "sales", "Count"),
+      ],
+      (number) => `Unnamed measure ${number}`,
+    );
+    expect([...labels.values()]).toEqual([
+      "Unnamed measure 1",
+      "Revenue",
+      "Unnamed measure 2",
+    ]);
+  });
+  it("keeps a stored column that no longer fits, explained, so the model saves", () => {
+    // A sum of text, saved before the picker offered only numbers.
+    const textSum = {
+      ...revenue,
+      aggregate: { ...revenue.aggregate, fieldId: "app" },
+    };
+    expect(unfitAggregateField(textSum.aggregate, source.fields)?.id).toBe(
+      "app",
+    );
+    expect(unfitAggregateField(revenue.aggregate, source.fields)).toBe(
+      undefined,
+    );
+    const en = card(render([textSum]), "Revenue");
+    expect(options(en, "Column")).toEqual([
+      "Choose…",
+      "Amount",
+      "App (does not fit)",
+    ]);
+    expect(selected(en, "Column")).toBe("App (does not fit)");
+    expect(en).toContain("App does not fit Sum.");
+    expect(en).toMatch(/<select[^>]*aria-describedby="[^"]+"[^>]*required=""/);
+    const de = card(render([textSum], "de"), "Revenue");
+    expect(de).toContain("App (passt nicht)");
+    expect(de).toContain("App passt nicht zu Summe.");
   });
 });
