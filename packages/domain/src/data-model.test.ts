@@ -155,6 +155,112 @@ describe("shared semantic query context", () => {
     expect(rounded.warnings).not.toContain("decimal_rounded");
     expect(query("unrounded").warnings).toContain("decimal_rounded");
   });
+  it("does not warn about a ROUND over a measure or an average that rounds (#680)", () => {
+    const call = (
+      fn: Extract<DataExpression, { kind: "call" }>["fn"],
+      ...args: DataExpression[]
+    ): DataExpression => ({
+      kind: "call",
+      fn,
+      args,
+    });
+    const integer = (value: number): DataExpression => ({
+      kind: "literal",
+      type: "integer",
+      value,
+    });
+    const formula = (id: string, expression: DataExpression) => ({
+      id,
+      name: id,
+      kind: "formula" as const,
+      expression,
+    });
+    const prices: DataTable = {
+      fields: [
+        { id: "app", name: "App", type: "string", nullable: false },
+        { id: "price", name: "Price", type: "decimal", nullable: false },
+      ],
+      rows: [
+        { app: "a", price: "1" },
+        { app: "a", price: "1" },
+        { app: "a", price: "2" },
+        { app: "b", price: "0.5" },
+      ],
+    };
+    const extended: SemanticModelDefinition = {
+      ...model,
+      datasets: [...model.datasets, "prices"],
+      relationships: [
+        ...model.relationships,
+        {
+          id: "prices-app",
+          from: { datasetId: "prices", fieldId: "app" },
+          to: { datasetId: "apps", fieldId: "id" },
+          cardinality: "many_to_one",
+        },
+      ],
+      measures: [
+        ...model.measures,
+        formula(
+          "ratio",
+          call("divide", field("apple-downloads"), field("play-downloads")),
+        ),
+        formula("rounded", call("round", field("ratio"), integer(2))),
+        formula("percent", call("multiply", field("ratio"), integer(100))),
+        formula("percentRounded", call("round", field("percent"), integer(1))),
+        formula("ratioTo18", call("round", field("ratio"), integer(18))),
+        formula("doubled", call("add", field("ratio"), field("ratio"))),
+        formula("doubledRounded", call("round", field("doubled"), integer(2))),
+        {
+          id: "avgPrice",
+          name: "Average price",
+          kind: "aggregate",
+          datasetId: "prices",
+          aggregate: {
+            id: "avgPrice",
+            name: "Price",
+            op: "avg",
+            fieldId: "price",
+          },
+        },
+        formula("avgRounded", call("round", field("avgPrice"), integer(2))),
+      ],
+    };
+    const query = (...measureIds: string[]) =>
+      querySemanticModel(extended, new Map([...sources, ["prices", prices]]), {
+        measureIds,
+        groupBy: ["app"],
+      });
+    // App B: 3 / 7 has no finite decimal; app A's average 4 / 3 neither.
+    const rounded = query("rounded", "percentRounded", "avgRounded");
+    expect(
+      rounded.rows.map((row) => [
+        row.measures.rounded?.value,
+        row.measures.percentRounded?.value,
+        row.measures.avgRounded?.value,
+      ]),
+    ).toEqual([
+      ["6", "600", "1.33"],
+      ["0.43", "42.9", "0.5"],
+    ]);
+    expect(rounded.warnings).not.toContain("decimal_rounded");
+    // The unrounded value itself, shown or used as it is, still warns.
+    for (const shown of [
+      ["ratio"],
+      ["rounded", "ratio"],
+      ["ratio", "rounded"],
+      ["percent"],
+      ["avgPrice"],
+      ["avgRounded", "avgPrice"],
+      // Rounding to 18 places cannot discard the lost digits.
+      ["ratioTo18"],
+      // Two roundings in the operand are not traced to the ROUND.
+      ["doubledRounded"],
+    ])
+      expect(query(...shown).warnings, shown.join()).toContain(
+        "decimal_rounded",
+      );
+  });
   it("marks aggregates and dependent formulas partial when reported values are missing", () => {
     const incomplete: DataTable = {
       ...apple,
