@@ -816,6 +816,271 @@ describe("measure widget freshness (ADR 0025 §6)", () => {
   });
 });
 
+describe("measure source health through preparations (#721)", () => {
+  // Warnings name the sources freshness reads: those the model binds and
+  // those its preparations read.
+  let sourcesDashboardId: string;
+  const DAY = 24 * HOUR;
+
+  /** A published model of the views in its first dataset. */
+  async function viewsModel(
+    name: string,
+    datasets: { prepared?: string[]; direct?: string[] },
+  ) {
+    const service = createDataService(db, () => NOW);
+    const actor = { workspaceId, callerId };
+    const bound = [...(datasets.direct ?? [])];
+    for (const dataset of datasets.prepared ?? []) {
+      const preparation = await service.savePreparation(actor, {
+        name: `${name} ${bound.length}`,
+        graph: {
+          version: 1,
+          nodes: [{ id: "source", type: "source", datasetId: dataset }],
+          outputs: ["source"],
+        },
+      });
+      await service.publishPreparation(actor, preparation.preparation.id, 1);
+      bound.push(`prepared:${preparation.preparation.id}:source`);
+    }
+    const first = bound[0]!;
+    const model = await service.saveModel(actor, {
+      name,
+      definition: {
+        version: 1,
+        datasets: bound,
+        relationships: [],
+        dimensions: [
+          {
+            id: "day",
+            name: "Day",
+            datasetId: first,
+            fieldId: "time",
+            timeAlignment: "reporting_date",
+          },
+        ],
+        measures: [
+          {
+            id: "views",
+            name: "Views",
+            kind: "aggregate",
+            datasetId: first,
+            aggregate: {
+              id: "views",
+              name: "Views",
+              op: "sum",
+              fieldId: "value",
+            },
+          },
+        ],
+      },
+    });
+    await service.publishModel(actor, model.model.id, 1);
+    return model.model.id;
+  }
+
+  const views = (connectionId: string) =>
+    `observation:${connectionId}:${metricIds["fresh.views"]}`;
+
+  beforeAll(async () => {
+    // A connection whose syncs fail for two days: its analytics overdue.
+    c.stale = await connection("Stale");
+    await owner`
+      update connection_state
+      set consecutive_failures = 3, last_success_at = ${at(-2 * DAY)}
+      where connection_id = ${c.stale}`;
+    await freshness(c.stale, "analytics", {
+      dataThrough: "2026-11-12",
+      nextExpectedAt: at(-2 * DAY),
+      checkedAt: at(-HOUR),
+    });
+    c.direct = await connection("Direct");
+    sourcesDashboardId = await dashboardWith("Sources");
+    const slide = await slideOf(sourcesDashboardId, 0);
+    const models: [string, Parameters<typeof viewsModel>[1]][] = [
+      ["Prepared auth failed", { prepared: [views(c.authFailed!)] }],
+      ["Prepared stale", { prepared: [views(c.stale)] }],
+      ["Prepared ok", { prepared: [views(c.periodic!)] }],
+      // Bindings that name only the prepared output (below).
+      ["Prepared only", { prepared: [views(c.stale)] }],
+      ["Direct reauth", { direct: [views(c.reauth!)] }],
+      ["Direct ok", { direct: [views(c.direct)] }],
+      // The same connection bound and prepared, and prepared twice.
+      [
+        "Both",
+        {
+          direct: [views(c.authFailed!)],
+          prepared: [views(c.authFailed!), views(c.authFailed!)],
+        },
+      ],
+    ];
+    for (const [index, [title, datasets]] of models.entries()) {
+      const id = await viewsModel(title, datasets);
+      // The loader records what a preparation read in the release's
+      // bindings; without those, only `dependencies.prepared` names them.
+      if (title === "Prepared only")
+        await owner`
+          update data_model_releases
+          set schema_bindings = schema_bindings - ${views(c.stale)}::text
+          where model_id = ${id}`;
+      await widget(sourcesDashboardId, slide, {
+        type: "measure",
+        title,
+        x: (index % 4) * 3,
+        y: Math.floor(index / 4),
+        model_id: id,
+        model_binding: {
+          modelId: id,
+          measureIds: ["views"],
+          groupBy: [],
+          exclusions: [],
+        },
+        options: { view: "value", limit: 20 },
+      });
+    }
+  });
+
+  type MeasureData = {
+    status: string;
+    sourceHealth?: { connectionId: string; status: string }[];
+    freshness?: Record<string, unknown>;
+  };
+  /** A widget's data in the screen's payload and the web's, which agree. */
+  async function both() {
+    const device = deviceDashboardV2ResponseSchema.parse(
+      await v2(sourcesDashboardId),
+    );
+    const web = await withWorkspace(db, { workspaceId }, async (tx) => {
+      const dashboard = await findDashboard(
+        tx,
+        workspaceId,
+        sourcesDashboardId,
+      );
+      return queryDashboardData(
+        tx,
+        workspaceId,
+        dashboard!.slides,
+        dashboard!.dataFilters,
+        {},
+        NOW,
+        DEFAULT_DATA_POLICY,
+        "en",
+        createFreshnessReader(workspaceId, manifests, "en"),
+      );
+    });
+    return (title: string) => {
+      const found = byLabel(device, title);
+      const fromWeb = web.widgets.find((entry) => entry.widgetId === found.id);
+      expect(fromWeb?.sourceHealth).toEqual(
+        (found.data as MeasureData).sourceHealth,
+      );
+      return found.data as MeasureData;
+    };
+  }
+
+  it("warns of a failed connection behind a preparation", async () => {
+    const data = (await both())("Prepared auth failed");
+    expect(data.sourceHealth).toEqual([
+      {
+        connectionId: c.authFailed,
+        name: "Auth failed",
+        status: "auth_failed",
+        lastSuccessAt: at(-5 * MINUTE).toISOString(),
+      },
+    ]);
+  });
+
+  it("warns of a stale connection behind a preparation, as its freshness does", async () => {
+    const data = (await both())("Prepared stale");
+    expect(data.sourceHealth).toEqual([
+      {
+        connectionId: c.stale,
+        name: "Stale",
+        status: "outage",
+        lastSuccessAt: at(-2 * DAY).toISOString(),
+      },
+    ]);
+    expect(data.status).toBe("stale");
+    expect(data.freshness).toMatchObject({
+      stream: "Analytics",
+      dataThrough: "2026-11-12",
+    });
+  });
+
+  it("keeps direct bindings as they were", async () => {
+    const data = await both();
+    expect(data("Direct reauth").sourceHealth).toEqual([
+      {
+        connectionId: c.reauth,
+        name: "Reauthorize",
+        status: "needs_reauthorization",
+        lastSuccessAt: at(-5 * MINUTE).toISOString(),
+      },
+    ]);
+    expect(data("Direct ok").sourceHealth).toEqual([
+      {
+        connectionId: c.direct,
+        name: "Direct",
+        status: "ok",
+        lastSuccessAt: at(-5 * MINUTE).toISOString(),
+      },
+    ]);
+  });
+
+  it("names a connection once, however many ways the model reads it", async () => {
+    const data = (await both())("Both");
+    expect(data.sourceHealth).toEqual([
+      expect.objectContaining({
+        connectionId: c.authFailed,
+        status: "auth_failed",
+      }),
+    ]);
+  });
+
+  it("follows the preparations a release depends on, as freshness does", async () => {
+    const data = (await both())("Prepared only");
+    expect(data.sourceHealth).toEqual([
+      expect.objectContaining({ connectionId: c.stale, status: "outage" }),
+    ]);
+    expect(data.status).toBe("stale");
+    expect(data.freshness).toMatchObject({ dataThrough: "2026-11-12" });
+  });
+
+  it("leaves a payload without failing sources as it was", async () => {
+    // The healthy source behind the preparation, as before (#721).
+    expect((await both())("Prepared ok").sourceHealth).toEqual([
+      {
+        connectionId: c.periodic,
+        name: "Periodic",
+        status: "ok",
+        lastSuccessAt: at(-5 * MINUTE).toISOString(),
+      },
+    ]);
+    const payload = await v2(measureDashboardId);
+    const found = byLabel(payload, "Views");
+    const data = found.data as Record<string, unknown>;
+    expect(JSON.stringify(data)).toBe(
+      JSON.stringify({
+        sourceHealth: [
+          {
+            connectionId: c.periodic,
+            name: "Periodic",
+            status: "ok",
+            lastSuccessAt: at(-5 * MINUTE).toISOString(),
+          },
+        ],
+        scope: [],
+        status: "ok",
+        widgetId: found.id,
+        metadata: data.metadata,
+        result: data.result,
+        error: null,
+        exclusions: [],
+        freshness: data.freshness,
+      }),
+    );
+  });
+});
+
 type StatusItem = {
   connectionId: string;
   status: string;

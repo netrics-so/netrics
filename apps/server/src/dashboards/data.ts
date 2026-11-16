@@ -51,10 +51,15 @@ import {
   DataServiceError,
 } from "../data/service.js";
 import {
-  modelFreshnessDependencies,
+  sourceFreshnessDependencies,
   type FreshnessReader,
   type WidgetFreshnessResult,
 } from "./freshness.js";
+import {
+  modelSourceConnections,
+  modelSourceDatasets,
+  type ModelSourceDatasets,
+} from "./model-sources.js";
 
 export async function publishedModel(
   tx: Transaction,
@@ -148,35 +153,19 @@ export function safeDataError(error: unknown): string {
     : "data_storage_failed";
 }
 
+/**
+ * The health of each connection a model reads, once per connection: those
+ * it binds and those its preparations read, as its freshness resolves them
+ * (#721).
+ */
 async function modelSourceHealth(
   tx: Transaction,
   workspaceId: string,
-  modelId: string,
+  sources: ModelSourceDatasets,
 ): Promise<NonNullable<DashboardWidgetData["sourceHealth"]>> {
-  const model = await publishedModel(tx, workspaceId, modelId);
-  const raw = Object.keys(model.bindings).filter((id) =>
-    /^[0-9a-f-]{36}$/i.test(id),
-  );
-  const connections = new Set<string>();
-  for (const id of Object.keys(model.bindings)) {
-    if (id.startsWith("resources:") || id.startsWith("observation:")) {
-      const connectionId = id.split(":")[1];
-      if (connectionId && /^[0-9a-f-]{36}$/i.test(connectionId))
-        connections.add(connectionId);
-    }
-  }
-  if (raw.length)
-    for (const dataset of await tx
-      .select({ connectionId: schema.dataDatasets.connectionId })
-      .from(schema.dataDatasets)
-      .where(
-        and(
-          eq(schema.dataDatasets.workspaceId, workspaceId),
-          inArray(schema.dataDatasets.id, raw),
-        ),
-      ))
-      if (dataset.connectionId) connections.add(dataset.connectionId);
-  if (!connections.size) return [];
+  const connections = (await modelSourceConnections(tx, workspaceId, sources))
+    .all;
+  if (!connections.length) return [];
   const rows = await tx
     .select({
       id: schema.connections.id,
@@ -198,7 +187,7 @@ async function modelSourceHealth(
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
-        inArray(schema.connections.id, [...connections]),
+        inArray(schema.connections.id, connections),
       ),
     );
   return rows.map((row) => {
@@ -405,18 +394,21 @@ export async function queryDashboardMeasure(
         input.options,
         slideScope,
       );
-      sourceHealth = await modelSourceHealth(
+      // One resolution of the model's sources for its warnings and its
+      // freshness, so both name the same connections (#721).
+      const sources = await modelSourceDatasets(
         savepoint,
         workspaceId,
-        input.binding.modelId,
+        await publishedModel(savepoint, workspaceId, input.binding.modelId),
       );
+      sourceHealth = await modelSourceHealth(savepoint, workspaceId, sources);
       if (freshnessReader)
         fresh = await freshnessReader.read(
           savepoint,
-          await modelFreshnessDependencies(
+          await sourceFreshnessDependencies(
             savepoint,
             workspaceId,
-            await publishedModel(savepoint, workspaceId, input.binding.modelId),
+            sources.all,
             slideScope,
             input.binding.exclusions,
             deviceScope,

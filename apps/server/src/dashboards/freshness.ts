@@ -25,6 +25,7 @@ import {
   relevantFreshnessRows,
   selectedResourcesOf,
 } from "../sync/freshness.js";
+import { modelSourceDatasets, type ModelRelease } from "./model-sources.js";
 
 // A widget's freshness (ADR 0025 sections 6 and 7): the freshness streams
 // its data depends on, resolved per (connection, stream, resources), and
@@ -435,53 +436,46 @@ function compareText(a: string, b: string) {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * The streams a measure widget depends on (ADR 0025 section 6): the source
- * datasets and observation bindings of the model's published release, also
- * those its preparations read. A dataset binding resolves to its
- * connection's dataset key, an observation binding through its metric
- * definition to the metric key. `resources:` bindings and manual datasets
- * have no stream. The resource is the one the slide scope names for the
- * connection, else the one a screen's scope names (#500), else every
- * selected resource.
+ * The streams a measure widget depends on (ADR 0025 section 6): the datasets
+ * of the model's published release, also those its preparations read (see
+ * `modelSourceDatasets`, which its source warnings share).
  */
 export async function modelFreshnessDependencies(
   tx: Transaction,
   workspaceId: string,
-  release: {
-    bindings: Readonly<Record<string, unknown>>;
-    dependencies: { prepared?: Record<string, number> };
-  },
+  release: ModelRelease,
   slideScope: SlideFilterScope,
   exclusions: readonly DashboardFilterExclusion[],
   /** A paired screen's fixed scope; it can never be excluded. */
   deviceScope: SlideFilterScope = {},
 ): Promise<FreshnessDependency[]> {
-  const ids = new Set(Object.keys(release.bindings));
-  for (const [preparationId, version] of Object.entries(
-    release.dependencies.prepared ?? {},
-  )) {
-    const [row] = await tx
-      .select({ graph: schema.dataPreparationVersions.graph })
-      .from(schema.dataPreparationVersions)
-      .where(
-        and(
-          eq(schema.dataPreparationVersions.workspaceId, workspaceId),
-          eq(schema.dataPreparationVersions.preparationId, preparationId),
-          eq(schema.dataPreparationVersions.version, version),
-        ),
-      );
-    const nodes = (row?.graph as { nodes?: unknown[] } | undefined)?.nodes;
-    for (const node of Array.isArray(nodes) ? nodes : [])
-      if (
-        node &&
-        typeof node === "object" &&
-        "type" in node &&
-        node.type === "source" &&
-        "datasetId" in node &&
-        typeof node.datasetId === "string"
-      )
-        ids.add(node.datasetId);
-  }
+  return sourceFreshnessDependencies(
+    tx,
+    workspaceId,
+    (await modelSourceDatasets(tx, workspaceId, release)).all,
+    slideScope,
+    exclusions,
+    deviceScope,
+  );
+}
+
+/**
+ * The streams of a model's datasets. A source dataset resolves to its
+ * connection's dataset key, an observation dataset through its metric
+ * definition to the metric key. `resources:` and manual datasets have no
+ * stream. The resource is the one the slide scope names for the
+ * connection, else the one a screen's scope names (#500), else every
+ * selected resource.
+ */
+export async function sourceFreshnessDependencies(
+  tx: Transaction,
+  workspaceId: string,
+  ids: ReadonlySet<string>,
+  slideScope: SlideFilterScope,
+  exclusions: readonly DashboardFilterExclusion[],
+  /** A paired screen's fixed scope; it can never be excluded. */
+  deviceScope: SlideFilterScope = {},
+): Promise<FreshnessDependency[]> {
   const datasetIds: string[] = [];
   const observations: { connectionId: string; metricId: string }[] = [];
   for (const id of ids) {
