@@ -494,16 +494,20 @@ export async function syncReviewApps(
   reviews: SyncReview[];
   reviewWindows: ReviewWindow[];
   stop: boolean;
+  /** Apps whose reviews could not be read (logged and skipped). */
+  skipped: number;
 }> {
   const window = reviewsWindow(options.from, options.now, options.maxDays);
   const observations: Observation[] = [];
   const reviews: SyncReview[] = [];
   const reviewWindows: ReviewWindow[] = [];
+  let skipped = 0;
   const done = (stop: boolean) => ({
     observations,
     reviews,
     reviewWindows,
     stop,
+    skipped,
   });
   for (const appId of appIds) {
     let result: AppReviewsResult;
@@ -525,6 +529,7 @@ export async function syncReviewApps(
       options.log(
         `App Store reviews of app ${appId} skipped: ${message.slice(0, 300)}`,
       );
+      skipped += 1;
       continue;
     }
     if (result.status === "refused") {

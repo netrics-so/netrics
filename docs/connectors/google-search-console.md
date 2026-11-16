@@ -110,6 +110,18 @@ day adds 0 to both sums.
   days, so each day is picked up when Google finalizes it. A changed value
   replaces the stored one.
 
+## When numbers arrive
+
+- Widgets show which day the numbers go up to
+  ([ADR 0025](../decisions/0025-data-freshness.md)): the newest day of the
+  property with final data that a sync has read. Search Console days are
+  **Pacific Time** days, and the widget shows the day as Google names it.
+- That day is usually two or three days ago. Google publishes final data
+  without a fixed time, so netrics shows no "next" time; the connection
+  syncs every 6 hours.
+- A property without any clicks or impressions on recent days has no final
+  rows for them, so its "up to" day stays at the last day with data.
+
 ## Limits and quotas
 
 - At most two dimensions besides date per breakdown, and at most 5,000 rows

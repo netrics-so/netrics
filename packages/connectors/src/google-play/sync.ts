@@ -7,12 +7,14 @@ import {
   type DatasetPage,
   type DatasetRecord,
   type DatasetStageWriter,
+  type FreshnessEntry,
   type SourceDatasetDefinition,
   type SyncRequest,
   type SyncResult,
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
+import { PACIFIC_TIME_ZONE, dateInZone, lastDayOfMonth } from "../freshness.js";
 import {
   PlayReportError,
   type PlayReportsClient,
@@ -96,8 +98,86 @@ const stateSchema = z.object({
   stageId: z.uuid().optional(),
   /** The pending task's report objects and generations (#519). */
   source: z.string().optional(),
+  /** What this run has confirmed so far (ADR 0025). */
+  fresh: z
+    .object({
+      /** The newest install report day read, per app. */
+      installs: z.record(z.string(), z.iso.date()).optional(),
+      /** The newest rating report day read, per app. */
+      ratings: z.record(z.string(), z.iso.date()).optional(),
+      /** The last day of the newest complete earnings month read. */
+      earnings: z.iso.date().optional(),
+      /** Every app's listing snapshot was read. */
+      listing: z.boolean().optional(),
+    })
+    .optional(),
 });
 type State = z.infer<typeof stateSchema>;
+type RunFreshness = NonNullable<State["fresh"]>;
+
+/** Freshness streams of the reports (ADR 0025). */
+export const PLAY_STREAMS = {
+  installs: "installs",
+  earnings: "earnings",
+  ratings: "ratings",
+  listingRatings: "listing_ratings",
+} as const;
+
+/**
+ * The done result's freshness entries of what the run confirmed. Google
+ * documents no publication time for the daily or monthly reports, so no
+ * entry has a next expected time.
+ */
+function freshnessOf(run: RunFreshness | undefined): FreshnessEntry[] {
+  const perApp = (stream: string, days: Record<string, string> | undefined) =>
+    Object.entries(days ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([resource, dataThrough]) => ({ stream, resource, dataThrough }));
+  return [
+    ...perApp(PLAY_STREAMS.installs, run?.installs),
+    ...perApp(PLAY_STREAMS.ratings, run?.ratings),
+    ...(run?.earnings
+      ? [{ stream: PLAY_STREAMS.earnings, dataThrough: run.earnings }]
+      : []),
+    ...(run?.listing === true ? [{ stream: PLAY_STREAMS.listingRatings }] : []),
+  ];
+}
+
+function laterDay(a: string | undefined, b: string): string {
+  return a !== undefined && a > b ? a : b;
+}
+
+/**
+ * What a task whose app partition was published completely confirms: an
+ * install or rating report its newest day for that app; an earnings report,
+ * once its last app is done, the last day of its month, if that month is
+ * over in Pacific Time (a running month's file would be partial).
+ */
+function confirmed(
+  run: RunFreshness | undefined,
+  task: Task,
+  app: string,
+  frame: Frame,
+  nowMs: number,
+): RunFreshness | undefined {
+  if (task.kind === "earnings") {
+    const last = frame.apps.at(-1) === app;
+    const over =
+      task.month.slice(0, 7) < dateInZone(nowMs, PACIFIC_TIME_ZONE).slice(0, 7);
+    if (!last || !over) return run;
+    return {
+      ...run,
+      earnings: laterDay(run?.earnings, lastDayOfMonth(task.month)),
+    };
+  }
+  const day = frame.lastDays?.[app];
+  if (day === undefined) return run;
+  const days = run?.[task.kind];
+  return {
+    ...run,
+    [task.kind]: { ...days, [app]: laterDay(days?.[app], day) },
+  };
+}
 interface Catalog {
   installs: ReportObject[];
   earnings: ReportObject[];
@@ -303,6 +383,8 @@ interface Frame {
   stage?: { id: string; parts: StagedPart[] };
   /** Not staged: this turn's pages of one app, read from the report again. */
   window?: AppWindow;
+  /** The newest report day per app read from a daily report (ADR 0025). */
+  lastDays?: Record<string, string>;
 }
 /**
  * A part's page index in one string, "key.count.bytes" per page and comma
@@ -328,6 +410,8 @@ const stagedFrameSchema = z.object({
   version: z.literal(2),
   apps: z.array(z.string()),
   unmapped: z.number().int().nonnegative(),
+  /** Absent in stages written before freshness (ADR 0025). */
+  lastDays: z.record(z.string(), z.iso.date()).optional(),
   parts: z.array(
     z.object({
       app: z.string(),
@@ -397,6 +481,17 @@ async function readReport(
   drain?: Drain,
 ): Promise<boolean> {
   if (frame.availability !== "available") return false;
+  if (task.kind !== "earnings") {
+    // The newest day of a daily report, for freshness (ADR 0025).
+    const lastDays: Record<string, string> = {};
+    frame.lastDays = lastDays;
+    const rows = emit;
+    emit = (app, row) => {
+      const day = row.values.day;
+      if (typeof day === "string") lastDays[app] = laterDay(lastDays[app], day);
+      rows(app, row);
+    };
+  }
   // Report bodies are read in bounded ranges while they are parsed; a failed
   // provider read keeps its own meaning instead of reading as a bad report.
   const download = async (object: ReportObject): Promise<ReportSource> => {
@@ -541,6 +636,7 @@ async function taskFrame(
       apps: metadata.apps,
       unmapped: metadata.unmapped,
       stage: { id: stage.id, parts: metadata.parts },
+      ...(metadata.lastDays ? { lastDays: metadata.lastDays } : {}),
     };
   }
   if (store?.begin && frame.availability === "available") {
@@ -620,6 +716,7 @@ async function stageFrame(
       version: 2,
       apps: frame.apps,
       unmapped: frame.unmapped,
+      ...(frame.lastDays ? { lastDays: frame.lastDays } : {}),
       parts: parts.map((part) => ({ ...part, pages: encodePages(part.pages) })),
     };
     const stored = await refused(() => writer.commit({ metadata }));
@@ -770,10 +867,18 @@ export async function syncPlayReports(
         return snapshot.record ? [snapshot.record] : [];
       }),
     );
+    // A failed lookup records nothing: then the snapshot was not read for
+    // every app, and the run reports no listing freshness (ADR 0025).
+    const fresh: RunFreshness = {
+      ...state.fresh,
+      listing:
+        (state.ratingAfter === undefined || state.fresh?.listing === true) &&
+        snapshots.every((records) => records.length > 0),
+    };
     const next: State =
       remaining.length <= batch.length
-        ? { ...state, phase: "reports" }
-        : { ...state, ratingAfter: batch.at(-1) };
+        ? { ...state, phase: "reports", fresh }
+        : { ...state, ratingAfter: batch.at(-1), fresh };
     return {
       observations: [],
       datasetPages: [
@@ -799,10 +904,12 @@ export async function syncPlayReports(
       (task) =>
         afterTask === undefined || task.key.localeCompare(afterTask) > 0,
     );
-  if (!task)
+  if (!task) {
+    const freshness = freshnessOf(state.fresh);
     return {
       observations: [],
       nextCursor: finished(state.to),
+      ...(freshness.length > 0 ? { freshness } : {}),
       // Every month of the window was checked for every app. Rating rows
       // are only emitted for months with a readable report, so an account
       // without any would otherwise stay pending forever: declared received,
@@ -811,6 +918,7 @@ export async function syncPlayReports(
       receivedDatasets: [ratingReportDataset.key],
       done: true,
     };
+  }
   const source = hash(
     frameObjects(task, catalog).map((object) => [
       object.name,
@@ -960,12 +1068,19 @@ export async function syncPlayReports(
   const nextApp = complete
     ? frame.apps[frame.apps.indexOf(app) + 1]
     : undefined;
+  const done: State =
+    complete && frame.availability === "available"
+      ? {
+          ...state,
+          fresh: confirmed(state.fresh, task, app, frame, options.now),
+        }
+      : state;
   const next: State = !complete
     ? { ...state, offset, previous, digest, source }
     : nextApp
-      ? restart({ ...state, app: nextApp })
+      ? restart({ ...done, app: nextApp })
       : {
-          ...restart(state),
+          ...restart(done),
           task: undefined,
           app: undefined,
           roster: undefined,

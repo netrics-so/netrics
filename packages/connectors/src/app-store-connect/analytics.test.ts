@@ -7,15 +7,22 @@ import type {
   SyncResult,
 } from "@netrics/connector-sdk";
 import { syncResultSchema } from "@netrics/connector-sdk";
+import {
+  expectValidFreshness,
+  freshnessEntry,
+} from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
 import {
   ANALYTICS_APPS_PER_PAGE,
   ANALYTICS_METRIC_KEYS,
   ANALYTICS_SEGMENT_HOSTS,
+  ANALYTICS_STREAM,
   AnalyticsReportError,
   AnalyticsSegmentHostError,
   AppStoreConnectApiError,
+  SALES_STREAM,
+  appStoreConnectManifest,
   createAppStoreConnectClient,
   createAppStoreConnectConnector,
   downloadSegment,
@@ -34,6 +41,7 @@ import {
   createFakeAppStoreConnect,
   fixture,
   segmentFixture,
+  withoutRunFreshness,
   type FakeAnalytics,
   type FakeTeam,
 } from "./test-helpers.js";
@@ -525,7 +533,9 @@ describe("analytics sync pages", () => {
       resources: [APP, OTHER_APP],
     });
     expect(ANALYTICS_APPS_PER_PAGE).toBe(2);
-    expect(pages.map((page) => [page.done, page.nextCursor])).toEqual([
+    expect(
+      pages.map((page) => [page.done, withoutRunFreshness(page.nextCursor)]),
+    ).toEqual([
       [false, "analytics:0:2026-09-28T00:00:00.000Z"],
       [true, "2026-09-28T00:00:00.000Z"],
     ]);
@@ -538,7 +548,7 @@ describe("analytics sync pages", () => {
     const api = fake();
     const { pages } = await runAll(api);
     // Four apps in the fixtures: two analytics pages after the sales page.
-    expect(pages.map((page) => page.nextCursor)).toEqual([
+    expect(pages.map((page) => withoutRunFreshness(page.nextCursor))).toEqual([
       "analytics:0:2026-09-28T00:00:00.000Z",
       "analytics:2:2026-09-28T00:00:00.000Z",
       "2026-09-28T00:00:00.000Z",
@@ -626,5 +636,71 @@ describe("analytics sync pages", () => {
         { now: NOW, log: () => {} },
       ),
     ).rejects.toMatchObject({ name: "AccessTokenRejectedError" });
+  });
+});
+
+// ─── Freshness (ADR 0025) ──────────────────────────────────────────────────
+
+describe("analytics freshness", () => {
+  it("reports each app read through the older of its reports' newest processing days", async () => {
+    // Discovery's newest instance is 29 September, Downloads' 28 September.
+    const { pages } = await runAll(fake(), { resources: [APP, OTHER_APP] });
+    const done = pages.at(-1)!;
+    expectValidFreshness(appStoreConnectManifest, done);
+    expect(freshnessEntry(done, ANALYTICS_STREAM, APP)).toEqual({
+      stream: ANALYTICS_STREAM,
+      resource: APP,
+      dataThrough: "2026-09-28",
+    });
+    // No analytics request for the other app: no report, no entry.
+    expect(freshnessEntry(done, ANALYTICS_STREAM, OTHER_APP)).toBeUndefined();
+    // Analytics are per app, never one connection entry.
+    expect(freshnessEntry(done, ANALYTICS_STREAM)).toBeUndefined();
+    // The sales of the same run (13:00 PDT on 30 September).
+    expect(freshnessEntry(done, SALES_STREAM)?.dataThrough).toBe("2026-09-29");
+  });
+
+  it("reports no app whose reports have no instance yet", async () => {
+    const empty = { data: [], links: {} };
+    const api = fake({
+      analytics: analytics({
+        pages: {
+          "/v1/analyticsReports/r3-0001/instances": empty,
+          "/v1/analyticsReports/r5-0001/instances": empty,
+        },
+      }),
+    });
+    const { pages } = await runAll(api, { resources: [APP] });
+    expect(freshnessEntry(pages.at(-1)!, ANALYTICS_STREAM, APP)).toBe(
+      undefined,
+    );
+  });
+
+  it("reports no app whose analytics failed", async () => {
+    const segments = fixture("analytics-segments-discovery-0928") as Page;
+    const outside = structuredClone(segments);
+    outside.data[0]!.attributes.url =
+      "https://other-bucket.s3.us-west-2.amazonaws.com/reports/0.csv.gz";
+    const api = fake({
+      analytics: analytics({
+        pages: {
+          "/v1/analyticsReportInstances/i-disc-0928/segments": outside,
+        },
+      }),
+    });
+    const { pages } = await runAll(api, { resources: [APP] });
+    const done = pages.at(-1)!;
+    expect(done.done).toBe(true);
+    expect(freshnessEntry(done, ANALYTICS_STREAM, APP)).toBeUndefined();
+    expect(freshnessEntry(done, SALES_STREAM)).toBeDefined();
+  });
+
+  it("keeps the apps of earlier analytics pages until the run is done", async () => {
+    // Four apps: two analytics pages; the first app is read on the first.
+    const { pages } = await runAll(fake());
+    expect(pages.slice(0, -1).every((page) => !page.freshness)).toBe(true);
+    expect(
+      freshnessEntry(pages.at(-1)!, ANALYTICS_STREAM, APP)?.dataThrough,
+    ).toBe("2026-09-28");
   });
 });

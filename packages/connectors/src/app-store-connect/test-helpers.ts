@@ -355,3 +355,13 @@ export function createFakeAppStoreConnect(
     runtime: { signal: new AbortController().signal, fetch },
   };
 }
+
+/**
+ * A cursor without the run's freshness segment (`f.<base64url>:`, ADR
+ * 0025), for assertions on where the pages go.
+ */
+export function withoutRunFreshness(
+  cursor: string | undefined,
+): string | undefined {
+  return cursor?.replace(/:f\.[A-Za-z0-9_-]+:/, ":");
+}

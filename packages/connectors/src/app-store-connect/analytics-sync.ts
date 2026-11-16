@@ -299,6 +299,8 @@ interface ReportWindow {
   texts: string[];
   /** DAILY instances the report has (0: no data generated yet). */
   instances: number;
+  /** The newest processing day read, if any instance was. */
+  newest: string | undefined;
 }
 
 /**
@@ -340,6 +342,7 @@ async function readReport(
     from: olderExists ? (oldestRead ?? sinceDate) : undefined,
     texts,
     instances: instances.length,
+    newest: recent[0]?.processingDate,
   };
 }
 
@@ -363,7 +366,19 @@ export type AppAnalyticsStatus =
 export interface AppAnalyticsResult {
   status: AppAnalyticsStatus;
   observations: Observation[];
+  /**
+   * The last day both reports were read through (ADR 0025): the older of
+   * their newest processing days read. The DAILY instance of processing day
+   * P is Apple's publication of day P (late events of P arrive in later
+   * instances, as revisions). Absent when a report is missing or had no
+   * instance in the lookback (analytics not enabled, or requested and not
+   * generated yet).
+   */
+  dataThrough?: string;
 }
+
+/** The freshness stream of App Store analytics (ADR 0025), per app. */
+export const ANALYTICS_STREAM = "analytics";
 
 /**
  * The analytics observations of one app: impressions and product page
@@ -460,12 +475,17 @@ export async function readAppAnalytics(
       }
     }
   }
+  const newest =
+    discovery?.newest !== undefined && downloads?.newest !== undefined
+      ? [discovery.newest, downloads.newest].sort()[0]!
+      : undefined;
   return {
     status:
       (discovery?.instances ?? 0) + (downloads?.instances ?? 0) > 0
         ? "read"
         : "pending",
     observations,
+    ...(newest !== undefined ? { dataThrough: newest } : {}),
   };
 }
 
@@ -511,8 +531,14 @@ export async function syncAnalyticsApps(
     log: (message: string) => void;
     hosts?: readonly string[];
   },
-): Promise<{ observations: Observation[]; rateLimited: boolean }> {
+): Promise<{
+  observations: Observation[];
+  rateLimited: boolean;
+  /** Apps read completely, with the last day their reports cover. */
+  dataThrough: Map<string, string>;
+}> {
   const observations: Observation[] = [];
+  const dataThrough = new Map<string, string>();
   for (const appId of appIds) {
     try {
       const result = await readAppAnalytics(client, fetch, appId, options);
@@ -522,16 +548,18 @@ export async function syncAnalyticsApps(
         );
       }
       observations.push(...result.observations);
+      if (result.dataThrough !== undefined)
+        dataThrough.set(appId, result.dataThrough);
     } catch (error) {
       if (isRefusedKey(error)) throw error;
       if (stopsRun(error)) {
         options.log(
           "App Store analytics postponed: the key's hourly request budget is used up",
         );
-        return { observations, rateLimited: true };
+        return { observations, rateLimited: true, dataThrough };
       }
       options.log(failureNote(appId, error));
     }
   }
-  return { observations, rateLimited: false };
+  return { observations, rateLimited: false, dataThrough };
 }

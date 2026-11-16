@@ -8,10 +8,18 @@ import type {
   SyncRequest,
   SyncResult,
 } from "@netrics/connector-sdk";
-import { runConnectorContractTests } from "@netrics/connector-sdk/testing";
+import {
+  expectValidFreshness,
+  freshnessEntry,
+  runConnectorContractTests,
+} from "@netrics/connector-sdk/testing";
 import { describe, expect, it } from "vitest";
 
-import { createVercelConnector, vercelManifest } from "./index.js";
+import {
+  TRAFFIC_STREAM,
+  createVercelConnector,
+  vercelManifest,
+} from "./index.js";
 import {
   FAKE_PROJECTS,
   FAKE_TOKEN,
@@ -433,5 +441,32 @@ describe("vercel connector check", () => {
     await expect(connector().check(context(), down.runtime)).rejects.toThrow(
       /503/,
     );
+  });
+});
+
+// ─── Freshness (ADR 0025) ──────────────────────────────────────────────────
+
+describe("vercel freshness", () => {
+  it("reports the continuous traffic stream on the done page only", async () => {
+    const { pages } = await syncAll(fake().runtime, {
+      mode: "backfill",
+      from: "2024-11-15T00:00:00.000Z",
+      to: `${TODAY}T12:00:00.000Z`,
+    });
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.slice(0, -1).every((page) => !page.freshness)).toBe(true);
+    const done = pages.at(-1)!;
+    expectValidFreshness(vercelManifest, done);
+    expect(done.freshness).toEqual([{ stream: TRAFFIC_STREAM }]);
+    expect(freshnessEntry(done, TRAFFIC_STREAM)?.dataThrough).toBeUndefined();
+  });
+
+  it("declares every metric in one continuous stream", () => {
+    expect(vercelManifest.freshnessStreams).toEqual([
+      expect.objectContaining({ key: TRAFFIC_STREAM, kind: "continuous" }),
+    ]);
+    expect(
+      [...(vercelManifest.freshnessStreams?.[0]?.metrics ?? [])].sort(),
+    ).toEqual(vercelManifest.metrics.map((metric) => metric.key).sort());
   });
 });

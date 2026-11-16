@@ -27,6 +27,9 @@ const INCREMENTAL_LOOKBACK_DAYS = 1;
 export const TOP_LIMIT = 10;
 const MAX_PROJECT_PAGES = 10;
 
+/** The freshness stream of every Vercel metric (ADR 0025): continuous. */
+export const TRAFFIC_STREAM = "traffic";
+
 /**
  * German texts of the manifest (ADR 0016, #257): "du" where the text
  * addresses the reader; product names and stored values stay as they are.
@@ -86,12 +89,13 @@ const vercelDe: ManifestTranslation = {
     country: "Land",
     event: "Event",
   },
+  freshnessStreams: { [TRAFFIC_STREAM]: "Besucher und Seitenaufrufe" },
 };
 
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
-  version: "0.1.2",
-  sdkVersion: "^0.2.7",
+  version: "0.1.3",
+  sdkVersion: "^0.2.13",
   category: "web",
   brandColor: "#000000",
   name: "Vercel Web Analytics",
@@ -200,6 +204,22 @@ export const vercelManifest: ConnectorManifest = {
   resourceNoun: { singular: "project", plural: "projects" },
   translations: { de: vercelDe },
   rateLimit: { maxRequests: 400, windowSeconds: 60 },
+  // When the numbers arrive (ADR 0025): Vercel counts live, so every
+  // metric is one continuous stream, "read" by each completed sync.
+  freshnessStreams: [
+    {
+      key: TRAFFIC_STREAM,
+      name: "Visitors and page views",
+      kind: "continuous",
+      metrics: [
+        "vercel.pageviews",
+        "vercel.visitors",
+        "vercel.route_pageviews",
+        "vercel.country_visitors",
+        "vercel.events",
+      ],
+    },
+  ],
 };
 
 // ─── Response shapes (a changed shape fails parsing, and the tests) ─────────
@@ -574,7 +594,14 @@ export function createVercelConnector(
           done: false,
         };
       }
-      return { observations, nextCursor: resumeAt, done: true };
+      // Every project's numbers were read up to today (ADR 0025): the
+      // continuous stream is fresh as of this run.
+      return {
+        observations,
+        nextCursor: resumeAt,
+        freshness: [{ stream: TRAFFIC_STREAM }],
+        done: true,
+      };
     },
   };
 }

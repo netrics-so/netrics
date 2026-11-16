@@ -40,8 +40,10 @@ import {
   PLAY_STORE_HOST,
   type ListingSnapshot,
 } from "./ratings.js";
+import { PACIFIC_TIME_ZONE } from "../freshness.js";
 import {
   HISTORY_DAYS,
+  PLAY_STREAMS,
   reportCatalog,
   reportedPackages,
   syncPlayReports,
@@ -79,11 +81,17 @@ const de: ManifestTranslation = {
         "Optionale Android-Paketnamen, getrennt durch Kommas, zum Beispiel com.example.app. Für Apps, die noch keine Berichte haben oder nicht automatisch gefunden werden.",
     },
   },
+  freshnessStreams: {
+    [PLAY_STREAMS.installs]: "Installationen",
+    [PLAY_STREAMS.earnings]: "Erlöse",
+    [PLAY_STREAMS.ratings]: "Bewertungen",
+    [PLAY_STREAMS.listingRatings]: "Store-Eintrag",
+  },
 };
 export const googlePlayManifest: ConnectorManifest = {
   id: "google-play",
-  version: "0.1.0",
-  sdkVersion: "^0.2.12",
+  version: "0.1.1",
+  sdkVersion: "^0.2.13",
   category: "apps",
   brandColor: "#34a853",
   name: "Google Play",
@@ -159,6 +167,39 @@ export const googlePlayManifest: ConnectorManifest = {
   rateLimit: { maxRequests: 600, windowSeconds: 60, scope: "connection" },
   resourceNoun: { singular: "App", plural: "Apps" },
   translations: { de },
+  // When the numbers arrive (ADR 0025): daily install and rating reports
+  // per app, a few days behind; earnings by calendar month; the public
+  // listing whenever a sync reads it. Report status is bookkeeping.
+  freshnessStreams: [
+    {
+      key: PLAY_STREAMS.installs,
+      name: "Installs",
+      kind: "periodic",
+      timeZone: PACIFIC_TIME_ZONE,
+      datasets: [installDataset.key],
+    },
+    {
+      key: PLAY_STREAMS.earnings,
+      name: "Earnings",
+      kind: "periodic",
+      period: "month",
+      timeZone: PACIFIC_TIME_ZONE,
+      datasets: [earningsDataset.key],
+    },
+    {
+      key: PLAY_STREAMS.ratings,
+      name: "Ratings",
+      kind: "periodic",
+      timeZone: PACIFIC_TIME_ZONE,
+      datasets: [ratingReportDataset.key],
+    },
+    {
+      key: PLAY_STREAMS.listingRatings,
+      name: "Store listing",
+      kind: "continuous",
+      datasets: [listingRatingDataset.key],
+    },
+  ],
 };
 
 function historyFrom(config: Record<string, unknown>): string | undefined {

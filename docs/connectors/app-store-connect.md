@@ -181,18 +181,48 @@ The optional reviews key has its own roles; see
   [Users and Access → Integrations](https://appstoreconnect.apple.com/access/integrations/api);
   netrics links there after deleting.
 
-## When data arrives
+## When numbers arrive
 
-- **Sales** for a day are published by Apple the next morning, Pacific Time
-  (generally by 8 a.m. PT). A day's sales appear in netrics at
-  the first sync after Apple publishes them.
-- **App Store analytics**, once enabled, start 1–2 days after the request,
-  and a day is complete about two days later than its sales (see
-  [App Store analytics](#app-store-analytics)).
+Apple publishes the four kinds of data on different schedules. Widgets show
+which day their numbers go up to and, where netrics can tell, when the next
+day is due ([ADR 0025](../decisions/0025-data-freshness.md)).
+
+| Data                | How Apple publishes it                                 | What netrics shows                                      |
+| ------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| Sales and proceeds  | One report per Pacific day, for all apps, the next day | "Up to" the last day read, and when the next one is due |
+| App Store analytics | Daily files per app, a day or two after the sales      | "Up to" the last day read, per app                      |
+| Reviews             | Whenever customers write them (needs the reviews key)  | When netrics last checked                               |
+| Rating snapshots    | The App Store's current rating, read at each sync      | When netrics last checked                               |
+
+- **Sales** for a Pacific Time day D are published by Apple the next day,
+  generally by 8 a.m. PT. netrics counts on them from **12:00 PT on D + 1**
+  (21:00 in Berlin in winter): until then a missing report means "not
+  published yet", afterwards a day without sales. From **05:00 PT** on, the
+  connection checks every 30 minutes until the day has arrived, so a report
+  Apple publishes early is picked up within about 40 minutes instead of at
+  the next 6-hour sync. 05:00 PT is netrics' assumption of the earliest
+  usual publication; Apple documents no earliest time.
+- Sales are one report for the whole vendor number, so every app of the
+  connection has the same "up to" day.
+- **App Store analytics**, once enabled, start 1–2 days after the request.
+  An app's "up to" day is the newest day both of its reports (Discovery and
+  Engagement, Downloads) have published; later files still correct a day
+  for a few days. Apple names no publication time for these files, so
+  netrics shows no "next" time for them. An app whose analytics are not
+  enabled, not generated yet, or could not be read in a sync shows no
+  analytics day.
+- **Reviews** have no days to wait for: a sync that read every app's
+  reviews marks them as checked. Without a reviews key, or when Apple
+  refuses it, reviews show no freshness.
+- **Rating snapshots** are checked when every selected app's rating could
+  be looked up in that sync.
 - **Reporting days are Pacific Time days.** A sale at 23:30 PT on the 1st
   counts on the 1st, even if your workspace's time zone already shows the
-  2nd. netrics does not shift Apple's days into the workspace time zone.
-- The connection page shows the latest reporting day collected.
+  2nd. netrics does not shift Apple's days into the workspace time zone,
+  and shows the day as Apple names it.
+- If Apple publishes a day's report after 12:00 PT, that day first reads as
+  a day without sales; the next syncs read the last 3 days again and
+  replace the zeros once the report is there.
 - Apple keeps daily reports for one year, which bounds what can be read
   back.
 

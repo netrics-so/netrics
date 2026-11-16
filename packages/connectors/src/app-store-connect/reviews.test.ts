@@ -34,6 +34,7 @@ import {
 import {
   createFakeAppStoreConnect,
   fixture,
+  withoutRunFreshness,
   type FakeAppStoreConnectOptions,
   type FakeTeam,
 } from "./test-helpers.js";
@@ -239,7 +240,7 @@ describe("reviews sync", () => {
     const { pages, observations } = await runAll(api);
     const salesCursor = pages.at(-1)!.nextCursor!;
     expect(salesCursor).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(pages.map((page) => page.nextCursor)).toContain(
+    expect(pages.map((page) => withoutRunFreshness(page.nextCursor))).toContain(
       `reviews:0:${salesCursor}`,
     );
 
