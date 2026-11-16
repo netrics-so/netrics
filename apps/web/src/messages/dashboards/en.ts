@@ -123,20 +123,19 @@ export const dashboardsEn = {
     empty: {
       title: "No dashboards yet",
       text: "Start from a template above. The Overview fills itself with the numbers of your sources.",
+      hiddenInArchived:
+        "{count, plural, one {# dashboard is in an archived project.} other {# dashboards are in archived projects.}}",
       readOnly: "Nobody has made a dashboard in this workspace yet.",
     },
     emptyFilter: "No dashboards in this project yet.",
     projects: {
       summary: "Manage projects",
-      count:
-        "{count, plural, =0 {none yet} one {# project} other {# projects}}",
-      archive: "Archive",
-      unarchive: "Unarchive",
+      overview:
+        "Projects: {active, plural, =0 {none active} other {# active}}{archived, plural, =0 {} other { · # archived}}.",
       archived: "Archived",
-      archiveHint:
-        "Archived projects and their items are hidden from lists and pickers. Screens keep showing their dashboards.",
-      archiveNamed: "Archive {name}",
-      unarchiveNamed: "Unarchive {name}",
+      saving: "Saving…",
+      savedTo: "Saved to {name}",
+      savedNone: "Saved: no project",
       project: "Project",
       noProject: "No project",
     },

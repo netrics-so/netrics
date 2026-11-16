@@ -113,6 +113,7 @@ import {
   createSharedKeyConnectionsRequestSchema,
   createInvitationRequestSchema,
   createProjectRequestSchema,
+  renameProjectRequestSchema,
   activeProjectResponseSchema,
   setActiveProjectRequestSchema,
   type ActiveProjectResponse,
@@ -736,6 +737,20 @@ export function createProject(
     "POST",
     `/v1/workspaces/${workspaceId}/projects`,
     createProjectRequestSchema.parse({ name }),
+  );
+}
+
+/** Renames a project (#640); its items keep it. */
+export function renameProject(
+  workspaceId: string,
+  projectId: string,
+  name: string,
+): Promise<ProjectResponse> {
+  return browserSend(
+    projectResponseSchema,
+    "PATCH",
+    `/v1/workspaces/${workspaceId}/projects/${projectId}`,
+    renameProjectRequestSchema.parse({ name }),
   );
 }
 

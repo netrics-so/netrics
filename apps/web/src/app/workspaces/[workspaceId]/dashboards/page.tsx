@@ -4,10 +4,10 @@ import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 
 import "@/app/styles/dashboards.css";
-import { CreateProjectForm } from "../create-project-form";
+import Link from "next/link";
+
 import { ViewerHint } from "../viewer-hint";
 import { DashboardsBrowser } from "./dashboards-browser";
-import { ProjectList } from "./project-list";
 import {
   listDashboards,
   listProjects,
@@ -70,6 +70,18 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
   const dashboards = listed.filter((d) => d.archivedAt === null);
   const scope = projectScope(membership.activeProjectId, projects);
   const projectName = activeProjectName(scope, projects);
+  // Under "All projects", an empty page says what archived projects hide
+  // (#640) instead of suggesting there is nothing.
+  const hiddenInArchived =
+    dashboards.length === 0 && scope.active === null && scope.archived.size > 0
+      ? (await listDashboards(cookieHeader, workspaceId)).dashboards.filter(
+          (d) =>
+            d.archivedAt === null &&
+            d.projectId !== null &&
+            scope.archived.has(d.projectId),
+        ).length
+      : 0;
+  const activeProjects = projects.filter((p) => p.archivedAt === null).length;
 
   const live = dashboards.filter((d) => d.screenCount > 0).length;
   const now = Date.now();
@@ -94,6 +106,7 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
         storeInstalls={storeInstalls}
         projectId={scope.active}
         projectName={projectName}
+        hiddenInArchived={hiddenInArchived}
         canCreate={can(role, "dashboards:create")}
         canEdit={can(role, "dashboards:update")}
         readOnlyNote={<ViewerHint role={role} workspaceId={workspaceId} />}
@@ -108,38 +121,17 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
         ].join(" · ")}
       />
 
-      <details className="dashboards-projects">
-        <summary>
-          <span>{page("projects.summary")}</span>
-          <span className="dashboards-projects-count">
-            {page("projects.count", {
-              count: projects.filter((project) => project.archivedAt === null)
-                .length,
-            })}
-          </span>
-        </summary>
-        <div className="dashboards-projects-body">
-          <p className="muted">{t("projectsHint")}</p>
-          {projects.length === 0 ? (
-            <p className="muted">{t("noProjects")}</p>
-          ) : (
-            <ProjectList
-              workspaceId={workspaceId}
-              projects={projects.map(({ id, name, archivedAt }) => ({
-                id,
-                name,
-                archivedAt,
-              }))}
-              canArchive={can(role, "projects:rename")}
-            />
-          )}
-          {can(role, "projects:create") ? (
-            <CreateProjectForm workspaceId={workspaceId} />
-          ) : (
-            <p className="muted">{t("cannotCreateProjects")}</p>
-          )}
-        </div>
-      </details>
+      <p className="dashboards-projects">
+        <span>
+          {page("projects.overview", {
+            active: activeProjects,
+            archived: projects.length - activeProjects,
+          })}
+        </span>{" "}
+        <Link href={`/workspaces/${workspaceId}/settings/projects`}>
+          {page("projects.summary")}
+        </Link>
+      </p>
     </div>
   );
 }

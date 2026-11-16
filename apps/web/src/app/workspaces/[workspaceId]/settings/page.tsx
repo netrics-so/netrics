@@ -105,6 +105,16 @@ export default async function WorkspaceSettingsPage({
         </div>
       ) : null}
 
+      <div className="card" id="projects">
+        <h2>{t("projects.title")}</h2>
+        <p className="muted">{t("projects.hint")}</p>
+        <p>
+          <Link href={`/workspaces/${workspaceId}/settings/projects`}>
+            {t("projects.manage")}
+          </Link>
+        </p>
+      </div>
+
       {can(role, "dashboards:view") ? (
         <div className="card">
           <h2>{t("themes.title")}</h2>

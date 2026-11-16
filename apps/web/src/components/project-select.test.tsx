@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 
-import { ProjectSelect, parseProjectChoice } from "./project-select";
+import {
+  ProjectSaveStatus,
+  ProjectSelect,
+  assignProject,
+  parseProjectChoice,
+  type ProjectSaveState,
+} from "./project-select";
 
 const A = "00000000-0000-4000-8000-0000000000aa";
 const B = "00000000-0000-4000-8000-0000000000bb";
@@ -50,5 +56,58 @@ describe("project select (#573)", () => {
     expect(html).toContain(">Projekt</label>");
     expect(html).toContain(">Kein Projekt</option>");
     expect(html).toContain(">Beta (Archiviert)</option>");
+  });
+});
+
+describe("project assignment says when it is saved (#640)", () => {
+  it("reports saving, then the project it saved to", async () => {
+    const states: ProjectSaveState[] = [];
+    const save = vi.fn(async () => {});
+    const saved = await assignProject(
+      A,
+      save,
+      () => "x",
+      (state) => states.push(state),
+    );
+    expect(saved).toBe(true);
+    expect(save).toHaveBeenCalledWith(A);
+    expect(states).toEqual([
+      { state: "saving" },
+      { state: "saved", projectId: A },
+    ]);
+  });
+
+  it("reports a failure with its message", async () => {
+    const states: ProjectSaveState[] = [];
+    const saved = await assignProject(
+      null,
+      () => Promise.reject(new Error("nope")),
+      (cause) => `failed: ${(cause as Error).message}`,
+      (state) => states.push(state),
+    );
+    expect(saved).toBe(false);
+    expect(states.at(-1)).toEqual({ state: "failed", message: "failed: nope" });
+  });
+
+  it("shows the status line in English and German", () => {
+    const line = (status: ProjectSaveState, locale: "en" | "de" = "en") =>
+      renderI18n(
+        <ProjectSaveStatus status={status} projects={PROJECTS} />,
+        locale,
+      );
+    expect(line({ state: "idle" })).toBe("");
+    expect(line({ state: "saving" })).toContain('role="status">Saving…</p>');
+    expect(line({ state: "saved", projectId: A })).toContain(
+      'role="status">Saved to Alpha</p>',
+    );
+    expect(line({ state: "saved", projectId: null })).toContain(
+      "Saved: no project",
+    );
+    expect(line({ state: "failed", message: "Try again" })).toContain(
+      '<p class="error" role="alert">Try again</p>',
+    );
+    expect(line({ state: "saved", projectId: A }, "de")).toContain(
+      "In Alpha gespeichert",
+    );
   });
 });

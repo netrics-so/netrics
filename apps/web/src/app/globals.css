@@ -4777,6 +4777,51 @@ button.shell-menu-item--danger {
   font-size: var(--size-12);
 }
 
+.project-switcher-manage {
+  justify-self: start;
+  color: var(--muted);
+  font-size: var(--size-12);
+}
+
+/* Projects (#640): settings/projects and the save line under selects. */
+.projects-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.projects-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.projects-row-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.projects-row-actions {
+  display: inline-flex;
+  gap: 12px;
+}
+
+.projects-list--archived .projects-row {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.project-save-status {
+  margin: 4px 0 0;
+  font-size: var(--size-12);
+}
+
 .shell-body {
   display: flex;
   flex-direction: column;

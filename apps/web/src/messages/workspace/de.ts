@@ -68,9 +68,6 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     cannotCreateConnections:
       "Deine Rolle kann in diesem Workspace keine Verbindungen anlegen.",
     projects: "Projekte",
-    noProjects: "Noch keine Projekte.",
-    cannotCreateProjects:
-      "Deine Rolle kann in diesem Workspace keine Projekte anlegen.",
     viewerHint: {
       text: "Du kannst diesen Workspace ansehen. Um Quellen hinzuzufügen, Daten zu bearbeiten oder Dashboards zu ändern, bitte einen Inhaber oder Admin um Bearbeiter-Zugang.",
       team: "Du findest sie auf der Team-Seite.",
@@ -87,8 +84,6 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       "{total, plural, =0 {Noch keine Bildschirme} one {# Bildschirm · {online} online} other {# Bildschirme · {online} online}}",
     sourceCount:
       "{count, plural, =0 {Noch keine Quellen} one {# Quelle} other {# Quellen}}",
-    projectsHint:
-      "Projekte fassen die Apps und Websites zusammen, über die deine Verbindungen berichten.",
     home: {
       metaTitle: "Start · netrics",
       dashboards: "Dashboards",

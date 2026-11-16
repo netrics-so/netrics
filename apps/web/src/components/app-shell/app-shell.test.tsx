@@ -148,6 +148,23 @@ describe("project switcher (#573)", () => {
     expect(all).toContain('<option value="" selected="">All projects</option>');
   });
 
+  it("links to project management under the switcher (#640)", () => {
+    const html = render(BASE, {
+      projects: [{ id: A, name: "Alpha" }],
+      activeProjectId: null,
+    });
+    expect(html).toContain(
+      `<a class="project-switcher-manage" href="${BASE}/settings/projects">Manage projects</a>`,
+    );
+    expect(
+      render(
+        BASE,
+        { projects: [{ id: A, name: "Alpha" }], activeProjectId: null },
+        "de",
+      ),
+    ).toContain(">Projekte verwalten</a>");
+  });
+
   it("hides the switcher without projects", () => {
     const html = render(BASE);
     expect(html).not.toContain(">Project</label>");

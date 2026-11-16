@@ -22,7 +22,7 @@ import {
   referencedSourceIds,
 } from "@/lib/project-pickers";
 import { activeProjectName, projectScope } from "@/lib/project-scope";
-import { ProjectSelect } from "@/components/project-select";
+import { ProjectAssignment } from "@/components/project-select";
 import { dataErrorKey, newDataId } from "@/lib/data-editing";
 import { ApiError } from "@/lib/api";
 import { useConfirmation } from "@/components/confirm-dialog";
@@ -131,8 +131,6 @@ export function DataWorkspace({
   }
   // The item open in an editor, once saved: its project select (#573).
   const [saved, setSaved] = useState<EditorRecord | null>(null);
-  const [projectError, setProjectError] = useState<string | null>(null);
-  const [movingProject, setMovingProject] = useState(false);
   // Sources the open item reads that the picker scope leaves out (another
   // or an archived project): kept so the editor still knows them.
   const [allSources, setAllSources] = useState<DataSource[] | null>(null);
@@ -179,23 +177,15 @@ export function DataWorkspace({
   async function moveToProject(projectId: string | null) {
     if (!editor || !editorRecord) return;
     if (editor.kind !== "preparation" && editor.kind !== "model") return;
-    setMovingProject(true);
-    setProjectError(null);
-    try {
-      const moved = await setDataProject(
-        workspaceId,
-        editor.kind === "preparation" ? "preparations" : "models",
-        editorRecord.id,
-        projectId,
-      );
-      setSaved({ ...editorRecord, projectId: moved.projectId });
-      // The lists follow the active project: the item joins or leaves them.
-      void refresh();
-    } catch (failure) {
-      setProjectError(t(`errors.${dataErrorKey(failure)}`));
-    } finally {
-      setMovingProject(false);
-    }
+    const moved = await setDataProject(
+      workspaceId,
+      editor.kind === "preparation" ? "preparations" : "models",
+      editorRecord.id,
+      projectId,
+    );
+    setSaved({ ...editorRecord, projectId: moved.projectId });
+    // The lists follow the active project: the item joins or leaves them.
+    void refresh();
   }
   const [selected, setSelected] = useState(initial.sources[0]?.id ?? ""),
     [search, setSearch] = useState("");
@@ -518,11 +508,12 @@ export function DataWorkspace({
       (projects.length > 0 || editorRecord.projectId || canDelete) ? (
         <div className="data-editor-project">
           {projects.length > 0 || editorRecord.projectId ? (
-            <ProjectSelect
+            <ProjectAssignment
+              key={editorRecord.key}
               projects={projects}
               value={editorRecord.projectId}
-              disabled={movingProject}
-              onChange={(projectId) => void moveToProject(projectId)}
+              onSave={moveToProject}
+              describeError={(failure) => t(`errors.${dataErrorKey(failure)}`)}
             />
           ) : null}
           {editor?.kind === "preparation" || editor?.kind === "model"
@@ -537,11 +528,6 @@ export function DataWorkspace({
                   "",
               )
             : null}
-          {projectError ? (
-            <p className="error" role="alert">
-              {projectError}
-            </p>
-          ) : null}
         </div>
       ) : null}
       {editor?.kind === "preparation" ? (

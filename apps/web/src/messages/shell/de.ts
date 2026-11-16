@@ -18,6 +18,7 @@ export const shellDe: Catalog<typeof shellEn> = {
       new: "Neuer Workspace",
     },
     projectSwitcher: "Projekt",
+    manageProjects: "Projekte verwalten",
     allProjects: "Alle Projekte",
     projectSwitchFailed:
       "Projekt konnte nicht gewechselt werden. Versuch es noch einmal.",
