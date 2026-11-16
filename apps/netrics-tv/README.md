@@ -337,7 +337,8 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   day and never converted. A missing or damaged `freshness` leaves the
   widget as before.
 - **Status board streams (#727).** A source's `streams` are listed under
-  it with the stream's name first ("Sales up to Nov 15 · next ~21:00",
+  it with the stream's name first ("Sales up to Nov 15 · fetched 10 min. ago
+  · next ~21:00",
   "Reviews checked 10 min. ago · next check ~14:30"), an overdue one in
   the warning colour with only the day and the late wording, and no next
   times while the source's credentials failed. On screens they take only

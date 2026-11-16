@@ -72,7 +72,7 @@ private func words(_ language: ScreenLanguage = .en) -> FreshnessText {
 
     @Test func theListFormNamesTheStreamFirst() throws {
         let streams = try board([item("a", streams: "[\(sales), \(reviews), \(overdue)]")]).items[0].streams
-        #expect(words().streamCandidates(streams[0], paused: false, now: now).first == "Sales up to Nov 15 · next ~21:00")
+        #expect(words().streamCandidates(streams[0], paused: false, now: now).first == "Sales up to Nov 15 · fetched 10 min. ago · next ~21:00")
         #expect(
             words().streamCandidates(streams[1], paused: false, now: now)
                 == ["Reviews checked 10 min. ago · next check ~14:30", "Reviews checked 10 min. ago"])
@@ -80,7 +80,7 @@ private func words(_ language: ScreenLanguage = .en) -> FreshnessText {
         #expect(
             words().streamCandidates(streams[2], paused: false, now: now)
                 == ["Analytics up to Nov 14 · Nov 15 not published yet", "Analytics up to Nov 14"])
-        #expect(words(.de).streamCandidates(streams[0], paused: false, now: now).first == "Sales bis 15. Nov. · nächste ~21:00")
+        #expect(words(.de).streamCandidates(streams[0], paused: false, now: now).first == "Sales bis 15. Nov. · abgerufen vor 10 Min. · nächste ~21:00")
         #expect(
             words(.de).streamCandidates(streams[1], paused: false, now: now).first
                 == "Reviews geprüft vor 10 Min. · nächste Prüfung ~14:30")
@@ -91,12 +91,13 @@ private func words(_ language: ScreenLanguage = .en) -> FreshnessText {
 
     @Test func pausedSyncsNeverPromiseTheNextOne() throws {
         let streams = try board([item("a", streams: "[\(sales), \(reviews)]")]).items[0].streams
-        #expect(words().streamCandidates(streams[0], paused: true, now: now) == ["Sales up to Nov 15"])
+        #expect(words().streamCandidates(streams[0], paused: true, now: now)
+                == ["Sales up to Nov 15 · fetched 10 min. ago", "Sales up to Nov 15"])
         #expect(words().streamCandidates(streams[1], paused: true, now: now) == ["Reviews checked 10 min. ago"])
         let paused = try board([item("a", status: "auth_failed", streams: "[\(sales)]")]).items[0]
         #expect(
             StatusBoard.streamLine(paused.streams[0], of: paused, now: now, language: .en, timeZone: berlin, region: clock24)
-                == "Sales up to Nov 15")
+                == "Sales up to Nov 15 · fetched 10 min. ago")
     }
 
     // MARK: Layout
@@ -143,7 +144,7 @@ private func words(_ language: ScreenLanguage = .en) -> FreshnessText {
         let line = try #require(rows(data, narrow)["a"]?.first?.text)
         #expect(line == "Sales up to Nov 15")
         let wide = layout(height: 900, width: 900)
-        #expect(rows(data, wide)["a"]?.first?.text == "Sales up to Nov 15 · next ~21:00")
+        #expect(rows(data, wide)["a"]?.first?.text == "Sales up to Nov 15 · fetched 10 min. ago · next ~21:00")
         // Fits the name and age columns at the age size.
         let fit = narrow.columns.name + narrow.columns.age + narrow.columns.gap
         #expect(StudioLayout.wrappedLineCount(line, maxWidth: fit, fontSize: narrow.sizes.age) == 1)
@@ -160,7 +161,7 @@ private func words(_ language: ScreenLanguage = .en) -> FreshnessText {
             WidgetDetail.make(widget, now: now, language: .en, timeZone: berlin, region: clock24))
         #expect(
             detail.items[0].lines == [
-                WidgetDetail.Item.Line(text: "Sales up to Nov 15 · next ~21:00", warning: false),
+                WidgetDetail.Item.Line(text: "Sales up to Nov 15 · fetched 10 min. ago · next ~21:00", warning: false),
                 WidgetDetail.Item.Line(text: "Analytics up to Nov 14 · Nov 15 not published yet", warning: true),
             ])
         #expect(detail.items[1].lines.isEmpty)
