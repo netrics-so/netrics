@@ -28,7 +28,9 @@ import {
   ANALYTICS_STREAM,
   syncAnalyticsApps,
 } from "./analytics-sync.js";
-import { PACIFIC_TIME_ZONE } from "../freshness.js";
+import { FRESHNESS_LIMITS } from "@netrics/connector-sdk";
+
+import { PACIFIC_TIME_ZONE, boundFreshness } from "../freshness.js";
 import { ANALYTICS_SOURCE_TYPES, OTHER_SOURCE } from "./analytics-report.js";
 import { ARTWORK_HOSTS, ITUNES_LOOKUP_HOST, appIcons } from "./icons.js";
 import { checkKey, vendorNumberOf } from "./probes.js";
@@ -934,12 +936,20 @@ export function createAppStoreConnectConnector(
         ? [...request.resources].sort()
         : (await listApps(client)).map((app) => app.id).sort();
     /** The end of the run: the cursor and what the run confirmed. */
-    const finish = (
+    const finish = async (
       result: Pick<SyncResult, "observations" | "reviews" | "reviewWindows">,
       salesCursor: string,
       run: RunFreshness,
-    ): SyncResult => {
-      const freshness = freshnessOf(run);
+    ): Promise<SyncResult> => {
+      // Within the host's bound, whatever the number of apps (the app list
+      // is read only when the per-app entries would exceed it).
+      const entries = freshnessOf(run);
+      const freshness = boundFreshness(
+        entries,
+        entries.length > FRESHNESS_LIMITS.entries
+          ? await appIdsOf()
+          : undefined,
+      );
       return {
         ...result,
         nextCursor: salesCursor,
@@ -948,11 +958,11 @@ export function createAppStoreConnectConnector(
       };
     };
     /** What follows the analytics: the reviews, or the end of the run. */
-    const afterAnalytics = (
+    const afterAnalytics = async (
       observations: SyncResult["observations"],
       salesCursor: string,
       run: RunFreshness,
-    ): SyncResult =>
+    ): Promise<SyncResult> =>
       reviewsToken !== undefined && request.resources?.length !== 0
         ? {
             observations,
@@ -1040,7 +1050,7 @@ export function createAppStoreConnectConnector(
             nextCursor: analyticsCursor(end, salesCursor, next),
             done: false,
           }
-        : afterAnalytics(observations, salesCursor, next);
+        : await afterAnalytics(observations, salesCursor, next);
     }
     const sales = await syncSalesPage(client, request, {
       now: now(),
@@ -1064,7 +1074,11 @@ export function createAppStoreConnectConnector(
       : {};
     if (!analytics) {
       return {
-        ...afterAnalytics(salesResult.observations, sales.nextCursor!, run),
+        ...(await afterAnalytics(
+          salesResult.observations,
+          sales.nextCursor!,
+          run,
+        )),
         ...(sales.datasetPages ? { datasetPages: sales.datasetPages } : {}),
       };
     }

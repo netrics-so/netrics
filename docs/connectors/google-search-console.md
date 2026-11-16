@@ -114,7 +114,7 @@ day adds 0 to both sums.
 
 - Widgets show which day the numbers go up to
   ([ADR 0025](../decisions/0025-data-freshness.md)): the newest day of the
-  property with final data that a sync has read. Search Console days are
+  connection's property with final data that a sync has read. Search Console days are
   **Pacific Time** days, and the widget shows the day as Google names it.
 - That day is usually two or three days ago. Google publishes final data
   without a fixed time, so netrics shows no "next" time; the connection

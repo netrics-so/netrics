@@ -12,7 +12,7 @@ import type {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
-import { PACIFIC_TIME_ZONE } from "../freshness.js";
+import { PACIFIC_TIME_ZONE, boundFreshness } from "../freshness.js";
 import {
   SearchConsoleApiError,
   createSearchConsoleClient,
@@ -669,20 +669,18 @@ export function createSearchConsoleConnector(
         oldestMs,
       );
       // Freshness (ADR 0025): the newest day with final data this run read,
-      // per property, in Pacific Time. Google publishes final data only,
-      // two to three days behind, at no documented time: no next expected.
-      const freshness = (through: string | undefined) =>
-        through === undefined
-          ? {}
-          : {
-              freshness: [
-                {
-                  stream: PERFORMANCE_STREAM,
-                  resource: siteUrl,
-                  dataThrough: through,
-                },
-              ],
-            };
+      // in Pacific Time. Google publishes final data only, two to three
+      // days behind, at no documented time: no next expected. A connection
+      // reads exactly one property, so its entry is the connection's: a
+      // URL-prefix property id can be longer than a freshness resource id.
+      const freshness = (through: string | undefined) => {
+        const entries = boundFreshness(
+          through === undefined
+            ? []
+            : [{ stream: PERFORMANCE_STREAM, dataThrough: through }],
+        );
+        return entries.length > 0 ? { freshness: entries } : {};
+      };
       // Where the next incremental sync starts: recent days are not final yet.
       const resumeAt = new Date(
         Math.max(

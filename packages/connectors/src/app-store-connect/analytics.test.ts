@@ -660,6 +660,28 @@ describe("analytics freshness", () => {
     expect(freshnessEntry(done, SALES_STREAM)?.dataThrough).toBe("2026-09-29");
   });
 
+  it("takes the newest reporting day in the files read, not the instance's processing day", async () => {
+    // Apple's own example: a DAILY instance processed on 1 April holds data
+    // for 30–31 March. Here the 28 September Discovery instance has no
+    // files: its newest day read is 27 September, though instances were
+    // processed through the 29th.
+    const api = fake({
+      analytics: analytics({
+        pages: {
+          "/v1/analyticsReportInstances/i-disc-0928/segments": fixture(
+            "analytics-segments-empty",
+          ),
+        },
+      }),
+    });
+    const { pages } = await runAll(api, { resources: [APP] });
+    expect(freshnessEntry(pages.at(-1)!, ANALYTICS_STREAM, APP)).toEqual({
+      stream: ANALYTICS_STREAM,
+      resource: APP,
+      dataThrough: "2026-09-27",
+    });
+  });
+
   it("reports no app whose reports have no instance yet", async () => {
     const empty = { data: [], links: {} };
     const api = fake({

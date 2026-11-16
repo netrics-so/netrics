@@ -170,6 +170,8 @@ Play, and the connection syncs every 6 hours.
   not count.
 - The store listing counts as checked only when the listing of every app
   could be read in that sync.
+- An account with more than about 1,000 apps gets one "up to" day per kind
+  of report instead of one per app: the oldest of its apps' days.
 
 ## Current implementation boundaries
 

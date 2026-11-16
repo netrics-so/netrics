@@ -946,8 +946,9 @@ describe("search console freshness", () => {
     const done = pages.at(-1)!;
     expectValidFreshness(searchConsoleManifest, done);
     // Final data trails today (20 January) by three days.
+    // One connection reads one property: a connection entry.
     expect(done.freshness).toEqual([
-      { stream: PERFORMANCE_STREAM, resource: SITE, dataThrough: "2024-01-17" },
+      { stream: PERFORMANCE_STREAM, dataThrough: "2024-01-17" },
     ]);
     expect(
       pages.slice(0, -1).every((page) => page.freshness === undefined),
@@ -968,9 +969,8 @@ describe("search console freshness", () => {
       () => Date.parse(`${today}T12:00:00.000Z`),
     );
     expect(pages).toHaveLength(2);
-    expect(freshnessEntry(pages[1]!, PERFORMANCE_STREAM, SITE)).toEqual({
+    expect(freshnessEntry(pages[1]!, PERFORMANCE_STREAM)).toEqual({
       stream: PERFORMANCE_STREAM,
-      resource: SITE,
       dataThrough: "2024-01-20",
     });
   });
@@ -989,6 +989,26 @@ describe("search console freshness", () => {
     );
     expect(pages.at(-1)).toMatchObject({ done: true });
     expect(pages.at(-1)!.freshness).toBeUndefined();
+  });
+
+  it("never fails a sync for a URL-prefix property longer than a freshness resource", async () => {
+    const long = `https://www.example.com/${"section/".repeat(30)}`;
+    expect(long.length).toBeGreaterThan(200);
+    const { pages } = await syncAll(
+      fake({ sites: [{ siteUrl: long, permissionLevel: "siteOwner" }] })
+        .runtime,
+      {
+        mode: "incremental",
+        from: "2024-01-10T00:00:00.000Z",
+        to: "2024-01-20T12:00:00.000Z",
+      },
+      context({ siteUrl: long }),
+    );
+    const done = pages.at(-1)!;
+    expectValidFreshness(searchConsoleManifest, done);
+    expect(done.freshness).toEqual([
+      { stream: PERFORMANCE_STREAM, dataThrough: "2024-01-17" },
+    ]);
   });
 
   it("reports nothing for a property outside the selection", async () => {

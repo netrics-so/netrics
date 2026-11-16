@@ -2,7 +2,65 @@
 // done sync (SDK 0.2.13, ADR 0025): provider days are calendar dates in the
 // provider's zone, publication times are instants.
 
+import {
+  FRESHNESS_LIMITS,
+  freshnessEntrySchema,
+  type FreshnessEntry,
+} from "@netrics/connector-sdk";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Freshness is optional metadata: it must never fail a sync that works
+ * without it. This keeps a done result's entries within what the host
+ * accepts:
+ *
+ * - an entry the SDK schema refuses (say a resource id longer than its
+ *   bound) is left out;
+ * - above `limit` entries, each stream's per-resource entries become one
+ *   connection entry with the oldest `dataThrough` of them, which can only
+ *   understate. That is done only when every resource in `resources` has
+ *   an entry of the stream (or the stream's connection entry already
+ *   covers it); otherwise the connection entry would claim a day for a
+ *   resource the run did not read, and the stream's resource entries are
+ *   left out instead (the host keeps their stored rows).
+ */
+export function boundFreshness(
+  entries: readonly FreshnessEntry[],
+  resources?: readonly string[],
+  limit: number = FRESHNESS_LIMITS.entries,
+): FreshnessEntry[] {
+  const valid = entries.filter(
+    (entry) => freshnessEntrySchema.safeParse(entry).success,
+  );
+  if (valid.length <= limit) return valid;
+  const streams = [...new Set(valid.map((entry) => entry.stream))];
+  const bounded: FreshnessEntry[] = [];
+  for (const stream of streams) {
+    const own = valid.filter((entry) => entry.stream === stream);
+    const perResource = own.filter((entry) => entry.resource !== undefined);
+    const connection = own.find((entry) => entry.resource === undefined);
+    if (perResource.length === 0) {
+      bounded.push(...own);
+      continue;
+    }
+    const covered = new Set(perResource.map((entry) => entry.resource));
+    const complete =
+      resources !== undefined &&
+      resources.every((resource) => covered.has(resource));
+    const dated = [...perResource, ...(connection ? [connection] : [])];
+    if (!complete || dated.some((entry) => entry.dataThrough === undefined)) {
+      if (connection) bounded.push(connection);
+      continue;
+    }
+    const oldest = dated.reduce((a, b) =>
+      b.dataThrough! < a.dataThrough! ? b : a,
+    );
+    const { resource: _resource, ...entry } = oldest;
+    bounded.push(entry);
+  }
+  return bounded;
+}
 
 /** The Pacific Time zone App Store Connect, Google Play and Search Console report in. */
 export const PACIFIC_TIME_ZONE = "America/Los_Angeles";

@@ -14,7 +14,12 @@ import {
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
-import { PACIFIC_TIME_ZONE, dateInZone, lastDayOfMonth } from "../freshness.js";
+import {
+  PACIFIC_TIME_ZONE,
+  boundFreshness,
+  dateInZone,
+  lastDayOfMonth,
+} from "../freshness.js";
 import {
   PlayReportError,
   type PlayReportsClient,
@@ -905,7 +910,9 @@ export async function syncPlayReports(
         afterTask === undefined || task.key.localeCompare(afterTask) > 0,
     );
   if (!task) {
-    const freshness = freshnessOf(state.fresh);
+    // Bounded for the host: a large account (1,000 apps × installs and
+    // ratings) reports one connection entry per stream instead (ADR 0025).
+    const freshness = boundFreshness(freshnessOf(state.fresh), apps);
     return {
       observations: [],
       nextCursor: finished(state.to),

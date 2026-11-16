@@ -299,8 +299,6 @@ interface ReportWindow {
   texts: string[];
   /** DAILY instances the report has (0: no data generated yet). */
   instances: number;
-  /** The newest processing day read, if any instance was. */
-  newest: string | undefined;
 }
 
 /**
@@ -342,7 +340,6 @@ async function readReport(
     from: olderExists ? (oldestRead ?? sinceDate) : undefined,
     texts,
     instances: instances.length,
-    newest: recent[0]?.processingDate,
   };
 }
 
@@ -368,11 +365,11 @@ export interface AppAnalyticsResult {
   observations: Observation[];
   /**
    * The last day both reports were read through (ADR 0025): the older of
-   * their newest processing days read. The DAILY instance of processing day
-   * P is Apple's publication of day P (late events of P arrive in later
-   * instances, as revisions). Absent when a report is missing or had no
-   * instance in the lookback (analytics not enabled, or requested and not
-   * generated yet).
+   * the two reports' newest reporting days in the files this run read. Not
+   * the instances' processing days: an instance processed on April 1 can
+   * hold data for March 30–31 only (Apple's data-completeness example).
+   * Absent when a report is missing or its files had no row of the app
+   * (analytics not enabled, not generated yet, or no activity read).
    */
   dataThrough?: string;
 }
@@ -421,12 +418,19 @@ export async function readAppAnalytics(
   const inWindow = (window: ReportWindow, date: string) =>
     window.from === undefined || date >= window.from;
 
+  /** The newest reporting day read per report. */
+  let discoveryDay: string | undefined;
+  let downloadsDay: string | undefined;
+  const later = (a: string | undefined, b: string) =>
+    a !== undefined && a > b ? a : b;
+
   if (discovery) {
     const impressions = new Map<string, number>();
     const views = new Map<string, number>();
     for (const text of discovery.texts) {
       for (const row of parseDiscoveryReport(text)) {
         if (row.appId !== appId || !inWindow(discovery, row.date)) continue;
+        discoveryDay = later(discoveryDay, row.date);
         add(impressions, row.date, isImpression(row) ? row.counts : 0);
         add(views, row.date, isProductPageView(row) ? row.counts : 0);
       }
@@ -453,6 +457,7 @@ export async function readAppAnalytics(
     for (const text of downloads.texts) {
       for (const row of parseDownloadsReport(text)) {
         if (row.appId !== appId || !inWindow(downloads, row.date)) continue;
+        downloadsDay = later(downloadsDay, row.date);
         if (!isFirstTimeDownload(row)) continue;
         let day = bySource.get(row.date);
         if (!day) {
@@ -476,8 +481,8 @@ export async function readAppAnalytics(
     }
   }
   const newest =
-    discovery?.newest !== undefined && downloads?.newest !== undefined
-      ? [discovery.newest, downloads.newest].sort()[0]!
+    discoveryDay !== undefined && downloadsDay !== undefined
+      ? [discoveryDay, downloadsDay].sort()[0]!
       : undefined;
   return {
     status:

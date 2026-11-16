@@ -205,9 +205,10 @@ day is due ([ADR 0025](../decisions/0025-data-freshness.md)).
 - Sales are one report for the whole vendor number, so every app of the
   connection has the same "up to" day.
 - **App Store analytics**, once enabled, start 1–2 days after the request.
-  An app's "up to" day is the newest day both of its reports (Discovery and
-  Engagement, Downloads) have published; later files still correct a day
-  for a few days. Apple names no publication time for these files, so
+  An app's "up to" day is the newest day found in the files of both its
+  reports (Discovery and Engagement, Downloads), the older of the two; a
+  file processed on one day can hold an earlier day's data, so the file's
+  date is not used. Later files still correct a day for a few days. Apple names no publication time for these files, so
   netrics shows no "next" time for them. An app whose analytics are not
   enabled, not generated yet, or could not be read in a sync shows no
   analytics day.
