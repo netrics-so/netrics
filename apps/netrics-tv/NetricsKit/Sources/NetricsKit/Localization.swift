@@ -54,6 +54,7 @@ public enum KitText: String, Sendable, CaseIterable {
     // A measure tile's states on a wall screen, worded as the web kiosk's
     // viewer wording (#649, #676): the state, never an editor's remedy.
     case measurePending, measureUnavailable, measureStale, measurePartial, measureWarningOne, measureWarningOther
+    case measureHistoryIncomplete
     case measureSourcePaused, measureSourceOutage, measureSourceCollectionPaused, measureSourcePending
     case sourceReportsPending
     case noDataForPeriod, noDataYet, noDataToCompare, noComparison, couldNotLoad
@@ -117,6 +118,7 @@ public enum KitStrings {
         .measureUnavailable: "Data not available",
         .measureStale: "Last valid data",
         .measurePartial: "Some source data is missing.",
+        .measureHistoryIncomplete: "History incomplete. Earlier days may be missing.",
         .measureWarningOne: "%d data warning",
         .measureWarningOther: "%d data warnings",
         .measureSourcePaused: "Imports from %@ are paused.",
@@ -269,6 +271,7 @@ public enum KitStrings {
         .measureUnavailable: "Daten nicht verfügbar",
         .measureStale: "Letzte gültige Daten",
         .measurePartial: "Einige Quelldaten fehlen.",
+        .measureHistoryIncomplete: "Verlauf unvollständig. Frühere Tage können fehlen.",
         .measureWarningOne: "%d Datenhinweis",
         .measureWarningOther: "%d Datenhinweise",
         .measureSourcePaused: "Die Importe von %@ sind pausiert.",

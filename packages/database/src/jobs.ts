@@ -91,25 +91,36 @@ function mapJobRow(row: Record<string, unknown>): Job {
 }
 
 /**
+ * How many backfills of one connector's OAuth connections run (or wait to
+ * continue) at a time across all workspaces (#635), unless the worker is
+ * configured otherwise (WORKER_BACKFILLS_PER_APP).
+ */
+export const DEFAULT_BACKFILLS_PER_APP = 4;
+
+/**
  * Atomically requeues stale running jobs (locked longer than
  * staleAfterSeconds — the worker crashed) and claims up to `limit` due jobs
- * for `workerId` via the claim_jobs() SQL function (migration 0006).
+ * for `workerId` via the claim_jobs() SQL function (migrations 0006, 0080).
  * Per-connection serialization: at most one claimed/running connection.* job
- * per connection. Runs as the scheduler role and bypasses tenant context BY
- * DESIGN (the function is SECURITY DEFINER); never call this on an app-role
- * handle.
+ * per connection. `backfillsPerApp` caps the backfills of OAuth connections
+ * per connector and provider across workspaces, which share the provider
+ * app's quota (#635); null or 0 is no cap. Runs as the scheduler role and
+ * bypasses tenant context BY DESIGN (the function is SECURITY DEFINER);
+ * never call this on an app-role handle.
  */
 export async function claimJobs(
   schedulerDb: Db | Transaction,
   workerId: string,
   limit: number,
   staleAfterSeconds: number,
+  backfillsPerApp: number | null = DEFAULT_BACKFILLS_PER_APP,
 ): Promise<Job[]> {
   const rows = await schedulerDb.execute(
     sql`select * from claim_jobs(
       ${workerId},
       ${limit},
-      make_interval(secs => ${staleAfterSeconds})
+      make_interval(secs => ${staleAfterSeconds}),
+      ${backfillsPerApp}::integer
     )`,
   );
   return rows.map((row) => mapJobRow(row));

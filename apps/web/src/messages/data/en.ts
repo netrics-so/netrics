@@ -145,6 +145,9 @@ export const dataEn = {
         "Showing the last valid data. Check the model and its sources.",
       resultWarnings:
         "{count, plural, one {# data warning. Check the model preview.} other {# data warnings. Check the model preview.}}",
+      /** A source's history is still loading or incomplete (#635). */
+      historyIncomplete:
+        "History incomplete: a source is still loading earlier days, so they may be missing.",
       /**
        * The same states on a paired screen (kiosk), where nobody can act on
        * editor instructions; worded as tvOS words them (#649).
@@ -153,6 +156,7 @@ export const dataEn = {
         noData: "No data yet",
         stale: "Last valid data",
         partial: "Some source data is missing.",
+        historyIncomplete: "History incomplete. Earlier days may be missing.",
         warnings:
           "{count, plural, one {# data warning} other {# data warnings}}",
         sourceOutage: "Imports from {name} are interrupted.",
@@ -410,6 +414,8 @@ export const dataEn = {
       division_by_zero: "Division by zero produces an empty value.",
       retained_source_history_incomplete:
         "Some older source records are no longer retained.",
+      source_history_incomplete:
+        "History incomplete: a source is still loading earlier days, so they may be missing. Its connection page shows the progress.",
       model_window_history_incomplete:
         "Some windows or earlier periods start before the oldest retained data, so their values are partial.",
       prepared_cache_capacity_reached:

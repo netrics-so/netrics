@@ -19,6 +19,7 @@ import {
   manualDatasetPageInputSchema,
   preparationGraphSchema,
   semanticModelDefinitionSchema,
+  SOURCE_HISTORY_INCOMPLETE_WARNING,
   type DataImpact,
   type DataImpactTarget,
   type DataUsers,
@@ -61,6 +62,7 @@ import {
   isTransactionHandle,
   retryOnSerializationFailure,
   resolveDataPolicy,
+  sourceHistoryIncomplete,
   isPooledDatabase,
   processSessionLocks,
   SessionLockQueue,
@@ -670,7 +672,12 @@ export function createDataLoader(
    * warnings of this source itself: not what the load added to this
    * loader's set, which may already hold them from another source.
    */
-  const share = (id: string, table: DataTable, historyIncomplete = false) =>
+  const share = (
+    id: string,
+    table: DataTable,
+    historyIncomplete = false,
+    backfillIncomplete = false,
+  ) =>
     shareable(id)?.set(id, {
       table,
       view: views.get(id)!,
@@ -678,6 +685,7 @@ export function createDataLoader(
       warnings: [
         ...(table.pendingSources?.length ? ["data_source_pending"] : []),
         ...(historyIncomplete ? ["retained_source_history_incomplete"] : []),
+        ...(backfillIncomplete ? [SOURCE_HISTORY_INCOMPLETE_WARNING] : []),
       ],
     });
   const load = async (id: string): Promise<DataTable> => {
@@ -700,7 +708,8 @@ export function createDataLoader(
       tables.set(id, shared.table);
       return shared.table;
     }
-    let historyIncomplete = false;
+    let historyIncomplete = false,
+      backfillIncomplete = false;
     visiting.add(id);
     let result: DataTable;
     if (id.startsWith("prepared:")) {
@@ -1081,6 +1090,21 @@ export function createDataLoader(
         warnings.add("retained_source_history_incomplete");
         historyIncomplete = true;
       }
+      // A connection's history still loading or not read by a backfill
+      // yet (#635): earlier days may be missing, not zero.
+      if (
+        dataset.kind === "source" &&
+        dataset.connectionId &&
+        (await sourceHistoryIncomplete(tx, {
+          workspaceId,
+          connectionId: dataset.connectionId,
+          key: dataset.key,
+          schemaVersion: generation.schemaVersion,
+        }))
+      ) {
+        warnings.add(SOURCE_HISTORY_INCOMPLETE_WARNING);
+        backfillIncomplete = true;
+      }
       const expiry = records.reduce<Date | null>((min, row) => {
         const policyExpiry =
           policy.maxRetentionDays === null
@@ -1121,7 +1145,7 @@ export function createDataLoader(
     bindings[id] = result.fields;
     visiting.delete(id);
     tables.set(id, result);
-    share(id, result, historyIncomplete);
+    share(id, result, historyIncomplete, backfillIncomplete);
     return result;
   };
   return {

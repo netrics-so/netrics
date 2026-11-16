@@ -168,7 +168,9 @@ import Testing
     }
 
     /// A tile with no rows, a warning count and sources needing attention.
-    private func viewerData(error: String? = nil, warnings: Int = 1, partial: Bool = false) throws
+    private func viewerData(
+        error: String? = nil, warnings: Int = 1, codes: [String] = [], partial: Bool = false
+    ) throws
         -> MeasureWidgetData
     {
         let rows =
@@ -176,7 +178,7 @@ import Testing
             ? #"[{"dimensions":{},"measures":{"d":{"value":"1","type":"decimal","status":"partial"}}}]"# : "[]"
         let result =
             error == nil
-            ? #"{"releaseId":null,"rows":\#(rows),"warnings":\#(Array(repeating: "\"w\"", count: warnings)),"provenance":[],"stale":true}"#
+            ? #"{"releaseId":null,"rows":\#(rows),"warnings":\#(Array(repeating: "\"w\"", count: warnings) + codes),"provenance":[],"stale":true}"#
             : "null"
         let json = #"""
             {"sourceHealth":[{"connectionId":"a","name":"Apple team","status":"needs_reauthorization"},
@@ -202,6 +204,14 @@ import Testing
         #expect(two.viewerWarnings(rows: [], language: .en) == ["2 data warnings"])
         #expect(two.viewerWarnings(rows: [], language: .de) == ["2 Datenhinweise"])
         #expect(try viewerData(warnings: 0).viewerWarnings(rows: [], language: .en).isEmpty)
+        let loading = try viewerData(warnings: 1, codes: ["source_history_incomplete"])
+        #expect(
+            loading.viewerWarnings(rows: [], language: .en) == [
+                "History incomplete. Earlier days may be missing.", "1 data warning",
+            ])
+        #expect(
+            try viewerData(warnings: 0, codes: ["source_history_incomplete"]).viewerWarnings(rows: [], language: .de)
+                == ["Verlauf unvollständig. Frühere Tage können fehlen."])
         let partial = try viewerData(warnings: 0, partial: true)
         #expect(
             partial.viewerWarnings(rows: partial.result?.rows ?? [], language: .en) == ["Some source data is missing."])

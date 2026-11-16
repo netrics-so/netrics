@@ -495,6 +495,121 @@ describe("claim_jobs", () => {
 
     await schedulerClient`update jobs set status = 'succeeded' where id = ${staleId}`;
   });
+
+  function connectWithOAuth(
+    workspaceId: string,
+    names: string[],
+    provider: string | null,
+  ): Promise<string[]> {
+    return withWorkspace(db, { workspaceId }, async (tx) => {
+      const rows = await tx
+        .insert(schema.connections)
+        .values(
+          names.map((name) => ({ workspaceId, connectorId: "demo", name })),
+        )
+        .returning({ id: schema.connections.id });
+      if (provider) {
+        await tx.insert(schema.connectionOAuth).values(
+          rows.map((row, index) => ({
+            connectionId: row.id,
+            workspaceId,
+            provider,
+            accountSub: `sub-${names[index]}`,
+            grantedScopes: [],
+          })),
+        );
+      }
+      return rows.map((row) => row.id);
+    });
+  }
+
+  it("caps backfills per OAuth app across workspaces (#635)", async () => {
+    // Three OAuth connections of one app in two workspaces, one of another
+    // provider, and one with its own key.
+    const [g1] = await connectWithOAuth(workspaceA, ["cap-g1"], "google");
+    const [g2, g3] = await connectWithOAuth(
+      workspaceB,
+      ["cap-g2", "cap-g3"],
+      "google",
+    );
+    const [other] = await connectWithOAuth(
+      workspaceA,
+      ["cap-other"],
+      "microsoft",
+    );
+    const [keyed] = await connectWithOAuth(workspaceA, ["cap-key"], null);
+    const backfill = (workspaceId: string, connectionId: string | undefined) =>
+      seedJob({ workspaceId, kind: "connection.backfill", connectionId });
+    const jobG1 = await backfill(workspaceA, g1);
+    const jobG2 = await backfill(workspaceB, g2);
+    const jobG3 = await backfill(workspaceB, g3);
+    const jobOther = await backfill(workspaceA, other);
+    const jobKeyed = await backfill(workspaceA, keyed);
+    const google = [jobG1, jobG2, jobG3];
+    try {
+      const first = (await claimJobs(schedulerDb, "w-cap", 10, 3600, 1)).map(
+        (job) => job.id,
+      );
+      const started = google.filter((id) => first.includes(id));
+      expect(started).toHaveLength(1);
+      expect(first).toEqual(expect.arrayContaining([jobOther, jobKeyed]));
+
+      // A backfill that hands over to a continuation keeps the app's slot.
+      expect(await deferJob(schedulerDb, started[0]!, "w-cap")).toBe(true);
+      await schedulerClient`update jobs set run_at = now() + interval '1 hour' where id = ${started[0]!}`;
+      const waiting = google.filter((id) => id !== started[0]);
+      expect(
+        (await claimJobs(schedulerDb, "w-cap", 10, 3600, 1))
+          .map((job) => job.id)
+          .filter((id) => waiting.includes(id)),
+      ).toEqual([]);
+
+      // No cap (0): the others are claimed as before.
+      const uncapped = (await claimJobs(schedulerDb, "w-cap", 10, 3600, 0))
+        .map((job) => job.id)
+        .filter((id) => waiting.includes(id));
+      expect(uncapped.sort()).toEqual([...waiting].sort());
+    } finally {
+      await schedulerClient`
+        update jobs set status = 'succeeded'
+        where id in (${jobG1}, ${jobG2}, ${jobG3}, ${jobOther}, ${jobKeyed})
+      `;
+    }
+  });
+
+  it("lets the oldest continuing backfills go first under the cap (#635)", async () => {
+    const connections = await connectWithOAuth(
+      workspaceA,
+      ["cont-1", "cont-2", "cont-3"],
+      "google",
+    );
+    const jobs: string[] = [];
+    for (const [index, connectionId] of connections.entries()) {
+      const id = await seedJob({
+        workspaceId: workspaceA,
+        kind: "connection.backfill",
+        connectionId,
+      });
+      // Three backfills already continuing, e.g. after the cap was lowered.
+      await schedulerClient`
+        update jobs set status = 'continuing',
+          created_at = now() - make_interval(mins => ${10 - index})
+        where id = ${id}
+      `;
+      jobs.push(id);
+    }
+    try {
+      const claimed = (await claimJobs(schedulerDb, "w-cont", 10, 3600, 2))
+        .map((job) => job.id)
+        .filter((id) => jobs.includes(id));
+      expect(claimed.sort()).toEqual([jobs[0], jobs[1]].sort());
+    } finally {
+      await schedulerClient`
+        update jobs set status = 'succeeded'
+        where id in (${jobs[0]!}, ${jobs[1]!}, ${jobs[2]!})
+      `;
+    }
+  });
 });
 
 const WORKER = "w-jobs";

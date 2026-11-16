@@ -153,10 +153,13 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Letzte gültige Daten werden angezeigt. Prüfe das Modell und seine Quellen.",
       resultWarnings:
         "{count, plural, one {# Datenhinweis. Prüfe die Modellvorschau.} other {# Datenhinweise. Prüfe die Modellvorschau.}}",
+      historyIncomplete:
+        "Verlauf unvollständig: Eine Quelle lädt noch frühere Tage, sie können daher fehlen.",
       viewer: {
         noData: "Noch keine Daten",
         stale: "Letzte gültige Daten",
         partial: "Einige Quelldaten fehlen.",
+        historyIncomplete: "Verlauf unvollständig. Frühere Tage können fehlen.",
         warnings:
           "{count, plural, one {# Datenhinweis} other {# Datenhinweise}}",
         sourceOutage: "Die Importe von {name} sind unterbrochen.",
@@ -416,6 +419,8 @@ export const dataDe: Catalog<typeof dataEn> = {
       division_by_zero: "Eine Division durch null ergibt einen leeren Wert.",
       retained_source_history_incomplete:
         "Einige ältere Quelldatensätze werden nicht mehr aufbewahrt.",
+      source_history_incomplete:
+        "Verlauf unvollständig: Eine Quelle lädt noch frühere Tage, sie können daher fehlen. Ihre Verbindungsseite zeigt den Fortschritt.",
       model_window_history_incomplete:
         "Einige Zeitfenster oder frühere Zeiträume beginnen vor den ältesten aufbewahrten Daten. Ihre Werte sind daher unvollständig.",
       prepared_cache_capacity_reached:

@@ -1446,3 +1446,105 @@ describe("a batch data service (#668)", () => {
     ).rejects.toThrow("a batch data service serves one actor");
   });
 });
+
+describe("sources whose history is still loading (#635)", () => {
+  /** A connection with a stored source dataset that a backfill has read. */
+  async function backfilledSource(key: string) {
+    const [connection] =
+      await admin`insert into connections(workspace_id,connector_id,name) values (${actor.workspaceId},'migration-fixture',${key}) returning id`;
+    const connectionId = connection!.id as string;
+    await admin`insert into connection_state(connection_id,workspace_id,backfilled_datasets) values (${connectionId},${actor.workspaceId},${admin.json({ [key]: 1 })})`;
+    const stored = await withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId },
+      (tx) =>
+        ingestDatasetPage(tx, {
+          workspaceId: actor.workspaceId,
+          connectionId,
+          definition: { ...salesDefinition, key },
+          page: {
+            datasetKey: key,
+            schemaVersion: 1,
+            refreshKey: "r1",
+            pageKey: "p1",
+            previousPageKey: null,
+            complete: true,
+            records: [
+              {
+                values: { id: "o1", app: "a", amount: "1.00", currency: "EUR" },
+              },
+            ],
+          },
+          now: NOW,
+        }),
+    );
+    expect(stored.generationId).not.toBeNull();
+    return { connectionId, datasetId: stored.datasetId };
+  }
+  const graph = (datasetId: string): PreparationGraph => ({
+    version: 1,
+    nodes: [{ id: "input", type: "source", datasetId }],
+    outputs: ["input"],
+  });
+  const recordBackfill = (connectionId: string, record: unknown) =>
+    admin`update connection_state set backfilled_datasets=${record === null ? null : admin.json(record as Record<string, number>)} where connection_id=${connectionId}`;
+
+  it("warns while a backfill waits or runs, or none has read the dataset", async () => {
+    const { connectionId, datasetId } = await backfilledSource("loading_sales");
+    const warnings = async () => ({
+      source: (await service.preview(actor, datasetId)).warnings,
+      preparation: (await service.previewPreparation(actor, graph(datasetId)))
+        .warnings,
+    });
+    // Read by a backfill at its schema version: complete.
+    expect(await warnings()).toEqual({ source: [], preparation: [] });
+
+    // A backfill of the connection waits.
+    const [job] =
+      await admin`insert into jobs(kind,workspace_id,connection_id,payload) values ('connection.backfill',${actor.workspaceId},${connectionId},${admin.json({ workspace_id: actor.workspaceId, connection_id: connectionId })}) returning id`;
+    expect(await warnings()).toEqual({
+      source: ["source_history_incomplete"],
+      preparation: ["source_history_incomplete"],
+    });
+    await admin`update jobs set status='succeeded' where id=${job!.id as string}`;
+    expect((await warnings()).source).toEqual([]);
+
+    // The record lacks the dataset (a connector update added it), or has
+    // it at another schema version.
+    await recordBackfill(connectionId, {});
+    expect((await warnings()).source).toEqual(["source_history_incomplete"]);
+    await recordBackfill(connectionId, { loading_sales: 2 });
+    expect((await warnings()).source).toEqual(["source_history_incomplete"]);
+
+    // No record (a connector without backfills): complete.
+    await recordBackfill(connectionId, null);
+    expect((await warnings()).source).toEqual([]);
+  });
+
+  it("keeps the warning for a source a batch read before", async () => {
+    const first = await backfilledSource("loading_a");
+    const second = await backfilledSource("loading_b");
+    await recordBackfill(first.connectionId, {});
+    await recordBackfill(second.connectionId, {});
+    const preview = await withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      async (tx) => {
+        const batch = createDataService(tx, () => NOW, undefined, undefined, {
+          batch: true,
+        });
+        await batch.previewPreparation(actor, {
+          version: 1,
+          nodes: [
+            { id: "a", type: "source", datasetId: first.datasetId },
+            { id: "b", type: "source", datasetId: second.datasetId },
+          ],
+          outputs: ["a", "b"],
+        });
+        return batch.previewPreparation(actor, graph(second.datasetId));
+      },
+      { isolationLevel: "serializable" },
+    );
+    expect(preview.warnings).toContain("source_history_incomplete");
+  });
+});

@@ -118,6 +118,9 @@ Relevant environment variables (see `.env.example`):
   production for worker/scheduler roles.
 - `SCHEDULER_POLL_MS` (default 5000), `WORKER_POLL_MS` (default 1000),
   `WORKER_CONCURRENCY` (default 4).
+- `WORKER_BACKFILLS_PER_APP` (default 4): backfills of one connector's OAuth
+  connections that run at a time across all workspaces, which share the OAuth
+  app's quota; `0` removes the cap. Set the same value on every worker.
 
 ### Authentication
 
