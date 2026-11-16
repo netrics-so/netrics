@@ -39,6 +39,7 @@ import { pairingAddress } from "@/lib/pairing-address";
 import type { RefreshCycle } from "@/lib/refresh-countdown";
 import { deviceTileNotice } from "@/lib/tile-status";
 import { useWakeLock } from "@/lib/use-screen";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 /** The product name, the same in every language. */
 const BRAND = "netrics";
@@ -232,6 +233,7 @@ function PairingScreen({ state }: { state: KioskState }) {
 function OfflineMarker({ state }: { state: KioskState }) {
   const t = useT("screen.kiosk");
   const locale = useLocale();
+  const viewerZone = useViewerTimeZone();
   if (!state.offline) {
     return null;
   }
@@ -239,7 +241,7 @@ function OfflineMarker({ state }: { state: KioskState }) {
     <span className="kiosk-offline" role="status" title={state.lastError ?? ""}>
       {state.updatedAt
         ? t("offlineSince", {
-            time: clockTime(state.updatedAt, locale),
+            time: clockTime(state.updatedAt, viewerZone, locale),
           })
         : t("offline")}
     </span>
@@ -310,6 +312,7 @@ function KioskSlides({
   const idle = useIdle();
   const t = useT("screen.kiosk");
   const locale = useLocale();
+  const viewerZone = useViewerTimeZone();
   const { theme, timeZone } = payload;
   const env = {
     timeZone,
@@ -337,7 +340,7 @@ function KioskSlides({
           offlineSince:
             state.updatedAt === null
               ? null
-              : clockTime(state.updatedAt, locale),
+              : clockTime(state.updatedAt, viewerZone, locale),
           refresh: kioskRefreshCycle(state, payload),
         }}
         images={state.images}

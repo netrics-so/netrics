@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { useLocale, useT } from "@/lib/i18n/client";
 import { tvGrid } from "@/lib/tv-grid";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 const IDLE_MS = 3000;
 
@@ -13,19 +14,25 @@ export function clockLocale(locale: string): string {
 }
 
 /**
- * A moment as the screen clock shows it ("12:00"), in the viewer's zone
- * (#736): the offline note's last update on the kiosk and in TV mode (#649,
- * #681).
+ * A moment as the screen clock shows it ("12:00"), in `timeZone`, the
+ * viewer's (#736, `useViewerTimeZone`): the offline note's last update on
+ * the kiosk and in TV mode (#649, #681).
  */
-export function clockTime(epochMs: number, locale: string): string {
+export function clockTime(
+  epochMs: number,
+  timeZone: string,
+  locale: string,
+): string {
   return new Intl.DateTimeFormat(clockLocale(locale), {
+    timeZone,
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(epochMs));
 }
 
-function formatClock(locale: string): string {
+function formatClock(timeZone: string, locale: string): string {
   return new Intl.DateTimeFormat(clockLocale(locale), {
+    timeZone,
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -40,12 +47,16 @@ function formatClock(locale: string): string {
  */
 export function useClock(): string {
   const locale = useLocale();
-  const [now, setNow] = useState(() => formatClock(locale));
+  const timeZone = useViewerTimeZone();
+  const [now, setNow] = useState(() => formatClock(timeZone, locale));
   useEffect(() => {
-    setNow(formatClock(locale));
-    const timer = setInterval(() => setNow(formatClock(locale)), 15_000);
+    setNow(formatClock(timeZone, locale));
+    const timer = setInterval(
+      () => setNow(formatClock(timeZone, locale)),
+      15_000,
+    );
     return () => clearInterval(timer);
-  }, [locale]);
+  }, [timeZone, locale]);
   return now;
 }
 

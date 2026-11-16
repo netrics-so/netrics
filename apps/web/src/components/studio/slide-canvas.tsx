@@ -31,9 +31,10 @@ import {
   type SlideLayouts,
 } from "@/lib/screen-view";
 import { refreshCountdown, type RefreshCycle } from "@/lib/refresh-countdown";
-import { clockText, viewerTimeZone } from "@/lib/studio-clock";
+import { clockText } from "@/lib/studio-clock";
 import { u, type ScreenPlacement } from "@/lib/studio-render";
 import { useElementSize } from "@/lib/use-screen";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 import { themeStyle, themeSurface } from "@/lib/studio-theme";
 import {
   slideBackground,
@@ -213,9 +214,10 @@ export function useOffline(): boolean {
 function HeaderClock() {
   const now = useNow();
   const locale = useLocale();
+  const timeZone = useViewerTimeZone();
   return (
     <time className="studio-header-clock" suppressHydrationWarning>
-      {clockText(now, { timeZone: viewerTimeZone(), locale }).time}
+      {clockText(now, { timeZone, locale }).time}
     </time>
   );
 }

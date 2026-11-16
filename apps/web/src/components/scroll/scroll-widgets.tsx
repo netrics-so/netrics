@@ -95,6 +95,7 @@ import {
   compareRatioText,
 } from "@/lib/studio-compare";
 import { LINE_HEIGHT, u } from "@/lib/studio-render";
+import { useClockZone } from "@/lib/viewer-time-zone";
 import {
   type ImageWidget,
   type StudioEnv,
@@ -1234,18 +1235,18 @@ function LiveScrollCountdown({
 
 function LiveScrollClock({
   widget,
-  env,
   size,
 }: {
   widget: Extract<StudioWidget, { type: "clock" }>;
-  env: StudioEnv;
   size: ScrollCardSize;
 }) {
   const now = useNow();
+  // Its own zone, else the viewer's (#736), as in screen view.
+  const timeZone = useClockZone(widget.options.timeZone);
   return (
     <ScrollClockCard
       now={now}
-      timeZone={widget.options.timeZone ?? env.timeZone}
+      timeZone={timeZone}
       options={widget.options}
       {...size}
     />
@@ -1282,7 +1283,7 @@ export function LiveScrollWidget({
     case "gauge":
       return <LiveScrollGauge widget={widget} env={env} size={size} />;
     case "clock":
-      return <LiveScrollClock widget={widget} env={env} size={size} />;
+      return <LiveScrollClock widget={widget} size={size} />;
     case "countdown":
       return <LiveScrollCountdown widget={widget} env={env} size={size} />;
     case "text":

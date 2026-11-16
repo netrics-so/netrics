@@ -18,6 +18,7 @@ import { I18nProvider } from "@/lib/i18n/client";
 import type { KioskState } from "@/lib/kiosk-client";
 import { encodeQr, qrPath } from "@/lib/qr-code";
 import { widgetBoxStyle } from "@/lib/studio-render";
+import { ViewerTimeZoneProvider } from "@/lib/viewer-time-zone";
 
 import {
   KioskScreen,
@@ -143,11 +144,16 @@ function paired(
   };
 }
 
+/** The viewer's zone (#736): fixed, so no result depends on the machine's. */
+const VIEWER_ZONE = "Europe/Berlin";
+
 function render(state: KioskState, pageLocale: Locale = "en") {
   const locale = kioskLocale(state, pageLocale);
   return renderToStaticMarkup(
     <I18nProvider locale={locale} messages={WEB_CATALOGS[locale]}>
-      <KioskScreen state={state} />
+      <ViewerTimeZoneProvider zone={VIEWER_ZONE}>
+        <KioskScreen state={state} />
+      </ViewerTimeZoneProvider>
     </I18nProvider>,
   );
 }
@@ -509,7 +515,7 @@ describe("kiosk wording for wall screens (#649)", () => {
   });
 
   it("puts the last update time in the slide header's offline note", () => {
-    // 10:00 UTC is 12:00 in Berlin, the payload's time zone.
+    // 10:00 UTC is 12:00 in Berlin, the viewer's time zone.
     const en = render(paired(slides("en"), true));
     expect(en).toContain('class="studio-header"');
     expect(en).toContain("Offline — last update 12:00");

@@ -419,9 +419,8 @@ export function DeviceWidgetView({
           options={widget.options}
           // Without its own zone the server sends the workspace's for
           // older screens and `followsViewer`: the viewer's zone (#736).
-          timeZone={
-            widget.options.followsViewer ? null : widget.options.timeZone
-          }
+          timeZone={widget.options.timeZone}
+          followsViewer={widget.options.followsViewer}
         />
       );
     case "countdown":

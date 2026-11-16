@@ -150,6 +150,8 @@ function render(
       connections={{}}
     />,
     locale,
+    // The viewer's zone (#736): fixed, so no result depends on the machine's.
+    "Europe/Berlin",
   );
 }
 
@@ -159,7 +161,7 @@ const INSTRUCTION =
 
 describe("signed-in TV mode wording on wall screens (#681)", () => {
   beforeEach(() => {
-    // 10:00 UTC is 11:00 in Berlin (CET), the workspace's time zone.
+    // 10:00 UTC is 11:00 in Berlin (CET), the viewer's time zone.
     vi.useFakeTimers({ now: new Date("2026-11-16T10:00:00.000Z") });
   });
   afterEach(() => {

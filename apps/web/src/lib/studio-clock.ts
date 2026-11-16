@@ -84,15 +84,6 @@ export function clockText(
   return { time, date: day, zone };
 }
 
-/**
- * The zone of the person in front of the screen: the browser's (ADR 0025
- * §8, #736). Clocks show it; the workspace's zone only counts data days.
- * Before hydration it is the server's; the clock corrects itself on mount.
- */
-export function viewerTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
 /** Milliseconds until the next minute starts: the clock ticks on it. */
 export function msUntilNextMinute(now: number): number {
   return 60_000 - (now % 60_000);
