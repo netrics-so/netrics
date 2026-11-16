@@ -6,6 +6,7 @@ import type {
   StoreTemplateProducts,
 } from "@netrics/contracts";
 import {
+  ApiError,
   apiErrorMessage,
   fetchResourceIcon,
   getStoreTemplateProducts,
@@ -54,15 +55,20 @@ export function StoreProductIdentity({
     locale = useLocale(),
     id = useId();
   const [data, setData] = useState(initial),
-    [choices, setChoices] = useState<Record<string, Choice>>({}),
+    // A Map: product ids are free text (the editable Products table), and
+    // ids like "constructor" or "__proto__" would hit a plain object's
+    // inherited properties.
+    [choices, setChoices] = useState<ReadonlyMap<string, Choice>>(
+      () => new Map(),
+    ),
     [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
-  const changed = Object.keys(choices),
+  const changed = [...choices.keys()],
     busy = !!pending || locked;
   useLeaveGuard(changed.length > 0, t("unsaved"));
   const choiceOf = (product: Product): Choice =>
-    choices[product.productId] ?? {
+    choices.get(product.productId) ?? {
       pricing: product.pricing,
       website: websiteValue(product.website),
     };
@@ -70,13 +76,15 @@ export function StoreProductIdentity({
     setError(null);
     setNotice(null);
     setChoices((current) => {
-      const next = { ...choiceOf(product), ...choice };
-      const rest = { ...current };
-      delete rest[product.productId];
-      return next.pricing === product.pricing &&
+      const next = { ...choiceOf(product), ...choice },
+        rest = new Map(current);
+      if (
+        next.pricing === product.pricing &&
         next.website === websiteValue(product.website)
-        ? rest
-        : { ...rest, [product.productId]: next };
+      )
+        rest.delete(product.productId);
+      else rest.set(product.productId, next);
+      return rest;
     });
   }
   async function save(): Promise<boolean> {
@@ -87,7 +95,7 @@ export function StoreProductIdentity({
       setData(
         await saveStoreTemplateProducts(workspaceId, requestId, {
           products: changed.map((productId) => {
-            const choice = choices[productId]!,
+            const choice = choices.get(productId)!,
               cut = choice.website.indexOf("|");
             return {
               productId,
@@ -102,7 +110,7 @@ export function StoreProductIdentity({
           }),
         }),
       );
-      setChoices({});
+      setChoices(new Map());
       setNotice(t("identitySaved"));
       return true;
     } catch (cause) {
@@ -117,7 +125,7 @@ export function StoreProductIdentity({
     guard.current = {
       dirty: changed.length > 0,
       save,
-      discard: () => setChoices({}),
+      discard: () => setChoices(new Map()),
     };
   });
   async function loadIcon(product: Product) {
@@ -286,6 +294,31 @@ export function StoreProductIdentity({
           {error}
         </p>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * The identity section when the products cannot be read (e.g. more apps or
+ * website projects than the workspace's row limit): an inline explanation,
+ * so the scope editor beside it stays usable (removing the connection that
+ * causes it, for one).
+ */
+export function StoreProductIdentityUnavailable({
+  error,
+}: {
+  error: { status: number; code: string };
+}) {
+  const t = useT("storeTemplate"),
+    locale = useLocale();
+  return (
+    <section className="card stack store-product-identity">
+      <h2>{t("identity")}</h2>
+      <p className="error" role="alert">
+        {error.code === "data_source_row_limit"
+          ? t("identityTooLarge")
+          : apiErrorMessage(new ApiError(error.status, error.code), locale)}
+      </p>
     </section>
   );
 }

@@ -126,6 +126,8 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     identitySaveAndApply: "Speichern und übernehmen",
     identityDiscardAndApply: "Verwerfen und übernehmen",
     identityKeepEditing: "Weiter bearbeiten",
+    identityTooLarge:
+      "Die App-Identität kann nicht angezeigt werden: Diese Verbindungen haben mehr Apps oder Website-Projekte, als das Zeilenlimit dieses Workspaces erlaubt. Die Apps oben kannst du weiter ändern, zum Beispiel eine Verbindung entfernen.",
   },
   dashboardsPage: {
     meta: "{count, plural, =0 {Noch keine Dashboards} one {# Dashboard} other {# Dashboards}}",

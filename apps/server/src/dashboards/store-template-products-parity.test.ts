@@ -69,6 +69,21 @@ const variants: Record<string, (tables: Map<string, DataTable>) => void> = {
       product_name: "Beta renamed",
     });
   },
+  // Free-text product ids that are object property names.
+  "products named like object properties": (tables) => {
+    tables
+      .get("products")!
+      .rows.push(
+        { product_id: "constructor", product_name: "Constructor" },
+        { product_id: "__proto__", product_name: "Proto" },
+      );
+    tables
+      .get("mapping")!
+      .rows.push(
+        { app_key: google.id + ":com.example.beta", product_id: "constructor" },
+        { app_key: google.id + ":com.example.gamma", product_id: "__proto__" },
+      );
+  },
   // A package Play reports earnings for that discovery never listed.
   "an earnings-only Play package": (tables) => {
     const earnings = tables.get("play-earnings")!;

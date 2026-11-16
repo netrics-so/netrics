@@ -121,6 +121,8 @@ export const dashboardsEn = {
     identitySaveAndApply: "Save them and apply",
     identityDiscardAndApply: "Discard them and apply",
     identityKeepEditing: "Keep editing",
+    identityTooLarge:
+      "App identity can’t be shown: these connections have more apps or website projects than this workspace’s row limit allows. You can still change the apps above, for example remove a connection.",
   },
   dashboardsPage: {
     meta: "{count, plural, =0 {No dashboards yet} one {# dashboard} other {# dashboards}}",

@@ -3,7 +3,10 @@ import type { StoreTemplateProducts } from "@netrics/contracts";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 
-import { StoreProductIdentity } from "./store-product-identity";
+import {
+  StoreProductIdentity,
+  StoreProductIdentityUnavailable,
+} from "./store-product-identity";
 
 const W = "00000000-0000-4000-8000-000000000001";
 const REQUEST = "00000000-0000-4000-8000-0000000000f1";
@@ -135,5 +138,39 @@ describe("store product identity", () => {
     );
     expect(controls.length).toBeGreaterThan(0);
     for (const control of controls) expect(control).toContain('disabled=""');
+  });
+
+  it("keeps product ids that are object property names apart", () => {
+    // Valid ids in the editable Products table: no inherited property.
+    const html = renderI18n(
+      <StoreProductIdentity
+        workspaceId={W}
+        requestId={REQUEST}
+        initial={{
+          ...products,
+          products: ["constructor", "__proto__", "toString"].map(
+            (productId) => ({ ...products.products[1]!, productId }),
+          ),
+        }}
+      />,
+    );
+    expect(selected(html)).toEqual(
+      Array.from({ length: 3 }, () => [
+        "Automatic (now free: no proceeds in the last 90 days)",
+        "No website",
+      ]).flat(),
+    );
+  });
+
+  it("explains an identity that cannot be read, without the editor", () => {
+    const html = renderI18n(
+      <StoreProductIdentityUnavailable
+        error={{ status: 413, code: "data_source_row_limit" }}
+      />,
+    );
+    expect(html).toContain("App identity");
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("row limit");
+    expect(html).not.toContain("<select");
   });
 });

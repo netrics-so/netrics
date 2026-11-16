@@ -240,3 +240,48 @@ test("app identity is locked while a scope change applies", async ({
     `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`,
   );
 });
+
+/**
+ * When app identity cannot be read (more website projects than the
+ * workspace's row limit), the page still changes the apps; the identity
+ * section explains the limit in place.
+ */
+test("the apps can still be changed when app identity is over the row limit", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const { storeTemplate: s } = catalog(locale);
+
+  const { workspaceId } = await startWorkspace(page, locale);
+  const { requestId } = await installWithConnections(page, workspaceId);
+  const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
+  try {
+    const [vercel] = await sql<{ id: string }[]>`
+      insert into connections (workspace_id, connector_id, name, setup_pending)
+      values (${workspaceId}, 'vercel', 'Websites', false)
+      returning id`;
+    for (const index of [1, 2, 3, 4, 5])
+      await sql`insert into connection_resources
+          (connection_id, workspace_id, resource_id, name, kind)
+        values (${vercel!.id}, ${workspaceId}, ${"prj_" + index},
+          ${"site" + index + ".example"}, 'project')`;
+    await sql`select admin_set_data_policy(${workspaceId}::uuid,
+      ${sql.json({ queryRows: 3 })})`;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+
+  await page.goto(
+    `/workspaces/${workspaceId}/dashboards/stores?install=${requestId}`,
+  );
+  await expect(page.getByRole("heading", { name: s.identity })).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: s.identityTooLarge }),
+  ).toBeVisible();
+  // The scope editor is there and works.
+  await page.getByRole("checkbox", { name: /Second Play/ }).check();
+  await page.getByRole("button", { name: s.reviewChanges }).click();
+  await expect(
+    page.getByRole("heading", { name: s.editReviewTitle }),
+  ).toBeVisible();
+});

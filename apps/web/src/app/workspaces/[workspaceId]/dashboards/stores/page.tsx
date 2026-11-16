@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { can } from "@netrics/domain";
 import {
+  ApiError,
   listStoreTemplateInstalls,
   listWorkspaces,
   readStoreTemplateOptions,
@@ -48,7 +49,21 @@ export default async function StoreTemplatesPage({
         ? await Promise.all([
             readStoreTemplateScope(cookieHeader, workspaceId, installId),
             readStoreTemplateOptions(cookieHeader, workspaceId),
-            readStoreTemplateProducts(cookieHeader, workspaceId, installId),
+            // App identity failing (e.g. over the row limit) must not take
+            // the scope editor with it: the section explains it in place.
+            readStoreTemplateProducts(
+              cookieHeader,
+              workspaceId,
+              installId,
+            ).then(
+              (value) => ({ value }),
+              (error: unknown) => ({
+                error:
+                  error instanceof ApiError
+                    ? { status: error.status, code: error.code }
+                    : { status: 503, code: "data_operation_failed" },
+              }),
+            ),
           ])
         : [null, null, null];
     return (
