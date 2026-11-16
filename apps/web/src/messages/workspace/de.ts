@@ -877,7 +877,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     appStoreReviews: {
       title: "Bewertungen und Rezensionen im App Store",
       intro:
-        "Optional. Rezensionen pro Tag, ihre Sternebewertungen und ihre Herkunft brauchen einen zweiten Teamschlüssel mit der Rolle Customer Support, weil der Sales-Schlüssel keine Rezensionen lesen kann. netrics behält nur Anzahlen und Sterne, nie Rezensionstexte oder Spitznamen. Die API liefert die Rezensionen, die Kunden geschrieben haben, so wie Apple sie auflistet; sie hat keine Gesamtbewertung, daher entsprechen diese Zahlen nicht der Bewertung im App Store. Verkäufe hängen nie von diesem Schlüssel ab.",
+        "Optional. Rezensionen pro Tag, ihre Sternebewertungen und ihre Herkunft brauchen einen zweiten Teamschlüssel mit der Rolle Customer Support, weil der Sales-Schlüssel keine Rezensionen lesen kann. Für das Widget „Neueste Bewertung“ behält netrics außerdem Titel, Text und Spitznamen der neuesten 50 Rezensionen jeder App, höchstens 90 Tage lang; wird der Schlüssel entfernt, werden sie gelöscht. Die API liefert die Rezensionen, die Kunden geschrieben haben, so wie Apple sie auflistet; sie hat keine Gesamtbewertung, daher entsprechen diese Zahlen nicht der Bewertung im App Store. Verkäufe hängen nie von diesem Schlüssel ab.",
       askToAdd:
         "Bitte einen Inhaber, Admin oder Bearbeiter des Workspaces, einen Customer-Support-Schlüssel hinzuzufügen.",
       pausedFallback:

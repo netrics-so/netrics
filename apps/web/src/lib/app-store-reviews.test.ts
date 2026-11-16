@@ -7,6 +7,7 @@ import {
   reviewsKeyStrategy,
   reviewsStatusLabel,
 } from "./app-store-reviews";
+import { webTranslator } from "./i18n/catalogs";
 import type { SignedKeyStrategy } from "./signed-key";
 
 const STRATEGY: SignedKeyStrategy = {
@@ -99,4 +100,30 @@ describe("App Store reviews card", () => {
       "https://appstoreconnect.apple.com/access/integrations/api",
     );
   });
+
+  // #712: the card's privacy statement matches what is kept (the connector
+  // doc, "What is read and kept"): the newest 50 reviews per app with text
+  // and nickname, at most 90 days, deleted with the key.
+  it.each([
+    [
+      "en",
+      /newest 50 reviews, at most 90 days; removing the key deletes them/,
+      /never review text|only counts and stars/,
+    ],
+    [
+      "de",
+      /neuesten 50 Rezensionen jeder App, höchstens 90 Tage lang; wird der Schlüssel entfernt, werden sie gelöscht/,
+      /nie Rezensionstexte|nur Anzahlen und Sterne/,
+    ],
+  ] as const)(
+    "says in %s which review text is kept and for how long",
+    (locale, kept, wrong) => {
+      const intro = webTranslator(
+        locale,
+        "connections.appStoreReviews",
+      )("intro");
+      expect(intro).toMatch(kept);
+      expect(intro).not.toMatch(wrong);
+    },
+  );
 });

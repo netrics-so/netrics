@@ -842,7 +842,7 @@ export const workspaceEn = {
     appStoreReviews: {
       title: "App Store ratings and reviews",
       intro:
-        "Optional. Reviews per day, their star ratings and where they come from need a second team key with the Customer Support role, because the Sales key cannot read reviews. netrics keeps only counts and stars, never review text or nicknames. The API returns the reviews customers wrote, as Apple lists them; it has no aggregate star rating, so these numbers are not the rating shown on the App Store. Sales never depend on this key.",
+        "Optional. Reviews per day, their star ratings and where they come from need a second team key with the Customer Support role, because the Sales key cannot read reviews. For the latest-review widget, netrics also keeps the title, text and reviewer nickname of each app’s newest 50 reviews, at most 90 days; removing the key deletes them. The API returns the reviews customers wrote, as Apple lists them; it has no aggregate star rating, so these numbers are not the rating shown on the App Store. Sales never depend on this key.",
       askToAdd:
         "Ask a workspace owner, admin or editor to add a Customer Support key.",
       pausedFallback: "App Store reviews paused — upload a new reviews key.",
