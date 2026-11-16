@@ -351,6 +351,26 @@ describe("unpublished changes (#632)", () => {
       }),
     ).toBe(false);
   });
+  it("takes a saved draft the server confirms equal as the published one (#697)", () => {
+    // Opened on a changed draft (published unknown), saved back to the
+    // released content: the server says equal.
+    const confirmed = {
+      version: 5,
+      publishedVersion: 3,
+      savedDiffers: false,
+      saved: releaseState("A", null),
+      published: undefined,
+      dirty: true,
+    };
+    // A name-only edit keeps the definition: unmarked.
+    expect(
+      hasUnpublishedChanges({ ...confirmed, current: releaseState("A", null) }),
+    ).toBe(false);
+    // A definition edit is marked.
+    expect(
+      hasUnpublishedChanges({ ...confirmed, current: releaseState("B", null) }),
+    ).toBe(true);
+  });
   it("never marks an item that was never published", () => {
     expect(
       hasUnpublishedChanges({

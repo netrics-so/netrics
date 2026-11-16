@@ -287,7 +287,9 @@ export function releaseState(
  * whether the inputs a release pinned were published again since. When the
  * saved definition equals the published one and the server still says it
  * differs, the inputs differ, and edits to the definition keep that mark.
- * Never-published items say "Not published" instead.
+ * When the server confirms the saved draft equals the release, the saved
+ * definition is the published one for later edits, even in an editor that
+ * did not know it. Never-published items say "Not published" instead.
  */
 export function hasUnpublishedChanges(state: {
   version: number | undefined;
@@ -306,12 +308,13 @@ export function hasUnpublishedChanges(state: {
   if (!state.publishedVersion) return false;
   if (!state.dirty && state.savedDiffers !== undefined)
     return state.savedDiffers;
-  if (state.published === undefined)
+  const published =
+    state.published ?? (state.savedDiffers === false ? state.saved : undefined);
+  if (published === undefined)
     return (
       (state.savedDiffers ?? state.version !== state.publishedVersion) ||
       state.dirty
     );
-  const inputsDiffer =
-    state.savedDiffers === true && state.saved === state.published;
-  return inputsDiffer || state.current !== state.published;
+  const inputsDiffer = state.savedDiffers === true && state.saved === published;
+  return inputsDiffer || state.current !== published;
 }

@@ -559,6 +559,71 @@ describe("published definition history", () => {
     ).toBe(false);
   });
 
+  it("resolves a draft's inputs as publishing does: nested pins and any id case (#697)", async () => {
+    const source = await service.saveManual(actor, {
+      definition: definition("nested-pin-numbers"),
+      records: [{ values: { id: "a", amount: "1" } }],
+    });
+    let inner = (
+      await service.savePreparation(actor, {
+        name: "Nested inner",
+        graph: graph(source.datasetId, "2"),
+      })
+    ).preparation;
+    inner = (await service.publishPreparation(actor, inner.id, inner.version))
+      .preparation;
+    const outer = (
+      await service.savePreparation(actor, {
+        name: "Nested outer",
+        graph: graph(`prepared:${inner.id}:output`, "3"),
+      })
+    ).preparation;
+    await service.publishPreparation(actor, outer.id, outer.version);
+    // The inner preparation moves on; the outer one still pins v1 of it.
+    inner = (
+      await service.savePreparation(
+        actor,
+        {
+          name: inner.name,
+          graph: graph(source.datasetId, "4"),
+          version: inner.version,
+        },
+        inner.id,
+      )
+    ).preparation;
+    await service.publishPreparation(actor, inner.id, inner.version);
+    const mark = async (id: string) =>
+      (await service.listModels(actor)).models.find((m) => m.id === id)!
+        .hasUnpublishedChanges;
+
+    // A model reading both: the outer one's pin decides the inner version,
+    // for publishing and for the mark alike.
+    const both: SemanticModelDefinition = {
+      ...modelDefinition(`prepared:${outer.id}:output`, "scaled_again"),
+      datasets: [`prepared:${outer.id}:output`, `prepared:${inner.id}:output`],
+    };
+    let model = (
+      await service.saveModel(actor, { name: "Both", definition: both })
+    ).model;
+    model = (await service.publishModel(actor, model.id, model.version)).model;
+    expect(model.hasUnpublishedChanges).toBe(false);
+    expect(await mark(model.id)).toBe(false);
+
+    // A source named with an uppercase id reads the same preparation.
+    const upper = `prepared:${outer.id.toUpperCase()}:output`;
+    let shouting = (
+      await service.saveModel(actor, {
+        name: "Uppercase",
+        definition: modelDefinition(upper, "scaled_again"),
+      })
+    ).model;
+    shouting = (
+      await service.publishModel(actor, shouting.id, shouting.version)
+    ).model;
+    expect(shouting.hasUnpublishedChanges).toBe(false);
+    expect(await mark(shouting.id)).toBe(false);
+  });
+
   it("publishes a published preparation again with the current versions of its inputs, and changes nothing when they are current", async () => {
     const source = await service.saveManual(actor, {
       definition: definition("refresh-numbers"),
