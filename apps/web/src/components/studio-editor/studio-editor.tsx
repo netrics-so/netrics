@@ -421,6 +421,12 @@ export function StudioEditor({
         logoImage && logoImage.width > 0 && logoImage.height > 0
           ? logoImage.width / logoImage.height
           : null,
+      logoAspectOf: (imageId: string) => {
+        const image = studioImages.get(imageId);
+        return image && image.width > 0 && image.height > 0
+          ? image.width / image.height
+          : null;
+      },
       timeZone,
       locale,
       labelOf: (entry: DashboardWidget) =>
@@ -731,7 +737,7 @@ export function StudioEditor({
   return (
     <DashboardDataProvider
       workspaceId={workspaceId}
-      widgets={draft.slides.flatMap((slide) => slide.widgets)}
+      slides={draft.slides}
       filters={draft.settings.dataFilters ?? []}
       values={filterValues}
     >
@@ -1134,6 +1140,8 @@ export function StudioEditor({
                     onUploadImage={onUploadImage}
                     confirmDelete={confirmDeleteSlide}
                     onConfirmDelete={setConfirmDeleteSlide}
+                    filters={draft.settings.dataFilters ?? []}
+                    workspaceId={workspaceId}
                   />
                 ) : null}
                 <SharedFilterEditor

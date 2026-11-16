@@ -76,6 +76,8 @@ export const dataDe: Catalog<typeof dataEn> = {
       discardFilter: "Filteränderungen verwerfen",
       filterProblem:
         "{name}: Ordne den Filter {filter} diesem Modell zu oder begründe, warum er hier nicht gilt.",
+      slideScopeConflict:
+        "{name}: Es zeigt eine andere App als die, um die es auf dieser Folie geht. Zeig im Widget alle Apps oder schalte den Filter dafür aus.",
       receivedAt: "Älteste Quellenaktualisierung: {at}",
       browseValues: "Werte durchsuchen",
       searchValues: "Verfügbare Werte suchen",

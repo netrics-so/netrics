@@ -33,6 +33,7 @@ import {
   dashboardWidgetDataSchema,
   dashboardDataFiltersSchema,
   deviceFilterScopeSchema,
+  slideFilterScopeSchema,
   deviceScopeSchema,
   dashboardFilterExclusionSchema,
   measureWidgetBindingSchema,
@@ -2313,6 +2314,21 @@ export const dashboardSlideInputSchema = z.object({
   enabled: z.boolean().optional(),
   /** A full-slide image behind the widgets; null or missing: none. */
   background: slideBackgroundSchema.nullable().optional(),
+  /**
+   * An image of this workspace shown in the header instead of the
+   * dashboard's logo (#707). Null: the dashboard's; missing: a slide of
+   * this dashboard keeps its stored one.
+   */
+  logoImageId: z.uuid().nullable().optional(),
+  /**
+   * Fixed values of the dashboard's shared filters that every widget on
+   * the slide applies (#707): measure widgets through their model, and
+   * metric, line, bar, table and review widgets through their resource
+   * when the values name their connection's app. A widget's exclusion of a
+   * filter keeps working. Every entry must restrict something. Missing: a
+   * slide of this dashboard keeps its stored scope; `{}`: none.
+   */
+  scope: slideFilterScopeSchema.optional(),
   widgets: z
     .array(dashboardWidgetInputSchema)
     .max(STUDIO_LIMITS.widgetsPerSlide),
@@ -2455,6 +2471,10 @@ export const dashboardSlideSchema = z.object({
   durationSeconds: z.number().int().nullable(),
   enabled: z.boolean(),
   background: slideBackgroundSchema.nullable(),
+  /** Shown in the header instead of the dashboard's logo; null: none (#707). */
+  logoImageId: z.uuid().nullable(),
+  /** Fixed shared-filter values for every widget on it; `{}`: none (#707). */
+  scope: slideFilterScopeSchema,
   /** In reading order: top to bottom, then left to right. */
   widgets: z.array(dashboardWidgetSchema),
   /** Custom layouts by format; formats not listed (and the primary) are auto. */
@@ -3593,6 +3613,12 @@ export const deviceSlideSchema = z.object({
       dim: z.number().int().min(BACKGROUND_DIM.min).max(BACKGROUND_DIM.max),
     })
     .nullable(),
+  /**
+   * Shown in the header instead of the dashboard's logo while this slide
+   * is on screen; one of `images` (#707). Missing: the dashboard's logo
+   * (servers before it, and slides without a logo of their own).
+   */
+  logo: z.object({ imageId: z.uuid() }).optional(),
   /** In reading order: top to bottom, then left to right. */
   widgets: z.array(deviceWidgetSchema),
 });

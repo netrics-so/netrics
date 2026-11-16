@@ -45,6 +45,8 @@ import { resolveThemeTokens } from "../themes/service.js";
 export interface ReadabilityInputs {
   fontScale: number;
   logoAspect: number | null;
+  /** Slides with a logo of their own (#707): its aspect, by slide id. */
+  slideLogoAspects?: ReadonlyMap<string, number | null>;
   /**
    * The workspace's time zone: clocks and countdowns without their own
    * use it.
@@ -99,11 +101,30 @@ export async function loadReadabilityInputs(
   );
   const tokens = await resolveThemeTokens(tx, workspaceId, dashboard);
   let logoAspect: number | null = null;
-  if (dashboard.showHeader && dashboard.logoImageId) {
-    const [logo] = await findImages(tx, workspaceId, [dashboard.logoImageId]);
-    if (logo && logo.width > 0 && logo.height > 0) {
-      logoAspect = logo.width / logo.height;
-    }
+  const slideLogoAspects = new Map<string, number | null>();
+  const logoIds = dashboard.showHeader
+    ? [
+        ...new Set(
+          [
+            dashboard.logoImageId,
+            ...dashboard.slides.map((slide) => slide.logoImageId),
+          ].filter((id): id is string => id !== null),
+        ),
+      ]
+    : [];
+  if (logoIds.length) {
+    const logos = new Map(
+      (await findImages(tx, workspaceId, logoIds)).map((logo) => [
+        logo.id,
+        logo.width > 0 && logo.height > 0 ? logo.width / logo.height : null,
+      ]),
+    );
+    logoAspect = dashboard.logoImageId
+      ? (logos.get(dashboard.logoImageId) ?? null)
+      : null;
+    for (const slide of dashboard.slides)
+      if (slide.logoImageId)
+        slideLogoAspects.set(slide.id, logos.get(slide.logoImageId) ?? null);
   }
   const hasZoneLine = dashboard.slides.some((slide) =>
     slide.widgets.some(
@@ -135,6 +156,7 @@ export async function loadReadabilityInputs(
   return {
     fontScale: effectiveFontScale(tokens?.fontScale),
     logoAspect,
+    slideLogoAspects,
     timeZone,
     sourcesLabel: sourcesLabel(locale),
     sourceCount,
@@ -277,7 +299,15 @@ export function dashboardFormatWarnings(
     }
     result.set(
       slide.id,
-      slideFormatWarnings({ name: slide.name, widgets, layouts }, context),
+      slideFormatWarnings(
+        { name: slide.name, widgets, layouts },
+        inputs.slideLogoAspects?.has(slide.id)
+          ? {
+              ...context,
+              logoAspect: inputs.slideLogoAspects.get(slide.id) ?? null,
+            }
+          : context,
+      ),
     );
   }
   return result;

@@ -221,6 +221,18 @@ describe("scroll view (ADR 0017, section 5)", () => {
     expect(html).toContain(`aria-labelledby="${h1}"`);
   });
 
+  it("shows a slide's own logo, also when its heading repeats the dashboard name (#707)", () => {
+    const html = render([
+      slide(0, "Wurfel", { logoImageId: ID(52) }),
+      slide(1, "Sales", { logoImageId: ID(52) }),
+    ]);
+    expect(
+      html.match(/class="scroll-section-logo[^"]*" src="\/bg\.jpg"/g),
+    ).toHaveLength(2);
+    // Still no heading that repeats the name.
+    expect(text(html).match(/wurfel/gi)).toHaveLength(1);
+  });
+
   it("names nameless slides in German", () => {
     const html = render([slide(0, null)], { locale: "de" });
     expect(html).toContain(">Folie 1</h2>");

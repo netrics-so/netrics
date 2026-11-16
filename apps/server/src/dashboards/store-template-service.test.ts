@@ -495,7 +495,7 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
         return queryDashboardData(
           tx,
           workspaceId,
-          widgets,
+          [{ scope: {}, widgets }],
           dashboard!.dataFilters,
           {},
           new Date(now),
@@ -604,7 +604,7 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
         const result = await queryDashboardData(
           tx,
           workspaceId,
-          widgets,
+          [{ scope: {}, widgets }],
           dashboard!.dataFilters,
           {},
           new Date(now),

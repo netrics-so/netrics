@@ -222,6 +222,8 @@ export interface DraftReadabilityContext {
   showHeader: boolean;
   dashboardName: string;
   logoAspect: number | null;
+  /** The aspect of a slide's own logo (#707); null when unknown. */
+  logoAspectOf?: (imageId: string) => number | null;
   /** The workspace's time zone, for clocks and countdowns without their own. */
   timeZone?: string;
   /** The Studio's language: a countdown's label without a title. */
@@ -242,6 +244,8 @@ export interface DraftReadabilityContext {
 export interface DraftSlide {
   id: string;
   name: string | null;
+  /** Shown in the header instead of the dashboard's logo (#707). */
+  logoImageId?: string | null;
   widgets: readonly DashboardWidget[];
   layouts?: SlideLayouts | null;
 }
@@ -322,7 +326,9 @@ export function draftFormatWarnings(
     fontScale: effectiveFontScale(context.fontScale),
     showHeader: context.showHeader,
     dashboardName: context.dashboardName,
-    logoAspect: context.logoAspect,
+    logoAspect: slide.logoImageId
+      ? (context.logoAspectOf?.(slide.logoImageId) ?? null)
+      : context.logoAspect,
     now: context.now ?? new Date(),
   };
   return PREVIEW_FORMAT_ORDER.flatMap((format) => {

@@ -10,7 +10,9 @@ import {
   imageContentUrl,
   logoImageId,
   referencedImageIds,
+  scopedSlide,
   slideBackground,
+  slideScopeFollow,
   slideTitle,
   studioImageUrl,
   toStudioImage,
@@ -40,6 +42,8 @@ function slide(widgets: StudioWidget[], extra: object = {}): DashboardSlide {
     durationSeconds: null,
     enabled: true,
     background: null,
+    logoImageId: null,
+    scope: {},
     widgets: widgets as DashboardWidget[],
     layouts: [],
     formatWarnings: [],
@@ -176,5 +180,50 @@ describe("textWidgetLayout", () => {
     });
     expect(layout.size).toBe("body");
     expect(layout.overflow).toBe(true);
+  });
+});
+
+describe("a slide's scope and logo (#707)", () => {
+  const app = (resource: string) => ({
+    app: { kind: "values" as const, values: [`${ID(9)}:${resource}`] },
+  });
+
+  it("lets a metric widget read the app its slide is scoped to", () => {
+    const scoped = scopedSlide(slide([metric, image], { scope: app("123") }));
+    expect(scoped.widgets[0]).toMatchObject({
+      dimensions: { resource: "123" },
+    });
+    expect(scoped.widgets[1]).toBe(image);
+    expect(slideScopeFollow(metric, app("123"))).toEqual({
+      follows: ["app"],
+      resource: "123",
+      conflict: false,
+    });
+    // Unscoped slides and excluded filters stay as they are.
+    const plain = slide([metric]);
+    expect(scopedSlide(plain)).toBe(plain);
+    const excluded = {
+      ...metric,
+      filterExclusions: [{ filterId: "app", reason: "All apps" }],
+    };
+    expect(
+      scopedSlide(slide([excluded], { scope: app("123") })).widgets[0],
+    ).toBe(excluded);
+    // Its own other app: a conflict, shown as configured.
+    const other = { ...metric, dimensions: { resource: "456" } };
+    expect(slideScopeFollow(other, app("123"))?.conflict).toBe(true);
+    expect(scopedSlide(slide([other], { scope: app("123") })).widgets[0]).toBe(
+      other,
+    );
+    expect(slideScopeFollow(image, app("123"))).toBeNull();
+  });
+
+  it("loads a slide's own logo with the dashboard's images", () => {
+    expect(
+      referencedImageIds({
+        settings,
+        slides: [slide([], { logoImageId: ID(60) })],
+      }),
+    ).toEqual([ID(60)]);
   });
 });

@@ -11,6 +11,7 @@ import type { DashboardWidget, DashboardWidgetData } from "@netrics/contracts";
 import type {
   DashboardDataFilter,
   DashboardFilterValue,
+  SlideFilterScope,
 } from "@netrics/domain";
 import { previewDashboardMeasures } from "@/lib/dashboard-data-api";
 const Context = createContext<{
@@ -20,6 +21,10 @@ const Context = createContext<{
 export const useDashboardData = () => useContext(Context);
 
 type MeasureWidget = Extract<DashboardWidget, { type: "measure" }>;
+/** A measure widget as queried: with its slide's scope (#707). */
+type MeasureQuery = Pick<MeasureWidget, "id" | "binding" | "options"> & {
+  scope?: SlideFilterScope;
+};
 
 /**
  * One load of the dashboard's measure tiles: the tiles by id, and the
@@ -45,7 +50,7 @@ export async function loadDashboardData(
  * stale ("Last valid data"), as the kiosk keeps its payload.
  */
 export function failedWidgets(
-  widgets: readonly MeasureWidget[],
+  widgets: readonly Pick<MeasureWidget, "id" | "binding">[],
   previous: ReadonlyMap<string, DashboardWidgetData> | undefined,
   keepLastGood: boolean,
 ): Map<string, DashboardWidgetData> {
@@ -69,7 +74,7 @@ export function failedWidgets(
 }
 export function DashboardDataProvider({
   workspaceId,
-  widgets,
+  slides,
   filters = [],
   values = {},
   onLoaded,
@@ -77,7 +82,11 @@ export function DashboardDataProvider({
   children,
 }: {
   workspaceId: string;
-  widgets: readonly DashboardWidget[];
+  /** The slides whose measure widgets to load, each with its scope. */
+  slides: readonly {
+    scope?: SlideFilterScope;
+    widgets: readonly DashboardWidget[];
+  }[];
   filters?: DashboardDataFilter[];
   values?: Record<string, DashboardFilterValue>;
   /**
@@ -99,9 +108,22 @@ export function DashboardDataProvider({
     loaded.current = onLoaded;
   });
   const key = JSON.stringify({
-    widgets: widgets
-      .filter((widget) => widget.type === "measure")
-      .map(({ id, binding, options }) => ({ id, binding, options })),
+    widgets: slides.flatMap((slide) =>
+      slide.widgets.flatMap((widget): MeasureQuery[] =>
+        widget.type === "measure"
+          ? [
+              {
+                id: widget.id,
+                binding: widget.binding,
+                options: widget.options,
+                ...(slide.scope && Object.keys(slide.scope).length
+                  ? { scope: slide.scope }
+                  : {}),
+              },
+            ]
+          : [],
+      ),
+    ),
     filters,
     values,
   });
@@ -113,7 +135,7 @@ export function DashboardDataProvider({
   useEffect(() => {
     let alive = true;
     const input = JSON.parse(key) as {
-      widgets: MeasureWidget[];
+      widgets: MeasureQuery[];
       filters: DashboardDataFilter[];
       values: Record<string, DashboardFilterValue>;
     };

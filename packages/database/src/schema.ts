@@ -997,6 +997,19 @@ export const dashboardSlides = pgTable(
     backgroundImageId: uuid("background_image_id"),
     /** 0–80 %: a theme-background overlay that keeps contrast. */
     backgroundDim: smallint("background_dim").notNull().default(0),
+    /**
+     * Shown in the header instead of the dashboard's logo (#707); null: the
+     * dashboard's.
+     */
+    logoImageId: uuid("logo_image_id"),
+    /**
+     * Fixed values for shared dashboard filters, by filter id, that every
+     * widget on the slide applies (#707); `{}`: none.
+     */
+    scope: jsonb("scope")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
   },
   (table) => [
     foreignKey({
@@ -1029,6 +1042,16 @@ export const dashboardSlides = pgTable(
       foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
     }),
     index("dashboard_slides_background_image_idx").on(table.backgroundImageId),
+    foreignKey({
+      name: "dashboard_slides_logo_image_fk",
+      columns: [table.logoImageId, table.workspaceId],
+      foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
+    }),
+    index("dashboard_slides_logo_image_idx").on(table.logoImageId),
+    check(
+      "dashboard_slides_scope_object",
+      sql`jsonb_typeof(${table.scope}) = 'object'`,
+    ),
   ],
 );
 

@@ -153,6 +153,12 @@ export const apiErrorsEn = {
       "Connect a source first: the Overview shows the numbers of your connections.",
     template_unsupported: "There is no Brand template for this connection yet.",
     device_not_found: "That TV no longer exists.",
+    slide_scope_filter_unknown:
+      "A slide's scope names a filter this dashboard does not have (any more).",
+    slide_scope_value_invalid:
+      "A slide's scope needs at least one value, or a range with a start or an end, of the filter’s type.",
+    slide_scope_resource_conflict:
+      "A widget shows another app than the one its slide is about. Show all apps in it, or turn the filter off for it.",
     device_scope_filter_unknown:
       "The scope names a filter this dashboard does not have (any more).",
     device_scope_value_invalid:

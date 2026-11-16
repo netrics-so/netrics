@@ -169,6 +169,13 @@ export interface SlideInput {
   /** A workspace image behind the widgets, and its dim (0–80 %). */
   backgroundImageId: string | null;
   backgroundDim: number;
+  /**
+   * Shown in the header instead of the dashboard's logo (#707); missing or
+   * null: the dashboard's.
+   */
+  logoImageId?: string | null;
+  /** Fixed values of shared filters for every widget on it (#707). */
+  scope?: Record<string, unknown>;
   widgets: WidgetInput[];
   /** Custom layouts (ADR 0017); missing or empty: every format is auto. */
   layouts?: SlideLayoutInput[];
@@ -543,6 +550,8 @@ async function writeSlides(
         enabled: slide.enabled,
         backgroundImageId: slide.backgroundImageId,
         backgroundDim: slide.backgroundDim,
+        logoImageId: slide.logoImageId ?? null,
+        scope: slide.scope ?? {},
       })),
     )
     .returning({

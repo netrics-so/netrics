@@ -4,12 +4,14 @@ import { sql } from "drizzle-orm";
 
 import {
   publishedModel,
+  slideScopeOf,
   validateDashboardMeasure,
   safeDataError,
 } from "./data.js";
 import {
   barWidgetOptionsSchema,
   dashboardDataFiltersSchema,
+  slideFilterScopeSchema,
   dashboardWidgetInputSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
@@ -77,6 +79,9 @@ import {
   compatibleAggregations,
   dataWidgetCost,
   connectorHasReviews,
+  followsSlideScopeResource,
+  slideScopeResource,
+  validateSlideFilterScope,
   isCurrencyCode,
   isDataWidgetType,
   isPerCurrencyUnit,
@@ -460,6 +465,8 @@ export async function presentDashboard(
         slide.backgroundImageId === null
           ? null
           : { imageId: slide.backgroundImageId, dim: slide.backgroundDim },
+      logoImageId: slide.logoImageId,
+      scope: slideScopeOf(slide),
       widgets: slide.widgets.map(present),
       layouts: slide.layouts.map((layout) => ({
         format: layout.format as ScreenFormatKey,
@@ -935,6 +942,13 @@ async function validateSlides(
       enabled: slide.enabled ?? true,
       backgroundImageId: slide.background?.imageId ?? null,
       backgroundDim: slide.background?.dim ?? 0,
+      // Missing: a stored slide keeps its logo and scope (#707), as its
+      // layouts, so a client from before them cannot clear them.
+      logoImageId:
+        slide.logoImageId !== undefined
+          ? slide.logoImageId
+          : (own?.logoImageId ?? null),
+      scope: slide.scope ?? (own ? slideScopeOf(own) : {}),
       widgets,
       layouts: layouts.value,
     });
@@ -1023,6 +1037,8 @@ function isTileDashboard(slides: readonly DashboardSlide[]): boolean {
         slide.name !== null ||
         slide.durationSeconds !== null ||
         slide.backgroundImageId !== null ||
+        slide.logoImageId !== null ||
+        Object.keys(slideScopeOf(slide)).length > 0 ||
         !slide.enabled,
     )
   ) {
@@ -1170,6 +1186,9 @@ async function checkImages(
     if (slide.backgroundImageId) {
       wanted.add(slide.backgroundImageId);
     }
+    if (slide.logoImageId) {
+      wanted.add(slide.logoImageId);
+    }
     for (const widget of slide.widgets) {
       if (widget.imageId) {
         wanted.add(widget.imageId);
@@ -1245,6 +1264,15 @@ async function validateDataBindings(
         .flatMap((slide) => slide.widgets)
         .map((widget) => [widget.id, widget]),
     );
+    // The scope each stored widget's slide had (#707).
+    const storedScopes = new Map(
+      (stored?.slides ?? []).flatMap((slide) =>
+        slide.widgets.map((widget) => [
+          widget.id,
+          JSON.stringify(slideScopeOf(slide)),
+        ]),
+      ),
+    );
     // Filters added, removed or edited by this save; widgets of an affected
     // model are re-validated against them.
     const changedFilters = [
@@ -1282,7 +1310,18 @@ async function validateDataBindings(
           return fail(400, "dashboard_filter_type_changed");
       }
     }
-    for (const widget of slides.flatMap((slide) => slide.widgets)) {
+    // A slide's scope names the dashboard's filters and restricts something
+    // with each (#707).
+    for (const slide of slides) {
+      // Parsed, not compared as JSON: a scope from a template-update copy
+      // has its keys in another order (#707).
+      const scope = slideFilterScopeSchema.safeParse(slide.scope ?? {});
+      if (!scope.success) return fail(400, "slide_scope_value_invalid");
+      validateSlideFilterScope(filters, scope.data);
+    }
+    for (const { widget, scope } of slides.flatMap((slide) =>
+      slide.widgets.map((widget) => ({ widget, scope: slideScopeOf(slide) })),
+    )) {
       if (widget.type === "measure") {
         const binding = measureWidgetBindingSchema.parse(widget.modelBinding),
           options = measureWidgetOptionsSchema.parse(widget.options);
@@ -1295,6 +1334,7 @@ async function validateDataBindings(
           JSON.stringify(
             measureWidgetOptionsSchema.safeParse(previous.options).data,
           ) === JSON.stringify(options) &&
+          storedScopes.get(previous.id) === JSON.stringify(scope) &&
           !changedFilters.some(
             (filter) =>
               !storedFilters.has(filter.id) ||
@@ -1317,6 +1357,7 @@ async function validateDataBindings(
               filters,
               binding,
               options,
+              scope,
             );
           } catch (error) {
             // With its saved defaults this comparison has no period: ask the
@@ -1334,13 +1375,26 @@ async function validateDataBindings(
           exclusions.some((exclusion) => !ids.has(exclusion.filterId))
         )
           return fail(400, "dashboard_filter_exclusion_invalid");
+        // A filter the slide scopes to the widget's own app needs no
+        // exclusion: the widget follows it through its resource (#707).
+        const scoped =
+          followsSlideScopeResource(widget.type) && widget.connectionId
+            ? slideScopeResource(
+                scope,
+                widget.connectionId,
+                exclusions,
+                widget.dimensions[RESOURCE_DIMENSION],
+              )
+            : { follows: [], conflict: false };
+        if (scoped.conflict) return fail(400, "slide_scope_resource_conflict");
         for (const filter of filters) {
           if (
             filter.fixedValue ||
-            !exclusions.some(
-              (exclusion) =>
-                exclusion.filterId === filter.id && exclusion.reason.trim(),
-            )
+            (!scoped.follows.includes(filter.id) &&
+              !exclusions.some(
+                (exclusion) =>
+                  exclusion.filterId === filter.id && exclusion.reason.trim(),
+              ))
           )
             return fail(400, "dashboard_filter_not_applicable");
         }
@@ -1578,6 +1632,10 @@ export async function createUpdatedDashboardCopy(
       backgroundImageId:
         (value.backgroundImageId as string | undefined) ?? null,
       backgroundDim: (value.backgroundDim as number | undefined) ?? 0,
+      // The slide's own logo and scope (#707), checked with the images and
+      // the bindings below.
+      logoImageId: (value.logoImageId as string | undefined) ?? null,
+      scope: (value.scope as Record<string, unknown> | undefined) ?? {},
       widgets: widgets.map((widget) => ({ ...widget, id: randomUUID() })),
       layouts: layouts.value,
     });
@@ -1996,6 +2054,8 @@ export function createDashboardService(deps: {
             enabled: slide.enabled,
             backgroundImageId: slide.backgroundImageId,
             backgroundDim: slide.backgroundDim,
+            logoImageId: slide.logoImageId,
+            scope: slideScopeOf(slide),
             widgets: slide.widgets.map(widgetInputOf),
             layouts: copyLayouts(slide),
           })),

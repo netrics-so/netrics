@@ -66,6 +66,8 @@ function slide(n: number, extra: Partial<StudioSlide> = {}): StudioSlide {
     durationSeconds: null,
     enabled: true,
     background: null,
+    logoImageId: null,
+    scope: {},
     widgets: [],
     ...extra,
   };
@@ -205,6 +207,41 @@ describe("slide settings in the inspector", () => {
     expect(html).toContain('placeholder="20 (dashboard default)"');
     expect(html).toContain('value="45"');
     expect(html).toContain('disabled="" aria-label="Move slide down"');
+  });
+
+  it("offers the slide's header logo and scope (#707)", () => {
+    const html = settings(ID(3));
+    expect(html).toContain("Header logo");
+    expect(html).toContain("The dashboard&#x27;s logo");
+    expect(html).toContain("<legend>Slide scope</legend>");
+    expect(html).toContain(
+      "To show one app on this slide, add a shared filter to the dashboard first.",
+    );
+    const scoped = renderI18n(
+      <SlideSettings
+        slides={slides}
+        selectedSlideId={ID(3)}
+        defaultSeconds={20}
+        images={[]}
+        dispatch={noop}
+        confirmDelete={null}
+        onConfirmDelete={noop}
+        filters={[
+          {
+            id: "app",
+            name: "App",
+            type: "string",
+            mode: "values",
+            mappings: [],
+            defaultValue: null,
+          },
+        ]}
+      />,
+      "de",
+    );
+    expect(scoped).toContain("Logo in der Kopfzeile");
+    expect(scoped).toContain("<legend>Bereich der Folie</legend>");
+    expect(scoped).toContain("<legend>App</legend>");
   });
 
   it("never offers to delete the only slide", () => {

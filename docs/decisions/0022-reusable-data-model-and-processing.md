@@ -520,3 +520,41 @@ code has and the owner accepted.
 - A filter combination never queried before has no last valid result: after
   a failure it shows an error rather than stale data.
 - Building prepared generations before switching a release is not planned.
+
+## Addendum: slide scope (#707)
+
+A slide can be about one app: it stores a scope, per shared dashboard filter
+the values or range every widget on it applies (`dashboard_slides.scope`,
+the same shape and rules as a screen's fixed scope), and optionally a logo
+of its own (`dashboard_slides.logo_image_id`, a workspace image like every
+other reference) that its header shows instead of the dashboard's.
+
+- **Measure widgets** conjoin the slide's value with the viewer's choice,
+  the filter's fixed value and the screen's scope, like a fixed value of the
+  slide. A widget that excludes the filter ignores the slide's value too:
+  the exclusion is authored on the widget, with its reason, by the same
+  editor as the slide. Fixed values and screen scopes still cannot be
+  excluded.
+- **Widgets that read a connection's metrics** (metric, line, bar, table,
+  latest review) cannot apply model filters. They follow a scoped filter
+  through their `resource` dimension when they do not exclude it and its
+  values all name connection resources (`<connectionId>:<resourceId>`, the
+  App Portfolio's identity of an app not grouped into a product), exactly
+  one of them of the widget's connection. Such a filter needs no exclusion.
+  A widget whose own resource differs is refused on save
+  (`slide_scope_resource_conflict`): it would show nothing. Values the
+  scope cannot map (a product group, another dimension) leave the widget
+  needing an exclusion, as before. Compare and goal widgets follow no slide
+  scope.
+- **A screen's fixed scope wins.** It is conjoined with everything and never
+  widened by a slide. A slide whose scope has nothing in common with the
+  screen's scope for some filter (no common value, ranges that do not
+  overlap) is left out of that screen's payload rather than shown empty;
+  every other slide is narrowed by both. Connection widgets stay withheld
+  from scoped screens as before.
+- Devices get the slide's logo as an optional `logo` on the slide, only
+  when it has one, so other payloads stay unchanged; the scope itself is
+  not sent (screens get evaluated results).
+- A save without `scope` or `logoImageId` on a stored slide keeps them, so
+  older clients cannot clear them; the Studio drops a slide's scope entries
+  when their filter is removed or changes type or control.

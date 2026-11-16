@@ -165,6 +165,12 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     template_unsupported:
       "Für diese Verbindung gibt es noch keine Brand-Vorlage.",
     device_not_found: "Dieser TV existiert nicht mehr.",
+    slide_scope_filter_unknown:
+      "Der Bereich einer Folie nennt einen Filter, den dieses Dashboard nicht (mehr) hat.",
+    slide_scope_value_invalid:
+      "Der Bereich einer Folie braucht mindestens einen Wert oder einen Zeitraum mit Anfang oder Ende im Typ des Filters.",
+    slide_scope_resource_conflict:
+      "Ein Widget zeigt eine andere App als die, um die es auf seiner Folie geht. Zeig darin alle Apps oder schalte den Filter dafür aus.",
     device_scope_filter_unknown:
       "Der Bereich nennt einen Filter, den dieses Dashboard nicht (mehr) hat.",
     device_scope_value_invalid:

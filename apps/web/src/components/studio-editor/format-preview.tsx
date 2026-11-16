@@ -30,7 +30,12 @@ import {
   type TargetStatus,
 } from "@/lib/studio-formats";
 import { widgetName, type StudioDocument } from "@/lib/studio-document";
-import { logoImageId, slideTitle, type StudioEnv } from "@/lib/studio-widgets";
+import {
+  logoImageId,
+  scopedSlide,
+  slideTitle,
+  type StudioEnv,
+} from "@/lib/studio-widgets";
 import { useElementSize, useViewportSize } from "@/lib/use-screen";
 
 import { formatRatio } from "./format-attention";
@@ -155,7 +160,7 @@ export function PreviewScreen({
       <ScrollView
         name={name}
         logoImageId={logoImageId(document.settings)}
-        slides={document.slides}
+        slides={document.slides.map(scopedSlide)}
         tokens={tokens}
         images={env.images}
         initialWidth={device.screen.width}
@@ -171,7 +176,10 @@ export function PreviewScreen({
   const shown = Math.min(page, pages.length - 1);
   return (
     <SlideCanvas
-      slide={{ ...slide, layouts: context.layouts.get(slide.id) ?? null }}
+      slide={{
+        ...scopedSlide(slide),
+        layouts: context.layouts.get(slide.id) ?? null,
+      }}
       tokens={tokens}
       showHeader={document.settings.showHeader}
       header={{

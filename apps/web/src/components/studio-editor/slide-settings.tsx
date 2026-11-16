@@ -1,6 +1,14 @@
 "use client";
 
-import { BACKGROUND_DIM, SLIDE_SECONDS, STUDIO_LIMITS } from "@netrics/domain";
+import {
+  BACKGROUND_DIM,
+  SLIDE_SECONDS,
+  STUDIO_LIMITS,
+  type DashboardDataFilter,
+  type DashboardFilterValue,
+} from "@netrics/domain";
+
+import { DashboardFilterInput } from "@/components/studio/shared-filters";
 
 import type { StudioAction, StudioSlide } from "@/lib/studio-document";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -10,8 +18,8 @@ import { ImagePicker, type PickableImage } from "./image-picker";
 
 /**
  * The selected slide's settings in the inspector (design 3b): name,
- * duration, whether screens show it, background, and moving, duplicating
- * or deleting it. Shown when no widget is selected; deleting asks first
+ * duration, whether screens show it, background, header logo and scope
+ * (#707), and moving, duplicating or deleting it. Shown when no widget is selected; deleting asks first
  * (`confirmDelete`, which Delete on a slide in the rail opens too).
  */
 export function SlideSettings({
@@ -23,6 +31,8 @@ export function SlideSettings({
   onUploadImage,
   confirmDelete,
   onConfirmDelete,
+  filters = [],
+  workspaceId,
 }: {
   slides: StudioSlide[];
   selectedSlideId: string;
@@ -33,6 +43,10 @@ export function SlideSettings({
   /** The slide waiting for the delete confirmation, or null. */
   confirmDelete: string | null;
   onConfirmDelete: (slideId: string | null) => void;
+  /** The dashboard's shared filters, which the slide's scope sets. */
+  filters?: DashboardDataFilter[];
+  /** For browsing a filter's values. */
+  workspaceId?: string;
 }) {
   const locale = useLocale();
   const t = useT("studio.rail");
@@ -47,6 +61,27 @@ export function SlideSettings({
   }
   const move = (to: number) =>
     dispatch({ type: "moveSlide", slideId: selected.id, to });
+  const setScope = (filterId: string, value: DashboardFilterValue) => {
+    const { [filterId]: _previous, ...rest } = selected.scope;
+    // Only an entry that restricts something is kept; "all" clears it.
+    const restricts =
+      value !== null &&
+      (value.kind === "values"
+        ? value.values.length > 0
+        : value.from !== null || value.to !== null);
+    dispatch({
+      type: "updateSlide",
+      slideId: selected.id,
+      patch: {
+        scope: restricts
+          ? {
+              ...rest,
+              [filterId]: value as StudioSlide["scope"][string],
+            }
+          : rest,
+      },
+    });
+  };
 
   return (
     <section
@@ -170,6 +205,42 @@ export function SlideSettings({
           />
         </div>
       ) : null}
+      <ImagePicker
+        id="slide-logo"
+        label={t("logo")}
+        noneLabel={t("dashboardLogo")}
+        images={images}
+        value={selected.logoImageId}
+        onChange={(logoImageId) =>
+          dispatch({
+            type: "updateSlide",
+            slideId: selected.id,
+            patch: { logoImageId },
+          })
+        }
+        onUpload={onUploadImage}
+      />
+      <fieldset className="slide-scope">
+        <legend>{t("scope")}</legend>
+        {filters.length ? (
+          <>
+            <p className="help">{t("scopeHint")}</p>
+            {filters.map((filter) => (
+              <fieldset key={filter.id}>
+                <legend>{filter.name}</legend>
+                <DashboardFilterInput
+                  workspaceId={workspaceId}
+                  filter={filter}
+                  value={selected.scope[filter.id] ?? null}
+                  onChange={(value) => setScope(filter.id, value)}
+                />
+              </fieldset>
+            ))}
+          </>
+        ) : (
+          <p className="help">{t("scopeNoFilters")}</p>
+        )}
+      </fieldset>
       <div className="actions rail-actions">
         <button
           type="button"

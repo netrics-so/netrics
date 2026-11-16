@@ -2,7 +2,11 @@ import {
   readCompareMeasure,
   type CompareSourceContext,
 } from "../dashboards/compare-measure.js";
-import { queryDashboardMeasure } from "../dashboards/data.js";
+import {
+  queryDashboardMeasure,
+  slideScopeOf,
+  slideScopedWidgets,
+} from "../dashboards/data.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -77,6 +81,7 @@ import {
   type ScreenFormat,
   isDataWidgetType,
   dataWidgetCost,
+  slideScopeConflicts,
   sortSourceItems,
   sourceItemStatus,
   sourcesLabel,
@@ -518,7 +523,13 @@ export async function buildDeviceDashboard(
   const tiles: DeviceTile[] = [];
   // Tiles cannot follow shared filters: a scoped screen gets none (#500).
   if (dashboard && !hasDeviceScope(options.scope)) {
-    const sources = schema1Tiles(dashboard.slides).filter(isDataWidget);
+    // Widgets read the app their slide is scoped to (#707).
+    const sources = schema1Tiles(
+      dashboard.slides.map((slide) => ({
+        ...slide,
+        widgets: slideScopedWidgets(slide),
+      })),
+    ).filter(isDataWidget);
     const context = await loadDataContext(tx, workspaceId, sources, options);
     for (const tile of sources) {
       tiles.push(tileOf(tile, await queryWidget(tx, tile, context), context));
@@ -1095,12 +1106,25 @@ async function buildSlides(
   const dashboard = dashboardId
     ? await findDashboard(tx, workspaceId, dashboardId)
     : null;
-  // A scoped screen gets only widgets that follow its scope (#500).
+  const filters = dashboardDataFiltersSchema.parse(
+    dashboard?.dataFilters ?? [],
+  );
+  // A scoped screen gets only widgets that follow its scope (#500), and no
+  // slide scoped to something its scope leaves out (#707): the screen's
+  // scope wins, and such a slide would show nothing.
   const slides = (dashboard?.slides ?? [])
-    .filter((slide) => slide.enabled)
+    .filter(
+      (slide) =>
+        slide.enabled &&
+        !(
+          hasDeviceScope(options.scope) &&
+          slideScopeConflicts(filters, slideScopeOf(slide), options.scope!)
+        ),
+    )
     .map((slide) => ({
       ...slide,
-      widgets: slide.widgets.filter((widget) =>
+      // Widgets read the app their slide is scoped to (#707).
+      widgets: slideScopedWidgets(slide).filter((widget) =>
         followsDeviceScope(widget.type, options.scope),
       ),
     }));
@@ -1113,6 +1137,7 @@ async function buildSlides(
         dashboard?.logoImageId ?? null,
         ...slides.flatMap((slide) => [
           slide.backgroundImageId,
+          slide.logoImageId,
           ...slide.widgets.map((widget) =>
             widget.type === "image" || widget.type === "review"
               ? widget.imageId
@@ -1188,12 +1213,13 @@ async function buildSlides(
           tx,
           workspaceId,
           { id: widget.id, binding, options: measureOptions },
-          dashboardDataFiltersSchema.parse(dashboard?.dataFilters ?? []),
+          filters,
           {},
           options.now,
           options.dataPolicy,
           options.locale,
           options.scope,
+          slideScopeOf(slide),
         );
         widgets.push({
           type: "measure",
@@ -1353,6 +1379,7 @@ async function buildSlides(
       }
     }
     const background = imageRef(slide.backgroundImageId);
+    const slideLogo = imageRef(slide.logoImageId);
     built.push({
       slide,
       head: {
@@ -1363,6 +1390,8 @@ async function buildSlides(
           background !== null
             ? { imageId: background, dim: slide.backgroundDim }
             : null,
+        // Only when set: other slides' payloads stay as they were (#707).
+        ...(slideLogo !== null ? { logo: { imageId: slideLogo } } : {}),
       },
       widgets,
     });

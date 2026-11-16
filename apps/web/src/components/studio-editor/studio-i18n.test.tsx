@@ -180,6 +180,8 @@ describe("the Studio in German", () => {
               durationSeconds: null,
               enabled: false,
               background: null,
+              logoImageId: null,
+              scope: {},
               widgets: [widget],
             },
           ]}
@@ -230,6 +232,8 @@ describe("the Studio in German", () => {
           durationSeconds: null,
           enabled: true,
           background: null,
+          logoImageId: null,
+          scope: {},
           widgets: [widget],
         },
       ],

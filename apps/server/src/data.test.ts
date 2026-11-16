@@ -2522,6 +2522,48 @@ describe("rolling and period-offset model measures", () => {
       });
     }
 
+    // A slide's scope with a closed range gives it its period (#707), when
+    // saving and when reading.
+    const slideRange = await dashboards("POST", "", editor, {
+      name: "Previous period, slide range",
+      settings: { dataFilters: [filter("range", null)] },
+      slides: [
+        {
+          scope: {
+            day: { kind: "range", from: "2026-10-04", to: "2026-10-05" },
+          },
+          widgets: [widget("units_previous_period", "value", [])],
+        },
+      ],
+    });
+    expect(slideRange.statusCode, slideRange.body).toBe(200);
+    const slideRead = await dashboards(
+      "POST",
+      `/${slideRange.json().dashboard.id as string}/data`,
+      viewer,
+      { values: {} },
+    );
+    expect(slideRead.json().widgets[0]).toMatchObject({
+      status: "ok",
+      error: null,
+    });
+    const preview = await dashboards("POST", "/data/preview", viewer, {
+      filters: [filter("range", null)],
+      values: {},
+      widgets: [
+        {
+          id: randomUUID(),
+          binding: widget("units_previous_period", "value", []).binding,
+          options: { view: "value", limit: 20 },
+          scope: {
+            day: { kind: "range", from: "2026-10-04", to: "2026-10-05" },
+          },
+        },
+      ],
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.json().widgets[0]).toMatchObject({ error: null });
+
     // A cleared range leaves a comparison without its period: the widget
     // explains that instead of reporting an outage.
     const ranged = await dashboards("POST", "", editor, {

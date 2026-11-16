@@ -38,7 +38,7 @@ import type { UnreadableLabel } from "@/lib/studio-readability";
 import { canvasGeometry } from "@/lib/screen-view";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { themeStyle } from "@/lib/studio-theme";
-import type { StudioEnv } from "@/lib/studio-widgets";
+import { scopedSlide, type StudioEnv } from "@/lib/studio-widgets";
 import { webTranslator } from "@/lib/i18n/catalogs";
 
 /** Pixels a pointer travels before a press becomes a drag (not a click). */
@@ -408,7 +408,8 @@ export function EditorCanvas({
       style={{ ...themeStyle(tokens), ...shape }}
     >
       <SlideCanvas
-        slide={slide}
+        // Widgets show the app their slide is scoped to (#707).
+        slide={scopedSlide(slide)}
         tokens={tokens}
         showHeader={settings.showHeader}
         header={{

@@ -147,17 +147,148 @@ export function validateDeviceFilterScope(
   filters: readonly DashboardDataFilter[],
   scope: DeviceFilterScope,
 ): void {
+  validateFilterScope(filters, scope, "device");
+}
+
+/**
+ * A slide's scope (#707): per shared dashboard filter, the values or range
+ * every widget on the slide applies, as a fixed value of that slide. The
+ * same shape and rules as a screen's fixed scope.
+ */
+export type SlideFilterScope = DeviceFilterScope;
+
+/** Checks a slide's scope like a screen's (`slide_scope_*` codes). */
+export function validateSlideFilterScope(
+  filters: readonly DashboardDataFilter[],
+  scope: SlideFilterScope,
+): void {
+  validateFilterScope(filters, scope, "slide");
+}
+
+function validateFilterScope(
+  filters: readonly DashboardDataFilter[],
+  scope: DeviceFilterScope,
+  of: "device" | "slide",
+): void {
   for (const [filterId, value] of Object.entries(scope)) {
     const filter = filters.find((filter) => filter.id === filterId);
-    if (!filter) dataFail("device_scope_filter_unknown", filterId);
+    if (!filter) dataFail(`${of}_scope_filter_unknown`, filterId);
     let restricts: DataExpression | undefined;
     try {
       restricts = predicate(filter, filter.id, value);
     } catch {
-      dataFail("device_scope_value_invalid", filterId);
+      dataFail(`${of}_scope_value_invalid`, filterId);
     }
-    if (!restricts) dataFail("device_scope_value_invalid", filterId);
+    if (!restricts) dataFail(`${of}_scope_value_invalid`, filterId);
   }
+}
+
+/**
+ * Whether a slide's scope and a screen's fixed scope leave nothing to show
+ * for some filter they both set: no common value, or ranges that do not
+ * overlap (#707). Such a slide is about something the screen may not show;
+ * screens skip it instead of showing it empty. Both scopes are taken as
+ * valid for `filters` (validateSlideFilterScope, validateDeviceFilterScope).
+ */
+export function slideScopeConflicts(
+  filters: readonly DashboardDataFilter[],
+  slide: SlideFilterScope,
+  screen: DeviceFilterScope,
+): boolean {
+  return filters.some((filter) => {
+    const a = Object.hasOwn(slide, filter.id) ? slide[filter.id] : undefined;
+    const b = Object.hasOwn(screen, filter.id) ? screen[filter.id] : undefined;
+    if (!a || !b) return false;
+    if (a.kind === "values" && b.kind === "values")
+      return !a.values.some((value) =>
+        b.values.some((other) =>
+          // As the query compares them: by the filter's type ("1.0" is
+          // "1.00"); null (unmatched) only matches null.
+          value === null || other === null
+            ? value === other
+            : compareDataValues(filter.type, value, other) === 0,
+        ),
+      );
+    if (a.kind === "range" && b.kind === "range") {
+      const before = (to: unknown, from: unknown) =>
+        to !== null &&
+        from !== null &&
+        compareDataValues(filter.type, to, from) < 0;
+      return before(a.to, b.from) || before(b.to, a.from);
+    }
+    return false;
+  });
+}
+
+/**
+ * The source-app identity of a connection's resource,
+ * `<connectionId>:<resourceId>`: what the App Portfolio template's app
+ * filter holds for an app that is not grouped into a product.
+ */
+export function connectionResourceKey(
+  connectionId: string,
+  resourceId: string,
+): string {
+  return `${connectionId}:${resourceId}`;
+}
+
+const RESOURCE_KEY =
+  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(.+)$/i;
+
+/**
+ * How a widget that reads a connection's metrics (metric, line, bar,
+ * table, latest review) follows its slide's scope (#707). Such widgets
+ * cannot apply model filters; they follow a scoped filter only through
+ * their `resource` dimension, when the widget does not exclude the filter
+ * and its values all name connection resources (connectionResourceKey),
+ * exactly one of them of the widget's connection. Values that name other
+ * connections' resources are rows that connection cannot have.
+ *
+ * `follows` lists the filters the widget follows that way, so they need no
+ * exclusion; `resource` is the resource they pick, or undefined when none
+ * does. `conflict` is true when they pick different resources, or one other
+ * than the widget's own `ownResource`: the widget would show nothing.
+ */
+/** The widgets that follow a slide's scope through their resource (#707). */
+export function followsSlideScopeResource(type: string): boolean {
+  return ["metric", "line", "bar", "table", "review"].includes(type);
+}
+
+export function slideScopeResource(
+  scope: SlideFilterScope,
+  connectionId: string,
+  exclusions: readonly DashboardFilterExclusion[],
+  ownResource?: string,
+): { follows: string[]; resource?: string; conflict: boolean } {
+  const follows: string[] = [],
+    picked = new Set<string>();
+  for (const [filterId, value] of Object.entries(scope)) {
+    if (
+      value.kind !== "values" ||
+      exclusions.some((exclusion) => exclusion.filterId === filterId)
+    )
+      continue;
+    const keys = value.values.map((raw) =>
+      typeof raw === "string" ? RESOURCE_KEY.exec(raw) : null,
+    );
+    if (!keys.length || keys.some((key) => key === null)) continue;
+    const own = keys.filter(
+      (key) => key![1]!.toLowerCase() === connectionId.toLowerCase(),
+    );
+    if (own.length !== 1) continue;
+    follows.push(filterId);
+    picked.add(own[0]![2]!);
+  }
+  const [resource] = picked;
+  return {
+    follows,
+    ...(resource !== undefined ? { resource } : {}),
+    conflict:
+      picked.size > 1 ||
+      (resource !== undefined &&
+        ownResource !== undefined &&
+        ownResource !== resource),
+  };
 }
 
 /**
@@ -165,6 +296,8 @@ export function validateDeviceFilterScope(
  * `scope` is a paired screen's fixed scope: like a fixed value it is
  * conjoined with every choice and can never be excluded, and a scope the
  * dashboard's filters no longer support fails instead of being dropped.
+ * `slide` is the widget's slide's scope (#707): conjoined too, but a widget
+ * that excludes a filter ignores the slide's value for it as well.
  */
 export function dashboardModelQuery(
   filters: readonly DashboardDataFilter[],
@@ -173,12 +306,15 @@ export function dashboardModelQuery(
   limit = 1000,
   window: ModelQuery["window"] = "first",
   scope: DeviceFilterScope = {},
+  /** The widget's slide's scope (#707). */
+  slide: SlideFilterScope = {},
 ): Omit<ModelQuery, "now"> {
   const ids = new Set(filters.map((filter) => filter.id));
   if (ids.size !== filters.length) dataFail("dashboard_filter_ids_not_unique");
   if (Object.keys(values).some((id) => !ids.has(id)))
     dataFail("dashboard_filter_unknown");
   validateDeviceFilterScope(filters, scope);
+  validateSlideFilterScope(filters, slide);
   const exclusions = new Set<string>();
   for (const exclusion of binding.exclusions) {
     if (
@@ -219,6 +355,12 @@ export function dashboardModelQuery(
       if (fixed) parts.push(fixed);
     }
     if (screen) parts.push(predicate(filter, mapping.dimensionId, screen)!);
+    // The slide's scope is a fixed value of the slide; an exclusion skips
+    // it above, like the filter's choices.
+    const scoped = Object.hasOwn(slide, filter.id)
+      ? slide[filter.id]
+      : undefined;
+    if (scoped) parts.push(predicate(filter, mapping.dimensionId, scoped)!);
   }
   const filter = combine("and", parts);
   return {

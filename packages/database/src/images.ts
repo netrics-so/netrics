@@ -177,6 +177,7 @@ export async function deleteImage(
 const IMAGE_REFERENCES = [
   "dashboards_logo_image_fk",
   "dashboard_slides_background_image_fk",
+  "dashboard_slides_logo_image_fk",
   "dashboard_widgets_image_fk",
 ].join(", ");
 
@@ -222,8 +223,8 @@ export async function findImages(
 }
 
 /**
- * The dashboards that use an image: as logo, slide background or in an
- * image widget, on any slide.
+ * The dashboards that use an image: as logo, slide logo, slide background
+ * or in an image widget, on any slide.
  */
 export async function findImageUsers(
   tx: Transaction,
@@ -238,7 +239,8 @@ export async function findImageUsers(
         or exists (
           select 1 from dashboard_slides s
           where s.workspace_id = ${workspaceId} and s.dashboard_id = d.id
-            and s.background_image_id = ${imageId})
+            and (s.background_image_id = ${imageId}
+              or s.logo_image_id = ${imageId}))
         or exists (
           select 1 from dashboard_widgets w
           where w.workspace_id = ${workspaceId} and w.dashboard_id = d.id
@@ -249,7 +251,7 @@ export async function findImageUsers(
 
 /**
  * The image, if the device's assigned dashboard shows it: as logo, as the
- * background of an enabled slide or in an image widget on one. Anything
+ * logo or background of an enabled slide or in an image widget on one. Anything
  * else is null, so a device credential cannot read other images.
  */
 export async function findDeviceImage(
@@ -271,7 +273,8 @@ export async function findDeviceImage(
         or exists (
           select 1 from dashboard_slides s
           where s.workspace_id = ${workspaceId} and s.dashboard_id = d.id
-            and s.enabled and s.background_image_id = i.id)
+            and s.enabled
+            and (s.background_image_id = i.id or s.logo_image_id = i.id))
         or exists (
           select 1 from dashboard_widgets w
           join dashboard_slides s
@@ -329,8 +332,8 @@ export async function listResourceIcons(
 }
 
 /**
- * Points every use of one image (dashboard logos, slide backgrounds, image
- * widgets) at another image of the same workspace: a refreshed icon
+ * Points every use of one image (dashboard and slide logos, slide
+ * backgrounds, image widgets) at another image of the same workspace: a refreshed icon
  * replaces the old one where it is shown. Dashboard versions are left
  * alone, so an open studio keeps its draft.
  */
@@ -356,6 +359,15 @@ export async function replaceImageReferences(
       and(
         eq(schema.dashboardSlides.workspaceId, workspaceId),
         eq(schema.dashboardSlides.backgroundImageId, fromImageId),
+      ),
+    );
+  await tx
+    .update(schema.dashboardSlides)
+    .set({ logoImageId: toImageId })
+    .where(
+      and(
+        eq(schema.dashboardSlides.workspaceId, workspaceId),
+        eq(schema.dashboardSlides.logoImageId, fromImageId),
       ),
     );
   await tx

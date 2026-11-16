@@ -540,6 +540,13 @@
       "when": 1794756202546,
       "tag": "0076_dataset_backfill_marker",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1794831988862,
+      "tag": "0077_slide_scope_logo",
+      "breakpoints": true
     }
   ]
 }

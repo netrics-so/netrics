@@ -1998,6 +1998,45 @@ describe("the updated dashboard copy", { timeout: TIMEOUT_MS }, () => {
     expect(copies).toHaveLength(2);
   });
 
+  it("keeps each slide's scope and logo in the copy (#707)", async () => {
+    const scope = {
+      app: { kind: "values", values: ["store:app-1"] },
+      // A range, whose keys the update's comparison form sorts.
+      day: { kind: "range", from: "2026-10-01", to: "2026-10-31" },
+    };
+    let logoImageId = "";
+    const { workspaceId, update } = await appliedUpdate(v2, async (install) => {
+      const [image] = await owner`
+          insert into workspace_images (workspace_id, name, content_type,
+            bytes, width, height, sha256, content)
+          values (${install.workspaceId}, 'logo', 'image/png', 1, 1, 1,
+            ${"a".repeat(64)}, ${Buffer.from([0])})
+          returning id`;
+      logoImageId = image!.id as string;
+      await editDashboard(
+        install.workspaceId,
+        install.installed.dashboardId,
+        (slides) => [
+          { ...slides[0], scope, logoImageId },
+          { ...customerSlide, scope, logoImageId },
+        ],
+      );
+    });
+    await publishDrafts(workspaceId, update);
+    const next = await updates(v2).createCopy(
+      actor(workspaceId),
+      update.id,
+      "dashboard:portfolio",
+    );
+    const copy = await readDashboard(workspaceId, next.dashboards[0]!.copyId!);
+    expect(
+      copy.slides.map(({ scope, logoImageId }) => ({ scope, logoImageId })),
+    ).toEqual([
+      { scope, logoImageId },
+      { scope, logoImageId },
+    ]);
+  });
+
   it("keeps the customer's layouts of unchanged widgets and places added ones automatically", async () => {
     const template = v2;
     const { workspaceId, installed, update } = await appliedUpdate(template);

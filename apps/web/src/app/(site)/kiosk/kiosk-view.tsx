@@ -388,7 +388,11 @@ function KioskScroll({
       <ScrollView
         name={dashboard.name}
         logoImageId={dashboard.logo?.imageId ?? null}
-        slides={payload.slides.map((slide) => ({ ...slide, enabled: true }))}
+        slides={payload.slides.map((slide) => ({
+          ...slide,
+          enabled: true,
+          logoImageId: slide.logo?.imageId ?? null,
+        }))}
         tokens={theme.tokens}
         images={state.images}
         toolbar={<OfflineMarker state={state} timeZone={timeZone} />}

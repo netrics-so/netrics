@@ -209,6 +209,8 @@ export function registerDashboardRoutes(
                       now,
                       deps.policy ?? DEFAULT_DATA_POLICY,
                       access.locale,
+                      {},
+                      widget.scope,
                     ),
                   );
                 return results;
@@ -298,7 +300,7 @@ export function registerDashboardRoutes(
                 return queryDashboardData(
                   tx,
                   access.workspaceId,
-                  dashboard.slides.flatMap((slide) => slide.widgets),
+                  dashboard.slides,
                   dashboard.dataFilters,
                   body.values,
                   deps.now?.() ?? new Date(),

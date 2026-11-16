@@ -1,9 +1,12 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import type { z } from "zod";
 import {
   dashboardDataFiltersSchema,
+  dashboardFilterExclusionSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
   semanticModelDefinitionSchema,
+  slideFilterScopeSchema,
   type DashboardWidgetData,
 } from "@netrics/contracts";
 import {
@@ -29,6 +32,10 @@ import {
   type DashboardFilterValue,
   type DeviceFilterScope,
   type MeasureWidgetBinding,
+  type SlideFilterScope,
+  followsSlideScopeResource,
+  slideScopeResource,
+  RESOURCE_DIMENSION,
 } from "@netrics/domain";
 import {
   schema,
@@ -217,6 +224,9 @@ export async function validateDashboardMeasure(
   filters: DashboardDataFilter[],
   binding: MeasureWidgetBinding,
   options: { view: "value" | "table" | "bar" | "line"; limit: number },
+  /** The scope of the widget's slide (#707): a range there can give a
+   * window its period. */
+  slideScope: SlideFilterScope = {},
 ) {
   validateMeasureView(options.view, binding);
   // A declared click target must be a filter this widget follows, on a
@@ -259,7 +269,15 @@ export async function validateDashboardMeasure(
     )
   )
     throw new DataServiceError("dashboard_filter_window_unsupported");
-  const query = dashboardModelQuery(filters, {}, binding, options.limit);
+  const query = dashboardModelQuery(
+    filters,
+    {},
+    binding,
+    options.limit,
+    "first",
+    {},
+    slideScope,
+  );
   // Validate the shape and filter paths using the published schema, even with no current rows.
   const tables = new Map(
     Object.entries(model.bindings).map(([id, fields]) => [
@@ -290,6 +308,49 @@ export async function validateDashboardMeasure(
   }
   return model.metadata;
 }
+/**
+ * A stored slide's scope (#707). Saves validate it against the dashboard's
+ * filters; the column holds a JSON object (a check constraint), so only a
+ * scope that no longer parses reads as none.
+ */
+export function slideScopeOf(slide: {
+  scope?: unknown;
+}): z.infer<typeof slideFilterScopeSchema> {
+  return slideFilterScopeSchema.safeParse(slide.scope ?? {}).data ?? {};
+}
+
+/**
+ * A slide's widgets as screens read them (#707): a metric, line, bar, table
+ * or review widget that follows the slide's scope reads the resource the
+ * scope names (slideScopeResource). Others, and widgets whose scope would
+ * conflict with their own resource (refused on save), are unchanged.
+ */
+export function slideScopedWidgets(slide: {
+  scope?: unknown;
+  widgets: readonly DashboardWidgetRow[];
+}): DashboardWidgetRow[] {
+  const scope = slideScopeOf(slide);
+  if (!Object.keys(scope).length) return [...slide.widgets];
+  return slide.widgets.map((widget) => {
+    if (!followsSlideScopeResource(widget.type) || !widget.connectionId)
+      return widget;
+    const dimensions = widget.dimensions as Record<string, string>;
+    const scoped = slideScopeResource(
+      scope,
+      widget.connectionId,
+      exclusionsSchema.safeParse(widget.filterExclusions).data ?? [],
+      dimensions[RESOURCE_DIMENSION],
+    );
+    return scoped.resource !== undefined && !scoped.conflict
+      ? {
+          ...widget,
+          dimensions: { ...dimensions, [RESOURCE_DIMENSION]: scoped.resource },
+        }
+      : widget;
+  });
+}
+const exclusionsSchema = dashboardFilterExclusionSchema.array();
+
 export async function queryDashboardMeasure(
   tx: Transaction,
   workspaceId: string,
@@ -305,6 +366,8 @@ export async function queryDashboardMeasure(
   locale: "en" | "de" = "en",
   /** A paired screen's fixed scope (#500); browsers have none. */
   deviceScope: DeviceFilterScope = {},
+  /** The scope of the widget's slide (#707). */
+  slideScope: SlideFilterScope = {},
 ): Promise<DashboardWidgetData> {
   let sourceHealth: DashboardWidgetData["sourceHealth"];
   const exclusions = input.binding.exclusions.filter((exclusion) => {
@@ -313,7 +376,10 @@ export async function queryDashboardMeasure(
     const value = Object.hasOwn(values, filter.id)
       ? values[filter.id]
       : filter.defaultValue;
-    return [value, filter.fixedValue].some(
+    const slide = Object.hasOwn(slideScope, filter.id)
+      ? slideScope[filter.id]
+      : undefined;
+    return [value, filter.fixedValue, slide].some(
       (value) =>
         value &&
         (value.kind === "values"
@@ -329,6 +395,7 @@ export async function queryDashboardMeasure(
         filters,
         input.binding,
         input.options,
+        slideScope,
       );
       sourceHealth = await modelSourceHealth(
         savepoint,
@@ -355,6 +422,7 @@ export async function queryDashboardMeasure(
           )?.type,
         ),
         deviceScope,
+        slideScope,
       );
       const result = await queryDataModel(
         savepoint,
@@ -442,8 +510,17 @@ export async function queryDashboardMeasure(
                 ? deviceScope[filter.id]
                 : undefined,
               dimensionId,
+            ),
+            slide = selection(
+              filter.type,
+              Object.hasOwn(slideScope, filter.id)
+                ? slideScope[filter.id]
+                : undefined,
+              dimensionId,
             );
-          const text = [chosen, fixed, screen].filter(Boolean).join(" ∩ ");
+          const text = [chosen, fixed, screen, slide]
+            .filter(Boolean)
+            .join(" ∩ ");
           return text ? [`${filter.name}: ${text}`] : [];
         });
       return {
@@ -483,7 +560,11 @@ export async function queryDashboardMeasure(
 export async function queryDashboardData(
   tx: Transaction,
   workspaceId: string,
-  widgets: readonly DashboardWidgetRow[],
+  /** The slides' widgets, each with its slide's scope (#707). */
+  slides: readonly {
+    scope: unknown;
+    widgets: readonly DashboardWidgetRow[];
+  }[],
   rawFilters: unknown,
   values: Record<string, DashboardFilterValue>,
   now: Date,
@@ -495,25 +576,28 @@ export async function queryDashboardData(
   if (Object.keys(values).some((key) => !ids.has(key)))
     throw new DataServiceError("dashboard_filter_unknown");
   const results = [];
-  for (const widget of widgets) {
-    if (widget.type !== "measure") continue;
-    results.push(
-      await queryDashboardMeasure(
-        tx,
-        workspaceId,
-        {
-          id: widget.id,
-          binding: measureWidgetBindingSchema.parse(widget.modelBinding),
-          options: measureWidgetOptionsSchema.parse(widget.options),
-        },
-        filters,
-        values,
-        now,
-        defaults,
-        locale,
-      ),
-    );
-  }
+  for (const slide of slides)
+    for (const widget of slide.widgets) {
+      if (widget.type !== "measure") continue;
+      results.push(
+        await queryDashboardMeasure(
+          tx,
+          workspaceId,
+          {
+            id: widget.id,
+            binding: measureWidgetBindingSchema.parse(widget.modelBinding),
+            options: measureWidgetOptionsSchema.parse(widget.options),
+          },
+          filters,
+          values,
+          now,
+          defaults,
+          locale,
+          {},
+          slideScopeOf(slide),
+        ),
+      );
+    }
   return {
     widgets: results,
     values: Object.fromEntries(
