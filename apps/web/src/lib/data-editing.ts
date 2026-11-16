@@ -265,6 +265,18 @@ export function* referenceRecordPages<
 }
 
 /**
+ * What a release is compared by: the definition's signature and which
+ * inputs it reads, the latest published ones (null) or those of the release
+ * it was restored from. "Use latest published inputs" changes only the
+ * latter, and still differs from a restored release (#632).
+ */
+export function releaseState(
+  definition: string,
+  restoredFromVersion: number | null | undefined,
+): string {
+  return JSON.stringify([definition, restoredFromVersion ?? null]);
+}
+/**
  * Whether an editor marks "Unpublished changes" (#632): what it shows
  * differs from the published definition. `published` is that definition's
  * signature when the editor knows it (opened at the published version, or

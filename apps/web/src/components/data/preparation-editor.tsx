@@ -22,6 +22,7 @@ import {
   dataErrorKey,
   dataErrorLocation,
   hasUnpublishedChanges,
+  releaseState,
 } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import { DataTable } from "./data-table";
@@ -144,17 +145,18 @@ export function PreparationEditor({
   const current = useMemo(() => canonicalJson({ name, graph }), [name, graph]),
     dirty = current !== savedState || (!record && graph.nodes.length > 0);
   const graphSignature = useMemo(() => canonicalJson(graph), [graph]);
-  // The published graph, when known: undoing back to it clears the mark.
+  // The published graph and its inputs, when known: undoing back to them
+  // clears the mark.
   const [publishedGraph, setPublishedGraph] = useState(() =>
     initial && initial.publishedVersion === initial.version
-      ? canonicalJson(initial.graph)
+      ? releaseState(canonicalJson(initial.graph), initial.restoredFromVersion)
       : undefined,
   );
   const unpublishedChanges = hasUnpublishedChanges({
     version: record?.version,
     publishedVersion: record?.publishedVersion,
     published: publishedGraph,
-    current: graphSignature,
+    current: releaseState(graphSignature, record?.restoredFromVersion),
     dirty,
   });
   const formOpen = adding || !!editing || removing;
@@ -303,7 +305,12 @@ export function PreparationEditor({
             draft.version,
           );
           setRecord(published.preparation);
-          setPublishedGraph(canonicalJson(published.preparation.graph));
+          setPublishedGraph(
+            releaseState(
+              canonicalJson(published.preparation.graph),
+              published.preparation.restoredFromVersion,
+            ),
+          );
           onSaved(published.preparation);
         },
       });
@@ -341,7 +348,9 @@ export function PreparationEditor({
       setRecord(next);
       // Restoring the live release shows the published graph.
       if (version !== undefined && version === record.publishedVersion)
-        setPublishedGraph(canonicalJson(next.graph));
+        setPublishedGraph(
+          releaseState(canonicalJson(next.graph), next.restoredFromVersion),
+        );
       setName(next.name);
       setGraphHistory(startHistory(next.graph));
       setSavedState(canonicalJson({ name: next.name, graph: next.graph }));

@@ -120,6 +120,24 @@ test("undoing back to the published definition clears the mark", async ({
   await page.getByRole("button", { name: t.undo, ...exact }).click();
   await expect(measureName).toHaveValue("Revenue");
   await expect(meta).toHaveText(published);
+
+  // 5. Published from a restore of v1, it reads v1's pinned inputs. Using
+  // the latest published inputs keeps the definition but would read others:
+  // marked.
+  const restored = await page.request.post(
+    `/v1/workspaces/${workspaceId}/data/models/${modelId}/restore`,
+    { headers: { origin: ORIGIN }, data: { version: 1, publishedVersion: 1 } },
+  );
+  expect(restored.status(), await restored.text()).toBe(200);
+  await publishModel(page, workspaceId, modelId, 2);
+  await page.goto(`/workspaces/${workspaceId}/data?model=${modelId}`);
+  const publishedRestore = fill(t.published, { version: 2 });
+  await expect(meta).toHaveText(publishedRestore);
+  await page.getByRole("button", { name: t.adoptLatestInputs }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: t.latestInputsNotice }),
+  ).toBeVisible();
+  await expect(meta).toHaveText(`${publishedRestore} · ${t.changed}`);
 });
 
 async function publishModel(

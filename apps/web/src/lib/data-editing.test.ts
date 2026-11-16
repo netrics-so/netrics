@@ -7,6 +7,7 @@ import {
   enteredValue,
   hasUnpublishedChanges,
   preparationAt,
+  releaseState,
 } from "./data-editing";
 import { previewPreparation } from "./data-api";
 import { DataProcessingError, type PreparationGraph } from "@netrics/domain";
@@ -296,5 +297,29 @@ describe("unpublished changes (#632)", () => {
         dirty: true,
       }),
     ).toBe(false);
+  });
+  it("counts a switch to the latest inputs as a change from a restored release", () => {
+    // Published from a restore of v1: it reads v1's pinned inputs. "Use
+    // latest published inputs" keeps the definition and drops the pin.
+    const published = releaseState("A", 1);
+    expect(
+      hasUnpublishedChanges({
+        version: 3,
+        publishedVersion: 2,
+        published,
+        current: releaseState("A", null),
+        dirty: false,
+      }),
+    ).toBe(true);
+    expect(
+      hasUnpublishedChanges({
+        version: 3,
+        publishedVersion: 2,
+        published,
+        current: releaseState("A", 1),
+        dirty: false,
+      }),
+    ).toBe(false);
+    expect(releaseState("A", undefined)).toBe(releaseState("A", null));
   });
 });

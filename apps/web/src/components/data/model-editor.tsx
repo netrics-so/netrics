@@ -38,6 +38,7 @@ import {
   dataErrorKey,
   hasUnpublishedChanges,
   newDataId,
+  releaseState,
 } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
 import {
@@ -337,11 +338,15 @@ export function ModelEditor({
       [name, definition, expressionDrafts],
     ),
     queryState = canonicalJson({ measureIds, groupBy, filterText });
-  // The published definition, when known: undoing back to it clears the
-  // "Unpublished changes" mark. The name is not part of a release.
+  // The published definition and its inputs, when known: undoing back to
+  // them clears the "Unpublished changes" mark. The name is not part of a
+  // release.
   const [publishedState, setPublishedState] = useState(() =>
     initial && initial.publishedVersion === initial.version
-      ? modelEditorState("", initial.definition, {})
+      ? releaseState(
+          modelEditorState("", initial.definition, {}),
+          initial.restoredFromVersion,
+        )
       : undefined,
   );
   const definitionState = useMemo(
@@ -618,7 +623,10 @@ export function ModelEditor({
           );
           setRecord(published.model);
           setPublishedState(
-            modelEditorState("", published.model.definition, {}),
+            releaseState(
+              modelEditorState("", published.model.definition, {}),
+              published.model.restoredFromVersion,
+            ),
           );
           onSaved(published.model);
         },
@@ -655,7 +663,12 @@ export function ModelEditor({
       setRecord(next);
       // Restoring the live release shows the published definition.
       if (version !== undefined && version === record.publishedVersion)
-        setPublishedState(modelEditorState("", next.definition, {}));
+        setPublishedState(
+          releaseState(
+            modelEditorState("", next.definition, {}),
+            next.restoredFromVersion,
+          ),
+        );
       setName(next.name);
       setEdits(
         startHistory({ definition: next.definition, expressionDrafts: {} }),
@@ -778,7 +791,10 @@ export function ModelEditor({
               version: record?.version,
               publishedVersion: record?.publishedVersion,
               published: publishedState,
-              current: definitionState,
+              current: releaseState(
+                definitionState,
+                record?.restoredFromVersion,
+              ),
               dirty,
             })
               ? " · " + t("changed")
