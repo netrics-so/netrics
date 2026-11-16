@@ -28,6 +28,49 @@ describe("PreparationEditor", () => {
       );
     },
   );
+  it("serves its steps disabled until the first check returns (#729)", () => {
+    // A click on the server markup before hydration, or while the first
+    // check starts, would be lost: the steps take one only once it is done.
+    const html = renderI18n(
+      <PreparationEditor
+        workspaceId="workspace"
+        sources={[]}
+        initial={{
+          id: "00000000-0000-4000-8000-000000000001",
+          name: "Sales",
+          graph: {
+            version: 1,
+            nodes: [
+              { id: "source", type: "source", datasetId: "sales" },
+              {
+                id: "unique",
+                type: "deduplicate",
+                input: "source",
+                keys: ["day"],
+                keep: "first",
+              },
+            ],
+            outputs: ["unique"],
+          },
+          projectId: null,
+          version: 1,
+          publishedVersion: null,
+          updatedAt: "2026-11-01T00:00:00.000Z",
+        }}
+        onSaved={() => {}}
+        onClose={() => {}}
+        onDirty={() => {}}
+      />,
+      "en",
+    );
+    const steps = html.slice(
+      html.indexOf('<ol class="data-step-list">'),
+      html.indexOf("</ol>"),
+    );
+    expect(steps.match(/<button /g)).toHaveLength(2);
+    expect(steps.match(/<button [^>]*disabled=""/g)).toHaveLength(2);
+    expect(html).toContain("Preparing preview…");
+  });
   it.each([
     ["en", 3, 3, "Published v3</p>"],
     ["en", 4, 3, "Published v3 · Unpublished changes</p>"],

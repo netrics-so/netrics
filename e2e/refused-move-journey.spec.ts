@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { PreparationGraph } from "@netrics/domain";
 import { salesEu } from "./fixtures/journey.ts";
 import { ORIGIN } from "./support/origin.ts";
@@ -6,21 +6,12 @@ import { labels, type Locale } from "./support/labels.ts";
 import { seedReferenceTable, startWorkspace } from "./support/session.ts";
 
 /**
- * A refused reorder leaves the graph as it was, and so the sample: when a
- * step already failed and the sample was out of date, it stays marked out
- * of date, with the failed step still marked (#654).
+ * A preparation with a Score column from Revenue, Score to a number, App to
+ * a decimal stopping on a failure ("app-1" fails), and the output.
  */
-test("a refused move keeps an earlier out-of-date sample", async ({
-  page,
-}, testInfo) => {
-  const locale = testInfo.project.name as Locale;
-  const t = labels(locale);
-  const exact = { exact: true } as const;
-
+async function failingPreparation(page: Page, locale: Locale) {
   const { workspaceId } = await startWorkspace(page, locale);
   const datasetId = await seedReferenceTable(page, workspaceId, salesEu);
-  // A Score column from Revenue, Score to a number, App to a decimal
-  // stopping on a failure ("app-1" fails), and the output.
   const graph: PreparationGraph = {
     version: 1,
     nodes: [
@@ -68,9 +59,22 @@ test("a refused move keeps an earlier out-of-date sample", async ({
   const { preparation } = (await response.json()) as {
     preparation: { id: string };
   };
-  await page.goto(
-    `/workspaces/${workspaceId}/data?preparation=${preparation.id}`,
-  );
+  return `/workspaces/${workspaceId}/data?preparation=${preparation.id}`;
+}
+
+/**
+ * A refused reorder leaves the graph as it was, and so the sample: when a
+ * step already failed and the sample was out of date, it stays marked out
+ * of date, with the failed step still marked (#654).
+ */
+test("a refused move keeps an earlier out-of-date sample", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = labels(locale);
+  const exact = { exact: true } as const;
+
+  await page.goto(await failingPreparation(page, locale));
 
   const steps = page.locator(".data-step-list > li");
   await expect(steps).toHaveCount(5);
@@ -106,4 +110,39 @@ test("a refused move keeps an earlier out-of-date sample", async ({
   await expect(
     page.getByRole("button", { name: t.undo, ...exact }),
   ).toBeDisabled();
+});
+
+/**
+ * The server markup shows the steps before the page is interactive, and the
+ * first check of the graph starts once it is. A step clicked in between was
+ * lost, so the steps wait for that check (#729).
+ */
+test("a step chosen while the page loads is selected", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const url = await failingPreparation(page, locale);
+  // The scripts (not the styles, which hold the markup back) arrive only
+  // after the click, as on a busy machine where the markup is there well
+  // before the page is interactive.
+  let release = () => {};
+  const scripts = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/_next/static/chunks/**/*.js", async (route) => {
+    await scripts;
+    await route.continue();
+  });
+  await page.goto(url, { waitUntil: "commit" });
+
+  const steps = page.locator(".data-step-list > li");
+  await expect(steps).toHaveCount(5);
+  const scoreType = steps.nth(2).getByRole("button");
+  const click = scoreType.click();
+  // Long enough for a click on an enabled step to land before the scripts.
+  await page.waitForTimeout(500);
+  release();
+  await click;
+  await expect(scoreType).toHaveAttribute("aria-current", "step");
+  await expect(page.getByRole("table").getByRole("row")).toHaveCount(
+    salesEu.rows.length + 1,
+  );
 });
