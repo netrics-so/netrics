@@ -152,7 +152,7 @@ export class ProcessingBudget {
    */
   readonly decimalErrors = new WeakMap<
     object,
-    { error: Ratio; roundings: number }
+    { error: bigint; roundings: number }
   >();
   readonly maximum: number;
   readonly maxRows: number;
@@ -220,34 +220,20 @@ function halfEven(
   if (remainder * 2n > d || (remainder * 2n === d && q % 2n !== 0n)) q++;
   return { units: negative ? -q : q, rounded: remainder !== 0n };
 }
-/** A non-negative exact fraction, for error bounds of decimal results. */
-interface Ratio {
-  n: bigint;
-  d: bigint;
-}
-const ZERO: Ratio = { n: 0n, d: 1n };
+/**
+ * Error bounds of decimal results are counted in units of 10^-40, rounded
+ * up: a bound that grows a little only warns more, and its size stays fixed
+ * however long the calculation (#645).
+ */
+const BOUND_SCALE = 40;
+const BOUND_ONE = 10n ** BigInt(BOUND_SCALE);
 /** Half a unit in the 18th place: the most a half-even rounding there moves. */
-const HALF_ULP: Ratio = { n: 1n, d: 2n * 10n ** 18n };
-const ratioOf = (text: string): Ratio => {
-  const { units, scale } = decimal(text);
-  return { n: units, d: power(scale) };
-};
-const ratioAdd = (a: Ratio, b: Ratio): Ratio => ({
-  n: a.n * b.d + b.n * a.d,
-  d: a.d * b.d,
-});
-const ratioSub = (a: Ratio, b: Ratio): Ratio => ({
-  n: a.n * b.d - b.n * a.d,
-  d: a.d * b.d,
-});
-const ratioMul = (a: Ratio, b: Ratio): Ratio => ({
-  n: a.n * b.n,
-  d: a.d * b.d,
-});
-const ratioAbs = (a: Ratio): Ratio => ({ n: a.n < 0n ? -a.n : a.n, d: a.d });
-/** `a` rounded half-even to `scale` places, in units of that place. */
-const ratioRound = (a: Ratio, scale: number): bigint =>
-  halfEven(a.n * power(scale), a.d).units;
+const HALF_ULP = 5n * 10n ** BigInt(BOUND_SCALE - 19);
+const ceilDiv = (n: bigint, d: bigint) => (n + d - 1n) / d;
+const magnitude = (d: Decimal): bigint => (d.units < 0n ? -d.units : d.units);
+/** |x| · bound, in bound units, rounded up. */
+const scaleBound = (x: Decimal, bound: bigint): bigint =>
+  bound === 0n ? 0n : ceilDiv(magnitude(x) * bound, power(x.scale));
 
 /** Precision lost that nobody asked for: beyond the supported 18 places. */
 function implicitlyRounded(budget: ProcessingBudget) {
@@ -540,10 +526,24 @@ export interface CompiledExpression {
   evaluate(row: DataRow, budget?: ProcessingBudget): DataCell;
 }
 
-/** `to` keeps the error bound of `from` (the same value, or its sign changed). */
+/** Steps an error bound passes through on its way to ROUND (and IF branches). */
+const BOUND_STEPS: ReadonlySet<string> = new Set([
+  "add",
+  "subtract",
+  "multiply",
+  "divide",
+  "coalesce",
+  "negate",
+  "abs",
+  "to_decimal",
+]);
+/** `to` keeps the error bound of `from` (the same decimal, or its sign changed). */
 function carry(budget: ProcessingBudget, from: DataCell, to: DataCell) {
   const bound = budget.decimalErrors.get(from);
-  if (bound) budget.decimalErrors.set(to, bound);
+  // A decimal made a number (an IF next to a number column) is no longer
+  // the value the bound describes.
+  if (bound && to.type === "decimal" && typeof to.value === "string")
+    budget.decimalErrors.set(to, bound);
   return to;
 }
 
@@ -552,48 +552,46 @@ function carry(budget: ProcessingBudget, from: DataCell, to: DataCell) {
  * without one is exact) and this operation's own `roundings` (at most half
  * a unit in the 18th place). A quotient whose divisor may be zero within
  * its bound, or a value rounded more than once, gets none: its roundings
- * stay unaccounted for, and a ROUND of it keeps the warning.
+ * stay unaccounted for, and a ROUND of it keeps the warning. Exact
+ * arithmetic of exact operands returns before any work.
  */
 function boundError(
   budget: ProcessingBudget,
   cell: DataCell,
   fn: "add" | "subtract" | "multiply" | "divide",
-  x: Ratio,
-  y: Ratio,
+  xText: string,
+  yText: string,
   a: DataCell,
   b: DataCell,
   roundings: number,
 ) {
   const ba = budget.decimalErrors.get(a),
     bb = budget.decimalErrors.get(b);
-  const ea = ba?.error ?? ZERO,
-    eb = bb?.error ?? ZERO;
-  const ax = ratioAbs(x),
-    ay = ratioAbs(y);
-  let error: Ratio;
-  if (fn === "add" || fn === "subtract") error = ratioAdd(ea, eb);
-  else if (fn === "multiply")
-    error = ratioAdd(
-      ratioAdd(ratioMul(ax, eb), ratioMul(ay, ea)),
-      ratioMul(ea, eb),
-    );
-  else {
-    // |x/y - X/Y| <= (|x|·eb + |y|·ea) / (|y|·(|y| - eb)), when |y| > eb.
-    const margin = ratioSub(ay, eb);
-    if (margin.n <= 0n) return;
-    const top = ratioAdd(ratioMul(ax, eb), ratioMul(ay, ea));
-    const bottom = ratioMul(ay, margin);
-    error = { n: top.n * bottom.d, d: top.d * bottom.n };
-  }
-  if (roundings)
-    error = ratioAdd(
-      error,
-      ratioMul(HALF_ULP, { n: BigInt(roundings), d: 1n }),
-    );
-  const total = (ba?.roundings ?? 0) + (bb?.roundings ?? 0) + roundings;
   // Only one rounding is traced to ROUND: a value rounded again on its way
   // keeps its warning.
-  if (total === 1) budget.decimalErrors.set(cell, { error, roundings: total });
+  if ((ba?.roundings ?? 0) + (bb?.roundings ?? 0) + roundings !== 1) return;
+  const ea = ba?.error ?? 0n,
+    eb = bb?.error ?? 0n;
+  let error: bigint;
+  if (fn === "add" || fn === "subtract" || (ea === 0n && eb === 0n))
+    error = ea + eb;
+  else {
+    const x = decimal(xText),
+      y = decimal(yText);
+    if (fn === "multiply")
+      error =
+        scaleBound(x, eb) + scaleBound(y, ea) + ceilDiv(ea * eb, BOUND_ONE);
+    else {
+      // |x/y - X/Y| <= (|x|·eb + |y|·ea) / (|y|·(|y| - eb)), when |y| > eb.
+      const uy = magnitude(y);
+      const margin = uy * BOUND_ONE - eb * power(y.scale);
+      if (margin <= 0n) return;
+      const top = scaleBound(x, eb) + scaleBound(y, ea);
+      error = ceilDiv(top * power(2 * y.scale) * BOUND_ONE, uy * margin);
+    }
+  }
+  error += HALF_ULP * BigInt(roundings);
+  budget.decimalErrors.set(cell, { error, roundings: 1 });
 }
 
 /** Compile once, before reading rows. Never eval user code or interpolate SQL. */
@@ -607,7 +605,16 @@ export function compileRowExpression(
     result: ExpressionType;
     run: (row: DataRow, budget: ProcessingBudget) => DataCell;
   };
-  const compile = (expr: DataExpression, depth: number): Node => {
+  /**
+   * `traced`: the node feeds a ROUND through steps that carry an error
+   * bound, so its decimal results record one (#645). Elsewhere nothing is
+   * recorded and nothing is paid for it.
+   */
+  const compile = (
+    expr: DataExpression,
+    depth: number,
+    traced = false,
+  ): Node => {
     if (++nodes > PROCESSING_LIMITS.nodes || depth > PROCESSING_LIMITS.depth)
       dataFail("expression_complexity_limit");
     if (!expr || typeof expr !== "object") dataFail("expression_invalid");
@@ -685,9 +692,17 @@ export function compileRowExpression(
       expr.args.length > 20
     )
       dataFail("expression_invalid");
-    const args = expr.args.map((arg) => compile(arg, depth + 1));
-    const types = args.map((arg) => arg.result);
     const fn = expr.fn;
+    const args = expr.args.map((arg, index) =>
+      compile(
+        arg,
+        depth + 1,
+        fn === "round"
+          ? index === 0
+          : traced && (BOUND_STEPS.has(fn) || (fn === "if" && index > 0)),
+      ),
+    );
+    const types = args.map((arg) => arg.result);
     const arity = (min: number, max = min) => {
       if (args.length < min || args.length > max)
         dataFail("expression_arity_invalid");
@@ -855,7 +870,7 @@ export function compileRowExpression(
       run: (row, budget) => {
         budget.tick();
         const roundings = budget.decimalRoundings,
-          warned = budget.warnings.has("decimal_rounded");
+          warned = fn === "round" && budget.warnings.has("decimal_rounded");
         const at = (index: number) => args[index]!.run(row, budget);
         const promote = (cell: DataCell): DataCell => ({
           ...cell,
@@ -884,7 +899,8 @@ export function compileRowExpression(
                   : cell.value,
         });
         // The chosen value keeps its error bound.
-        const chosen = (cell: DataCell) => carry(budget, cell, promote(cell));
+        const chosen = (cell: DataCell) =>
+          traced ? carry(budget, cell, promote(cell)) : promote(cell);
         if (fn === "if") return chosen(at(at(0).value === true ? 1 : 2));
         if (fn === "coalesce") {
           for (const arg of args) {
@@ -976,13 +992,13 @@ export function compileRowExpression(
               budget,
             );
             const cell = out(value);
-            if (value !== null)
+            if (traced && value !== null)
               boundError(
                 budget,
                 cell,
                 fn as "add" | "subtract" | "multiply" | "divide",
-                ratioOf(x),
-                ratioOf(y),
+                x,
+                y,
                 a,
                 b!,
                 budget.decimalRoundings - before,
@@ -1081,10 +1097,12 @@ export function compileRowExpression(
               bound &&
               budget.decimalRoundings - roundings === bound.roundings
             ) {
-              const x = ratioOf(String(a.value));
+              const x = decimal(a.value);
+              const at40 = x.units * power(BOUND_SCALE - x.scale);
+              const step = power(BOUND_SCALE - scale);
               if (
-                ratioRound(ratioSub(x, bound.error), scale) ===
-                ratioRound(ratioAdd(x, bound.error), scale)
+                halfEven(at40 - bound.error, step).units ===
+                halfEven(at40 + bound.error, step).units
               ) {
                 budget.decimalRoundings = roundings;
                 if (!warned) budget.warnings.delete("decimal_rounded");
@@ -1130,7 +1148,7 @@ export function compileRowExpression(
             budget.warnings.add("number_converted_to_decimal");
           const text = String(a.value);
           decimal(text);
-          return carry(budget, a, out(text));
+          return traced ? carry(budget, a, out(text)) : out(text);
         }
         if (fn === "to_number" || fn === "to_integer") {
           if (typeof a.value !== "number" && typeof a.value !== "string")

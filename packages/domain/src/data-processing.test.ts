@@ -140,6 +140,7 @@ describe("explicit rounding (#645)", () => {
     { id: "orders", name: "Orders", type: "integer", nullable: true },
     { id: "cost", name: "Cost", type: "decimal", nullable: true },
     { id: "paid", name: "Paid", type: "boolean", nullable: true },
+    { id: "share", name: "Share", type: "number", nullable: true },
   ];
   const run = (
     expression: DataExpression,
@@ -148,6 +149,7 @@ describe("explicit rounding (#645)", () => {
       orders: 3,
       cost: "1.25",
       paid: true,
+      share: 0.5,
     },
   ) => {
     const budget = new ProcessingBudget();
@@ -186,6 +188,31 @@ describe("explicit rounding (#645)", () => {
     quiet(round(call("to_decimal", divide), 2), "3.33");
   });
 
+  it("keeps the error bound small along a long chain", () => {
+    let chain: DataExpression = divide;
+    for (let i = 0; i < 14; i++)
+      chain = call("multiply", chain, lit("decimal", "2"));
+    const compiled = compileRowExpression(round(chain, 2), ratio);
+    const started = performance.now();
+    for (let i = 0; i < 500; i++)
+      expect(
+        compiled.evaluate(
+          {
+            revenue: String(10 + i),
+            orders: 3,
+            cost: null,
+            paid: null,
+            share: null,
+          },
+          new ProcessingBudget(),
+        ).value,
+      ).toBeTypeOf("string");
+    // Bounds kept as unreduced fractions doubled their digits per step and
+    // took about 24 ms a row here; in units of 10^-40 they stay small.
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(run(round(chain, 2))).toEqual({ value: "54613.33", warnings: [] });
+  });
+
   it("still warns about precision lost without being asked", () => {
     expect(run(divide)).toEqual({
       value: "3.333333333333333333",
@@ -205,6 +232,28 @@ describe("explicit rounding (#645)", () => {
         ),
       ).warnings,
     ).toEqual(["decimal_rounded"]);
+    // A quotient that IF turns into a number is no longer the decimal its
+    // bound describes: TO_DECIMAL of it keeps the warning.
+    const seventh = call("divide", lit("decimal", "1"), lit("decimal", "7"));
+    expect(
+      run(
+        round(
+          call(
+            "to_decimal",
+            call("if", lit("boolean", true), seventh, field("share")),
+          ),
+          17,
+        ),
+      ).warnings,
+    ).toContain("decimal_rounded");
+    expect(
+      run(
+        round(
+          call("to_decimal", call("coalesce", seventh, field("share"))),
+          17,
+        ),
+      ).warnings,
+    ).toContain("decimal_rounded");
     // Two roundings on the way: the error is not traced.
     expect(
       run(round(call("divide", field("revenue"), divide), 2)).warnings,
