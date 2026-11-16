@@ -747,4 +747,90 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     const slide = copy.slides.find((s) => s.name === "Focus Pro")!;
     expect(slide.logoImageId).toBe(focusIcon);
   });
+
+  // Last: its apps would be listed by every install after it.
+  it("offers a two-store app's App Store icon after its Play icon was refreshed", async () => {
+    // Clock is in both stores; only its Play app has an icon at install.
+    for (const [connectionId, id] of [
+      [apple.id, "1003"],
+      [google.id, "com.clock"],
+    ] as const)
+      await withWorkspace(db, { workspaceId }, (tx) =>
+        upsertConnectionResources(tx, {
+          workspaceId,
+          connectionId,
+          resources: [{ id, name: "Clock", kind: "app" }],
+          now: at(),
+        }),
+      );
+    const playIcon = await icon(google.id, "com.clock");
+    const requestId = randomUUID();
+    const result = await installs().install(actor(), {
+      requestId,
+      name: "App portfolio",
+      connections: [apple.id, google.id],
+      groups: [
+        {
+          id: "8b0f8a8e-2f7a-4d55-9f43-3c3f1d1b0e02",
+          name: "Clock",
+          apps: [
+            { connectionId: google.id, appId: "com.clock" },
+            { connectionId: apple.id, appId: "1003" },
+          ],
+        },
+      ],
+    });
+    const clockLogo = async (dashboardId: string) =>
+      (await readDashboard(dashboardId)).slides.find(
+        (slide) => slide.name === "Clock",
+      )!.logoImageId;
+    expect(await clockLogo(result.dashboardId)).toBe(playIcon);
+    expect(await updateAvailable(requestId)).toBe(false);
+
+    // The daily refresh replaces the Play icon, as images/resource-icons.ts
+    // does: the new image takes the old one's place, which is removed.
+    const content = Buffer.from("a refreshed Play icon");
+    const [refreshed] = await owner`insert into workspace_images
+        (workspace_id, name, content_type, bytes, width, height, sha256,
+         content, origin, connection_id, resource_id, created_at)
+      values (${workspaceId}, 'App icon', 'image/png', ${content.length}, 64,
+        64, ${createHash("sha256").update(content).digest("hex")}, ${content},
+        'resource_icon', ${google.id}, 'com.clock', ${now})
+      returning id`;
+    await withWorkspace(db, { workspaceId }, (tx) =>
+      replaceImageReferences(
+        tx,
+        workspaceId,
+        playIcon,
+        refreshed!.id as string,
+      ),
+    );
+    await owner`delete from workspace_images where id = ${playIcon}`;
+    expect(await clockLogo(result.dashboardId)).toBe(refreshed!.id);
+    // A refreshed logo alone is no update.
+    expect(await updateAvailable(requestId)).toBe(false);
+
+    // Then the App Store icon, which the product prefers, arrives.
+    const appStoreIcon = await icon(apple.id, "1003");
+    expect(await updateAvailable(requestId)).toBe(true);
+    const { plan, copy } = await applyUpdate(requestId);
+    expect(
+      plan.records
+        .flatMap((record) => record.items)
+        .find(
+          (item) =>
+            item.ref ===
+            `dashboard:portfolio#slide:${appSlideKey("product:8b0f8a8e-2f7a-4d55-9f43-3c3f1d1b0e02")}`,
+        ),
+    ).toMatchObject({ change: "changed", outcome: "template" });
+    expect(copy.slides.find((s) => s.name === "Clock")!.logoImageId).toBe(
+      appStoreIcon,
+    );
+    const listed = (await updates().list(actor())).installs.find(
+      (entry) => entry.requestId === requestId,
+    )!;
+    await updates().swap(actor(), listed.openUpdate!.id, "dashboard:portfolio");
+    expect(await clockLogo(copy.id)).toBe(appStoreIcon);
+    expect(await updateAvailable(requestId)).toBe(false);
+  });
 });

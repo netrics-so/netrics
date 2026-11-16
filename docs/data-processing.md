@@ -871,7 +871,9 @@ that only follows changed apps leaves them editable. A scope change fetches
 the missing icons of the apps it would show. The comparison is with
 the apps the active dashboard was built from (stored with its template
 record), so an update closed before its swap, or swapped back, is offered
-again. A slide's name is the product's name, else (an empty name is valid
+again. The daily icon refresh replaces an icon in that baseline too, by
+the new icon of the same app: a product in both stores whose Play icon was
+refreshed is offered its App Store icon once that arrives (#734). A slide's name is the product's name, else (an empty name is valid
 in the Products table) its first app's name, else that app's id. An icon
 the daily refresh replaced after an update was applied is the product's
 current icon when the updated copy is made. A scope change builds
