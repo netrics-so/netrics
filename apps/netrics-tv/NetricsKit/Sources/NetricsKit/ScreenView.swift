@@ -252,25 +252,66 @@ extension StudioLayout {
      * shrinks; the slide name is shown only when it fits in full beside a
      * one-line name, so it is dropped before the name is cut.
      */
-    public static func headerFit(name: String, slideName: String?, format: ScreenFormat, logoAspect: Double?)
+    public static func headerFit(
+        name: String, slideName: String?, format: ScreenFormat, logoAspect: Double?, meta: String? = nil
+    )
         -> HeaderFit
     {
         typealias M = StudioHeaderMetrics
         let aspect = logoAspect.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        // Text beside the clock at its size (the offline note) takes its
+        // room from the names, as on the web (#649).
+        let metaWidth = meta.map { estimateTextWidth($0, fontSize: M.meta) + M.clockSpace } ?? 0
         let width =
             format.spec.reference.width - 2 * M.padding - (aspect.map { M.logo * $0 + M.gap } ?? 0)
-            - (2 * M.gap + M.clockSpace) - estimateTextWidth(M.clockSample, fontSize: M.meta)
+            - (2 * M.gap + M.clockSpace) - estimateTextWidth(M.clockSample, fontSize: M.meta) - metaWidth
         let maxNameLines = M.narrowFormats.contains(format) ? 2 : 1
         let trimmedName = trimWhitespace(name)
         let nameLines = Swift.max(
             1, wrappedLineCount(trimmedName, maxWidth: Swift.max(0, width), fontSize: M.name, weight: .semibold))
         let slide = slideName.map(trimWhitespace) ?? ""
         let showSlideName =
-            !slide.isEmpty && nameLines == 1
+            !slide.isEmpty && !repeatsName(slide, trimmedName) && nameLines == 1
             && estimateTextWidth(trimmedName, fontSize: M.name, weight: .semibold) + M.gap
                 + estimateTextWidth(slide, fontSize: M.meta) <= width
         return HeaderFit(
             width: width, nameLines: nameLines, maxNameLines: maxNameLines, showSlideName: showSlideName,
             fits: width > 0 && nameLines <= maxNameLines)
+    }
+
+    /**
+     * Whether a slide name repeats the dashboard name: equal ignoring case
+     * and outer spaces, but not accents ("Café" is not "Cafe"), as the web's
+     * `repeatsName` (#622, #676). The header then shows the name once.
+     * Compared in a fixed locale, so a Turkish device (dotted and dotless i)
+     * decides as every other.
+     */
+    public static func repeatsName(_ slideName: String?, _ dashboardName: String) -> Bool {
+        let slide = trimWhitespace(slideName ?? "")
+        guard !slide.isEmpty else { return false }
+        return slide.compare(
+            trimWhitespace(dashboardName), options: [.caseInsensitive], range: nil,
+            locale: Locale(identifier: "en_US_POSIX")) == .orderedSame
+    }
+
+    /**
+     * The header's offline note, as long as the dashboard name still fits
+     * in its lines (`headerFit`): "Offline — last update 12:00", else
+     * "Offline · 12:00", else "Offline"; the name is never cut for the time.
+     * The web's `offlineNoteFor` (#649, #676).
+     */
+    public static func offlineNote(
+        name: String, slideName: String?, format: ScreenFormat, logoAspect: Double?, updatedAt: Date?,
+        timeZone: String, language: ScreenLanguage
+    ) -> String {
+        let bare = KitStrings.text(.offline, language)
+        guard let updatedAt else { return bare }
+        let time = TVTime.hourMinute(updatedAt, timeZone: timeZone, language: language)
+        let notes = [
+            KitStrings.text(.offlineLastUpdate, language, time), KitStrings.text(.offlineShort, language, time),
+        ]
+        return notes.first {
+            headerFit(name: name, slideName: slideName, format: format, logoAspect: logoAspect, meta: "⚠ \($0)").fits
+        } ?? bare
     }
 }

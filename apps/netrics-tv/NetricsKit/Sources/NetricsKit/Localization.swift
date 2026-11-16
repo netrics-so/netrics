@@ -50,12 +50,16 @@ public enum KitText: String, Sendable, CaseIterable {
     case periodThisWeek, periodThisQuarter, periodThisYear
     case comparisonThisWeek, comparisonThisQuarter, comparisonThisYear
     case aggregationSum, aggregationAvg, aggregationMin, aggregationMax, aggregationLast
-    case sourceAccess, sourcePaused
+    case sourcePaused
+    // A measure tile's states on a wall screen, worded as the web kiosk's
+    // viewer wording (#649, #676): the state, never an editor's remedy.
+    case measurePending, measureUnavailable, measureStale, measurePartial, measureWarningOne, measureWarningOther
+    case measureSourcePaused, measureSourceOutage
     case sourceReportsPending
     case noDataForPeriod, noDataYet, noDataToCompare, noComparison, couldNotLoad
     case noticeAuthFailed, noticeOutage, noticeFirstSync, noticeLastSync
     case justNow, never, timeAgo, timeIn, minuteOne, minuteOther, hourOne, hourOther, dayOne, dayOther
-    case offline, offlineLastUpdate
+    case offline, offlineLastUpdate, offlineShort
     case conversionSource, conversionNotConverted
     case weekOf, others
     case tableTop, tableNew
@@ -104,7 +108,14 @@ public enum KitStrings {
         .aggregationLast: "Latest",
         .noDataForPeriod: "No data for this period yet",
         .noDataYet: "No data yet",
-        .sourceAccess: "Update the connection’s access to resume imports.",
+        .measurePending: "Data not available yet",
+        .measureUnavailable: "Data not available",
+        .measureStale: "Last valid data",
+        .measurePartial: "Some source data is missing.",
+        .measureWarningOne: "%d data warning",
+        .measureWarningOther: "%d data warnings",
+        .measureSourcePaused: "Imports from %@ are paused.",
+        .measureSourceOutage: "Imports from %@ are interrupted.",
         .sourcePaused: "App collection is paused; retained history remains available.",
         .sourceReportsPending: "Waiting for some source reports. Known values may be incomplete.",
         .noDataToCompare: "No data to compare %@",
@@ -126,6 +137,7 @@ public enum KitStrings {
         .dayOther: "%d days",
         .offline: "Offline",
         .offlineLastUpdate: "Offline — last update %@",
+        .offlineShort: "Offline · %@",
         .conversionSource: "ECB reference rates",
         .conversionNotConverted: "%@ · %@ not converted",
         .weekOf: "Week of %@",
@@ -225,7 +237,14 @@ public enum KitStrings {
         .aggregationLast: "Aktuell",
         .noDataForPeriod: "Noch keine Daten für diesen Zeitraum",
         .noDataYet: "Noch keine Daten",
-        .sourceAccess: "Aktualisiere den Zugriff der Verbindung, um Importe fortzusetzen.",
+        .measurePending: "Daten noch nicht verfügbar",
+        .measureUnavailable: "Daten nicht verfügbar",
+        .measureStale: "Letzte gültige Daten",
+        .measurePartial: "Einige Quelldaten fehlen.",
+        .measureWarningOne: "%d Datenhinweis",
+        .measureWarningOther: "%d Datenhinweise",
+        .measureSourcePaused: "Die Importe von %@ sind pausiert.",
+        .measureSourceOutage: "Die Importe von %@ sind unterbrochen.",
         .sourcePaused: "Die App-Erfassung ist pausiert; aufbewahrte Daten bleiben verfügbar.",
         .sourceReportsPending: "Einige Quellenberichte stehen noch aus. Bekannte Werte können unvollständig sein.",
         .noDataToCompare: "Keine Daten zum Vergleich (%@)",
@@ -247,6 +266,7 @@ public enum KitStrings {
         .dayOther: "%d Tagen",
         .offline: "Offline",
         .offlineLastUpdate: "Offline – letzte Aktualisierung %@",
+        .offlineShort: "Offline · %@",
         .conversionSource: "EZB-Referenzkurse",
         .conversionNotConverted: "%@ · %@ nicht umgerechnet",
         .weekOf: "Woche vom %@",

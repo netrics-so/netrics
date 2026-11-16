@@ -137,17 +137,22 @@ public struct ScrollDashboardView: View {
         let widgets = Dictionary(slide.widgets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let padding = CGFloat(ScrollGeometry.sectionPadding)
         let gap = CGFloat(ScrollGeometry.gap)
+        // A slide named like the dashboard (a template's only slide) has no
+        // heading of its own: the dashboard's name above names it (#622, #676).
+        let repeated = StudioLayout.repeatsName(slide.name, payload.dashboard?.name ?? "")
         return VStack(alignment: .leading, spacing: gap) {
-            Text(slide.name ?? L10n.tr("Slide %@", payload.language, String(section.index + 1)))
-                .font(.system(size: CGFloat(1.125 * rem), weight: .semibold))
-                .foregroundStyle(colors.text)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(colors.surface, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(colors.border, lineWidth: 1))
-                .accessibilityAddTraits(.isHeader)
+            if !repeated {
+                Text(slide.name ?? L10n.tr("Slide %@", payload.language, String(section.index + 1)))
+                    .font(.system(size: CGFloat(1.125 * rem), weight: .semibold))
+                    .foregroundStyle(colors.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(colors.surface, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(colors.border, lineWidth: 1))
+                    .accessibilityAddTraits(.isHeader)
+            }
             if layout.items.isEmpty {
                 Text(L10n.tr("This slide has no widgets yet.", payload.language))
                     .font(.system(size: CGFloat(rem)))

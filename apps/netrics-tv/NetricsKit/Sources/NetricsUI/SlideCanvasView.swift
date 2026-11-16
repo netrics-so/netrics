@@ -230,9 +230,19 @@ struct SlideHeaderView: View {
     var body: some View {
         let colors = env.colors
         let name = payload.dashboard?.name ?? ""
+        let logoAspect = logo.flatMap {
+            $0.image.height > 0 ? Double($0.image.width) / Double($0.image.height) : nil
+        }
+        // Offline: the note with the last update's time, as long as the name
+        // still fits; its room is taken from the names (#676, as the web).
+        let offlineNote =
+            state.offline
+            ? StudioLayout.offlineNote(
+                name: name, slideName: slide.name, format: format, logoAspect: logoAspect,
+                updatedAt: state.updatedAt, timeZone: payload.timeZone, language: env.language) : nil
         let fit = StudioLayout.headerFit(
-            name: name, slideName: slide.name, format: format,
-            logoAspect: logo.flatMap { $0.image.height > 0 ? Double($0.image.width) / Double($0.image.height) : nil })
+            name: name, slideName: slide.name, format: format, logoAspect: logoAspect,
+            meta: offlineNote.map { "⚠ \($0)" })
         let slideName = slide.name.flatMap { $0.isEmpty || !fit.showSlideName ? nil : $0 }
         // "next refresh in 42 s" where there is room (ADR 0018 section 5).
         let cycle = RefreshCountdown.cycle(
@@ -293,8 +303,8 @@ struct SlideHeaderView: View {
                         .font(env.font(30))
                         .foregroundStyle(colors.muted)
                 }
-                if state.offline {
-                    Text("⚠ \(TVTime.offlineMarker(updatedAt: state.updatedAt, timeZone: payload.timeZone, language: env.language))")
+                if let offlineNote {
+                    Text("⚠ \(offlineNote)")
                         .font(env.font(30))
                         .foregroundStyle(colors.warning)
                         .lineLimit(1)

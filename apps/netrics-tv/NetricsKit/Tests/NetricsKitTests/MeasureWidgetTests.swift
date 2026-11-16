@@ -166,4 +166,76 @@ import Testing
     @Test func showsNegativeZeroDecimalsAsZero() {
         #expect(MeasureCell(value: .number(-0.0), type: "decimal", unit: nil, currency: nil, status: "ok").text(language: .en) == "0")
     }
+
+    /// A tile with no rows, a warning count and sources needing attention.
+    private func viewerData(error: String? = nil, warnings: Int = 1, partial: Bool = false) throws
+        -> MeasureWidgetData
+    {
+        let rows =
+            partial
+            ? #"[{"dimensions":{},"measures":{"d":{"value":"1","type":"decimal","status":"partial"}}}]"# : "[]"
+        let result =
+            error == nil
+            ? #"{"releaseId":null,"rows":\#(rows),"warnings":\#(Array(repeating: "\"w\"", count: warnings)),"provenance":[],"stale":true}"#
+            : "null"
+        let json = #"""
+            {"sourceHealth":[{"connectionId":"a","name":"Apple team","status":"needs_reauthorization"},
+            {"connectionId":"b","name":"Play account","status":"auth_failed"},
+            {"connectionId":"c","name":"Second Play","status":"outage"}],
+            "metadata":null,"result":\#(result),"error":\#(error.map { "\"\($0)\"" } ?? "null"),"exclusions":[]}
+            """#
+        return try JSONDecoder().decode(MeasureWidgetData.self, from: Data(json.utf8))
+    }
+
+    /// Editor instructions, in either language (#649, #676).
+    private func instructs(_ text: String) -> Bool {
+        ["Check", "check", "Reconnect", "Update", "Try again", "Prüfe", "Verbinde", "Aktualisiere", "Versuche"]
+            .contains { text.contains($0) }
+    }
+
+    @Test func wallScreenWordingAsTheWebKiosk() throws {
+        let data = try viewerData()
+        let rows = data.result?.rows ?? []
+        #expect(data.viewerWarnings(rows: rows, language: .en) == ["1 data warning"])
+        #expect(data.viewerWarnings(rows: rows, language: .de) == ["1 Datenhinweis"])
+        let two = try viewerData(warnings: 2)
+        #expect(two.viewerWarnings(rows: [], language: .en) == ["2 data warnings"])
+        #expect(two.viewerWarnings(rows: [], language: .de) == ["2 Datenhinweise"])
+        #expect(try viewerData(warnings: 0).viewerWarnings(rows: [], language: .en).isEmpty)
+        let partial = try viewerData(warnings: 0, partial: true)
+        #expect(
+            partial.viewerWarnings(rows: partial.result?.rows ?? [], language: .en) == ["Some source data is missing."])
+        #expect(
+            data.viewerSourceNotices(language: .en) == [
+                "Imports from Apple team are paused.", "Imports from Play account are paused.",
+                "Imports from Second Play are interrupted.",
+            ])
+        #expect(data.viewerSourceNotices(language: .de).first == "Die Importe von Apple team sind pausiert.")
+        #expect(KitStrings.text(.measureStale, .de) == "Letzte gültige Daten")
+        #expect(data.viewerError(expired: false, language: .en) == nil)
+        #expect(data.viewerError(expired: true, language: .en) == "Data not available")
+    }
+
+    @Test func failedRequestsSayOnlyTheState() throws {
+        #expect(try viewerData(error: "data_source_pending").viewerError(expired: false, language: .en) == "Data not available yet")
+        #expect(
+            try viewerData(error: "data_source_pending").viewerError(expired: false, language: .de)
+                == "Daten noch nicht verfügbar")
+        #expect(try viewerData(error: "internal_error").viewerError(expired: false, language: .en) == "Data not available")
+        #expect(try viewerData(error: "internal_error").viewerError(expired: false, language: .de) == "Daten nicht verfügbar")
+        for language in [ScreenLanguage.en, .de] {
+            for error in ["data_source_pending", "data_source_not_found", "internal_error"] {
+                let data = try viewerData(error: error)
+                let lines =
+                    [data.viewerError(expired: false, language: language) ?? ""]
+                    + data.viewerSourceNotices(language: language)
+                let instructed = lines.contains(where: instructs)
+                #expect(!instructed, "\(language) \(error)")
+            }
+            let data = try viewerData(warnings: 3, partial: true)
+            let warned = data.viewerWarnings(rows: data.result?.rows ?? [], language: language)
+            let instructed = warned.contains(where: instructs)
+            #expect(!instructed)
+        }
+    }
 }

@@ -230,6 +230,52 @@ public struct MeasureWidgetData: Codable, Sendable, Equatable {
     public var error: String?
     public var exclusions: [MeasureExclusion]
 }
+/**
+ * What a measure tile says about its state on a wall screen, worded as the
+ * web kiosk's viewer wording (`audience="viewer"`, #649, #676): the state
+ * only, since nobody at a TV can check a model or reconnect a source.
+ */
+extension MeasureWidgetData {
+    /// The line instead of the data when the request failed or the result
+    /// expired: "Data not available yet" while the source has not imported,
+    /// else "Data not available"; nil with data to show.
+    public func viewerError(expired: Bool, language: ScreenLanguage) -> String? {
+        guard error != nil || expired else { return nil }
+        return KitStrings.text(
+            error == "data_source_pending" && !expired ? .measurePending : .measureUnavailable, language)
+    }
+    /// "Some source data is missing." for partial cells, then "2 data
+    /// warnings" for the result's warnings.
+    public func viewerWarnings(rows: [MeasureResultRow], language: ScreenLanguage) -> [String] {
+        var lines: [String] = []
+        if rows.contains(where: { $0.measures.values.contains { $0.status == "partial" } }) {
+            lines.append(KitStrings.text(.measurePartial, language))
+        }
+        if let count = result?.warnings.count, count > 0 {
+            lines.append(
+                KitStrings.text(count == 1 ? .measureWarningOne : .measureWarningOther, language, count))
+        }
+        return lines
+    }
+    /// One line per source that is not ok: "Imports from Apple team are
+    /// paused." when its access expired or was rejected, "… interrupted."
+    /// on an outage; a paused or first-syncing source says so by name.
+    public func viewerSourceNotices(language: ScreenLanguage) -> [String] {
+        (sourceHealth ?? []).filter { $0.status != "ok" }.map { source in
+            switch source.status {
+            case "needs_reauthorization", "auth_failed":
+                return KitStrings.text(.measureSourcePaused, language, source.name)
+            case "paused":
+                return "\(source.name): \(KitStrings.text(.sourcePaused, language))"
+            case "pending":
+                return "\(source.name): \(KitStrings.text(.noticeFirstSync, language))"
+            default:
+                return KitStrings.text(.measureSourceOutage, language, source.name)
+            }
+        }
+    }
+}
+
 extension MeasureWidgetData {
     /// A measure cell as displayed, honouring the measure's metadata.
     public func text(
