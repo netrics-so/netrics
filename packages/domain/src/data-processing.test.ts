@@ -9,8 +9,10 @@ import {
   type DataField,
 } from "./data-expression.js";
 import {
+  aggregateAcceptsField,
   aggregateData,
   executePreparation,
+  type AggregateOperation,
   type DataTable,
   type PreparationGraph,
   type PreparationNode,
@@ -692,6 +694,64 @@ describe("reusable preparation graphs", () => {
   });
 });
 describe("aggregate semantics", () => {
+  it("offers exactly the columns each aggregate can read (#631)", () => {
+    const types = [
+      "string",
+      "boolean",
+      "integer",
+      "number",
+      "decimal",
+      "date",
+      "timestamp",
+      "json",
+    ] as const;
+    const ops: AggregateOperation[] = [
+      "sum",
+      "count",
+      "distinct_count",
+      "avg",
+      "min",
+      "max",
+      "last",
+      "any",
+      "all",
+    ];
+    const table: DataTable = {
+      fields: [
+        ...types.map((type) => ({
+          id: type,
+          name: type,
+          type,
+          nullable: true,
+        })),
+        { id: "at", name: "At", type: "date", nullable: true },
+      ],
+      rows: [],
+    };
+    for (const op of ops)
+      for (const type of types) {
+        let runs = true;
+        try {
+          aggregateData(table, {
+            id: "a",
+            name: "A",
+            op,
+            fieldId: type,
+            ...(op === "last" ? { orderBy: "at" } : {}),
+          });
+        } catch {
+          runs = false;
+        }
+        expect([op, type, aggregateAcceptsField(op, type)]).toEqual([
+          op,
+          type,
+          runs,
+        ]);
+      }
+    expect(aggregateAcceptsField("sum", "string")).toBe(false);
+    expect(aggregateAcceptsField("avg", "integer")).toBe(true);
+    expect(aggregateAcceptsField("count", "string")).toBe(true);
+  });
   it("distinguishes no data from zero and computes exact integer sums", () => {
     expect(
       aggregateData(

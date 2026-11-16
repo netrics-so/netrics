@@ -219,6 +219,21 @@ function sourceContext(
     ...(expiry ? { expiresAt: expiry } : {}),
   };
 }
+/**
+ * Whether an aggregate operation can read a column of this type: numbers for
+ * sum and average, true/false for any and all, and no JSON except for count.
+ * The same rules `aggregateData` enforces, for pickers that offer columns.
+ */
+export function aggregateAcceptsField(
+  op: AggregateOperation,
+  type: DataType,
+): boolean {
+  if (type === "json") return op === "count";
+  if (op === "sum" || op === "avg")
+    return type === "integer" || type === "number" || type === "decimal";
+  if (op === "any" || op === "all") return type === "boolean";
+  return true;
+}
 export function aggregateData(
   table: DataTable,
   definition: AggregateDefinition,

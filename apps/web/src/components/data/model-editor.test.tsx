@@ -14,8 +14,11 @@ import {
   ModelEditor,
   modelEditorState,
   modelImpact,
+  newAggregateMeasure,
   PreviewScopeHint,
+  renameMeasure,
 } from "./model-editor";
+import { changeAggregateOperation } from "./fields";
 
 const source: DataSource = {
   id: "sales",
@@ -716,6 +719,68 @@ describe("model editor preview scope", () => {
     expect(de).toContain("Deine Kennzahlen halten Store, Land getrennt");
     expect(de).toContain(
       ">Nach Store, Land gruppieren und Vorschau zeigen</button>",
+    );
+  });
+});
+
+describe("model editor new measures and aggregate columns (#631)", () => {
+  const counted = {
+    id: "orders",
+    name: "Orders",
+    kind: "aggregate",
+    datasetId: "sales",
+    aggregate: { id: "orders", name: "Orders", op: "count" },
+  } as const;
+  it("starts a new measure with an empty name and a placeholder, en and de", () => {
+    const added = newAggregateMeasure("m1", "sales", "Count");
+    expect(added.name).toBe("");
+    expect(added.aggregate).toEqual({ id: "m1", name: "Count", op: "count" });
+    const en = render([added]);
+    expect(en).toMatch(/<input[^>]*placeholder="e.g. Revenue"[^>]*value=""/);
+    // The preview's measure list names it until it has a name.
+    expect(en).toContain("Unnamed measure");
+    const de = render([added], "de");
+    expect(de).toMatch(/<input[^>]*placeholder="z. B. Umsatz"[^>]*value=""/);
+    expect(de).toContain("Unbenannte Kennzahl");
+  });
+  it("keeps the aggregate's name with the measure's", () => {
+    const renamed = renameMeasure(
+      { ...counted, aggregate: { ...counted.aggregate, name: "" } },
+      "Paid orders",
+    );
+    expect(renamed).toMatchObject({
+      name: "Paid orders",
+      aggregate: { name: "Paid orders" },
+    });
+    expect(renameMeasure(ratio, "Share")).toEqual({ ...ratio, name: "Share" });
+  });
+  it("offers only number columns to sum, and every column to count", () => {
+    expect(options(card(render([revenue]), "Revenue"), "Column")).toEqual([
+      "Choose…",
+      "Amount",
+    ]);
+    expect(options(card(render([counted]), "Orders"), "Column")).toEqual([
+      "Choose…",
+      "Date",
+      "Ordered at",
+      "App",
+      "Amount",
+    ]);
+  });
+  it("drops a column the new aggregation cannot read", () => {
+    const byApp = { ...counted.aggregate, fieldId: "app" };
+    expect(
+      changeAggregateOperation(byApp, "sum", source.fields).fieldId,
+    ).toBeUndefined();
+    expect(
+      changeAggregateOperation(
+        { ...byApp, fieldId: "amount" },
+        "avg",
+        source.fields,
+      ),
+    ).toEqual({ ...byApp, op: "avg", fieldId: "amount" });
+    expect(changeAggregateOperation(byApp, "max", source.fields).fieldId).toBe(
+      "app",
     );
   });
 });

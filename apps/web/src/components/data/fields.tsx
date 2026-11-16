@@ -1,11 +1,12 @@
 "use client";
 import { useId, useState } from "react";
-import type {
-  DataField,
-  AggregateDefinition,
-  ModelDimension,
-  ModelMeasure,
-  ModelWindowUnit,
+import {
+  aggregateAcceptsField,
+  type DataField,
+  type AggregateDefinition,
+  type ModelDimension,
+  type ModelMeasure,
+  type ModelWindowUnit,
 } from "@netrics/domain";
 import { useT } from "@/lib/i18n/client";
 import {
@@ -87,6 +88,22 @@ export function ColumnChecks({
     </fieldset>
   );
 }
+/** Switches the operation; a column the new one cannot read is dropped (#631). */
+export function changeAggregateOperation(
+  value: AggregateDefinition,
+  op: AggregateDefinition["op"],
+  fields: readonly DataField[],
+): AggregateDefinition {
+  const field = fields.find((f) => f.id === value.fieldId);
+  return {
+    ...value,
+    op,
+    fieldId:
+      field && !aggregateAcceptsField(op, field.type)
+        ? undefined
+        : value.fieldId,
+  };
+}
 export function AggregateFields({
   fields,
   value,
@@ -132,10 +149,13 @@ export function AggregateFields({
           id={opId}
           value={value.op}
           onChange={(e) =>
-            onChange({
-              ...value,
-              op: e.target.value as AggregateDefinition["op"],
-            })
+            onChange(
+              changeAggregateOperation(
+                value,
+                e.target.value as AggregateDefinition["op"],
+                fields,
+              ),
+            )
           }
         >
           {operations.map((op) => (
@@ -147,7 +167,7 @@ export function AggregateFields({
       </div>
       <ColumnSelect
         label={t("field")}
-        fields={fields}
+        fields={fields.filter((f) => aggregateAcceptsField(value.op, f.type))}
         value={value.fieldId ?? ""}
         empty={value.op === "count"}
         onChange={(fieldId) =>
@@ -226,7 +246,7 @@ export function WindowedMeasureFields({
           <option value="">{t("choose")}</option>
           {baseMeasures.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.name}
+              {m.name.trim() || t("unnamedMeasure")}
             </option>
           ))}
         </select>

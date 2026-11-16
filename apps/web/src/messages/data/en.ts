@@ -443,6 +443,8 @@ export const dataEn = {
     requiredScopeHelp:
       "This measure requires grouping by each chosen dimension, or filtering it to one value. Useful for ratings, snapshots and other values that cannot be combined.",
     measureName: "Measure name",
+    measureNamePlaceholder: "e.g. Revenue",
+    unnamedMeasure: "Unnamed measure",
     measureKind: "Calculation",
     aggregateMeasure: "Aggregate a column",
     formulaMeasure: "Calculate from measures",

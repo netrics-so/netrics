@@ -449,6 +449,8 @@ export const dataDe: Catalog<typeof dataEn> = {
     requiredScopeHelp:
       "Diese Kennzahl erfordert eine Gruppierung nach jeder gewählten Dimension oder einen Filter auf genau einen Wert. Geeignet für Bewertungen, Momentaufnahmen und andere nicht kombinierbare Werte.",
     measureName: "Kennzahlname",
+    measureNamePlaceholder: "z. B. Umsatz",
+    unnamedMeasure: "Unbenannte Kennzahl",
     measureKind: "Berechnung",
     aggregateMeasure: "Spalte aggregieren",
     formulaMeasure: "Aus Kennzahlen berechnen",
