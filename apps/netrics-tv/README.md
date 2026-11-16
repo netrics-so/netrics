@@ -327,7 +327,11 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   keeps its warning, which names only the day ("Source unreachable · Up to
   Nov 15"), and a provider overdue by a day (status `stale`) is the warning
   "Up to Nov 14 · Nov 15 not published yet". The detail sheet's "Updated"
-  row names the stream ("Sales up to Nov 15 · next ~21:00"). Times are in
+  row names the stream ("Sales up to Nov 15 · next ~21:00"). A latest
+  review shows its cadence ("Checked 10 min. ago · next check ~15:46") in
+  the slot a notice would use, so the layout shared with the web is
+  unchanged. After a prefix the line starts lower-case ("derived · checked
+  5 min. ago"). Times are in
   the device's time zone and clock (12 or 24 hours) and recomputed every
   minute; dates follow the screen language; `dataThrough` is the provider's
   day and never converted. A missing or damaged `freshness` leaves the

@@ -100,7 +100,7 @@ public enum CompareText {
         let derived = KitStrings.text(.compareDerived, language)
         return WidgetFooter.candidates(
             updatedAt: updatedAt, freshness: freshness, source: nil, now: now, language: language)
-            .map { "\(derived) · \($0)" } + [derived]
+            .map { "\(derived) · \(FreshnessText.midLine($0))" } + [derived]
     }
 }
 

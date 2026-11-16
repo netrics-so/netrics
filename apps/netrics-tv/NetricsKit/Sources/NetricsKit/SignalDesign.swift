@@ -257,6 +257,26 @@ public enum DataSurface: String, Sendable, Equatable {
 
 public enum ReviewText {
     /**
+     * The freshness line of a latest-review widget (ADR 0025, #706): its
+     * stream is continuous, "Checked 10 min. ago · next check ~15:46". It
+     * takes the slot a notice would use, so `reviewLayout(notice: true)`
+     * sizes it and the layout shared with the web is unchanged. Nil while a
+     * notice shows, without freshness, or when no candidate fits one line.
+     */
+    public static func footer(
+        _ data: ReviewWidgetData, notice: Bool, placement: StudioPlacement, showHeader: Bool, fontScale: Double,
+        unitBox: StudioCanvas? = nil, now: Date = Date(), language: ScreenLanguage = .en,
+        timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+    ) -> String? {
+        guard !notice, let freshness = data.freshness else { return nil }
+        return WidgetFooter.line(
+            WidgetFooter.candidates(
+                updatedAt: nil, freshness: freshness, status: data.status, source: nil, now: now,
+                language: language, timeZone: timeZone, region: region),
+            type: .review, placement: placement, showHeader: showHeader, fontScale: fontScale, unitBox: unitBox)
+    }
+
+    /**
      * A review widget's surface lines: "App Store reviews paused — upload a
      * new reviews key" and its hint instead of "Reconnect …"; "No reviews
      * yet" under the skeleton; "Loading history…" as for any widget.

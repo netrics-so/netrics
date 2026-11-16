@@ -444,3 +444,72 @@ private func metricData(_ payload: DeviceDashboardV2) -> MetricWidgetData? {
         #expect(Brand.name == "netrics")
     }
 }
+
+// MARK: - Review cadence and prefixed lines
+
+@Suite struct ReviewFreshnessTests {
+    private let placement = StudioPlacement(x: 0, y: 0, w: 4, h: 3)
+
+    private func review(status: DeviceTileStatus = .ok, freshness: WidgetFreshness?) -> ReviewWidgetData {
+        var data = ReviewWidgetData(
+            status: status, updatedAt: "2026-11-16T12:50:00Z",
+            review: WidgetReview(
+                rating: 5, title: "Finally", body: "Finally a dashboard.", author: nil, territory: "DE",
+                createdAt: "2026-11-16T07:02:00Z"))
+        data.freshness = freshness
+        return data
+    }
+
+    private func footer(_ data: ReviewWidgetData, notice: Bool = false, language: ScreenLanguage = .en) -> String? {
+        ReviewText.footer(
+            data, notice: notice, placement: placement, showHeader: true, fontScale: 1, now: now, language: language,
+            timeZone: berlin, region: language == .en ? us24 : germany)
+    }
+
+    @Test func theReviewCadenceShowsInTheNoticeSlot() {
+        #expect(footer(review(freshness: continuous())) == "Checked 10 min. ago · next check ~14:30")
+        // The longer German line drops its last part where it would wrap.
+        let german = footer(review(freshness: continuous()), language: .de)
+        #expect(german == "Geprüft vor 10 Min." || german == "Geprüft vor 10 Min. · nächste Prüfung ~14:30")
+        #expect(
+            ReviewText.footer(
+                review(freshness: continuous()), notice: false, placement: StudioPlacement(x: 0, y: 0, w: 6, h: 3),
+                showHeader: true, fontScale: 1, now: now, language: .de, timeZone: berlin, region: germany)
+                == "Geprüft vor 10 Min. · nächste Prüfung ~14:30")
+        // A notice keeps the slot; without freshness there is no line, as before.
+        #expect(footer(review(freshness: continuous()), notice: true) == nil)
+        #expect(footer(review(freshness: nil)) == nil)
+        // A failing source: no next check.
+        #expect(footer(review(status: .outage, freshness: continuous())) == "Checked 10 min. ago")
+    }
+
+    @Test func theLineUsesTheNoticesRoomSoTheSharedLayoutHolds() throws {
+        // The line is laid out as a notice: reviewLayout(notice: true), a
+        // shape the shared layout already has, never a new one.
+        let box = StudioRender.contentBox(placement, showHeader: true)
+        func layout(notice: Bool) -> StudioLayout.ReviewLayout {
+            StudioLayout.reviewLayout(
+                label: "Latest review · Wurfel", width: box.width, height: box.height, fontScale: 1, icon: true,
+                title: "Finally", body: "Finally a dashboard.", notice: notice)
+        }
+        #expect(layout(notice: true).bodyLines <= layout(notice: false).bodyLines)
+        // It fits the slot's one line at the slot's size.
+        let line = try #require(footer(review(freshness: continuous())))
+        #expect(
+            StudioLayout.wrappedLineCount(line, maxWidth: box.width, fontSize: layout(notice: true).sizes.author) == 1)
+    }
+
+    @Test func aLineAfterAPrefixStartsLowerCase() {
+        let compare = CompareText.footerCandidates(updatedAt: nil, freshness: continuous(), now: now, language: .en)
+        #expect(compare.first?.hasPrefix("derived · checked ") == true)
+        #expect(compare.last == "derived")
+        #expect(FreshnessText.midLine("Up to Nov 15") == "up to Nov 15")
+        #expect(FreshnessText.midLine("Geprüft vor 10 Min.") == "geprüft vor 10 Min.")
+        // Without freshness the compare footer is as before.
+        #expect(
+            CompareText.footerCandidates(updatedAt: "2026-11-16T12:55:00Z", now: now)
+                == ["derived · updated 5 min. ago", "derived"])
+        // On its own a line keeps its capital.
+        #expect(text().footer(continuous(), now: now).first?.hasPrefix("Checked") == true)
+    }
+}

@@ -156,6 +156,16 @@ public struct FreshnessText: Sendable {
         return Locale(components: components)
     }
 
+    /**
+     * A line that follows a prefix ("derived · checked 5 min. ago"): its
+     * first letter lower-cased. A line that starts on its own keeps the
+     * capital ("Checked 5 min. ago").
+     */
+    public static func midLine(_ line: String) -> String {
+        guard let first = line.first else { return line }
+        return first.lowercased() + line.dropFirst()
+    }
+
     private func text(_ key: KitText, _ arguments: CVarArg...) -> String {
         KitStrings.text(key, language, arguments: arguments)
     }

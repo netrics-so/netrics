@@ -1079,9 +1079,13 @@ struct ReviewWidgetView: View {
             data.status == .stale || data.status == .outage
             ? TileNotices.notice(status: data.status, updatedAt: data.updatedAt, freshness: data.freshness, language: language) : nil
         let review = data.review
+        // The freshness line takes the notice's slot (ADR 0025, #706).
+        let footer = ReviewText.footer(
+            data, notice: notice != nil, placement: placement.cells, showHeader: env.showHeader,
+            fontScale: env.fontScale, unitBox: placement.unitBox, now: now, language: language)
         let layout = StudioLayout.reviewLayout(
             label: label, width: box.width, height: box.height, fontScale: env.fontScale, icon: icon != nil,
-            title: review?.title, body: review?.body, notice: notice != nil)
+            title: review?.title, body: review?.body, notice: notice != nil || footer != nil)
         let small = layout.sizes.author
 
         if let surface = DataSurface(data.status) {
@@ -1146,6 +1150,9 @@ struct ReviewWidgetView: View {
                 }
                 if let notice {
                     NoticeLine(text: notice, size: small, env: env, stale: data.status == .stale)
+                        .padding(.top, env.pt(StudioLayout.ReviewSpacing.stack))
+                } else if let footer {
+                    FooterLine(text: footer, size: small, env: env)
                         .padding(.top, env.pt(StudioLayout.ReviewSpacing.stack))
                 }
             }

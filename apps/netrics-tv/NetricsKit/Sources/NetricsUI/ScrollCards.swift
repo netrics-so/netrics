@@ -823,7 +823,11 @@ struct ScrollReviewCard: View {
             } else {
                 ScrollMutedLine(text: state ?? "…", env: env)
             }
-            ScrollBottomLine(notice: notice, stale: data.status == .stale, footer: nil, env: env)
+            // The review cadence (ADR 0025, #706); without freshness nothing, as before.
+            ScrollBottomLine(
+                notice: notice, stale: data.status == .stale,
+                footer: data.freshness == nil ? nil : scrollFooter(nil, data.freshness, now: now, language: language),
+                env: env)
         }
         .accessibilityElement(children: .combine)
     }
