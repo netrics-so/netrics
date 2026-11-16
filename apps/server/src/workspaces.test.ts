@@ -914,17 +914,33 @@ describe("archived projects", () => {
     ]);
   });
 
-  it("falls back to All while the active project is archived and restores it after", async () => {
+  it("archiving ends the active project for good; un-archiving does not switch back (#641)", async () => {
     const p = await newProject("Active then archived");
-    expect(
-      (await patch("/active-project", cookies.owner, { projectId: p }))
-        .statusCode,
-    ).toBe(200);
+    for (const cookie of [cookies.owner, cookies.editor]) {
+      expect(
+        (await patch("/active-project", cookie, { projectId: p })).statusCode,
+      ).toBe(200);
+    }
     await post(`/projects/${p}/archive`, cookies.owner);
     expect(await activeOf(cookies.owner)).toBeNull();
+    // The stored choice is cleared, not only read back as "All".
+    const stored = await world.admin`
+      select count(*)::int as n from memberships
+      where workspace_id = ${w1Id} and active_project_id = ${p}`;
+    expect(stored[0]?.n).toBe(0);
     await post(`/projects/${p}/unarchive`, cookies.owner);
-    expect(await activeOf(cookies.owner)).toBe(p);
-    await patch("/active-project", cookies.owner, { projectId: null });
+    expect(await activeOf(cookies.owner)).toBeNull();
+    expect(await activeOf(cookies.editor)).toBeNull();
+  });
+
+  it("un-archiving clears an active project stored before the rule (#641)", async () => {
+    const p = await newProject("Archived earlier");
+    await patch("/active-project", cookies.owner, { projectId: p });
+    // A pointer left behind by an archive before #641.
+    await world.admin`update projects set archived_at = now() where id = ${p}`;
+    expect(await activeOf(cookies.owner)).toBeNull();
+    await post(`/projects/${p}/unarchive`, cookies.owner);
+    expect(await activeOf(cookies.owner)).toBeNull();
   });
 
   it("refuses an archived project as active project", async () => {

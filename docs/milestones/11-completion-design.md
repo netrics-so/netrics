@@ -203,6 +203,8 @@ a, b)` where the condition is a visual condition.
   the choice follows the user across pages and sessions; "All" (null) stays
   the default. The dashboards page's client-side filter moves to it. If the
   active project is archived, it falls back to "All". _(Builder-check call.)_
+  Archiving clears the stored choice, so un-archiving leaves members on
+  "All" (#641); switching refreshes the open page at once.
 - The existing hard delete (`projects:delete`, items' `project_id` set to
   null) stays unchanged; archive is added next to it. _(Builder-check call.)_
 - Archiving hides a project and its items from navigation and pickers but

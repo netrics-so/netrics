@@ -196,7 +196,7 @@ describe("user context (workspace discovery)", () => {
 });
 
 describe("effective active project", () => {
-  it("reads as All while the stored project is archived and comes back after", async () => {
+  it("archiving clears the stored active project; unarchiving keeps All (#641)", async () => {
     const projectId = await withWorkspace(
       db,
       { workspaceId: workspaceA, userId: u1 },
@@ -231,7 +231,7 @@ describe("effective active project", () => {
     const archived = await archive(true);
     expect(archived?.archivedAt).toBeInstanceOf(Date);
     expect(await activeIn()).toBeNull();
-    // The stored choice is kept, so unarchiving restores it.
+    // The stored choice is cleared, so unarchiving does not restore it.
     const stored = await withWorkspace(
       db,
       { workspaceId: workspaceA, userId: u1 },
@@ -246,9 +246,9 @@ describe("effective active project", () => {
             ),
           ),
     );
-    expect(stored[0]?.id).toBe(projectId);
+    expect(stored[0]?.id).toBeNull();
     expect((await archive(false))?.archivedAt).toBeNull();
-    expect(await activeIn()).toBe(projectId);
+    expect(await activeIn()).toBeNull();
     // Another workspace's caller cannot archive it.
     expect(
       await withWorkspace(db, { workspaceId: workspaceB, userId: u2 }, (tx) =>

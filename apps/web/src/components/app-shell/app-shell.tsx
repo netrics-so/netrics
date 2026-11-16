@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  Fragment,
   useEffect,
   useId,
   useRef,
@@ -95,6 +96,22 @@ export function AppShell(props: AppShellProps) {
   return <AppShellFrame {...props} pathname={usePathname() ?? ""} />;
 }
 
+/**
+ * The page under the active project (#641): keyed by it, so switching
+ * projects mounts the page afresh once the refreshed data arrives. Pages
+ * that keep their lists in client state (Data & measures) would otherwise
+ * go on showing the previous project's items until a reload.
+ */
+export function ProjectScoped({
+  projectId,
+  children,
+}: {
+  projectId: string | null;
+  children: ReactNode;
+}) {
+  return <Fragment key={projectId ?? "all"}>{children}</Fragment>;
+}
+
 /** The shell for a given path (AppShell reads it from the router). */
 export function AppShellFrame({
   pathname,
@@ -156,7 +173,9 @@ export function AppShellFrame({
           onToggleDrawer={() => setDrawerOpen((open) => !open)}
         />
         <main id="main" className="shell-content">
-          {children}
+          <ProjectScoped projectId={props.activeProjectId}>
+            {children}
+          </ProjectScoped>
         </main>
       </div>
     </div>
