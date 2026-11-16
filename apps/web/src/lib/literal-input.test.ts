@@ -6,6 +6,8 @@ import {
   literalFromInput,
   literalInputText,
   listFromInput,
+  fixedValueMode,
+  typedNumericLiteral,
 } from "./literal-input";
 
 describe("literal input", () => {
@@ -283,5 +285,51 @@ describe("literal input", () => {
       type: "date",
       value: null,
     });
+  });
+});
+
+describe("fixed values typed before a type is picked (#630)", () => {
+  it("follows a decimal or number neighbour, else the typed text", () => {
+    expect(fixedValueMode("decimal")).toBe("decimal");
+    expect(fixedValueMode("number")).toBe("number");
+    expect(fixedValueMode("integer")).toBe("typed");
+    expect(fixedValueMode(undefined)).toBe("typed");
+  });
+  it("reads a whole number as an integer and keeps anything else a decimal", () => {
+    const typed = (text: string) =>
+      typedNumericLiteral(
+        literalFromInput("decimal", text, "en") ?? {
+          kind: "literal",
+          type: "decimal",
+          value: null,
+        },
+      );
+    expect(typed("0")).toEqual({ kind: "literal", type: "integer", value: 0 });
+    expect(typed("-12")).toEqual({
+      kind: "literal",
+      type: "integer",
+      value: -12,
+    });
+    expect(typed("")).toEqual({
+      kind: "literal",
+      type: "integer",
+      value: null,
+    });
+    expect(typed("0.5")).toEqual({
+      kind: "literal",
+      type: "decimal",
+      value: "0.5",
+    });
+    // Beyond the safe integers, and money, stay exact decimals.
+    expect(typed("12345678901234567890").type).toBe("decimal");
+    expect(
+      typedNumericLiteral({
+        kind: "literal",
+        type: "decimal",
+        value: "5",
+        unit: "currency",
+        currency: "EUR",
+      }).type,
+    ).toBe("decimal");
   });
 });

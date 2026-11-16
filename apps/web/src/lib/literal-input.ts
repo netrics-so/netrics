@@ -194,3 +194,34 @@ export function literalEdit(
     }
   );
 }
+
+/**
+ * How a calculation's fixed value is typed until someone picks a type
+ * (#630): like the value next to it when that is a decimal or a number, and
+ * otherwise as typed, a whole number an integer and anything else a decimal.
+ * An integer column next to it stays an integer only for whole numbers, so
+ * `[Downloads] * 0.5` can still be typed.
+ */
+export type FixedValueMode = "decimal" | "number" | "typed";
+export function fixedValueMode(partner: DataType | undefined): FixedValueMode {
+  return partner === "decimal" || partner === "number" ? partner : "typed";
+}
+
+/** In "typed" mode: a decimal without unit whose text is a whole number is an integer. */
+export function typedNumericLiteral(literal: DataLiteral): DataLiteral {
+  if (
+    literal.type !== "decimal" ||
+    literal.unit !== undefined ||
+    literal.currency !== undefined
+  )
+    return literal;
+  if (literal.value === null) return { ...literal, type: "integer" };
+  const whole =
+    typeof literal.value === "string" &&
+    /^(0|-?[1-9][0-9]*)$/.test(literal.value)
+      ? Number(literal.value)
+      : Number.NaN;
+  return Number.isSafeInteger(whole)
+    ? { ...literal, type: "integer", value: whole }
+    : literal;
+}

@@ -11,10 +11,12 @@ const fields: DataField[] = [
   { id: "revenue", name: "Revenue", type: "decimal", nullable: true },
   { id: "downloads", name: "Downloads", type: "integer", nullable: true },
   { id: "paid", name: "Paid", type: "boolean", nullable: true },
+  { id: "rating", name: "Rating", type: "number", nullable: true },
 ];
 /**
  * Equal, except that a whole decimal literal may read back as the same
- * integer (it prints as a plain number where that means the same).
+ * integer, and a number as an integer or decimal (they print as plain
+ * numbers where that means the same).
  */
 function sameUpToPlainDecimals(
   parsed: DataExpression,
@@ -30,6 +32,18 @@ function sameUpToPlainDecimals(
       String(parsed.value) === original.value &&
       parsed.unit === original.unit &&
       parsed.currency === original.currency
+    );
+  // A number without a unit reads back as an integer or a scalar decimal.
+  if (
+    parsed.kind === "literal" &&
+    original.kind === "literal" &&
+    (parsed.type === "integer" || parsed.type === "decimal") &&
+    original.type === "number"
+  )
+    return (
+      Number(parsed.value) === original.value &&
+      parsed.unit === undefined &&
+      original.unit === undefined
     );
   if (parsed.kind === "call" && original.kind === "call")
     return (
@@ -49,6 +63,7 @@ function outcome(expression: DataExpression) {
       revenue: "12.50",
       downloads: 5,
       paid: true,
+      rating: 4.2,
     });
     return JSON.stringify([compiled.result.type, cell]);
   } catch (error) {
@@ -239,12 +254,18 @@ describe("editable formulas", () => {
       "formula_literal_invalid",
     );
   });
-  it("prints a whole decimal typed in the builder as a plain number next to a decimal (#630)", () => {
+  it("prints a number typed in the builder as a plain number where its type is decided by its neighbour (#630)", () => {
     const decimal = (value: string): DataExpression => ({
       kind: "literal",
       type: "decimal",
       value,
     });
+    const number = (value: number): DataExpression => ({
+      kind: "literal",
+      type: "number",
+      value,
+    });
+    const rating: DataExpression = { kind: "field", fieldId: "rating" };
     const revenue: DataExpression = { kind: "field", fieldId: "revenue" };
     const downloads: DataExpression = { kind: "field", fieldId: "downloads" };
     const cases: [DataExpression, string][] = [
@@ -291,6 +312,31 @@ describe("editable formulas", () => {
         },
         "ADD(MULTIPLY([Revenue], 2), -3)",
       ],
+      [
+        { kind: "call", fn: "coalesce", args: [revenue, decimal("0")] },
+        "COALESCE([Revenue], 0)",
+      ],
+      // A number next to a number column (#630 review).
+      [
+        { kind: "call", fn: "gt", args: [rating, number(0)] },
+        "GT([Rating], 0)",
+      ],
+      [
+        { kind: "call", fn: "add", args: [rating, number(-1.5)] },
+        "ADD([Rating], -1.5)",
+      ],
+      [
+        {
+          kind: "call",
+          fn: "if",
+          args: [{ kind: "field", fieldId: "paid" }, number(0.5), rating],
+        },
+        "IF([Paid], 0.5, [Rating])",
+      ],
+      [
+        { kind: "call", fn: "coalesce", args: [rating, number(0)] },
+        "COALESCE([Rating], 0)",
+      ],
       // The wrapper stays where an integer would change the result type.
       [decimal("0"), 'DECIMAL("0")'],
       [
@@ -302,8 +348,29 @@ describe("editable formulas", () => {
         'ADD(DECIMAL("1"), DECIMAL("2"))',
       ],
       [
-        { kind: "call", fn: "coalesce", args: [revenue, decimal("0")] },
-        'COALESCE([Revenue], DECIMAL("0"))',
+        { kind: "call", fn: "coalesce", args: [downloads, decimal("0")] },
+        'COALESCE([Downloads], DECIMAL("0"))',
+      ],
+      [number(0), 'NUMBER("0")'],
+      [
+        { kind: "call", fn: "add", args: [number(1), downloads] },
+        'ADD(NUMBER("1"), [Downloads])',
+      ],
+      // A number with a unit is no scalar: as a decimal it would need a cast.
+      [
+        {
+          kind: "call",
+          fn: "add",
+          args: [
+            rating,
+            { kind: "literal", type: "number", value: 1.5, unit: "stars" },
+          ],
+        },
+        'ADD([Rating], UNIT(NUMBER("1.5"), "stars"))',
+      ],
+      [
+        { kind: "call", fn: "gt", args: [rating, number(1e21)] },
+        'GT([Rating], NUMBER("1e+21"))',
       ],
     ];
     for (const [expression, text] of cases) {
