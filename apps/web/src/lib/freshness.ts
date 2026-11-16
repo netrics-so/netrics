@@ -344,19 +344,19 @@ function lessFresh(a: FreshnessEntry, b: FreshnessEntry): boolean {
 
 /**
  * A connection's stream as one line, by the rule widgets and screens'
- * status boards follow (ADR 0025 section 7, #727): over the rows the
- * server uses, which are the selected resources' own entries (the detail
- * lists only those), else the connection's entry; the least fresh one (the
- * earliest day, ties broken by the earliest next), late when any entry
- * with that day is, overdue when any entry used is; fetched at the oldest
- * check. Null before any run reported it.
+ * status boards follow (ADR 0025 section 7, #727), over every entry the
+ * connection detail lists. The server already filtered those to the
+ * selected resources' rows and the connection entry, a superset of the
+ * rows screens use, so the line can understate but never claim fresher
+ * data. The least fresh entry (the earliest day, ties broken by the
+ * earliest next), late when any entry with that day is, overdue when any
+ * entry is; fetched at the oldest check. Null before any run reported it.
  */
 export function streamFreshness(
   stream: ConnectionFreshnessStream,
   nextCheckAt: string | null,
 ): StreamFreshness | null {
-  const own = stream.entries.filter((entry) => entry.resource !== null);
-  const used = own.length > 0 ? own : stream.entries;
+  const used = stream.entries;
   const [first, ...rest] = used;
   if (!first) return null;
   const least = rest.reduce(

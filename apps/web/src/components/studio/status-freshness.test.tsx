@@ -101,10 +101,11 @@ describe("streamFreshness: one line per stream", () => {
       ).toBe("2026-11-16T20:00:00Z");
   });
 
-  it("uses the rows the server's widgets use (#727)", () => {
-    // The detail lists the selected resources and the connection entry;
-    // widgets and screens read the resources' own rows, the connection
-    // entry only when no resource has one.
+  it("summarizes every entry the detail lists, never claiming fresher data (#727)", () => {
+    // The detail lists the selected resources' rows and the connection
+    // entry (server-filtered). Apps A and B are selected; only A has its
+    // own row, so screens read the connection entry for B: an older,
+    // overdue connection entry must show, not A's newer day.
     const stream = (
       entries: ConnectionFreshnessStream["entries"],
     ): ConnectionFreshnessStream => ({
@@ -116,15 +117,23 @@ describe("streamFreshness: one line per stream", () => {
     });
     const whole = entry({
       dataThrough: "2026-11-10",
+      nextExpectedAt: "2026-11-11T09:00:00Z",
       checkedAt: "2026-11-16T09:00:00Z",
+      late: true,
+      overdue: true,
     });
-    const own = entry({ resource: "app-1" });
-    expect(streamFreshness(stream([whole, own]), null)).toEqual(
-      streamFreshness(stream([own]), null),
-    );
-    expect(streamFreshness(stream([whole]), null)?.freshness.dataThrough).toBe(
-      "2026-11-10",
-    );
+    const appA = entry({ resource: "app-a" });
+    expect(streamFreshness(stream([whole, appA]), null)).toEqual({
+      freshness: {
+        kind: "periodic",
+        stream: "Sales",
+        fetchedAt: "2026-11-16T09:00:00Z",
+        dataThrough: "2026-11-10",
+        nextExpectedAt: "2026-11-11T09:00:00Z",
+        late: true,
+      },
+      overdue: true,
+    });
     // Overdue when any row used is, as the server decides "stale".
     const behind = entry({
       resource: "app-2",
