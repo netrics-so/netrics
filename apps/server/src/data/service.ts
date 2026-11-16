@@ -2944,8 +2944,9 @@ export function createDataService(
 
 /**
  * Narrows the source list to a project (#572). A source follows its
- * connection's project, a prepared output its preparation's; manual and
- * other sources count as unassigned.
+ * connection's project, a prepared output its preparation's; reference
+ * tables (manual) are workspace-wide and listed in every project (#644);
+ * other sources without a connection count as unassigned.
  */
 async function filterSourcesByProject(
   tx: Transaction,
