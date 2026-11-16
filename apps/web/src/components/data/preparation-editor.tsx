@@ -497,13 +497,25 @@ export function PreparationEditor({
     // A step form is open for the change and can show its failure.
     fromForm = false,
   ) {
+    // What the sample and the step markers showed before the check: a
+    // refused change leaves the graph, and so both, as they were (#654).
+    const staleBefore = previewStale,
+      stepErrorBefore = stepError;
     try {
       await show(next, output, true);
     } catch (failure) {
       const outcome = preparationChangeFailure(failure, next, changedIds);
-      const reaction = preparationChangeRejection(outcome, fromForm);
+      const reaction = preparationChangeRejection(
+        outcome,
+        fromForm,
+        staleBefore,
+      );
       setProposal(reaction.proposal ? next : null);
-      if (reaction.sampleCurrent) setPreviewStale(false);
+      if (reaction.previewStale !== null) {
+        setPreviewStale(reaction.previewStale);
+        // The check marked the refused graph; the shown one keeps its mark.
+        setStepError(stepErrorBefore);
+      }
       if (reaction.banner === "clear") setError(null);
       if (reaction.banner === "step")
         setError(

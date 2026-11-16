@@ -109,9 +109,12 @@ export function preparationChangeFailure(
  * - `proposal`: show the proposed graph with the failed step marked (only
  *   while a form is open); any earlier proposal is dropped otherwise, so an
  *   old marking never stays beside a new failure.
- * - `sampleCurrent`: the graph stayed as it was, so the sample still matches
- *   it and is not out of date. Only an applied change, or the open form of a
- *   failed proposal, leaves the sample marked out of date.
+ * - `previewStale`: whether the sample is marked out of date afterwards, or
+ *   null to keep the mark the failed check set. When the graph stays as it
+ *   was (a refused change, or a failure that names no step), the sample is
+ *   as current as before the check: `staleBefore` is restored, so a mark
+ *   from a step that already failed is kept (#654). Only an applied change,
+ *   or the open form of a failed proposal, keeps the check's mark.
  * - `banner`: "step" shows the step's message in the banner (no form, no
  *   marker), "clear" removes the banner (the form shows it), "keep" leaves
  *   what the check showed.
@@ -119,20 +122,22 @@ export function preparationChangeFailure(
 export function preparationChangeRejection(
   outcome: "proposal" | "applied" | "form",
   fromForm: boolean,
+  /** Whether the sample was marked out of date before the check. */
+  staleBefore = false,
 ): {
   proposal: boolean;
-  sampleCurrent: boolean;
+  previewStale: boolean | null;
   banner: "step" | "clear" | "keep";
 } {
   if (outcome === "applied")
-    return { proposal: false, sampleCurrent: false, banner: "keep" };
+    return { proposal: false, previewStale: null, banner: "keep" };
   if (outcome === "proposal")
     return fromForm
-      ? { proposal: true, sampleCurrent: false, banner: "keep" }
-      : { proposal: false, sampleCurrent: true, banner: "step" };
+      ? { proposal: true, previewStale: null, banner: "keep" }
+      : { proposal: false, previewStale: staleBefore, banner: "step" };
   return {
     proposal: false,
-    sampleCurrent: true,
+    previewStale: staleBefore,
     banner: fromForm ? "clear" : "keep",
   };
 }
