@@ -120,6 +120,7 @@ async function installStores(
 export async function installWithConnections(
   page: Page,
   workspaceId: string,
+  options: { name?: string } = {},
 ): Promise<{
   requestId: string;
   dashboardId: string;
@@ -142,7 +143,7 @@ export async function installWithConnections(
     const requestId = randomUUID();
     const response = await installStores(page, workspaceId, {
       requestId,
-      name: "App portfolio",
+      name: options.name ?? "App portfolio",
       connections: [connections.apple, connections.play],
       groups: [],
     });

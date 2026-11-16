@@ -7,6 +7,7 @@ import {
   formatWarnings,
   formatsNeedingAttention,
   headerFit,
+  repeatsName,
   slideFormatWarnings,
   textWidgetFit,
   type FormatWarningItem,
@@ -558,6 +559,44 @@ describe("headerFit", () => {
       showSlideName: false,
       fits: true,
     });
+  });
+
+  it("leaves out a slide name that repeats the dashboard name (#622)", () => {
+    for (const format of SCREEN_FORMAT_KEYS) {
+      expect(
+        headerFit({
+          name: "App-Portfolio",
+          slideName: "App-Portfolio",
+          format,
+          logoAspect: null,
+        }).showSlideName,
+      ).toBe(false);
+    }
+    expect(
+      headerFit({
+        name: "App portfolio",
+        slideName: " app Portfolio ",
+        format: "16x9",
+        logoAspect: null,
+      }).showSlideName,
+    ).toBe(false);
+    expect(
+      headerFit({
+        name: "App portfolio",
+        slideName: "App portfolio 2",
+        format: "16x9",
+        logoAspect: null,
+      }).showSlideName,
+    ).toBe(true);
+  });
+
+  it("compares names the same in every runtime locale (repeatsName)", () => {
+    // A fixed locale: Turkish casing rules (I / ı) never decide.
+    expect(repeatsName("INFO", "info")).toBe(true);
+    expect(repeatsName(" App-Portfolio ", "app-portfolio")).toBe(true);
+    expect(repeatsName("Café", "Cafe")).toBe(false);
+    expect(repeatsName(null, "App")).toBe(false);
+    expect(repeatsName("", "")).toBe(false);
   });
 
   it("counts the logo's width at its aspect ratio", () => {

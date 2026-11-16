@@ -172,6 +172,24 @@ export const NARROW_HEADER_FORMATS: readonly ScreenFormat[] = ["3x4", "9x16"];
 /** The widest clock text the header reserves room for. */
 const CLOCK_SAMPLE = "12:00 PM";
 
+/**
+ * Whether a slide name repeats the dashboard name: equal ignoring case and
+ * outer spaces (#622). Compared in a fixed locale ("und"), so the server and
+ * every browser (a Turkish one with its dotted and dotless i) agree.
+ */
+export function repeatsName(
+  slideName: string | null | undefined,
+  dashboardName: string,
+): boolean {
+  const slide = slideName?.trim() ?? "";
+  return (
+    slide !== "" &&
+    slide.localeCompare(dashboardName.trim(), "und", {
+      sensitivity: "accent",
+    }) === 0
+  );
+}
+
 export interface HeaderFit {
   /** The width the names share, in units. */
   width: number;
@@ -179,7 +197,10 @@ export interface HeaderFit {
   nameLines: number;
   /** 1, or 2 in narrow formats. */
   maxNameLines: number;
-  /** The slide name fits beside a one-line dashboard name; else dropped. */
+  /**
+   * The slide name fits beside a one-line dashboard name and says something
+   * the dashboard name does not; else dropped.
+   */
   showSlideName: boolean;
   /** The dashboard name shows in full at its size (no shrinking or cut). */
   fits: boolean;
@@ -192,6 +213,9 @@ export interface HeaderFit {
  * gaps. In narrow formats (`3x4`, `9x16`) the dashboard name wraps to two
  * lines before it shrinks; the slide name is shown only when it fits in
  * full beside a one-line name, so it is dropped before the name is cut.
+ * A slide name that repeats the dashboard name (ignoring case and outer
+ * spaces, e.g. a template's only slide) is left out: the header shows the
+ * title once (#622).
  */
 export function headerFit(input: {
   name: string;
@@ -222,6 +246,7 @@ export function headerFit(input: {
   const slideName = input.slideName?.trim() ?? "";
   const showSlideName =
     slideName !== "" &&
+    !repeatsName(slideName, name) &&
     nameLines === 1 &&
     estimateTextWidth(name, m.name, "semibold") +
       m.gap +
