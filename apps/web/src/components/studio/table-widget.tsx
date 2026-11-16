@@ -253,6 +253,7 @@ export function useLiveTable(
         loading,
         loaded: data !== null,
         hasData: data !== null && (data.groups.length > 0 || others !== null),
+        stale: data?.status === "stale",
       },
       env.connections[widget.connectionId],
       locale,
@@ -260,6 +261,7 @@ export function useLiveTable(
     source: env.connections[widget.connectionId]?.name ?? null,
     updatedAt:
       env.connections[widget.connectionId]?.state.lastSuccessAt ?? null,
+    freshness: data?.freshness ?? null,
     loading,
   };
 }

@@ -35,7 +35,11 @@ import {
   type StudioEnv,
 } from "@/lib/studio-widgets";
 import { webTranslator, type WebTranslator } from "@/lib/i18n/catalogs";
-import { connectionNotice, connectionStatus } from "@/lib/tile-status";
+import {
+  connectionNotice,
+  connectionStatus,
+  deviceTileNotice,
+} from "@/lib/tile-status";
 
 import { useCountUp } from "./enter-motion";
 import { useMetricData } from "./use-widget-data";
@@ -343,7 +347,9 @@ export function dataNotice(
  * A live widget's notice and data status (signed-in views): the status by
  * the server's rule for screens from the connection's state; a failed
  * query keeps its notice in the warning style (as an outage), and a first
- * load in flight is not "no data" yet.
+ * load in flight is not "no data" yet. A response's `status: "stale"`
+ * (a provider overdue by a day, ADR 0025 section 8) turns "ok" into
+ * "stale" with the stale notice, as the server does for screens.
  */
 export function liveDataState(
   query: {
@@ -353,6 +359,8 @@ export function liveDataState(
     loaded: boolean;
     /** It has something to show (a value, a group). */
     hasData: boolean;
+    /** The response said `status: "stale"` (#727). */
+    stale?: boolean;
   },
   connection: Parameters<typeof connectionStatus>[0],
   locale: Locale,
@@ -372,6 +380,14 @@ export function liveDataState(
       : query.loading && !query.loaded
         ? "ok"
         : connectionStatus(connection, query.hasData, now);
+  if (status === "ok" && query.stale && query.loaded && connection) {
+    return {
+      notice:
+        notice ??
+        deviceTileNotice("stale", connection.state.lastSuccessAt, locale),
+      status: "stale",
+    };
+  }
   return { notice, status };
 }
 
@@ -419,12 +435,14 @@ export function useLiveMetric(
         loading,
         loaded: data !== null,
         hasData: data !== null && data.value !== null,
+        stale: data?.status === "stale",
       },
       connection,
       locale,
     ),
     source: connection?.name ?? null,
     updatedAt: connection?.state.lastSuccessAt ?? null,
+    freshness: data?.freshness ?? null,
     options: widget.options,
     loading,
   };

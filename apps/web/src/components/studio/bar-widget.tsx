@@ -235,6 +235,7 @@ export function useLiveBar(
         loaded: data !== null,
         hasData:
           data !== null && (data.groups.length > 0 || data.others !== null),
+        stale: data?.status === "stale",
       },
       env.connections[widget.connectionId],
       locale,
@@ -242,6 +243,7 @@ export function useLiveBar(
     source: env.connections[widget.connectionId]?.name ?? null,
     updatedAt:
       env.connections[widget.connectionId]?.state.lastSuccessAt ?? null,
+    freshness: data?.freshness ?? null,
     loading,
   };
 }

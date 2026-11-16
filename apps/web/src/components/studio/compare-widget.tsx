@@ -23,6 +23,7 @@ import {
 } from "@/lib/format-metric";
 import { boundErrorKey } from "@/lib/compare-measure";
 import { dataErrorCodeKey } from "@/lib/data-errors";
+import { leastFresh } from "@/lib/freshness";
 import { useLocale, useT } from "@/lib/i18n/client";
 import {
   compareFooterCandidates,
@@ -394,6 +395,8 @@ export function useLiveCompare(
       status: failed !== null ? "outage" : (data?.status ?? "ok"),
       source: data?.sources.join(" · ") || null,
       updatedAt: data?.updatedAt ?? null,
+      // The measures' sources' freshness (#727); none once expired.
+      freshness: expired ? null : (data?.freshness ?? null),
       loading,
     };
   }
@@ -415,6 +418,7 @@ export function useLiveCompare(
       loading: a.loading,
       loaded: a.data !== null,
       hasData: a.data !== null && a.data.value !== null,
+      stale: a.data?.status === "stale",
     },
     connectionA,
     locale,
@@ -425,6 +429,7 @@ export function useLiveCompare(
       loading: b.loading,
       loaded: b.data !== null,
       hasData: b.data !== null && b.data.value !== null,
+      stale: b.data?.status === "stale",
     },
     connectionB,
     locale,
@@ -472,6 +477,8 @@ export function useLiveCompare(
       connectionA?.state.lastSuccessAt ?? null,
       connectionB?.state.lastSuccessAt ?? null,
     ),
+    // The less fresh of the two queries, as the payload summarizes both.
+    freshness: leastFresh([a.data?.freshness, b.data?.freshness]),
     loading: a.loading || b.loading,
   };
 }

@@ -101,6 +101,54 @@ describe("streamFreshness: one line per stream", () => {
       ).toBe("2026-11-16T20:00:00Z");
   });
 
+  it("summarizes every entry the detail lists, never claiming fresher data (#727)", () => {
+    // The detail lists the selected resources' rows and the connection
+    // entry (server-filtered). Apps A and B are selected; only A has its
+    // own row, so screens read the connection entry for B: an older,
+    // overdue connection entry must show, not A's newer day.
+    const stream = (
+      entries: ConnectionFreshnessStream["entries"],
+    ): ConnectionFreshnessStream => ({
+      key: "sales",
+      name: "Sales",
+      kind: "periodic",
+      period: "day",
+      entries,
+    });
+    const whole = entry({
+      dataThrough: "2026-11-10",
+      nextExpectedAt: "2026-11-11T09:00:00Z",
+      checkedAt: "2026-11-16T09:00:00Z",
+      late: true,
+      overdue: true,
+    });
+    const appA = entry({ resource: "app-a" });
+    expect(streamFreshness(stream([whole, appA]), null)).toEqual({
+      freshness: {
+        kind: "periodic",
+        stream: "Sales",
+        fetchedAt: "2026-11-16T09:00:00Z",
+        dataThrough: "2026-11-10",
+        nextExpectedAt: "2026-11-11T09:00:00Z",
+        late: true,
+      },
+      overdue: true,
+    });
+    // Overdue when any row used is, as the server decides "stale".
+    const behind = entry({
+      resource: "app-2",
+      dataThrough: "2026-11-14",
+    });
+    const overdueLater = entry({
+      resource: "app-3",
+      dataThrough: "2026-11-15",
+      overdue: true,
+    });
+    expect(streamFreshness(stream([behind, overdueLater]), null)).toMatchObject(
+      { freshness: { dataThrough: "2026-11-14" }, overdue: true },
+    );
+  });
+
   it("monthly, continuous, overdue and empty streams", () => {
     expect(
       streamFreshness(

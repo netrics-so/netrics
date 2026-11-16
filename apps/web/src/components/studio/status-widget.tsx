@@ -31,7 +31,8 @@ export interface StatusReadingProps {
   items: readonly StatusItem[];
   /**
    * Each source's freshness streams (ADR 0025), listed under it where
-   * rows are free; signed-in pages only, paired screens have none.
+   * rows are free: from connection detail on signed-in pages, from the
+   * payload on paired screens (#727).
    */
   streams?: StatusStreams;
 }

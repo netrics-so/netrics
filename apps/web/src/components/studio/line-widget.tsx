@@ -368,6 +368,7 @@ export function useLiveLine(
         loading,
         loaded: data !== null,
         hasData: data !== null && data.value !== null,
+        stale: data?.status === "stale",
       },
       env.connections[widget.connectionId],
       locale,
@@ -375,6 +376,7 @@ export function useLiveLine(
     source: env.connections[widget.connectionId]?.name ?? null,
     updatedAt:
       env.connections[widget.connectionId]?.state.lastSuccessAt ?? null,
+    freshness: data?.freshness ?? null,
     options: widget.options,
     loading,
   };

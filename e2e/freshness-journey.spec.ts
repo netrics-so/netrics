@@ -10,7 +10,8 @@ import { ownerUrl } from "./support/store-template.ts";
 // How far the numbers reach (ADR 0025 section 8, #705): a dashboard shows
 // a periodic stream's footer ("Up to Nov 15 · fetched 10 min. ago · next
 // ~9:00 PM") and a continuous one's ("Checked 10 min. ago · next check
-// ~2:30 PM"), and the connection's page lists its streams by name. The
+// ~2:30 PM"), a signed-in metric widget the same line from its live query
+// (#727), and the connection's page lists its streams by name. The
 // freshness rows are seeded as a succeeded sync leaves them.
 
 const CONNECTOR = "app-store-connect";
@@ -72,7 +73,12 @@ async function seedConnection(workspaceId: string, now: number) {
       insert into connection_freshness (workspace_id, connection_id, stream,
         resource, checked_at)
       values (${workspaceId}, ${id}, 'reviews', '', ${checked})`;
-    return { connectionId: id, downloads: downloads!.id, reviews: reviews!.id };
+    return {
+      connectionId: id,
+      downloads: downloads!.id,
+      downloadsKey: downloads!.key,
+      reviews: reviews!.id,
+    };
   } finally {
     await sql.end({ timeout: 5 });
   }
@@ -134,6 +140,7 @@ const wording = {
   en: {
     periodic: /^Up to \w{3} \d{1,2} · fetched \d+ min\. ago · next ~/,
     continuous: /^Checked \d+ min\. ago · next check ~/,
+    metric: /^Up to \w{3} \d{1,2} · fetched \d+ min\. ago/,
     title: "Data freshness",
     sales: /^Sales up to \w{3} \d{1,2} · next ~/,
     reviews: /^Reviews checked \d+ min\. ago · next check ~/,
@@ -142,6 +149,7 @@ const wording = {
   de: {
     periodic: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\. · nächste ~/,
     continuous: /^Geprüft vor \d+ Min\. · nächste Prüfung ~/,
+    metric: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\./,
     title: "Datenstand",
     sales: / bis \d{1,2}\. \S+ · nächste ~/,
     reviews: / geprüft vor \d+ Min\. · nächste Prüfung ~/,
@@ -180,6 +188,18 @@ test("widgets and the connection page say how far the data reaches", async ({
             widgets: [
               measureWidget(0, "Downloads", downloads),
               measureWidget(6, "Reviews", reviews),
+              // A signed-in metric widget: its live query's freshness (#727).
+              {
+                type: "metric",
+                title: "Downloads metric",
+                x: 0,
+                y: 4,
+                w: 6,
+                h: 4,
+                connectionId: seeded.connectionId,
+                metricKey: seeded.downloadsKey,
+                period: "last_7_days",
+              },
             ],
           },
         ],
@@ -204,6 +224,13 @@ test("widgets and the connection page say how far the data reaches", async ({
   await expect(periodic).toHaveAttribute("title", w.periodic);
   await expect(continuous).toHaveAttribute("title", w.continuous);
   await expect(periodic).not.toHaveClass(/sw-notice/);
+  // The metric widget's footer comes from its live query, as on screens.
+  const metric = page.locator("article.sw-metric").filter({
+    has: page.getByRole("heading", { name: "Downloads metric", exact: true }),
+  });
+  await expect(metric.locator(".sw-value")).toHaveText(/42/);
+  await expect(metric.locator(".sw-footer")).toHaveText(w.metric);
+  await expect(metric.locator(".sw-notice")).toHaveCount(0);
   await testInfo.attach(`dashboard-${locale}`, {
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",

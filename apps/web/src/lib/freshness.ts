@@ -1,5 +1,6 @@
 import type {
   ConnectionFreshnessStream,
+  DeviceStatusStream,
   DeviceTileStatus,
   WidgetFreshness,
 } from "@netrics/contracts";
@@ -312,6 +313,18 @@ export function entryFreshness(
 }
 
 /**
+ * A status board stream from a device payload (#727) as a line: the
+ * server summarized it already; it names no next times when the source is
+ * not scheduled.
+ */
+export function deviceStreamFreshness(
+  stream: DeviceStatusStream,
+): StreamFreshness {
+  const { key: _key, overdue, ...freshness } = stream;
+  return { freshness, overdue: overdue === true };
+}
+
+/**
  * Whether `a` is less fresh than `b`, as the server decides it for widgets:
  * an unknown day first, else the earlier day; on the same day the earlier
  * known next time (a known time wins over an unknown one).
@@ -330,25 +343,28 @@ function lessFresh(a: FreshnessEntry, b: FreshnessEntry): boolean {
 }
 
 /**
- * A connection's stream as one line, by the rule widgets follow (ADR 0025
- * section 7): the least fresh entry (the earliest day, ties broken by the
- * earliest next), late or overdue when any entry with that day is;
- * fetched at the oldest check. Null before any run reported it.
+ * A connection's stream as one line, by the rule widgets and screens'
+ * status boards follow (ADR 0025 section 7, #727), over every entry the
+ * connection detail lists. The server already filtered those to the
+ * selected resources' rows and the connection entry, a superset of the
+ * rows screens use, so the line can understate but never claim fresher
+ * data. The least fresh entry (the earliest day, ties broken by the
+ * earliest next), late when any entry with that day is, overdue when any
+ * entry is; fetched at the oldest check. Null before any run reported it.
  */
 export function streamFreshness(
   stream: ConnectionFreshnessStream,
   nextCheckAt: string | null,
 ): StreamFreshness | null {
-  const [first, ...rest] = stream.entries;
+  const used = stream.entries;
+  const [first, ...rest] = used;
   if (!first) return null;
   const least = rest.reduce(
     (worst, entry) => (lessFresh(entry, worst) ? entry : worst),
     first,
   );
-  const same = stream.entries.filter(
-    (entry) => entry.dataThrough === least.dataThrough,
-  );
-  const oldest = stream.entries.reduce(
+  const same = used.filter((entry) => entry.dataThrough === least.dataThrough);
+  const oldest = used.reduce(
     (min, entry) => (entry.checkedAt < min ? entry.checkedAt : min),
     first.checkedAt,
   );
@@ -358,8 +374,70 @@ export function streamFreshness(
       ...least,
       checkedAt: oldest,
       late: same.some((entry) => entry.late),
-      overdue: same.some((entry) => entry.overdue),
+      overdue: used.some((entry) => entry.overdue),
     },
     nextCheckAt,
   );
+}
+
+/**
+ * The least fresh of several widget freshness lines, by the rule the
+ * server summarizes rows with (ADR 0025 section 7): periodic before
+ * continuous; among periodic the earliest day (an unknown one first), ties
+ * broken by the earliest known next time, late when any with that day is;
+ * fetched at the oldest; the earliest next check. For a widget over two
+ * queries (an unbound compare). Null without any.
+ */
+export function leastFresh(
+  lines: readonly (WidgetFreshness | null | undefined)[],
+): WidgetFreshness | null {
+  const known = lines.filter((line): line is WidgetFreshness => !!line);
+  const [first] = known;
+  if (!first || known.length === 1) return first ?? null;
+  const asEntry = (line: WidgetFreshness): FreshnessEntry => ({
+    resource: null,
+    dataThrough: line.dataThrough ?? null,
+    nextExpectedAt: line.nextExpectedAt ?? null,
+    checkedAt: line.fetchedAt,
+    advancedAt: null,
+    late: line.late ?? false,
+    overdue: false,
+  });
+  const periodic = known.filter((line) => line.kind === "periodic");
+  const chosen =
+    periodic.length > 0
+      ? periodic.reduce((least, line) =>
+          lessFresh(asEntry(line), asEntry(least)) ? line : least,
+        )
+      : known.reduce((least, line) =>
+          Date.parse(line.fetchedAt) < Date.parse(least.fetchedAt)
+            ? line
+            : least,
+        );
+  const late = periodic.some(
+    (line) =>
+      line.late &&
+      chosen.kind === "periodic" &&
+      line.dataThrough === chosen.dataThrough,
+  );
+  const fetchedAt = known.reduce(
+    (min, line) =>
+      Date.parse(line.fetchedAt) < Date.parse(min) ? line.fetchedAt : min,
+    first.fetchedAt,
+  );
+  const nextCheckAt = known.reduce<string | null>(
+    (min, line) =>
+      line.nextCheckAt &&
+      (min === null || Date.parse(line.nextCheckAt) < Date.parse(min))
+        ? line.nextCheckAt
+        : min,
+    null,
+  );
+  const { late: _late, nextCheckAt: _check, ...rest } = chosen;
+  return {
+    ...rest,
+    fetchedAt,
+    ...(late ? { late: true as const } : {}),
+    ...(nextCheckAt ? { nextCheckAt } : {}),
+  };
 }
