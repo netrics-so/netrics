@@ -315,7 +315,7 @@ struct MetricWidgetView: View {
             notice != nil
             ? nil
             : WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, source: nil, now: now, language: env.language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: env.language),
                 type: .metric, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox)
         let slot = footer ?? note
@@ -453,7 +453,7 @@ struct LineWidgetView: View {
         let fitted = WidgetFooter.chartLayout(
             type: .line, label: label, value: (full, compact), notice: notice,
             footer: WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, source: nil, now: now, language: env.language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: env.language),
                 type: .line, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox),
             placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
@@ -636,7 +636,7 @@ struct BarWidgetView: View {
         let fitted = WidgetFooter.chartLayout(
             type: .bar, label: label, value: nil, notice: notice,
             footer: WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, source: nil, now: now, language: env.language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: env.language),
                 type: .bar, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox),
             placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
@@ -797,7 +797,7 @@ struct TableWidgetView: View {
             notice != nil
             ? nil
             : WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, source: nil, now: now, language: language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: language),
                 type: .table, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox)
         let small = sizes[.any] ?? StudioLayout.Minimum.any
@@ -1245,7 +1245,7 @@ struct CompareWidgetView: View {
             notice != nil || !layout.showFooter
             ? nil
             : WidgetFooter.line(
-                CompareText.footerCandidates(updatedAt: data.updatedAt, freshness: data.freshness, now: now, language: language),
+                CompareText.footerCandidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, now: now, language: language),
                 type: .compare, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox)
         let small = layout.sizes.small
@@ -1467,7 +1467,7 @@ struct GaugeWidgetView: View {
             notice != nil || !layout.showFooter
             ? nil
             : WidgetFooter.line(
-                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, source: nil, now: now, language: language),
+                WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: language),
                 type: .gauge, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
                 unitBox: placement.unitBox)
         let shown = layout.compact ? compact : full

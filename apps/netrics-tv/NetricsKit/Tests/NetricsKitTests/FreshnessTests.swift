@@ -513,3 +513,56 @@ private func metricData(_ payload: DeviceDashboardV2) -> MetricWidgetData? {
         #expect(text().footer(continuous(), now: now).first?.hasPrefix("Checked") == true)
     }
 }
+
+// MARK: - Measure status and failing review cards (Codex review of #725)
+
+@Suite struct FreshnessStatusTests {
+    private func measure(status: String?, sources: String = "ok") throws -> MeasureWidgetData {
+        let statusField = status.map { #""status": "\#($0)", "# } ?? ""
+        let json = """
+            {\(statusField)"widgetId": "11111111-1111-4111-8111-111111111111",
+             "sourceHealth": [{"connectionId": "22222222-2222-4222-8222-222222222222", "name": "App Store",
+                               "status": "\(sources)", "lastSuccessAt": "2026-11-16T12:50:00Z"}],
+             "metadata": null, "result": null, "error": null, "exclusions": [],
+             "freshness": {"kind": "periodic", "stream": "Sales", "fetchedAt": "2026-11-16T12:50:00Z",
+                           "dataThrough": "2026-11-14", "nextExpectedAt": "2026-11-15T20:00:00Z", "late": true,
+                           "nextCheckAt": "2026-11-16T14:10:00Z"}}
+            """
+        return try JSONDecoder().decode(MeasureWidgetData.self, from: Data(json.utf8))
+    }
+
+    @Test func anOverdueMeasureIsStaleThoughItsSourcesAreOk() throws {
+        // The server marks a provider a day overdue on the widget's own status;
+        // its sources stay "ok" (apps/server/src/dashboards/data.ts).
+        let overdue = try measure(status: "stale")
+        #expect(overdue.freshnessStatus == .stale)
+        let lines = overdue.freshnessLines(now: now, language: .en, timeZone: berlin, region: us24)
+        #expect(lines.warning == "Up to Nov 14 · Nov 15 not published yet")
+        #expect(lines.footer.allSatisfy { !$0.contains("checking again") })
+        // Late under a day: the muted wording, no warning.
+        let late = try measure(status: "ok")
+        #expect(late.freshnessStatus == .ok)
+        let muted = late.freshnessLines(now: now, language: .en, timeZone: berlin, region: us24)
+        #expect(muted.warning == nil)
+        #expect(muted.footer.first == "Up to Nov 14 · Nov 15 not published yet · checking again ~15:10")
+        // A server before the field, and an unknown value: the sources decide.
+        #expect(try measure(status: nil).freshnessStatus == .ok)
+        #expect(try measure(status: "melting").freshnessStatus == .ok)
+        #expect(try measure(status: nil, sources: "outage").freshnessStatus == .outage)
+        #expect(try measure(status: "outage").freshnessStatus == .outage)
+    }
+
+    @Test func aPausedReviewCardNeverPromisesTheNextCheck() {
+        var data = ReviewWidgetData(status: .authFailed, updatedAt: "2026-11-16T12:50:00Z")
+        data.freshness = continuous()
+        #expect(
+            ReviewText.scrollFooter(data, now: now, language: .en, timeZone: berlin, region: us24)
+                == "Checked 10 min. ago")
+        data.status = .ok
+        #expect(
+            ReviewText.scrollFooter(data, now: now, language: .en, timeZone: berlin, region: us24)
+                == "Checked 10 min. ago · next check ~14:30")
+        data.freshness = nil
+        #expect(ReviewText.scrollFooter(data, now: now) == nil)
+    }
+}

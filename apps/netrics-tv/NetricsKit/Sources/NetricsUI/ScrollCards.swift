@@ -221,11 +221,13 @@ struct ScrollBottomLine: View {
 }
 
 /** The first footer candidate ("updated 2 min. ago"): the scroll view wraps instead of choosing a shorter one. */
-private func scrollFooter(_ updatedAt: String?, _ freshness: WidgetFreshness?, now: Date, language: ScreenLanguage)
-    -> String?
-{
-    WidgetFooter.candidates(updatedAt: updatedAt, freshness: freshness, source: nil, now: now, language: language)
-        .first
+private func scrollFooter(
+    _ updatedAt: String?, _ freshness: WidgetFreshness?, status: DeviceTileStatus, now: Date,
+    language: ScreenLanguage
+) -> String? {
+    WidgetFooter.candidates(
+        updatedAt: updatedAt, freshness: freshness, status: status, source: nil, now: now, language: language
+    ).first
 }
 
 // MARK: Metric
@@ -281,7 +283,7 @@ struct ScrollMetricCard: View {
             }
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: scrollFooter(data.updatedAt, data.freshness, now: now, language: language), env: env)
+                footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language), env: env)
         }
     }
 
@@ -335,7 +337,7 @@ struct ScrollLineCard: View {
             .padding(.top, 8)
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: scrollFooter(data.updatedAt, data.freshness, now: now, language: language), env: env)
+                footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language), env: env)
         }
     }
 }
@@ -402,7 +404,7 @@ struct ScrollBarCard: View {
             }
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: scrollFooter(data.updatedAt, data.freshness, now: now, language: language), env: env)
+                footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language), env: env)
         }
     }
 }
@@ -528,7 +530,7 @@ struct ScrollTableCard: View {
             }
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: scrollFooter(data.updatedAt, data.freshness, now: now, language: language), env: env)
+                footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language), env: env)
         }
     }
 
@@ -676,7 +678,7 @@ struct ScrollCompareCard: View {
             }
             ScrollBottomLine(
                 notice: notice, stale: stale,
-                footer: CompareText.footerCandidates(updatedAt: data.updatedAt, freshness: data.freshness, now: now, language: language).first,
+                footer: CompareText.footerCandidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, now: now, language: language).first,
                 env: env)
         }
     }
@@ -762,7 +764,7 @@ struct ScrollGaugeCard: View {
                     .foregroundStyle(reached ? env.colors.up : env.colors.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollBottomLine(
-                    notice: notice, stale: stale, footer: scrollFooter(data.updatedAt, data.freshness, now: now, language: language),
+                    notice: notice, stale: stale, footer: scrollFooter(data.updatedAt, data.freshness, status: data.status, now: now, language: language),
                     env: env)
             }
         }
@@ -826,7 +828,7 @@ struct ScrollReviewCard: View {
             // The review cadence (ADR 0025, #706); without freshness nothing, as before.
             ScrollBottomLine(
                 notice: notice, stale: data.status == .stale,
-                footer: data.freshness == nil ? nil : scrollFooter(nil, data.freshness, now: now, language: language),
+                footer: ReviewText.scrollFooter(data, now: now, language: language),
                 env: env)
         }
         .accessibilityElement(children: .combine)

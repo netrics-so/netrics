@@ -256,6 +256,19 @@ public enum DataSurface: String, Sendable, Equatable {
 // MARK: - Latest review (ADR 0019 section 12)
 
 public enum ReviewText {
+    /** The scroll card's freshness line (the first candidate; the card wraps); nil without freshness. */
+    public static func scrollFooter(
+        _ data: ReviewWidgetData, now: Date = Date(), language: ScreenLanguage = .en, timeZone: TimeZone = .current,
+        region: Locale = .autoupdatingCurrent
+    ) -> String? {
+        guard let freshness = data.freshness else { return nil }
+        // A paused or failing source never promises the next check.
+        return WidgetFooter.candidates(
+            updatedAt: nil, freshness: freshness, status: data.status, source: nil, now: now, language: language,
+            timeZone: timeZone, region: region
+        ).first
+    }
+
     /**
      * The freshness line of a latest-review widget (ADR 0025, #706): its
      * stream is continuous, "Checked 10 min. ago · next check ~15:46". It

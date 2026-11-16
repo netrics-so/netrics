@@ -231,10 +231,13 @@ public struct MeasureWidgetData: Codable, Sendable, Equatable {
     public var exclusions: [MeasureExclusion]
     /// How far the model's sources reach (ADR 0025); nil without it.
     public var freshness: WidgetFreshness? = nil
+    /// The widget's own state ("stale" also when a provider is a day
+    /// overdue, ADR 0025 §7); nil from servers before it or when unknown.
+    public var status: DeviceTileStatus? = nil
 }
 extension MeasureWidgetData {
     private enum CodingKeys: String, CodingKey {
-        case sourceHealth, scope, metadata, result, error, exclusions, freshness
+        case sourceHealth, scope, metadata, result, error, exclusions, freshness, status
     }
     /// As the synthesized decoding, except that `freshness` is read
     /// leniently: a newer or damaged one never fails the widget.
@@ -247,6 +250,7 @@ extension MeasureWidgetData {
         error = try c.decodeIfPresent(String.self, forKey: .error)
         exclusions = try c.decode([MeasureExclusion].self, forKey: .exclusions)
         freshness = c.lenient(WidgetFreshness.self, .freshness)
+        status = c.lenient(String.self, .status).flatMap(DeviceTileStatus.init(rawValue:))
     }
 }
 /**
@@ -297,11 +301,27 @@ extension MeasureWidgetData {
 }
 
 extension MeasureWidgetData {
-    /// The state the freshness line is worded for (ADR 0025 section 8): a
-    /// failing or stale source keeps the line to the day its numbers reach.
+    /// The state the freshness line is worded for (ADR 0025 section 8): the
+    /// widget's own stale or outage (a provider overdue by a day is stale
+    /// while its sources stay ok), else a failing or stale source; both keep
+    /// the line to the day its numbers reach.
     public var freshnessStatus: DeviceTileStatus {
+        if let status, status == .stale || status == .outage { return status }
         let failing: Set<String> = ["auth_failed", "needs_reauthorization", "outage", "stale"]
         return (sourceHealth ?? []).contains { failing.contains($0.status) } ? .outage : .ok
+    }
+
+    /// The freshness line under a measure tile: the warning of a provider
+    /// overdue by a day, else the muted candidates, longest first.
+    public func freshnessLines(
+        now: Date = Date(), language: ScreenLanguage = .en, timeZone: TimeZone = .current,
+        region: Locale = .autoupdatingCurrent
+    ) -> (warning: String?, footer: [String]) {
+        guard let freshness else { return (nil, []) }
+        let text = FreshnessText(language: language, timeZone: timeZone, region: region)
+        let status = freshnessStatus
+        if let warning = text.overdueWarning(freshness, status: status, now: now) { return (warning, []) }
+        return (nil, text.footer(freshness, status: status, now: now))
     }
 }
 

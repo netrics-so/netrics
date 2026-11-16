@@ -335,6 +335,17 @@ public struct FreshnessText: Sendable {
     }
 
     /**
+     * The warning of a provider overdue by a day (status stale and late):
+     * "Up to Nov 14 · Nov 15 not published yet"; nil otherwise.
+     */
+    public func overdueWarning(_ f: WidgetFreshness, status: DeviceTileStatus, now: Date = Date()) -> String? {
+        guard status == .stale, f.kind == .periodic, f.late, let upTo = upTo(f, stream: nil, now: now) else {
+            return nil
+        }
+        return [upTo, notPublished(f, now: now)].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /**
      * For lists and the detail sheet, which name the stream: "Sales up to
      * Nov 15 · next ~21:00", "Reviews checked 10 min. ago · next check ~14:30".
      */

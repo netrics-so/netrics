@@ -62,13 +62,15 @@ struct MeasureWidgetView: View {
             ForEach(data.scope ?? [], id: \.self) { scope in
                 Text(scope).font(font(24)).foregroundStyle(env.colors.muted)
             }
-            if let freshness = data.freshness {
+            if data.freshness != nil {
                 // The freshness line replaces the refresh age (ADR 0025): the
-                // longest form that fits one line, parts dropped from the end.
-                let candidates = WidgetFooter.candidates(
-                    updatedAt: nil, freshness: freshness, status: data.freshnessStatus, source: nil, now: now,
-                    language: env.language)
-                if scroll {
+                // longest form that fits one line, parts dropped from the end;
+                // a provider overdue by a day is the warning instead.
+                let lines = data.freshnessLines(now: now, language: env.language)
+                let candidates = lines.footer
+                if let warning = lines.warning {
+                    Text(verbatim: "⚠ \(warning)").font(font(24)).foregroundStyle(env.colors.warning)
+                } else if scroll {
                     if let first = candidates.first {
                         Text(verbatim: first).font(font(24).monospacedDigit()).foregroundStyle(env.colors.muted)
                     }

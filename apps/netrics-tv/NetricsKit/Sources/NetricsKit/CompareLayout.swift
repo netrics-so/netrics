@@ -95,11 +95,12 @@ public enum CompareText {
 
     /** The footer's candidates: "derived · updated 2 min. ago", then "derived". */
     public static func footerCandidates(
-        updatedAt: String?, freshness: WidgetFreshness? = nil, now: Date = Date(), language: ScreenLanguage = .en
+        updatedAt: String?, freshness: WidgetFreshness? = nil, status: DeviceTileStatus = .ok, now: Date = Date(),
+        language: ScreenLanguage = .en
     ) -> [String] {
         let derived = KitStrings.text(.compareDerived, language)
         return WidgetFooter.candidates(
-            updatedAt: updatedAt, freshness: freshness, source: nil, now: now, language: language)
+            updatedAt: updatedAt, freshness: freshness, status: status, source: nil, now: now, language: language)
             .map { "\(derived) · \(FreshnessText.midLine($0))" } + [derived]
     }
 }
