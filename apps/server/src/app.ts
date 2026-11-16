@@ -204,6 +204,7 @@ export async function buildApp(
   registerDashboardRoutes(app, {
     authService,
     db,
+    registry,
     policy: config.dataPolicy,
     ...(deps.now ? { now: deps.now } : {}),
   });
@@ -233,6 +234,7 @@ export async function buildApp(
     dataPolicy: config.dataPolicy,
     authService,
     db,
+    registry,
     pairingUrl: config.pairingUrl,
     version: config.version,
     exchangeRates: config.exchangeRates,

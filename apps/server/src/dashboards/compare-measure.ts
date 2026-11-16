@@ -6,6 +6,7 @@ import {
   type ConnectionStateView,
   type DashboardWidgetData,
   type DeviceTileStatus,
+  type WidgetFreshness,
 } from "@netrics/contracts";
 import {
   findBackfillingConnectionIds,
@@ -30,6 +31,7 @@ import {
 
 import { toStateView } from "../connections/present.js";
 import { tileStatus } from "../devices/dashboard.js";
+import type { FreshnessReader } from "./freshness.js";
 import {
   publishedModel,
   queryDashboardMeasure,
@@ -330,8 +332,10 @@ export async function readCompareMeasure(
     policy?: DataPolicy;
     locale?: "en" | "de";
     sources?: CompareSourceContext;
+    /** Reads the model's sources' freshness (ADR 0025): device payloads. */
+    freshness?: FreshnessReader;
   } = {},
-): Promise<CompareMeasureReading> {
+): Promise<CompareMeasureReading & { freshness?: WidgetFreshness }> {
   const workspace = await findWorkspace(tx, workspaceId);
   const dates = compareMeasureWindows(
     widget.period,
@@ -371,6 +375,9 @@ export async function readCompareMeasure(
       now,
       options.policy ?? DEFAULT_DATA_POLICY,
       options.locale ?? "en",
+      {},
+      {},
+      options.freshness,
     );
   const failed = (error: string): CompareMeasureReading => ({
     widgetId: widget.id,
@@ -530,5 +537,6 @@ export async function readCompareMeasure(
     ratio: { value: ratio.value, previousValue: previousRatio.value },
     unit: compareRatioUnit(numerator.unit, denominator.unit),
     dates,
+    ...(current.freshness ? { freshness: current.freshness } : {}),
   };
 }

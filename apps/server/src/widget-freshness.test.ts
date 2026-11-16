@@ -1,0 +1,773 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import {
+  deviceDashboardV2ResponseSchema,
+  deviceDashboardV3ResponseSchema,
+  type DeviceDashboardV2Response,
+  type DeviceWidget,
+} from "@netrics/contracts";
+import type { ConnectorManifest } from "@netrics/connector-sdk";
+import {
+  createDatabase,
+  createRawSqlClient,
+  findDashboard,
+  withWorkspace,
+  type Database,
+  type Sql,
+} from "@netrics/database";
+import { DEFAULT_DATA_POLICY } from "@netrics/domain";
+
+import { queryDashboardData } from "./dashboards/data.js";
+import {
+  createFreshnessReader,
+  modelFreshnessDependencies,
+  type FreshnessManifests,
+} from "./dashboards/freshness.js";
+import { createDataService } from "./data/service.js";
+import {
+  buildDeviceDashboard,
+  buildDeviceDashboardV2,
+  buildDeviceDashboardV3,
+} from "./devices/dashboard.js";
+import { createDeviceService } from "./devices/service.js";
+import {
+  createTestDatabase,
+  TEST_DATABASE_SETUP_TIMEOUT_MS,
+} from "./test-db.js";
+
+// Freshness in widget data and the device payload (ADR 0025 sections 6 and
+// 7, #704): which streams a widget depends on, the least fresh of their
+// stored rows, and payloads that stay as they were without freshness.
+
+const NOW = new Date("2026-11-16T12:00:00Z");
+const MINUTE = 60_000,
+  HOUR = 60 * MINUTE;
+const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs);
+
+/** A connector with every kind of stream; only its streams matter here. */
+const manifest = {
+  id: "fresh",
+  name: "Fresh",
+  supportsResourceSelection: true,
+  metrics: [],
+  translations: {
+    de: { freshnessStreams: { sales: "Verkäufe", analytics: "Analysen" } },
+  },
+  freshnessStreams: [
+    {
+      key: "sales",
+      name: "Sales",
+      kind: "periodic",
+      timeZone: "America/Los_Angeles",
+      metrics: ["fresh.sales"],
+      datasets: ["sales_rows"],
+    },
+    {
+      key: "analytics",
+      name: "Analytics",
+      kind: "periodic",
+      timeZone: "America/Los_Angeles",
+      metrics: ["fresh.views"],
+    },
+    {
+      key: "earnings",
+      name: "Earnings",
+      kind: "periodic",
+      period: "month",
+      timeZone: "America/Los_Angeles",
+      metrics: ["fresh.revenue"],
+    },
+    {
+      key: "reviews",
+      name: "Reviews",
+      kind: "continuous",
+      metrics: ["fresh.rating"],
+    },
+  ],
+} as unknown as ConnectorManifest;
+const manifests: FreshnessManifests = {
+  get: (id) => (id === "fresh" ? { manifest } : undefined),
+};
+
+let testDb: Awaited<ReturnType<typeof createTestDatabase>>;
+let owner: Sql;
+let db: Database;
+let workspaceId: string;
+let otherWorkspaceId: string;
+let callerId: string;
+/** Connections by scenario. */
+const c: Record<string, string> = {};
+const metricIds: Record<string, string> = {};
+let salesDatasetId: string;
+let modelId: string;
+let dashboardId: string;
+let quietDashboardId: string;
+let measureDashboardId: string;
+let deviceId: string;
+
+async function connection(
+  name: string,
+  fields: { workspace?: string; selection?: string[] } = {},
+): Promise<string> {
+  const workspace = fields.workspace ?? workspaceId;
+  const [row] = await owner`
+    insert into connections (workspace_id, connector_id, name, config)
+    values (${workspace}, 'fresh', ${name},
+      ${owner.json(fields.selection ? { resourceSelection: fields.selection } : {})})
+    returning id`;
+  const id = row!.id as string;
+  await owner`
+    insert into connection_state (connection_id, workspace_id,
+      last_success_at, poll_interval_seconds, next_due_at)
+    values (${id}, ${workspace}, ${at(-5 * MINUTE)}, 21600,
+      ${at(2 * HOUR)})`;
+  await owner`
+    insert into connection_resources (connection_id, workspace_id,
+      resource_id, name, kind)
+    values (${id}, ${workspace}, 'app-1', 'Wurfel', 'app'),
+           (${id}, ${workspace}, 'app-2', 'voilà', 'app')`;
+  // Yesterday's numbers of every metric for both apps: widgets are `ok`.
+  for (const resource of ["app-1", "app-2"])
+    await owner`
+      insert into observations (workspace_id, connection_id,
+        metric_definition_id, dimensions, source_timestamp, value)
+      select ${workspace}, ${id}, m.id, ${owner.json({ resource })},
+             '2026-11-15T00:00:00Z'::timestamptz, 7
+      from metric_definitions m where m.connector_id = 'fresh'`;
+  return id;
+}
+
+async function freshness(
+  connectionId: string,
+  stream: string,
+  row: {
+    resource?: string;
+    dataThrough?: string | null;
+    nextExpectedAt?: Date | null;
+    checkedAt: Date;
+    workspace?: string;
+  },
+) {
+  const date = row.dataThrough ?? null;
+  await owner`
+    insert into connection_freshness (workspace_id, connection_id, stream,
+      resource, data_through, time_zone, next_expected_at, checked_at,
+      advanced_at)
+    values (${row.workspace ?? workspaceId}, ${connectionId}, ${stream},
+      ${row.resource ?? ""}, ${date},
+      ${date === null ? null : "America/Los_Angeles"},
+      ${row.nextExpectedAt ?? null}, ${row.checkedAt},
+      ${date === null ? null : row.checkedAt})`;
+}
+
+let widgetCount = 0;
+async function widget(
+  dashboard: string,
+  slide: string,
+  fields: Record<string, unknown>,
+): Promise<string> {
+  const { options, dimensions, model_binding, ...rest } = fields;
+  const [row] = await owner`
+    insert into dashboard_widgets ${owner({
+      slide_id: slide,
+      dashboard_id: dashboard,
+      workspace_id: workspaceId,
+      x: 0,
+      y: widgetCount++,
+      w: 3,
+      h: 1,
+      ...rest,
+      ...(model_binding === undefined
+        ? {}
+        : { model_binding: owner.json(model_binding as never) }),
+    })} returning id`;
+  await owner`
+    update dashboard_widgets
+    set options = ${owner.json((options ?? {}) as never)},
+        dimensions = ${owner.json((dimensions ?? {}) as never)}
+    where id = ${row!.id as string}`;
+  return row!.id as string;
+}
+
+const metricWidget = (
+  connectionId: string,
+  metricKey: string,
+  title: string,
+  fields: Record<string, unknown> = {},
+) => ({
+  type: "metric",
+  title,
+  connection_id: connectionId,
+  metric_key: metricKey,
+  aggregation: "sum",
+  period: "last_7_days",
+  ...fields,
+});
+
+async function dashboardWith(name: string) {
+  const [dashboard] = await owner`
+    insert into dashboards (workspace_id, name) values (${workspaceId}, ${name})
+    returning id`;
+  return dashboard!.id as string;
+}
+
+async function slideOf(dashboard: string, position: number, scope = {}) {
+  const [slide] = await owner`
+    insert into dashboard_slides (dashboard_id, workspace_id, position, scope)
+    values (${dashboard}, ${workspaceId}, ${position}, ${owner.json(scope)})
+    returning id`;
+  return slide!.id as string;
+}
+
+beforeAll(async () => {
+  testDb = await createTestDatabase();
+  owner = createRawSqlClient(testDb.adminUrl, {
+    max: 1,
+    onnotice: () => undefined,
+  });
+  await owner`insert into connectors (id, version, manifest) values
+    ('fresh', '1.0.0', ${owner.json({ id: "fresh" })})`;
+  for (const key of [
+    "fresh.sales",
+    "fresh.views",
+    "fresh.revenue",
+    "fresh.rating",
+    "fresh.other",
+  ]) {
+    const [metric] = await owner`
+      insert into metric_definitions (connector_id, key, name, description,
+        kind, unit, granularity, dimensions, aggregations)
+      values ('fresh', ${key}, ${key}, '', 'delta', 'count', 'day',
+        '["resource"]', '["sum"]')
+      returning id`;
+    metricIds[key] = metric!.id as string;
+  }
+  const [user] = await owner`
+    insert into users (email, display_name)
+    values ('freshness@example.test', 'Owner') returning id`;
+  callerId = user!.id as string;
+  const [workspace] = await owner`
+    insert into workspaces (name, time_zone) values ('W', 'Europe/Berlin')
+    returning id`;
+  workspaceId = workspace!.id as string;
+  await owner`insert into memberships (workspace_id, user_id, role)
+    values (${workspaceId}, ${callerId}, 'owner')`;
+  const [other] = await owner`
+    insert into workspaces (name) values ('Other') returning id`;
+  otherWorkspaceId = other!.id as string;
+
+  c.periodic = await connection("Periodic", { selection: ["app-1", "app-2"] });
+  c.late = await connection("Late");
+  c.overdue = await connection("Overdue");
+  c.continuous = await connection("Continuous");
+  c.monthly = await connection("Monthly");
+  c.none = await connection("Without rows");
+  c.other = await connection("Other workspace", {
+    workspace: otherWorkspaceId,
+  });
+
+  // Sales: one report for the connection. Analytics: per app.
+  await freshness(c.periodic, "sales", {
+    dataThrough: "2026-11-14",
+    nextExpectedAt: at(8 * HOUR),
+    checkedAt: at(-5 * MINUTE),
+  });
+  await freshness(c.periodic, "analytics", {
+    resource: "app-1",
+    dataThrough: "2026-11-13",
+    nextExpectedAt: at(8 * HOUR),
+    checkedAt: at(-5 * MINUTE),
+  });
+  await freshness(c.periodic, "analytics", {
+    resource: "app-2",
+    dataThrough: "2026-11-12",
+    nextExpectedAt: at(9 * HOUR),
+    checkedAt: at(-10 * MINUTE),
+  });
+  // An app outside the selection is ignored.
+  await freshness(c.periodic, "analytics", {
+    resource: "app-9",
+    dataThrough: "2026-10-01",
+    checkedAt: at(-HOUR),
+  });
+  // A sync 23 h 59 min after the expected time: late, not yet overdue.
+  await freshness(c.late, "sales", {
+    dataThrough: "2026-11-14",
+    nextExpectedAt: at(-25 * HOUR),
+    checkedAt: at(-HOUR - MINUTE),
+  });
+  // Exactly 24 h after: overdue.
+  await freshness(c.overdue, "sales", {
+    dataThrough: "2026-11-14",
+    nextExpectedAt: at(-25 * HOUR),
+    checkedAt: at(-HOUR),
+  });
+  await freshness(c.continuous, "reviews", { checkedAt: at(-20 * MINUTE) });
+  await freshness(c.monthly, "earnings", {
+    dataThrough: "2026-10-31",
+    nextExpectedAt: new Date("2026-11-18T20:00:00Z"),
+    checkedAt: at(-5 * MINUTE),
+  });
+  await freshness(c.other, "sales", {
+    dataThrough: "2026-11-01",
+    checkedAt: at(-HOUR),
+    workspace: otherWorkspaceId,
+  });
+
+  const [dataset] = await owner`
+    insert into data_datasets (workspace_id, connection_id, kind, key, name)
+    values (${workspaceId}, ${c.periodic}, 'source', 'sales_rows', 'Sales')
+    returning id`;
+  salesDatasetId = dataset!.id as string;
+
+  db = createDatabase(testDb.appUrl, { max: 2 });
+
+  // A measure model over the views observations, read through a
+  // preparation (as store templates read theirs).
+  const service = createDataService(db, () => NOW);
+  const actor = { workspaceId, callerId };
+  const observation = `observation:${c.periodic}:${metricIds["fresh.views"]}`;
+  const preparation = await service.savePreparation(actor, {
+    name: "Views",
+    graph: {
+      version: 1,
+      nodes: [{ id: "source", type: "source", datasetId: observation }],
+      outputs: ["source"],
+    },
+  });
+  await service.publishPreparation(actor, preparation.preparation.id, 1);
+  const prepared = `prepared:${preparation.preparation.id}:source`;
+  const model = await service.saveModel(actor, {
+    name: "Views",
+    definition: {
+      version: 1,
+      datasets: [prepared],
+      relationships: [],
+      dimensions: [
+        {
+          id: "day",
+          name: "Day",
+          datasetId: prepared,
+          fieldId: "time",
+          timeAlignment: "reporting_date",
+        },
+      ],
+      measures: [
+        {
+          id: "views",
+          name: "Views",
+          kind: "aggregate",
+          datasetId: prepared,
+          aggregate: {
+            id: "views",
+            name: "Views",
+            op: "sum",
+            fieldId: "value",
+          },
+        },
+      ],
+    },
+  });
+  await service.publishModel(actor, model.model.id, 1);
+  modelId = model.model.id;
+
+  dashboardId = await dashboardWith("Freshness");
+  const slide = await slideOf(dashboardId, 0);
+  await widget(
+    dashboardId,
+    slide,
+    metricWidget(c.periodic, "fresh.sales", "Sales"),
+  );
+  await widget(
+    dashboardId,
+    slide,
+    metricWidget(c.periodic, "fresh.views", "Views"),
+  );
+  await widget(
+    dashboardId,
+    slide,
+    metricWidget(c.periodic, "fresh.other", "Other"),
+  );
+  await widget(dashboardId, slide, metricWidget(c.late, "fresh.sales", "Late"));
+  await widget(
+    dashboardId,
+    slide,
+    metricWidget(c.overdue, "fresh.sales", "Overdue"),
+  );
+  await widget(
+    dashboardId,
+    slide,
+    metricWidget(c.continuous, "fresh.rating", "Rating", { type: "line" }),
+  );
+  await widget(
+    dashboardId,
+    slide,
+    metricWidget(c.monthly, "fresh.revenue", "Revenue", {
+      type: "bar",
+      options: { groupBy: "resource" },
+    }),
+  );
+  await widget(dashboardId, slide, metricWidget(c.none, "fresh.sales", "None"));
+  // A slide scoped to app-1 (#707): its widgets read app-1's rows only.
+  const scoped = await slideOf(dashboardId, 1, {
+    app: { kind: "values", values: [`${c.periodic}:app-1`] },
+  });
+  await widget(
+    dashboardId,
+    scoped,
+    metricWidget(c.periodic, "fresh.views", "Views of app-1"),
+  );
+
+  // Connections without rows only: a payload as before.
+  quietDashboardId = await dashboardWith("Quiet");
+  const quiet = await slideOf(quietDashboardId, 0);
+  await widget(
+    quietDashboardId,
+    quiet,
+    metricWidget(c.none, "fresh.sales", "A"),
+  );
+  await widget(
+    quietDashboardId,
+    quiet,
+    metricWidget(c.none, "fresh.views", "B", { type: "line" }),
+  );
+
+  measureDashboardId = await dashboardWith("Measures");
+  const measures = await slideOf(measureDashboardId, 0);
+  await widget(measureDashboardId, measures, {
+    type: "measure",
+    title: "Views",
+    model_id: modelId,
+    model_binding: {
+      modelId,
+      measureIds: ["views"],
+      groupBy: [],
+      exclusions: [],
+    },
+    options: { view: "value", limit: 20 },
+  });
+
+  const [device] = await owner`
+    insert into devices (workspace_id, name, dashboard_id)
+    values (${workspaceId}, 'TV', ${dashboardId}) returning id`;
+  deviceId = device!.id as string;
+}, TEST_DATABASE_SETUP_TIMEOUT_MS);
+
+afterAll(async () => {
+  await owner?.end({ timeout: 5 }).catch(() => undefined);
+  await db?.$client.end({ timeout: 5 }).catch(() => undefined);
+});
+
+function v2(
+  dashboard: string,
+  options: { now?: Date; withRegistry?: boolean; locale?: "de" } = {},
+) {
+  return withWorkspace(db, { workspaceId }, (tx) =>
+    buildDeviceDashboardV2(tx, workspaceId, dashboard, {
+      now: options.now ?? NOW,
+      ...(options.withRegistry === false ? {} : { freshness: manifests }),
+      ...(options.locale ? { locale: options.locale } : {}),
+    }),
+  );
+}
+
+function byLabel(payload: DeviceDashboardV2Response, label: string) {
+  const found = payload.slides
+    .flatMap((slide) => slide.widgets)
+    .find((widget) => "label" in widget && widget.label === label);
+  if (!found) throw new Error(`no widget ${label}`);
+  return found as Extract<DeviceWidget, { data: unknown }>;
+}
+
+const dataOf = (payload: DeviceDashboardV2Response, label: string) =>
+  byLabel(payload, label).data as {
+    status: string;
+    freshness?: Record<string, unknown>;
+  };
+
+describe("device payload freshness (ADR 0025 §7)", () => {
+  it("gives a metric widget its periodic stream", async () => {
+    const payload = deviceDashboardV2ResponseSchema.parse(
+      await v2(dashboardId),
+    );
+    expect(dataOf(payload, "Sales")).toMatchObject({
+      status: "ok",
+      freshness: {
+        kind: "periodic",
+        stream: "Sales",
+        fetchedAt: at(-5 * MINUTE).toISOString(),
+        dataThrough: "2026-11-14",
+        nextExpectedAt: at(8 * HOUR).toISOString(),
+        nextCheckAt: at(2 * HOUR).toISOString(),
+      },
+    });
+    const { freshness } = dataOf(payload, "Sales");
+    // No zone, no late flag, no period for a daily stream.
+    expect(Object.keys(freshness!)).toEqual([
+      "kind",
+      "stream",
+      "fetchedAt",
+      "dataThrough",
+      "nextExpectedAt",
+      "nextCheckAt",
+    ]);
+  });
+
+  it("shows the least fresh of a widget's resources, selected ones only", async () => {
+    const payload = await v2(dashboardId);
+    expect(dataOf(payload, "Views").freshness).toEqual({
+      kind: "periodic",
+      stream: "Analytics",
+      // The oldest check of the rows used (app-9 is not selected).
+      fetchedAt: at(-10 * MINUTE).toISOString(),
+      dataThrough: "2026-11-12",
+      nextExpectedAt: at(9 * HOUR).toISOString(),
+      nextCheckAt: at(2 * HOUR).toISOString(),
+    });
+  });
+
+  it("uses only the app's rows on a slide scoped to it", async () => {
+    const payload = await v2(dashboardId);
+    expect(dataOf(payload, "Views of app-1").freshness).toMatchObject({
+      stream: "Analytics",
+      fetchedAt: at(-5 * MINUTE).toISOString(),
+      dataThrough: "2026-11-13",
+      nextExpectedAt: at(8 * HOUR).toISOString(),
+    });
+  });
+
+  it("keeps a provider late under 24 h `ok`, and makes it `stale` at 24 h", async () => {
+    const payload = await v2(dashboardId);
+    expect(dataOf(payload, "Late")).toMatchObject({
+      status: "ok",
+      freshness: { dataThrough: "2026-11-14", late: true },
+    });
+    expect(dataOf(payload, "Overdue")).toMatchObject({
+      status: "stale",
+      freshness: { dataThrough: "2026-11-14", late: true },
+    });
+  });
+
+  it("words a continuous stream by its check only", async () => {
+    const payload = await v2(dashboardId);
+    expect(dataOf(payload, "Rating").freshness).toEqual({
+      kind: "continuous",
+      stream: "Reviews",
+      fetchedAt: at(-20 * MINUTE).toISOString(),
+      nextCheckAt: at(2 * HOUR).toISOString(),
+    });
+  });
+
+  it("marks a monthly stream", async () => {
+    const payload = await v2(dashboardId);
+    expect(dataOf(payload, "Revenue").freshness).toEqual({
+      kind: "periodic",
+      stream: "Earnings",
+      fetchedAt: at(-5 * MINUTE).toISOString(),
+      dataThrough: "2026-10-31",
+      period: "month",
+      nextExpectedAt: "2026-11-18T20:00:00.000Z",
+      nextCheckAt: at(2 * HOUR).toISOString(),
+    });
+  });
+
+  it("names the stream in the payload's language", async () => {
+    const payload = await v2(dashboardId, { locale: "de" });
+    expect(dataOf(payload, "Sales").freshness?.stream).toBe("Verkäufe");
+  });
+
+  it("has no freshness for metrics in no stream or without rows", async () => {
+    const payload = await v2(dashboardId);
+    expect(dataOf(payload, "Other")).not.toHaveProperty("freshness");
+    expect(dataOf(payload, "None")).not.toHaveProperty("freshness");
+  });
+
+  it("leaves payloads without freshness byte for byte as they were", async () => {
+    const withRegistry = await v2(quietDashboardId);
+    const without = await v2(quietDashboardId, { withRegistry: false });
+    expect(JSON.stringify(withRegistry)).toBe(JSON.stringify(without));
+    const v3 = (freshness: boolean) =>
+      withWorkspace(db, { workspaceId }, (tx) =>
+        buildDeviceDashboardV3(tx, workspaceId, quietDashboardId, {
+          now: NOW,
+          ...(freshness ? { freshness: manifests } : {}),
+        }),
+      );
+    expect(JSON.stringify(await v3(true))).toBe(
+      JSON.stringify(await v3(false)),
+    );
+  });
+
+  it("never gives schema 1 tiles freshness", async () => {
+    const v1 = (freshness: boolean) =>
+      withWorkspace(db, { workspaceId }, (tx) =>
+        buildDeviceDashboard(tx, workspaceId, dashboardId, {
+          now: NOW,
+          ...(freshness ? { freshness: manifests } : {}),
+        }),
+      );
+    const tiles = await v1(true);
+    expect(JSON.stringify(tiles)).toBe(JSON.stringify(await v1(false)));
+    expect(JSON.stringify(tiles)).not.toContain("freshness");
+  });
+
+  it("keeps the version (ETag) across clock times with the same rows", async () => {
+    let clock = NOW;
+    const service = createDeviceService({
+      db,
+      pairingUrl: "https://pair.example.test",
+      now: () => clock,
+      payloadCacheMs: 0,
+      registry: manifests,
+    });
+    const read = async (schema: 2 | 3) => {
+      const result = await service.dashboard(
+        { workspaceId, deviceId },
+        undefined,
+        schema,
+      );
+      if (!result.ok) throw new Error(result.error);
+      return result.value as { version: string };
+    };
+    const first = await read(2);
+    const firstV3 = deviceDashboardV3ResponseSchema.parse(await read(3));
+    // Ten minutes on: the expected times of the late rows pass, nothing
+    // stored changes.
+    clock = at(10 * MINUTE);
+    const second = await read(2);
+    expect(second.version).toBe(first.version);
+    expect((await read(3)).version).toBe(firstV3.version);
+    expect(JSON.stringify(second)).toContain('"freshness"');
+    // A stored change is a new version.
+    await owner`
+      update connection_freshness set checked_at = ${at(MINUTE)}
+      where connection_id = ${c.late!}`;
+    try {
+      expect((await read(2)).version).not.toBe(first.version);
+    } finally {
+      await owner`
+        update connection_freshness set checked_at = ${at(-HOUR - MINUTE)}
+        where connection_id = ${c.late!}`;
+    }
+  });
+});
+
+describe("measure widget freshness (ADR 0025 §6)", () => {
+  it("resolves the model's sources through its preparations", async () => {
+    const payload = await v2(measureDashboardId);
+    const data = dataOf(payload, "Views");
+    expect(data.freshness).toEqual({
+      kind: "periodic",
+      stream: "Analytics",
+      fetchedAt: at(-10 * MINUTE).toISOString(),
+      dataThrough: "2026-11-12",
+      nextExpectedAt: at(9 * HOUR).toISOString(),
+      nextCheckAt: at(2 * HOUR).toISOString(),
+    });
+    // The web's dashboard data carries the same.
+    const web = await withWorkspace(db, { workspaceId }, async (tx) => {
+      const dashboard = await findDashboard(
+        tx,
+        workspaceId,
+        measureDashboardId,
+      );
+      return queryDashboardData(
+        tx,
+        workspaceId,
+        dashboard!.slides,
+        dashboard!.dataFilters,
+        {},
+        NOW,
+        DEFAULT_DATA_POLICY,
+        "en",
+        createFreshnessReader(workspaceId, manifests, "en"),
+      );
+    });
+    expect(web.widgets[0]!.freshness).toEqual(data.freshness);
+  });
+
+  it("shows the least fresh of a model over two streams", async () => {
+    const found = await withWorkspace(db, { workspaceId }, async (tx) => {
+      const dependencies = await modelFreshnessDependencies(
+        tx,
+        workspaceId,
+        {
+          bindings: {
+            // A source dataset of the sales stream, by its key …
+            [salesDatasetId]: [],
+            // … and the views observations of the analytics stream.
+            [`observation:${c.periodic}:${metricIds["fresh.views"]}`]: [],
+            // Resource names have no stream.
+            [`resources:${c.periodic}`]: [],
+          },
+          dependencies: {},
+        },
+        {},
+        [],
+      );
+      expect(dependencies).toEqual(
+        expect.arrayContaining([
+          { connectionId: c.periodic, datasetKey: "sales_rows" },
+          { connectionId: c.periodic, metricKey: "fresh.views" },
+        ]),
+      );
+      return createFreshnessReader(workspaceId, manifests).read(
+        tx,
+        dependencies,
+      );
+    });
+    expect(found).toEqual({
+      overdue: false,
+      freshness: {
+        kind: "periodic",
+        stream: "Analytics",
+        fetchedAt: at(-10 * MINUTE).toISOString(),
+        dataThrough: "2026-11-12",
+        nextExpectedAt: at(9 * HOUR).toISOString(),
+        nextCheckAt: at(2 * HOUR).toISOString(),
+      },
+    });
+  });
+
+  it("follows the slide scope's app", async () => {
+    const found = await withWorkspace(db, { workspaceId }, async (tx) =>
+      createFreshnessReader(workspaceId, manifests).read(
+        tx,
+        await modelFreshnessDependencies(
+          tx,
+          workspaceId,
+          {
+            bindings: {
+              [`observation:${c.periodic}:${metricIds["fresh.views"]}`]: [],
+            },
+            dependencies: {},
+          },
+          { app: { kind: "values", values: [`${c.periodic}:app-1`] } },
+          [],
+        ),
+      ),
+    );
+    expect(found.freshness).toMatchObject({ dataThrough: "2026-11-13" });
+  });
+});
+
+describe("tenant isolation", () => {
+  it("never reads another workspace's rows", async () => {
+    const found = await withWorkspace(db, { workspaceId }, (tx) =>
+      createFreshnessReader(workspaceId, manifests).read(tx, [
+        { connectionId: c.other!, metricKey: "fresh.sales" },
+      ]),
+    );
+    expect(found).toEqual({ overdue: false });
+    // The other workspace sees its own.
+    const own = await withWorkspace(
+      db,
+      { workspaceId: otherWorkspaceId },
+      (tx) =>
+        createFreshnessReader(otherWorkspaceId, manifests).read(tx, [
+          { connectionId: c.other!, metricKey: "fresh.sales" },
+        ]),
+    );
+    expect(own.freshness).toMatchObject({ dataThrough: "2026-11-01" });
+  });
+});

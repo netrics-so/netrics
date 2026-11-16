@@ -31,6 +31,7 @@ import {
 
 import {
   dashboardWidgetDataSchema,
+  widgetFreshnessSchema,
   dashboardDataFiltersSchema,
   deviceFilterScopeSchema,
   slideFilterScopeSchema,
@@ -3178,6 +3179,11 @@ const deviceWidgetDataShape = {
   status: deviceTileStatusSchema,
   /** The connection's last successful sync. */
   updatedAt: z.iso.datetime().nullable(),
+  /**
+   * How far the numbers reach (ADR 0025 section 7); absent when the
+   * widget's connectors report no freshness. Schema 1 tiles never have it.
+   */
+  freshness: widgetFreshnessSchema.optional(),
 };
 
 /** A metric widget's data: a schema 1 tile without id and label. */

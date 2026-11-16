@@ -7,6 +7,12 @@ import {
   slideScopeOf,
   slideScopedWidgets,
 } from "../dashboards/data.js";
+import {
+  createFreshnessReader,
+  type FreshnessDependency,
+  type FreshnessManifests,
+  type FreshnessReader,
+} from "../dashboards/freshness.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -164,6 +170,11 @@ export interface BuildOptions {
    * unscoped.
    */
   scope?: DeviceFilterScope;
+  /**
+   * The connector registry: the freshness streams of widgets' connectors
+   * (ADR 0025). Absent: no widget has `freshness`. Schema 1 tiles never do.
+   */
+  freshness?: FreshnessManifests;
 }
 
 /** Whether a screen has a fixed scope that restricts something. */
@@ -249,6 +260,41 @@ function dimensionsOf(widget: DashboardWidgetRow): Record<string, string> {
   return widget.dimensions as Record<string, string>;
 }
 
+/** A metric of a connection, for one resource or all selected ones. */
+function metricDependency(
+  connectionId: string,
+  metricKey: string,
+  dimensions: unknown,
+): FreshnessDependency {
+  return {
+    connectionId,
+    metricKey,
+    resource: (dimensions as Record<string, string>)[RESOURCE_DIMENSION],
+  };
+}
+
+/**
+ * A data widget's data with its freshness (ADR 0025 section 7), the
+ * least fresh of the streams it depends on. A provider overdue by a day
+ * turns `ok` into `stale`. Without freshness the data is returned as it
+ * is, so payloads of connectors without streams stay byte for byte.
+ */
+async function withFreshness<T extends { status: DeviceTileStatus }>(
+  tx: Transaction,
+  context: DataContext,
+  data: T,
+  dependencies: readonly FreshnessDependency[],
+): Promise<T> {
+  if (!context.freshness) return data;
+  const found = await context.freshness.read(tx, dependencies);
+  if (!found.freshness && !found.overdue) return data;
+  return {
+    ...data,
+    ...(found.overdue && data.status === "ok" ? { status: "stale" } : {}),
+    ...(found.freshness ? { freshness: found.freshness } : {}),
+  };
+}
+
 /**
  * What every data widget of one payload shares: connection health and the
  * names its labels use, each loaded once.
@@ -270,6 +316,8 @@ interface DataContext {
   label(widget: DataWidget, metricName: string | undefined): string;
   /** The same connections for bound compare widgets (#507). */
   compareSources: CompareSourceContext;
+  /** Widgets' freshness (ADR 0025); null without a registry. */
+  freshness: FreshnessReader | null;
 }
 
 async function loadDataContext(
@@ -334,6 +382,9 @@ async function loadDataContext(
     states,
     sources,
     backfilling,
+    freshness: options.freshness
+      ? createFreshnessReader(workspaceId, options.freshness, options.locale)
+      : null,
     compareSources: {
       states,
       names: new Map(connections.map(({ row }) => [row.id, row.name])),
@@ -630,25 +681,36 @@ async function dataWidgetOf(
       ...placement,
       label: context.label(widget, breakdown?.metric.name),
       options,
-      data: {
-        period: request.period,
-        aggregation: breakdown?.aggregation ?? request.aggregation,
-        unit: unitOf(breakdown),
-        conversion: conversionOf(breakdown?.conversion ?? null),
-        kind: breakdown?.metric.kind ?? null,
-        granularity: breakdown?.metric.granularity ?? null,
-        better: breakdown?.metric.better ?? "higher",
-        status: tileStatus(
-          state,
-          hasData,
-          context.options.now,
-          context.backfilling.has(widget.connectionId),
-        ),
-        updatedAt: state?.lastSuccessAt ?? null,
-        groupBy: options.groupBy,
-        bars: breakdown?.groups ?? [],
-        others: breakdown?.others ?? null,
-      },
+      data: await withFreshness(
+        tx,
+        context,
+        {
+          period: request.period,
+          aggregation: breakdown?.aggregation ?? request.aggregation,
+          unit: unitOf(breakdown),
+          conversion: conversionOf(breakdown?.conversion ?? null),
+          kind: breakdown?.metric.kind ?? null,
+          granularity: breakdown?.metric.granularity ?? null,
+          better: breakdown?.metric.better ?? "higher",
+          status: tileStatus(
+            state,
+            hasData,
+            context.options.now,
+            context.backfilling.has(widget.connectionId),
+          ),
+          updatedAt: state?.lastSuccessAt ?? null,
+          groupBy: options.groupBy,
+          bars: breakdown?.groups ?? [],
+          others: breakdown?.others ?? null,
+        },
+        [
+          metricDependency(
+            widget.connectionId,
+            widget.metricKey,
+            widget.dimensions,
+          ),
+        ],
+      ),
     };
   }
   if (widget.type === "table") {
@@ -658,7 +720,10 @@ async function dataWidgetOf(
     return compareWidgetOf(tx, widget, context, placement);
   }
   const query = await queryWidget(tx, widget, context);
-  const { id: _id, label, ...tile } = tileOf(widget, query, context);
+  const { id: _id, label, ...plain } = tileOf(widget, query, context);
+  const tile = await withFreshness(tx, context, plain, [
+    metricDependency(widget.connectionId, widget.metricKey, widget.dimensions),
+  ]);
   if (widget.type === "line") {
     const options = parsedOptions(lineWidgetOptionsSchema, widget.options);
     const { spark, ...data } = tile;
@@ -731,35 +796,46 @@ async function tableWidgetOf(
     ...placement,
     label: context.label(widget, breakdown?.metric.name),
     options,
-    data: {
-      period: request.period,
-      aggregation: breakdown?.aggregation ?? request.aggregation,
-      unit: unitOf(breakdown),
-      conversion: conversionOf(breakdown?.conversion ?? null),
-      kind: breakdown?.metric.kind ?? null,
-      granularity: breakdown?.metric.granularity ?? null,
-      better: breakdown?.metric.better ?? "higher",
-      status: tileStatus(
-        state,
-        hasData,
-        context.options.now,
-        context.backfilling.has(widget.connectionId),
-      ),
-      updatedAt: state?.lastSuccessAt ?? null,
-      groupBy: options.groupBy,
-      columns: {
-        label: breakdown?.groupByName ?? options.groupBy,
-        value: metricName,
+    data: await withFreshness(
+      tx,
+      context,
+      {
+        period: request.period,
+        aggregation: breakdown?.aggregation ?? request.aggregation,
+        unit: unitOf(breakdown),
+        conversion: conversionOf(breakdown?.conversion ?? null),
+        kind: breakdown?.metric.kind ?? null,
+        granularity: breakdown?.metric.granularity ?? null,
+        better: breakdown?.metric.better ?? "higher",
+        status: tileStatus(
+          state,
+          hasData,
+          context.options.now,
+          context.backfilling.has(widget.connectionId),
+        ),
+        updatedAt: state?.lastSuccessAt ?? null,
+        groupBy: options.groupBy,
+        columns: {
+          label: breakdown?.groupByName ?? options.groupBy,
+          value: metricName,
+        },
+        rows: (breakdown?.groups ?? []).map((group) => ({
+          key: group.key,
+          label: group.label,
+          value: group.value,
+          previousValue: group.previousValue ?? null,
+          ratio: group.ratio ?? null,
+        })),
+        others,
       },
-      rows: (breakdown?.groups ?? []).map((group) => ({
-        key: group.key,
-        label: group.label,
-        value: group.value,
-        previousValue: group.previousValue ?? null,
-        ratio: group.ratio ?? null,
-      })),
-      others,
-    },
+      [
+        metricDependency(
+          widget.connectionId,
+          widget.metricKey,
+          widget.dimensions,
+        ),
+      ],
+    ),
   };
 }
 
@@ -884,28 +960,35 @@ async function compareWidgetOf(
     ...placement,
     label: context.label(widget, numerator?.metric.name),
     options,
-    data: {
-      period: request.period,
-      aggregation: numerator?.aggregation ?? request.aggregation,
-      unit: compareRatioUnit(a.operand.unit, b.operand.unit),
-      conversion: conversionOf(
-        numerator?.conversion ?? denominator?.conversion ?? null,
-      ),
-      kind: numerator?.metric.kind ?? null,
-      granularity: numerator?.metric.granularity ?? null,
-      better: numerator?.metric.better ?? "higher",
-      status: worseStatus(a.status, b.status),
-      updatedAt: olderSync(a.updatedAt, b.updatedAt),
-      numerator: a.operand,
-      denominator: b.operand,
-      ratio: {
-        value: comparable ? ratioOf(a.operand.value, b.operand.value) : null,
-        previousValue: comparable
-          ? ratioOf(a.previousValue, b.previousValue)
-          : null,
-        format: options.format,
+    data: await withFreshness(
+      tx,
+      context,
+      {
+        period: request.period,
+        aggregation: numerator?.aggregation ?? request.aggregation,
+        unit: compareRatioUnit(a.operand.unit, b.operand.unit),
+        conversion: conversionOf(
+          numerator?.conversion ?? denominator?.conversion ?? null,
+        ),
+        kind: numerator?.metric.kind ?? null,
+        granularity: numerator?.metric.granularity ?? null,
+        better: numerator?.metric.better ?? "higher",
+        status: worseStatus(a.status, b.status),
+        updatedAt: olderSync(a.updatedAt, b.updatedAt),
+        numerator: a.operand,
+        denominator: b.operand,
+        ratio: {
+          value: comparable ? ratioOf(a.operand.value, b.operand.value) : null,
+          previousValue: comparable
+            ? ratioOf(a.previousValue, b.previousValue)
+            : null,
+          format: options.format,
+        },
       },
-    },
+      [widget, ...(denominatorWidget ? [denominatorWidget] : [])].map((side) =>
+        metricDependency(side.connectionId, side.metricKey, side.dimensions),
+      ),
+    ),
   };
 }
 
@@ -944,6 +1027,7 @@ async function boundCompareWidgetOf(
         : {}),
       ...(context.options.locale ? { locale: context.options.locale } : {}),
       sources: context.compareSources,
+      ...(context.freshness ? { freshness: context.freshness } : {}),
     },
   );
   if (reading.error !== null) {
@@ -976,6 +1060,7 @@ async function boundCompareWidgetOf(
         previousValue: reading.ratio.previousValue,
         format: options.format,
       },
+      ...(reading.freshness ? { freshness: reading.freshness } : {}),
     },
   };
 }
@@ -1040,30 +1125,35 @@ async function gaugeWidgetOf(
     ...placement,
     label: widget.title ?? goal.name,
     options,
-    data: {
-      period,
-      aggregation: goal.aggregation as GoalAggregation,
-      unit: unitOf(reading?.read ?? null),
-      conversion: conversionOf(reading?.read.conversion ?? null),
-      kind: reading?.read.metric.kind ?? null,
-      granularity: reading?.read.metric.granularity ?? null,
-      better: reading?.read.metric.better ?? "higher",
-      status: tileStatus(
-        state,
-        value !== null,
-        now,
-        context.backfilling.has(goal.connectionId),
-      ),
-      updatedAt: state?.lastSuccessAt ?? null,
-      goal: { id: goal.id, name: goal.name },
-      value,
-      target: goal.target,
-      progress: reading?.progress.progress ?? null,
-      reachedAt: reading?.progress.reachedAt ?? null,
-      periodEnd:
-        reading?.progress.periodEnd ??
-        zonedIsoString(goalPeriodEnd(period, now, timeZone), timeZone),
-    },
+    data: await withFreshness(
+      tx,
+      context,
+      {
+        period,
+        aggregation: goal.aggregation as GoalAggregation,
+        unit: unitOf(reading?.read ?? null),
+        conversion: conversionOf(reading?.read.conversion ?? null),
+        kind: reading?.read.metric.kind ?? null,
+        granularity: reading?.read.metric.granularity ?? null,
+        better: reading?.read.metric.better ?? "higher",
+        status: tileStatus(
+          state,
+          value !== null,
+          now,
+          context.backfilling.has(goal.connectionId),
+        ),
+        updatedAt: state?.lastSuccessAt ?? null,
+        goal: { id: goal.id, name: goal.name },
+        value,
+        target: goal.target,
+        progress: reading?.progress.progress ?? null,
+        reachedAt: reading?.progress.reachedAt ?? null,
+        periodEnd:
+          reading?.progress.periodEnd ??
+          zonedIsoString(goalPeriodEnd(period, now, timeZone), timeZone),
+      },
+      [metricDependency(goal.connectionId, goal.metricKey, goal.dimensions)],
+    ),
   };
 }
 
@@ -1220,6 +1310,7 @@ async function buildSlides(
           options.locale,
           options.scope,
           slideScopeOf(slide),
+          context.freshness ?? undefined,
         );
         widgets.push({
           type: "measure",

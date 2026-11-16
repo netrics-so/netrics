@@ -50,6 +50,11 @@ import {
   queryDataModel,
   DataServiceError,
 } from "../data/service.js";
+import {
+  modelFreshnessDependencies,
+  type FreshnessReader,
+  type WidgetFreshnessResult,
+} from "./freshness.js";
 
 export async function publishedModel(
   tx: Transaction,
@@ -368,8 +373,11 @@ export async function queryDashboardMeasure(
   deviceScope: DeviceFilterScope = {},
   /** The scope of the widget's slide (#707). */
   slideScope: SlideFilterScope = {},
+  /** Reads the model's sources' freshness (ADR 0025); absent: none. */
+  freshnessReader?: FreshnessReader,
 ): Promise<DashboardWidgetData> {
   let sourceHealth: DashboardWidgetData["sourceHealth"];
+  let fresh: WidgetFreshnessResult = { overdue: false };
   const exclusions = input.binding.exclusions.filter((exclusion) => {
     const filter = filters.find((filter) => filter.id === exclusion.filterId);
     if (!filter) return false;
@@ -402,6 +410,17 @@ export async function queryDashboardMeasure(
         workspaceId,
         input.binding.modelId,
       );
+      if (freshnessReader)
+        fresh = await freshnessReader.read(
+          savepoint,
+          await modelFreshnessDependencies(
+            savepoint,
+            workspaceId,
+            await publishedModel(savepoint, workspaceId, input.binding.modelId),
+            slideScope,
+            input.binding.exclusions,
+          ),
+        );
       const { policy } = await resolveDataPolicy(
         savepoint,
         workspaceId,
@@ -523,21 +542,24 @@ export async function queryDashboardMeasure(
             .join(" ∩ ");
           return text ? [`${filter.name}: ${text}`] : [];
         });
+      const status = result.stale
+        ? ("stale" as const)
+        : result.rows.some((row) =>
+              Object.values(row.measures).some((cell) => cell.value !== null),
+            )
+          ? ("ok" as const)
+          : ("no_data" as const);
       return {
         sourceHealth,
         scope,
-        status: result.stale
-          ? ("stale" as const)
-          : result.rows.some((row) =>
-                Object.values(row.measures).some((cell) => cell.value !== null),
-              )
-            ? ("ok" as const)
-            : ("no_data" as const),
+        // A provider overdue by a day is the existing warning (ADR 0025 §7).
+        status: status === "ok" && fresh.overdue ? "stale" : status,
         widgetId: input.id,
         metadata,
         result,
         error: null,
         exclusions,
+        ...(fresh.freshness ? { freshness: fresh.freshness } : {}),
       };
     });
   } catch (error) {
@@ -554,6 +576,7 @@ export async function queryDashboardMeasure(
       result: null,
       error: code,
       exclusions,
+      ...(fresh.freshness ? { freshness: fresh.freshness } : {}),
     };
   }
 }
@@ -570,6 +593,8 @@ export async function queryDashboardData(
   now: Date,
   defaults?: DataPolicy,
   locale: "en" | "de" = "en",
+  /** Reads the widgets' freshness (ADR 0025); absent: none. */
+  freshnessReader?: FreshnessReader,
 ) {
   const filters = dashboardDataFiltersSchema.parse(rawFilters);
   const ids = new Set(filters.map((filter) => filter.id));
@@ -595,6 +620,7 @@ export async function queryDashboardData(
           locale,
           {},
           slideScopeOf(slide),
+          freshnessReader,
         ),
       );
     }
