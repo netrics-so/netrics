@@ -58,7 +58,9 @@ import {
   ModelPreviewTable,
   type ModelPreviewQuery,
 } from "./model-preview-table";
+import { ApiError } from "@/lib/api";
 import { PreviewNotes } from "./preview-notes";
+import { FilterValueNotes } from "./filter-value-notes";
 import { DefinitionHistory } from "./definition-history";
 import {
   publishAfterConfirmation,
@@ -543,7 +545,18 @@ export function ModelEditor({
         dataErrorKey(failure),
         scopeHintShown && grouping === groupBy,
       );
-      setPreviewError(key ? t(`errors.${key}`) : null);
+      // A display name of several values says how many, and of what.
+      const shared =
+        failure instanceof ApiError &&
+        failure.code === "model_filter_label_several_values" &&
+        failure.details.count &&
+        failure.details.fieldId
+          ? t("errors.labelSeveralCount", {
+              count: failure.details.count,
+              dimension: dimensionName(failure.details.fieldId),
+            })
+          : null;
+      setPreviewError(shared ?? (key ? t(`errors.${key}`) : null));
       setResult(null);
     } finally {
       setBusy(null);
@@ -1590,7 +1603,23 @@ export function ModelEditor({
           </p>
         ) : null}
         {result?.stale ? <p className="notice">{t("stale")}</p> : null}
-        {result ? <PreviewNotes warnings={result.warnings} /> : null}
+        {result ? (
+          <PreviewNotes
+            warnings={result.warnings.filter(
+              (warning) =>
+                !(
+                  warning === "model_filter_value_unknown" &&
+                  result.filterValueNotes?.length
+                ),
+            )}
+          />
+        ) : null}
+        {result ? (
+          <FilterValueNotes
+            notes={result.filterValueNotes}
+            dimensionName={dimensionName}
+          />
+        ) : null}
         {result && previewed ? (
           <ModelPreviewTable
             query={previewed}

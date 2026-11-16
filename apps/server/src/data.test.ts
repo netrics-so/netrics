@@ -649,6 +649,93 @@ describe("data API authorization and contract", () => {
       (await call("POST", "/models/preview", stranger, body)).statusCode,
     ).toBe(404);
   });
+  it("explains a filter by display name that matches nothing or several values (#627)", async () => {
+    const field = (id: string, type: string) => ({
+      id,
+      name: id,
+      type,
+      nullable: false,
+      classification: "internal",
+    });
+    const source = await call("POST", "/manual", editor, {
+      definition: {
+        ...manual.definition,
+        key: "named-apps",
+        name: "Named apps",
+        fields: [
+          field("id", "string"),
+          field("name", "string"),
+          field("amount", "decimal"),
+        ],
+      },
+      records: [
+        { values: { id: "a", name: "My App", amount: "1" } },
+        { values: { id: "b", name: "My App", amount: "2" } },
+      ],
+    });
+    expect(source.statusCode, source.body).toBe(200);
+    const datasetId = source.json().datasetId as string;
+    const preview = (name: string) =>
+      call("POST", "/models/preview", editor, {
+        definition: {
+          version: 1,
+          datasets: [datasetId],
+          relationships: [],
+          dimensions: [
+            {
+              id: "app",
+              name: "App",
+              datasetId,
+              fieldId: "id",
+              labelFieldId: "name",
+            },
+          ],
+          measures: [
+            {
+              id: "amount",
+              name: "Amount",
+              kind: "aggregate",
+              datasetId,
+              requiredDimensions: ["app"],
+              aggregate: {
+                id: "amount",
+                name: "Amount",
+                op: "sum",
+                fieldId: "amount",
+              },
+            },
+          ],
+        },
+        query: {
+          measureIds: ["amount"],
+          groupBy: [],
+          filter: {
+            kind: "call",
+            fn: "eq",
+            args: [
+              { kind: "field", fieldId: "app" },
+              { kind: "literal", type: "string", value: name },
+            ],
+          },
+        },
+      });
+    const several = await preview("My App");
+    expect(several.statusCode).toBe(400);
+    expect(several.json()).toEqual({
+      error: "model_filter_label_several_values",
+      fieldId: "app",
+      count: 2,
+    });
+    const near = await preview("my app ");
+    expect(near.statusCode, near.body).toBe(200);
+    expect(modelQueryResponseSchema.parse(near.json())).toMatchObject({
+      rows: [{ measures: { amount: { value: null, status: "missing" } } }],
+      warnings: expect.arrayContaining(["model_filter_value_unknown"]),
+      filterValueNotes: [
+        { dimensionId: "app", value: "my app ", suggestion: "My App" },
+      ],
+    });
+  });
   it("does not warn about a measure that rounds on purpose (#645)", async () => {
     const draft = modelResponseSchema.parse(
       (await call("GET", `/models/${modelId}`, editor)).json(),

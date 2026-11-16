@@ -1,5 +1,6 @@
 export function dataErrorCodeKey(code: string) {
   if (/measure_scope_required|measure_grain_invalid/.test(code)) return "scope";
+  if (code === "model_filter_label_several_values") return "labelSeveral";
   if (/dimension_label/.test(code)) return "label";
   if (code === "data_publication_not_found") return "history";
   if (code === "data_dependency_version_conflict") return "pinConflict";

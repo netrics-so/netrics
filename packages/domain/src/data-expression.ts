@@ -112,6 +112,8 @@ export class DataProcessingError extends Error {
     public readonly fieldId?: string,
     /** Id of the preparation step (PreparationNode.id) whose work failed. */
     public readonly nodeId?: string,
+    /** How many values the failure concerns, where the message names it. */
+    public readonly count?: number,
   ) {
     super(fieldId ? `${code}: ${fieldId}` : code);
     this.name = "DataProcessingError";

@@ -414,8 +414,13 @@ export const dataEn = {
         "The preparation was evaluated without caching because its storage policy was reached.",
       using_last_valid_source_snapshot:
         "The latest refresh could not be processed. This is the last valid retained data.",
+      model_filter_value_unknown:
+        "A filter names a value that is neither a value nor a display name of its dimension, so it matches nothing.",
       generic: "Review this preview before publishing.",
     },
+    filterValueUnknown:
+      "“{value}” is neither a {dimension} value nor a display name, so the filter matches nothing.",
+    filterValueSuggestion: "Did you mean “{suggestion}”?",
     sourcePending: "No completed data refresh yet",
     sum: "Sum",
     count: "Count",
@@ -649,6 +654,10 @@ export const dataEn = {
         "These inputs depend on different published versions of the same preparation. Use latest published inputs, or remove the input that needs a newer version.",
       scope:
         "Group by the required dimensions, or select one value for each, before using this measure.",
+      labelSeveral:
+        "The name in this filter belongs to several values of a dimension this measure keeps separate. Group by that dimension, or filter by one of its values.",
+      labelSeveralCount:
+        "The name in this filter belongs to {count} different {dimension} values, and this measure keeps each {dimension} separate. Group by {dimension} to see each one, or filter by one of its values.",
       label:
         "Choose a text column for display names. Each identity needs one consistent name.",
       pending:

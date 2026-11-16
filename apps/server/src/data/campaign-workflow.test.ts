@@ -8,10 +8,11 @@ import {
   schema,
   type Database,
 } from "@netrics/database";
-import type {
-  DashboardFilterValue,
-  SemanticModelDefinition,
-  PreparationGraph,
+import {
+  parseDataFormula,
+  type DashboardFilterValue,
+  type SemanticModelDefinition,
+  type PreparationGraph,
 } from "@netrics/domain";
 import {
   createTestDatabase,
@@ -247,6 +248,36 @@ describe("persisted advertising and website campaign workflow", () => {
       campaign: { kind: "values", values: ["brand"] },
     });
     expect(refused.widgets[0]?.result?.rows).toEqual([]);
+  });
+  it("filters a labelled dimension by the name shown in a model preview (#627)", async () => {
+    // What a person types in the preview filter: the label they see.
+    const filter = parseDataFormula(
+      '[Campaign] = "Spring launch"',
+      modelDefinition.dimensions,
+    );
+    const query = {
+      measureIds: ["spend"],
+      groupBy: ["campaign", "currency"],
+      filter,
+    };
+    const preview = await data.previewModel(actor, modelDefinition, query);
+    expect(
+      preview.rows.map((row) => [
+        row.dimensions.campaign,
+        row.dimensionLabels?.campaign,
+        row.measures.spend?.value,
+      ]),
+    ).toEqual([["launch", "Spring launch", "30"]]);
+    expect(preview.filterValueLabels).toEqual([
+      { dimensionId: "campaign", value: "launch", label: "Spring launch" },
+    ]);
+    // The published model's queries resolve labels the same way, and the
+    // stable value still works.
+    const published = await data.query(actor, modelId, query);
+    expect(published.rows.map((row) => row.dimensions.campaign)).toEqual([
+      "launch",
+    ]);
+    expect((await rowFor("launch")).measures.spend?.value).toBe("30");
   });
   it("refuses unsupported keyword revenue, ambiguous paths and a direct fact-to-fact join", async () => {
     await expect(
