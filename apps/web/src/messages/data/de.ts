@@ -419,8 +419,13 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Die Aufbereitung wurde ohne Zwischenspeicherung ausgewertet, weil die Speicherrichtlinie erreicht wurde.",
       using_last_valid_source_snapshot:
         "Die neueste Aktualisierung konnte nicht verarbeitet werden. Dies sind die letzten gültigen aufbewahrten Daten.",
+      model_filter_value_unknown:
+        "Ein Filter nennt etwas, das weder ein Wert noch ein Anzeigename seiner Dimension ist, und trifft daher nichts.",
       generic: "Prüfe diese Vorschau vor der Veröffentlichung.",
     },
+    filterValueUnknown:
+      "„{value}“ ist weder ein Wert noch ein Anzeigename von {dimension}, daher trifft der Filter nichts.",
+    filterValueSuggestion: "Meintest du „{suggestion}“?",
     sourcePending: "Noch keine abgeschlossene Aktualisierung",
     sum: "Summe",
     count: "Anzahl",
@@ -654,6 +659,10 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Diese Eingaben hängen von unterschiedlichen veröffentlichten Versionen derselben Vorbereitung ab. Verwende die neuesten veröffentlichten Eingaben oder entferne die Eingabe, die eine neuere Version benötigt.",
       scope:
         "Gruppiere nach den erforderlichen Dimensionen oder wähle für jede genau einen Wert aus, bevor du diese Kennzahl verwendest.",
+      labelSeveral:
+        "Der Name in diesem Filter gehört zu mehreren Werten einer Dimension, die diese Kennzahl getrennt hält. Gruppiere nach dieser Dimension oder filtere nach einem ihrer Werte.",
+      labelSeveralCount:
+        "Der Name in diesem Filter gehört zu {count} verschiedenen Werten von {dimension}, und diese Kennzahl hält jeden Wert von {dimension} getrennt. Gruppiere nach {dimension}, um jeden einzeln zu sehen, oder filtere nach einem seiner Werte.",
       label:
         "Wähle eine Textspalte für Anzeigenamen. Jede Identität braucht einen eindeutigen, konsistenten Namen.",
       pending:

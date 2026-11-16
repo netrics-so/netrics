@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { SemanticModelDefinition } from "@netrics/domain";
 import { createModel } from "./support/api.ts";
-import { labels, type Locale } from "./support/labels.ts";
+import { fill, labels, type Locale } from "./support/labels.ts";
 import { seedReferenceTable, startWorkspace } from "./support/session.ts";
 
 /**
@@ -79,4 +79,17 @@ test("a preview filter matches a dimension by the name it shows", async ({
   await expect(rows.nth(1)).toContainText("Google Play");
   await expect(rows.nth(1)).toContainText("7");
   await expect(preview.getByText("App Store")).toHaveCount(0);
+
+  // A spelling that is neither a value nor a name matches nothing, and the
+  // preview says so, naming the near match instead of applying it.
+  await preview
+    .getByLabel(t.sharedFilter, exact)
+    .fill('[Store] = "google play"');
+  await preview.getByRole("button", { name: t.preview, ...exact }).click();
+  await expect(
+    preview.getByText(
+      `${fill(t.filterValueUnknown, { value: "google play", dimension: "Store" })} ${fill(t.filterValueSuggestion, { suggestion: "Google Play" })}`,
+    ),
+  ).toBeVisible();
+  await expect(rows).toHaveCount(1);
 });

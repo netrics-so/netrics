@@ -1,6 +1,7 @@
 import {
   compileRowExpression,
   dataFail,
+  DataProcessingError,
   ProcessingBudget,
   type DataExpression,
   type DataType,
@@ -135,23 +136,63 @@ function scalarKey(table: DataTable, row: DataRow, fieldId: string): string {
   );
 }
 
+/** A filter text that names neither a value nor a display name (#627). */
+export interface FilterValueNote {
+  dimensionId: string;
+  value: string;
+  /** A value or display name that differs only in case or spacing. */
+  suggestion?: string;
+}
+
+const looseText = (text: string) =>
+  text.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+
 /**
  * Filters compare a dimension's stable value, but people type the label they
  * see (`[Store] = "Google Play"`). A string compared with a labelled
  * dimension that is not one of its values but is one of its labels stands for
  * the values shown with that label; a string that is a value keeps its
- * meaning, so filters written with values (dashboards) are unchanged.
+ * meaning, so filters written with values (dashboards) are unchanged. A
+ * string that is neither is noted (with a near match, never applied), and a
+ * label of several values is reported for the scope check.
  */
 function resolveLabelLiterals(
   expression: DataExpression,
   dimensions: ReadonlyMap<string, ModelDimension>,
   tableFor: (datasetId: string) => DataTable,
   budget: ProcessingBudget,
-): DataExpression {
+): {
+  expression: DataExpression;
+  unknown: FilterValueNote[];
+  /** Per dimension, a label that stands for several values, and how many. */
+  several: Map<string, { label: string; count: number }>;
+} {
+  const unknown: FilterValueNote[] = [],
+    several = new Map<string, { label: string; count: number }>();
   const indexes = new Map<
     string,
-    { type: DataType; values: Set<string>; byLabel: Map<string, unknown[]> }
+    {
+      type: DataType;
+      values: Set<string>;
+      byLabel: Map<string, unknown[]>;
+      rows: number;
+    }
   >();
+  const checkedValues = new Map<string, boolean>();
+  /** Whether `literal` is a stable value; stops at the first matching row. */
+  const isValue = (dimension: ModelDimension, literal: string) => {
+    const key = JSON.stringify([dimension.id, literal]);
+    const known =
+      checkedValues.get(key) ??
+      indexes.get(dimension.id)?.values.has(JSON.stringify(literal));
+    if (known !== undefined) return known;
+    const found = tableFor(dimension.datasetId).rows.some((row) => {
+      budget.tick();
+      return row[dimension.fieldId] === literal;
+    });
+    checkedValues.set(key, found);
+    return found;
+  };
   const index = (dimension: ModelDimension) => {
     const known = indexes.get(dimension.id);
     if (known) return known;
@@ -179,18 +220,52 @@ function resolveLabelLiterals(
       byLabel: new Map(
         [...byLabel].map(([label, keyed]) => [label, [...keyed.values()]]),
       ),
+      rows: table.rows.length,
     };
     indexes.set(dimension.id, built);
     return built;
+  };
+  /** A value or label equal to `literal` but for case and spacing. */
+  const nearMatch = (
+    built: ReturnType<typeof index>,
+    literal: string,
+  ): string | undefined => {
+    const loose = looseText(literal);
+    for (const label of built.byLabel.keys())
+      if (looseText(label) === loose) return label;
+    for (const key of built.values) {
+      const value: unknown = JSON.parse(key);
+      if (typeof value === "string" && looseText(value) === loose) return value;
+    }
+    return undefined;
   };
   /** The values a label literal stands for, or undefined to keep it. */
   const labelValues = (fieldId: string, literal: unknown) => {
     const dimension = dimensions.get(fieldId);
     if (!dimension?.labelFieldId || typeof literal !== "string") return;
-    const { type, values, byLabel } = index(dimension);
-    if (values.has(JSON.stringify(literal))) return;
-    const matched = byLabel.get(literal);
-    return matched ? { type, values: matched } : undefined;
+    if (isValue(dimension, literal)) return;
+    const built = index(dimension);
+    const matched = built.byLabel.get(literal);
+    if (!matched) {
+      // Schema-only probes have no rows to name anything.
+      if (
+        built.rows > 0 &&
+        !unknown.some(
+          (note) => note.dimensionId === fieldId && note.value === literal,
+        )
+      ) {
+        const suggestion = nearMatch(built, literal);
+        unknown.push({
+          dimensionId: fieldId,
+          value: literal,
+          ...(suggestion !== undefined ? { suggestion } : {}),
+        });
+      }
+      return;
+    }
+    if (matched.length > 1)
+      several.set(fieldId, { label: literal, count: matched.length });
+    return { type: built.type, values: matched };
   };
   const rewrite = (node: DataExpression): DataExpression => {
     if (node.kind !== "call") return node;
@@ -257,7 +332,7 @@ function resolveLabelLiterals(
     }
     return { ...node, args };
   };
-  return rewrite(expression);
+  return { expression: rewrite(expression), unknown, several };
 }
 
 /** A required grain can also be fixed to one value by a conjunctive filter. */
@@ -694,7 +769,7 @@ export function querySemanticModel(
       dataFail("model_date_alignment_required");
     dimensionFields.push({ ...f, id: d.id, name: d.name, nullable: true });
   }
-  const queryFilter = query.filter
+  const resolved = query.filter
     ? resolveLabelLiterals(
         query.filter,
         dimensions,
@@ -702,6 +777,9 @@ export function querySemanticModel(
         budget,
       )
     : undefined;
+  const queryFilter = resolved?.expression;
+  if (resolved?.unknown.length)
+    budget.warnings.add("model_filter_value_unknown");
   const filter = queryFilter
     ? compileRowExpression(queryFilter, dimensionFields)
     : undefined;
@@ -724,13 +802,22 @@ export function querySemanticModel(
       grain.some((dimension) => !dimensions.has(dimension))
     )
       dataFail("model_measure_grain_invalid");
-    if (
-      grain.some(
-        (dimension) =>
-          !query.groupBy.includes(dimension) && !fixedDimensions.has(dimension),
-      )
-    )
-      dataFail("model_measure_scope_required");
+    const unscoped = grain.filter(
+      (dimension) =>
+        !query.groupBy.includes(dimension) && !fixedDimensions.has(dimension),
+    );
+    // A display name of several values (two apps named alike) fixes none.
+    const shared = unscoped.find((dimension) =>
+      resolved?.several.has(dimension),
+    );
+    if (shared)
+      throw new DataProcessingError(
+        "model_filter_label_several_values",
+        shared,
+        undefined,
+        resolved!.several.get(shared)!.count,
+      );
+    if (unscoped.length) dataFail("model_measure_scope_required");
     visiting.add(id);
     if (m.kind === "aggregate") {
       table(m.datasetId);
@@ -1294,6 +1381,7 @@ export function querySemanticModel(
   return {
     rows: results,
     ...(filterValueLabels.length ? { filterValueLabels } : {}),
+    ...(resolved?.unknown.length ? { filterValueNotes: resolved.unknown } : {}),
     ...([...pendingByDataset.values()].some((pending) => pending.size)
       ? {
           pendingSources: [

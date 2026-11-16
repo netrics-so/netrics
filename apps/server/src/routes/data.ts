@@ -44,12 +44,17 @@ export function registerDataRoutes(
     reply: FastifyReply,
     status: number,
     code: string,
-    location: { fieldId?: string | undefined; nodeId?: string | undefined },
+    location: {
+      fieldId?: string | undefined;
+      nodeId?: string | undefined;
+      count?: number | undefined;
+    },
   ) => {
     const located = contracts.dataErrorResponseSchema.safeParse({
       error: code,
       ...(location.fieldId ? { fieldId: location.fieldId } : {}),
       ...(location.nodeId ? { nodeId: location.nodeId } : {}),
+      ...(location.count ? { count: location.count } : {}),
     });
     // A location that does not fit the contract never turns the error into a 500.
     return located.success
@@ -83,6 +88,7 @@ export function registerDataRoutes(
         return sendDataError(reply, 400, error.code, {
           fieldId: error.fieldId,
           nodeId: error.nodeId,
+          count: error.count,
         });
       return sendError(reply, 503, "data_operation_failed");
     }

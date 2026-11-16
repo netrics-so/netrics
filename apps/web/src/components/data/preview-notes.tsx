@@ -9,6 +9,7 @@ const labels = [
   "model_window_history_incomplete",
   "prepared_cache_capacity_reached",
   "using_last_valid_source_snapshot",
+  "model_filter_value_unknown",
 ] as const;
 export function PreviewNotes({ warnings }: { warnings: string[] }) {
   const t = useT("data");

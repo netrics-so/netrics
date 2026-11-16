@@ -631,6 +631,77 @@ describe("dimension display names", () => {
     expect(query("eq")).toEqual(["a", "b"]);
     expect(query("ne")).toEqual([]);
   });
+  it("notes filter texts that name neither a value nor a display name, with a near match", () => {
+    const query = (values: string[]) =>
+      querySemanticModel(named, sources, {
+        measureIds: ["total-downloads"],
+        groupBy: ["app"],
+        filter: {
+          kind: "call",
+          fn: "in",
+          args: [
+            field("app"),
+            { kind: "literal", type: "json", value: values },
+          ],
+        },
+      });
+    // Case and spacing differ: noted with a suggestion, never matched.
+    const near = query(["app  b ", "App C", "a"]);
+    expect(near.rows.map((row) => row.dimensions.app)).toEqual(["a"]);
+    expect(near.warnings).toContain("model_filter_value_unknown");
+    expect(near.filterValueNotes).toEqual([
+      { dimensionId: "app", value: "app  b ", suggestion: "App B" },
+      { dimensionId: "app", value: "App C" },
+    ]);
+    // Values and labels that match are not noted.
+    const known = query(["a", "App B"]);
+    expect(known.filterValueNotes).toBeUndefined();
+    expect(known.warnings).not.toContain("model_filter_value_unknown");
+    // Dimensions without display names are left alone.
+    const plain = querySemanticModel(named, sources, {
+      measureIds: ["total-downloads"],
+      groupBy: [],
+      filter: {
+        kind: "call",
+        fn: "eq",
+        args: [field("country"), literal("XX")],
+      },
+    });
+    expect(plain.filterValueNotes).toBeUndefined();
+  });
+  it("says how many values a shared display name stands for when one is required", () => {
+    const sameNames = new Map(sources).set("apps", {
+      ...apps,
+      rows: apps.rows.map((row) => ({ ...row, name: "My App" })),
+    });
+    const scoped: SemanticModelDefinition = {
+      ...named,
+      measures: named.measures.map((measure) =>
+        measure.id === "apple-downloads"
+          ? { ...measure, requiredDimensions: ["app"] }
+          : measure,
+      ),
+    };
+    const run = (name: string) => () =>
+      querySemanticModel(scoped, sameNames, {
+        measureIds: ["apple-downloads"],
+        groupBy: [],
+        filter: { kind: "call", fn: "eq", args: [field("app"), literal(name)] },
+      });
+    let failure: unknown;
+    try {
+      run("My App")();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: "model_filter_label_several_values",
+      fieldId: "app",
+      count: 2,
+    });
+    // One value by its stable ID still fixes the scope.
+    expect(run("a")().rows[0]?.measures["apple-downloads"]?.value).toBe("30");
+  });
   it("rejects incompatible display columns and conflicting names for one identity", () => {
     const wrong = {
       ...named,

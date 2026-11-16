@@ -389,6 +389,20 @@ export const modelQueryResponseSchema = z.object({
       }),
     )
     .optional(),
+  /**
+   * Filter texts compared with a labelled dimension that are neither one of
+   * its values nor one of its display names (#627), with a value or name
+   * that differs only in case or spacing. Warning model_filter_value_unknown.
+   */
+  filterValueNotes: z
+    .array(
+      z.object({
+        dimensionId: z.string(),
+        value: z.string(),
+        suggestion: z.string().optional(),
+      }),
+    )
+    .optional(),
   pendingSources: z.array(dataSourceIdSchema).optional(),
   receivedAt: z.iso.datetime().nullable().optional(),
   expiresAt: z.iso.datetime().nullable().optional(),
@@ -454,6 +468,8 @@ export const dataErrorResponseSchema = z.object({
   error: z.string().min(1),
   fieldId: z.string().min(1).max(240).optional(),
   nodeId: z.string().min(1).max(240).optional(),
+  /** How many values the error concerns (model_filter_label_several_values). */
+  count: z.number().int().positive().optional(),
 });
 export type DataErrorResponse = z.infer<typeof dataErrorResponseSchema>;
 
