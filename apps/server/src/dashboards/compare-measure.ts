@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   compareMeasureBindingSchema,
   semanticModelDefinitionSchema,
@@ -32,6 +32,10 @@ import {
 import { toStateView } from "../connections/present.js";
 import { tileStatus } from "../devices/dashboard.js";
 import type { FreshnessReader } from "./freshness.js";
+import {
+  modelSourceConnections,
+  modelSourceDatasets,
+} from "./model-sources.js";
 import {
   publishedModel,
   queryDashboardMeasure,
@@ -118,7 +122,8 @@ export async function compareBindingProblem(
  * The connections a published model reads, also through the preparations
  * it depends on (a compiled compare reads two observation datasets through
  * its generated preparation), and those of each preparation source node by
- * its id (a compiled compare's `numerator_source`, `denominator_source`).
+ * its id (a compiled compare's `numerator_source`, `denominator_source`);
+ * as a measure widget's source warnings and freshness resolve them.
  */
 async function modelConnections(
   tx: Transaction,
@@ -149,82 +154,16 @@ async function modelConnections(
       ),
     );
   if (!release) return { all: [], bySourceNode: new Map() };
-  const datasets = new Set(
-    Object.keys(release.bindings as Record<string, unknown>),
+  return modelSourceConnections(
+    tx,
+    workspaceId,
+    await modelSourceDatasets(tx, workspaceId, {
+      bindings: release.bindings as Record<string, unknown>,
+      dependencies: release.dependencies as {
+        prepared?: Record<string, number>;
+      },
+    }),
   );
-  const prepared = Object.entries(
-    (release.dependencies as { prepared?: Record<string, number> }).prepared ??
-      {},
-  );
-  const sourceNodes = new Map<string, Set<string>>();
-  for (const [preparationId, version] of prepared) {
-    const [row] = await tx
-      .select({ graph: schema.dataPreparationVersions.graph })
-      .from(schema.dataPreparationVersions)
-      .where(
-        and(
-          eq(schema.dataPreparationVersions.workspaceId, workspaceId),
-          eq(schema.dataPreparationVersions.preparationId, preparationId),
-          eq(schema.dataPreparationVersions.version, version),
-        ),
-      );
-    const nodes = (row?.graph as { nodes?: unknown[] } | undefined)?.nodes;
-    for (const node of Array.isArray(nodes) ? nodes : [])
-      if (
-        node &&
-        typeof node === "object" &&
-        "type" in node &&
-        node.type === "source" &&
-        "datasetId" in node &&
-        typeof node.datasetId === "string"
-      ) {
-        datasets.add(node.datasetId);
-        if ("id" in node && typeof node.id === "string")
-          sourceNodes.set(
-            node.id,
-            (sourceNodes.get(node.id) ?? new Set()).add(node.datasetId),
-          );
-      }
-  }
-  const uuid = /^[0-9a-f-]{36}$/i;
-  const connectionOf = new Map<string, string>();
-  const raw: string[] = [];
-  for (const id of datasets) {
-    if (id.startsWith("observation:") || id.startsWith("resources:")) {
-      const connectionId = id.split(":")[1];
-      if (connectionId && uuid.test(connectionId))
-        connectionOf.set(id, connectionId);
-    } else if (uuid.test(id)) raw.push(id);
-  }
-  if (raw.length)
-    for (const dataset of await tx
-      .select({
-        id: schema.dataDatasets.id,
-        connectionId: schema.dataDatasets.connectionId,
-      })
-      .from(schema.dataDatasets)
-      .where(
-        and(
-          eq(schema.dataDatasets.workspaceId, workspaceId),
-          inArray(schema.dataDatasets.id, raw),
-        ),
-      ))
-      if (dataset.connectionId)
-        connectionOf.set(dataset.id, dataset.connectionId);
-  const connectionsOf = (ids: Iterable<string>) => [
-    ...new Set(
-      [...ids].flatMap((id) => {
-        const connection = connectionOf.get(id);
-        return connection ? [connection] : [];
-      }),
-    ),
-  ];
-  return {
-    all: connectionsOf(datasets),
-    bySourceNode: new Map(
-      [...sourceNodes].map(([node, ids]) => [node, connectionsOf(ids)]),
-    ),
-  };
 }
 
 /** The workspace's connection health, loaded once per payload. */
