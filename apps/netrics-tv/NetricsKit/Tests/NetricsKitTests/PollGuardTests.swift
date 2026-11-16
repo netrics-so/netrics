@@ -141,6 +141,46 @@ private func staleDashboardRoute() -> Handler {
     }
 }
 
+@Suite struct AssignedDashboardInFlightTests {
+    /**
+     * The heartbeat sees another dashboard while a conditional poll is under
+     * way: that poll's (stale) 304 must not take back the request to ask
+     * without the ETag (review of #752).
+     */
+    @Test func aMismatchDuringAConditionalPollStillDropsTheETagNext() async throws {
+        let h = Harness(
+            credentials: { credentialsFor("a", accessExpiresIn: 86_400, clock: $0) },
+            cached: CachedDashboard(etag: "\"vA\"", payload: .v1(dashboard("vA")), updatedAt: T0)
+        ) { _ in
+            [
+                "POST /v1/device/heartbeat": { _ in HTTPResponse(status: 204) },
+                "GET /v1/device/me": { _ in me(dashboardId: otherDashboardID) },
+            ]
+        }
+        let client = h.client
+        let heartbeatDuring = Mutex(true)
+        h.api.route("GET /v1/device/dashboard") { call in
+            // The first poll is conditional; the heartbeat lands while it is in flight.
+            if call.header("if-none-match") == "\"vA\"", heartbeatDuring.withLock({ $0 }) {
+                heartbeatDuring.withLock { $0 = false }
+                await client.sendHeartbeat()
+            }
+            return try await staleDashboardRoute()(call)
+        }
+        await h.start()
+        await h.advance(0)
+        let first = try #require(h.api.callsTo("GET /v1/device/dashboard").first)
+        #expect(first.header("if-none-match") == "\"vA\"")
+        #expect(h.api.callsTo("GET /v1/device/me").count == 1)
+
+        await h.advance(60)
+        let polls = h.api.callsTo("GET /v1/device/dashboard")
+        #expect(polls.count == 2)
+        #expect(polls.last?.header("if-none-match") == nil)
+        #expect(await h.state.dashboard?.dashboard?.id == otherDashboardID)
+    }
+}
+
 @Suite struct AssignedDashboardBackoffTests {
     /**
      * The heartbeat sees another dashboard while the token must be refreshed

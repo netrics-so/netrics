@@ -167,6 +167,12 @@ public actor DeviceClient {
      */
     private var pollUnconditionally = false
     /**
+     * Bumped by every such request: an answer clears `pollUnconditionally`
+     * only when none came in while it was under way, so a conditional poll
+     * already in flight cannot take back a newer request with its 304.
+     */
+    private var unconditionalGeneration = 0
+    /**
      * ...and the next step runs at once instead of after its wait: taken by
      * one step of the poll loop, so a failure after it (a refresh that
      * fails) waits its backoff as always.
@@ -758,6 +764,7 @@ public actor DeviceClient {
             }
             let schema = requestSchema()
             let conditional = !pollUnconditionally
+            let asked = unconditionalGeneration
             var response = try await getDashboard(schema: schema, conditional: conditional)
             guard at == epoch else { return superseded() }
             if response.status == 401 {
@@ -777,8 +784,8 @@ public actor DeviceClient {
                 }
             }
             let confirmedAt = now()
-            if response.isSuccess || response.status == 304 {
-                // Answered: back to conditional polls (a 304 here was asked for).
+            if response.isSuccess || response.status == 304, unconditionalGeneration == asked {
+                // Answered, and no new mismatch came in meanwhile: back to conditional polls.
                 pollUnconditionally = false
             }
             if response.status == 304, let payload = state.payload, payload.schema == schema {
@@ -987,6 +994,7 @@ public actor DeviceClient {
      */
     private func pollNow() {
         pollUnconditionally = true
+        unconditionalGeneration += 1
         pollWakeRequested = true
         if let pollWait { wake(pollWait) }
     }
