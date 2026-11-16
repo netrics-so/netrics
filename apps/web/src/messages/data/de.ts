@@ -234,6 +234,7 @@ export const dataDe: Catalog<typeof dataEn> = {
     observations: "Bereits aggregiert",
     prepared: "Aufbereitet",
     manual: "Referenztabelle",
+    allProjects: "in allen Projekten",
     sample: "Datenvorschau",
     sampleHint:
       "Vorschau mit bis zu 100 Zeilen. Aufbereitungsschritte verwenden alle verfügbaren Zeilen.",

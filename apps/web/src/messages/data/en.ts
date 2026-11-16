@@ -229,6 +229,7 @@ export const dataEn = {
     observations: "Already aggregated",
     prepared: "Prepared",
     manual: "Reference table",
+    allProjects: "in all projects",
     sample: "Data preview",
     sampleHint:
       "Preview of up to 100 rows. Preparation steps use all available rows.",

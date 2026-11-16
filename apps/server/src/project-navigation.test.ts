@@ -441,16 +441,25 @@ describe("project navigation checks", () => {
     },
   );
 
-  it("counts manual sources as unassigned", async () => {
+  it("lists reference tables in every project, they are workspace-wide (#644)", async () => {
     const manual = async (query: string) =>
       items((await list("/data/sources", query)).sources)
         .filter((s) => (s as Item & { kind: string }).kind === "manual")
         .map((s) => s.name);
-    expect(await manual("?project=" + W1.A)).toEqual([]);
-    expect(await manual(`?project=${W1.A}&unassigned=include`)).toEqual([
-      "Numbers",
-    ]);
-    expect(await manual("?project=all")).toEqual(["Numbers"]);
+    for (const query of [
+      "?project=" + W1.A,
+      `?project=${W1.A}&unassigned=include`,
+      "?project=" + W1.B,
+      "?project=all",
+      "",
+    ])
+      expect(await manual(query), query).toEqual(["Numbers"]);
+    // Still only this workspace's reference tables, whatever project id.
+    const listed = items(
+      (await list("/data/sources", "?project=" + W2.A)).sources,
+    ).filter((s) => (s as Item & { kind: string }).kind === "manual");
+    expect(listed.map((s) => s.name)).toEqual(["Numbers"]);
+    expect(listed.some((s) => W2.ids.has(s.id))).toBe(false);
   });
 
   it("rejects malformed filters", async () => {

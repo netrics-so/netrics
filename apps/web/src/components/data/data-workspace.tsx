@@ -630,6 +630,9 @@ export function DataWorkspace({
                           <span>{source.name}</span>
                           <small>
                             {t(source.kind === "source" ? "raw" : source.kind)}
+                            {source.kind === "manual" && projectName
+                              ? " · " + t("allProjects")
+                              : ""}
                             {source.rowCount !== null
                               ? " · " +
                                 new Intl.NumberFormat(locale).format(

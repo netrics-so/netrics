@@ -194,6 +194,10 @@ a, b)` where the condition is a visual condition.
 
 - Models and preparations get an optional `project_id`, like connections and
   dashboards. Projects get `archived_at`.
+- Reference tables (manual datasets) have no project: they are shared
+  lookups (app or campaign mappings), so every project lists them and its
+  editors may read them (#644). Source datasets follow their connection's
+  project, prepared outputs their preparation's.
 - Navigation (data, dashboards, connections) is filtered by the user's
   stored active project (`memberships.active_project_id`, existing route), so
   the choice follows the user across pages and sessions; "All" (null) stays
