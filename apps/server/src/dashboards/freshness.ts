@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import type { WidgetFreshness } from "@netrics/contracts";
+import type { DeviceStatusStream, WidgetFreshness } from "@netrics/contracts";
 import type {
   ConnectorManifest,
   FreshnessStream,
@@ -14,6 +14,7 @@ import {
   isFreshnessLate,
   isFreshnessOverdue,
   localizedFreshnessStreamName,
+  RESOURCE_DIMENSION,
   slideScopeResource,
   type DashboardFilterExclusion,
   type Locale,
@@ -86,6 +87,15 @@ export interface FreshnessReader {
     tx: Transaction,
     dependencies: readonly FreshnessDependency[],
   ): Promise<WidgetFreshnessResult>;
+  /**
+   * Each connection's streams with stored rows, in manifest order, each
+   * summarized over the rows a widget of every selected resource uses
+   * (a status board, #727). Connections without such rows are absent.
+   */
+  streams(
+    tx: Transaction,
+    connectionIds: readonly string[],
+  ): Promise<Map<string, DeviceStatusStream[]>>;
 }
 
 export function createFreshnessReader(
@@ -193,7 +203,81 @@ export function createFreshnessReader(
       }
       return summarizeFreshness([...used.values()], nextDue, locale);
     },
+    async streams(tx, connectionIds) {
+      await load(tx, connectionIds);
+      const found = new Map<string, DeviceStatusStream[]>();
+      for (const connectionId of connectionIds) {
+        const connection = loaded.get(connectionId);
+        if (!connection) continue;
+        const nextDue = new Map([[connectionId, connection.nextDueAt]]);
+        const streams = connection.streams.flatMap((stream) => {
+          const summary = summarizeFreshness(
+            streamRows(connection, stream, undefined).map((row) => ({
+              connectionId,
+              row,
+              stream,
+              manifest: connection.manifest,
+            })),
+            nextDue,
+            locale,
+          );
+          return summary.freshness
+            ? [
+                {
+                  key: stream.key,
+                  ...summary.freshness,
+                  ...(summary.overdue ? { overdue: true as const } : {}),
+                },
+              ]
+            : [];
+        });
+        if (streams.length) found.set(connectionId, streams);
+      }
+      return found;
+    },
   };
+}
+
+/**
+ * A live query's freshness fields (#727): `freshness`, and `status`
+ * "stale" when a row used is overdue by 24 h. Nothing without rows, so
+ * those responses stay as they were.
+ */
+export function liveFreshness(found: WidgetFreshnessResult): {
+  freshness?: WidgetFreshness;
+  status?: "stale";
+} {
+  return {
+    ...(found.freshness ? { freshness: found.freshness } : {}),
+    ...(found.overdue ? { status: "stale" as const } : {}),
+  };
+}
+
+/**
+ * The freshness of a live metric query or goal (#727): its metric on its
+ * connection, for the `resource` filter (a widget's own or the slide
+ * scope's, which browsers send as the filter), else every selected
+ * resource; as a device payload resolves the same widget.
+ */
+export async function metricLiveFreshness(
+  tx: Transaction,
+  reader: FreshnessReader | undefined,
+  query: {
+    connectionId: string;
+    metricKey: string;
+    dimensions?: Readonly<Record<string, string>> | undefined;
+  },
+): Promise<{ freshness?: WidgetFreshness; status?: "stale" }> {
+  if (!reader) return {};
+  return liveFreshness(
+    await reader.read(tx, [
+      {
+        connectionId: query.connectionId,
+        metricKey: query.metricKey,
+        resource: query.dimensions?.[RESOURCE_DIMENSION],
+      },
+    ]),
+  );
 }
 
 /**

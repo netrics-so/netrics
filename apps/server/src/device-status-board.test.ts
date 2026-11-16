@@ -3,6 +3,7 @@ import {
   deviceDashboardV3ResponseSchema,
   type DeviceWidget,
 } from "@netrics/contracts";
+import type { ConnectorManifest } from "@netrics/connector-sdk";
 import {
   createDatabase,
   createRawSqlClient,
@@ -300,5 +301,27 @@ describe("status board payload (ADR 0019 section 7)", () => {
       STUDIO_MIN_WIDGET_SIZE.status,
     );
     expect(payload.slides[0]!.widgets[0]!.min).toEqual({ w: 3, h: 3 });
+  });
+
+  it("stays byte for byte without stored freshness rows (#727)", async () => {
+    // The connector declares a stream, but no run has reported it.
+    const manifest = {
+      id: "snap",
+      freshnessStreams: [{ key: "sales", name: "Sales", kind: "periodic" }],
+    } as unknown as ConnectorManifest;
+    const build = (freshness: boolean) =>
+      withWorkspace(db, { workspaceId }, async (tx) => ({
+        v2: await buildDeviceDashboardV2(tx, workspaceId, BOARDS, {
+          now: NOW,
+          ...(freshness ? { freshness: { get: () => ({ manifest }) } } : {}),
+        }),
+        v3: await buildDeviceDashboardV3(tx, workspaceId, BOARDS, {
+          now: NOW,
+          ...(freshness ? { freshness: { get: () => ({ manifest }) } } : {}),
+        }),
+      }));
+    const withRegistry = JSON.stringify(await build(true));
+    expect(withRegistry).toBe(JSON.stringify(await build(false)));
+    expect(withRegistry).not.toContain("streams");
   });
 });

@@ -13,7 +13,7 @@ import {
   workspaceMetricListResponseSchema,
 } from "@netrics/contracts";
 import { withWorkspace, type Database } from "@netrics/database";
-import { can } from "@netrics/domain";
+import { can, type Locale } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
 import {
@@ -24,6 +24,11 @@ import {
   queryMetric,
   queryMetricBreakdown,
 } from "../metrics/query.js";
+import {
+  createFreshnessReader,
+  metricLiveFreshness,
+  type FreshnessManifests,
+} from "../dashboards/freshness.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -34,6 +39,8 @@ export interface MetricRouteDeps {
   now?: () => Date;
   /** NETRICS_EXCHANGE_RATES: display-currency conversion (#191). */
   exchangeRates?: boolean;
+  /** The connector registry: live queries' freshness (ADR 0025, #727). */
+  registry?: FreshnessManifests;
 }
 
 export function registerMetricRoutes(
@@ -42,6 +49,10 @@ export function registerMetricRoutes(
 ): void {
   const requireSession = createRequireSession(deps.authService);
   const now = deps.now ?? (() => new Date());
+  const reader = (workspaceId: string, locale: Locale) =>
+    deps.registry
+      ? createFreshnessReader(workspaceId, deps.registry, locale)
+      : undefined;
 
   void app.register(
     (scope, _opts, done) => {
@@ -107,11 +118,32 @@ export function registerMetricRoutes(
           const result = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) =>
-              queryMetric(tx, access.workspaceId, body, now(), {
-                exchangeRates: deps.exchangeRates ?? false,
-                locale: request.sessionIdentity!.locale,
-              }),
+            async (tx) => {
+              const locale = request.sessionIdentity!.locale;
+              const found = await queryMetric(
+                tx,
+                access.workspaceId,
+                body,
+                now(),
+                {
+                  exchangeRates: deps.exchangeRates ?? false,
+                  locale,
+                },
+              );
+              return found.ok
+                ? {
+                    ...found,
+                    value: {
+                      ...found.value,
+                      ...(await metricLiveFreshness(
+                        tx,
+                        reader(access.workspaceId, locale),
+                        body,
+                      )),
+                    },
+                  }
+                : found;
+            },
           );
           if (!result.ok) {
             return sendError(reply, result.status, result.error);
@@ -148,11 +180,32 @@ export function registerMetricRoutes(
           const result = await withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            (tx) =>
-              queryMetricBreakdown(tx, access.workspaceId, body, now(), {
-                exchangeRates: deps.exchangeRates ?? false,
-                locale: request.sessionIdentity!.locale,
-              }),
+            async (tx) => {
+              const locale = request.sessionIdentity!.locale;
+              const found = await queryMetricBreakdown(
+                tx,
+                access.workspaceId,
+                body,
+                now(),
+                {
+                  exchangeRates: deps.exchangeRates ?? false,
+                  locale,
+                },
+              );
+              return found.ok
+                ? {
+                    ...found,
+                    value: {
+                      ...found.value,
+                      ...(await metricLiveFreshness(
+                        tx,
+                        reader(access.workspaceId, locale),
+                        body,
+                      )),
+                    },
+                  }
+                : found;
+            },
           );
           if (!result.ok) {
             return sendError(reply, result.status, result.error);

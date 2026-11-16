@@ -6,13 +6,19 @@ import {
   deleteGoalResponseSchema,
   errorResponseSchema,
   goalListResponseSchema,
+  goalReadResponseSchema,
   goalResponseSchema,
   updateGoalRequestSchema,
 } from "@netrics/contracts";
-import type { Database } from "@netrics/database";
+import { withWorkspace, type Database } from "@netrics/database";
 import { can, type WorkspaceAction } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
+import {
+  createFreshnessReader,
+  metricLiveFreshness,
+  type FreshnessManifests,
+} from "../dashboards/freshness.js";
 import { createGoalService, type GoalResult } from "../goals/service.js";
 import {
   parseBody,
@@ -33,6 +39,8 @@ export interface GoalRouteDeps {
   exchangeRates?: boolean;
   /** The clock; tests pin it. */
   now?: () => Date;
+  /** The connector registry: a goal read's freshness (ADR 0025, #727). */
+  registry?: FreshnessManifests;
 }
 
 const goalParamsSchema = z.object({ goalId: z.uuid() });
@@ -143,7 +151,7 @@ export function registerGoalRoutes(
           schema: routeSchema({
             summary: "Get a goal with its current progress",
             tags: ["goals"],
-            response: goalResponseSchema,
+            response: goalReadResponseSchema,
             errors: [403, 404],
           }),
         },
@@ -157,7 +165,25 @@ export function registerGoalRoutes(
           if (!goal) {
             return;
           }
-          return goalResponseSchema.parse({ goal });
+          // A gauge shows the goal's metric (ADR 0025, #727).
+          const registry = deps.registry;
+          const freshness = registry
+            ? await withWorkspace(
+                deps.db,
+                { workspaceId: access.workspaceId, userId: access.callerId },
+                (tx) =>
+                  metricLiveFreshness(
+                    tx,
+                    createFreshnessReader(
+                      access.workspaceId,
+                      registry,
+                      access.locale,
+                    ),
+                    goal,
+                  ),
+              )
+            : {};
+          return goalReadResponseSchema.parse({ goal, ...freshness });
         },
       );
 

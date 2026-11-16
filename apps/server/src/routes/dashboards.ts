@@ -259,6 +259,14 @@ export function registerDashboardRoutes(
             async (tx) => {
               const now = deps.now?.() ?? new Date();
               const sources = await loadCompareSources(tx, access.workspaceId);
+              // The measures' sources' freshness, as on screens (#727).
+              const freshness = deps.registry
+                ? createFreshnessReader(
+                    access.workspaceId,
+                    deps.registry,
+                    access.locale,
+                  )
+                : undefined;
               const widgets = [];
               for (const widget of body.widgets)
                 widgets.push(
@@ -271,6 +279,7 @@ export function registerDashboardRoutes(
                       policy: deps.policy ?? DEFAULT_DATA_POLICY,
                       locale: access.locale,
                       sources,
+                      ...(freshness ? { freshness } : {}),
                     },
                   ),
                 );

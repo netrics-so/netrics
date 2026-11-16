@@ -45,7 +45,7 @@ import {
   connectionRetentionChoiceSchema,
   connectorDatasetRetentionSchema,
 } from "./connection-retention.js";
-import { goalProgressSchema } from "./goals.js";
+import { goalProgressSchema, goalResponseSchema } from "./goals.js";
 import { imageContentTypeSchema } from "./images.js";
 
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
@@ -1385,6 +1385,20 @@ export const currencyConversionSchema = z.object({
 });
 export type CurrencyConversion = z.infer<typeof currencyConversionSchema>;
 
+/**
+ * Freshness on a signed-in live query (ADR 0025 sections 6 and 7, #727),
+ * resolved as for the same widget in a device payload: `freshness` is the
+ * least fresh of the streams the query depends on (its `resource` filter,
+ * else every selected resource); `status` is "stale" when a row used is
+ * overdue by 24 h. Both are absent for connectors without stored rows, so
+ * those responses stay as they were. Clients that derive a widget's status
+ * from its connection keep doing so and show "stale" over "ok".
+ */
+const liveFreshnessShape = {
+  freshness: widgetFreshnessSchema.optional(),
+  status: z.literal("stale").optional(),
+};
+
 export const metricQueryResponseSchema = z.object({
   metric: workspaceMetricSchema,
   period: metricPeriodSchema,
@@ -1422,6 +1436,7 @@ export const metricQueryResponseSchema = z.object({
   previousSeries: z.array(
     z.object({ bucket: z.iso.datetime(), value: z.number().nullable() }),
   ),
+  ...liveFreshnessShape,
 });
 export type MetricQueryResponse = z.infer<typeof metricQueryResponseSchema>;
 
@@ -1515,10 +1530,19 @@ export const metricBreakdownResponseSchema = z.object({
       groups: z.number().int().nonnegative(),
     })
     .nullable(),
+  ...liveFreshnessShape,
 });
 export type MetricBreakdownResponse = z.infer<
   typeof metricBreakdownResponseSchema
 >;
+
+/**
+ * A goal read (GET …/goals/:id), which gauge widgets show: with its
+ * metric's freshness as on a live query (#727).
+ */
+export const goalReadResponseSchema =
+  goalResponseSchema.extend(liveFreshnessShape);
+export type GoalReadResponse = z.infer<typeof goalReadResponseSchema>;
 
 /** The currencies of a "currency_minor" metric, for picking one (ADR 0014). */
 export const metricCurrenciesRequestSchema = z.object({
@@ -3284,6 +3308,21 @@ export type DeviceStatusItemStatus = z.infer<
 >;
 
 /**
+ * One freshness stream of a source on a status board (ADR 0025, #727):
+ * the widget freshness of section 7 over the stream's rows (the
+ * connection's, else every selected resource's; the least fresh), with
+ * the stream's key. `stream` is its name in the payload's language.
+ * `overdue`: a row is 24 h past its expected time (the warning style).
+ * A connection whose credentials failed or need reauthorization is not
+ * synced, so it has no `nextExpectedAt` or `nextCheckAt`.
+ */
+export const deviceStatusStreamSchema = widgetFreshnessSchema.extend({
+  key: z.string().min(1),
+  overdue: z.literal(true).optional(),
+});
+export type DeviceStatusStream = z.infer<typeof deviceStatusStreamSchema>;
+
+/**
  * A status board's data: one item per source, attention first
  * (auth_failed, outage, stale, backfilling, ok), then by name. No
  * credentials, configuration or error texts. Screens compute each age
@@ -3298,6 +3337,11 @@ export const deviceStatusDataSchema = z.object({
       name: z.string().min(1),
       status: deviceStatusItemStatusSchema,
       lastSuccessAt: z.iso.datetime().nullable(),
+      /**
+       * The source's freshness streams with stored rows, in manifest
+       * order (#727); absent when it has none.
+       */
+      streams: z.array(deviceStatusStreamSchema).optional(),
     }),
   ),
 });
@@ -3394,6 +3438,12 @@ export const compareMeasureReadingSchema = z.object({
     current: z.object({ from: z.iso.date(), to: z.iso.date() }),
     previous: z.object({ from: z.iso.date(), to: z.iso.date() }),
   }),
+  /**
+   * ADR 0025: the least fresh of the model's sources, as on measure
+   * widgets (#727); an overdue one makes `status` "stale". Absent without
+   * stored rows.
+   */
+  freshness: widgetFreshnessSchema.optional(),
 });
 export type CompareMeasureReading = z.infer<typeof compareMeasureReadingSchema>;
 export const compareMeasureReadingsResponseSchema = z.object({

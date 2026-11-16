@@ -838,26 +838,60 @@ async function tableWidgetOf(
  * chosen ones (a connection deleted since is left out), attention first,
  * from the payload's one connection query. Always `ok`: the board is the
  * status display; no sources reads "No sources connected" on screens.
+ * Each source with stored freshness rows lists its streams (ADR 0025,
+ * #727).
  */
-function statusWidgetOf(
+async function statusWidgetOf(
+  tx: Transaction,
   widget: DashboardWidgetRow,
   placement: { id: string; x: number; y: number; w: number; h: number },
   context: DataContext,
-): DeviceWidget {
+): Promise<DeviceWidget> {
   const options = parsedOptions(statusWidgetOptionsSchema, widget.options);
   const chosen = options.connectionIds ? new Set(options.connectionIds) : null;
+  const items = chosen
+    ? context.sources.filter((item) => chosen.has(item.connectionId))
+    : context.sources;
   return {
     type: "status",
     ...placement,
     label: widget.title ?? sourcesLabel(context.options.locale),
     options,
-    data: {
-      status: "ok",
-      items: chosen
-        ? context.sources.filter((item) => chosen.has(item.connectionId))
-        : context.sources,
-    },
+    data: { status: "ok", items: await withStreams(tx, context, items) },
   };
+}
+
+/**
+ * Status items with their freshness streams. The scheduler skips a
+ * connection whose credentials failed or need reauthorization, so its
+ * streams name no next expected time and no next check.
+ */
+async function withStreams(
+  tx: Transaction,
+  context: DataContext,
+  items: DeviceStatusData["items"],
+): Promise<DeviceStatusData["items"]> {
+  if (!context.freshness || !items.length) return items;
+  const found = await context.freshness.streams(
+    tx,
+    items.map((item) => item.connectionId),
+  );
+  return items.map((item) => {
+    const streams = found.get(item.connectionId);
+    if (!streams) return item;
+    const health = context.states.get(item.connectionId)?.health;
+    const skipped =
+      health === "auth_failed" || health === "needs_reauthorization";
+    return {
+      ...item,
+      streams: skipped
+        ? streams.map(
+            ({ nextExpectedAt: _next, nextCheckAt: _check, ...stream }) =>
+              stream,
+          )
+        : streams,
+    };
+  });
 }
 
 /** Worst last: a compare widget shows the worse of its two sides. */
@@ -1427,7 +1461,7 @@ async function buildSlides(
           options: parsedOptions(textWidgetOptionsSchema, widget.options),
         });
       } else if (widget.type === "status") {
-        widgets.push(statusWidgetOf(widget, placement, context));
+        widgets.push(await statusWidgetOf(tx, widget, placement, context));
       } else if (widget.type === "clock") {
         const { dateStyle, showZone, ...clock } = parsedOptions(
           clockWidgetOptionsSchema,

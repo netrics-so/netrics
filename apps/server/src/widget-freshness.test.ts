@@ -107,6 +107,8 @@ let dashboardId: string;
 let quietDashboardId: string;
 let measureDashboardId: string;
 let deviceId: string;
+let boardDashboardId: string;
+let boardDeviceId: string;
 
 async function connection(
   name: string,
@@ -311,6 +313,21 @@ beforeAll(async () => {
     nextExpectedAt: new Date("2026-11-18T20:00:00Z"),
     checkedAt: at(-5 * MINUTE),
   });
+  // Credentials refused, a grant to renew: the scheduler skips both.
+  c.authFailed = await connection("Auth failed");
+  c.reauth = await connection("Reauthorize");
+  await owner`
+    update connection_state set auth_state = 'auth_failed'
+    where connection_id = ${c.authFailed}`;
+  await owner`
+    update connection_state set auth_state = 'needs_reauthorization'
+    where connection_id = ${c.reauth}`;
+  for (const id of [c.authFailed, c.reauth])
+    await freshness(id, "sales", {
+      dataThrough: "2026-11-14",
+      nextExpectedAt: at(8 * HOUR),
+      checkedAt: at(-5 * MINUTE),
+    });
   await freshness(c.other, "sales", {
     dataThrough: "2026-11-01",
     checkedAt: at(-HOUR),
@@ -454,6 +471,19 @@ beforeAll(async () => {
     insert into devices (workspace_id, name, dashboard_id)
     values (${workspaceId}, 'TV', ${dashboardId}) returning id`;
   deviceId = device!.id as string;
+
+  // A status board over every source (#727).
+  boardDashboardId = await dashboardWith("Board");
+  await widget(boardDashboardId, await slideOf(boardDashboardId, 0), {
+    type: "status",
+    title: "Sources",
+    y: 0,
+    h: 3,
+  });
+  const [board] = await owner`
+    insert into devices (workspace_id, name, dashboard_id)
+    values (${workspaceId}, 'Board', ${boardDashboardId}) returning id`;
+  boardDeviceId = board!.id as string;
 }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
@@ -783,6 +813,132 @@ describe("measure widget freshness (ADR 0025 §6)", () => {
       dataThrough: "2026-11-13",
       fetchedAt: at(-5 * MINUTE).toISOString(),
     });
+  });
+});
+
+type StatusItem = {
+  connectionId: string;
+  status: string;
+  streams?: Record<string, unknown>[];
+};
+
+async function boardItems(options: { locale?: "de" } = {}) {
+  const payload = deviceDashboardV2ResponseSchema.parse(
+    await v2(boardDashboardId, options),
+  );
+  const board = payload.slides[0]!.widgets.find(
+    (widget) => widget.type === "status",
+  ) as Extract<DeviceWidget, { type: "status" }>;
+  const items = board.data.items as StatusItem[];
+  return (id: string) => {
+    const item = items.find((entry) => entry.connectionId === id);
+    if (!item) throw new Error(`no item ${id}`);
+    return item;
+  };
+}
+
+describe("status board streams (#727)", () => {
+  it("lists each source's streams, selected resources only", async () => {
+    const item = await boardItems();
+    expect(item(c.periodic!).streams).toEqual([
+      {
+        key: "sales",
+        kind: "periodic",
+        stream: "Sales",
+        fetchedAt: at(-5 * MINUTE).toISOString(),
+        dataThrough: "2026-11-14",
+        nextExpectedAt: at(8 * HOUR).toISOString(),
+        nextCheckAt: at(2 * HOUR).toISOString(),
+      },
+      {
+        // The least fresh selected app; app-9 is not selected.
+        key: "analytics",
+        kind: "periodic",
+        stream: "Analytics",
+        fetchedAt: at(-10 * MINUTE).toISOString(),
+        dataThrough: "2026-11-12",
+        nextExpectedAt: at(9 * HOUR).toISOString(),
+        nextCheckAt: at(2 * HOUR).toISOString(),
+      },
+    ]);
+    expect(item(c.monthly!).streams).toEqual([
+      expect.objectContaining({ key: "earnings", period: "month" }),
+    ]);
+    expect(item(c.continuous!).streams).toEqual([
+      {
+        key: "reviews",
+        kind: "continuous",
+        stream: "Reviews",
+        fetchedAt: at(-20 * MINUTE).toISOString(),
+        nextCheckAt: at(2 * HOUR).toISOString(),
+      },
+    ]);
+  });
+
+  it("marks late and overdue streams", async () => {
+    const item = await boardItems();
+    expect(item(c.late!).streams).toEqual([
+      expect.objectContaining({ key: "sales", late: true }),
+    ]);
+    expect(item(c.late!).streams![0]).not.toHaveProperty("overdue");
+    expect(item(c.overdue!).streams).toEqual([
+      expect.objectContaining({ key: "sales", late: true, overdue: true }),
+    ]);
+  });
+
+  it("leaves out the next times of a connection the scheduler skips", async () => {
+    const item = await boardItems();
+    for (const id of [c.authFailed!, c.reauth!]) {
+      expect(item(id).status).toBe("auth_failed");
+      expect(item(id).streams).toEqual([
+        {
+          key: "sales",
+          kind: "periodic",
+          stream: "Sales",
+          fetchedAt: at(-5 * MINUTE).toISOString(),
+          dataThrough: "2026-11-14",
+        },
+      ]);
+    }
+  });
+
+  it("has no streams for a source without rows", async () => {
+    const item = await boardItems();
+    expect(item(c.none!)).not.toHaveProperty("streams");
+  });
+
+  it("names streams in the payload's language", async () => {
+    const item = await boardItems({ locale: "de" });
+    expect(item(c.periodic!).streams![0]).toMatchObject({
+      stream: "Verkäufe",
+    });
+  });
+
+  it("keeps the board's version across clock times", async () => {
+    let clock = NOW;
+    const service = createDeviceService({
+      db,
+      pairingUrl: "https://pair.example.test",
+      now: () => clock,
+      payloadCacheMs: 0,
+      registry: manifests,
+    });
+    const read = async (schema: 2 | 3) => {
+      const result = await service.dashboard(
+        { workspaceId, deviceId: boardDeviceId },
+        undefined,
+        schema,
+      );
+      if (!result.ok) throw new Error(result.error);
+      return result.value as { version: string };
+    };
+    const first = await read(2);
+    const firstV3 = deviceDashboardV3ResponseSchema.parse(await read(3));
+    expect(JSON.stringify(first)).toContain('"streams"');
+    // Ten minutes on: next expected times pass, nothing stored changes.
+    clock = at(10 * MINUTE);
+    expect((await read(2)).version).toBe(first.version);
+    expect((await read(3)).version).toBe(firstV3.version);
   });
 });
 
