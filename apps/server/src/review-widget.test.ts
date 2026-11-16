@@ -19,7 +19,6 @@ import { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   createAppStoreConnectConnector,
   createDemoConnector,
-  REVIEW_METRIC_KEYS,
 } from "@netrics/connectors";
 import {
   createDatabase,
@@ -69,30 +68,14 @@ let demoConnection: string;
 const logs: string[] = [];
 
 /**
- * App Store Connect with its continuous `reviews` stream (ADR 0025), as
- * #703 declares it: review widgets show when reviews were last checked.
+ * App Store Connect as it ships, with its continuous `reviews` stream
+ * (ADR 0025, #703): review widgets show when reviews were last checked.
  * Without stored rows nothing changes, so every other test here also
  * checks that payloads stay as they were.
  */
 const registry = new ConnectorRegistry();
-{
-  const asc = createAppStoreConnectConnector();
-  registry.register({
-    ...asc,
-    manifest: {
-      ...asc.manifest,
-      freshnessStreams: [
-        {
-          key: "reviews",
-          name: "Reviews",
-          kind: "continuous",
-          metrics: Object.values(REVIEW_METRIC_KEYS),
-        },
-      ],
-    },
-  });
-  registry.register(createDemoConnector());
-}
+registry.register(createAppStoreConnectConnector());
+registry.register(createDemoConnector());
 
 function call(
   method: "GET" | "POST" | "PUT",
