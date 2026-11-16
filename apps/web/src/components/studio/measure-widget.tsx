@@ -547,6 +547,7 @@ export function LiveMeasureWidget({
       interaction={liveInteraction(widget, env)}
       workspaceId={env.workspaceId}
       fontScale={env.fontScale}
+      audience={env.audience}
       data={batch ? (batch.widgets.get(widget.id) ?? null) : data}
       loading={batch ? batch.loading : loading}
     />

@@ -3,6 +3,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -22,14 +23,24 @@ export function DashboardDataProvider({
   widgets,
   filters = [],
   values = {},
+  onLoaded,
   children,
 }: {
   workspaceId: string;
   widgets: readonly DashboardWidget[];
   filters?: DashboardDataFilter[];
   values?: Record<string, DashboardFilterValue>;
+  /**
+   * Called with the time of each successful load: a wall screen's offline
+   * note says when its data last updated (#681).
+   */
+  onLoaded?: (at: number) => void;
   children: ReactNode;
 }) {
+  const loaded = useRef(onLoaded);
+  useEffect(() => {
+    loaded.current = onLoaded;
+  });
   const key = JSON.stringify({
     widgets: widgets
       .filter((widget) => widget.type === "measure")
@@ -67,7 +78,7 @@ export function DashboardDataProvider({
           input.values,
           input.widgets,
         );
-        if (alive)
+        if (alive) {
           setState({
             key,
             widgets: new Map(
@@ -75,6 +86,8 @@ export function DashboardDataProvider({
             ),
             loading: false,
           });
+          loaded.current?.(Date.now());
+        }
       } catch {
         if (alive)
           setState({

@@ -193,6 +193,12 @@ export interface StudioEnv {
     value: import("@netrics/domain").DashboardFilterValue | undefined,
   ) => void;
   workspaceId: string;
+  /**
+   * Who reads the widgets: "viewer" on wall screens (signed-in TV mode,
+   * #681), where nobody can act on editor instructions, as on the kiosk
+   * (#649). The dashboard and Studio default to "editor".
+   */
+  audience?: "editor" | "viewer";
   /** The workspace's time zone: clocks and chart labels. */
   timeZone: string;
   /** The theme's text scale (1, 1.15 or 1.3). */

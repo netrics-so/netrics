@@ -2,15 +2,15 @@
 import { DashboardDataProvider } from "@/components/studio/dashboard-data-provider";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Dashboard, WorkspaceMetric } from "@netrics/contracts";
 
 import { LiveWidget, useOffline } from "@/components/studio/slide-canvas";
 import { SlidePlayer } from "@/components/studio/slide-player";
 import { useWidgetRefreshCycle } from "@/components/studio/use-widget-data";
-import { useIdle } from "@/components/tv-frame";
-import { useT } from "@/lib/i18n/client";
+import { clockTime, useIdle } from "@/components/tv-frame";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { documentRotation } from "@/lib/slide-rotation";
 import { themeStyle, type ResolvedTheme } from "@/lib/studio-theme";
 import {
@@ -29,7 +29,10 @@ import { useServerRefresh } from "../use-server-refresh";
  * the device payload. The session already authorises those queries, so no
  * second, session-side payload builder is needed; the rotation rules
  * (enabled slides, durations, transition) are the payload's. Screen view
- * on the whole window in its format (ADR 0017), kept awake.
+ * on the whole window in its format (ADR 0017), kept awake. It hangs on a
+ * wall like a paired screen, so it speaks as one: viewer wording without
+ * editor instructions, and an offline note with the last update (#681,
+ * as the kiosk since #649).
  */
 export function TvDashboard({
   workspaceId,
@@ -53,13 +56,23 @@ export function TvDashboard({
   const idle = useIdle();
   const offline = useOffline();
   const t = useT("screen.tv");
+  const note = useT("screen.widget");
+  const locale = useLocale();
   const { settings } = dashboard;
   const refresh = useWidgetRefreshCycle();
   useWakeLock(true);
+  // The last update: the page's load, then each server refresh (new props:
+  // sync health, tiles) and each measure load; offline, neither arrives.
+  const [updatedAt, setUpdatedAt] = useState(() => Date.now());
+  useEffect(() => {
+    setUpdatedAt(Date.now());
+  }, [dashboard, metrics, connections]);
+  const offlineSince = clockTime(updatedAt, timeZone, locale);
 
   const env: StudioEnv = useMemo(
     () => ({
       workspaceId,
+      audience: "viewer",
       dataFilters: dashboard.settings.dataFilters ?? [],
       timeZone,
       fontScale: theme.tokens.fontScale,
@@ -97,6 +110,7 @@ export function TvDashboard({
         workspaceId={workspaceId}
         widgets={dashboard.slides.flatMap((slide) => slide.widgets)}
         filters={dashboard.settings.dataFilters ?? []}
+        onLoaded={setUpdatedAt}
       >
         <SlidePlayer
           slides={slides}
@@ -109,6 +123,7 @@ export function TvDashboard({
             logoImageId: logoImageId(settings),
             timeZone,
             offline,
+            offlineSince,
             refresh,
           }}
           images={env.images}
@@ -118,6 +133,12 @@ export function TvDashboard({
         />
       </DashboardDataProvider>
       <div className="slide-screen-status">
+        {/* With the header the note is in it; without, in the corner. */}
+        {offline && !settings.showHeader ? (
+          <span className="kiosk-offline" role="status">
+            {note("offlineSince", { time: offlineSince })}
+          </span>
+        ) : null}
         <Link
           className="tv-exit"
           href={`/workspaces/${workspaceId}/dashboards/${dashboard.id}`}
