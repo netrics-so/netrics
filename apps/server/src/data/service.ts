@@ -372,18 +372,39 @@ function modelView(row: typeof schema.dataModels.$inferSelect) {
 }
 
 /**
- * The preparations a definition reads directly: every "prepared:<id>:<output>"
- * source it names, wherever it names one.
+ * A prepared source's preparation and output, as the loader reads
+ * "prepared:<id>:<output>"; null for any other source or a malformed one.
  */
-function directPreparations(content: unknown, into = new Set<string>()) {
-  if (typeof content === "string") {
-    const match = /^prepared:([0-9a-f-]{36}):/.exec(content);
-    if (match) into.add(match[1]!);
-  } else if (Array.isArray(content))
-    for (const item of content) directPreparations(item, into);
-  else if (content !== null && typeof content === "object")
-    for (const value of Object.values(content)) directPreparations(value, into);
+function preparedSource(
+  id: string,
+): { preparationId: string; output: string } | null {
+  if (!id.startsWith("prepared:")) return null;
+  const parts = id.split(":");
+  if (parts.length !== 3 || !z.uuid().safeParse(parts[1]).success) return null;
+  return { preparationId: parts[1]!, output: parts[2]! };
+}
+/**
+ * The preparations a draft reads directly, from the sources the loader
+ * loads for it: a preparation's source nodes, a model's datasets. Names and
+ * literals never count.
+ */
+function directPreparations(
+  sources: readonly string[],
+  into = new Set<string>(),
+) {
+  for (const source of sources) {
+    const prepared = preparedSource(source);
+    if (prepared) into.add(prepared.preparationId);
+  }
   return into;
+}
+function preparationSources(graph: unknown): string[] {
+  return preparationGraphSchema
+    .parse(graph)
+    .nodes.flatMap((node) => (node.type === "source" ? [node.datasetId] : []));
+}
+function modelSources(definition: unknown): string[] {
+  return semanticModelDefinitionSchema.parse(definition).datasets;
 }
 interface StoredRelease {
   content: unknown;
@@ -400,6 +421,7 @@ interface StoredRelease {
  */
 function differsFromRelease(
   content: unknown,
+  sources: readonly string[],
   release: StoredRelease | undefined,
   /** The release the draft was restored from; undefined when not restored. */
   restored: StoredRelease | undefined | null,
@@ -409,7 +431,7 @@ function differsFromRelease(
   if (stable(content) !== stable(release.content)) return true;
   const pinned = (release.dependencies as Dependencies | null)?.prepared ?? {};
   const pins = (restored?.dependencies as Dependencies | null)?.prepared ?? {};
-  for (const id of directPreparations(content))
+  for (const id of directPreparations(sources))
     if ((pins[id] ?? published.get(id) ?? null) !== (pinned[id] ?? null))
       return true;
   return false;
@@ -427,7 +449,7 @@ type DraftRow = {
 async function unpublishedChanges(
   tx: Transaction,
   workspaceId: string,
-  rows: readonly (DraftRow & { content: unknown })[],
+  rows: readonly (DraftRow & { content: unknown; sources: string[] })[],
   loadReleases: (
     keys: [string, number][],
   ) => Promise<
@@ -453,7 +475,7 @@ async function unpublishedChanges(
   );
   const ids = new Set<string>();
   for (const row of rows)
-    if (row.publishedVersion) directPreparations(row.content, ids);
+    if (row.publishedVersion) directPreparations(row.sources, ids);
   const t = schema.dataPreparations;
   const published = new Map(
     (ids.size
@@ -469,6 +491,7 @@ async function unpublishedChanges(
       !!row.publishedVersion &&
       differsFromRelease(
         row.content,
+        row.sources,
         releases.get(row.id + ":" + row.publishedVersion),
         row.restoredFromVersion
           ? releases.get(row.id + ":" + row.restoredFromVersion)
@@ -486,7 +509,11 @@ async function preparationViews(
   const changed = await unpublishedChanges(
     tx,
     workspaceId,
-    rows.map((row) => ({ ...row, content: row.graph })),
+    rows.map((row) => ({
+      ...row,
+      content: row.graph,
+      sources: row.publishedVersion ? preparationSources(row.graph) : [],
+    })),
     (keys) =>
       tx
         .select({
@@ -521,7 +548,11 @@ async function modelViews(
   const changed = await unpublishedChanges(
     tx,
     workspaceId,
-    rows.map((row) => ({ ...row, content: row.definition })),
+    rows.map((row) => ({
+      ...row,
+      content: row.definition,
+      sources: row.publishedVersion ? modelSources(row.definition) : [],
+    })),
     (keys) =>
       tx
         .select({
@@ -930,11 +961,9 @@ export function createDataLoader(
     visiting.add(id);
     let result: DataTable;
     if (id.startsWith("prepared:")) {
-      const parts = id.split(":");
-      if (parts.length !== 3 || !z.uuid().safeParse(parts[1]).success)
-        fail("data_source_not_found", 404);
-      const preparationId = parts[1]!,
-        output = parts[2]!;
+      const prepared = preparedSource(id);
+      if (!prepared) fail("data_source_not_found", 404);
+      const { preparationId, output } = prepared;
       const [parent] = options.shared?.preparations.has(preparationId)
         ? [options.shared.preparations.get(preparationId)!]
         : await tx

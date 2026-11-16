@@ -284,7 +284,9 @@ export function releaseState(
  * Otherwise the saved draft counts when the server says it differs from the
  * release (#697; without that word, any saved draft ahead of it), and so do
  * unsaved edits. Without unsaved edits the server's word wins: only it knows
- * whether the inputs a release pinned were published again since.
+ * whether the inputs a release pinned were published again since. When the
+ * saved definition equals the published one and the server still says it
+ * differs, the inputs differ, and edits to the definition keep that mark.
  * Never-published items say "Not published" instead.
  */
 export function hasUnpublishedChanges(state: {
@@ -292,6 +294,8 @@ export function hasUnpublishedChanges(state: {
   publishedVersion: number | null | undefined;
   /** The server's word on whether the saved draft differs from the release. */
   savedDiffers?: boolean | undefined;
+  /** The saved draft's definition signature, in the same form. */
+  saved?: string | undefined;
   /** The published definition's signature, when known. */
   published: string | undefined;
   /** The shown definition's signature, in the same form. */
@@ -302,8 +306,12 @@ export function hasUnpublishedChanges(state: {
   if (!state.publishedVersion) return false;
   if (!state.dirty && state.savedDiffers !== undefined)
     return state.savedDiffers;
-  return state.published === undefined
-    ? (state.savedDiffers ?? state.version !== state.publishedVersion) ||
-        state.dirty
-    : state.current !== state.published;
+  if (state.published === undefined)
+    return (
+      (state.savedDiffers ?? state.version !== state.publishedVersion) ||
+      state.dirty
+    );
+  const inputsDiffer =
+    state.savedDiffers === true && state.saved === state.published;
+  return inputsDiffer || state.current !== state.published;
 }

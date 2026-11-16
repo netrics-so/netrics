@@ -370,6 +370,17 @@ export function ModelEditor({
     () => modelEditorState("", definition, expressionDrafts),
     [definition, expressionDrafts],
   );
+  // The saved draft's definition and inputs, in the published state's form.
+  const savedRelease = useMemo(
+    () =>
+      record
+        ? releaseState(
+            modelEditorState("", record.definition, {}),
+            record.restoredFromVersion,
+          )
+        : undefined,
+    [record],
+  );
   const dirty = current !== savedState,
     fresh = previewState === current + queryState;
   // The required dimensions the chosen preview neither groups by nor filters
@@ -823,6 +834,7 @@ export function ModelEditor({
               version: record?.version,
               publishedVersion: record?.publishedVersion,
               savedDiffers: record?.hasUnpublishedChanges,
+              saved: savedRelease,
               published: publishedState,
               current: releaseState(
                 definitionState,

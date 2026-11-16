@@ -158,10 +158,19 @@ export function PreparationEditor({
       ? releaseState(canonicalJson(initial.graph), initial.restoredFromVersion)
       : undefined,
   );
+  // The saved draft's graph and inputs, in the published state's form.
+  const savedRelease = useMemo(
+    () =>
+      record
+        ? releaseState(canonicalJson(record.graph), record.restoredFromVersion)
+        : undefined,
+    [record],
+  );
   const unpublishedChanges = hasUnpublishedChanges({
     version: record?.version,
     publishedVersion: record?.publishedVersion,
     savedDiffers: record?.hasUnpublishedChanges,
+    saved: savedRelease,
     published: publishedGraph,
     current: releaseState(graphSignature, record?.restoredFromVersion),
     dirty,

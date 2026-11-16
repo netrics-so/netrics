@@ -319,6 +319,38 @@ describe("unpublished changes (#632)", () => {
       }),
     ).toBe(true);
   });
+  it("keeps a difference in inputs through unsaved edits (#697)", () => {
+    const published = releaseState("A", null);
+    // Saved as published, but an input it pins was published again: a
+    // name-only edit (same definition) keeps the mark.
+    const republished = {
+      version: 3,
+      publishedVersion: 3,
+      savedDiffers: true,
+      saved: published,
+      published,
+      dirty: true,
+    };
+    expect(hasUnpublishedChanges({ ...republished, current: published })).toBe(
+      true,
+    );
+    expect(
+      hasUnpublishedChanges({
+        ...republished,
+        current: releaseState("B", null),
+      }),
+    ).toBe(true);
+    // A saved definition change, undone back to the published one: the
+    // server's mark was about the definition, so it clears.
+    expect(
+      hasUnpublishedChanges({
+        ...republished,
+        version: 4,
+        saved: releaseState("B", null),
+        current: published,
+      }),
+    ).toBe(false);
+  });
   it("never marks an item that was never published", () => {
     expect(
       hasUnpublishedChanges({

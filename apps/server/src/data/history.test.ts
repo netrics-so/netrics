@@ -506,6 +506,57 @@ describe("published definition history", () => {
     model = (await service.publishModel(actor, model.id, model.version)).model;
     expect(model.hasUnpublishedChanges).toBe(false);
     await saveModel(semantic, false);
+
+    // Only sources count as inputs: names that look like a prepared source,
+    // a real one or a malformed one, never do.
+    const lookalike = `prepared:${prep.id}:output`,
+      malformed = `prepared:${"-".repeat(36)}:output`;
+    const named = modelDefinition(source.datasetId, "amount");
+    named.measures[0]!.name = lookalike;
+    named.measures.push({
+      ...named.measures[0]!,
+      id: "other",
+      name: malformed,
+    });
+    let reader = (
+      await service.saveModel(actor, { name: "Lookalike", definition: named })
+    ).model;
+    reader = (await service.publishModel(actor, reader.id, reader.version))
+      .model;
+    const namedGraph = graph(source.datasetId, "7");
+    namedGraph.nodes[1] = { ...namedGraph.nodes[1]!, name: lookalike } as never;
+    let other = (
+      await service.savePreparation(actor, {
+        name: "Lookalike preparation",
+        graph: namedGraph,
+      })
+    ).preparation;
+    other = (await service.publishPreparation(actor, other.id, other.version))
+      .preparation;
+    // The preparation they name is published again.
+    await save({ graph: g1 }, true);
+    prep = (await service.publishPreparation(actor, prep.id, prep.version))
+      .preparation;
+    reader = (
+      await service.saveModel(
+        actor,
+        { name: reader.name, definition: named, version: reader.version },
+        reader.id,
+      )
+    ).model;
+    expect(reader.hasUnpublishedChanges).toBe(false);
+    other = (
+      await service.savePreparation(
+        actor,
+        { name: other.name, graph: namedGraph, version: other.version },
+        other.id,
+      )
+    ).preparation;
+    expect(other.hasUnpublishedChanges).toBe(false);
+    expect(
+      (await service.listModels(actor)).models.find((m) => m.id === reader.id)!
+        .hasUnpublishedChanges,
+    ).toBe(false);
   });
 
   it("publishes a published preparation again with the current versions of its inputs, and changes nothing when they are current", async () => {
