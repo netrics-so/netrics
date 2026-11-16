@@ -14,6 +14,7 @@ import {
   updateMemberRole,
 } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 const ALL_ROLES: WorkspaceRole[] = ["owner", "admin", "editor", "viewer"];
 
@@ -143,8 +144,12 @@ function InvitationRow({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const mayRevoke = canManageMember(actorRole, invitation.role, "add");
+  // A date for the viewer, in the viewer's zone (#745): not the zone of the
+  // machine that renders it.
+  const timeZone = useViewerTimeZone();
   const expires = new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
+    timeZone,
   }).format(new Date(invitation.expiresAt));
 
   async function revoke() {

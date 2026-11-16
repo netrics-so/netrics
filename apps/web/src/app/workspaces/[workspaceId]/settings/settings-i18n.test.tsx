@@ -49,7 +49,8 @@ const invitations: Invitation[] = [
   },
 ];
 
-function membersHtml(locale: Locale) {
+/** The expiry is a date for the viewer, in the viewer's zone (#745). */
+function membersHtml(locale: Locale, viewerTimeZone = "UTC") {
   return renderI18n(
     <MembersManager
       workspaceId={ID(9)}
@@ -60,6 +61,7 @@ function membersHtml(locale: Locale) {
       invitations={invitations}
     />,
     locale,
+    viewerTimeZone,
   );
 }
 
@@ -109,6 +111,16 @@ describe("members manager", () => {
     expect(html).toContain(">Betrachter<");
     expect(html).toContain("Zurückziehen");
     expect(html).not.toContain("Pending invitations");
+  });
+
+  it("dates the expiry in the viewer's zone, whatever the machine's", () => {
+    // 12:00 UTC on Oct 8 is already Oct 9 in Auckland.
+    expect(membersHtml("en", "Pacific/Auckland")).toContain(
+      "expires Oct 9, 2026",
+    );
+    expect(membersHtml("en", "America/Los_Angeles")).toContain(
+      "expires Oct 8, 2026",
+    );
   });
 });
 
