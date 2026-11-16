@@ -17,6 +17,10 @@ import {
   readCompareMeasure,
 } from "../dashboards/compare-measure.js";
 import {
+  createFreshnessReader,
+  type FreshnessManifests,
+} from "../dashboards/freshness.js";
+import {
   dashboardDimensionValues,
   queryDashboardData,
   queryDashboardMeasure,
@@ -54,6 +58,8 @@ export interface DashboardRouteDeps {
   db: Database;
   policy?: DataPolicy;
   now?: () => Date;
+  /** The connector registry: measure widgets' freshness (ADR 0025). */
+  registry?: FreshnessManifests;
 }
 
 const dashboardParamsSchema = z.object({ dashboardId: z.uuid() });
@@ -198,6 +204,13 @@ export function registerDashboardRoutes(
               widgets: await (async () => {
                 const results = [];
                 const now = deps.now?.() ?? new Date();
+                const freshness = deps.registry
+                  ? createFreshnessReader(
+                      access.workspaceId,
+                      deps.registry,
+                      access.locale,
+                    )
+                  : undefined;
                 for (const widget of body.widgets)
                   results.push(
                     await queryDashboardMeasure(
@@ -211,6 +224,7 @@ export function registerDashboardRoutes(
                       access.locale,
                       {},
                       widget.scope,
+                      freshness,
                     ),
                   );
                 return results;
@@ -306,6 +320,13 @@ export function registerDashboardRoutes(
                   deps.now?.() ?? new Date(),
                   deps.policy,
                   access.locale,
+                  deps.registry
+                    ? createFreshnessReader(
+                        access.workspaceId,
+                        deps.registry,
+                        access.locale,
+                      )
+                    : undefined,
                 );
               },
               { isolationLevel: "repeatable read" },

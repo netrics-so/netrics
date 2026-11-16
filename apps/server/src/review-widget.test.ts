@@ -15,6 +15,12 @@ import {
   type DeviceDashboardV3Response,
   type DeviceWidgetV3,
 } from "@netrics/contracts";
+import { ConnectorRegistry } from "@netrics/connector-runtime";
+import {
+  createAppStoreConnectConnector,
+  createDemoConnector,
+  REVIEW_METRIC_KEYS,
+} from "@netrics/connectors";
 import {
   createDatabase,
   createRawSqlClient,
@@ -61,6 +67,32 @@ let reviewsConnection: string;
 let keylessConnection: string;
 let demoConnection: string;
 const logs: string[] = [];
+
+/**
+ * App Store Connect with its continuous `reviews` stream (ADR 0025), as
+ * #703 declares it: review widgets show when reviews were last checked.
+ * Without stored rows nothing changes, so every other test here also
+ * checks that payloads stay as they were.
+ */
+const registry = new ConnectorRegistry();
+{
+  const asc = createAppStoreConnectConnector();
+  registry.register({
+    ...asc,
+    manifest: {
+      ...asc.manifest,
+      freshnessStreams: [
+        {
+          key: "reviews",
+          name: "Reviews",
+          kind: "continuous",
+          metrics: Object.values(REVIEW_METRIC_KEYS),
+        },
+      ],
+    },
+  });
+  registry.register(createDemoConnector());
+}
 
 function call(
   method: "GET" | "POST" | "PUT",
@@ -207,6 +239,7 @@ const devices = () =>
     now: () => NOW,
     payloadCacheMs: 0,
     credentialKeyring: KEYRING,
+    registry,
   });
 
 async function reviewsOf(deviceId: string) {
@@ -250,6 +283,7 @@ beforeAll(async () => {
   db = createDatabase(testDb.appUrl);
   app = await buildApp(config, {
     db,
+    registry,
     authService: createAuthService(config, db, {
       logger: pino({ level: "silent" }),
     }),
@@ -512,5 +546,129 @@ describe("the latest-review widget", () => {
     const all = logs.join("\n");
     expect(all).not.toContain(SECRET_BODY);
     expect(all).not.toContain(SECRET_NICK);
+  });
+});
+
+describe("review widget freshness (ADR 0025, #704)", () => {
+  const minutesAgo = (minutes: number) =>
+    new Date(NOW.getTime() - minutes * 60_000);
+
+  async function withRows<T>(run: () => Promise<T>): Promise<T> {
+    // The connection entry, and one per app: each app's reviews are read
+    // on their own.
+    for (const [resource, minutes] of [
+      ["", 30],
+      [APP, 10],
+      [OTHER_APP, 20],
+    ] as const)
+      await admin`
+        insert into connection_freshness (workspace_id, connection_id,
+          stream, resource, checked_at)
+        values (${workspaceId}, ${reviewsConnection}, 'reviews',
+          ${resource}, ${minutesAgo(minutes)})`;
+    try {
+      return await run();
+    } finally {
+      await admin`
+        delete from connection_freshness
+        where connection_id = ${reviewsConnection}`;
+    }
+  }
+
+  const checked = (minutes: number) => ({
+    kind: "continuous",
+    stream: "Reviews",
+    fetchedAt: minutesAgo(minutes).toISOString(),
+  });
+
+  it("gives screens the app's reviews stream, by widget app or slide scope", async () => {
+    const dashboard = parsed(
+      await create([
+        reviewWidget(reviewsConnection, {}, { dimensions: { resource: APP } }),
+        reviewWidget(reviewsConnection, {}, { y: 3 }),
+      ]),
+    );
+    // A second slide scoped to the other app (#707).
+    const [slide] = await admin`
+      insert into dashboard_slides (dashboard_id, workspace_id, position,
+        scope)
+      values (${dashboard.id}, ${workspaceId}, 1,
+        ${admin.json({
+          app: {
+            kind: "values",
+            values: [`${reviewsConnection}:${OTHER_APP}`],
+          },
+        })})
+      returning id`;
+    await admin`
+      insert into dashboard_widgets (slide_id, dashboard_id, workspace_id,
+        type, x, y, w, h, connection_id)
+      values (${slide!.id as string}, ${dashboard.id}, ${workspaceId},
+        'review', 0, 0, 4, 3, ${reviewsConnection})`;
+    const deviceId = await insertDevice(dashboard.id);
+    const before = await devices().dashboard(
+      { workspaceId, deviceId },
+      undefined,
+      3,
+    );
+    await withRows(async () => {
+      const result = await devices().dashboard(
+        { workspaceId, deviceId },
+        undefined,
+        3,
+      );
+      if (!result.ok) throw new Error(result.error);
+      const payload = deviceDashboardV3ResponseSchema.parse(result.value);
+      const data = payload.slides.flatMap((slide) =>
+        slide.widgets.flatMap((widget) =>
+          widget.type === "review" ? [widget.data] : [],
+        ),
+      );
+      expect(data.map((entry) => entry.freshness)).toEqual([
+        checked(10),
+        // Every app: the least recently checked row.
+        checked(30),
+        checked(20),
+      ]);
+      expect(data[0]!.status).toBe("ok");
+      // Schema 2 carries the same.
+      const v2 = await devices().dashboard(
+        { workspaceId, deviceId },
+        undefined,
+        2,
+      );
+      if (!v2.ok) throw new Error(v2.error);
+      const reviews = deviceDashboardV2ResponseSchema
+        .parse(v2.value)
+        .slides[0]!.widgets.filter((widget) => widget.type === "review");
+      expect(reviews[0]!.data).toMatchObject({ freshness: checked(10) });
+      if (!before.ok) throw new Error(before.error);
+      expect(result.value.version).not.toBe(before.value.version);
+    });
+    // Without rows the payload is what it was.
+    const after = await devices().dashboard(
+      { workspaceId, deviceId },
+      undefined,
+      3,
+    );
+    expect(after).toEqual(before);
+    expect(JSON.stringify(after)).not.toContain("freshness");
+  });
+
+  it("gives the Studio the same for the widget's app", async () => {
+    await withRows(async () => {
+      const app = latestReviewResponseSchema.parse(
+        (await latest(reviewsConnection, { resource: APP })).json(),
+      );
+      expect(app.freshness).toEqual(checked(10));
+      const all = latestReviewResponseSchema.parse(
+        (await latest(reviewsConnection)).json(),
+      );
+      expect(all.freshness).toEqual(checked(30));
+    });
+    const none = latestReviewResponseSchema.parse(
+      (await latest(reviewsConnection, { resource: APP })).json(),
+    );
+    expect(none).not.toHaveProperty("freshness");
   });
 });

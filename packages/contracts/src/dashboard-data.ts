@@ -122,6 +122,31 @@ export const dashboardMeasureMetadataSchema = z.object({
     z.object({ id, name: z.string(), type: z.enum(DATA_TYPES) }),
   ),
 });
+/**
+ * How far a widget's numbers reach (ADR 0025 section 7): the least fresh
+ * of the freshness streams its data depends on. Absent for widgets whose
+ * connectors report no freshness, which show `updatedAt` as before. Every
+ * value comes from stored rows, never the clock; clients word the times
+ * themselves, in the viewer's time zone.
+ */
+export const widgetFreshnessSchema = z.object({
+  kind: z.enum(["periodic", "continuous"]),
+  /** The stream's name in the payload's language ("Sales"). */
+  stream: z.string().min(1),
+  /** The oldest check of the rows used: when netrics last read them. */
+  fetchedAt: z.iso.datetime(),
+  /** YYYY-MM-DD, the provider's last complete day; never converted. */
+  dataThrough: z.iso.date().optional(),
+  /** A stream published by calendar month: name the month, not the day. */
+  period: z.literal("month").optional(),
+  /** When the period after dataThrough should be published, when known. */
+  nextExpectedAt: z.iso.datetime().optional(),
+  /** A sync after nextExpectedAt (plus grace) still did not find the period. */
+  late: z.literal(true).optional(),
+  /** The earliest next scheduled sync of the connections used. */
+  nextCheckAt: z.iso.datetime().optional(),
+});
+export type WidgetFreshness = z.infer<typeof widgetFreshnessSchema>;
 export const dashboardWidgetDataSchema = z.object({
   sourceHealth: z
     .array(
@@ -147,6 +172,8 @@ export const dashboardWidgetDataSchema = z.object({
   result: modelQueryResponseSchema.nullable(),
   error: z.string().nullable(),
   exclusions: z.array(dashboardFilterExclusionSchema),
+  /** ADR 0025: through the model's sources; absent without freshness. */
+  freshness: widgetFreshnessSchema.optional(),
 });
 export const dashboardDataResponseSchema = z.object({
   widgets: z.array(dashboardWidgetDataSchema),

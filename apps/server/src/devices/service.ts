@@ -66,6 +66,7 @@ import {
 
 import { generatePrincipalToken, generateToken, hashToken } from "../tokens.js";
 import type { CredentialKeyring } from "../credentials.js";
+import type { FreshnessManifests } from "../dashboards/freshness.js";
 import { storedReviewsKey } from "../reviews/latest.js";
 import {
   buildDeviceDashboard,
@@ -294,6 +295,11 @@ export interface DeviceServiceDeps {
    * reviews key (latest-review widgets, ADR 0019 section 12).
    */
   credentialKeyring?: CredentialKeyring;
+  /**
+   * The connector registry: the freshness streams of widgets' connectors
+   * (ADR 0025). Absent: no widget has `freshness`.
+   */
+  registry?: FreshnessManifests;
 }
 
 /** The device dashboard payload in schema 1, 2 or 3 (ADR 0015, ADR 0017). */
@@ -717,6 +723,7 @@ export function createDeviceService(deps: DeviceServiceDeps) {
             locale,
             exchangeRates: deps.exchangeRates ?? false,
             ...(deps.dataPolicy ? { dataPolicy: deps.dataPolicy } : {}),
+            ...(deps.registry ? { freshness: deps.registry } : {}),
             ...(log ? { log } : {}),
             ...(keyring
               ? {

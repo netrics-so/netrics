@@ -134,6 +134,11 @@ import {
 } from "../signed-keys/pending-keys.js";
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
+  applyFreshness,
+  createFreshnessReader,
+  REVIEWS_FRESHNESS_STREAM,
+} from "../dashboards/freshness.js";
+import {
   presentConnection,
   presentConnectionDetail,
   presentFreshness,
@@ -2893,17 +2898,32 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           tx,
           actor.workspaceId,
         );
+        const latest = await latestReview(tx, {
+          workspaceId: actor.workspaceId,
+          connectionId,
+          resourceId: request.resource ?? null,
+          options: request,
+          state: toStateView(found.state),
+          backfilling: backfilling.has(connectionId),
+          reviewsKey: storedReviewsKey(found.row, credentialKeyring),
+          now: new Date(),
+        });
+        // As on screens: the reviews stream of the widget's app (ADR 0025).
         return ok(
-          await latestReview(tx, {
-            workspaceId: actor.workspaceId,
-            connectionId,
-            resourceId: request.resource ?? null,
-            options: request,
-            state: toStateView(found.state),
-            backfilling: backfilling.has(connectionId),
-            reviewsKey: storedReviewsKey(found.row, credentialKeyring),
-            now: new Date(),
-          }),
+          applyFreshness(
+            latest,
+            await createFreshnessReader(
+              actor.workspaceId,
+              registry,
+              actor.locale,
+            ).read(tx, [
+              {
+                connectionId,
+                stream: REVIEWS_FRESHNESS_STREAM,
+                resource: request.resource,
+              },
+            ]),
+          ),
         );
       });
     },

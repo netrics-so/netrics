@@ -31,6 +31,7 @@ import {
 
 import {
   dashboardWidgetDataSchema,
+  widgetFreshnessSchema,
   dashboardDataFiltersSchema,
   deviceFilterScopeSchema,
   slideFilterScopeSchema,
@@ -3178,6 +3179,11 @@ const deviceWidgetDataShape = {
   status: deviceTileStatusSchema,
   /** The connection's last successful sync. */
   updatedAt: z.iso.datetime().nullable(),
+  /**
+   * How far the numbers reach (ADR 0025 section 7); absent when the
+   * widget's connectors report no freshness. Schema 1 tiles never have it.
+   */
+  freshness: widgetFreshnessSchema.optional(),
 };
 
 /** A metric widget's data: a schema 1 tile without id and label. */
@@ -3443,6 +3449,8 @@ export const deviceReviewDataSchema = z.object({
   /** The connection's last successful sync. */
   updatedAt: z.iso.datetime().nullable(),
   review: z.object(reviewShape).nullable(),
+  /** The `reviews` stream's last check (ADR 0025); absent without it. */
+  freshness: widgetFreshnessSchema.optional(),
 });
 export type DeviceReviewData = z.infer<typeof deviceReviewDataSchema>;
 
@@ -3473,6 +3481,8 @@ export const latestReviewResponseSchema = z.object({
       ...reviewShape,
     })
     .nullable(),
+  /** As on screens (ADR 0025); absent without freshness. */
+  freshness: widgetFreshnessSchema.optional(),
 });
 export type LatestReviewResponse = z.infer<typeof latestReviewResponseSchema>;
 
