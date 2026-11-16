@@ -288,7 +288,8 @@ export async function renameProject(
 
 /**
  * Archives (archived_at = now) or unarchives (null) a project. Archiving an
- * archived project keeps its first archived_at. Null when the project is not
+ * archived project keeps its first archived_at. A state flip clears every
+ * member's active project pointing at it (#641). Null when the project is not
  * in this workspace; `changed` says whether this call flipped the state (the
  * update only matches a project in the other state, so of two concurrent
  * calls only one reports a change).
@@ -315,7 +316,22 @@ export async function setProjectArchived(
       ),
     )
     .returning();
-  if (rows[0]) return { ...rows[0], changed: true };
+  if (rows[0]) {
+    // Archiving ends the project as anyone's active project for good
+    // (#641): the stored choice is cleared, so un-archiving never switches
+    // members back to it. Clearing on unarchive too covers choices stored
+    // before this rule.
+    await tx
+      .update(schema.memberships)
+      .set({ activeProjectId: null })
+      .where(
+        and(
+          eq(schema.memberships.workspaceId, input.workspaceId),
+          eq(schema.memberships.activeProjectId, input.projectId),
+        ),
+      );
+    return { ...rows[0], changed: true };
+  }
   const current = await findProject(tx, input.workspaceId, input.projectId);
   return current ? { ...current, changed: false } : null;
 }

@@ -120,6 +120,15 @@ export function DataWorkspace({
           : null,
     ),
     [dirty, setDirty] = useState(false);
+  // A new active project (#641), however it changed (the sidebar, another
+  // tab, an archive by someone else): the lists follow the refreshed server
+  // data, while an open editor keeps its draft.
+  const [listedProject, setListedProject] = useState(activeProjectId);
+  if (listedProject !== activeProjectId) {
+    setListedProject(activeProjectId);
+    setData(initial);
+    setPickerSources(initialPickerSources ?? initial.sources);
+  }
   // The item open in an editor, once saved: its project select (#573).
   const [saved, setSaved] = useState<EditorRecord | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
