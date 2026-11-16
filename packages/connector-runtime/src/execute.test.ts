@@ -924,6 +924,34 @@ describe("freshness (SDK 0.2.13, ADR 0025 §2)", () => {
     ).rejects.toThrow(ContractViolationError);
   });
 
+  it("refuses a monthly stream's dataThrough that is not a month's last day", async () => {
+    const monthly: ConnectorManifest = {
+      ...manifest,
+      freshnessStreams: [
+        ...manifest.freshnessStreams!,
+        {
+          key: "earnings",
+          name: "Earnings",
+          kind: "periodic",
+          period: "month",
+          timeZone: "UTC",
+        },
+      ],
+    };
+    await expect(
+      run(monthly, {
+        freshness: [{ stream: "earnings", dataThrough: "2023-12-31" }],
+        done: true,
+      }),
+    ).resolves.toMatchObject({ done: true });
+    await expect(
+      run(monthly, {
+        freshness: [{ stream: "earnings", dataThrough: "2023-12-30" }],
+        done: true,
+      }),
+    ).rejects.toThrow(/last day of a month/);
+  });
+
   it("ignores freshness on a page that is not final", async () => {
     const result = await run(demoManifest, {
       freshness: [{ stream: "anything" }],

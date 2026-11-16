@@ -46,6 +46,22 @@ export function isCalendarDate(value: string): boolean {
 }
 
 /**
+ * Whether a YYYY-MM-DD calendar date is the last day of its month: the
+ * only `dataThrough` a monthly stream reports (ADR 0025 §2).
+ */
+export function isLastDayOfMonth(value: string): boolean {
+  if (!isCalendarDate(value)) return false;
+  const [year, month, day] = value.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return days[month - 1] === day;
+}
+
+/**
  * A part of a connector's data that the provider publishes on one cadence
  * (ADR 0025 section 1). "periodic" streams publish complete periods (days,
  * or months with `period: "month"`) in the provider's `timeZone`;
@@ -176,6 +192,12 @@ export function freshnessProblem(
         entry.timeZone !== undefined)
     )
       return `continuous freshness stream "${entry.stream}" reports no dataThrough, expected times or timeZone`;
+    if (
+      stream.period === "month" &&
+      entry.dataThrough !== undefined &&
+      !isLastDayOfMonth(entry.dataThrough)
+    )
+      return `monthly freshness stream "${entry.stream}" reports dataThrough as the last day of a month`;
   }
   return null;
 }

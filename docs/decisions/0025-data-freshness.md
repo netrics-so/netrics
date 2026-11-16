@@ -146,6 +146,8 @@ freshness?: Array<{
   complete as far as the provider publishes them. A day that is still
   revised later (re-read days) counts once the provider has published it;
   revisions are normal and not shown.
+  For a `period: "month"` stream it is the last day of the last complete
+  month; any other date is a contract violation.
 - `nextExpectedAt` is when the period after `dataThrough` should be
   published, by the connector's knowledge of the provider. It is reported
   **even when it is already past**: a connector that finds yesterday's
