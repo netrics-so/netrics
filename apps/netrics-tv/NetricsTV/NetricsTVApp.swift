@@ -102,6 +102,13 @@ struct DeviceView: View {
     @State private var justPaired = false
     /** "Press the clickpad for the menu", until the menu opens or its time is up. */
     @State private var showHint = false
+    @State private var pendingHint = PendingHint()
+
+    /** What the hint's wait depends on: its time, and whether the settings cover the screen. */
+    private struct HintSchedule: Equatable {
+        var dueAt: Date?
+        var settings: Bool
+    }
 
     var body: some View {
         let state = model.device
@@ -126,15 +133,26 @@ struct DeviceView: View {
         }
         // The menu hint (#737): a while after the dashboard appears, after a
         // pairing or once per app version.
-        .task(id: state.phase == .paired && state.payload != nil) {
-            guard state.phase == .paired, state.payload != nil else { return }
-            try? await Task.sleep(for: .seconds(MenuHint.delay))
-            // Not behind the settings: the hint is kept for when it can be seen.
-            guard !Task.isCancelled, !showSettings,
-                MenuHint.standard().take(version: DeviceSession.appVersionAndBuild, justPaired: justPaired)
-            else { return }
+        .onChange(of: state.phase == .paired && state.payload != nil, initial: true) { _, shown in
+            if !shown {
+                pendingHint.cancel()
+            } else if MenuHint.standard().isDue(version: DeviceSession.appVersionAndBuild, justPaired: justPaired) {
+                pendingHint.arm(now: Date())
+            }
+        }
+        // Never behind the settings: open when it is due, it follows once they close.
+        .task(id: HintSchedule(dueAt: pendingHint.dueAt, settings: showSettings)) {
+            guard let wait = pendingHint.wait(now: Date(), blocked: showSettings) else { return }
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled, !showSettings else { return }
+            let take = MenuHint.standard().take(version: DeviceSession.appVersionAndBuild, justPaired: justPaired)
+            pendingHint.shown()
             justPaired = false
+            guard take else { return }
             withAnimation(reduceMotion ? nil : .default) { showHint = true }
+        }
+        .task(id: showHint) {
+            guard showHint else { return }
             try? await Task.sleep(for: .seconds(MenuHint.duration))
             withAnimation(reduceMotion ? nil : .default) { showHint = false }
         }

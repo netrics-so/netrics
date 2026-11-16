@@ -63,10 +63,6 @@ private struct RemoteMenuModifier: ViewModifier {
                 guard enabled else { return }
                 show()
             }
-            .onLongPressGesture(minimumDuration: 0.8) {
-                hide()
-                openSettings()
-            }
             .overlay(alignment: .bottom) {
                 if menu.isShown {
                     bar.transition(.opacity)
@@ -74,7 +70,12 @@ private struct RemoteMenuModifier: ViewModifier {
                     hintPill.transition(.opacity)
                 }
             }
-            // Below the menu's buttons too, so the commands reach these while one has the focus.
+            // Below the menu's buttons too, so press and hold and the commands
+            // reach these while one of them has the focus.
+            .onLongPressGesture(minimumDuration: 0.8) {
+                hide()
+                openSettings()
+            }
             .onPlayPauseCommand {
                 if let pause {
                     pause.toggle()
@@ -154,8 +155,14 @@ private struct RemoteMenuModifier: ViewModifier {
         .padding(.bottom, 60)
     }
 
+    /**
+     * A menu button. Not a SwiftUI `Button`: a focused `Button` takes the
+     * whole clickpad press, so press and hold would press it instead of
+     * opening the settings as everywhere else on the dashboard. A focusable
+     * label tells a press from a hold.
+     */
     private func button(_ item: RemoteMenu.Item) -> some View {
-        let button = Button(title(item)) {
+        let action = {
             switch item {
             case .pauseResume:
                 pause?.toggle()
@@ -165,15 +172,20 @@ private struct RemoteMenuModifier: ViewModifier {
                 openSettings()
             }
         }
-        .focused($focus, equals: item)
         // Upright, the focus engine moves between the buttons; turned, only the focused one can take focus.
-        return Group {
-            if rotation.remapsFocus {
-                button.focusable(current == item)
-            } else {
-                button
+        return MenuButtonLabel(title: title(item), focused: focus == item)
+            .focusable(!rotation.remapsFocus || current == item)
+            .focused($focus, equals: item)
+            .focusEffectDisabled()
+            .onTapGesture(perform: action)
+            .onLongPressGesture(minimumDuration: 0.8) {
+                hide()
+                openSettings()
             }
-        }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title(item))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, action)
     }
 
     private func title(_ item: RemoteMenu.Item) -> String {
@@ -195,5 +207,24 @@ private struct RemoteMenuModifier: ViewModifier {
             .background(.regularMaterial, in: Capsule())
             .padding(.bottom, 120)
             .allowsHitTesting(false)
+    }
+}
+
+/** A menu button's look: the system's focused and unfocused button, as in the settings. */
+private struct MenuButtonLabel: View {
+    let title: String
+    let focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 29, weight: .medium))
+            .foregroundStyle(focused ? Color.black : Theme.text)
+            .padding(.horizontal, 40)
+            .padding(.vertical, 20)
+            .background(Capsule().fill(focused ? Color.white : Color.white.opacity(0.12)))
+            .scaleEffect(focused ? 1.08 : 1)
+            .shadow(color: .black.opacity(focused ? 0.4 : 0), radius: 12, y: 8)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: focused)
     }
 }

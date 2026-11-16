@@ -115,3 +115,42 @@ public struct MenuHint: Sendable {
         return true
     }
 }
+
+/**
+ * The menu hint of one session on screen (#737): armed when the dashboard
+ * appears and the hint is due, shown `MenuHint.delay` seconds later. Never
+ * behind the settings: when they are open at that time the hint waits, and
+ * follows `afterSettings` seconds after they close instead of being lost.
+ */
+public struct PendingHint: Sendable, Equatable {
+    /** Seconds after the settings close before a held hint shows. */
+    public static let afterSettings: TimeInterval = 2
+    /** Overdue by more than this: it was held, so it waits `afterSettings`. */
+    static let overdue: TimeInterval = 0.5
+
+    public private(set) var dueAt: Date?
+
+    public init() {}
+
+    public var isArmed: Bool { dueAt != nil }
+
+    /** The dashboard appeared and the hint is due; arming again keeps the first time. */
+    public mutating func arm(now: Date) {
+        if dueAt == nil { dueAt = now.addingTimeInterval(MenuHint.delay) }
+    }
+
+    public mutating func shown() { dueAt = nil }
+
+    public mutating func cancel() { dueAt = nil }
+
+    /**
+     * Seconds to wait before showing it; nil when nothing is pending or the
+     * settings (`blocked`) are open, in which case it stays pending.
+     */
+    public func wait(now: Date, blocked: Bool) -> TimeInterval? {
+        guard let dueAt, !blocked else { return nil }
+        let left = dueAt.timeIntervalSince(now)
+        if left > 0 { return left }
+        return -left > Self.overdue ? Self.afterSettings : 0
+    }
+}

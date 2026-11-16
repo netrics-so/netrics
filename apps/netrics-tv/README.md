@@ -417,7 +417,10 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   and Play/Pause stay shortcuts. "Press the clickpad for the menu" shows
   for a few seconds 8 s after the dashboard appears, after a pairing and
   once per app version and build (`MenuHint`, kept in the user defaults).
-  The demo keeps its own menu (press and hold).
+  It never shows behind the settings: open when it is due, it follows 2 s
+  after they close (`PendingHint`). The menu's buttons tell a press from a
+  hold, so press and hold opens the settings while the menu shows too. The
+  demo keeps its own menu (press and hold).
 - **iPhone and iPad (#411).** The pairing screen also opens `approveUrl`
   in Safari ("Open approval page"; the web session approves, the app never
   sees a user credential), shares it, and copies the code. Back in the

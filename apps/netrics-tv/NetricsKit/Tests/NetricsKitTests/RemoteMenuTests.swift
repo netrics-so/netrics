@@ -108,3 +108,39 @@ import Testing
         #expect(store.value.withLock { $0 } == nil)
     }
 }
+
+/** When the hint shows in a session: never behind the settings, and not lost to them. */
+@Suite struct PendingHintTests {
+    @Test func showsWhenItsDelayIsOver() {
+        var pending = PendingHint()
+        #expect(pending.wait(now: T0, blocked: false) == nil)
+        pending.arm(now: T0)
+        #expect(pending.wait(now: T0, blocked: false) == 8)
+        #expect(pending.wait(now: T0.addingTimeInterval(8), blocked: false) == 0)
+        pending.shown()
+        #expect(pending.wait(now: T0.addingTimeInterval(9), blocked: false) == nil)
+    }
+
+    @Test func settingsOpenWhenItIsDueKeepItForAfterTheyClose() {
+        var pending = PendingHint()
+        pending.arm(now: T0)
+        // The settings are open when the 8 s are over: not now, but still pending.
+        #expect(pending.wait(now: T0.addingTimeInterval(8), blocked: true) == nil)
+        #expect(pending.isArmed)
+        // Closed later: it follows a moment after, not at once over the closing sheet.
+        #expect(pending.wait(now: T0.addingTimeInterval(20), blocked: false) == PendingHint.afterSettings)
+        // Closed before its time: it keeps its time.
+        var early = PendingHint()
+        early.arm(now: T0)
+        #expect(early.wait(now: T0.addingTimeInterval(3), blocked: false) == 5)
+    }
+
+    @Test func armingAgainKeepsTheFirstTime() {
+        var pending = PendingHint()
+        pending.arm(now: T0)
+        pending.arm(now: T0.addingTimeInterval(5))
+        #expect(pending.wait(now: T0.addingTimeInterval(5), blocked: false) == 3)
+        pending.cancel()
+        #expect(!pending.isArmed)
+    }
+}
