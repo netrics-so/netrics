@@ -3,6 +3,7 @@ import {
   dataFail,
   ProcessingBudget,
   type DataExpression,
+  type DataType,
   type DataCell,
   type DataField,
   type DataRow,
@@ -46,7 +47,7 @@ export interface ModelDimension {
   name: string;
   datasetId: string;
   fieldId: string;
-  /** Presentation only: filters and grouping continue to use fieldId's stable value. */
+  /** Presentation: grouping uses fieldId's stable value; a filter may name a label (resolveLabelLiterals). */
   labelFieldId?: string;
   timeAlignment?: "reporting_date" | "instant";
 }
@@ -132,6 +133,131 @@ function scalarKey(table: DataTable, row: DataRow, fieldId: string): string {
   return JSON.stringify(
     JSON.parse(dataKey(table.fields, row, [fieldId]))[0][1],
   );
+}
+
+/**
+ * Filters compare a dimension's stable value, but people type the label they
+ * see (`[Store] = "Google Play"`). A string compared with a labelled
+ * dimension that is not one of its values but is one of its labels stands for
+ * the values shown with that label; a string that is a value keeps its
+ * meaning, so filters written with values (dashboards) are unchanged.
+ */
+function resolveLabelLiterals(
+  expression: DataExpression,
+  dimensions: ReadonlyMap<string, ModelDimension>,
+  tableFor: (datasetId: string) => DataTable,
+  budget: ProcessingBudget,
+): DataExpression {
+  const indexes = new Map<
+    string,
+    { type: DataType; values: Set<string>; byLabel: Map<string, unknown[]> }
+  >();
+  const index = (dimension: ModelDimension) => {
+    const known = indexes.get(dimension.id);
+    if (known) return known;
+    const table = tableFor(dimension.datasetId),
+      type =
+        table.fields.find((field) => field.id === dimension.fieldId)?.type ??
+        "string",
+      values = new Set<string>(),
+      byLabel = new Map<string, Map<string, unknown>>();
+    for (const row of table.rows) {
+      budget.tick();
+      const value = row[dimension.fieldId],
+        label = row[dimension.labelFieldId!];
+      if (value === null || value === undefined) continue;
+      const key = JSON.stringify(value);
+      values.add(key);
+      if (typeof label !== "string") continue;
+      const labelled = byLabel.get(label) ?? new Map<string, unknown>();
+      labelled.set(key, value);
+      byLabel.set(label, labelled);
+    }
+    const built = {
+      type,
+      values,
+      byLabel: new Map(
+        [...byLabel].map(([label, keyed]) => [label, [...keyed.values()]]),
+      ),
+    };
+    indexes.set(dimension.id, built);
+    return built;
+  };
+  /** The values a label literal stands for, or undefined to keep it. */
+  const labelValues = (fieldId: string, literal: unknown) => {
+    const dimension = dimensions.get(fieldId);
+    if (!dimension?.labelFieldId || typeof literal !== "string") return;
+    const { type, values, byLabel } = index(dimension);
+    if (values.has(JSON.stringify(literal))) return;
+    const matched = byLabel.get(literal);
+    return matched ? { type, values: matched } : undefined;
+  };
+  const rewrite = (node: DataExpression): DataExpression => {
+    if (node.kind !== "call") return node;
+    const args = node.args.map(rewrite);
+    const [a, b] = args;
+    if ((node.fn === "eq" || node.fn === "ne") && args.length === 2) {
+      const pair =
+        a?.kind === "field" && b?.kind === "literal"
+          ? ([a, b] as const)
+          : b?.kind === "field" && a?.kind === "literal"
+            ? ([b, a] as const)
+            : undefined;
+      const resolved =
+        pair && pair[1].type === "string"
+          ? labelValues(pair[0].fieldId, pair[1].value)
+          : undefined;
+      if (pair && resolved) {
+        if (resolved.values.length === 1)
+          return {
+            kind: "call",
+            fn: node.fn,
+            args: [
+              pair[0],
+              {
+                kind: "literal",
+                type: resolved.type,
+                value: resolved.values[0],
+              },
+            ],
+          };
+        const any: DataExpression = {
+          kind: "call",
+          fn: "in",
+          args: [
+            pair[0],
+            { kind: "literal", type: "json", value: resolved.values },
+          ],
+        };
+        return node.fn === "eq"
+          ? any
+          : { kind: "call", fn: "not", args: [any] };
+      }
+    }
+    if (
+      node.fn === "in" &&
+      a?.kind === "field" &&
+      b?.kind === "literal" &&
+      b.type === "json" &&
+      Array.isArray(b.value)
+    ) {
+      let changed = false;
+      const value = b.value.flatMap((candidate: unknown) => {
+        const resolved = labelValues(a.fieldId, candidate);
+        if (!resolved) return [candidate];
+        changed = true;
+        return resolved.values;
+      });
+      if (changed)
+        return {
+          kind: "call",
+          fn: "in",
+          args: [a, { kind: "literal", type: "json", value }],
+        };
+    }
+    return { ...node, args };
+  };
+  return rewrite(expression);
 }
 
 /** A required grain can also be fixed to one value by a conjunctive filter. */
@@ -568,8 +694,16 @@ export function querySemanticModel(
       dataFail("model_date_alignment_required");
     dimensionFields.push({ ...f, id: d.id, name: d.name, nullable: true });
   }
-  const filter = query.filter
-    ? compileRowExpression(query.filter, dimensionFields)
+  const queryFilter = query.filter
+    ? resolveLabelLiterals(
+        query.filter,
+        dimensions,
+        (datasetId) => table(datasetId),
+        budget,
+      )
+    : undefined;
+  const filter = queryFilter
+    ? compileRowExpression(queryFilter, dimensionFields)
     : undefined;
   if (filter && filter.result.type !== "boolean")
     dataFail("model_filter_boolean_required");
@@ -577,7 +711,7 @@ export function querySemanticModel(
     visiting = new Set<string>(),
     validatedMeasures = new Set<string>(),
     windowed: WindowedMeasure[] = [];
-  const fixedDimensions = singleValueDimensions(query.filter);
+  const fixedDimensions = singleValueDimensions(queryFilter);
   const discover = (id: string) => {
     if (validatedMeasures.has(id)) return;
     if (visiting.has(id)) dataFail("model_measure_cycle");
@@ -644,7 +778,7 @@ export function querySemanticModel(
     const grouped = query.groupBy.includes(dimensionId);
     if (!grouped && windowed.some(windowNeedsTimeGrouping))
       dataFail("model_window_time_grouping_required", dimensionId);
-    const { range, residual } = modelQueryTimeRange(query.filter, dimensionId);
+    const { range, residual } = modelQueryTimeRange(queryFilter, dimensionId);
     const closed = range.from !== null && range.to !== null;
     if (
       !closed &&
@@ -1132,13 +1266,13 @@ export function querySemanticModel(
     } else if (expression.kind === "call")
       expression.args.forEach(collectLiterals);
   };
-  if (query.filter) collectLiterals(query.filter);
+  if (queryFilter) collectLiterals(queryFilter);
   const filterValueLabels: Array<{
     dimensionId: string;
     value: unknown;
     label: string;
   }> = [];
-  for (const id of query.filter ? references(query.filter) : []) {
+  for (const id of queryFilter ? references(queryFilter) : []) {
     const dimension = dimensions.get(id)!;
     if (!dimension.labelFieldId) continue;
     const source = table(dimension.datasetId),
@@ -1174,7 +1308,7 @@ export function querySemanticModel(
     warnings: [...budget.warnings],
     operations: budget.operations,
     provenance: [...lineage.values()],
-    appliedFilter: query.filter ?? null,
+    appliedFilter: queryFilter ?? null,
     groupBy: query.groupBy,
   };
 }

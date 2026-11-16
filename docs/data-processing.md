@@ -747,7 +747,11 @@ those dimensions or fix each to a single value in a conjunctive filter. Formula
 measures inherit the requirements of their dependencies. `OR` and multi-value
 filters do not satisfy a single-value requirement. Stable identity values are kept
 separate from optional dimension display labels in queries, filter choices and
-native payloads.
+native payloads. A typed filter may name either: a string compared with a
+labelled dimension (`=`, `!=`, `in`) that is not one of its values but is one of
+its labels stands for the values shown with that label, so `[Store] = "Google
+Play"` matches what the preview shows. A value spelled like another value's
+label keeps its meaning, and `appliedFilter` reports the resolved values.
 
 Each affected widget includes connection health and, in the workspace browser,
 a link to resolve missing access, reauthorization, failed sync or paused app

@@ -531,6 +531,106 @@ describe("dimension display names", () => {
       "Same name",
     ]);
   });
+  it("filters by the display name people see as well as by the stable value (#627)", () => {
+    const query = (filter: DataExpression) =>
+      querySemanticModel(named, sources, {
+        measureIds: ["total-downloads"],
+        groupBy: ["app"],
+        filter,
+      });
+    const byLabel = query({
+      kind: "call",
+      fn: "eq",
+      args: [field("app"), literal("App B")],
+    });
+    expect(
+      byLabel.rows.map((row) => [
+        row.dimensions.app,
+        row.dimensionLabels?.app,
+        row.measures["total-downloads"]?.value,
+      ]),
+    ).toEqual([["b", "App B", "10"]]);
+    // The applied filter names the value, labelled like a value filter.
+    expect(byLabel.appliedFilter).toEqual({
+      kind: "call",
+      fn: "eq",
+      args: [field("app"), literal("b")],
+    });
+    expect(byLabel.filterValueLabels).toEqual([
+      { dimensionId: "app", value: "b", label: "App B" },
+    ]);
+    // Literal first, ne and in lists resolve the same way.
+    expect(
+      query({
+        kind: "call",
+        fn: "eq",
+        args: [literal("App A"), field("app")],
+      }).rows.map((row) => row.dimensions.app),
+    ).toEqual(["a"]);
+    expect(
+      query({
+        kind: "call",
+        fn: "ne",
+        args: [field("app"), literal("App A")],
+      }).rows.map((row) => row.dimensions.app),
+    ).toEqual(["b"]);
+    expect(
+      query({
+        kind: "call",
+        fn: "in",
+        args: [
+          field("app"),
+          { kind: "literal", type: "json", value: ["App A", "b"] },
+        ],
+      }).rows.map((row) => row.dimensions.app),
+    ).toEqual(["a", "b"]);
+    // Stable values keep working, and unknown text still matches nothing.
+    expect(
+      query({
+        kind: "call",
+        fn: "eq",
+        args: [field("app"), literal("a")],
+      }).rows.map((row) => row.dimensions.app),
+    ).toEqual(["a"]);
+    expect(
+      query({ kind: "call", fn: "eq", args: [field("app"), literal("App C")] })
+        .rows,
+    ).toEqual([]);
+  });
+  it("prefers a stable value over a display name spelled the same", () => {
+    // "b" is App A's label and App B's value: the value wins.
+    const confusing = new Map(sources).set("apps", {
+      ...apps,
+      rows: [
+        { id: "a", name: "b", country: "DE" },
+        { id: "b", name: "App B", country: "FR" },
+      ],
+    });
+    const result = querySemanticModel(named, confusing, {
+      measureIds: ["total-downloads"],
+      groupBy: ["app"],
+      filter: { kind: "call", fn: "eq", args: [field("app"), literal("b")] },
+    });
+    expect(result.rows.map((row) => row.dimensions.app)).toEqual(["b"]);
+  });
+  it("a display name shared by several values selects all of them", () => {
+    const sameNames = new Map(sources).set("apps", {
+      ...apps,
+      rows: apps.rows.map((row) => ({ ...row, name: "Same name" })),
+    });
+    const query = (fn: "eq" | "ne") =>
+      querySemanticModel(named, sameNames, {
+        measureIds: ["total-downloads"],
+        groupBy: ["app"],
+        filter: {
+          kind: "call",
+          fn,
+          args: [field("app"), literal("Same name")],
+        },
+      }).rows.map((row) => row.dimensions.app);
+    expect(query("eq")).toEqual(["a", "b"]);
+    expect(query("ne")).toEqual([]);
+  });
   it("rejects incompatible display columns and conflicting names for one identity", () => {
     const wrong = {
       ...named,
