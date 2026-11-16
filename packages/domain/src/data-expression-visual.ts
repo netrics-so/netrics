@@ -12,7 +12,16 @@ import {
 export type DataLiteral = Extract<DataExpression, { kind: "literal" }>;
 export type VisualOperand =
   | { kind: "field"; fieldId: string } // "" = not chosen yet
-  | { kind: "literal"; literal: DataLiteral };
+  | {
+      kind: "literal";
+      literal: DataLiteral;
+      /**
+       * Builder draft only, never stored: the value was added in the
+       * builder and no type was picked for it, so its type follows its
+       * neighbour or the typed text (#630).
+       */
+      typed?: true;
+    };
 export const VISUAL_COMPARISONS = [
   "eq",
   "ne",

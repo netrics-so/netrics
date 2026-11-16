@@ -197,17 +197,21 @@ export function literalEdit(
 
 /**
  * How a calculation's fixed value is typed until someone picks a type
- * (#630): like the value next to it when that is a decimal or a number, and
- * otherwise as typed, a whole number an integer and anything else a decimal.
- * An integer column next to it stays an integer only for whole numbers, so
- * `[Downloads] * 0.5` can still be typed.
+ * (#630): like the value next to it when that is a decimal or a number; as
+ * typed (a whole number an integer, anything else a decimal) next to an
+ * integer or nothing yet, so `[Downloads] * 0.5` can still be typed; and a
+ * decimal next to anything else, as before.
  */
 export type FixedValueMode = "decimal" | "number" | "typed";
 export function fixedValueMode(partner: DataType | undefined): FixedValueMode {
-  return partner === "decimal" || partner === "number" ? partner : "typed";
+  return partner === "number"
+    ? "number"
+    : partner === undefined || partner === "integer"
+      ? "typed"
+      : "decimal";
 }
 
-/** In "typed" mode: a decimal without unit whose text is a whole number is an integer. */
+/** In "typed" mode: a decimal without unit whose text is a whole number is an integer; an empty one stays a decimal. */
 export function typedNumericLiteral(literal: DataLiteral): DataLiteral {
   if (
     literal.type !== "decimal" ||
@@ -215,7 +219,6 @@ export function typedNumericLiteral(literal: DataLiteral): DataLiteral {
     literal.currency !== undefined
   )
     return literal;
-  if (literal.value === null) return { ...literal, type: "integer" };
   const whole =
     typeof literal.value === "string" &&
     /^(0|-?[1-9][0-9]*)$/.test(literal.value)

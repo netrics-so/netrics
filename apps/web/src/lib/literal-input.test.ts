@@ -294,6 +294,10 @@ describe("fixed values typed before a type is picked (#630)", () => {
     expect(fixedValueMode("number")).toBe("number");
     expect(fixedValueMode("integer")).toBe("typed");
     expect(fixedValueMode(undefined)).toBe("typed");
+    // Next to text, a switch or a date: a decimal, as before.
+    expect(fixedValueMode("string")).toBe("decimal");
+    expect(fixedValueMode("boolean")).toBe("decimal");
+    expect(fixedValueMode("date")).toBe("decimal");
   });
   it("reads a whole number as an integer and keeps anything else a decimal", () => {
     const typed = (text: string) =>
@@ -312,7 +316,7 @@ describe("fixed values typed before a type is picked (#630)", () => {
     });
     expect(typed("")).toEqual({
       kind: "literal",
-      type: "integer",
+      type: "decimal",
       value: null,
     });
     expect(typed("0.5")).toEqual({

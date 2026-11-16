@@ -66,14 +66,24 @@ test("a typed 0 reads as 0 in the formula", async ({ page }, testInfo) => {
   await second
     .getByRole("combobox", { name: b.source })
     .selectOption({ label: b.fixedValue });
+  // Before anything is typed, the type is the one the input reads.
+  await expect(typeOf(second)).toHaveValue("decimal");
   await second.getByRole("textbox", { name: b.fixedValue }).fill("0");
   await expect(typeOf(second)).toHaveValue("integer");
   await formulaView.check();
   await expect(formula).toHaveValue("ADD([Units], 0)");
   await visualView.check();
-  await expect(second.getByRole("textbox", { name: b.fixedValue })).toHaveValue(
-    "0",
-  );
+  const secondValue = second.getByRole("textbox", { name: b.fixedValue });
+  await expect(secondValue).toHaveValue("0");
+  // Back in the builder the value still follows what is typed.
+  await secondValue.fill(locale === "de" ? "0,5" : "0.5");
+  await expect(secondValue).not.toHaveAttribute("aria-invalid", "true");
+  await expect(typeOf(second)).toHaveValue("decimal");
+  await formulaView.check();
+  await expect(formula).toHaveValue("ADD([Units], 0.5)");
+  await visualView.check();
+  await secondValue.fill("0");
+  await expect(typeOf(second)).toHaveValue("integer");
 
   // If empty, use 0.
   await page

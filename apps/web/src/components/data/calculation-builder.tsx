@@ -1,5 +1,5 @@
 "use client";
-import { useId, useState } from "react";
+import { useId } from "react";
 import {
   VISUAL_ARITHMETIC,
   type DataField,
@@ -31,7 +31,6 @@ const LITERAL_TYPES: readonly DataType[] = [
   "date",
   "timestamp",
 ];
-const numericTypes: readonly DataType[] = ["integer", "number", "decimal"];
 const emptyField = (): VisualOperand => ({ kind: "field", fieldId: "" });
 const emptyCondition = (): VisualCondition => ({
   kind: "condition",
@@ -74,22 +73,28 @@ function OperandField({
 }) {
   const t = useT("data"),
     id = useId();
-  // A value opened with the builder keeps its type; a new one is typed from
-  // its neighbour or its text until a type is picked (#630).
-  const [picked, setPicked] = useState(
-    operand.kind === "literal" && operand.literal.value !== null,
-  );
-  const mode = picked ? null : fixedValueMode(operandType(partner, choices));
+  // A value opened with the builder keeps its type; one added here follows
+  // its neighbour or its text until a type is picked (#630). The mark lives
+  // on the operand, so it survives switching views or the calculation kind.
+  const mode =
+    operand.kind === "literal" && operand.typed
+      ? fixedValueMode(operandType(partner, choices))
+      : null;
   const inputType =
     operand.kind !== "literal"
       ? null
       : mode === null
         ? operand.literal.type
         : mode === "typed"
-          ? numericTypes.includes(operand.literal.type)
-            ? "decimal"
-            : operand.literal.type
+          ? "decimal"
           : mode;
+  // Before anything is typed, the type shown is the one the input reads.
+  const shownType =
+    operand.kind !== "literal"
+      ? null
+      : mode !== null && operand.literal.value === null
+        ? inputType!
+        : operand.literal.type;
   return (
     <div role="group" aria-label={label} className="data-builder-row">
       <div className="field">
@@ -99,13 +104,13 @@ function OperandField({
           value={operand.kind}
           onChange={(e) => {
             const next = fixedValueMode(operandType(partner, choices));
-            setPicked(false);
             onChange(
               e.target.value === "field"
                 ? emptyField()
                 : {
                     kind: "literal",
-                    literal: emptyLiteral(next === "typed" ? "integer" : next),
+                    literal: emptyLiteral(next === "typed" ? "decimal" : next),
+                    typed: true,
                   },
             );
           }}
@@ -141,18 +146,17 @@ function OperandField({
             <label htmlFor={id + "-type"}>{t("type")}</label>
             <select
               id={id + "-type"}
-              value={operand.literal.type}
+              value={shownType!}
               onChange={(e) => {
-                setPicked(true);
                 onChange({
                   kind: "literal",
                   literal: emptyLiteral(e.target.value as DataType),
                 });
               }}
             >
-              {(LITERAL_TYPES.includes(operand.literal.type)
+              {(LITERAL_TYPES.includes(shownType!)
                 ? LITERAL_TYPES
-                : [operand.literal.type, ...LITERAL_TYPES]
+                : [shownType!, ...LITERAL_TYPES]
               ).map((type) => (
                 <option key={type} value={type}>
                   {t(`types.${type}`)}
@@ -174,6 +178,7 @@ function OperandField({
                 kind: "literal",
                 literal:
                   mode === "typed" ? typedNumericLiteral(literal) : literal,
+                ...(operand.typed ? { typed: true as const } : {}),
               })
             }
           />
