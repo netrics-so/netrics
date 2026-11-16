@@ -964,6 +964,49 @@ describe("rolling and period-offset measures", () => {
       sumUnits("2026-10-01", "2026-10-02"),
     );
   });
+
+  it("does not warn about a ROUND over a rolling or offset average (#680)", () => {
+    const two: DataExpression = { kind: "literal", type: "integer", value: 2 };
+    const rounded = (id: string, base: string): ModelMeasure => ({
+      id,
+      name: id,
+      kind: "formula",
+      expression: call("round", field(base), two),
+    });
+    const extra = [
+      offset("prevAvg", "avgUnits", "day"),
+      rounded("avg7Rounded", "avg7"),
+      rounded("prevAvgRounded", "prevAvg"),
+    ];
+    const query = (...measureIds: string[]) =>
+      run(
+        {
+          measureIds,
+          groupBy: ["date"],
+          filter: between("2026-10-01", "2026-10-10"),
+        },
+        { extra },
+      );
+    // Some 7-day averages of apps a, b and c have no finite decimal.
+    expect(query("avg7").warnings).toContain("decimal_rounded");
+    expect(query("prevAvg").warnings).toContain("decimal_rounded");
+    const result = query("avg7Rounded", "prevAvgRounded");
+    expect(result.warnings).not.toContain("decimal_rounded");
+    const at = byDate(result).get("2026-10-07")!;
+    expect(at.measures.avg7Rounded!.value).toBe(
+      (
+        Math.round(
+          Number(
+            byDate(query("avg7")).get("2026-10-07")!.measures.avg7!.value,
+          ) * 100,
+        ) / 100
+      ).toString(),
+    );
+    expect(
+      query("avg7Rounded", "avg7").warnings,
+      "the unrounded average is shown too",
+    ).toContain("decimal_rounded");
+  });
 });
 
 describe("windowed measure validation and edge cases", () => {

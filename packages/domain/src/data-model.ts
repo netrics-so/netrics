@@ -2,7 +2,11 @@ import {
   compileRowExpression,
   dataFail,
   DataProcessingError,
+  carryDeferredRounding,
+  deferRounding,
   ProcessingBudget,
+  roundingMark,
+  useDeferredRounding,
   type DataExpression,
   type DataType,
   type DataCell,
@@ -483,16 +487,18 @@ function evaluateFormula(
     nameOf,
     (cell) => !!cell.currency,
   );
-  const row: DataRow = {};
+  const row: DataRow = {},
+    sources: Record<string, DataCell> = {};
   dependencies.forEach(([ref, result], i) => {
     row[ref] = result.value;
+    sources[ref] = result;
     const currencyField = measures[i]!.currencyField;
     if (currencyField) row[currencyField] = result.currency;
   });
-  return compileRowExpression(expression, [
-    ...currencies,
-    ...measures,
-  ]).evaluate(row, budget);
+  // The result's error bound lets the caller defer its rounding (#680).
+  return compileRowExpression(expression, [...currencies, ...measures], {
+    traceResult: true,
+  }).evaluate(row, budget, sources);
 }
 
 /**
@@ -1125,12 +1131,16 @@ export function querySemanticModel(
     if (cached) return cached;
     const m = measures.get(id)!;
     budget.tick();
+    const mark = roundingMark(budget);
     let cell: DataCell,
+      computed: (DataCell & { partial?: true }) | undefined,
+      // The base result this one shows unchanged (rolling, offset value).
+      same: WindowedResult | undefined,
       partial: boolean,
       incomplete = false,
       comparedTo: { from: string; to: string } | undefined;
     if (m.kind === "aggregate") {
-      const { partial: waiting, ...aggregated } = aggregateData(
+      computed = aggregateData(
         {
           ...table(m.datasetId),
           rows: rowsIn(m.datasetId, partition, from, to),
@@ -1139,6 +1149,7 @@ export function querySemanticModel(
         m.aggregate,
         budget,
       );
+      const { partial: waiting, ...aggregated } = computed;
       cell = aggregated;
       partial = !!waiting;
       if (derived) {
@@ -1152,7 +1163,7 @@ export function querySemanticModel(
         (ref) =>
           [ref, evaluateWindowed(partition, ref, from, to, derived)] as const,
       );
-      cell = formulaCell(m.expression, dependencies);
+      cell = computed = formulaCell(m.expression, dependencies);
       partial = dependencies.some(([, result]) => result.status !== "ok");
       incomplete = dependencies.some(([, result]) => result.incomplete);
     } else if (m.kind === "rolling") {
@@ -1163,6 +1174,7 @@ export function querySemanticModel(
         to,
         true,
       );
+      same = base;
       cell = windowCell(base);
       partial = base.status === "partial";
       incomplete = !!base.incomplete;
@@ -1176,6 +1188,7 @@ export function querySemanticModel(
         true,
       );
       if (m.output === "value") {
+        same = previous;
         cell = windowCell(previous);
         partial = previous.status === "partial";
         incomplete = !!previous.incomplete;
@@ -1187,6 +1200,8 @@ export function querySemanticModel(
           to,
           derived,
         );
+        useDeferredRounding(budget, current);
+        useDeferredRounding(budget, previous);
         cell = windowChange(m.id, m.output, current, previous, budget);
         partial = [current, previous].some((r) => r.status === "partial");
         incomplete = !!(current.incomplete || previous.incomplete);
@@ -1206,6 +1221,8 @@ export function querySemanticModel(
       ...(comparedTo ? { comparedTo } : {}),
       ...(incomplete ? { incomplete: true as const } : {}),
     };
+    if (computed) deferRounding(budget, mark, computed, result);
+    else if (same) carryDeferredRounding(budget, same, result);
     windowCache.set(cacheKey, result);
     return result;
   };
@@ -1222,10 +1239,12 @@ export function querySemanticModel(
     if (cached) return cached;
     const m = measures.get(id)!;
     budget.tick();
+    const mark = roundingMark(budget);
     let cell: DataCell,
+      computed: (DataCell & { partial?: true }) | undefined,
       partial = false;
     if (m.kind === "aggregate") {
-      const { partial: waiting, ...aggregated } = aggregateData(
+      computed = aggregateData(
         {
           ...table(m.datasetId),
           rows: undated.get(m.datasetId)?.get(partition) ?? [],
@@ -1234,13 +1253,14 @@ export function querySemanticModel(
         m.aggregate,
         budget,
       );
+      const { partial: waiting, ...aggregated } = computed;
       cell = aggregated;
       partial = !!waiting;
     } else if (m.kind === "formula") {
       const dependencies = [...references(m.expression)].map(
         (ref) => [ref, evaluateUndated(partition, ref)] as const,
       );
-      cell = formulaCell(m.expression, dependencies);
+      cell = computed = formulaCell(m.expression, dependencies);
       partial = dependencies.some(([, result]) => result.status !== "ok");
     } else {
       typeProbe ??= measureTypeProbe(model, sources, query.measureIds, budget);
@@ -1250,6 +1270,7 @@ export function querySemanticModel(
       ...cell,
       status: cell.value === null ? "missing" : partial ? "partial" : "ok",
     };
+    if (computed) deferRounding(budget, mark, computed, result);
     undatedCache.set(cacheKey, result);
     return result;
   };
@@ -1258,31 +1279,39 @@ export function querySemanticModel(
     const date = w.grouped
       ? (values[w.dimensionId] as string | null)
       : undefined;
-    if (date === null)
-      return evaluateUndated(
+    if (date === null) {
+      const undatedResult = evaluateUndated(
         dataKey(dimensionFields, values, w.partitionBy),
         id,
       );
-    const { incomplete: _incomplete, ...result } = evaluateWindowed(
+      useDeferredRounding(budget, undatedResult);
+      return undatedResult;
+    }
+    const windowed = evaluateWindowed(
       dataKey(dimensionFields, values, w.partitionBy),
       id,
       date ?? w.from!,
       date ?? w.to!,
       false,
     );
+    // Shown as it is: a deferred rounding warns (#680).
+    useDeferredRounding(budget, windowed);
+    const { incomplete: _incomplete, ...result } = windowed;
     return result;
   };
   for (const [key, values] of orderedGroups.slice(start, end)) {
-    const computed = new Map<string, ModelMeasureResult>();
+    const cache = new Map<string, ModelMeasureResult>();
     const evaluate = (id: string): ModelMeasureResult => {
-      const cached = computed.get(id);
+      const cached = cache.get(id);
       if (cached) return cached;
       const m = measures.get(id)!;
       budget.tick();
+      const mark = roundingMark(budget);
       let cell: DataCell,
+        computed: DataCell & { partial?: true },
         status: ModelMeasureResult["status"] = "ok";
       if (m.kind === "aggregate") {
-        const { partial, ...aggregated } = aggregateData(
+        computed = aggregateData(
           {
             ...table(m.datasetId),
             rows: grouped.get(m.datasetId)?.get(key) ?? [],
@@ -1291,6 +1320,7 @@ export function querySemanticModel(
           m.aggregate,
           budget,
         );
+        const { partial, ...aggregated } = computed;
         cell = aggregated;
         if (partial) status = "partial";
       } else {
@@ -1299,13 +1329,14 @@ export function querySemanticModel(
         const dependencies = [...references(m.expression)].map(
           (ref) => [ref, evaluate(ref)] as const,
         );
-        cell = formulaCell(m.expression, dependencies);
+        cell = computed = formulaCell(m.expression, dependencies);
         if (dependencies.some(([, result]) => result.status !== "ok"))
           status = "partial";
       }
       if (cell.value === null) status = "missing";
       const result = { ...cell, status };
-      computed.set(id, result);
+      deferRounding(budget, mark, computed, result);
+      cache.set(id, result);
       return result;
     };
     const labels = Object.fromEntries(
@@ -1327,10 +1358,13 @@ export function querySemanticModel(
       dimensions: values,
       ...(Object.keys(labels).length ? { dimensionLabels: labels } : {}),
       measures: Object.fromEntries(
-        query.measureIds.map((id) => [
-          id,
-          windowPlan ? windowedMeasure(values, id) : evaluate(id),
-        ]),
+        query.measureIds.map((id) => {
+          if (windowPlan) return [id, windowedMeasure(values, id)];
+          const result = evaluate(id);
+          // Shown as it is: a deferred rounding warns (#680).
+          useDeferredRounding(budget, result);
+          return [id, result];
+        }),
       ),
     });
   }

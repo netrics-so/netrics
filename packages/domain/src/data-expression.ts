@@ -156,6 +156,15 @@ export class ProcessingBudget {
     object,
     { error: bigint; roundings: number }
   >();
+  /**
+   * Measure results whose one rounding was taken back (`deferRounding`):
+   * whoever shows or uses the value warns, unless a ROUND discards the lost
+   * digits (#680).
+   */
+  readonly deferredRoundings = new WeakMap<
+    object,
+    { error: bigint; roundings: number }
+  >();
   readonly maximum: number;
   readonly maxRows: number;
   readonly maxOutputBytes: number;
@@ -241,6 +250,59 @@ const scaleBound = (x: Decimal, bound: bigint): bigint =>
 function implicitlyRounded(budget: ProcessingBudget) {
   budget.warnings.add("decimal_rounded");
   budget.decimalRoundings++;
+}
+/** Where a measure's evaluation started, for `deferRounding`. */
+export interface RoundingMark {
+  roundings: number;
+  warned: boolean;
+}
+export function roundingMark(budget: ProcessingBudget): RoundingMark {
+  return {
+    roundings: budget.decimalRoundings,
+    warned: budget.warnings.has("decimal_rounded"),
+  };
+}
+/**
+ * A measure result `result` (computed as `cell` since `mark`) whose only
+ * rounding is covered by `cell`'s error bound does not warn by itself: the
+ * warning moves to whoever shows or uses it (`useDeferredRounding`, or a
+ * formula reading it), so a ROUND in another measure can discard the lost
+ * digits (#680).
+ */
+export function deferRounding(
+  budget: ProcessingBudget,
+  mark: RoundingMark,
+  cell: DataCell,
+  result: object,
+) {
+  const bound = budget.decimalErrors.get(cell);
+  if (
+    !bound ||
+    cell.type !== "decimal" ||
+    typeof cell.value !== "string" ||
+    budget.decimalRoundings - mark.roundings !== bound.roundings
+  )
+    return;
+  budget.decimalRoundings = mark.roundings;
+  if (!mark.warned) budget.warnings.delete("decimal_rounded");
+  budget.deferredRoundings.set(result, bound);
+}
+/** `result` is shown or used as it is: its deferred rounding warns now. */
+export function useDeferredRounding(budget: ProcessingBudget, result: object) {
+  if (budget.deferredRoundings.has(result)) implicitlyRounded(budget);
+}
+/** `to` shows the value of `from` unchanged: it keeps the deferral. */
+export function carryDeferredRounding(
+  budget: ProcessingBudget,
+  from: object,
+  to: object,
+) {
+  const bound = budget.deferredRoundings.get(from);
+  if (bound) budget.deferredRoundings.set(to, bound);
+}
+/** A quotient rounded once at 18 places from exact operands (AVG, #680). */
+export function roundedOnce(budget: ProcessingBudget, cell: DataCell) {
+  budget.decimalErrors.set(cell, { error: HALF_ULP, roundings: 1 });
 }
 /** An explicit ROUND to `maximumScale` places warns of nothing. */
 function decimalText(
@@ -525,7 +587,16 @@ function mergedType(a: ExpressionType, b: ExpressionType): ExpressionType {
 }
 export interface CompiledExpression {
   result: ExpressionType;
-  evaluate(row: DataRow, budget?: ProcessingBudget): DataCell;
+  /**
+   * `sources`: the measure result each field's value was taken from, so a
+   * rounding deferred on it (`deferRounding`) warns when read, or is traced
+   * to a ROUND that discards it (#680).
+   */
+  evaluate(
+    row: DataRow,
+    budget?: ProcessingBudget,
+    sources?: Readonly<Record<string, object>>,
+  ): DataCell;
 }
 
 /** Steps an error bound passes through on its way to ROUND (and IF branches). */
@@ -600,9 +671,15 @@ function boundError(
 export function compileRowExpression(
   expression: DataExpression,
   fields: readonly DataField[],
+  /**
+   * `traceResult`: the result records an error bound, as an operand of a
+   * ROUND does, so the caller can defer its rounding (`deferRounding`).
+   */
+  options: { traceResult?: boolean } = {},
 ): CompiledExpression {
   const byId = new Map(fields.map((f) => [f.id, f]));
   let nodes = 0;
+  let sources: Readonly<Record<string, object>> | undefined;
   type Node = {
     result: ExpressionType;
     run: (row: DataRow, budget: ProcessingBudget) => DataCell;
@@ -647,12 +724,21 @@ export function compileRowExpression(
             (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency))
           )
             dataFail("data_currency_invalid");
-          return {
+          const cell: DataCell = {
             value,
             type: field.type,
             ...(field.unit ? { unit: field.unit } : {}),
             ...(typeof currency === "string" ? { currency } : {}),
           };
+          // A measure whose rounding was deferred: reading it is where the
+          // precision is lost, unless a ROUND above discards it (#680).
+          const source = sources?.[field.id];
+          const bound = source && budget.deferredRoundings.get(source);
+          if (bound && typeof value === "string") {
+            implicitlyRounded(budget);
+            if (traced) budget.decimalErrors.set(cell, bound);
+          }
+          return cell;
         },
       };
     }
@@ -1206,10 +1292,17 @@ export function compileRowExpression(
       },
     };
   };
-  const compiled = compile(expression, 0);
+  const compiled = compile(expression, 0, options.traceResult);
   return {
     result: compiled.result,
-    evaluate: (row, budget = new ProcessingBudget()) =>
-      compiled.run(row, budget),
+    evaluate: (row, budget = new ProcessingBudget(), from) => {
+      const outer = sources;
+      sources = from;
+      try {
+        return compiled.run(row, budget);
+      } finally {
+        sources = outer;
+      }
+    },
   };
 }

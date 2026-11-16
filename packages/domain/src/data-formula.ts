@@ -11,8 +11,9 @@ import {
 
 /**
  * Typed literal forms, e.g. `DATE("2026-01-31")`: each takes exactly one
- * string and parses to a literal (not a call), so printed formulas read back
- * as the same literal.
+ * string, or NULL for an empty value of that type (`DECIMAL(NULL)`, #682),
+ * and parses to a literal (not a call), so printed formulas read back as the
+ * same literal.
  */
 export const FORMULA_LITERAL_FORMS = [
   "DATE",
@@ -20,6 +21,9 @@ export const FORMULA_LITERAL_FORMS = [
   "NUMBER",
   "DECIMAL",
   "JSON",
+  "INTEGER",
+  "STRING",
+  "BOOLEAN",
 ] as const;
 type FormulaLiteralForm = (typeof FORMULA_LITERAL_FORMS)[number];
 const literalFormTypes: Record<FormulaLiteralForm, DataType> = {
@@ -28,21 +32,38 @@ const literalFormTypes: Record<FormulaLiteralForm, DataType> = {
   NUMBER: "number",
   DECIMAL: "decimal",
   JSON: "json",
+  INTEGER: "integer",
+  STRING: "string",
+  BOOLEAN: "boolean",
 };
+const formOfType = Object.fromEntries(
+  Object.entries(literalFormTypes).map(([form, type]) => [type, form]),
+) as Partial<Record<DataType, FormulaLiteralForm>>;
 const numberText = /^-?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:e[+-]?[0-9]+)?$/i;
 const numericTypes: readonly DataType[] = ["integer", "number", "decimal"];
 
-function literalForm(form: FormulaLiteralForm, text: string): DataExpression {
+/** `text` null: the form's NULL, an empty value of its type. */
+function literalForm(
+  form: FormulaLiteralForm,
+  text: string | null,
+): DataExpression {
   const type = literalFormTypes[form];
+  if (text === null) return { kind: "literal", type, value: null };
   try {
-    if (type === "number" && !numberText.test(text))
+    if (
+      (type === "number" && !numberText.test(text)) ||
+      (type === "integer" && !/^-?(0|[1-9][0-9]*)$/.test(text)) ||
+      (type === "boolean" && text !== "TRUE" && text !== "FALSE")
+    )
       dataFail("formula_literal_invalid");
     const value: unknown =
-      type === "number"
+      type === "number" || type === "integer"
         ? Number(text)
         : type === "json"
           ? (JSON.parse(text) as unknown)
-          : text;
+          : type === "boolean"
+            ? text === "TRUE"
+            : text;
     validateDataValue(type, value, false);
     return { kind: "literal", type, value };
   } catch (error) {
@@ -253,10 +274,14 @@ export function parseDataFormula(
       if (peek().text !== "(") dataFail("formula_literal_invalid");
       take();
       const text = take();
-      if (text.kind !== "string" || peek().text !== ")")
+      const empty = text.kind === "word" && text.text === "NULL";
+      if ((text.kind !== "string" && !empty) || peek().text !== ")")
         dataFail("formula_literal_invalid");
       take();
-      left = literalForm(token.text as FormulaLiteralForm, text.text);
+      left = literalForm(
+        token.text as FormulaLiteralForm,
+        empty ? null : text.text,
+      );
     } else if (token.kind === "reference") {
       const exact = references.find((ref) => ref.id === token.text),
         matches = references.filter(
@@ -512,7 +537,10 @@ function formatExpression(
   }
   const value =
     expression.value === null
-      ? "NULL"
+      ? // A typed NULL keeps its type (#682); plain NULL reads back as JSON.
+        expression.type === "json"
+        ? "NULL"
+        : formOfType[expression.type] + "(NULL)"
       : expression.type === "boolean"
         ? expression.value
           ? "TRUE"

@@ -6,6 +6,7 @@ import {
   exactDecimal,
   ProcessingBudget,
   PROCESSING_LIMITS,
+  roundedOnce,
   validateDataValue,
   DataProcessingError,
   type DataCell,
@@ -268,7 +269,9 @@ export function aggregateData(
   const values = field ? nonNull.map((row) => row[field.id]) : [];
   let type: DataType = field?.type ?? "integer",
     value: unknown = null,
-    lastRow: DataRow | undefined;
+    lastRow: DataRow | undefined,
+    // An average whose only rounding is its quotient at 18 places (#680).
+    quotientRounded = false;
   budget.tick(rows.length + 1);
   if (field)
     for (const row of rows)
@@ -295,14 +298,18 @@ export function aggregateData(
           value = (value as number) / values.length;
       } else {
         type = "decimal";
+        const start = budget.decimalRoundings;
         let total = "0";
         for (const v of values)
           total = exactDecimal("add", total, String(v), budget)!;
+        const summed = budget.decimalRoundings;
         value = values.length
           ? definition.op === "avg"
             ? exactDecimal("divide", total, String(values.length), budget)
             : total
           : null;
+        quotientRounded =
+          summed === start && budget.decimalRoundings === summed + 1;
       }
       break;
     }
@@ -398,13 +405,15 @@ export function aggregateData(
     nonNull.length < rows.length;
   if (missing) budget.warnings.add("aggregate_missing_inputs");
   const partial = value !== null && (missing || waiting);
-  return {
+  const cell = {
     value,
     type,
     ...(preservesUnit && field?.unit ? { unit: field.unit } : {}),
     ...(preservesUnit && currency ? { currency } : {}),
     ...(partial ? { partial: true as const } : {}),
   };
+  if (quotientRounded) roundedOnce(budget, cell);
+  return cell;
 }
 
 /** Failures of a type change on one value; "Use an empty value" turns them into null. */

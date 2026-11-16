@@ -6,7 +6,11 @@ import {
   type DataField,
 } from "./data-expression.js";
 import { fromVisual, sameDataExpression } from "./data-expression-visual.js";
-import { mulberry32, randomVisualModel } from "./test-helpers.js";
+import {
+  mulberry32,
+  randomDataExpression,
+  randomVisualModel,
+} from "./test-helpers.js";
 const fields: DataField[] = [
   { id: "revenue", name: "Revenue", type: "decimal", nullable: true },
   { id: "downloads", name: "Downloads", type: "integer", nullable: true },
@@ -220,6 +224,110 @@ describe("editable formulas", () => {
           expect(formatDataFormula(parsed, fields)).toBe(text);
         }
     }
+  });
+  it("formula text keeps the type, nullability and result of typed NULLs (#682)", () => {
+    /** Result type, nullability and value on a sample row, or the error code. */
+    const typedOutcome = (expression: DataExpression) => {
+      try {
+        const compiled = compileRowExpression(expression, fields);
+        const cell = compiled.evaluate({
+          revenue: "12.50",
+          downloads: 5,
+          paid: true,
+          rating: 4.2,
+        });
+        return JSON.stringify([
+          compiled.result.type,
+          compiled.result.nullable,
+          compiled.result.unit,
+          compiled.result.currency,
+          cell,
+        ]);
+      } catch (error) {
+        return (error as Error).message;
+      }
+    };
+    const hasNull = (e: DataExpression): boolean =>
+      e.kind === "literal"
+        ? e.value === null
+        : e.kind === "call" && e.args.some(hasNull);
+    let withNull = 0;
+    for (const seed of [1, 2, 3]) {
+      const random = mulberry32(seed);
+      for (let i = 0; i < 10000; i++) {
+        const e = randomDataExpression(
+          random,
+          fields.map((f) => f.id),
+          3,
+        );
+        // Only expressions that compile can be saved and round-tripped.
+        try {
+          compileRowExpression(e, fields);
+        } catch {
+          continue;
+        }
+        if (hasNull(e)) withNull++;
+        const text = formatDataFormula(e, fields);
+        const message = `seed ${seed} #${i}: ${text}`;
+        const parsed = parseDataFormula(text, fields);
+        expect(typedOutcome(parsed), message).toBe(typedOutcome(e));
+        expect(formatDataFormula(parsed, fields), message).toBe(text);
+      }
+    }
+    expect(withNull).toBeGreaterThan(500); // not vacuous
+  });
+  it("prints a typed NULL as a literal form of its type (#682)", () => {
+    const cases: [DataExpression, string][] = [
+      [{ kind: "literal", type: "json", value: null }, "NULL"],
+      [{ kind: "literal", type: "decimal", value: null }, "DECIMAL(NULL)"],
+      [{ kind: "literal", type: "number", value: null }, "NUMBER(NULL)"],
+      [{ kind: "literal", type: "integer", value: null }, "INTEGER(NULL)"],
+      [{ kind: "literal", type: "string", value: null }, "STRING(NULL)"],
+      [{ kind: "literal", type: "boolean", value: null }, "BOOLEAN(NULL)"],
+      [{ kind: "literal", type: "date", value: null }, "DATE(NULL)"],
+      [{ kind: "literal", type: "timestamp", value: null }, "TIMESTAMP(NULL)"],
+      [
+        {
+          kind: "literal",
+          type: "decimal",
+          value: null,
+          unit: "currency",
+          currency: "EUR",
+        },
+        'UNIT(DECIMAL(NULL), "currency", "EUR")',
+      ],
+    ];
+    for (const [expression, text] of cases) {
+      expect(formatDataFormula(expression, [])).toBe(text);
+      expect(parseDataFormula(text, [])).toEqual(expression);
+    }
+    // Alone, a typed NULL keeps its type; plain NULL stays untyped.
+    expect(
+      compileRowExpression(parseDataFormula("DECIMAL(NULL)", []), []).result,
+    ).toMatchObject({ type: "decimal", nullable: true });
+    expect(
+      compileRowExpression(parseDataFormula("NULL", []), []).result.type,
+    ).toBe("json");
+    // The new forms read their own values too.
+    expect(parseDataFormula('INTEGER("-5")', [])).toEqual({
+      kind: "literal",
+      type: "integer",
+      value: -5,
+    });
+    expect(parseDataFormula('STRING("a")', [])).toEqual({
+      kind: "literal",
+      type: "string",
+      value: "a",
+    });
+    expect(parseDataFormula('BOOLEAN("FALSE")', [])).toEqual({
+      kind: "literal",
+      type: "boolean",
+      value: false,
+    });
+    for (const text of ['INTEGER("1.5")', 'BOOLEAN("yes")', "DATE(TRUE)"])
+      expect(() => parseDataFormula(text, []), text).toThrow(
+        "formula_literal_invalid",
+      );
   });
   it("prints literal forms that parse back to the same literal", () => {
     expect(
