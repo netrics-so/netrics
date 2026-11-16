@@ -1,6 +1,9 @@
 "use client";
 
-import type { ConnectionFreshnessStream } from "@netrics/contracts";
+import type {
+  ConnectionAuthState,
+  ConnectionFreshnessStream,
+} from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
 import { useNow } from "@/components/studio/clock-widget";
@@ -31,7 +34,14 @@ export function freshnessLines(
   nextCheckAt: string | null,
   resourceNames: Readonly<Record<string, string>>,
   clock: { locale: Locale; now: number; timeZone?: string },
+  /**
+   * The connection's auth state: while it needs new credentials or a
+   * reconnect, the scheduler skips it, so no line promises a next check.
+   */
+  authState: ConnectionAuthState = "ok",
 ): FreshnessLine[] {
+  const paused =
+    authState === "auth_failed" || authState === "needs_reauthorization";
   const t = webTranslator(clock.locale, "screen.freshness");
   return streams.flatMap((stream) => {
     if (stream.entries.length === 0) {
@@ -63,6 +73,7 @@ export function freshnessLines(
           stream: true,
           fetched: false,
           warning: line.overdue,
+          paused,
         }).join(" · "),
         overdue: line.overdue,
       };
@@ -75,19 +86,27 @@ export function ConnectionFreshness({
   streams,
   nextCheckAt,
   resourceNames,
+  authState,
 }: {
   streams: readonly ConnectionFreshnessStream[];
   nextCheckAt: string | null;
   resourceNames: Readonly<Record<string, string>>;
+  authState: ConnectionAuthState;
 }) {
   const locale = useLocale();
   const t = useT("connections.detail");
   const now = useNow();
   if (streams.length === 0) return null;
-  const lines = freshnessLines(streams, nextCheckAt, resourceNames, {
-    locale,
-    now: now.getTime(),
-  });
+  const lines = freshnessLines(
+    streams,
+    nextCheckAt,
+    resourceNames,
+    {
+      locale,
+      now: now.getTime(),
+    },
+    authState,
+  );
   return (
     <div className="card" id="freshness">
       <h2>{t("freshnessTitle")}</h2>

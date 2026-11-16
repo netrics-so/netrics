@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -5,6 +8,7 @@ import type {
   DeviceWidget,
   WidgetFreshness,
 } from "@netrics/contracts";
+import { BUILTIN_THEMES, contrastRatio } from "@netrics/domain";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 import { ScrollMetricCard } from "@/components/scroll/scroll-widgets";
@@ -391,8 +395,29 @@ describe("measure widget footer", () => {
         data={data({ freshness: late, status: "stale" })}
       />,
     );
-    expect(overdue).toContain('class="sw-measure-freshness sw-notice"');
+    expect(overdue).toContain(
+      'class="sw-measure-freshness sw-measure-freshness--overdue"',
+    );
     expect(line(overdue)).toBe("Up to Nov 14 · Nov 15 not published yet");
+  });
+
+  it("colours an overdue line in the theme's warning colour, readable in every theme", () => {
+    // The measure widget's muted rules come first; this one must win.
+    const css = readFileSync(
+      fileURLToPath(new URL("../../app/globals.css", import.meta.url)),
+      "utf8",
+    );
+    const rule =
+      /\.sw-measure \.sw-measure-freshness--overdue\s*\{[^}]*color:\s*var\(--t-warning\)/;
+    expect(css).toMatch(rule);
+    expect(css.search(rule)).toBeGreaterThan(
+      css.indexOf(".sw-measure-freshness {"),
+    );
+    // Small text on the widget's surface: 4.5:1, light and dark themes.
+    for (const { tokens } of Object.values(BUILTIN_THEMES))
+      expect(
+        contrastRatio(tokens.warning, tokens.surface),
+      ).toBeGreaterThanOrEqual(4.5);
   });
 
   it("a failing source keeps its notice; the line keeps the covered day", () => {

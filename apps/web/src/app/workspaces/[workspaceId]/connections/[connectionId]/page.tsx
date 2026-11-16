@@ -369,6 +369,7 @@ export default async function ConnectionDetailPage({
       <ConnectionFreshness
         streams={detail.freshness}
         nextCheckAt={connection.state.nextDueAt}
+        authState={connection.state.authState}
         resourceNames={resourceNames}
       />
 

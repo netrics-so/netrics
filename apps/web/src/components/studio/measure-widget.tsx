@@ -525,7 +525,7 @@ export function MeasureWidgetView({
         <p
           className={
             freshness.warning
-              ? "sw-measure-freshness sw-notice"
+              ? "sw-measure-freshness sw-measure-freshness--overdue"
               : "sw-measure-freshness"
           }
           title={freshness.parts.join(" · ")}

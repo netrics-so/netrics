@@ -165,10 +165,13 @@ export function statusStreamText(
   stream: StreamFreshness,
   clock: FreshnessClock,
   fit?: { width: number; size: number },
+  /** The source's status: `auth_failed` syncs are paused (no "next"). */
+  status?: StatusItem["status"],
 ): string | null {
   const candidates = freshnessCandidates(stream.freshness, clock, {
     stream: true,
     warning: stream.overdue,
+    paused: status === "auth_failed",
   });
   return (
     candidates.find(
@@ -258,6 +261,7 @@ export function statusWidgetLayout(input: {
         stream,
         { locale: input.locale, now: input.now },
         fit,
+        item.status,
       );
       if (text === null) continue;
       (streams[item.connectionId] ??= []).push({

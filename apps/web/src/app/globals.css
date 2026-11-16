@@ -5317,6 +5317,12 @@ a.button.primary:hover {
 .sw-measure-freshness > span {
   white-space: pre;
 }
+/* A provider overdue by a day: the stale warning (ADR 0025 section 8), in
+   the theme's warning colour (at least 4.5:1 on the surface in every
+   built-in theme). */
+.sw-measure .sw-measure-freshness--overdue {
+  color: var(--t-warning);
+}
 .sw-measure-table-scroll {
   overflow: auto;
   min-height: 0;

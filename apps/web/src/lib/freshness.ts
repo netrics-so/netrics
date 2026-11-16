@@ -151,6 +151,11 @@ export interface FreshnessPartsOptions {
    * with the late wording when late; no "fetched", no "next".
    */
   warning?: boolean;
+  /**
+   * Syncs are paused until the connection is reconnected (the scheduler
+   * skips it): no "next", "checking again" or "next check".
+   */
+  paused?: boolean;
 }
 
 /**
@@ -182,7 +187,7 @@ export function freshnessParts(
             : t("checkedOn", { date: fetched.date }),
       );
     }
-    if (freshness.nextCheckAt) {
+    if (freshness.nextCheckAt && !options.paused) {
       const when = expectedWhen(freshness.nextCheckAt, clock);
       parts.push(when ? t("nextCheck", { when }) : t("nextCheckSoon"));
     }
@@ -206,7 +211,7 @@ export function freshnessParts(
       }),
     );
     if (options.warning) return parts;
-    if (freshness.nextCheckAt) {
+    if (freshness.nextCheckAt && !options.paused) {
       const when = expectedWhen(freshness.nextCheckAt, clock);
       parts.push(when ? t("checkingAgain", { when }) : t("checkingSoon"));
     }
@@ -223,7 +228,7 @@ export function freshnessParts(
       );
     }
   }
-  if (freshness.nextExpectedAt) {
+  if (freshness.nextExpectedAt && !options.paused) {
     const when = expectedWhen(freshness.nextExpectedAt, clock);
     parts.push(when ? t("next", { when }) : t("nextSoon"));
   }
@@ -307,6 +312,24 @@ export function entryFreshness(
 }
 
 /**
+ * Whether `a` is less fresh than `b`, as the server decides it for widgets:
+ * an unknown day first, else the earlier day; on the same day the earlier
+ * known next time (a known time wins over an unknown one).
+ */
+function lessFresh(a: FreshnessEntry, b: FreshnessEntry): boolean {
+  if (a.dataThrough !== b.dataThrough) {
+    if (a.dataThrough === null) return true;
+    if (b.dataThrough === null) return false;
+    return a.dataThrough < b.dataThrough;
+  }
+  const ea = a.nextExpectedAt === null ? null : Date.parse(a.nextExpectedAt);
+  const eb = b.nextExpectedAt === null ? null : Date.parse(b.nextExpectedAt);
+  if (ea === eb || ea === null) return false;
+  if (eb === null) return true;
+  return ea < eb;
+}
+
+/**
  * A connection's stream as one line, by the rule widgets follow (ADR 0025
  * section 7): the least fresh entry (the earliest day, ties broken by the
  * earliest next), late or overdue when any entry with that day is;
@@ -318,17 +341,10 @@ export function streamFreshness(
 ): StreamFreshness | null {
   const [first, ...rest] = stream.entries;
   if (!first) return null;
-  const order = (value: string | null) => value ?? "";
-  const least = rest.reduce((worst, entry) => {
-    const day = order(entry.dataThrough).localeCompare(
-      order(worst.dataThrough),
-    );
-    if (day !== 0) return day < 0 ? entry : worst;
-    return order(entry.nextExpectedAt) < order(worst.nextExpectedAt) &&
-      entry.nextExpectedAt !== null
-      ? entry
-      : worst;
-  }, first);
+  const least = rest.reduce(
+    (worst, entry) => (lessFresh(entry, worst) ? entry : worst),
+    first,
+  );
   const same = stream.entries.filter(
     (entry) => entry.dataThrough === least.dataThrough,
   );

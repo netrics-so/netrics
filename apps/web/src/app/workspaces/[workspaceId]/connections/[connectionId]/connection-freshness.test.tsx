@@ -83,6 +83,34 @@ describe("connection page freshness", () => {
     ]);
   });
 
+  it("promises no next check while the connection needs reconnecting", () => {
+    const lateSales: ConnectionFreshnessStream = {
+      ...streams[0]!,
+      entries: [
+        entry({
+          dataThrough: "2026-11-14",
+          nextExpectedAt: "2026-11-15T20:00:00Z",
+          late: true,
+        }),
+      ],
+    };
+    for (const authState of ["auth_failed", "needs_reauthorization"] as const) {
+      const lines = freshnessLines(
+        [lateSales, streams[0]!, streams[2]!],
+        // Still set: the scheduler skips the connection without clearing it.
+        "2026-11-16T12:00:00Z",
+        {},
+        { locale: "en", now: NOW, timeZone: "Europe/Berlin" },
+        authState,
+      );
+      expect(lines.map((line) => plain(line.text))).toEqual([
+        "Sales up to Nov 14 · Nov 15 not published yet",
+        "Sales up to Nov 15",
+        "Reviews checked 10 min. ago",
+      ]);
+    }
+  });
+
   it("in German, in Los Angeles", () => {
     const lines = freshnessLines(
       streams.slice(0, 1),

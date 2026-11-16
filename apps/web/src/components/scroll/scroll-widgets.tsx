@@ -704,7 +704,12 @@ export function ScrollStatusCard(props: StatusReadingProps & ScrollCardSize) {
                   style={{ fontSize: u(SCROLL_TYPE.small) }}
                   suppressHydrationWarning
                 >
-                  {statusStreamText(stream, { locale, now })}
+                  {statusStreamText(
+                    stream,
+                    { locale, now },
+                    undefined,
+                    item.status,
+                  )}
                 </span>
               </li>
             )),

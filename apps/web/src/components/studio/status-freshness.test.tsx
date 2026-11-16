@@ -79,6 +79,28 @@ describe("streamFreshness: one line per stream", () => {
     });
   });
 
+  it("on the same day, a known next time wins over an unknown one, in any order", () => {
+    const known = entry({
+      resource: "app-1",
+      nextExpectedAt: "2026-11-16T20:00:00Z",
+    });
+    const unknown = entry({ resource: "app-2", nextExpectedAt: null });
+    const stream = (entries: (typeof known)[]): ConnectionFreshnessStream => ({
+      key: "sales",
+      name: "Sales",
+      kind: "periodic",
+      period: "day",
+      entries,
+    });
+    for (const entries of [
+      [unknown, known],
+      [known, unknown],
+    ])
+      expect(
+        streamFreshness(stream(entries), null)?.freshness.nextExpectedAt,
+      ).toBe("2026-11-16T20:00:00Z");
+  });
+
   it("monthly, continuous, overdue and empty streams", () => {
     expect(
       streamFreshness(
@@ -239,6 +261,25 @@ describe("status board streams", () => {
     expect(rows).toBe(items.length);
     expect(rows + streams).toBeLessThanOrEqual(layout.status.rowCapacity);
     expect(layout.more).toBeNull();
+  });
+
+  it("a source that needs attention promises no next check", () => {
+    const failing = [
+      { ...items[0]!, status: "auth_failed" as const },
+      items[1]!,
+    ];
+    const html = renderI18n(<StatusWidgetView {...board} items={failing} />);
+    expect(streamRows(html)).toEqual([
+      "Sales up to Nov 15 · fetched 10 min. ago",
+      "Reviews checked 10 min. ago",
+    ]);
+    const card = renderI18n(
+      <ScrollStatusCard {...board} items={failing} width={600} rootPx={16} />,
+    );
+    expect(streamRows(card)).toEqual([
+      "Sales up to Nov 15 · fetched 10 min. ago",
+      "Reviews checked 10 min. ago",
+    ]);
   });
 
   it("without streams the board is as before", () => {
