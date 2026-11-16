@@ -4,7 +4,6 @@ import type { Locale } from "@netrics/domain";
 
 import {
   AppShellFrame,
-  ProjectScoped,
   ProjectSwitchError,
   switchProject,
   type AppShellProps,
@@ -153,19 +152,6 @@ describe("project switcher (#573)", () => {
     const html = render(BASE);
     expect(html).not.toContain(">Project</label>");
     expect(html).not.toContain("All projects");
-  });
-
-  it("mounts the page afresh when the active project changes (#641)", () => {
-    const page = <p>page</p>;
-    const keyOf = (projectId: string | null) =>
-      (ProjectScoped({ projectId, children: page }) as { key: string | null })
-        .key;
-    expect(keyOf(A)).toBe(A);
-    expect(keyOf(null)).toBe("all");
-    expect(keyOf(A)).not.toBe(keyOf(B));
-    expect(render(BASE, { activeProjectId: A })).toContain(
-      '<p id="page">page</p>',
-    );
   });
 
   it("speaks German", () => {

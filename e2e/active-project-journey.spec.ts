@@ -79,14 +79,49 @@ test("switching projects refreshes the page; un-archiving does not switch back",
   await expect(models).toContainText("2");
   expect(reloads).toBe(0);
 
-  // 3. Archived while active: back on All, and it stays so after
-  // un-archiving.
+  // 3. An unsaved edit survives a switch: the editor keeps its draft while
+  // the lists follow the project.
+  await page.getByText("Unassigned", { exact: true }).click();
+  const name = page.getByLabel(t.modelName, { exact: true });
+  await name.fill("Unassigned EDITED");
   await switcher.selectOption({ label: "Marketing" });
   await expect(models).toContainText("1");
+  await expect(name).toHaveValue("Unassigned EDITED");
+  await switcher.selectOption({ label: shell.allProjects });
+  await expect(models).toContainText("2");
+  await expect(name).toHaveValue("Unassigned EDITED");
+
+  // 4. Switched elsewhere (another tab): the page follows on its next
+  // router refresh, as any save on the page triggers one.
+  await page.goto(`/workspaces/${workspaceId}/data`);
+  await expect(models).toContainText("2");
+  const other = await page.context().newPage();
+  await other.goto(`/workspaces/${workspaceId}/data`);
+  await other
+    .locator("#shell-sidebar")
+    .getByLabel(shell.projectSwitcher, { exact: true })
+    .selectOption({ label: "Marketing" });
+  await expect(
+    other
+      .getByRole("navigation", { name: t.title })
+      .getByRole("button", { name: new RegExp(t.models) }),
+  ).toContainText("1");
+  await other.close();
+  await routerRefresh(page);
+  await expect(switcher).toHaveValue(projectId);
+  await expect(models).toContainText("1");
+
+  // 5. Archived while active: back on All, and it stays so after
+  // un-archiving.
   await post(
     page,
     `/v1/workspaces/${workspaceId}/projects/${projectId}/archive`,
   );
+  await routerRefresh(page);
+  // On All now (the switcher goes: no project left to pick); the archived
+  // project's model is hidden, the other stays.
+  await expect(switcher).toHaveCount(0);
+  await expect(models).toContainText("1");
   await post(
     page,
     `/v1/workspaces/${workspaceId}/projects/${projectId}/unarchive`,
@@ -95,6 +130,15 @@ test("switching projects refreshes the page; un-archiving does not switch back",
   await expect(switcher).toHaveValue("");
   await expect(models).toContainText("2");
 });
+
+/** The app router's refresh, as router.refresh() after a save runs it. */
+async function routerRefresh(page: Page) {
+  await page.evaluate(() =>
+    (
+      window as unknown as { next: { router: { refresh: () => void } } }
+    ).next.router.refresh(),
+  );
+}
 
 async function post<T = unknown>(
   page: Page,
