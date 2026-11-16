@@ -27,3 +27,20 @@ export function renderI18n(
     </I18nProvider>,
   );
 }
+
+/**
+ * For tests: runs `render` as if the machine were in `zone` (process.env.TZ,
+ * which the runtime's default zone follows), then restores the machine's.
+ * A server render and the browser's first render must not depend on it
+ * (#749).
+ */
+export function inMachineZone<T>(zone: string, render: () => T): T {
+  const saved = process.env.TZ;
+  process.env.TZ = zone;
+  try {
+    return render();
+  } finally {
+    if (saved === undefined) delete process.env.TZ;
+    else process.env.TZ = saved;
+  }
+}

@@ -16,12 +16,16 @@ import type { DashboardDataFilter } from "@netrics/domain";
 import { DeviceControls } from "../device-controls";
 import { DeviceScope } from "../device-scope";
 import type { HeartbeatSummary } from "@/lib/device-heartbeat";
-import { useT } from "@/lib/i18n/client";
+import { useLocale, useT } from "@/lib/i18n/client";
 import { pickableDashboards } from "@/lib/project-pickers";
 import { projectScope, type ProjectScope } from "@/lib/project-scope";
 import type { ScreenCounts, ScreenPreview } from "@/lib/screens";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
-/** One screen as the page shows it; texts are worded on the server. */
+/**
+ * One screen as the page shows it; texts are worded on the server, dates
+ * here, in the viewer's zone (#749).
+ */
 export interface ScreenItem {
   device: Device;
   online: boolean;
@@ -42,8 +46,6 @@ export interface ScreenItem {
   heartbeat: HeartbeatSummary | null;
   /** "3840 × 2160 · 16:9 · Screen view · Portrait", or null before one. */
   screenLine: string | null;
-  /** The day it was paired, as a date. */
-  paired: string;
   /** Its fixed scope by filter name ("Country: DE"), or null (#500). */
   scopeLine: string | null;
   /** The shared filters of the dashboard it shows, for its scope. */
@@ -443,8 +445,15 @@ function ScreenPanel({
   onClose,
 }: ScreenPanelProps) {
   const t = useT("screens");
+  const locale = useLocale();
+  // The day it was paired, in the viewer's zone (#749).
+  const timeZone = useViewerTimeZone();
   const { device, heartbeat } = screen;
   const state = screenState(screen);
+  const paired = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeZone,
+  }).format(new Date(device.createdAt));
   return (
     <aside
       ref={ref}
@@ -513,7 +522,7 @@ function ScreenPanel({
           <dt>{t("screen")}</dt>
           <dd>{screen.screenLine ?? t("screenNotReported")}</dd>
           <dt>{t("paired")}</dt>
-          <dd>{screen.paired}</dd>
+          <dd>{paired}</dd>
           <dt>{t("lastError")}</dt>
           <dd
             className={heartbeat?.lastError ? "screen-error" : undefined}

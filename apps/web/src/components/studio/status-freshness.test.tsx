@@ -303,6 +303,7 @@ describe("status board streams", () => {
       fontScale: 1,
       now: NOW,
       locale: "en",
+      timeZone: "UTC",
     });
     const rows = layout.rows.length;
     const streams = Object.values(layout.streams).flat().length;

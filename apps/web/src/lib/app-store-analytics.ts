@@ -31,7 +31,11 @@ export function analyticsStatusLabel(
   return t(status);
 }
 
-/** A reporting day (YYYY-MM-DD) as a date in the user's language. */
+/**
+ * A reporting day (YYYY-MM-DD) as a date in the user's language. Apple's
+ * day, not an instant: formatted as itself (UTC), never converted to the
+ * viewer's zone (ADR 0025 §8, #749).
+ */
 export function formatReportingDay(day: string, locale: Locale): string {
   const time = Date.parse(`${day}T00:00:00Z`);
   return Number.isNaN(time)

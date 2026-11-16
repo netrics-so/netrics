@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 
 import { fetchApiHealth } from "@/lib/api";
 import { buildInfo } from "@/lib/build-info";
-import { getLocale, getT } from "@/lib/i18n/server";
+import { getT } from "@/lib/i18n/server";
+
+import { RenderedAt } from "./rendered-at";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +29,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function StatusPage() {
-  const [health, t, locale] = await Promise.all([
-    fetchApiHealth(),
-    getT("statusPage"),
-    getLocale(),
-  ]);
+  const [health, t] = await Promise.all([fetchApiHealth(), getT("statusPage")]);
 
   const liveState = health.live ? "up" : "down";
   const readyState = health.ready
@@ -108,14 +106,7 @@ export default async function StatusPage() {
         </div>
       ) : null}
 
-      <p className="meta">
-        {t("renderedAt", {
-          time: new Intl.DateTimeFormat(locale, {
-            dateStyle: "medium",
-            timeStyle: "medium",
-          }).format(new Date()),
-        })}
-      </p>
+      <RenderedAt at={new Date().toISOString()} />
     </>
   );
 }

@@ -10,6 +10,7 @@ import { dataErrorKey } from "@/lib/data-editing";
 import { ApiError } from "@/lib/api";
 import { formatPercentChange } from "@/lib/format-metric";
 import { freshnessParts, type FreshnessClock } from "@/lib/freshness";
+import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 import { useNow } from "./clock-widget";
 import {
   currencyExponent,
@@ -45,13 +46,15 @@ export function formatMeasureCell(
   locale: string,
   yes: string,
   no: string,
-  unit?: string,
+  unit: string | undefined,
+  /** The viewer's zone (#749), for timestamps; days are never converted. */
+  timeZone: string,
 ): string {
   value = displayMeasureAmount(value, unit, currency);
   if (value === null || value === undefined) return "—";
   if (type === "boolean") return value ? yes : no;
   // Days and timestamps as people read them; the viewer's time zone for times.
-  const date = formatDataDate(value, type, locale);
+  const date = formatDataDate(value, type, locale, timeZone);
   if (date !== null) return date;
   // A unit with a display precision (ratings) is rounded; the value stays exact.
   const fractionDigits = unit ? MEASURE_UNIT_FRACTION_DIGITS[unit] : undefined;
@@ -160,6 +163,9 @@ export function MeasureWidgetView({
   const viewer = audience === "viewer";
   // Relative times in the freshness line, worded anew every minute.
   const clock = useNow();
+  // Times (values, the source refresh, the next update) in the viewer's
+  // zone (#749); covered days and date values stay as they are.
+  const timeZone = useViewerTimeZone();
   const [now, setNow] = useState(() => Date.now());
   const expiry = data?.result?.expiresAt;
   useEffect(() => {
@@ -206,6 +212,7 @@ export function MeasureWidgetView({
       t("true"),
       t("false"),
       unit,
+      timeZone,
     );
   const percentChange = new Set(
     data?.metadata?.measures
@@ -243,7 +250,7 @@ export function MeasureWidgetView({
     );
   const freshness = expired
     ? null
-    : measureFreshnessLine(data, { locale, now: clock.getTime() });
+    : measureFreshnessLine(data, { locale, now: clock.getTime(), timeZone });
   const errorKey = expired
     ? "expired"
     : data?.error
@@ -460,6 +467,7 @@ export function MeasureWidgetView({
             at: new Intl.DateTimeFormat(locale, {
               dateStyle: "medium",
               timeStyle: "short",
+              timeZone,
             }).format(new Date(data.result.receivedAt)),
           })}
         </p>

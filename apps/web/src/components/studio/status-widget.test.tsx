@@ -115,6 +115,7 @@ describe("status board", () => {
       fontScale: 1.3,
       now: NOW,
       locale: "en",
+      timeZone: "UTC",
     });
     expect(layout.rows.map((row) => row.name)).toEqual(["A", "B"]);
     expect(layout.more).toEqual({ count: 2, tone: "warning" });

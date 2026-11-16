@@ -95,7 +95,7 @@ import {
   compareRatioText,
 } from "@/lib/studio-compare";
 import { LINE_HEIGHT, u } from "@/lib/studio-render";
-import { useClockZone } from "@/lib/viewer-time-zone";
+import { useClockZone, useViewerTimeZone } from "@/lib/viewer-time-zone";
 import {
   type ImageWidget,
   type StudioEnv,
@@ -642,6 +642,7 @@ export function ScrollStatusCard(props: StatusReadingProps & ScrollCardSize) {
   const locale = useLocale();
   const t = useT("screen.widget");
   const now = useNow().getTime();
+  const timeZone = useViewerTimeZone();
   return (
     <article className="sw scroll-card scroll-card--status">
       <ScrollLabel label={props.label} />
@@ -707,7 +708,7 @@ export function ScrollStatusCard(props: StatusReadingProps & ScrollCardSize) {
                 >
                   {statusStreamText(
                     stream,
-                    { locale, now },
+                    { locale, now, timeZone },
                     undefined,
                     item.status,
                   )}
