@@ -751,10 +751,28 @@ export type AppStoreAnalyticsOutcome = z.infer<
   typeof appStoreAnalyticsOutcomeSchema
 >;
 
+/**
+ * A key uploaded to "Enable App Store analytics" that cannot request
+ * reports but passes the reviews key's checks (#715: this team, not Admin,
+ * reads reviews). Nothing was requested or stored; the client may store
+ * the key it still holds as the reviews key.
+ */
+export const appStoreReviewsKeyOfferSchema = z.object({
+  /** The uploaded key's Key ID (not secret). */
+  keyId: z.string(),
+  /** The reviews key the connection stores now, which this one replaces. */
+  replacesKeyId: z.string().nullable(),
+});
+export type AppStoreReviewsKeyOffer = z.infer<
+  typeof appStoreReviewsKeyOfferSchema
+>;
+
 export const enableAppStoreAnalyticsResponseSchema = z.object({
   apps: z.array(appStoreAnalyticsOutcomeSchema),
   /** Where the user revokes the temporary key now. */
   keysUrl: z.string(),
+  /** Set (with `apps` empty) when the key is a reviews key instead. */
+  reviewsKeyOffer: appStoreReviewsKeyOfferSchema.optional(),
 });
 export type EnableAppStoreAnalyticsResponse = z.infer<
   typeof enableAppStoreAnalyticsResponseSchema

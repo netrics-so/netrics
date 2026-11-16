@@ -218,6 +218,12 @@ export const apiErrorsEn = {
       "The connection is changing right now. Try again in a moment.",
     analytics_unsupported:
       "App Store analytics are only available for App Store Connect connections with an uploaded key.",
+    app_store_analytics_admin_required:
+      "This key cannot request App Store analytics: only a team key with the Admin role can, once. Use a temporary Admin key and revoke it afterwards.",
+    app_store_analytics_sales_key:
+      "This is the Sales key netrics already stores. It reads the analytics reports but cannot request them: only a team key with the Admin role can, once. Use a temporary Admin key and revoke it afterwards.",
+    app_store_analytics_reviews_key:
+      "This is the Customer Support key netrics already stores for ratings and reviews. It cannot request App Store analytics: only a team key with the Admin role can, once. Use a temporary Admin key and revoke it afterwards.",
     requestFailed: "Request failed ({code}).",
     invalidInput: "Check your input — a field is missing or invalid.",
     generic: "Something went wrong.",

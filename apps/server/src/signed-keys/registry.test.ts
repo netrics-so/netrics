@@ -311,6 +311,7 @@ describe("validation probes", () => {
       ok: false,
       message:
         "App Store Connect could not be reached to check the key. Try again in a few minutes.",
+      retry: true,
     });
   });
 

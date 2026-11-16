@@ -814,6 +814,22 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     },
     appStoreAnalytics: {
       title: "App-Store-Analysen",
+      lead: "Analysen: einmal mit einem temporären Admin-Schlüssel anfordern.",
+      adminOnly:
+        "Dieses Formular ist nur für einen temporären Admin-Schlüssel. Der Customer-Support-Schlüssel für Bewertungen und Rezensionen gehört zu „Bewertungen und Rezensionen im App Store“.",
+      offer: {
+        title:
+          "Dieser Schlüssel kann Bewertungen und Rezensionen lesen — als Rezensionsschlüssel verwenden?",
+        detail:
+          "Mit dem Schlüssel {keyId} lassen sich keine Analysen anfordern, aber er kann Bewertungen und Rezensionen lesen. netrics prüft ihn noch einmal und behält ihn als Rezensionsschlüssel dieser Verbindung. Für die Analysen brauchst du weiterhin einen temporären Admin-Schlüssel.",
+        replaces:
+          "Diese Verbindung hat schon einen Rezensionsschlüssel ({keyId}). Durch diesen ersetzen?",
+        use: "Für Bewertungen und Rezensionen verwenden",
+        replace: "Ersetzen",
+        dismiss: "Nein, Schlüssel verwerfen",
+        stored:
+          "Schlüssel {keyId} als Rezensionsschlüssel gespeichert. Die Rezensionen des letzten Jahres werden bei der nächsten Synchronisierung gelesen. Behalte diesen Schlüssel: netrics verwendet ihn ab jetzt.",
+      },
       intro:
         "Impressionen, Aufrufe der Produktseite und Downloads nach Quelle stammen aus den Analyseberichten von Apple. Apple erstellt sie erst, nachdem ein Admin sie einmal pro App angefordert hat. Die ersten Berichte kommen 1–2 Tage danach, und jeder Tag ist etwa zwei Tage später vollständig. netrics liest sie dann mit dem gespeicherten Sales-Schlüssel; Verkäufe werden in jedem Fall weiter synchronisiert.",
       askToEnable:
@@ -876,6 +892,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     },
     appStoreReviews: {
       title: "Bewertungen und Rezensionen im App Store",
+      lead: "Rezensionen: Füg einen Customer-Support-Schlüssel hinzu.",
       intro:
         "Optional. Rezensionen pro Tag, ihre Sternebewertungen und ihre Herkunft brauchen einen zweiten Teamschlüssel mit der Rolle Customer Support, weil der Sales-Schlüssel keine Rezensionen lesen kann. Für das Widget „Neueste Bewertung“ behält netrics außerdem Titel, Text und Spitznamen der neuesten 50 Rezensionen jeder App, höchstens 90 Tage lang; wird der Schlüssel entfernt, werden sie gelöscht. Die API liefert die Rezensionen, die Kunden geschrieben haben, so wie Apple sie auflistet; sie hat keine Gesamtbewertung, daher entsprechen diese Zahlen nicht der Bewertung im App Store. Verkäufe hängen nie von diesem Schlüssel ab.",
       askToAdd:

@@ -195,6 +195,8 @@ export type SignedKeyProbeResult =
       ok: false;
       /** Shown to the user; credential values are redacted from it. */
       message: string;
+      /** Nothing was decided about the key (e.g. a rate limit): try again. */
+      retry?: true;
     };
 
 /**

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import type {
   AppStoreAnalyticsStatusResponse,
+  AppStoreReviewsKeyOffer,
   EnableAppStoreAnalyticsResponse,
 } from "@netrics/contracts";
 
@@ -12,8 +13,14 @@ import {
   apiErrorMessage,
   enableAppStoreAnalytics,
   getAppStoreAnalytics,
+  updateConnection,
 } from "@/lib/api";
 import {
+  REVIEWS_KEY_CHANGED_EVENT,
+  reviewsKeyCredentials,
+} from "@/lib/app-store-reviews";
+import {
+  APP_STORE_CONNECT_KEYS_URL,
   adminKeyGuide,
   adminKeyIdOf,
   analyticsStatusLabel,
@@ -45,7 +52,10 @@ interface AppStoreAnalyticsPanelProps {
  * "Enable App Store analytics" (ADR 0014, #174): the per-app status of the
  * analytics report requests, and the one-time step with a temporary Admin
  * key. The key is read in the browser, sent once, used by the API in memory
- * and never stored; afterwards the user is told to revoke it.
+ * and never stored; afterwards the user is told to revoke it. A Customer
+ * Support key uploaded here by mistake (#715) is offered, in place, as the
+ * connection's reviews key: on confirm the form's values go to the reviews
+ * key update, which checks the key again before storing it.
  */
 export function AppStoreAnalyticsPanel({
   workspaceId,
@@ -57,6 +67,7 @@ export function AppStoreAnalyticsPanel({
 }: AppStoreAnalyticsPanelProps) {
   const locale = useLocale();
   const t = useT("connections.appStoreAnalytics");
+  const reviews = useT("connections.appStoreReviews");
   const common = useT("common");
   const initialValues = useCallback(
     () => ({
@@ -80,6 +91,13 @@ export function AppStoreAnalyticsPanel({
   const [result, setResult] = useState<{
     response: EnableAppStoreAnalyticsResponse;
     keyId: string | null;
+  } | null>(null);
+  // #715: the uploaded key is a reviews key. It stays in the form's
+  // values (browser memory) until the user takes or discards the offer.
+  const [offer, setOffer] = useState<AppStoreReviewsKeyOffer | null>(null);
+  const [reviewsStored, setReviewsStored] = useState<{
+    keyId: string;
+    previous: string | null;
   } | null>(null);
 
   const load = useCallback(async () => {
@@ -105,12 +123,40 @@ export function AppStoreAnalyticsPanel({
     setValues(initialValues());
     setFieldErrors({});
     setError(null);
+    setOffer(null);
+  }
+
+  /** Stores the offered key as the reviews key, from the form's values. */
+  async function acceptOffer() {
+    if (!offer) {
+      return;
+    }
+    setPending(true);
+    setError(null);
+    try {
+      const credentials = reviewsKeyCredentials(strategy, values);
+      await updateConnection(workspaceId, connectionId, { credentials });
+      setReviewsStored({
+        keyId: credentials.reviews.keyId ?? offer.keyId,
+        previous: offer.replacesKeyId,
+      });
+      // The private key leaves the browser's memory with the form.
+      close();
+      window.dispatchEvent(new Event(REVIEWS_KEY_CHANGED_EVENT));
+    } catch (cause) {
+      setOffer(null);
+      setError(apiErrorMessage(cause, locale));
+    } finally {
+      setPending(false);
+    }
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setFieldErrors({});
+    setOffer(null);
+    setReviewsStored(null);
     const missing = missingKeyField(strategy, values);
     if (missing) {
       setFieldErrors({
@@ -130,6 +176,11 @@ export function AppStoreAnalyticsPanel({
         connectionId,
         { credentials: keyCredentials(strategy, values) },
       );
+      if (response.reviewsKeyOffer) {
+        // Nothing was requested or stored: ask before keeping the key.
+        setOffer(response.reviewsKeyOffer);
+        return;
+      }
       setResult({ response, keyId: adminKeyIdOf(values) });
       // The Admin key leaves the browser's memory with the form.
       close();
@@ -153,6 +204,9 @@ export function AppStoreAnalyticsPanel({
   return (
     <div className="card" id="app-store-analytics">
       <h2>{t("title")}</h2>
+      <p>
+        <strong>{t("lead")}</strong>
+      </p>
       <p className="muted">{t("intro")}</p>
 
       {!canUpdate ? (
@@ -170,6 +224,32 @@ export function AppStoreAnalyticsPanel({
                 paused.map((app) => app.name ?? app.appId),
               ),
             })}
+          </p>
+        </div>
+      ) : null}
+
+      {reviewsStored ? (
+        <div className="notice" role="status">
+          <p>
+            {t("offer.stored", { keyId: reviewsStored.keyId })}
+            {reviewsStored.previous &&
+            reviewsStored.previous !== reviewsStored.keyId ? (
+              <>
+                {" "}
+                <strong>
+                  {reviews("revokePrevious", {
+                    keyId: reviewsStored.previous,
+                  })}
+                </strong>{" "}
+                <a
+                  href={status?.keysUrl ?? APP_STORE_CONNECT_KEYS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t("openKeys")} ↗
+                </a>
+              </>
+            ) : null}
           </p>
         </div>
       ) : null}
@@ -244,12 +324,15 @@ export function AppStoreAnalyticsPanel({
           {open ? (
             <form className="stack" onSubmit={onSubmit}>
               <h3>{t("enable")}</h3>
+              <p>
+                <strong>{t("adminOnly")}</strong>
+              </p>
               <p className="muted">{t("enableIntro")}</p>
               <SignedKeyFields
                 strategy={strategy}
                 values={values}
                 errors={fieldErrors}
-                disabled={pending}
+                disabled={pending || offer !== null}
                 guideOpen
                 guide={adminKeyGuide(locale)}
                 idPrefix="admin-"
@@ -261,14 +344,47 @@ export function AppStoreAnalyticsPanel({
                   }));
                 }}
               />
-              <div className="actions">
-                <button type="submit" className="primary" disabled={pending}>
-                  {pending ? t("requesting") : t("request")}
-                </button>
-                <button type="button" disabled={pending} onClick={close}>
-                  {common("cancel")}
-                </button>
-              </div>
+              {offer ? (
+                <div
+                  className="notice"
+                  role="status"
+                  data-testid="reviews-key-offer"
+                >
+                  <p>
+                    <strong>{t("offer.title")}</strong>
+                  </p>
+                  <p>{t("offer.detail", { keyId: offer.keyId })}</p>
+                  {offer.replacesKeyId ? (
+                    <p>{t("offer.replaces", { keyId: offer.replacesKeyId })}</p>
+                  ) : null}
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={pending}
+                      onClick={() => void acceptOffer()}
+                    >
+                      {pending
+                        ? reviews("checkingKey")
+                        : offer.replacesKeyId
+                          ? t("offer.replace")
+                          : t("offer.use")}
+                    </button>
+                    <button type="button" disabled={pending} onClick={close}>
+                      {t("offer.dismiss")}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="actions">
+                  <button type="submit" className="primary" disabled={pending}>
+                    {pending ? t("requesting") : t("request")}
+                  </button>
+                  <button type="button" disabled={pending} onClick={close}>
+                    {common("cancel")}
+                  </button>
+                </div>
+              )}
               {error ? (
                 <div className="error" role="alert">
                   <p>{error}</p>
@@ -283,6 +399,7 @@ export function AppStoreAnalyticsPanel({
                 className="primary"
                 onClick={() => {
                   setResult(null);
+                  setReviewsStored(null);
                   setOpen(true);
                 }}
               >

@@ -111,7 +111,10 @@ import {
   SignedKeyRejectedError,
 } from "../signed-keys/connector-auth.js";
 import {
+  ADMIN_ROLE_REQUIRED,
   APP_STORE_CONNECT_KEYS_URL,
+  REVIEWS_KEY_CANNOT_REQUEST,
+  SALES_KEY_CANNOT_REQUEST,
   appStoreAnalyticsStatus,
   enableAppStoreAnalytics,
 } from "../signed-keys/app-store-analytics.js";
@@ -3041,6 +3044,47 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         http: signedKeys.httpFor(provider),
         selection,
       });
+      if (!enabled.ok && enabled.role) {
+        // Not an Admin key (#715): Apple refused (403) a step before any
+        // request was created, whether listing apps, listing an app's
+        // report requests or creating one. Owners setting up the reviews key end
+        // up here: say which key it is, and offer a key that passes the
+        // reviews key's own checks as that key. It is not kept: the
+        // browser still holds it and stores it with the usual update.
+        const keyId = adminKey.value.publicFields.keyId ?? "";
+        if (keyId === storedKey.publicFields.keyId) {
+          return fail(400, SALES_KEY_CANNOT_REQUEST);
+        }
+        const reviewsKeyId =
+          storedKey.additional(REVIEWS_KEY_ID)?.publicFields.keyId ?? null;
+        if (keyId === reviewsKeyId) {
+          return fail(400, REVIEWS_KEY_CANNOT_REQUEST);
+        }
+        const asReviews = signedKeys.parseAdditional(
+          storedKey,
+          REVIEWS_KEY_ID,
+          {
+            keyId,
+            privateKey: adminKey.value.stored().privateKey,
+          },
+        );
+        const probed = asReviews.ok
+          ? await signedKeys.probeAdditional(
+              storedKey.withAdditional(REVIEWS_KEY_ID, asReviews.value),
+              REVIEWS_KEY_ID,
+              existing.row.config as Record<string, unknown>,
+            )
+          : asReviews;
+        if (!probed.ok) {
+          // A rate limit or outage decided nothing: try again, not "Admin".
+          return fail(400, probed.retry ? probed.message : ADMIN_ROLE_REQUIRED);
+        }
+        return ok({
+          apps: [],
+          keysUrl: APP_STORE_CONNECT_KEYS_URL,
+          reviewsKeyOffer: { keyId, replacesKeyId: reviewsKeyId },
+        });
+      }
       if (!enabled.ok) {
         return fail(400, enabled.message);
       }

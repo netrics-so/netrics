@@ -783,6 +783,22 @@ export const workspaceEn = {
     },
     appStoreAnalytics: {
       title: "App Store analytics",
+      lead: "Analytics: request them once with a temporary Admin key.",
+      adminOnly:
+        "This form is only for a temporary Admin key. The Customer Support key for ratings and reviews goes under “App Store ratings and reviews”.",
+      offer: {
+        title:
+          "This key can read ratings and reviews — use it as the reviews key?",
+        detail:
+          "Key {keyId} cannot request analytics, but it can read ratings and reviews. netrics checks it again and keeps it as this connection’s reviews key. Analytics still need a temporary Admin key.",
+        replaces:
+          "This connection already has a reviews key ({keyId}). Replace it with this one?",
+        use: "Use for ratings and reviews",
+        replace: "Replace",
+        dismiss: "No, discard the key",
+        stored:
+          "Key {keyId} stored as the reviews key. Reviews of the last year are read with the next sync. Keep this key: netrics uses it from now on.",
+      },
       intro:
         "Impressions, product page views and downloads by source come from Apple’s analytics reports. Apple only generates them after an Admin has requested them once per app. The first reports arrive 1–2 days after that, and each day is complete about two days later. netrics then reads them with the Sales key it stores; sales keep syncing either way.",
       askToEnable:
@@ -841,6 +857,7 @@ export const workspaceEn = {
     },
     appStoreReviews: {
       title: "App Store ratings and reviews",
+      lead: "Reviews: add a Customer Support key.",
       intro:
         "Optional. Reviews per day, their star ratings and where they come from need a second team key with the Customer Support role, because the Sales key cannot read reviews. For the latest-review widget, netrics also keeps the title, text and reviewer nickname of each app’s newest 50 reviews, at most 90 days; removing the key deletes them. The API returns the reviews customers wrote, as Apple lists them; it has no aggregate star rating, so these numbers are not the rating shown on the App Store. Sales never depend on this key.",
       askToAdd:

@@ -403,7 +403,16 @@ export class SignedKey {
 }
 
 export type SignedKeyResult<T> =
-  { ok: true; value: T } | { ok: false; message: string };
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      message: string;
+      /**
+       * A probe could not ask the provider (rate limit, outage, network):
+       * nothing was decided about the key, and trying again may pass.
+       */
+      retry?: true;
+    };
 
 /** The signed-key providers of this server. */
 export class SignedKeyProviders {
@@ -701,13 +710,19 @@ export class SignedKeyProviders {
           fetch: (url, init) => http(url, init),
         });
       } catch {
+        // Probes throw on 429, 5xx and network errors.
         return {
           ok: false,
           message: `${provider.name} could not be reached to check the key. Try again in a few minutes.`,
+          retry: true,
         };
       }
       if (!result.ok) {
-        return { ok: false, message: redact(result.message) };
+        return {
+          ok: false,
+          message: redact(result.message),
+          ...(result.retry ? { retry: true as const } : {}),
+        };
       }
     }
     return { ok: true, value: true };
