@@ -483,6 +483,19 @@ public struct RefreshCountdown: Sendable, Equatable {
     }
 
     /**
+     * The cadence at `now`: none either once no poll has been confirmed for
+     * too long (`PollHealth.isStale`, #739), when the header shows the
+     * offline marker instead of counting on as if all were well.
+     */
+    public static func cycle(updatedAt: Date?, offline: Bool, refreshAfterSec: Int, now: Date)
+        -> (since: Date, every: TimeInterval)?
+    {
+        let shown = PollHealth.showsOffline(
+            offline: offline, updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now)
+        return cycle(updatedAt: updatedAt, offline: shown, refreshAfterSec: refreshAfterSec)
+    }
+
+    /**
      * Whether the countdown fits beside the names the header shows, by the
      * same conservative estimates as `headerFit`: it is left out before the
      * dashboard or slide name would be cut, and in narrow formats.
@@ -787,5 +800,27 @@ public enum StatusBoard {
             parts.removeLast()
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+/**
+ * Whether the dashboard on screen is still being confirmed (#739). The poll
+ * confirms it every `refreshAfterSec` (200 or 304, `DeviceState.updatedAt`);
+ * when none has for more than `staleAfter` refreshes, something stopped the
+ * poll without a failure to show, and the screen says so with the offline
+ * marker ("last update HH:MM") instead of a countdown that keeps cycling.
+ */
+public enum PollHealth {
+    public static let staleAfter = 2.0
+
+    public static func isStale(updatedAt: Date?, refreshAfterSec: Int, now: Date) -> Bool {
+        guard let updatedAt else { return false }
+        let seconds = refreshAfterSec > 0 ? refreshAfterSec : DeviceClient.defaultRefreshAfterSeconds
+        return now.timeIntervalSince(updatedAt) > staleAfter * Double(seconds)
+    }
+
+    /** The offline marker: the last poll failed, or none has been confirmed for too long. */
+    public static func showsOffline(offline: Bool, updatedAt: Date?, refreshAfterSec: Int, now: Date) -> Bool {
+        offline || isStale(updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now)
     }
 }

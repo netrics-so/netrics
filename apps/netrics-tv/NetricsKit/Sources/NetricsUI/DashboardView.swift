@@ -44,10 +44,16 @@ public struct DashboardView: View {
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
             Spacer()
-            if state.offline {
-                Text(TVTime.offlineMarker(updatedAt: state.updatedAt, language: language))
-                    .font(.system(size: height * 0.018))
-                    .foregroundStyle(Theme.warning)
+            // Also when no poll has confirmed the dashboard for two refreshes (#739).
+            TimelineView(.periodic(from: .distantPast, by: SlideHeaderView.healthCheck)) { context in
+                if PollHealth.showsOffline(
+                    offline: state.offline, updatedAt: state.updatedAt,
+                    refreshAfterSec: dashboard.refreshAfterSec, now: context.date)
+                {
+                    Text(TVTime.offlineMarker(updatedAt: state.updatedAt, language: language))
+                        .font(.system(size: height * 0.018))
+                        .foregroundStyle(Theme.warning)
+                }
             }
             TimelineView(.periodic(from: .now, by: 15)) { context in
                 // The device's zone, not the workspace's (#736).

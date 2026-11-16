@@ -6,6 +6,8 @@ import Synchronization
 let T0 = ISODate.parse("2026-09-29T10:00:00.000Z")!
 let pairingID = "0b8f6a52-7c1e-4a8e-9a55-3d6f0e3b2a11"
 let pollSecret = String(repeating: "s", count: 43)
+/** The dashboard `dashboard(_:)` shows. */
+let fixtureDashboardID = "4c1e2d3f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
 let testServer = ServerConfig(baseURL: URL(string: "https://kiosk.test")!, kind: .custom)
 
 /** A clock the test moves by hand. */
@@ -100,7 +102,7 @@ func dashboard(_ version: String, value: Double = 42) -> DeviceDashboard {
         version: version,
         refreshAfterSec: 60,
         timeZone: "Europe/Berlin",
-        dashboard: .init(id: "4c1e2d3f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", name: "Sales"),
+        dashboard: .init(id: fixtureDashboardID, name: "Sales"),
         tiles: [
             DeviceTile(
                 id: "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",

@@ -1755,6 +1755,14 @@ public enum DashboardPayload: Codable, Sendable, Equatable {
         }
     }
 
+    /** The dashboard it shows; nil when none is assigned. */
+    public var dashboardId: String? {
+        switch self {
+        case .v1(let payload): return payload.dashboard?.id
+        case .v2(let payload): return payload.dashboard?.id
+        }
+    }
+
     public var refreshAfterSec: Int {
         switch self {
         case .v1(let payload): return payload.refreshAfterSec

@@ -227,16 +227,29 @@ struct SlideHeaderView: View {
     let logo: StoredImage?
     @Environment(\.demoMode) private var demo
 
+    /** Seconds between checks whether the poll still confirms the dashboard (#739). */
+    static let healthCheck: TimeInterval = 10
+
     var body: some View {
+        // Re-checked as time passes: a poll that stopped without failing
+        // shows the offline marker after two refreshes (`PollHealth`, #739).
+        TimelineView(.periodic(from: .distantPast, by: Self.healthCheck)) { context in
+            header(now: context.date)
+        }
+    }
+
+    private func header(now: Date) -> some View {
         let colors = env.colors
         let name = payload.dashboard?.name ?? ""
+        let offline = PollHealth.showsOffline(
+            offline: state.offline, updatedAt: state.updatedAt, refreshAfterSec: payload.refreshAfterSec, now: now)
         let logoAspect = logo.flatMap {
             $0.image.height > 0 ? Double($0.image.width) / Double($0.image.height) : nil
         }
         // Offline: the note with the last update's time, as long as the name
         // still fits; its room is taken from the names (#676, as the web).
         let offlineNote =
-            state.offline
+            offline
             ? StudioLayout.offlineNote(
                 name: name, slideName: slide.name, format: format, logoAspect: logoAspect,
                 updatedAt: state.updatedAt, timeZone: TVTime.viewerZone(), language: env.language) : nil
@@ -246,13 +259,13 @@ struct SlideHeaderView: View {
         let slideName = slide.name.flatMap { $0.isEmpty || !fit.showSlideName ? nil : $0 }
         // "next refresh in 42 s" where there is room (ADR 0018 section 5).
         let cycle = RefreshCountdown.cycle(
-            updatedAt: state.updatedAt, offline: state.offline, refreshAfterSec: payload.refreshAfterSec)
+            updatedAt: state.updatedAt, offline: state.offline, refreshAfterSec: payload.refreshAfterSec, now: now)
         let showCountdown =
             cycle != nil
             && RefreshCountdown.fits(
                 fit, name: name, slideName: slideName, pageLabel: pageLabel,
                 sample: RefreshCountdown.sample(env.language))
-        HStack(spacing: env.pt(StudioHeaderMetrics.gap)) {
+        return HStack(spacing: env.pt(StudioHeaderMetrics.gap)) {
             if let logo {
                 let height = env.pt(StudioHeaderMetrics.logo)
                 let aspect = logo.image.height > 0 ? CGFloat(logo.image.width) / CGFloat(logo.image.height) : 1

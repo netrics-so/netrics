@@ -193,6 +193,10 @@ public struct SlideRotation: Sendable, Equatable {
         } else {
             index = 0
             shownSince = now
+            // Another dashboard while paused (#739): it stays paused, and its
+            // first slide gets its full time after Resume, not less by the
+            // time the old one was held.
+            if pausedAt != nil { pausedAt = now }
         }
         if !rotates {
             pausedAt = nil

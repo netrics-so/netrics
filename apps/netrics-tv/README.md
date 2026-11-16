@@ -386,6 +386,14 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   background starts from the cache like an offline start. A device not
   opened for 90 days finds its refresh token refused and shows a new code.
   There is no background refresh (`BGAppRefreshTask`).
+- **Poll guards (#739).** A screen once kept its old dashboard after
+  another was assigned, which did not reproduce. The heartbeat's
+  `GET /v1/device/me` names the assigned dashboard: when it is another
+  than the one on screen, the client polls at once and without
+  `If-None-Match`. The header's countdown runs from the last confirmed poll
+  (200 or 304); when none has come for more than two refreshes
+  (`PollHealth`), the header shows the offline marker with the last update
+  instead, so a screen that stopped polling without an error shows it.
 - **iPhone (ADR 0021 section 3, #413).** Portrait shows the scroll view,
   landscape screen view full screen in the phone's format (`21x9`; `16x9`
   on an iPhone SE) with the slides rotating and the screen kept on.
@@ -407,7 +415,9 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   countdowns ticking locally. At the largest accessibility sizes a table's
   rows stack (label, then value and Δ), where the web keeps its columns.
 - **Remote.** On a slide dashboard, left and right change the slide (or page) and
-  Play/Pause pauses the rotation ("Paused" in the header).
+  Play/Pause pauses the rotation ("Paused" in the header). Another
+  dashboard arriving while paused stays paused on its first slide, which
+  gets its full time after Resume.
 - **Menu (#737).** A single press of the clickpad on the dashboard shows a
   small menu at the bottom, as the system's video players do: Pause or
   Resume (when the slides rotate), Settings and the app version

@@ -66,7 +66,8 @@ final class RunningClient {
         var all: [String: Handler] = [
             heartbeatRoute: { _ in HTTPResponse(status: 204) },
             "GET /v1/device/me": { _ in
-                jsonObject(["device": ["id": pairingID, "name": "Lobby", "dashboardId": NSNull()]], status: 200)
+                // The dashboard the fixtures show (`dashboard(_:)`), as the server would report it.
+                jsonObject(["device": ["id": pairingID, "name": "Lobby", "dashboardId": fixtureDashboardID]], status: 200)
             },
         ]
         all.merge(routes(clock)) { _, new in new }
