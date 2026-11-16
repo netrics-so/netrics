@@ -281,17 +281,23 @@ extension StudioLayout {
 
     /**
      * Whether a slide name repeats the dashboard name: equal ignoring case
-     * and outer spaces, but not accents ("Café" is not "Cafe"), as the web's
+     * and outer spaces (as JS `trim()`), but not accents ("Café" is not "Cafe"), as the web's
      * `repeatsName` (#622, #676). The header then shows the name once.
      * Compared in a fixed locale, so a Turkish device (dotted and dotless i)
      * decides as every other.
      */
     public static func repeatsName(_ slideName: String?, _ dashboardName: String) -> Bool {
-        let slide = trimWhitespace(slideName ?? "")
+        let slide = jsTrim(slideName ?? "")
         guard !slide.isEmpty else { return false }
         return slide.compare(
-            trimWhitespace(dashboardName), options: [.caseInsensitive], range: nil,
+            jsTrim(dashboardName), options: [.caseInsensitive], range: nil,
             locale: Locale(identifier: "en_US_POSIX")) == .orderedSame
+    }
+
+    /// JavaScript's `trim()`: white space and line ends, and the byte order
+    /// mark (U+FEFF), which Foundation's set leaves.
+    static func jsTrim(_ text: String) -> String {
+        text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}")))
     }
 
     /**

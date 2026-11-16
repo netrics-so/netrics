@@ -76,11 +76,12 @@ struct MeasureWidgetView: View {
                 Text(KitStrings.text(.sourceReportsPending, env.language)).font(font(24)).foregroundStyle(env.colors.muted)
             }
             // A wall screen's wording: the state, not the editor's remedy (#676).
-            ForEach(
-                data.viewerWarnings(rows: rows, language: env.language)
-                    + data.viewerSourceNotices(language: env.language), id: \.self
-            ) { notice in
+            // Partial data and the warning count: two different lines at most.
+            ForEach(data.viewerWarnings(rows: rows, language: env.language), id: \.self) { notice in
                 Text(notice).font(font(24)).foregroundStyle(env.colors.muted)
+            }
+            ForEach(data.viewerSourceNotices(language: env.language)) { notice in
+                Text(notice.text).font(font(24)).foregroundStyle(env.colors.muted)
             }
             ForEach(data.exclusions, id: \.filterId) { exclusion in
                 Text(exclusion.reason).font(font(24)).foregroundStyle(env.colors.muted)

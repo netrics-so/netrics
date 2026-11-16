@@ -54,7 +54,7 @@ public enum KitText: String, Sendable, CaseIterable {
     // A measure tile's states on a wall screen, worded as the web kiosk's
     // viewer wording (#649, #676): the state, never an editor's remedy.
     case measurePending, measureUnavailable, measureStale, measurePartial, measureWarningOne, measureWarningOther
-    case measureSourcePaused, measureSourceOutage
+    case measureSourcePaused, measureSourceOutage, measureSourceCollectionPaused, measureSourcePending
     case sourceReportsPending
     case noDataForPeriod, noDataYet, noDataToCompare, noComparison, couldNotLoad
     case noticeAuthFailed, noticeOutage, noticeFirstSync, noticeLastSync
@@ -116,6 +116,8 @@ public enum KitStrings {
         .measureWarningOther: "%d data warnings",
         .measureSourcePaused: "Imports from %@ are paused.",
         .measureSourceOutage: "Imports from %@ are interrupted.",
+        .measureSourceCollectionPaused: "App collection is paused for %@. Retained history remains available.",
+        .measureSourcePending: "Waiting for the first complete import from %@.",
         .sourcePaused: "App collection is paused; retained history remains available.",
         .sourceReportsPending: "Waiting for some source reports. Known values may be incomplete.",
         .noDataToCompare: "No data to compare %@",
@@ -245,6 +247,8 @@ public enum KitStrings {
         .measureWarningOther: "%d Datenhinweise",
         .measureSourcePaused: "Die Importe von %@ sind pausiert.",
         .measureSourceOutage: "Die Importe von %@ sind unterbrochen.",
+        .measureSourceCollectionPaused: "Die App-Erfassung für %@ ist pausiert. Aufbewahrte Daten bleiben verfügbar.",
+        .measureSourcePending: "Der erste vollständige Import von %@ steht noch aus.",
         .sourcePaused: "Die App-Erfassung ist pausiert; aufbewahrte Daten bleiben verfügbar.",
         .sourceReportsPending: "Einige Quellenberichte stehen noch aus. Bekannte Werte können unvollständig sein.",
         .noDataToCompare: "Keine Daten zum Vergleich (%@)",

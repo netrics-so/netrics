@@ -257,22 +257,33 @@ extension MeasureWidgetData {
         }
         return lines
     }
-    /// One line per source that is not ok: "Imports from Apple team are
-    /// paused." when its access expired or was rejected, "… interrupted."
-    /// on an outage; a paused or first-syncing source says so by name.
-    public func viewerSourceNotices(language: ScreenLanguage) -> [String] {
+    /// One line per source that is not ok, worded as the web's viewer
+    /// branch: "Imports from Apple team are paused." when its access expired
+    /// or was rejected, "… interrupted." on an outage, and the collection
+    /// pause or first import by name. Keyed by connection and state, so two
+    /// connections with the same name stay two lines.
+    public func viewerSourceNotices(language: ScreenLanguage) -> [MeasureNotice] {
         (sourceHealth ?? []).filter { $0.status != "ok" }.map { source in
-            switch source.status {
-            case "needs_reauthorization", "auth_failed":
-                return KitStrings.text(.measureSourcePaused, language, source.name)
-            case "paused":
-                return "\(source.name): \(KitStrings.text(.sourcePaused, language))"
-            case "pending":
-                return "\(source.name): \(KitStrings.text(.noticeFirstSync, language))"
-            default:
-                return KitStrings.text(.measureSourceOutage, language, source.name)
-            }
+            let key: KitText =
+                switch source.status {
+                case "needs_reauthorization", "auth_failed": .measureSourcePaused
+                case "paused": .measureSourceCollectionPaused
+                case "pending": .measureSourcePending
+                default: .measureSourceOutage
+                }
+            return MeasureNotice(
+                id: "\(source.connectionId)|\(source.status)", text: KitStrings.text(key, language, source.name))
         }
+    }
+}
+
+/** A line under a measure tile, with an id that is unique on the tile. */
+public struct MeasureNotice: Sendable, Equatable, Identifiable {
+    public var id: String
+    public var text: String
+    public init(id: String, text: String) {
+        self.id = id
+        self.text = text
     }
 }
 

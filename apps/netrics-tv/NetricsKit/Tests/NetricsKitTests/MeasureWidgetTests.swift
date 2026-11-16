@@ -206,11 +206,11 @@ import Testing
         #expect(
             partial.viewerWarnings(rows: partial.result?.rows ?? [], language: .en) == ["Some source data is missing."])
         #expect(
-            data.viewerSourceNotices(language: .en) == [
+            data.viewerSourceNotices(language: .en).map(\.text) == [
                 "Imports from Apple team are paused.", "Imports from Play account are paused.",
                 "Imports from Second Play are interrupted.",
             ])
-        #expect(data.viewerSourceNotices(language: .de).first == "Die Importe von Apple team sind pausiert.")
+        #expect(data.viewerSourceNotices(language: .de).first?.text == "Die Importe von Apple team sind pausiert.")
         #expect(KitStrings.text(.measureStale, .de) == "Letzte gültige Daten")
         #expect(data.viewerError(expired: false, language: .en) == nil)
         #expect(data.viewerError(expired: true, language: .en) == "Data not available")
@@ -228,7 +228,7 @@ import Testing
                 let data = try viewerData(error: error)
                 let lines =
                     [data.viewerError(expired: false, language: language) ?? ""]
-                    + data.viewerSourceNotices(language: language)
+                    + data.viewerSourceNotices(language: language).map(\.text)
                 let instructed = lines.contains(where: instructs)
                 #expect(!instructed, "\(language) \(error)")
             }
@@ -237,5 +237,39 @@ import Testing
             let instructed = warned.contains(where: instructs)
             #expect(!instructed)
         }
+    }
+
+    private func sources(_ health: String) throws -> MeasureWidgetData {
+        try JSONDecoder().decode(
+            MeasureWidgetData.self,
+            from: Data(#"{"sourceHealth":\#(health),"metadata":null,"result":null,"error":null,"exclusions":[]}"#.utf8))
+    }
+
+    @Test func pausedAndFirstImportSourcesAsTheWebViewer() throws {
+        let data = try sources(
+            #"[{"connectionId":"a","name":"Apple team","status":"paused"},{"connectionId":"b","name":"Play","status":"pending"}]"#
+        )
+        #expect(
+            data.viewerSourceNotices(language: .en).map(\.text) == [
+                "App collection is paused for Apple team. Retained history remains available.",
+                "Waiting for the first complete import from Play.",
+            ])
+        #expect(
+            data.viewerSourceNotices(language: .de).map(\.text) == [
+                "Die App-Erfassung für Apple team ist pausiert. Aufbewahrte Daten bleiben verfügbar.",
+                "Der erste vollständige Import von Play steht noch aus.",
+            ])
+    }
+
+    @Test func sameNamedSourcesKeepTheirOwnLines() throws {
+        // Two "Google Play" connections both needing reauthorization: the
+        // same text, two lines with their own ids (SwiftUI's ForEach).
+        let data = try sources(
+            #"[{"connectionId":"a","name":"Google Play","status":"needs_reauthorization"},{"connectionId":"b","name":"Google Play","status":"needs_reauthorization"}]"#
+        )
+        let notices = data.viewerSourceNotices(language: .en)
+        #expect(notices.count == 2)
+        #expect(notices[0].text == notices[1].text)
+        #expect(Set(notices.map(\.id)).count == 2)
     }
 }

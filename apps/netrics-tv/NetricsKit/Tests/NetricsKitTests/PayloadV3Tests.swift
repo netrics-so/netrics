@@ -449,6 +449,8 @@ func v3Response(version: String = "v3-1") -> HTTPResponse {
         #expect(!StudioLayout.repeatsName("Café", "Cafe"))
         #expect(!StudioLayout.repeatsName(nil, "App"))
         #expect(!StudioLayout.repeatsName("", ""))
+        // JavaScript's trim() also drops the byte order mark.
+        #expect(StudioLayout.repeatsName("\u{FEFF}Sales\u{FEFF}", "sales"))
         // A different slide name still shows.
         #expect(
             StudioLayout.headerFit(name: "App-Portfolio", slideName: "Downloads", format: .widescreen, logoAspect: nil)
