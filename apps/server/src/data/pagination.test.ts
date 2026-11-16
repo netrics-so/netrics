@@ -232,6 +232,40 @@ describe("immutable semantic result pagination", PAGINATION_BUDGET, () => {
     expect(last.provenance).toEqual(first.provenance);
   });
 
+  it("keeps a pinned source's history state across pages (#635)", async () => {
+    const f = await fixture();
+    // The table as a connection's source dataset; its backfill waits.
+    const [connection] =
+      await admin`insert into connections(workspace_id,connector_id,name) values (${f.actor.workspaceId},'pagination-fixture','Numbers') returning id`;
+    const connectionId = connection!.id as string;
+    await admin`insert into connection_state(connection_id,workspace_id,backfilled_datasets) values (${connectionId},${f.actor.workspaceId},'{}'::jsonb)`;
+    await admin`update data_datasets set kind='source', connection_id=${connectionId} where id=${f.source.datasetId}`;
+    const [job] =
+      await admin`insert into jobs(kind,workspace_id,connection_id,payload) values ('connection.backfill',${f.actor.workspaceId},${connectionId},${admin.json({ workspace_id: f.actor.workspaceId, connection_id: connectionId })}) returning id`;
+    const warning = "source_history_incomplete";
+    const loading = await f.read();
+    expect(loading.warnings).toContain(warning);
+
+    // The backfill finishes: new reads are complete, the pinned pages
+    // still read the generation pinned before it.
+    await admin`update jobs set status='succeeded' where id=${job!.id as string}`;
+    await admin`update connection_state set backfilled_datasets=${admin.json({ numbers: 1 })} where connection_id=${connectionId}`;
+    const later = await f.read({ ...query, pageToken: loading.nextPageToken! });
+    expect(later.rows[0]?.dimensions.id).toBe("b");
+    expect(later.warnings).toContain(warning);
+    const complete = await f.read();
+    expect(complete.warnings).not.toContain(warning);
+
+    // A reload of the history starts: the complete pinned pages stay so.
+    await admin`insert into jobs(kind,workspace_id,connection_id,payload) values ('connection.backfill',${f.actor.workspaceId},${connectionId},${admin.json({ workspace_id: f.actor.workspaceId, connection_id: connectionId })})`;
+    const reloading = await f.read({
+      ...query,
+      pageToken: complete.nextPageToken!,
+    });
+    expect(reloading.warnings).not.toContain(warning);
+    expect((await f.read()).warnings).toContain(warning);
+  });
+
   it("requires opt-in and does not allocate page sessions for repeated truncated dashboard-style queries", async () => {
     const f = await fixture();
     for (let i = 0; i < 8; i++) {

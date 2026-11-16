@@ -604,7 +604,9 @@ to a connection whose backfill waits or runs, or whose backfill record lacks
 the dataset at the schema version of its stored rows (#635). The Data page,
 dashboard tiles and paired screens show it as a short "History incomplete"
 note. A connection without a record (a connector without backfills) shows no
-note.
+note. A snapshot (pinned pages, the last valid result) records which of its
+pinned sources were incomplete, so a read of a pinned generation keeps the
+state it had when it was pinned, not the connection's state now.
 
 **Reload history.** Members with `connections:update` can press "Reload
 history" (`POST …/connections/{id}/backfill`). It is audited with the member,
