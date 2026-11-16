@@ -319,7 +319,9 @@ The ADR 0015 section 8 rules apply per format:
 - The header in narrow formats (`3x4`, `9x16`): the dashboard name wraps to
   two lines before it shrinks; the slide name is dropped before the name is
   cut, and the Studio warns when the name does not fit in the narrowest
-  format a screen of the workspace uses.
+  format a screen of the workspace uses. In every format, a slide name that
+  repeats the dashboard name (ignoring case) is left out, so the header
+  never shows the title twice (#622).
 - `formatWarnings(slide, format)` returns these per slide and format, for
   the Studio's badges and the dashboard API (section 8). Templates (ADR 0015
   section 9) are tested to produce no warnings in any format.

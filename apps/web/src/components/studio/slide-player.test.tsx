@@ -355,6 +355,26 @@ describe("SlidePlayer in screen view on any screen (ADR 0017, #281)", () => {
     expect(tall).not.toContain(">Weekly sales by country</span>");
   });
 
+  it("shows the title once when the slide repeats the dashboard name (#622)", () => {
+    const html = renderI18n(
+      <SlidePlayer
+        slides={[slide(1, "App-Portfolio", [])]}
+        autoAdvance
+        transition="none"
+        tokens={tokens}
+        showHeader
+        header={{ name: "App-Portfolio", logoImageId: null, timeZone: "UTC" }}
+        images={images}
+        renderWidget={(widget) => (
+          <DeviceWidgetView widget={widget} env={env} />
+        )}
+        screen={{ width: 1920, height: 1080 }}
+      />,
+    );
+    expect(html.match(/>App-Portfolio</g)).toHaveLength(1);
+    expect(html).not.toContain("studio-header-slide");
+  });
+
   it("lays out a kiosk turned by 90° in its rotated format", () => {
     // A 1920 × 1080 screen turned 90°: the player measures 1080 × 1920.
     const html = renderI18n(

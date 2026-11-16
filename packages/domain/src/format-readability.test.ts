@@ -560,6 +560,35 @@ describe("headerFit", () => {
     });
   });
 
+  it("leaves out a slide name that repeats the dashboard name (#622)", () => {
+    for (const format of SCREEN_FORMAT_KEYS) {
+      expect(
+        headerFit({
+          name: "App-Portfolio",
+          slideName: "App-Portfolio",
+          format,
+          logoAspect: null,
+        }).showSlideName,
+      ).toBe(false);
+    }
+    expect(
+      headerFit({
+        name: "App portfolio",
+        slideName: " app Portfolio ",
+        format: "16x9",
+        logoAspect: null,
+      }).showSlideName,
+    ).toBe(false);
+    expect(
+      headerFit({
+        name: "App portfolio",
+        slideName: "App portfolio 2",
+        format: "16x9",
+        logoAspect: null,
+      }).showSlideName,
+    ).toBe(true);
+  });
+
   it("counts the logo's width at its aspect ratio", () => {
     const m = STUDIO_HEADER_METRICS;
     const without = headerFit({
