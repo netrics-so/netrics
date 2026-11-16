@@ -8,6 +8,17 @@ public enum NetricsCloud {
     public static let baseURL = URL(string: "https://app.netrics.so")!
 }
 
+/**
+ * The product's names, which are never translated: the String Catalog keeps
+ * "netrics cloud" in German too (ADR 0016). Screens show them verbatim.
+ */
+public enum Brand {
+    /** The product: the wordmark and the title of screens without a dashboard name. */
+    public static let name = "netrics"
+    /** The hosted service. */
+    public static let cloud = "netrics cloud"
+}
+
 public enum ServerKind: String, Codable, Sendable, Equatable {
     case cloud
     case custom
@@ -45,7 +56,7 @@ public struct ServerConfig: Codable, Sendable, Equatable {
     /** What the settings and pairing screens show. */
     public var displayName: String {
         switch kind {
-        case .cloud: return "netrics cloud"
+        case .cloud: return Brand.cloud
         case .custom: return ServerAddress.display(baseURL)
         }
     }

@@ -52,7 +52,7 @@ struct TouchDashboardView: View {
                 text: L10n.tr("Choose one under TVs in netrics; this screen picks it up on its own.", language))
         } else {
             TouchNotice(
-                title: "netrics",
+                title: Brand.name,
                 text: L10n.tr(state.offline ? "Connecting to netrics…" : "Loading…", language))
         }
     }

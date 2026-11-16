@@ -340,11 +340,19 @@ public enum WidgetFooter {
 
     /**
      * The footer's candidates, longest first: "updated 2 min. ago · Stripe",
-     * "updated 2 min. ago", "Stripe".
+     * "updated 2 min. ago", "Stripe". With freshness (ADR 0025 section 8)
+     * the freshness line replaces them: "Up to Nov 15 · fetched 10 min. ago
+     * · next ~21:00", dropping parts from the end; `status` picks its form.
      */
     public static func candidates(
-        updatedAt: String?, source: String?, now: Date = Date(), language: ScreenLanguage = .en
+        updatedAt: String?, freshness: WidgetFreshness? = nil, status: DeviceTileStatus = .ok, source: String?,
+        now: Date = Date(), language: ScreenLanguage = .en, timeZone: TimeZone = .current,
+        region: Locale = .autoupdatingCurrent
     ) -> [String] {
+        if let freshness {
+            return FreshnessText(language: language, timeZone: timeZone, region: region)
+                .footer(freshness, status: status, now: now)
+        }
         let time = relativeTime(updatedAt, now: now, language: language)
         let name = source.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
         var result: [String] = []

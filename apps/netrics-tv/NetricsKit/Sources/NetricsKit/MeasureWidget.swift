@@ -36,7 +36,7 @@ public enum MeasureValue: Codable, Sendable, Equatable {
             return number.formatted(
                 .number.locale(language.numberLocale).precision(.fractionLength(0...18)))
         case .boolean(let value):
-            return language == .de ? (value ? "Wahr" : "Falsch") : (value ? "True" : "False")
+            return KitStrings.text(value ? .measureTrue : .measureFalse, language)
         case .null: return "—"
         }
     }
@@ -229,6 +229,25 @@ public struct MeasureWidgetData: Codable, Sendable, Equatable {
     public var result: MeasureResult?
     public var error: String?
     public var exclusions: [MeasureExclusion]
+    /// How far the model's sources reach (ADR 0025); nil without it.
+    public var freshness: WidgetFreshness? = nil
+}
+extension MeasureWidgetData {
+    private enum CodingKeys: String, CodingKey {
+        case sourceHealth, scope, metadata, result, error, exclusions, freshness
+    }
+    /// As the synthesized decoding, except that `freshness` is read
+    /// leniently: a newer or damaged one never fails the widget.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sourceHealth = try c.decodeIfPresent([MeasureSourceHealth].self, forKey: .sourceHealth)
+        scope = try c.decodeIfPresent([String].self, forKey: .scope)
+        metadata = try c.decodeIfPresent(MeasureMetadata.self, forKey: .metadata)
+        result = try c.decodeIfPresent(MeasureResult.self, forKey: .result)
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+        exclusions = try c.decode([MeasureExclusion].self, forKey: .exclusions)
+        freshness = c.lenient(WidgetFreshness.self, .freshness)
+    }
 }
 /**
  * What a measure tile says about its state on a wall screen, worded as the
@@ -274,6 +293,15 @@ extension MeasureWidgetData {
             return MeasureNotice(
                 id: "\(source.connectionId)|\(source.status)", text: KitStrings.text(key, language, source.name))
         }
+    }
+}
+
+extension MeasureWidgetData {
+    /// The state the freshness line is worded for (ADR 0025 section 8): a
+    /// failing or stale source keeps the line to the day its numbers reach.
+    public var freshnessStatus: DeviceTileStatus {
+        let failing: Set<String> = ["auth_failed", "needs_reauthorization", "outage", "stale"]
+        return (sourceHealth ?? []).contains { failing.contains($0.status) } ? .outage : .ok
     }
 }
 

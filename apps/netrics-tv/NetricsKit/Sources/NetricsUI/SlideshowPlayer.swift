@@ -99,7 +99,7 @@ public struct SlideshowPlayer: View {
                 .transition(.opacity)
             } else {
                 MessageView(
-                    title: payload.dashboard?.name ?? "netrics",
+                    title: payload.dashboard?.name ?? Brand.name,
                     text: L10n.tr("This dashboard has no slides yet.", payload.language))
             }
         }

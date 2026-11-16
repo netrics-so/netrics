@@ -30,7 +30,7 @@ struct PairingView: View {
                         .foregroundStyle(Theme.muted)
                         .font(.system(size: 34))
                     } else {
-                        Text("····-····")
+                        Text(verbatim: "····-····")
                             .font(.system(size: 150, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Theme.faint)
                     }

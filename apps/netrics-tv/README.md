@@ -317,6 +317,24 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   only the last point's pulse, the stale dot's blink and the skeleton's
   sweep move. Reduce Motion turns all of it off. Text is SF Pro, values and
   clocks in tabular figures.
+- **Data freshness (ADR 0025, #706).** A widget whose data carries
+  `freshness` (metric, line, bar, table, compare, goal, latest review and
+  measure widgets) words it in `Freshness.swift` instead of "updated …":
+  "Up to Nov 15 · fetched 10 min. ago · next ~21:00", "Checked 10 min. ago
+  · next check ~14:30", parts dropped from the end where the widget is
+  narrow. A late provider reads "Up to Nov 14 · Nov 15 not published yet ·
+  checking again ~15:10" in the muted footer; a failing or stale source
+  keeps its warning, which names only the day ("Source unreachable · Up to
+  Nov 15"), and a provider overdue by a day (status `stale`) is the warning
+  "Up to Nov 14 · Nov 15 not published yet". The detail sheet's "Updated"
+  row names the stream ("Sales up to Nov 15 · next ~21:00"). Times are in
+  the device's time zone and clock (12 or 24 hours) and recomputed every
+  minute; dates follow the screen language; `dataThrough` is the provider's
+  day and never converted. A missing or damaged `freshness` leaves the
+  widget as before.
+- **Slide logo (#707).** A slide's `logo` replaces the dashboard's in the
+  header while the slide shows; the scroll view puts it before the slide's
+  heading, as the web does.
 - **Images.** The payload's images are downloaded once with the device
   token from their device URL (only `/v1/device/images/…` on the paired
   server), verified against their SHA-256 and stored by hash in

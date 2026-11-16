@@ -70,10 +70,14 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
         }
     }
 
-    /** The sheet of a widget at `now`; nil for widgets without one. */
-    public static func make(_ widget: DeviceWidget, now: Date = Date(), language: ScreenLanguage = .en)
-        -> WidgetDetail?
-    {
+    /**
+     * The sheet of a widget at `now`; nil for widgets without one. Times
+     * are in `timeZone` with `region`'s clock: the device's.
+     */
+    public static func make(
+        _ widget: DeviceWidget, now: Date = Date(), language: ScreenLanguage = .en, timeZone: TimeZone = .current,
+        region: Locale = .autoupdatingCurrent
+    ) -> WidgetDetail? {
         let parts = MetricFormat.titleParts(widget.label ?? "")
         func detail(_ rows: [Row?], items: [Item] = [], text: String? = nil, fallbackTitle: String) -> WidgetDetail {
             let title = parts.title.isEmpty ? fallbackTitle : parts.title
@@ -111,7 +115,9 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
             }
             return [Row(.comparison, line), previous]
         }
-        func source(_ status: DeviceTileStatus, updatedAt: String?, conversion: TileConversion?) -> [Row?] {
+        func source(
+            _ status: DeviceTileStatus, updatedAt: String?, freshness: WidgetFreshness?, conversion: TileConversion?
+        ) -> [Row?] {
             let state: String
             switch status {
             case .authFailed: state = KitStrings.text(.noticeAuthFailed, language)
@@ -126,8 +132,18 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
             return [
                 Row(.source, state),
                 ConversionFormat.note(conversion, language: language).map { Row(.conversion, $0) },
-                Row(.updated, RelativeTime.describe(updatedAt, now: now, language: language)),
+                updated(updatedAt, freshness: freshness, status: status),
             ]
+        }
+        // With freshness (ADR 0025) the row names the stream and the day
+        // its numbers reach: "Sales up to Nov 15 · next ~21:00".
+        func updated(_ updatedAt: String?, freshness: WidgetFreshness?, status: DeviceTileStatus) -> Row {
+            if let freshness {
+                return Row(
+                    .updated, FreshnessText(language: language, timeZone: timeZone, region: region)
+                        .detail(freshness, status: status, now: now))
+            }
+            return Row(.updated, RelativeTime.describe(updatedAt, now: now, language: language))
         }
         func amount(_ value: Double, unit: String?) -> String {
             MetricFormat.exactValue(value, unit: unit ?? "count", language: language)
@@ -143,7 +159,8 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                     return Item(label: group.isEmpty ? name : "\(group) · \(name)", value: data.text(row.measures[id], measure: id, language: language))
                 }
             }
-            return detail([], items: items, text: data.scope?.joined(separator: "\n"), fallbackTitle: data.metadata?.modelName ?? widget.type)
+            let freshness = data.freshness.map { updated(nil, freshness: $0, status: data.freshnessStatus) }
+            return detail([freshness], items: items, text: data.scope?.joined(separator: "\n"), fallbackTitle: data.metadata?.modelName ?? widget.type)
 
         case .metric(_, let data):
             return detail(
@@ -151,7 +168,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                     value(data.value, unit: data.unit, conversion: data.conversion),
                     period(data.period, data.aggregation),
                 ] + change(data.change, value: data.value, unit: data.unit, period: data.period)
-                    + source(data.status, updatedAt: data.updatedAt, conversion: data.conversion),
+                    + source(data.status, updatedAt: data.updatedAt, freshness: data.freshness, conversion: data.conversion),
                 fallbackTitle: widget.type)
         case .line(_, let data):
             return detail(
@@ -159,7 +176,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                     value(data.value, unit: data.unit, conversion: data.conversion),
                     period(data.period, data.aggregation),
                 ] + change(data.change, value: data.value, unit: data.unit, period: data.period)
-                    + source(data.status, updatedAt: data.updatedAt, conversion: data.conversion),
+                    + source(data.status, updatedAt: data.updatedAt, freshness: data.freshness, conversion: data.conversion),
                 fallbackTitle: widget.type)
         case .bar(_, let data):
             var items = data.bars.map { Item(label: $0.label, value: amount($0.value, unit: data.unit)) }
@@ -168,7 +185,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
             }
             return detail(
                 [period(data.period, data.aggregation)]
-                    + source(data.status, updatedAt: data.updatedAt, conversion: data.conversion),
+                    + source(data.status, updatedAt: data.updatedAt, freshness: data.freshness, conversion: data.conversion),
                 items: items, fallbackTitle: widget.type)
         case .table(_, let data):
             var items = data.rows.map { Item(label: $0.label, value: amount($0.value, unit: data.unit)) }
@@ -177,7 +194,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
             }
             return detail(
                 [period(data.period, data.aggregation)]
-                    + source(data.status, updatedAt: data.updatedAt, conversion: data.conversion),
+                    + source(data.status, updatedAt: data.updatedAt, freshness: data.freshness, conversion: data.conversion),
                 items: items, fallbackTitle: widget.type)
         case .compare(let options, let cached):
             let data = cached.shown(at: now)
@@ -201,7 +218,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
             return detail(
                 [Row(.value, "\(ratio) \(CompareText.ratioLabel(options, language: language))"),
                  period(data.period, data.aggregation), changeRow, previous]
-                    + source(data.status, updatedAt: data.updatedAt, conversion: data.conversion),
+                    + source(data.status, updatedAt: data.updatedAt, freshness: data.freshness, conversion: data.conversion),
                 items: items, fallbackTitle: widget.type)
         case .gauge(_, let data):
             guard let goal = data.goal else {
@@ -220,7 +237,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                 rows: ([
                     value(data.value, unit: data.unit, conversion: data.conversion), target, progress,
                     period(data.period, data.aggregation),
-                ] + source(data.status, updatedAt: data.updatedAt, conversion: data.conversion)).compactMap { $0 })
+                ] + source(data.status, updatedAt: data.updatedAt, freshness: data.freshness, conversion: data.conversion)).compactMap { $0 })
         case .status(_, let data):
             let items = data.items.map { item in
                 Item(
@@ -252,7 +269,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
                 review.map { KitStrings.text(.reviewStars, language, $0.rating) }
                     ?? KitStrings.text(.noReviews, language))
             return detail(
-                [valueRow] + source(data.status, updatedAt: data.updatedAt, conversion: nil),
+                [valueRow] + source(data.status, updatedAt: data.updatedAt, freshness: data.freshness, conversion: nil),
                 text: text.flatMap { $0.isEmpty ? nil : $0 }, fallbackTitle: widget.type)
         case .image, .text, .clock, .countdown, .unsupported:
             return nil

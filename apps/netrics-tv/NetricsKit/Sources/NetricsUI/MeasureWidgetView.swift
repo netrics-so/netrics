@@ -56,19 +56,35 @@ struct MeasureWidgetView: View {
                     .font(font(24)).foregroundStyle(env.colors.muted)
             }
             if let total = data.result?.totalRows, total > rows.count {
-                Text(
-                    env.language == .de
-                        ? "\(rows.count) von \(total) Gruppen" : "\(rows.count) of \(total) groups"
-                )
-                .font(font(24)).foregroundStyle(env.colors.muted)
+                Text(verbatim: KitStrings.text(.measureGroupsShown, env.language, rows.count, total))
+                    .font(font(24)).foregroundStyle(env.colors.muted)
             }
             ForEach(data.scope ?? [], id: \.self) { scope in
                 Text(scope).font(font(24)).foregroundStyle(env.colors.muted)
             }
-            if let received = data.result?.receivedAt {
+            if let freshness = data.freshness {
+                // The freshness line replaces the refresh age (ADR 0025): the
+                // longest form that fits one line, parts dropped from the end.
+                let candidates = WidgetFooter.candidates(
+                    updatedAt: nil, freshness: freshness, status: data.freshnessStatus, source: nil, now: now,
+                    language: env.language)
+                if scroll {
+                    if let first = candidates.first {
+                        Text(verbatim: first).font(font(24).monospacedDigit()).foregroundStyle(env.colors.muted)
+                    }
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        ForEach(candidates, id: \.self) { line in
+                            Text(verbatim: line).lineLimit(1)
+                        }
+                    }
+                    .font(font(24).monospacedDigit()).foregroundStyle(env.colors.muted)
+                }
+            } else if let received = data.result?.receivedAt {
                 Text(
-                    (env.language == .de ? "Älteste Quellenaktualisierung: " : "Oldest source refresh: ")
-                        + RelativeTime.describe(received, now: now, language: env.language)
+                    verbatim: KitStrings.text(
+                        .measureOldestRefresh, env.language,
+                        RelativeTime.describe(received, now: now, language: env.language))
                 )
                 .font(font(24)).foregroundStyle(env.colors.muted)
             }

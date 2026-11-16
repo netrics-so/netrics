@@ -39,7 +39,7 @@ public struct DashboardView: View {
 
     private func header(height: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 40) {
-            Text(dashboard.dashboard?.name ?? "netrics")
+            Text(verbatim: dashboard.dashboard?.name ?? Brand.name)
                 .font(.system(size: height * 0.03, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
@@ -166,7 +166,7 @@ struct TileView: View {
 
                 if let notice = TileNotices.notice(
                     status: tile.status, updatedAt: tile.updatedAt, now: now, language: language) {
-                    Text("⚠ \(notice)")
+                    Text(verbatim: "⚠ \(notice)")
                         .font(.system(size: min(h * 0.06, w * 0.04)))
                         .foregroundStyle(Theme.warning)
                         .lineLimit(1)

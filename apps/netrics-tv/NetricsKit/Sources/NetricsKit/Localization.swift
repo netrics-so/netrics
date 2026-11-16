@@ -77,6 +77,11 @@ public enum KitText: String, Sendable, CaseIterable {
     case serverTimedOut, serverUntrustedCertificateSettingHelps, serverUntrustedCertificate
     case serverCertificateChanged, serverRedirected, serverRedirectedSomewhere, serverNotNetrics
     case serverNewerThanApp, serverOlderThanApp, serverError, certificateChangedBlocked
+    // Data freshness (ADR 0025 section 8).
+    case freshUpTo, freshStreamUpTo, freshFetched, freshFetchedOn, freshNext, freshNextSoon, freshNotPublished
+    case freshCheckingAgain, freshCheckingAgainSoon, freshChecked, freshCheckedOn, freshStreamChecked
+    case freshStreamCheckedOn, freshNextCheck, freshNextCheckSoon, freshTomorrow, freshApprox
+    case measureGroupsShown, measureOldestRefresh, measureTrue, measureFalse
 }
 
 public enum KitStrings {
@@ -207,6 +212,27 @@ public enum KitStrings {
         .serverNewerThanApp: "This server is newer than this app (device API %d). Update the app.",
         .serverOlderThanApp: "This server is too old for this app (device API %d). Update the server.",
         .serverError: "The server answered with an error (HTTP %d). Try again later.",
+        .freshUpTo: "Up to %@",
+        .freshStreamUpTo: "%@ up to %@",
+        .freshFetched: "fetched %@",
+        .freshFetchedOn: "fetched %@",
+        .freshNext: "next %@",
+        .freshNextSoon: "next any minute",
+        .freshNotPublished: "%@ not published yet",
+        .freshCheckingAgain: "checking again %@",
+        .freshCheckingAgainSoon: "checking again any minute",
+        .freshChecked: "Checked %@",
+        .freshCheckedOn: "Checked %@",
+        .freshStreamChecked: "%@ checked %@",
+        .freshStreamCheckedOn: "%@ checked %@",
+        .freshNextCheck: "next check %@",
+        .freshNextCheckSoon: "next check any minute",
+        .freshTomorrow: "tomorrow %@",
+        .freshApprox: "~%@",
+        .measureGroupsShown: "%d of %d groups",
+        .measureOldestRefresh: "Oldest source refresh: %@",
+        .measureTrue: "True",
+        .measureFalse: "False",
         .certificateChangedBlocked:
             "The server's certificate has changed. This can mean someone is intercepting the connection. Unpair this TV and set up the server again if you replaced the certificate.",
     ]
@@ -338,6 +364,27 @@ public enum KitStrings {
         .serverNewerThanApp: "Dieser Server ist neuer als diese App (Geräte-API %d). Aktualisiere die App.",
         .serverOlderThanApp: "Dieser Server ist zu alt für diese App (Geräte-API %d). Aktualisiere den Server.",
         .serverError: "Der Server hat mit einem Fehler geantwortet (HTTP %d). Versuch es später noch einmal.",
+        .freshUpTo: "Bis %@",
+        .freshStreamUpTo: "%@ bis %@",
+        .freshFetched: "abgerufen %@",
+        .freshFetchedOn: "abgerufen am %@",
+        .freshNext: "nächste %@",
+        .freshNextSoon: "nächste in Kürze",
+        .freshNotPublished: "%@ noch nicht veröffentlicht",
+        .freshCheckingAgain: "erneut prüfen %@",
+        .freshCheckingAgainSoon: "erneut prüfen in Kürze",
+        .freshChecked: "Geprüft %@",
+        .freshCheckedOn: "Geprüft am %@",
+        .freshStreamChecked: "%@ geprüft %@",
+        .freshStreamCheckedOn: "%@ geprüft am %@",
+        .freshNextCheck: "nächste Prüfung %@",
+        .freshNextCheckSoon: "nächste Prüfung in Kürze",
+        .freshTomorrow: "morgen %@",
+        .freshApprox: "~%@",
+        .measureGroupsShown: "%d von %d Gruppen",
+        .measureOldestRefresh: "Älteste Quellenaktualisierung: %@",
+        .measureTrue: "Wahr",
+        .measureFalse: "Falsch",
         .certificateChangedBlocked:
             "Das Zertifikat des Servers hat sich geändert. Das kann bedeuten, dass jemand die Verbindung abhört. Entkopple diesen TV und richte den Server neu ein, falls du das Zertifikat ersetzt hast.",
     ]
@@ -351,6 +398,11 @@ public enum KitStrings {
 
     /** The text in a language (English when a translation is missing), arguments filled in order. */
     public static func text(_ key: KitText, _ language: ScreenLanguage = .en, _ arguments: CVarArg...) -> String {
+        text(key, language, arguments: arguments)
+    }
+
+    /** `text(_:_:_:)` with the arguments as an array. */
+    public static func text(_ key: KitText, _ language: ScreenLanguage, arguments: [CVarArg]) -> String {
         let format = table(language)[key] ?? en[key] ?? key.rawValue
         guard !arguments.isEmpty else { return format }
         return String(format: format, locale: language.numberLocale, arguments: arguments)

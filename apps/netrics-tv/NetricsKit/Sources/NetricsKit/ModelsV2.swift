@@ -445,6 +445,8 @@ public struct MetricWidgetData: Codable, Sendable, Equatable {
     public var spark: [Double?]
     public var status: DeviceTileStatus
     public var updatedAt: String?
+    /** How far the numbers reach (ADR 0025); nil from servers without it. */
+    public var freshness: WidgetFreshness? = nil
     public var conversion: TileConversion?
     public var better: MetricBetter
 
@@ -466,7 +468,7 @@ public struct MetricWidgetData: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, value, unit, change, spark, status, updatedAt, conversion, better
+        case period, aggregation, value, unit, change, spark, status, updatedAt, freshness, conversion, better
     }
 
     public init(from decoder: Decoder) throws {
@@ -479,6 +481,7 @@ public struct MetricWidgetData: Codable, Sendable, Equatable {
         spark = c.lenient([Double?].self, .spark) ?? []
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
+        freshness = c.lenient(WidgetFreshness.self, .freshness)
         conversion = c.lenient(TileConversion.self, .conversion)
         better = c.lenient(MetricBetter.self, .better) ?? .higher
     }
@@ -507,6 +510,8 @@ public struct LineWidgetData: Codable, Sendable, Equatable {
     public var previous: [Double?]
     public var status: DeviceTileStatus
     public var updatedAt: String?
+    /** How far the numbers reach (ADR 0025); nil from servers without it. */
+    public var freshness: WidgetFreshness? = nil
     public var conversion: TileConversion?
     public var better: MetricBetter
 
@@ -530,7 +535,7 @@ public struct LineWidgetData: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, value, unit, change, buckets, values, previous, status, updatedAt, conversion,
+        case period, aggregation, value, unit, change, buckets, values, previous, status, updatedAt, freshness, conversion,
             better
     }
 
@@ -546,6 +551,7 @@ public struct LineWidgetData: Codable, Sendable, Equatable {
         previous = c.lenient([Double?].self, .previous) ?? []
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
+        freshness = c.lenient(WidgetFreshness.self, .freshness)
         conversion = c.lenient(TileConversion.self, .conversion)
         better = c.lenient(MetricBetter.self, .better) ?? .higher
     }
@@ -585,6 +591,8 @@ public struct BarWidgetData: Codable, Sendable, Equatable {
     public var others: BarOthers?
     public var status: DeviceTileStatus
     public var updatedAt: String?
+    /** How far the numbers reach (ADR 0025); nil from servers without it. */
+    public var freshness: WidgetFreshness? = nil
     public var conversion: TileConversion?
 
     public init(
@@ -603,7 +611,7 @@ public struct BarWidgetData: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, unit, groupBy, bars, others, status, updatedAt, conversion
+        case period, aggregation, unit, groupBy, bars, others, status, updatedAt, freshness, conversion
     }
 
     public init(from decoder: Decoder) throws {
@@ -616,6 +624,7 @@ public struct BarWidgetData: Codable, Sendable, Equatable {
         others = c.lenient(BarOthers.self, .others)
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
+        freshness = c.lenient(WidgetFreshness.self, .freshness)
         conversion = c.lenient(TileConversion.self, .conversion)
     }
 }
@@ -667,6 +676,8 @@ public struct TableWidgetData: Codable, Sendable, Equatable {
     public var others: BarOthers?
     public var status: DeviceTileStatus
     public var updatedAt: String?
+    /** How far the numbers reach (ADR 0025); nil from servers without it. */
+    public var freshness: WidgetFreshness? = nil
     public var conversion: TileConversion?
     public var better: MetricBetter
 
@@ -689,7 +700,7 @@ public struct TableWidgetData: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, unit, groupBy, columns, rows, others, status, updatedAt, conversion, better
+        case period, aggregation, unit, groupBy, columns, rows, others, status, updatedAt, freshness, conversion, better
     }
 
     public init(from decoder: Decoder) throws {
@@ -703,6 +714,7 @@ public struct TableWidgetData: Codable, Sendable, Equatable {
         others = c.lenient(BarOthers.self, .others)
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
+        freshness = c.lenient(WidgetFreshness.self, .freshness)
         conversion = c.lenient(TileConversion.self, .conversion)
         better = c.lenient(MetricBetter.self, .better) ?? .higher
     }
@@ -839,6 +851,8 @@ public struct CompareWidgetData: Codable, Sendable, Equatable {
     public var ratio: CompareRatio
     public var status: DeviceTileStatus
     public var updatedAt: String?
+    /** How far the numbers reach (ADR 0025); nil from servers without it. */
+    public var freshness: WidgetFreshness? = nil
     public var conversion: TileConversion?
     public var better: MetricBetter
     /**
@@ -867,7 +881,7 @@ public struct CompareWidgetData: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, unit, numerator, denominator, ratio, status, updatedAt, conversion, better,
+        case period, aggregation, unit, numerator, denominator, ratio, status, updatedAt, freshness, conversion, better,
             expiresAt
     }
 
@@ -882,6 +896,7 @@ public struct CompareWidgetData: Codable, Sendable, Equatable {
         ratio = c.lenient(CompareRatio.self, .ratio) ?? CompareRatio(value: nil, previousValue: nil, format: .percent)
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
+        freshness = c.lenient(WidgetFreshness.self, .freshness)
         conversion = c.lenient(TileConversion.self, .conversion)
         better = c.lenient(MetricBetter.self, .better) ?? .higher
         expiresAt = c.lenient(String.self, .expiresAt)
@@ -952,6 +967,8 @@ public struct GaugeWidgetData: Codable, Sendable, Equatable {
     public var unit: String?
     public var status: DeviceTileStatus
     public var updatedAt: String?
+    /** How far the numbers reach (ADR 0025); nil from servers without it. */
+    public var freshness: WidgetFreshness? = nil
     public var conversion: TileConversion?
     public var better: MetricBetter
     public var goal: GoalReference?
@@ -984,7 +1001,7 @@ public struct GaugeWidgetData: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, unit, status, updatedAt, conversion, better, goal, value, target, progress
+        case period, aggregation, unit, status, updatedAt, freshness, conversion, better, goal, value, target, progress
         case reachedAt, periodEnd
     }
 
@@ -995,6 +1012,7 @@ public struct GaugeWidgetData: Codable, Sendable, Equatable {
         unit = c.lenient(String.self, .unit)
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
+        freshness = c.lenient(WidgetFreshness.self, .freshness)
         conversion = c.lenient(TileConversion.self, .conversion)
         better = c.lenient(MetricBetter.self, .better) ?? .higher
         goal = c.lenient(GoalReference.self, .goal)
@@ -1068,6 +1086,8 @@ public struct WidgetReview: Codable, Sendable, Equatable {
 public struct ReviewWidgetData: Codable, Sendable, Equatable {
     public var status: DeviceTileStatus
     public var updatedAt: String?
+    /** How far the numbers reach (ADR 0025); nil from servers without it. */
+    public var freshness: WidgetFreshness? = nil
     /** Nil: no review matches (the status says why). */
     public var review: WidgetReview?
 
@@ -1077,12 +1097,13 @@ public struct ReviewWidgetData: Codable, Sendable, Equatable {
         self.review = review
     }
 
-    private enum CodingKeys: String, CodingKey { case status, updatedAt, review }
+    private enum CodingKeys: String, CodingKey { case status, updatedAt, freshness, review }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
+        freshness = c.lenient(WidgetFreshness.self, .freshness)
         review = c.lenient(WidgetReview.self, .review)
     }
 }
@@ -1299,6 +1320,15 @@ public struct SlideBackground: Codable, Sendable, Equatable {
     }
 }
 
+/** A slide's own header logo (#707): one of the payload's images. */
+public struct SlideLogo: Codable, Sendable, Equatable {
+    public var imageId: String
+
+    public init(imageId: String) {
+        self.imageId = imageId
+    }
+}
+
 public struct DeviceSlide: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String?
@@ -1307,10 +1337,12 @@ public struct DeviceSlide: Codable, Sendable, Equatable, Identifiable {
     public var widgets: [DeviceWidget]
     /** Schema 3: the custom layouts of formats other than the primary; the others are auto. */
     public var layouts: [DeviceSlideLayout]
+    /** Shown in the header instead of the dashboard's logo; nil: the dashboard's (servers before #707 too). */
+    public var logo: SlideLogo?
 
     public init(
         id: String, name: String?, durationSec: Int, background: SlideBackground?, widgets: [DeviceWidget],
-        layouts: [DeviceSlideLayout] = []
+        layouts: [DeviceSlideLayout] = [], logo: SlideLogo? = nil
     ) {
         self.id = id
         self.name = name
@@ -1318,12 +1350,13 @@ public struct DeviceSlide: Codable, Sendable, Equatable, Identifiable {
         self.background = background
         self.widgets = widgets
         self.layouts = layouts
+        self.logo = logo
     }
 
     /** The dashboard default (ADR 0015): used when a duration is missing. */
     public static let defaultDurationSec = 20
 
-    private enum CodingKeys: String, CodingKey { case id, name, durationSec, background, widgets, layouts }
+    private enum CodingKeys: String, CodingKey { case id, name, durationSec, background, widgets, layouts, logo }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1334,6 +1367,7 @@ public struct DeviceSlide: Codable, Sendable, Equatable, Identifiable {
         background = c.lenient(SlideBackground.self, .background)
         widgets = c.lossyArray(DeviceWidget.self, .widgets)
         layouts = c.lossyArray(DeviceSlideLayout.self, .layouts)
+        logo = c.lenient(SlideLogo.self, .logo)
     }
 
     /** The custom layout for `format`, if the slide has one. */
@@ -1617,6 +1651,16 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
 
     /** The language of the labels; English when the server sent none. */
     public var language: ScreenLanguage { ScreenLanguage(tag: locale) }
+
+    /**
+     * The header logo while `slide` is on screen: the slide's own (#707),
+     * else the dashboard's. A slide logo the payload does not list falls
+     * back too, so the header never loses its logo to a damaged entry.
+     */
+    public func logoImageId(for slide: DeviceSlide?) -> String? {
+        if let own = slide?.logo?.imageId, image(own) != nil { return own }
+        return dashboard?.logoImageId
+    }
 
     /** The image with this id, if the payload lists it. */
     public func image(_ id: String?) -> DeviceImage? {

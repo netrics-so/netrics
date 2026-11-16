@@ -140,12 +140,23 @@ public struct ScrollDashboardView: View {
         // A slide named like the dashboard (a template's only slide) has no
         // heading of its own: the dashboard's name above names it (#622, #676).
         let repeated = StudioLayout.repeatsName(slide.name, payload.dashboard?.name ?? "")
+        // The slide's own logo (#707) leads its heading, as on the web; it
+        // still shows when the heading is left out for repeating the name.
+        let logo = slide.logo.flatMap { payload.image($0.imageId) != nil ? imageFile($0.imageId) : nil }
         return VStack(alignment: .leading, spacing: gap) {
-            if !repeated {
-                Text(slide.name ?? L10n.tr("Slide %@", payload.language, String(section.index + 1)))
-                    .font(.system(size: CGFloat(1.125 * rem), weight: .semibold))
-                    .foregroundStyle(colors.text)
-                    .fixedSize(horizontal: false, vertical: true)
+            if repeated, let logo {
+                sectionLogo(logo, width: Double(layout.contentWidth) - 2 * Double(padding))
+                    .padding(.horizontal, 14)
+            } else if !repeated {
+                HStack(spacing: 10) {
+                    if let logo {
+                        sectionLogo(logo, width: Double(layout.contentWidth) - 2 * Double(padding))
+                    }
+                    Text(slide.name ?? L10n.tr("Slide %@", payload.language, String(section.index + 1)))
+                        .font(.system(size: CGFloat(1.125 * rem), weight: .semibold))
+                        .foregroundStyle(colors.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -192,6 +203,19 @@ public struct ScrollDashboardView: View {
                 .accessibilityHidden(true)
             }
         }
+    }
+
+    /** A slide logo in its heading: 1.5 times the heading's text high, at most 30 % of the section wide. */
+    private func sectionLogo(_ logo: StoredImage, width: Double) -> some View {
+        let aspect = logo.image.height > 0 ? Double(logo.image.width) / Double(logo.image.height) : 1
+        var height = 1.5 * 1.125 * rem
+        if height * aspect > 0.3 * width, aspect > 0 { height = max(1, 0.3 * width / aspect) }
+        return DownsampledImage(
+            file: logo.url, image: logo.image, fit: .contain, align: .center,
+            box: CGSize(width: height * aspect, height: height), displayScale: displayScale
+        )
+        .frame(width: CGFloat(height * aspect), height: CGFloat(height))
+        .accessibilityHidden(true)
     }
 
     /** One card: the widget's scroll card at the item's width, as high as its content. */

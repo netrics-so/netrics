@@ -157,7 +157,7 @@ struct DeviceView: View {
             }
         } else {
             MessageView(
-                title: "netrics",
+                title: Brand.name,
                 text: L10n.tr(state.offline ? "Connecting to netrics…" : "Loading…", language))
                 .remoteSettingsGesture { showSettings = true }
         }

@@ -133,7 +133,7 @@ public struct SlideCanvasView: View {
             if let band = geometry.frame.header {
                 SlideHeaderView(
                     payload: payload, slide: slide, format: format, pageLabel: page.pageLabel, env: env, state: state,
-                    paused: paused, logo: imageFile(payload.dashboard?.logoImageId)
+                    paused: paused, logo: imageFile(payload.logoImageId(for: slide))
                 )
                 .frame(width: CGFloat(band.width), height: CGFloat(band.height))
                 .slideActions(interaction)
@@ -304,7 +304,7 @@ struct SlideHeaderView: View {
                         .foregroundStyle(colors.muted)
                 }
                 if let offlineNote {
-                    Text("⚠ \(offlineNote)")
+                    Text(verbatim: "⚠ \(offlineNote)")
                         .font(env.font(30))
                         .foregroundStyle(colors.warning)
                         .lineLimit(1)
