@@ -3531,6 +3531,16 @@ a.health-badge:hover {
   background: var(--t-background);
 }
 
+/* A slide's own logo before its heading (#707). */
+.scroll-section-logo {
+  height: 1.5em;
+  width: auto;
+  max-width: 30%;
+  margin-inline-end: 10px;
+  vertical-align: middle;
+  object-fit: contain;
+}
+
 .scroll-section-heading {
   margin: 0 0 12px;
   padding: 10px 14px;

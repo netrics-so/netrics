@@ -470,6 +470,10 @@ export interface CanvasWidget extends StudioPlacement {
  */
 export interface CanvasSlide<W extends CanvasWidget> {
   background: DashboardSlide["background"];
+  /** Shown in the header instead of the dashboard's logo (#707). */
+  logoImageId?: string | null;
+  /** The same from a device payload (#707). */
+  logo?: { imageId: string } | null;
   widgets: readonly W[];
   /** Custom layouts per format (ADR 0017); none: every format is auto. */
   layouts?: SlideLayouts | null;
@@ -493,6 +497,15 @@ export type PlacedWidget<W extends CanvasWidget> = W & ScreenPlacement;
  * tokens as CSS variables; `renderWidget` supplies the content (live
  * queries on signed-in pages, the device payload on screens).
  */
+/** The header with the slide's own logo, if it has one (#707). */
+function withSlideLogo(
+  header: SlideHeaderInfo,
+  slide: Pick<CanvasSlide<CanvasWidget>, "logoImageId" | "logo">,
+): SlideHeaderInfo {
+  const logoImageId = slide.logoImageId ?? slide.logo?.imageId ?? null;
+  return logoImageId ? { ...header, logoImageId } : header;
+}
+
 export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
   slide,
   tokens,
@@ -588,7 +601,7 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
       ) : null}
       {geometry.header ? (
         <SlideHeader
-          header={header}
+          header={withSlideLogo(header, slide)}
           box={geometry.header}
           images={images}
           format={format}

@@ -40,6 +40,8 @@ const slide: StudioSlide = {
   durationSeconds: null,
   enabled: true,
   background: null,
+  logoImageId: null,
+  scope: {},
   widgets: [text],
 };
 

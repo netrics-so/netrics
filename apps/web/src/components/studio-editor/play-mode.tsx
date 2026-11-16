@@ -13,7 +13,7 @@ import { useWidgetRefreshCycle } from "@/components/studio/use-widget-data";
 import { documentRotation } from "@/lib/slide-rotation";
 import type { StudioDocument } from "@/lib/studio-document";
 import type { SlideLayouts } from "@/lib/screen-view";
-import type { StudioEnv } from "@/lib/studio-widgets";
+import { scopedSlide, type StudioEnv } from "@/lib/studio-widgets";
 import { useT } from "@/lib/i18n/client";
 import { useWakeLock } from "@/lib/use-screen";
 
@@ -51,10 +51,13 @@ export function PlayMode({
   const { settings } = document;
   const slides = useMemo(
     () =>
-      documentRotation(document.slides, settings).map((slide) => ({
-        ...slide,
-        layouts: layouts?.get(slide.id) ?? null,
-      })),
+      // Widgets follow their slide's scope, as on screens (#707).
+      documentRotation(document.slides.map(scopedSlide), settings).map(
+        (slide) => ({
+          ...slide,
+          layouts: layouts?.get(slide.id) ?? null,
+        }),
+      ),
     [document.slides, settings, layouts],
   );
   const [currentId, setCurrentId] = useState<string | null>(null);

@@ -103,6 +103,8 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
         durationSeconds: null,
         enabled: true,
         background: null,
+        logoImageId: null,
+        scope: {},
         widgets: OVERVIEW,
         layouts: [],
         formatWarnings: [],

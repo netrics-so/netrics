@@ -86,6 +86,8 @@ const slide: StudioSlide = {
   durationSeconds: null,
   enabled: true,
   background: null,
+  logoImageId: null,
+  scope: {},
   widgets: WIDGETS,
   layouts: [toSlideLayout("9x16", custom)],
 };

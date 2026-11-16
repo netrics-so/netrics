@@ -6,8 +6,12 @@ import type {
   WorkspaceMetric,
 } from "@netrics/contracts";
 import {
+  followsSlideScopeResource,
+  RESOURCE_DIMENSION,
+  slideScopeResource,
   textWidgetFit,
   type Locale,
+  type SlideFilterScope,
   type StudioTextSize,
   type TextWidgetFit,
 } from "@netrics/domain";
@@ -109,6 +113,58 @@ export function slideBackground(
   };
 }
 
+/**
+ * How a widget follows its slide's scope through its resource (#707): a
+ * metric, line, bar, table or review widget whose filters the slide scopes
+ * to its connection's app. Null for every other widget.
+ */
+export function slideScopeFollow(
+  widget: StudioWidget,
+  scope: SlideFilterScope,
+): ReturnType<typeof slideScopeResource> | null {
+  if (
+    !followsSlideScopeResource(widget.type) ||
+    !("connectionId" in widget) ||
+    !("dimensions" in widget)
+  )
+    return null;
+  return slideScopeResource(
+    scope,
+    widget.connectionId,
+    widget.filterExclusions ?? [],
+    widget.dimensions[RESOURCE_DIMENSION],
+  );
+}
+
+/**
+ * A slide as screens show it (#707): widgets that follow its scope through
+ * their resource read the app it names, as the server does for screens.
+ * Measure widgets get the scope with their query (DashboardDataProvider).
+ */
+export function scopedSlide<
+  S extends { scope?: SlideFilterScope; widgets: readonly StudioWidget[] },
+>(slide: S): S {
+  const scope = slide.scope ?? {};
+  if (!Object.keys(scope).length) return slide;
+  return {
+    ...slide,
+    widgets: slide.widgets.map((widget) => {
+      const follow = slideScopeFollow(widget, scope);
+      return follow?.resource !== undefined &&
+        !follow.conflict &&
+        "dimensions" in widget
+        ? {
+            ...widget,
+            dimensions: {
+              ...widget.dimensions,
+              [RESOURCE_DIMENSION]: follow.resource,
+            },
+          }
+        : widget;
+    }),
+  };
+}
+
 /** The dashboard's logo image (#217), or null. */
 export function logoImageId(
   settings: Pick<DashboardSettings, "logoImageId">,
@@ -116,15 +172,20 @@ export function logoImageId(
   return settings.logoImageId;
 }
 
-/** Every image a dashboard's slides show: logo, backgrounds, widgets. */
+/** Every image a dashboard's slides show: logos, backgrounds, widgets. */
 export function referencedImageIds(dashboard: {
   settings: Pick<DashboardSettings, "logoImageId">;
-  slides: ReadonlyArray<Pick<DashboardSlide, "background" | "widgets">>;
+  slides: ReadonlyArray<
+    Pick<DashboardSlide, "background" | "widgets"> & {
+      logoImageId?: string | null;
+    }
+  >;
 }): string[] {
   const ids = new Set<string>();
   const logo = logoImageId(dashboard.settings);
   if (logo) ids.add(logo);
   for (const slide of dashboard.slides) {
+    if (slide.logoImageId) ids.add(slide.logoImageId);
     const background = slideBackground(slide);
     if (background) ids.add(background.imageId);
     for (const widget of slide.widgets) {

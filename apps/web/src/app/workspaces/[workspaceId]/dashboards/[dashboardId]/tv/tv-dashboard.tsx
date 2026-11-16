@@ -15,6 +15,7 @@ import { documentRotation } from "@/lib/slide-rotation";
 import { themeStyle, type ResolvedTheme } from "@/lib/studio-theme";
 import {
   logoImageId,
+  scopedSlide,
   type StudioEnv,
   type StudioImage,
 } from "@/lib/studio-widgets";
@@ -99,7 +100,8 @@ export function TvDashboard({
     ],
   );
   const slides = useMemo(
-    () => documentRotation(dashboard.slides, settings),
+    // As screens show them: widgets follow their slide's scope (#707).
+    () => documentRotation(dashboard.slides.map(scopedSlide), settings),
     [dashboard.slides, settings],
   );
 
@@ -110,7 +112,7 @@ export function TvDashboard({
     >
       <DashboardDataProvider
         workspaceId={workspaceId}
-        widgets={dashboard.slides.flatMap((slide) => slide.widgets)}
+        slides={dashboard.slides}
         filters={dashboard.settings.dataFilters ?? []}
         onLoaded={setUpdatedAt}
         keepLastGood

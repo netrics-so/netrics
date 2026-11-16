@@ -78,6 +78,8 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
         durationSeconds: null,
         enabled: true,
         background: null,
+        logoImageId: null,
+        scope: {},
         widgets: [metric],
         layouts: [],
         formatWarnings: [],
@@ -430,5 +432,87 @@ describe("placement and reordering helpers", () => {
     expect(reorderTarget(0, 3)).toBe(2);
     expect(reorderTarget(2, 0)).toBe(0);
     expect(reorderTarget(1, 1)).toBe(1);
+  });
+});
+
+describe("a slide's scope and logo (#707)", () => {
+  const appFilter = {
+    id: "app",
+    name: "App",
+    type: "string" as const,
+    mode: "values" as const,
+    mappings: [{ modelId: ID(70), dimensionId: "app" }],
+    defaultValue: null,
+  };
+  const scoped = (resource: string) => ({
+    app: { kind: "values" as const, values: [`${ID(9)}:${resource}`] },
+  });
+  const start = () =>
+    run(
+      initialStudioState(
+        dashboard({
+          settings: {
+            ...dashboard().settings,
+            dataFilters: [appFilter],
+          },
+        }),
+        "en",
+      ),
+      {
+        type: "updateSlide",
+        slideId: ID(2),
+        patch: { scope: scoped("123"), logoImageId: ID(60) },
+      },
+    );
+
+  it("saves the slide's scope and logo", () => {
+    const body = toReplaceRequest(start());
+    expect(body.slides![0]).toMatchObject({
+      scope: scoped("123"),
+      logoImageId: ID(60),
+    });
+    expect(replaceDashboardRequestSchema.safeParse(body).success).toBe(true);
+  });
+
+  it("lets a metric widget follow the slide's app instead of excluding the filter", () => {
+    expect(documentProblems(start().draft, "en")).toEqual([]);
+    // Unscoped, the same widget must say why the filter does not apply.
+    const unscoped = run(start(), {
+      type: "updateSlide",
+      slideId: ID(2),
+      patch: { scope: {} },
+    });
+    expect(
+      documentProblems(unscoped.draft, "en").map((problem) => problem.message),
+    ).toEqual([expect.stringContaining("map the App filter to this model")]);
+    // Its own other app conflicts with the slide's.
+    const other = run(start(), {
+      type: "updateWidget",
+      widgetId: ID(11),
+      patch: { dimensions: { resource: "456" } },
+    });
+    expect(
+      documentProblems(other.draft, "en").map((problem) => problem.message),
+    ).toEqual([expect.stringContaining("another app than the one")]);
+  });
+
+  it("drops a slide's scope of a removed or changed filter", () => {
+    const removed = run(start(), {
+      type: "updateSettings",
+      patch: { dataFilters: [] },
+    });
+    expect(removed.draft.slides[0]!.scope).toEqual({});
+    const renamed = run(start(), {
+      type: "updateSettings",
+      patch: { dataFilters: [{ ...appFilter, name: "Product" }] },
+    });
+    expect(renamed.draft.slides[0]!.scope).toEqual(scoped("123"));
+    const ranged = run(start(), {
+      type: "updateSettings",
+      patch: {
+        dataFilters: [{ ...appFilter, mode: "range" as const }],
+      },
+    });
+    expect(ranged.draft.slides[0]!.scope).toEqual({});
   });
 });

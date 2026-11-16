@@ -22,6 +22,7 @@ import {
   meetsMinimumSize,
   placementsOverlap,
   type CustomLayout,
+  type DashboardDataFilter,
   type Locale,
   type ScreenFormat,
   type StudioPlacement,
@@ -55,7 +56,7 @@ import {
   type LayoutEdit,
   type LayoutMove,
 } from "./studio-layouts";
-import { slideTitle } from "./studio-widgets";
+import { slideScopeFollow, slideTitle } from "./studio-widgets";
 
 // The Studio's draft of one dashboard (ADR 0015, section 9): the document
 // as the user edits it, what is selected, and undo history. Everything here
@@ -130,7 +131,15 @@ export type WidgetPatch = Partial<
 >;
 
 export type SlidePatch = Partial<
-  Pick<StudioSlide, "name" | "durationSeconds" | "enabled" | "background">
+  Pick<
+    StudioSlide,
+    | "name"
+    | "durationSeconds"
+    | "enabled"
+    | "background"
+    | "logoImageId"
+    | "scope"
+  >
 >;
 
 export type StudioAction =
@@ -533,7 +542,17 @@ export function documentProblems(
       const at = (message: string) =>
         atSlide(t("problems.atSlide", { slide: title, message }), widget.id);
       const name = widgetName(widget, locale);
+      // A widget that follows the slide's scope through its resource needs
+      // no exclusion of those filters (#707).
+      const follow = slideScopeFollow(widget, slide.scope);
+      if (follow?.conflict)
+        at(
+          webTranslator(locale, "data.dashboard")("slideScopeConflict", {
+            name,
+          }),
+        );
       for (const filter of document.settings.dataFilters ?? []) {
+        if (!filter.fixedValue && follow?.follows.includes(filter.id)) continue;
         const exclusions =
           widget.type === "measure"
             ? widget.binding.exclusions
@@ -701,6 +720,8 @@ function slideInputs(
       durationSeconds: slide.durationSeconds,
       enabled: slide.enabled,
       background: slide.background,
+      logoImageId: slide.logoImageId,
+      scope: slide.scope,
       widgets: slide.widgets.map((widget) => {
         const input = widgetInput(widget);
         if (!keepWidgetIds) {
@@ -828,6 +849,26 @@ function mapSlide(
   };
 }
 
+/** The entries of a slide's scope whose filter is unchanged in kind. */
+function keptScope(
+  scope: StudioSlide["scope"],
+  before: readonly DashboardDataFilter[],
+  after: readonly DashboardDataFilter[],
+): StudioSlide["scope"] {
+  return Object.fromEntries(
+    Object.entries(scope).filter(([filterId]) => {
+      const old = before.find((filter) => filter.id === filterId),
+        now = after.find((filter) => filter.id === filterId);
+      return (
+        old !== undefined &&
+        now !== undefined &&
+        old.type === now.type &&
+        old.mode === now.mode
+      );
+    }),
+  );
+}
+
 function emptySlide(id: string): StudioSlide {
   return {
     id,
@@ -835,6 +876,8 @@ function emptySlide(id: string): StudioSlide {
     durationSeconds: null,
     enabled: true,
     background: null,
+    logoImageId: null,
+    scope: {},
     widgets: [],
     layouts: [],
   };
@@ -994,6 +1037,13 @@ export function createStudioReducer(newId: () => string) {
               ? {
                   slides: draft.slides.map((slide) => ({
                     ...slide,
+                    // A slide keeps its scope of filters that still exist
+                    // with the same type and control (#707).
+                    scope: keptScope(
+                      slide.scope,
+                      draft.settings.dataFilters ?? [],
+                      action.patch.dataFilters!,
+                    ),
                     widgets: slide.widgets.map((widget) => {
                       const ids = new Set(
                         action.patch.dataFilters!.map((filter) => filter.id),

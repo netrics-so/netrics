@@ -9,8 +9,12 @@ import {
   measureInteractionSelected,
   measureInteractionValue,
   measureViewWindow,
+  connectionResourceKey,
+  slideScopeConflicts,
+  slideScopeResource,
   validateDeviceFilterScope,
   validateMeasureView,
+  validateSlideFilterScope,
   type DashboardDataFilter,
   type DeviceFilterScope,
   type MeasureWidgetBinding,
@@ -216,6 +220,180 @@ describe("shared dashboard filters", () => {
     expect(() =>
       validateDeviceFilterScope(filters, { country: de }),
     ).not.toThrow();
+  });
+  it("applies a slide's scope like a fixed value, unless the widget excludes the filter (#707)", () => {
+    const fields = [
+      {
+        id: "territory",
+        name: "Country",
+        type: "string" as const,
+        nullable: true,
+      },
+      { id: "day", name: "Date", type: "date" as const, nullable: false },
+    ];
+    const row = (territory: string) => ({ territory, day: "2026-11-01" });
+    const de = { country: { kind: "values" as const, values: ["DE"] } },
+      fr = { country: { kind: "values" as const, values: ["FR"] } };
+    const shows = (
+      slide: Parameters<typeof dashboardModelQuery>[6],
+      territory: string,
+      widget = binding,
+      screen: DeviceFilterScope = {},
+    ) => {
+      const query = dashboardModelQuery(
+        filters,
+        { country: null },
+        widget,
+        10,
+        "first",
+        screen,
+        slide,
+      );
+      return query.filter
+        ? compileRowExpression(query.filter, fields).evaluate(row(territory))
+            .value
+        : true;
+    };
+    // Two slides of one dashboard read different rows.
+    expect(shows(de, "DE")).toBe(true);
+    expect(shows(de, "FR")).toBe(false);
+    expect(shows(fr, "FR")).toBe(true);
+    expect(shows(fr, "DE")).toBe(false);
+    // A viewer's choice narrows it further, never widens it.
+    const chosen = dashboardModelQuery(
+      filters,
+      { country: { kind: "values", values: ["DE", "FR"] } },
+      binding,
+      10,
+      "first",
+      {},
+      fr,
+    );
+    expect(
+      compileRowExpression(chosen.filter!, fields).evaluate(row("DE")).value,
+    ).toBe(false);
+    // An excluded filter ignores the slide's value as well.
+    const total = {
+      ...binding,
+      exclusions: [{ filterId: "country", reason: "All markets" }],
+    };
+    expect(shows(fr, "DE", total)).toBe(true);
+    // A screen's scope still applies: with a conflicting slide nothing shows.
+    expect(shows(fr, "FR", binding, de)).toBe(false);
+    expect(shows(fr, "DE", binding, de)).toBe(false);
+    // An unknown filter or a scope that restricts nothing is refused.
+    expect(() =>
+      dashboardModelQuery(
+        filters,
+        {},
+        binding,
+        10,
+        "first",
+        {},
+        {
+          gone: { kind: "values", values: ["DE"] },
+        },
+      ),
+    ).toThrow("slide_scope_filter_unknown");
+    expect(() =>
+      validateSlideFilterScope(filters, {
+        country: { kind: "values", values: [] },
+      }),
+    ).toThrow("slide_scope_value_invalid");
+  });
+  it("tells a slide's scope that contradicts a screen's scope (#707)", () => {
+    const values = (...values: string[]) => ({
+      country: { kind: "values" as const, values },
+    });
+    expect(slideScopeConflicts(filters, values("FR"), values("DE"))).toBe(true);
+    expect(slideScopeConflicts(filters, values("FR"), values("DE", "FR"))).toBe(
+      false,
+    );
+    expect(slideScopeConflicts(filters, values("FR"), {})).toBe(false);
+    expect(slideScopeConflicts(filters, {}, values("DE"))).toBe(false);
+    const days = (from: string | null, to: string | null) => ({
+      day: { kind: "range" as const, from, to },
+    });
+    expect(
+      slideScopeConflicts(
+        filters,
+        days("2026-11-01", "2026-11-05"),
+        days("2026-11-06", null),
+      ),
+    ).toBe(true);
+    expect(
+      slideScopeConflicts(
+        filters,
+        days("2026-11-01", "2026-11-06"),
+        days("2026-11-06", null),
+      ),
+    ).toBe(false);
+    expect(
+      slideScopeConflicts(
+        filters,
+        days(null, "2026-11-01"),
+        days(null, "2026-10-01"),
+      ),
+    ).toBe(false);
+  });
+  it("lets connection widgets follow a slide's app through their resource (#707)", () => {
+    const apple = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e001",
+      play = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e002";
+    const app = (...values: string[]) => ({
+      app: { kind: "values" as const, values },
+    });
+    expect(
+      slideScopeResource(app(connectionResourceKey(apple, "123")), apple, []),
+    ).toEqual({ follows: ["app"], resource: "123", conflict: false });
+    // An app of each store: each connection reads its own.
+    const pair = app(
+      connectionResourceKey(apple, "123"),
+      connectionResourceKey(play, "com.example"),
+    );
+    expect(slideScopeResource(pair, play, [])).toEqual({
+      follows: ["app"],
+      resource: "com.example",
+      conflict: false,
+    });
+    // An exclusion keeps working; values that name no resource, or none or
+    // two of this connection, are not followed.
+    for (const [scope, exclusions] of [
+      [
+        app(connectionResourceKey(apple, "123")),
+        [{ filterId: "app", reason: "All apps" }],
+      ],
+      [app("product:wurfel"), []],
+      [app(connectionResourceKey(play, "com.example")), []],
+      [
+        app(
+          connectionResourceKey(apple, "1"),
+          connectionResourceKey(apple, "2"),
+        ),
+        [],
+      ],
+      [{ day: { kind: "range" as const, from: "2026-11-01", to: null } }, []],
+    ] as const)
+      expect(slideScopeResource(scope, apple, exclusions)).toEqual({
+        follows: [],
+        conflict: false,
+      });
+    // The widget's own other app would leave nothing to show.
+    expect(
+      slideScopeResource(
+        app(connectionResourceKey(apple, "123")),
+        apple,
+        [],
+        "456",
+      ),
+    ).toEqual({ follows: ["app"], resource: "123", conflict: true });
+    expect(
+      slideScopeResource(
+        app(connectionResourceKey(apple, "123")),
+        apple,
+        [],
+        "123",
+      ).conflict,
+    ).toBe(false);
   });
   it("validates types and ordered ranges before executing", () => {
     expect(() =>

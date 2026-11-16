@@ -12,6 +12,7 @@ import type {
   DashboardDataFilter,
   DashboardFilterValue,
   MeasureWidgetBinding,
+  SlideFilterScope,
 } from "@netrics/domain";
 import { browserSend } from "./api";
 import { projectQueryString } from "./project-scope";
@@ -33,6 +34,8 @@ export const previewDashboardMeasures = (
     id: string;
     binding: MeasureWidgetBinding;
     options: { view: "value" | "table" | "bar" | "line"; limit: number };
+    /** The widget's slide's scope (#707). */
+    scope?: SlideFilterScope;
   }>,
 ) =>
   browserSend(

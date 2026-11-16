@@ -74,6 +74,8 @@ const document: StudioDocument = {
       durationSeconds: null,
       enabled: true,
       background: null,
+      logoImageId: null,
+      scope: {},
       widgets: FULL,
     },
   ],

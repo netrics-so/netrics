@@ -69,6 +69,8 @@ export const dataEn = {
       discardFilter: "Discard filter changes",
       filterProblem:
         "{name}: map the {filter} filter to this model, or explain why it does not apply.",
+      slideScopeConflict:
+        "{name}: it shows another app than the one this slide is about. Show all apps in the widget, or turn the filter off for it.",
       receivedAt: "Oldest source refresh: {at}",
       browseValues: "Browse values",
       searchValues: "Search available values",

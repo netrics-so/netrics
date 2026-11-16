@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 
 import {
   publishedModel,
+  slideScopeOf,
   validateDashboardMeasure,
   safeDataError,
 } from "./data.js";
@@ -77,6 +78,9 @@ import {
   compatibleAggregations,
   dataWidgetCost,
   connectorHasReviews,
+  followsSlideScopeResource,
+  slideScopeResource,
+  validateSlideFilterScope,
   isCurrencyCode,
   isDataWidgetType,
   isPerCurrencyUnit,
@@ -460,6 +464,8 @@ export async function presentDashboard(
         slide.backgroundImageId === null
           ? null
           : { imageId: slide.backgroundImageId, dim: slide.backgroundDim },
+      logoImageId: slide.logoImageId,
+      scope: slideScopeOf(slide),
       widgets: slide.widgets.map(present),
       layouts: slide.layouts.map((layout) => ({
         format: layout.format as ScreenFormatKey,
@@ -935,6 +941,13 @@ async function validateSlides(
       enabled: slide.enabled ?? true,
       backgroundImageId: slide.background?.imageId ?? null,
       backgroundDim: slide.background?.dim ?? 0,
+      // Missing: a stored slide keeps its logo and scope (#707), as its
+      // layouts, so a client from before them cannot clear them.
+      logoImageId:
+        slide.logoImageId !== undefined
+          ? slide.logoImageId
+          : (own?.logoImageId ?? null),
+      scope: slide.scope ?? (own ? slideScopeOf(own) : {}),
       widgets,
       layouts: layouts.value,
     });
@@ -1023,6 +1036,8 @@ function isTileDashboard(slides: readonly DashboardSlide[]): boolean {
         slide.name !== null ||
         slide.durationSeconds !== null ||
         slide.backgroundImageId !== null ||
+        slide.logoImageId !== null ||
+        Object.keys(slideScopeOf(slide)).length > 0 ||
         !slide.enabled,
     )
   ) {
@@ -1170,6 +1185,9 @@ async function checkImages(
     if (slide.backgroundImageId) {
       wanted.add(slide.backgroundImageId);
     }
+    if (slide.logoImageId) {
+      wanted.add(slide.logoImageId);
+    }
     for (const widget of slide.widgets) {
       if (widget.imageId) {
         wanted.add(widget.imageId);
@@ -1282,7 +1300,17 @@ async function validateDataBindings(
           return fail(400, "dashboard_filter_type_changed");
       }
     }
-    for (const widget of slides.flatMap((slide) => slide.widgets)) {
+    // A slide's scope names the dashboard's filters and restricts something
+    // with each (#707).
+    for (const slide of slides) {
+      const scope = slideScopeOf(slide);
+      if (JSON.stringify(scope) !== JSON.stringify(slide.scope ?? {}))
+        return fail(400, "slide_scope_value_invalid");
+      validateSlideFilterScope(filters, scope);
+    }
+    for (const { widget, scope } of slides.flatMap((slide) =>
+      slide.widgets.map((widget) => ({ widget, scope: slideScopeOf(slide) })),
+    )) {
       if (widget.type === "measure") {
         const binding = measureWidgetBindingSchema.parse(widget.modelBinding),
           options = measureWidgetOptionsSchema.parse(widget.options);
@@ -1334,13 +1362,26 @@ async function validateDataBindings(
           exclusions.some((exclusion) => !ids.has(exclusion.filterId))
         )
           return fail(400, "dashboard_filter_exclusion_invalid");
+        // A filter the slide scopes to the widget's own app needs no
+        // exclusion: the widget follows it through its resource (#707).
+        const scoped =
+          followsSlideScopeResource(widget.type) && widget.connectionId
+            ? slideScopeResource(
+                scope,
+                widget.connectionId,
+                exclusions,
+                widget.dimensions[RESOURCE_DIMENSION],
+              )
+            : { follows: [], conflict: false };
+        if (scoped.conflict) return fail(400, "slide_scope_resource_conflict");
         for (const filter of filters) {
           if (
             filter.fixedValue ||
-            !exclusions.some(
-              (exclusion) =>
-                exclusion.filterId === filter.id && exclusion.reason.trim(),
-            )
+            (!scoped.follows.includes(filter.id) &&
+              !exclusions.some(
+                (exclusion) =>
+                  exclusion.filterId === filter.id && exclusion.reason.trim(),
+              ))
           )
             return fail(400, "dashboard_filter_not_applicable");
         }
@@ -1996,6 +2037,8 @@ export function createDashboardService(deps: {
             enabled: slide.enabled,
             backgroundImageId: slide.backgroundImageId,
             backgroundDim: slide.backgroundDim,
+            logoImageId: slide.logoImageId,
+            scope: slideScopeOf(slide),
             widgets: slide.widgets.map(widgetInputOf),
             layouts: copyLayouts(slide),
           })),

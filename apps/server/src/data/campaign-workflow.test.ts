@@ -154,7 +154,7 @@ async function readDashboard(
     return queryDashboardData(
       tx,
       actor.workspaceId,
-      widgets,
+      [{ scope: {}, widgets }],
       dashboard!.dataFilters,
       values,
       campaignNow,

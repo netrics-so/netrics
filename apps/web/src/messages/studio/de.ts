@@ -154,6 +154,13 @@ export const studioDe: Catalog<typeof studioEn> = {
       background: "Hintergrundbild",
       noBackground: "Kein Hintergrund",
       dim: "Hintergrund abdunkeln: {percent} %",
+      logo: "Logo in der Kopfzeile",
+      dashboardLogo: "Das Logo des Dashboards",
+      scope: "Bereich der Folie",
+      scopeHint:
+        "Jedes Widget auf dieser Folie zeigt nur diese Werte, zum Beispiel eine App. Leer: die Auswahl des Dashboards.",
+      scopeNoFilters:
+        "Um auf dieser Folie eine App zu zeigen, füge dem Dashboard zuerst einen gemeinsamen Filter hinzu.",
       moveUp: "Folie nach oben verschieben",
       moveDown: "Folie nach unten verschieben",
       duplicate: "Duplizieren",

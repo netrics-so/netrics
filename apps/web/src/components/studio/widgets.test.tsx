@@ -714,6 +714,33 @@ describe("slide canvas", () => {
     );
   });
 
+  it("shows a slide's own logo instead of the dashboard's (#707)", () => {
+    const header = {
+      name: "Wurfel",
+      slideName: "Sales",
+      logoImageId: ID(50),
+      timeZone: "Europe/Berlin",
+    };
+    for (const own of [
+      { ...slide, background: null, logoImageId: ID(52) },
+      // A device payload's slide.
+      { ...slide, background: null, logo: { imageId: ID(52) } },
+    ]) {
+      const html = renderI18n(
+        <SlideCanvas
+          slide={own}
+          tokens={BUILTIN_THEMES.paper.tokens}
+          showHeader
+          header={header}
+          images={env.images}
+          renderWidget={() => null}
+        />,
+      );
+      expect(html).toMatch(/class="studio-logo" src="\/bg\.jpg"/);
+      expect(html).not.toContain("/logo.png");
+    }
+  });
+
   it("leaves the header out when the dashboard hides it", () => {
     const html = renderI18n(
       <SlideCanvas

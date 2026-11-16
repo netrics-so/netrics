@@ -34,6 +34,8 @@ export interface ScrollSlide<W extends LayoutWidget> {
   name: string | null;
   enabled: boolean;
   background: DashboardSlide["background"];
+  /** Shown before the slide's heading (#707). */
+  logoImageId?: string | null;
   widgets: readonly W[];
 }
 
@@ -152,6 +154,9 @@ export function ScrollView<W extends LayoutWidget>({
           // A slide named like the dashboard (a template's only slide) has
           // no heading of its own: the h1 names its section (#622).
           const repeated = repeatsName(slide.name, name);
+          const slideLogo = slide.logoImageId
+            ? images.get(slide.logoImageId)
+            : null;
           const byId = new Map(slide.widgets.map((w) => [w.id, w]));
           return (
             <section
@@ -180,6 +185,15 @@ export function ScrollView<W extends LayoutWidget>({
               ) : null}
               {repeated ? null : (
                 <h2 id={sectionId} className="scroll-section-heading">
+                  {slideLogo ? (
+                    <img
+                      className="scroll-section-logo"
+                      src={slideLogo.url}
+                      alt=""
+                      width={slideLogo.width}
+                      height={slideLogo.height}
+                    />
+                  ) : null}
                   {slideTitle(slide, index, locale)}
                 </h2>
               )}

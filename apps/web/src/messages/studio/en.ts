@@ -151,6 +151,13 @@ export const studioEn = {
       background: "Background image",
       noBackground: "No background",
       dim: "Dim the background: {percent} %",
+      logo: "Header logo",
+      dashboardLogo: "The dashboard's logo",
+      scope: "Slide scope",
+      scopeHint:
+        "Every widget on this slide shows only these values, for example one app. Empty: the dashboard's choice.",
+      scopeNoFilters:
+        "To show one app on this slide, add a shared filter to the dashboard first.",
       moveUp: "Move slide up",
       moveDown: "Move slide down",
       duplicate: "Duplicate",

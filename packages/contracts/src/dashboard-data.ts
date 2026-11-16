@@ -87,6 +87,11 @@ export const deviceFilterScopeSchema = z
   .refine((scope) => Object.keys(scope).length <= 30, {
     message: "at most 30 filters",
   });
+/**
+ * A slide's scope (#707): per shared filter of its dashboard, the values or
+ * range every widget on the slide applies. The same rules as a screen's.
+ */
+export const slideFilterScopeSchema = deviceFilterScopeSchema;
 /** As stored and shown: the dashboard the scope was set for, and its values. */
 export const deviceScopeSchema = z.object({
   dashboardId: z.uuid(),
@@ -159,6 +164,8 @@ export const dashboardMeasurePreviewSchema = z.strictObject({
         id: z.uuid(),
         binding: measureWidgetBindingSchema,
         options: measureWidgetOptionsSchema,
+        /** The scope of the widget's slide (#707); missing: none. */
+        scope: slideFilterScopeSchema.optional(),
       }),
     )
     .max(48),

@@ -543,6 +543,8 @@ function dashboard(widgets: DashboardWidget[]): Dashboard {
         durationSeconds: null,
         enabled: true,
         background: null,
+        logoImageId: null,
+        scope: {},
         widgets,
         layouts: [],
         formatWarnings: [],

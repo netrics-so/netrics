@@ -20,6 +20,7 @@ import { pickableMetrics } from "@/lib/format-metric";
 import type { ResolvedTheme } from "@/lib/studio-theme";
 import {
   logoImageId,
+  scopedSlide,
   type StudioEnv,
   type StudioImage,
 } from "@/lib/studio-widgets";
@@ -92,6 +93,11 @@ export function DashboardView({
     setDashboard(initial);
   }, [initial]);
 
+  // As screens show them: widgets follow their slide's scope (#707).
+  const shownSlides = useMemo(
+    () => dashboard.slides.map(scopedSlide),
+    [dashboard.slides],
+  );
   const metricsById = useMemo(
     () => new Map(metrics.map((metric) => [metricId(metric), metric])),
     [metrics],
@@ -249,14 +255,14 @@ export function DashboardView({
         {filterBar}
         <DashboardDataProvider
           workspaceId={workspaceId}
-          widgets={dashboard.slides.flatMap((slide) => slide.widgets)}
+          slides={dashboard.slides}
           filters={dashboard.settings.dataFilters ?? []}
           values={filterValues}
         >
           <ScrollView
             name={dashboard.name}
             logoImageId={logoImageId(dashboard.settings)}
-            slides={dashboard.slides}
+            slides={shownSlides}
             tokens={theme.tokens}
             images={env.images}
             toolbar={actions}
@@ -281,11 +287,15 @@ export function DashboardView({
       {mode === "screen" ? (
         <DashboardDataProvider
           workspaceId={workspaceId}
-          widgets={dashboard.slides.flatMap((slide) => slide.widgets)}
+          slides={dashboard.slides}
           filters={dashboard.settings.dataFilters ?? []}
           values={filterValues}
         >
-          <SlideViewer dashboard={dashboard} tokens={theme.tokens} env={env} />
+          <SlideViewer
+            dashboard={{ ...dashboard, slides: shownSlides }}
+            tokens={theme.tokens}
+            env={env}
+          />
         </DashboardDataProvider>
       ) : (
         // Until the browser's default is known (after mount).
