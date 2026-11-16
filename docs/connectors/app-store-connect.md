@@ -267,12 +267,15 @@ Running the step again creates nothing new.
 
 **A key without the Admin role** is refused, and nothing is requested. The
 form says when it is the Sales key netrics stores, or the reviews key it
-stores. A key of the same team that cannot request reports but passes the
-[reviews key's checks](#add-a-customer-support-key) (it reads reviews and
-is not Admin) is usually the Customer Support key meant for ratings and
-reviews (#715). The form then asks "This is a Customer Support key — use it
-for ratings and reviews?", or offers **Replace** when the connection already
-has a reviews key. Until you answer, the key exists only in your browser's
+stores. When Apple refuses any step of the request as forbidden (listing
+the apps, listing an app's report requests, or creating one), netrics runs
+the [reviews key's checks](#add-a-customer-support-key) on the key: it
+belongs to this team, reads reviews and is not Admin. Such a key is usually
+the Customer Support key meant for ratings and reviews (#715); Developer
+and Marketing keys pass too. The form then asks "This key can read ratings
+and reviews — use it as the reviews key?", or offers **Replace** when the
+connection already has a reviews key. If Apple rate-limits these checks,
+the form shows the usual rate-limit message (try again later) instead of refusing the key. Until you answer, the key exists only in your browser's
 memory, as in this form otherwise; on confirm the browser sends it as the
 reviews key, which is checked again and stored as under
 [Add a Customer Support key](#add-a-customer-support-key). Keep that key:

@@ -819,7 +819,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "Dieses Formular ist nur für einen temporären Admin-Schlüssel. Der Customer-Support-Schlüssel für Bewertungen und Rezensionen gehört zu „Bewertungen und Rezensionen im App Store“.",
       offer: {
         title:
-          "Das ist ein Customer-Support-Schlüssel – für Bewertungen und Rezensionen verwenden?",
+          "Dieser Schlüssel kann Bewertungen und Rezensionen lesen — als Rezensionsschlüssel verwenden?",
         detail:
           "Mit dem Schlüssel {keyId} lassen sich keine Analysen anfordern, aber er kann Bewertungen und Rezensionen lesen. netrics prüft ihn noch einmal und behält ihn als Rezensionsschlüssel dieser Verbindung. Für die Analysen brauchst du weiterhin einen temporären Admin-Schlüssel.",
         replaces:
@@ -828,7 +828,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         replace: "Ersetzen",
         dismiss: "Nein, Schlüssel verwerfen",
         stored:
-          "Customer-Support-Schlüssel {keyId} für Bewertungen und Rezensionen gespeichert. Die Rezensionen des letzten Jahres werden bei der nächsten Synchronisierung gelesen. Behalte diesen Schlüssel: netrics verwendet ihn ab jetzt.",
+          "Schlüssel {keyId} als Rezensionsschlüssel gespeichert. Die Rezensionen des letzten Jahres werden bei der nächsten Synchronisierung gelesen. Behalte diesen Schlüssel: netrics verwendet ihn ab jetzt.",
       },
       intro:
         "Impressionen, Aufrufe der Produktseite und Downloads nach Quelle stammen aus den Analyseberichten von Apple. Apple erstellt sie erst, nachdem ein Admin sie einmal pro App angefordert hat. Die ersten Berichte kommen 1–2 Tage danach, und jeder Tag ist etwa zwei Tage später vollständig. netrics liest sie dann mit dem gespeicherten Sales-Schlüssel; Verkäufe werden in jedem Fall weiter synchronisiert.",

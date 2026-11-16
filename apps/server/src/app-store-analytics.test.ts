@@ -41,6 +41,7 @@ import {
   REVIEWS_KEY_CANNOT_REQUEST,
   SALES_KEY_CANNOT_REQUEST,
 } from "./signed-keys/app-store-analytics.js";
+import { RATE_LIMITED_MESSAGE } from "./signed-keys/providers/app-store-connect.js";
 import { SignedKeyProviders } from "./signed-keys/registry.js";
 import {
   createFakeAsc,
@@ -155,6 +156,20 @@ const OTHER_TEAM_SUPPORT: FakeAscTeam = {
   role: "customer-support",
   reviews: {},
 };
+// Apple refuses this one even the listing of analytics report requests.
+const LISTING_REFUSED_SUPPORT_KEY: FakeAscTeam = {
+  ...SUPPORT_KEY,
+  keyId: "CS5UPP0RT3",
+  key: p256KeyPair(),
+  analyticsListingForbidden: true,
+};
+// Its reviews answer 429: the offer's checks are rate-limited.
+const RATE_LIMITED_SUPPORT_KEY: FakeAscTeam = {
+  ...SUPPORT_KEY,
+  keyId: "CS5UPP0RT4",
+  key: p256KeyPair(),
+  reviewsRateLimited: true,
+};
 const asc = createFakeAsc([
   SALES_KEY,
   ADMIN_KEY,
@@ -163,6 +178,8 @@ const asc = createFakeAsc([
   SUPPORT_KEY,
   SECOND_SUPPORT_KEY,
   OTHER_TEAM_SUPPORT,
+  LISTING_REFUSED_SUPPORT_KEY,
+  RATE_LIMITED_SUPPORT_KEY,
 ]);
 
 function towardsFake(connector: Connector): Connector {
@@ -715,9 +732,47 @@ describe("A Customer Support key in the analytics form", () => {
     });
   });
 
+  it("still offers the key when Apple refuses it the listing of report requests", async () => {
+    const response = await enable(LISTING_REFUSED_SUPPORT_KEY);
+    expect(response.statusCode).toBe(200);
+    expect(
+      enableAppStoreAnalyticsResponseSchema.parse(response.json())
+        .reviewsKeyOffer,
+    ).toEqual({
+      keyId: LISTING_REFUSED_SUPPORT_KEY.keyId,
+      replacesKeyId: SUPPORT_KEY.keyId,
+    });
+    // Refused at the listing: no request was even attempted.
+    expect(
+      asc.requests.filter(
+        (request) =>
+          request.keyId === LISTING_REFUSED_SUPPORT_KEY.keyId &&
+          request.method === "POST",
+      ),
+    ).toEqual([]);
+  });
+
+  it("answers a rate limit during the offer's checks with try again, not with the Admin role", async () => {
+    const response = await enable(RATE_LIMITED_SUPPORT_KEY);
+    expect(response.statusCode).toBe(400);
+    // The App Store Connect key checks' own rate-limit message.
+    expect(errorResponseSchema.parse(response.json()).error).toBe(
+      RATE_LIMITED_MESSAGE,
+    );
+    expect((await envelope()).reviews).toMatchObject({
+      keyId: SUPPORT_KEY.keyId,
+    });
+  });
+
   it("puts no key material of the offered keys in responses or logs", () => {
     const text = [...bodies, ...logs].join("\n");
-    for (const team of [SUPPORT_KEY, SECOND_SUPPORT_KEY, OTHER_TEAM_SUPPORT]) {
+    for (const team of [
+      SUPPORT_KEY,
+      SECOND_SUPPORT_KEY,
+      OTHER_TEAM_SUPPORT,
+      LISTING_REFUSED_SUPPORT_KEY,
+      RATE_LIMITED_SUPPORT_KEY,
+    ]) {
       const body = pemBody(team.key.privateKeyPem);
       expect(text).not.toContain(body.slice(0, 24));
       expect(text).not.toContain(body.slice(-24));

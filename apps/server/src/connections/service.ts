@@ -3045,7 +3045,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         selection,
       });
       if (!enabled.ok && enabled.role) {
-        // Not an Admin key (#715). Owners setting up the reviews key end
+        // Not an Admin key (#715): Apple refused (403) a step before any
+        // request was created, whether listing apps, listing an app's
+        // report requests or creating one. Owners setting up the reviews key end
         // up here: say which key it is, and offer a key that passes the
         // reviews key's own checks as that key. It is not kept: the
         // browser still holds it and stores it with the usual update.
@@ -3074,7 +3076,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             )
           : asReviews;
         if (!probed.ok) {
-          return fail(400, ADMIN_ROLE_REQUIRED);
+          // A rate limit or outage decided nothing: try again, not "Admin".
+          return fail(400, probed.retry ? probed.message : ADMIN_ROLE_REQUIRED);
         }
         return ok({
           apps: [],

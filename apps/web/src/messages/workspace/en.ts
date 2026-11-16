@@ -788,7 +788,7 @@ export const workspaceEn = {
         "This form is only for a temporary Admin key. The Customer Support key for ratings and reviews goes under “App Store ratings and reviews”.",
       offer: {
         title:
-          "This is a Customer Support key — use it for ratings and reviews?",
+          "This key can read ratings and reviews — use it as the reviews key?",
         detail:
           "Key {keyId} cannot request analytics, but it can read ratings and reviews. netrics checks it again and keeps it as this connection’s reviews key. Analytics still need a temporary Admin key.",
         replaces:
@@ -797,7 +797,7 @@ export const workspaceEn = {
         replace: "Replace",
         dismiss: "No, discard the key",
         stored:
-          "Customer Support key {keyId} stored for ratings and reviews. Reviews of the last year are read with the next sync. Keep this key: netrics uses it from now on.",
+          "Key {keyId} stored as the reviews key. Reviews of the last year are read with the next sync. Keep this key: netrics uses it from now on.",
       },
       intro:
         "Impressions, product page views and downloads by source come from Apple’s analytics reports. Apple only generates them after an Admin has requested them once per app. The first reports arrive 1–2 days after that, and each day is complete about two days later. netrics then reads them with the Sales key it stores; sales keep syncing either way.",

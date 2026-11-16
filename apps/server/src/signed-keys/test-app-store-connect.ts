@@ -29,6 +29,13 @@ export interface FakeAscTeam {
   /** A revoked key answers 401 everywhere. */
   revoked?: boolean;
   /**
+   * Apple may refuse non-Admin keys even the listing of analytics report
+   * requests (#715): this key's listing answers 403.
+   */
+  analyticsListingForbidden?: boolean;
+  /** This key's customer reviews answer 429 (its hourly budget is used up). */
+  reviewsRateLimited?: boolean;
+  /**
    * Daily sales reports (YYYY-MM-DD → tab-separated text, served gzipped);
    * other days answer 404 "no sales".
    */
@@ -242,6 +249,14 @@ export function createFakeAsc(teams: FakeAscTeam[]): FakeAsc {
       }
       const reviews = /^\/v1\/apps\/(\d+)\/customerReviews$/.exec(url.pathname);
       if (reviews) {
+        if (team.reviewsRateLimited) {
+          return error(
+            429,
+            "RATE_LIMIT_EXCEEDED",
+            "The request rate limit has been reached.",
+            "We've received too many requests for this API.",
+          );
+        }
         if (
           team.role !== "customer-support" &&
           team.role !== "developer" &&
@@ -405,7 +420,9 @@ function analyticsReply(
   }
   const apps = /^\/v1\/apps\/(\d+)\/analyticsReportRequests$/.exec(path);
   if (apps) {
-    if (team.role === "developer") return forbidden();
+    if (team.role === "developer" || team.analyticsListingForbidden) {
+      return forbidden();
+    }
     return reply(200, {
       data: (state.requests[apps[1]!] ?? []).map((entry) => ({
         type: "analyticsReportRequests",

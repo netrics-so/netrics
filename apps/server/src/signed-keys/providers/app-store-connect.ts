@@ -72,7 +72,7 @@ function probe(
           error instanceof AppStoreConnectRateBudgetError ||
           (error instanceof AppStoreConnectApiError && error.status === 429)
         ) {
-          return { ok: false, message: RATE_LIMITED_MESSAGE };
+          return { ok: false, message: RATE_LIMITED_MESSAGE, retry: true };
         }
         throw error;
       }
