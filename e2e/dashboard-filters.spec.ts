@@ -45,6 +45,41 @@ async function boxOf(locator: Locator) {
   return box!;
 }
 
+/**
+ * The triggers' boxes once the filter bar's layout has settled (#685): web
+ * fonts loaded, and the same boxes on two reads in a row. Read earlier,
+ * while a font or label still swaps in, the bar can look unwrapped.
+ */
+async function settledBoxes(page: Page, triggers: Locator) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  let previous = "",
+    boxes: NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>[] = [];
+  await expect
+    .poll(
+      async () => {
+        const read = await triggers.evaluateAll((elements) =>
+          elements.map((element) => {
+            const { x, y, width, height } = element.getBoundingClientRect();
+            return { x, y, width, height };
+          }),
+        );
+        const key = JSON.stringify(read);
+        const settled =
+          read.length > 0 &&
+          read.every((box) => box.width > 0 && box.height > 0) &&
+          key === previous;
+        previous = key;
+        boxes = read;
+        return settled;
+      },
+      { intervals: [50, 100, 100, 250] },
+    )
+    .toBe(true);
+  return boxes;
+}
+
 /** The open popover overlaps none of the filter triggers. */
 async function coversNoTrigger(popover: Locator, triggers: Locator) {
   const box = await boxOf(popover);
@@ -126,17 +161,15 @@ test.describe("on a phone", () => {
       page,
       locale,
     );
-    // The bar wraps: find a trigger on a lower row than the first.
+    // The bar wraps: find a trigger on a lower row than the first, once
+    // the layout has settled.
     const first = triggers.first();
-    const firstBox = await boxOf(first);
-    let second: Locator | null = null;
-    for (const candidate of await triggers.all()) {
-      const box = await boxOf(candidate);
-      if (box.y >= firstBox.y + firstBox.height) {
-        second = candidate;
-        break;
-      }
-    }
+    const boxes = await settledBoxes(page, triggers);
+    const firstBox = boxes[0]!;
+    const lower = boxes.findIndex(
+      (box) => box.y >= firstBox.y + firstBox.height,
+    );
+    const second: Locator | null = lower > 0 ? triggers.nth(lower) : null;
     expect(second, "the filter bar wraps at 390px").not.toBeNull();
     const firstName = (await first.locator("span").first().innerText()).trim();
     const secondName = (
