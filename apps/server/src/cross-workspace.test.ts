@@ -534,6 +534,16 @@ describe("identifier probing: no sub-resource existence oracle", () => {
         404,
         "store_template_not_found",
       );
+      // Its icon retry (#740): no fetch for another workspace's install.
+      expectError(
+        await call(world.app, {
+          method: "POST",
+          url: `/v1/workspaces/${w1Id}/dashboard-templates/stores/installs/${id}/products/icons`,
+          cookie: cookies.a,
+        }),
+        404,
+        "store_template_not_found",
+      );
     }
     const listed = await call(world.app, {
       method: "GET",

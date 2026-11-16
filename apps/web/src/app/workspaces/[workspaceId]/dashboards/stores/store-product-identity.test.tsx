@@ -107,6 +107,58 @@ describe("store product identity", () => {
     expect(html).not.toContain("connect Vercel Web Analytics first");
   });
 
+  it("says how many app icons could not be loaded, with a retry (#740)", () => {
+    const missing = (count: number) => ({
+      ...products,
+      products: [
+        products.products[0]!,
+        ...Array.from({ length: count }, (_, n) => ({
+          ...products.products[1]!,
+          productId: `${PLAY}:com.timer${n}`,
+        })),
+        // No app to fetch an icon from: nothing to retry.
+        { ...products.products[1]!, productId: "none", iconSource: null },
+      ],
+    });
+    const two = renderI18n(
+      <StoreProductIdentity
+        workspaceId={W}
+        requestId={REQUEST}
+        initial={missing(2)}
+      />,
+    );
+    expect(two).toContain("2 app icons could not be loaded.");
+    expect(two.match(/>Retry</g)).toHaveLength(1);
+    expect(
+      renderI18n(
+        <StoreProductIdentity
+          workspaceId={W}
+          requestId={REQUEST}
+          initial={missing(1)}
+        />,
+      ),
+    ).toContain("1 app icon could not be loaded.");
+    expect(
+      renderI18n(
+        <StoreProductIdentity
+          workspaceId={W}
+          requestId={REQUEST}
+          initial={missing(2)}
+        />,
+        "de",
+      ),
+    ).toContain("2 App-Icons konnten nicht geladen werden.");
+    const none = renderI18n(
+      <StoreProductIdentity
+        workspaceId={W}
+        requestId={REQUEST}
+        initial={missing(0)}
+      />,
+    );
+    expect(none).not.toContain("could not be loaded");
+    expect(none).not.toContain(">Retry<");
+  });
+
   it("speaks German and points to Vercel when no website can be linked", () => {
     const html = renderI18n(
       <StoreProductIdentity

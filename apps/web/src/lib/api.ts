@@ -1700,6 +1700,20 @@ export function getStoreTemplateProducts(
   );
 }
 /**
+ * Fetches the icons the install's apps lack (#740), the same validated
+ * fetch as an install; answers the products afterwards.
+ */
+export function retryStoreTemplateIcons(
+  workspaceId: string,
+  requestId: string,
+): Promise<StoreTemplateProducts> {
+  return browserSend(
+    storeTemplateProductsSchema,
+    "POST",
+    `${storesPath(workspaceId)}/installs/${requestId}/products/icons`,
+  );
+}
+/**
  * Sets paid or free and the website of the listed products; 400
  * store_website_invalid or store_product_unknown.
  */

@@ -113,6 +113,10 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
       "Noch keine Apps. Sie erscheinen, sobald eine Verbindung synchronisiert hat.",
     useIcon: "App-Icon verwenden",
     iconLoading: "Icon wird geholt …",
+    iconsMissing:
+      "{count, plural, one {# App-Icon konnte nicht geladen werden.} other {# App-Icons konnten nicht geladen werden.}}",
+    iconsRetry: "Erneut versuchen",
+    iconsRetrying: "Icons werden geladen …",
     pricing: "Kostenpflichtig oder kostenlos",
     pricingAutoPaid:
       "Automatisch (jetzt kostenpflichtig: Erlöse in den letzten 90 Tagen)",

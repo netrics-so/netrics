@@ -357,6 +357,35 @@ export function registerStoreTemplateRoutes(
           }
         },
       );
+      scope.post(
+        `${path}/installs/:requestId/products/icons`,
+        {
+          schema: routeSchema({
+            summary:
+              "Fetch the icons an install's products lack again, and read the products",
+            tags: ["dashboards"],
+            response: storeTemplateProductsSchema,
+            errors: [403, 404, 409, 413, 503],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (!can(access.role, "data:edit"))
+            return sendError(reply, 403, "forbidden");
+          const params = installParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "store_template_not_found");
+          try {
+            reply.header("cache-control", "no-store");
+            return storeTemplateProductsSchema.parse(
+              await products.retryIcons(access, params.data.requestId),
+            );
+          } catch (error) {
+            return sendError(reply, ...failed(error));
+          }
+        },
+      );
       scope.put(
         `${path}/installs/:requestId/products`,
         {

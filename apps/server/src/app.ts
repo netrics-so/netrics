@@ -241,6 +241,7 @@ export async function buildApp(
     registry,
     callConnection: (actor, connectionId, call) =>
       iconConnections.callConnection(actor, connectionId, call),
+    log: app.log,
   });
   registerStoreTemplateRoutes(app, {
     authService,
