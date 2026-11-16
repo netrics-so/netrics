@@ -7,6 +7,7 @@
   "files": [
     "dist",
     "drizzle",
+    "!drizzle/meta/*_snapshot.json",
     "!dist/**/*.test.*",
     "!dist/**/test-db.*",
     "!dist/**/test-helpers.*",
