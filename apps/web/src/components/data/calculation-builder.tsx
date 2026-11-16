@@ -19,6 +19,7 @@ import {
   FieldOptions,
   type BuilderNoun,
 } from "./condition-builder";
+import { fixedValueMode, typedNumericLiteral } from "@/lib/literal-input";
 import { emptyLiteral, LiteralField } from "./literal-field";
 
 const LITERAL_TYPES: readonly DataType[] = [
@@ -37,10 +38,23 @@ const emptyCondition = (): VisualCondition => ({
   items: [emptyComparison()],
 });
 
+/** The type of an operand, when the builder knows it. */
+function operandType(
+  operand: VisualOperand | null,
+  choices: BuilderChoices,
+): DataType | undefined {
+  return operand?.kind === "field"
+    ? choices.field(operand.fieldId)?.type
+    : operand?.kind === "literal"
+      ? operand.literal.type
+      : undefined;
+}
+
 /** One operand: a column (from the offered ones) or a typed value. */
 function OperandField({
   label,
   operand,
+  partner,
   fields,
   choices,
   noun,
@@ -49,6 +63,8 @@ function OperandField({
 }: {
   label: string;
   operand: VisualOperand;
+  /** The value next to this one, whose type a new fixed value follows. */
+  partner: VisualOperand | null;
   fields: readonly DataField[];
   choices: BuilderChoices;
   noun: BuilderNoun;
@@ -57,6 +73,28 @@ function OperandField({
 }) {
   const t = useT("data"),
     id = useId();
+  // A value opened with the builder keeps its type; one added here follows
+  // its neighbour or its text until a type is picked (#630). The mark lives
+  // on the operand, so it survives switching views or the calculation kind.
+  const mode =
+    operand.kind === "literal" && operand.typed
+      ? fixedValueMode(operandType(partner, choices))
+      : null;
+  const inputType =
+    operand.kind !== "literal"
+      ? null
+      : mode === null
+        ? operand.literal.type
+        : mode === "typed"
+          ? "decimal"
+          : mode;
+  // Before anything is typed, the type shown is the one the input reads.
+  const shownType =
+    operand.kind !== "literal"
+      ? null
+      : mode !== null && operand.literal.value === null
+        ? inputType!
+        : operand.literal.type;
   return (
     <div role="group" aria-label={label} className="data-builder-row">
       <div className="field">
@@ -64,13 +102,18 @@ function OperandField({
         <select
           id={id + "-source"}
           value={operand.kind}
-          onChange={(e) =>
+          onChange={(e) => {
+            const next = fixedValueMode(operandType(partner, choices));
             onChange(
               e.target.value === "field"
                 ? emptyField()
-                : { kind: "literal", literal: emptyLiteral("decimal") },
-            )
-          }
+                : {
+                    kind: "literal",
+                    literal: emptyLiteral(next === "typed" ? "decimal" : next),
+                    typed: true,
+                  },
+            );
+          }}
         >
           <option value="field">{t(`builder.${noun}`)}</option>
           <option value="literal">{t("builder.fixedValue")}</option>
@@ -103,17 +146,17 @@ function OperandField({
             <label htmlFor={id + "-type"}>{t("type")}</label>
             <select
               id={id + "-type"}
-              value={operand.literal.type}
-              onChange={(e) =>
+              value={shownType!}
+              onChange={(e) => {
                 onChange({
                   kind: "literal",
                   literal: emptyLiteral(e.target.value as DataType),
-                })
-              }
+                });
+              }}
             >
-              {(LITERAL_TYPES.includes(operand.literal.type)
+              {(LITERAL_TYPES.includes(shownType!)
                 ? LITERAL_TYPES
-                : [operand.literal.type, ...LITERAL_TYPES]
+                : [shownType!, ...LITERAL_TYPES]
               ).map((type) => (
                 <option key={type} value={type}>
                   {t(`types.${type}`)}
@@ -123,14 +166,21 @@ function OperandField({
           </div>
           <LiteralField
             label={t("builder.fixedValue")}
-            type={operand.literal.type}
+            type={inputType!}
             literal={operand.literal}
             currency={
-              operand.literal.type === "decimal" &&
+              inputType === "decimal" &&
               (operand.literal.currency !== undefined ||
                 choices.fields.some((field) => field.unit === "currency"))
             }
-            onChange={(literal) => onChange({ kind: "literal", literal })}
+            onChange={(literal) =>
+              onChange({
+                kind: "literal",
+                literal:
+                  mode === "typed" ? typedNumericLiteral(literal) : literal,
+                ...(operand.typed ? { typed: true as const } : {}),
+              })
+            }
           />
         </>
       )}
@@ -177,6 +227,7 @@ function ValueEditor({
       <OperandField
         label={label}
         operand={left}
+        partner={right ?? (role === "branch" ? partner : null)}
         fields={leftFields}
         choices={choices}
         noun={noun}
@@ -220,6 +271,7 @@ function ValueEditor({
         <OperandField
           label={t("builder.secondValue")}
           operand={value.right}
+          partner={value.left}
           fields={choices.operandFields(value.left, "arithmetic")}
           choices={choices}
           noun={noun}
@@ -308,6 +360,7 @@ function WrapEditor({
         <OperandField
           label={t("builder.wrap.coalesce")}
           operand={wrap.fallback}
+          partner={asOperand(value)}
           fields={choices.operandFields(asOperand(value), "fallback")}
           choices={choices}
           noun={noun}

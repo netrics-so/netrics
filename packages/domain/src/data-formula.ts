@@ -74,6 +74,8 @@ function negated(operand: DataExpression): DataExpression {
 export interface FormulaReference {
   id: string;
   name: string;
+  /** The column's type, when known: lets plain numbers print without a wrapper. */
+  type?: DataType;
 }
 const functions = new Set<DataFunction>([
   "add",
@@ -368,9 +370,114 @@ export function parseDataFormula(
   return result;
 }
 
+/** Operators whose result does not depend on an integer vs decimal operand next to a decimal. */
+const decimalNeutral = new Set<DataFunction>([
+  "add",
+  "subtract",
+  "multiply",
+  "divide",
+  "eq",
+  "ne",
+  "lt",
+  "lte",
+  "gt",
+  "gte",
+]);
+/** A whole number in its one canonical spelling (no sign on zero, no leading zeros). */
+const wholeDecimal = /^(0|-?[1-9][0-9]*)$/;
+/** Number text that reads back as an integer or a scalar decimal. */
+const plainNumberText = /^-?(0|[1-9][0-9]*)(\.[0-9]{1,18})?$/;
+
+/**
+ * Whether `expression` has `type` from its printed text alone. A decimal:
+ * a decimal column, a decimal literal with a point, or arithmetic over one;
+ * whole decimal literals do not count, they may print as plain numbers. A
+ * number: a number column or arithmetic over one (never a literal, which is
+ * a scalar that does not decide the type next to a decimal).
+ */
+function printsAs(
+  type: "decimal" | "number",
+  expression: DataExpression,
+  references: readonly FormulaReference[],
+): boolean {
+  if (expression.kind === "field")
+    return references.find((r) => r.id === expression.fieldId)?.type === type;
+  if (expression.kind === "literal")
+    return (
+      type === "decimal" &&
+      expression.type === "decimal" &&
+      typeof expression.value === "string" &&
+      expression.value.includes(".")
+    );
+  const any = (args: readonly DataExpression[]) =>
+    args.some((arg) => printsAs(type, arg, references));
+  if (["add", "subtract", "multiply", "divide"].includes(expression.fn))
+    return any(expression.args);
+  if (expression.fn === "if") return any(expression.args.slice(1));
+  if (expression.fn === "coalesce") return any(expression.args);
+  if (["negate", "abs", "round"].includes(expression.fn))
+    return any(expression.args.slice(0, 1));
+  return type === "decimal" && expression.fn === "to_decimal";
+}
+
+/**
+ * The operands next to `args[index]` whose type the result shares: the
+ * other operand of arithmetic or a comparison, the other branch of IF, the
+ * other values of COALESCE. A plain number there is promoted to their type.
+ */
+function neighbours(
+  fn: DataFunction,
+  args: readonly DataExpression[],
+  index: number,
+): readonly DataExpression[] {
+  if (decimalNeutral.has(fn) && args.length === 2) return [args[1 - index]!];
+  if (fn === "if" && args.length === 3 && index > 0) return [args[3 - index]!];
+  if (fn === "coalesce") return args.filter((_, i) => i !== index);
+  return [];
+}
+
+/**
+ * A numeric literal typed in the builder prints as the plain number where
+ * reading it back as an integer (or a scalar decimal) means the same:
+ * - a whole decimal (`0`) next to a decimal, which promotes it anyway;
+ * - a number without a unit (`0`, `1.5`) next to a number column, whose
+ *   type a scalar beside it takes.
+ * Elsewhere (alone, next to an integer column) `DECIMAL("0")` and
+ * `NUMBER("0")` keep the result's type.
+ */
+function plainLiteral(
+  expression: DataExpression,
+  around: readonly DataExpression[],
+  references: readonly FormulaReference[],
+): boolean {
+  if (expression.kind !== "literal" || expression.value === null) return false;
+  if (expression.type === "decimal")
+    return (
+      typeof expression.value === "string" &&
+      wholeDecimal.test(expression.value) &&
+      around.some((e) => printsAs("decimal", e, references))
+    );
+  return (
+    expression.type === "number" &&
+    expression.unit === undefined &&
+    typeof expression.value === "number" &&
+    !Object.is(expression.value, -0) &&
+    plainNumberText.test(String(expression.value)) &&
+    around.some((e) => printsAs("number", e, references))
+  );
+}
+
 export function formatDataFormula(
   expression: DataExpression,
   references: readonly FormulaReference[],
+): string {
+  return formatExpression(expression, references, false);
+}
+
+function formatExpression(
+  expression: DataExpression,
+  references: readonly FormulaReference[],
+  plain: boolean,
 ): string {
   if (expression.kind === "field") {
     const ref = references.find((r) => r.id === expression.fieldId);
@@ -383,15 +490,26 @@ export function formatDataFormula(
         : expression.fieldId;
     return "[" + name.replace(/]/g, "]]") + "]";
   }
-  if (expression.kind === "call")
+  if (expression.kind === "call") {
     return (
       expression.fn.toUpperCase() +
       "(" +
       expression.args
-        .map((arg) => formatDataFormula(arg, references))
+        .map((arg, index) =>
+          formatExpression(
+            arg,
+            references,
+            plainLiteral(
+              arg,
+              neighbours(expression.fn, expression.args, index),
+              references,
+            ),
+          ),
+        )
         .join(", ") +
       ")"
     );
+  }
   const value =
     expression.value === null
       ? "NULL"
@@ -408,9 +526,10 @@ export function formatDataFormula(
               ")"
             : expression.type === "json"
               ? "JSON(" + JSON.stringify(JSON.stringify(expression.value)) + ")"
-              : expression.type === "number"
+              : expression.type === "number" && !plain
                 ? "NUMBER(" + JSON.stringify(String(expression.value)) + ")"
                 : expression.type === "decimal" &&
+                    !plain &&
                     !String(expression.value).includes(".")
                   ? "DECIMAL(" + JSON.stringify(String(expression.value)) + ")"
                   : String(expression.value);
@@ -429,5 +548,5 @@ export function formatDataFormula(
 export function formulaReferences(
   fields: readonly DataField[],
 ): FormulaReference[] {
-  return fields.map(({ id, name }) => ({ id, name }));
+  return fields.map(({ id, name, type }) => ({ id, name, type }));
 }
