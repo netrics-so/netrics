@@ -2352,6 +2352,66 @@ export const dataTemplateUpdates = pgTable(
 );
 
 /**
+ * The owner's settings of one product of a store-template install (#708):
+ * paid or free (`auto` derives it from proceeds) and the Vercel Web
+ * Analytics project of the app's website. A product without a row has the
+ * defaults (auto, no website), so installs made before this table need no
+ * rows. The website connection is bound to the install's workspace by the
+ * composite foreign key; deleting the connection clears only the website
+ * connection (hand-written `ON DELETE SET NULL (website_connection_id)` in
+ * migration 0079); a project id left without its connection reads as no
+ * website.
+ */
+export const dataTemplateProducts = pgTable(
+  "data_template_products",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    requestId: uuid("request_id").notNull(),
+    /** The product id of the install's products and mapping tables. */
+    productId: text("product_id").notNull(),
+    pricing: text("pricing").notNull().default("auto"),
+    websiteConnectionId: uuid("website_connection_id"),
+    websiteResourceId: text("website_resource_id"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.requestId, table.productId],
+    }),
+    foreignKey({
+      name: "data_template_products_install_fk",
+      columns: [table.workspaceId, table.requestId],
+      foreignColumns: [
+        dataTemplateInstalls.workspaceId,
+        dataTemplateInstalls.requestId,
+      ],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "data_template_products_website_fk",
+      columns: [table.websiteConnectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("set null"),
+    index("data_template_products_website_idx")
+      .on(table.websiteConnectionId)
+      .where(sql`${table.websiteConnectionId} is not null`),
+    check(
+      "data_template_products_pricing_valid",
+      sql`${table.pricing} in ('auto','paid','free')`,
+    ),
+    check(
+      "data_template_products_website_pair",
+      sql`${table.websiteConnectionId} is null or ${table.websiteResourceId} is not null`,
+    ),
+    check(
+      "data_template_products_ids_length",
+      sql`length(${table.productId}) between 1 and 65600 and (${table.websiteResourceId} is null or length(${table.websiteResourceId}) between 1 and 1024)`,
+    ),
+  ],
+);
+
+/**
  * Disposable immutable parsed provider report, never shared across
  * connections. A row with a null committedAt is a draft (ADR 0024): written
  * page by page within one connector call, never readable, and short-lived.

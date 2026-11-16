@@ -8,6 +8,10 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Jede App darf nur zu einem verknüpften Produkt gehören.",
     store_scope_invalid:
       "Wähle eine App aus einer der ausgewählten Verbindungen.",
+    store_website_invalid:
+      "Wähle ein Projekt einer Vercel-Verbindung dieses Workspaces.",
+    store_product_unknown:
+      "Diese App gehört nicht mehr zum Dashboard. Lade die Seite neu.",
     store_template_request_reused:
       "Diese Einrichtung wurde bereits gesendet. Öffne deine Dashboards oder starte eine neue Einrichtung.",
     store_template_removed:

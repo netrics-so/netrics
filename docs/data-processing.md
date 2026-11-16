@@ -776,6 +776,35 @@ zero and exact decimal strings remain distinct. The UI renders 50 rows at a time
 but currently holds the whole editable table in browser memory. Source and query
 budgets still apply; paging does not claim warehouse-scale execution.
 
+### App identity
+
+[#708](https://github.com/netrics-so/netrics/issues/708) gives each product
+of an install an icon, paid or free, and an optional website, set under "App
+identity" on the screen that changes the install's apps
+(`GET`/`PUT .../dashboard-templates/stores/installs/:requestId/products`). The
+products are those of the Products and mapping tables plus every app no
+product claims (product ID = its app key).
+
+- **Icon:** the stored resource icon of the product's first App Store app,
+  else Play app, that has one, resolved when read. The daily icon refresh
+  replaces it in place; "Use app icon" fetches it the first time.
+- **Paid or free:** `auto` (default), `paid` or `free`. Auto is paid while
+  one of the product's apps had proceeds in the last 90 days: an App Store
+  sales row with units × developer proceeds per unit above zero, or a Play
+  earnings row with a positive amount (charges; fees and refunds are
+  negative), read from each source dataset's latest generation when the
+  products are read. Nothing is stored for auto, so it follows new reports.
+- **Website:** a project of a Vercel Web Analytics connection of the same
+  workspace, checked when saved.
+
+The settings are rows of `data_template_products` (migration 0079, forced
+RLS), not fields of the Products table: apps without a product have no row
+there, a website typed into that freely editable table could not be checked
+against the workspace, and new fields would change every install's table. A
+product without a row has the defaults, so existing installs need no update.
+A composite foreign key binds the website connection to the row's workspace;
+deleting the connection clears only the link.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

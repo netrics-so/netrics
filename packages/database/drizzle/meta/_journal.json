@@ -554,6 +554,13 @@
       "when": 1794835275107,
       "tag": "0078_connection_freshness",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1794835849456,
+      "tag": "0079_store_template_products",
+      "breakpoints": true
     }
   ]
 }

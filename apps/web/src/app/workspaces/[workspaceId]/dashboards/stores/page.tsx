@@ -5,11 +5,13 @@ import {
   listStoreTemplateInstalls,
   listWorkspaces,
   readStoreTemplateOptions,
+  readStoreTemplateProducts,
   readStoreTemplateScope,
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import { storeUpdatePath } from "@/lib/store-updates";
+import { StoreProductIdentity } from "./store-product-identity";
 import { StoreTemplateForm } from "./store-template-form";
 export const dynamic = "force-dynamic";
 export default async function StoreTemplatesPage({
@@ -41,13 +43,14 @@ export default async function StoreTemplatesPage({
         ).installs.find((entry) => entry.requestId === installId)
       : undefined;
     if (allowed && !install) notFound();
-    const [scope, options] =
+    const [scope, options, products] =
       install && install.error === null && !install.updateAvailable
         ? await Promise.all([
             readStoreTemplateScope(cookieHeader, workspaceId, installId),
             readStoreTemplateOptions(cookieHeader, workspaceId),
+            readStoreTemplateProducts(cookieHeader, workspaceId, installId),
           ])
-        : [null, null];
+        : [null, null, null];
     return (
       <div className="area-page store-template-page">
         <header className="page-header">
@@ -68,12 +71,21 @@ export default async function StoreTemplatesPage({
               {t("editOpenUpdate")}
             </Link>
           </p>
-        ) : install && scope && options ? (
-          <StoreTemplateForm
-            workspaceId={workspaceId}
-            install={{ requestId: installId, name: install.name, scope }}
-            initialOptions={options}
-          />
+        ) : install && scope && options && products ? (
+          <>
+            <StoreTemplateForm
+              workspaceId={workspaceId}
+              install={{ requestId: installId, name: install.name, scope }}
+              initialOptions={options}
+            />
+            <div className="store-template-form">
+              <StoreProductIdentity
+                workspaceId={workspaceId}
+                requestId={installId}
+                initial={products}
+              />
+            </div>
+          </>
         ) : (
           <p className="notice">{t("editUnavailable")}</p>
         )}

@@ -111,7 +111,7 @@ async function signUpUser(
 }
 
 interface Call {
-  method: "GET" | "POST" | "PATCH" | "DELETE";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   url: string;
   cookie?: string;
   payload?: unknown;
@@ -502,7 +502,7 @@ describe("identifier probing: no sub-resource existence oracle", () => {
     await world.admin`insert into data_template_installs
       (workspace_id, request_id, request_hash, result)
       values (${w2Id}, ${requestId}, ${"0".repeat(64)}, ${world.admin.json({})})`;
-    for (const id of [requestId, randomUUID()])
+    for (const id of [requestId, randomUUID()]) {
       expectError(
         await call(world.app, {
           method: "GET",
@@ -512,6 +512,29 @@ describe("identifier probing: no sub-resource existence oracle", () => {
         404,
         "store_template_not_found",
       );
+      // Its product settings (#708), read and written.
+      expectError(
+        await call(world.app, {
+          method: "GET",
+          url: `/v1/workspaces/${w1Id}/dashboard-templates/stores/installs/${id}/products`,
+          cookie: cookies.a,
+        }),
+        404,
+        "store_template_not_found",
+      );
+      expectError(
+        await call(world.app, {
+          method: "PUT",
+          url: `/v1/workspaces/${w1Id}/dashboard-templates/stores/installs/${id}/products`,
+          cookie: cookies.a,
+          payload: {
+            products: [{ productId: "x:y", pricing: "paid", website: null }],
+          },
+        }),
+        404,
+        "store_template_not_found",
+      );
+    }
     const listed = await call(world.app, {
       method: "GET",
       url: `/v1/workspaces/${w1Id}/dashboard-templates/stores/installs`,

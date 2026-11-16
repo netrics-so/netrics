@@ -11,6 +11,8 @@ import {
   storeTemplateInstallListSchema,
   storeTemplatePlanSchema,
   storeTemplateOptionsSchema,
+  storeTemplateProductsRequestSchema,
+  storeTemplateProductsSchema,
   storeTemplateRequestSchema,
   storeTemplateResultSchema,
   storeTemplateScopeQuerySchema,
@@ -19,6 +21,7 @@ import {
   storeTemplateUpdateSchema,
 } from "@netrics/contracts";
 import type { AuthService } from "../auth/index.js";
+import { createStoreProductService } from "../dashboards/store-template-products.js";
 import { createStoreTemplateService } from "../dashboards/store-template-service.js";
 import {
   createStoreTemplateUpdateService,
@@ -79,7 +82,8 @@ export function registerStoreTemplateRoutes(
   },
 ) {
   const service = createStoreTemplateService(deps),
-    updates = createStoreTemplateUpdateService(deps);
+    updates = createStoreTemplateUpdateService(deps),
+    products = createStoreProductService(deps);
   const failed = (error: unknown) =>
     error instanceof DataServiceError
       ? ([error.status, error.code] as const)
@@ -312,6 +316,72 @@ export function registerStoreTemplateRoutes(
             reply.header("cache-control", "no-store");
             return storeTemplateScopeSchema.parse(
               await updates.scope(access, params.data.requestId),
+            );
+          } catch (error) {
+            return sendError(reply, ...failed(error));
+          }
+        },
+      );
+      // Product identity (#708): icon, paid or free and linked website.
+      scope.get(
+        `${path}/installs/:requestId/products`,
+        {
+          schema: routeSchema({
+            summary:
+              "Read an install's products with their icon, paid or free and linked website",
+            tags: ["dashboards"],
+            response: storeTemplateProductsSchema,
+            errors: [403, 404, 409, 503],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (!can(access.role, "data:edit"))
+            return sendError(reply, 403, "forbidden");
+          const params = installParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "store_template_not_found");
+          try {
+            reply.header("cache-control", "no-store");
+            return storeTemplateProductsSchema.parse(
+              await products.read(access, params.data.requestId),
+            );
+          } catch (error) {
+            return sendError(reply, ...failed(error));
+          }
+        },
+      );
+      scope.put(
+        `${path}/installs/:requestId/products`,
+        {
+          schema: routeSchema({
+            summary:
+              "Set the paid or free choice and linked website of an install's products",
+            tags: ["dashboards"],
+            body: storeTemplateProductsRequestSchema,
+            response: storeTemplateProductsSchema,
+            errors: [400, 403, 404, 409, 503],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) return;
+          if (!can(access.role, "data:edit"))
+            return sendError(reply, 403, "forbidden");
+          const params = installParamsSchema.safeParse(request.params);
+          if (!params.success)
+            return sendError(reply, 404, "store_template_not_found");
+          const input = parseBody(
+            storeTemplateProductsRequestSchema,
+            request,
+            reply,
+          );
+          if (!input) return;
+          try {
+            reply.header("cache-control", "no-store");
+            return storeTemplateProductsSchema.parse(
+              await products.update(access, params.data.requestId, input),
             );
           } catch (error) {
             return sendError(reply, ...failed(error));

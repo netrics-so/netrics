@@ -1,0 +1,264 @@
+"use client";
+import Link from "next/link";
+import { useId, useState } from "react";
+import type {
+  StoreProductPricing,
+  StoreTemplateProducts,
+} from "@netrics/contracts";
+import {
+  apiErrorMessage,
+  fetchResourceIcon,
+  getStoreTemplateProducts,
+  saveStoreTemplateProducts,
+} from "@/lib/api";
+import { useLocale, useT } from "@/lib/i18n/client";
+import { useLeaveGuard } from "@/components/studio-editor/use-leave-guard";
+
+type Product = StoreTemplateProducts["products"][number];
+type Choice = { pricing: StoreProductPricing; website: string };
+const websiteValue = (website: Product["website"]) =>
+  website ? `${website.connectionId}|${website.projectId}` : "";
+
+/**
+ * The identity of an install's apps (#708): icon, paid or free and the
+ * linked website, saved on their own (not through the scope review).
+ */
+export function StoreProductIdentity({
+  workspaceId,
+  requestId,
+  initial,
+}: {
+  workspaceId: string;
+  requestId: string;
+  initial: StoreTemplateProducts;
+}) {
+  const t = useT("storeTemplate"),
+    locale = useLocale(),
+    id = useId();
+  const [data, setData] = useState(initial),
+    [choices, setChoices] = useState<Record<string, Choice>>({}),
+    [pending, setPending] = useState<string | null>(null),
+    [error, setError] = useState<string | null>(null),
+    [notice, setNotice] = useState<string | null>(null);
+  const changed = Object.keys(choices);
+  useLeaveGuard(changed.length > 0, t("unsaved"));
+  const choiceOf = (product: Product): Choice =>
+    choices[product.productId] ?? {
+      pricing: product.pricing,
+      website: websiteValue(product.website),
+    };
+  function choose(product: Product, choice: Partial<Choice>) {
+    setError(null);
+    setNotice(null);
+    setChoices((current) => {
+      const next = { ...choiceOf(product), ...choice };
+      const rest = { ...current };
+      delete rest[product.productId];
+      return next.pricing === product.pricing &&
+        next.website === websiteValue(product.website)
+        ? rest
+        : { ...rest, [product.productId]: next };
+    });
+  }
+  async function save() {
+    setPending("save");
+    setError(null);
+    setNotice(null);
+    try {
+      setData(
+        await saveStoreTemplateProducts(workspaceId, requestId, {
+          products: changed.map((productId) => {
+            const choice = choices[productId]!,
+              cut = choice.website.indexOf("|");
+            return {
+              productId,
+              pricing: choice.pricing,
+              website: choice.website
+                ? {
+                    connectionId: choice.website.slice(0, cut),
+                    projectId: choice.website.slice(cut + 1),
+                  }
+                : null,
+            };
+          }),
+        }),
+      );
+      setChoices({});
+      setNotice(t("identitySaved"));
+    } catch (cause) {
+      setError(apiErrorMessage(cause, locale));
+    } finally {
+      setPending(null);
+    }
+  }
+  async function loadIcon(product: Product) {
+    if (!product.iconSource) return;
+    setPending("icon:" + product.productId);
+    setError(null);
+    setNotice(null);
+    try {
+      await fetchResourceIcon(
+        workspaceId,
+        product.iconSource.connectionId,
+        product.iconSource.resourceId,
+      );
+      setData(await getStoreTemplateProducts(workspaceId, requestId));
+    } catch (cause) {
+      setError(apiErrorMessage(cause, locale));
+    } finally {
+      setPending(null);
+    }
+  }
+  return (
+    <section className="card stack store-product-identity">
+      <h2>{t("identity")}</h2>
+      <p className="muted">{t("identityHelp")}</p>
+      {!data.products.length ? (
+        <p className="muted">{t("identityEmpty")}</p>
+      ) : null}
+      {data.products.map((product, index) => {
+        const choice = choiceOf(product);
+        const projectKnown =
+          !choice.website ||
+          data.websites.some((website) =>
+            website.projects.some(
+              (project) =>
+                `${website.connectionId}|${project.id}` === choice.website,
+            ),
+          );
+        return (
+          <div
+            className="store-template-group stack"
+            key={product.productId}
+            data-product={product.productId}
+          >
+            <div className="store-product-head">
+              {product.icon ? (
+                <img
+                  src={product.icon.url}
+                  alt=""
+                  width={48}
+                  height={48}
+                  className="store-product-icon"
+                />
+              ) : (
+                <span
+                  className="store-product-icon store-product-icon-empty"
+                  aria-hidden
+                />
+              )}
+              <span>
+                <strong>{product.name}</strong>
+                <small className="help">
+                  {product.apps
+                    .map(
+                      (app) =>
+                        `${app.name} · ${
+                          app.connectorId === "google-play"
+                            ? t("googlePlay")
+                            : t("appStoreConnect")
+                        }`,
+                    )
+                    .join(" · ")}
+                </small>
+              </span>
+            </div>
+            {!product.icon && product.iconSource ? (
+              <div className="actions">
+                <button
+                  type="button"
+                  disabled={!!pending}
+                  onClick={() => void loadIcon(product)}
+                >
+                  {pending === "icon:" + product.productId
+                    ? t("iconLoading")
+                    : t("useIcon")}
+                </button>
+              </div>
+            ) : null}
+            <div className="field">
+              <label htmlFor={`${id}-pricing-${index}`}>{t("pricing")}</label>
+              <select
+                id={`${id}-pricing-${index}`}
+                value={choice.pricing}
+                disabled={!!pending}
+                onChange={(event) =>
+                  choose(product, {
+                    pricing: event.target.value as StoreProductPricing,
+                  })
+                }
+              >
+                <option value="auto">
+                  {product.hadProceeds
+                    ? t("pricingAutoPaid")
+                    : t("pricingAutoFree")}
+                </option>
+                <option value="paid">{t("pricingPaid")}</option>
+                <option value="free">{t("pricingFree")}</option>
+              </select>
+              <p className="help">{t("pricingHelp")}</p>
+            </div>
+            <div className="field">
+              <label htmlFor={`${id}-website-${index}`}>{t("website")}</label>
+              <select
+                id={`${id}-website-${index}`}
+                value={choice.website}
+                disabled={
+                  !!pending || (!data.websites.length && !choice.website)
+                }
+                onChange={(event) =>
+                  choose(product, { website: event.target.value })
+                }
+              >
+                <option value="">{t("websiteNone")}</option>
+                {!projectKnown ? (
+                  <option value={choice.website}>{t("websiteMissing")}</option>
+                ) : null}
+                {data.websites.map((website) => (
+                  <optgroup key={website.connectionId} label={website.name}>
+                    {website.projects.map((project) => (
+                      <option
+                        key={project.id}
+                        value={`${website.connectionId}|${project.id}`}
+                      >
+                        {project.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          </div>
+        );
+      })}
+      {!data.websites.length ? (
+        <p className="help">
+          {t("websiteConnect")}{" "}
+          <Link href={`/workspaces/${workspaceId}/sources`}>
+            {t("connect")}
+          </Link>
+        </p>
+      ) : null}
+      <div className="actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={!!pending || !changed.length}
+          onClick={() => void save()}
+        >
+          {pending === "save" ? t("identitySaving") : t("identitySave")}
+        </button>
+      </div>
+      {notice ? (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
