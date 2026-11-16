@@ -21,7 +21,7 @@ import { ScrollView } from "@/components/scroll/scroll-view";
 import { DeviceWidgetView } from "@/components/studio/device-widget";
 import { SlidePlayer } from "@/components/studio/slide-player";
 import { TileNotice, TileView } from "@/components/tile-view";
-import { TvFrame, clockLocale, useClock, useIdle } from "@/components/tv-frame";
+import { TvFrame, clockTime, useClock, useIdle } from "@/components/tv-frame";
 import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
 import { I18nProvider, useLocale, useT } from "@/lib/i18n/client";
 import {
@@ -228,14 +228,6 @@ function PairingScreen({ state }: { state: KioskState }) {
   );
 }
 
-function formatTime(epochMs: number, timeZone: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(clockLocale(locale), {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(epochMs));
-}
-
 function OfflineMarker({
   state,
   timeZone,
@@ -252,7 +244,7 @@ function OfflineMarker({
     <span className="kiosk-offline" role="status" title={state.lastError ?? ""}>
       {state.updatedAt
         ? t("offlineSince", {
-            time: formatTime(state.updatedAt, timeZone, locale),
+            time: clockTime(state.updatedAt, timeZone, locale),
           })
         : t("offline")}
     </span>
@@ -351,7 +343,7 @@ function KioskSlides({
           offlineSince:
             state.updatedAt === null
               ? null
-              : formatTime(state.updatedAt, timeZone, locale),
+              : clockTime(state.updatedAt, timeZone, locale),
           refresh: kioskRefreshCycle(state, payload),
         }}
         images={state.images}

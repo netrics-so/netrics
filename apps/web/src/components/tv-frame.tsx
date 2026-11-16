@@ -12,6 +12,22 @@ export function clockLocale(locale: string): string {
   return locale === "en" ? "en-GB" : locale;
 }
 
+/**
+ * A moment as the screen clock shows it ("12:00"), in the workspace's zone:
+ * the offline note's last update on the kiosk and in TV mode (#649, #681).
+ */
+export function clockTime(
+  epochMs: number,
+  timeZone: string,
+  locale: string,
+): string {
+  return new Intl.DateTimeFormat(clockLocale(locale), {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(epochMs));
+}
+
 function formatClock(timeZone: string, locale: string): string {
   return new Intl.DateTimeFormat(clockLocale(locale), {
     timeZone,
