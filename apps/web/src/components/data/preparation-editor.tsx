@@ -121,9 +121,12 @@ export function PreparationEditor({
   const [removing, setRemoving] = useState(false),
     [bypass, setBypass] = useState("");
   const [adding, setAdding] = useState(false),
+    // A graph with an output is checked once the editor mounts, so it starts
+    // busy: the server markup, and the page until that check returns, offer
+    // no step or action that hydration or the check would drop (#729).
     [busy, setBusy] = useState<
       "preview" | "save" | "publish" | "history" | null
-    >(null);
+    >(graph.outputs[0] ? "preview" : null);
   const [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null);
   // A data error attributed to one step, kept with the graph it was found in.
