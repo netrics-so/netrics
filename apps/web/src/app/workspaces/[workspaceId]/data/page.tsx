@@ -59,6 +59,7 @@ export default async function DataPage({
         archivedAt,
       }))}
       activeProjectId={membership.activeProjectId}
+      canDelete={can(membership.role, "data:delete")}
       {...(typeof model === "string" ? { openModelId: model } : {})}
       {...(openModel ? { openModel } : {})}
       {...(typeof preparation === "string"

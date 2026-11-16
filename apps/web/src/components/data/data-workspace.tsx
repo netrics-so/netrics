@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { DataUsers } from "@netrics/contracts";
 import {
+  deleteDataItem,
   getDataSources,
   previewData,
   setDataProject,
@@ -22,6 +24,8 @@ import {
 import { activeProjectName, projectScope } from "@/lib/project-scope";
 import { ProjectSelect } from "@/components/project-select";
 import { dataErrorKey, newDataId } from "@/lib/data-editing";
+import { ApiError } from "@/lib/api";
+import { useConfirmation } from "@/components/confirm-dialog";
 import { useT, useLocale } from "@/lib/i18n/client";
 import { useLeaveGuard } from "@/components/studio-editor/use-leave-guard";
 import { DataTable } from "./data-table";
@@ -52,6 +56,7 @@ export function DataWorkspace({
   openModel,
   openPreparationId,
   initialSection,
+  canDelete = false,
 }: {
   workspaceId: string;
   initial: WorkspaceData;
@@ -69,6 +74,8 @@ export function DataWorkspace({
   openPreparationId?: string;
   /** The tab shown first when no editor opens. */
   initialSection?: Section;
+  /** Whether the caller may delete preparations and models (#671). */
+  canDelete?: boolean;
 }) {
   const t = useT("data"),
     dashboardsT = useT("dashboardsPage"),
@@ -187,6 +194,80 @@ export function DataWorkspace({
     [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewRevision, setPreviewRevision] = useState(0);
+  // Deleting a preparation or model (#671): the app's own confirmation,
+  // then what still uses it when the server refuses.
+  const confirmation = useConfirmation();
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteResult, setDeleteResult] = useState<
+    | { kind: "deleted"; name: string }
+    | { kind: "inUse"; name: string; usedBy: DataUsers }
+    | { kind: "failed"; message: string }
+    | null
+  >(null);
+  async function deleteItem(
+    kind: "preparation" | "model",
+    id: string,
+    name: string,
+  ) {
+    const confirmed = await confirmation.ask({
+      title: t(
+        kind === "preparation"
+          ? "delete.preparationTitle"
+          : "delete.modelTitle",
+        { name },
+      ),
+      text: t("delete.text"),
+      confirm: t("delete.confirm"),
+      cancel: t("delete.cancel"),
+    });
+    if (!confirmed) return;
+    setDeleting(id);
+    setDeleteResult(null);
+    try {
+      await deleteDataItem(
+        workspaceId,
+        kind === "preparation" ? "preparations" : "models",
+        id,
+      );
+      setData((value) => ({
+        ...value,
+        preparations: value.preparations.filter((p) => p.id !== id),
+        models: value.models.filter((m) => m.id !== id),
+      }));
+      if (editorRecord?.id === id) {
+        setDirty(false);
+        setEditor(null);
+      }
+      setDeleteResult({ kind: "deleted", name });
+      void refresh();
+    } catch (failure) {
+      setDeleteResult(
+        failure instanceof ApiError &&
+          failure.code === "data_in_use" &&
+          failure.details.usedBy
+          ? { kind: "inUse", name, usedBy: failure.details.usedBy }
+          : { kind: "failed", message: t(`errors.${dataErrorKey(failure)}`) },
+      );
+    } finally {
+      setDeleting(null);
+    }
+  }
+  const deleteButton = (
+    kind: "preparation" | "model",
+    id: string,
+    name: string,
+  ) =>
+    canDelete ? (
+      <button
+        type="button"
+        className="danger"
+        aria-label={t("delete.actionNamed", { name })}
+        disabled={deleting !== null}
+        onClick={() => void deleteItem(kind, id, name)}
+      >
+        {deleting === id ? t("delete.deleting") : t("delete.action")}
+      </button>
+    ) : null;
   useLeaveGuard(dirty, t("unsaved"));
   const referenceAbort = useRef<AbortController | null>(null);
   const [referenceLoading, setReferenceLoading] = useState<{
@@ -244,6 +325,7 @@ export function DataWorkspace({
     if (!dirty || window.confirm(t("unsaved"))) {
       setDirty(false);
       setError(null);
+      setDeleteResult(null);
       next();
     }
   }
@@ -368,6 +450,22 @@ export function DataWorkspace({
           </section>
         );
       })}
+      {confirmation.dialog}
+      {deleteResult?.kind === "deleted" ? (
+        <p className="notice" role="status">
+          {t("delete.deleted", { name: deleteResult.name })}
+        </p>
+      ) : deleteResult?.kind === "failed" ? (
+        <p className="error" role="alert">
+          {deleteResult.message}
+        </p>
+      ) : deleteResult?.kind === "inUse" ? (
+        <DataInUseNotice
+          workspaceId={workspaceId}
+          name={deleteResult.name}
+          usedBy={deleteResult.usedBy}
+        />
+      ) : null}
       <nav className="data-tabs" aria-label={t("title")}>
         {(["datasets", "preparations", "models"] as const).map((key) => (
           <button
@@ -391,14 +489,29 @@ export function DataWorkspace({
           {error}
         </p>
       ) : null}
-      {editorRecord && (projects.length > 0 || editorRecord.projectId) ? (
+      {editorRecord &&
+      (projects.length > 0 || editorRecord.projectId || canDelete) ? (
         <div className="data-editor-project">
-          <ProjectSelect
-            projects={projects}
-            value={editorRecord.projectId}
-            disabled={movingProject}
-            onChange={(projectId) => void moveToProject(projectId)}
-          />
+          {projects.length > 0 || editorRecord.projectId ? (
+            <ProjectSelect
+              projects={projects}
+              value={editorRecord.projectId}
+              disabled={movingProject}
+              onChange={(projectId) => void moveToProject(projectId)}
+            />
+          ) : null}
+          {editor?.kind === "preparation" || editor?.kind === "model"
+            ? deleteButton(
+                editor.kind,
+                editorRecord.id,
+                (editor.kind === "preparation"
+                  ? data.preparations.find((p) => p.id === editorRecord.id)
+                      ?.name
+                  : data.models.find((m) => m.id === editorRecord.id)?.name) ??
+                  editor.initial?.name ??
+                  "",
+              )
+            : null}
           {projectError ? (
             <p className="error" role="alert">
               {projectError}
@@ -612,6 +725,13 @@ export function DataWorkspace({
                     <th scope="col">{t("name")}</th>
                     <th scope="col">{t("draft")}</th>
                     <th scope="col">{t("output")}</th>
+                    {canDelete ? (
+                      <th scope="col">
+                        <span className="visually-hidden">
+                          {t("delete.action")}
+                        </span>
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -640,6 +760,15 @@ export function DataWorkspace({
                           : ""}
                       </td>
                       <td>{preparation.graph.outputs.length}</td>
+                      {canDelete ? (
+                        <td className="data-row-actions">
+                          {deleteButton(
+                            "preparation",
+                            preparation.id,
+                            preparation.name,
+                          )}
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -662,6 +791,13 @@ export function DataWorkspace({
                     <th scope="col">{t("name")}</th>
                     <th scope="col">{t("draft")}</th>
                     <th scope="col">{t("measures")}</th>
+                    {canDelete ? (
+                      <th scope="col">
+                        <span className="visually-hidden">
+                          {t("delete.action")}
+                        </span>
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -688,6 +824,11 @@ export function DataWorkspace({
                           : ""}
                       </td>
                       <td>{model.definition.measures.length}</td>
+                      {canDelete ? (
+                        <td className="data-row-actions">
+                          {deleteButton("model", model.id, model.name)}
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -697,5 +838,50 @@ export function DataWorkspace({
         </>
       )}
     </div>
+  );
+}
+
+/** Why a delete was refused: what still uses the item (#671). */
+export function DataInUseNotice({
+  workspaceId,
+  name,
+  usedBy,
+}: {
+  workspaceId: string;
+  name: string;
+  usedBy: DataUsers;
+}) {
+  const t = useT("data");
+  const hidden =
+    usedBy.hidden.preparations +
+    usedBy.hidden.models +
+    usedBy.hidden.dashboards;
+  return (
+    <section className="error data-in-use" role="alert">
+      <p>{t("delete.inUse", { name })}</p>
+      <ul>
+        {usedBy.preparations.map((item) => (
+          <li key={item.id}>{t("delete.preparation", { name: item.name })}</li>
+        ))}
+        {usedBy.models.map((item) => (
+          <li key={item.id}>{t("delete.model", { name: item.name })}</li>
+        ))}
+        {usedBy.dashboards.map((item) => (
+          <li key={item.id}>
+            <Link href={`/workspaces/${workspaceId}/dashboards/${item.id}`}>
+              {t("delete.dashboard", { name: item.name })}
+            </Link>
+          </li>
+        ))}
+        {usedBy.storeTemplates.map((item) => (
+          <li key={item.requestId}>
+            {item.name
+              ? t("delete.storeTemplate", { name: item.name })
+              : t("delete.storeTemplateUnnamed")}
+          </li>
+        ))}
+        {hidden ? <li>{t("delete.hidden", { count: hidden })}</li> : null}
+      </ul>
+    </section>
   );
 }

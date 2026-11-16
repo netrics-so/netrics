@@ -26,7 +26,7 @@ import type {
   SemanticModelDefinition,
   ModelQuery,
 } from "@netrics/domain";
-import { browserSend, ApiError } from "./api";
+import { browserSend, ApiError, readError } from "./api";
 import { referenceRecordPages } from "./data-editing";
 import { apiFetch } from "./api-fetch";
 import { projectQueryString } from "./project-scope";
@@ -145,6 +145,22 @@ export function setDataProject(
         base(workspaceId) + `/models/${id}/project`,
         { projectId },
       ).then((response) => response.model);
+}
+/**
+ * Deletes a preparation or model with its versions and drafts (#671).
+ * Throws ApiError "data_in_use" (409) with `details.usedBy` naming what
+ * still uses it.
+ */
+export async function deleteDataItem(
+  workspaceId: string,
+  kind: "preparations" | "models",
+  id: string,
+): Promise<void> {
+  const response = await fetch(
+    base(workspaceId) + `/${kind}/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) throw await readError(response);
 }
 export const previewData = (
   workspaceId: string,

@@ -671,3 +671,25 @@
   font-weight: 600;
   text-decoration: none;
 }
+
+/* Delete (#671): the row action and what still uses an item. */
+.data-row-actions {
+  text-align: end;
+  white-space: nowrap;
+}
+.data-in-use p {
+  margin: 0 0 6px;
+}
+.data-in-use ul {
+  margin: 0;
+  padding-inline-start: 20px;
+}
+.data-editor-project {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.data-editor-project > button.danger {
+  margin-inline-start: auto;
+}

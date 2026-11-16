@@ -28,6 +28,26 @@ export const dataDe: Catalog<typeof dataEn> = {
       confirm: "Veröffentlichen",
       cancel: "Abbrechen",
     },
+    delete: {
+      action: "Löschen",
+      actionNamed: "{name} löschen",
+      preparationTitle: "Die Aufbereitung „{name}“ löschen?",
+      modelTitle: "Das Modell „{name}“ löschen?",
+      text: "Damit werden alle veröffentlichten Versionen und der Entwurf gelöscht. Das lässt sich nicht rückgängig machen.",
+      confirm: "Löschen",
+      cancel: "Abbrechen",
+      deleting: "Wird gelöscht …",
+      deleted: "„{name}“ wurde gelöscht.",
+      inUse:
+        "„{name}“ wird noch verwendet und lässt sich deshalb nicht löschen. Entferne es zuerst hier:",
+      preparation: "Aufbereitung „{name}“",
+      model: "Modell „{name}“",
+      dashboard: "Dashboard „{name}“",
+      storeTemplate: "Vorlage „{name}“",
+      storeTemplateUnnamed: "Eine Vorlage",
+      hidden:
+        "{count, plural, one {# weiteres, das du nicht öffnen kannst} other {# weitere, die du nicht öffnen kannst}}",
+    },
     dashboard: {
       sourceReconnect: "Verbinde {name} erneut, um Importe fortzusetzen.",
       sourceAccess:

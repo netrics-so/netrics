@@ -21,6 +21,7 @@ import {
   semanticModelDefinitionSchema,
   type DataImpact,
   type DataImpactTarget,
+  type DataUsers,
   type SourceDatasetDefinition,
 } from "@netrics/contracts";
 import {
@@ -71,6 +72,7 @@ import {
 } from "@netrics/database";
 import {
   collectDataImpact,
+  collectDataUsers,
   loadImpactGraph,
   redactDataImpact,
 } from "./impact.js";
@@ -84,6 +86,13 @@ export class DataServiceError extends Error {
   ) {
     super(code);
     this.name = "DataServiceError";
+  }
+}
+/** A preparation or model to delete is still used (409 data_in_use, #671). */
+export class DataInUseError extends DataServiceError {
+  constructor(readonly usedBy: DataUsers) {
+    super("data_in_use", 409);
+    this.name = "DataInUseError";
   }
 }
 /**
@@ -1557,10 +1566,200 @@ export function createDataService(
       db,
       "read committed",
     );
+  /**
+   * The store-template installs `id` belongs to (#671): a record of the
+   * install that is not detached, of an install whose dashboard still
+   * exists, or a draft of the install's open update. An install whose
+   * dashboard was deleted shows nothing any more, and its updates skip
+   * records deleted since; without that exception a template item could
+   * never be deleted, as installs are never removed.
+   */
+  const templateUsers = async (
+    tx: Transaction,
+    workspaceId: string,
+    kind: "preparation" | "model",
+    id: string,
+  ) => {
+    const records = schema.dataTemplateRecords,
+      installs = schema.dataTemplateInstalls,
+      updates = schema.dataTemplateUpdates;
+    const tracked = await tx
+      .select({ requestId: records.requestId })
+      .from(records)
+      .where(
+        and(
+          eq(records.workspaceId, workspaceId),
+          eq(records.recordId, id),
+          eq(records.kind, kind),
+          isNull(records.detachedAt),
+        ),
+      );
+    const drafting = await tx
+      .select({ requestId: updates.requestId })
+      .from(updates)
+      .where(
+        and(
+          eq(updates.workspaceId, workspaceId),
+          isNull(updates.closedAt),
+          sql`${updates.drafts} @> ${JSON.stringify([{ recordId: id }])}::jsonb`,
+        ),
+      );
+    const requestIds = [
+      ...new Set([...tracked, ...drafting].map((row) => row.requestId)),
+    ];
+    if (!requestIds.length) return [];
+    const rows = await tx
+      .select({
+        requestId: installs.requestId,
+        inputs: installs.inputs,
+        dashboardName: schema.dashboards.name,
+      })
+      .from(installs)
+      .leftJoin(
+        records,
+        and(
+          eq(records.workspaceId, installs.workspaceId),
+          eq(records.requestId, installs.requestId),
+          eq(records.kind, "dashboard"),
+          isNull(records.detachedAt),
+        ),
+      )
+      .leftJoin(
+        schema.dashboards,
+        and(
+          eq(schema.dashboards.workspaceId, workspaceId),
+          eq(schema.dashboards.id, records.recordId),
+        ),
+      )
+      .where(
+        and(
+          eq(installs.workspaceId, workspaceId),
+          inArray(installs.requestId, requestIds),
+        ),
+      );
+    const drafted = new Set(drafting.map((row) => row.requestId));
+    const used = new Map<string, string>();
+    for (const row of rows) {
+      if (row.dashboardName === null && !drafted.has(row.requestId)) continue;
+      const inputs = row.inputs as { name?: unknown } | null;
+      used.set(
+        row.requestId,
+        row.dashboardName ??
+          used.get(row.requestId) ??
+          (typeof inputs?.name === "string" ? inputs.name : ""),
+      );
+    }
+    return [...used]
+      .map(([requestId, name]) => ({ requestId, name }))
+      .sort((a, b) =>
+        a.name < b.name
+          ? -1
+          : a.name > b.name
+            ? 1
+            : a.requestId < b.requestId
+              ? -1
+              : 1,
+      );
+  };
+  /**
+   * Deletes a preparation or model with its versions or releases and
+   * drafts (#671); the prepared-output cache and query snapshots go with
+   * them (cascade). Refused (409 data_in_use) while anything uses it,
+   * naming what does. Items of archived projects can be deleted too.
+   */
+  const remove = (
+    actor: DataActor & { role: WorkspaceRole },
+    kind: "preparation" | "model",
+    id: string,
+  ) =>
+    run(actor, async (tx) => {
+      const row =
+        kind === "preparation"
+          ? await findPreparation(tx, actor.workspaceId, id, true)
+          : await findDataModel(tx, actor.workspaceId, id, true);
+      // Widgets the impact graph cannot read (a binding that no longer
+      // parses) still hold the model's foreign key.
+      const unreadable =
+        kind === "model"
+          ? await tx
+              .select({ dashboardId: schema.dashboardWidgets.dashboardId })
+              .from(schema.dashboardWidgets)
+              .where(
+                and(
+                  eq(schema.dashboardWidgets.workspaceId, actor.workspaceId),
+                  eq(schema.dashboardWidgets.modelId, id),
+                ),
+              )
+          : [];
+      const users = collectDataUsers(
+        await loadImpactGraph(tx, actor.workspaceId),
+        { kind, id },
+        unreadable.map((widget) => widget.dashboardId),
+      );
+      const storeTemplates = await templateUsers(
+        tx,
+        actor.workspaceId,
+        kind,
+        id,
+      );
+      if (
+        users.preparations.length ||
+        users.models.length ||
+        users.dashboards.length ||
+        storeTemplates.length
+      ) {
+        const data = can(actor.role, "data:edit"),
+          dashboards = can(actor.role, "dashboards:view");
+        throw new DataInUseError({
+          preparations: data ? users.preparations : [],
+          models: data ? users.models : [],
+          dashboards: dashboards ? users.dashboards : [],
+          storeTemplates: dashboards ? storeTemplates : [],
+          hidden: {
+            preparations: data ? 0 : users.preparations.length,
+            models: data ? 0 : users.models.length,
+            dashboards: dashboards
+              ? 0
+              : users.dashboards.length + storeTemplates.length,
+          },
+        });
+      }
+      if (kind === "preparation") preparationChanged(id);
+      try {
+        if (kind === "preparation")
+          await tx
+            .delete(schema.dataPreparations)
+            .where(
+              and(
+                eq(schema.dataPreparations.workspaceId, actor.workspaceId),
+                eq(schema.dataPreparations.id, id),
+              ),
+            );
+        else
+          await tx
+            .delete(schema.dataModels)
+            .where(
+              and(
+                eq(schema.dataModels.workspaceId, actor.workspaceId),
+                eq(schema.dataModels.id, id),
+              ),
+            );
+      } catch (error) {
+        // A widget saved concurrently holds the model's foreign key: a
+        // conflict, and the next try names it.
+        if (hasSqlstate(error, "23503")) fail("version_conflict", 409);
+        throw error;
+      }
+      await audit(tx, actor, `data.${kind}_deleted`, id, {
+        name: row.name,
+        publishedVersion: row.publishedVersion,
+      });
+    });
   return {
     listSources,
     setProject,
     impact,
+    remove,
     previewModel: (
       actor: DataActor,
       definition: SemanticModelDefinition,

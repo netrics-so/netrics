@@ -571,3 +571,29 @@ export const dataImpactResponseSchema = z.object({
 });
 export type DataImpactTarget = z.infer<typeof dataImpactTargetSchema>;
 export type DataImpact = z.infer<typeof dataImpactResponseSchema>;
+
+/**
+ * What still uses a preparation or model, so it cannot be deleted (#671):
+ * the preparations and models that read it, the dashboards that show it
+ * (a widget or a shared filter mapping) and the store-template installs it
+ * belongs to. Direct users only: removing these is enough. Items the caller
+ * may not see are counted in `hidden`, not named.
+ */
+export const dataUsersSchema = z.object({
+  preparations: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  models: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  dashboards: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  storeTemplates: z.array(z.object({ requestId: z.uuid(), name: z.string() })),
+  hidden: z.object({
+    preparations: z.number().int().nonnegative(),
+    models: z.number().int().nonnegative(),
+    dashboards: z.number().int().nonnegative(),
+  }),
+});
+export type DataUsers = z.infer<typeof dataUsersSchema>;
+/** 409 when a preparation or model to delete is still used. */
+export const dataInUseResponseSchema = z.object({
+  error: z.literal("data_in_use"),
+  usedBy: dataUsersSchema,
+});
+export type DataInUseResponse = z.infer<typeof dataInUseResponseSchema>;

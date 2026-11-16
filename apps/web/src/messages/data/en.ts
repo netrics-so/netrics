@@ -23,6 +23,26 @@ export const dataEn = {
       confirm: "Publish",
       cancel: "Cancel",
     },
+    delete: {
+      action: "Delete",
+      actionNamed: "Delete {name}",
+      preparationTitle: "Delete the preparation “{name}”?",
+      modelTitle: "Delete the model “{name}”?",
+      text: "This deletes every published version and the draft. It can’t be undone.",
+      confirm: "Delete",
+      cancel: "Cancel",
+      deleting: "Deleting…",
+      deleted: "“{name}” was deleted.",
+      inUse:
+        "“{name}” is still used, so it can’t be deleted. Remove it from these first:",
+      preparation: "Preparation “{name}”",
+      model: "Model “{name}”",
+      dashboard: "Dashboard “{name}”",
+      storeTemplate: "Template “{name}”",
+      storeTemplateUnnamed: "A template",
+      hidden:
+        "{count, plural, one {# more you can't open} other {# more you can't open}}",
+    },
     dashboard: {
       sourceReconnect: "Reconnect {name} to resume imports.",
       sourceAccess: "Update access for {name} to resume imports.",
