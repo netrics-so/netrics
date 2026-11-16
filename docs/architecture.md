@@ -283,7 +283,8 @@ Connector code can explain what it skipped or parked through `runtime.log`
 and optional scalar fields (`runtime.log?.info("report not published yet",
 { app, day })`). The host writes the lines to its log attributed to the
 connection, the job (the run) and the attempt, and keeps secrets out: it drops
-fields that are not scalars or have malformed names, replaces the value of
+fields that are not scalars, have malformed names or names that contain
+credential material, replaces the value of
 every field whose name looks secret-like (secret, token, password, credential,
 key, auth, cookie, session, signature) with `[redacted]`, strips the
 connection's credential values and anything that looks like a bearer value,

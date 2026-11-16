@@ -91,6 +91,20 @@ describe("createConnectorLogger", () => {
     expect(entries[0]!.fields).toEqual({ detail: "sent [redacted]" });
   });
 
+  it("drops fields whose name carries a credential value or a JWT", () => {
+    const secret = "sk-live-logging-token-456";
+    const { log, entries } = logger({ token: secret });
+    log.warn("m", {
+      [secret]: "rejected",
+      [`app_${secret}`]: "rejected",
+      [JWT]: "rejected",
+      app: "123",
+    });
+    expect(entries[0]!.fields).toEqual({ app: "123" });
+    expect(JSON.stringify(entries)).not.toContain(secret);
+    expect(JSON.stringify(entries)).not.toContain(JWT);
+  });
+
   it("redacts bearer values, JWTs and PEM blocks it does not know", () => {
     const { log, entries } = logger();
     log.info(`Authorization: Bearer ${"a".repeat(40)}`, {

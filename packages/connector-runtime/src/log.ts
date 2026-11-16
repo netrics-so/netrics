@@ -89,6 +89,9 @@ export function createConnectorLogger(input: {
     for (const [name, value] of Object.entries(fields)) {
       if (count >= CONNECTOR_LOG_MAX_FIELDS) break;
       if (!FIELD_NAME_PATTERN.test(name)) continue;
+      // A name that carries credential material (or a bearer, JWT or PEM
+      // shape) would leak it as a key: dropped, not redacted.
+      if (clean(name) !== name) continue;
       if (SECRET_FIELD_PATTERN.test(name)) {
         result[name] = REDACTED;
       } else if (typeof value === "string") {
