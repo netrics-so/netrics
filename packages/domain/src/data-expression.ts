@@ -145,10 +145,15 @@ export class ProcessingBudget {
   /** Results rounded to the supported 18 decimal places so far. */
   decimalRoundings = 0;
   /**
-   * The last cell whose own operation rounded to 18 places from exact
-   * operands: an explicit ROUND of it asked for that rounding (#645).
+   * Decimal cells of this run that may differ from the exact result: a
+   * bound on the difference, and how many roundings it accounts for. A
+   * ROUND whose operand stays within one rounding step drops the warning
+   * (#645); a rounding the bound misses leaves the warning in place.
    */
-  lastPlaceRounding: unknown = undefined;
+  readonly decimalErrors = new WeakMap<
+    object,
+    { error: Ratio; roundings: number }
+  >();
   readonly maximum: number;
   readonly maxRows: number;
   readonly maxOutputBytes: number;
@@ -215,6 +220,35 @@ function halfEven(
   if (remainder * 2n > d || (remainder * 2n === d && q % 2n !== 0n)) q++;
   return { units: negative ? -q : q, rounded: remainder !== 0n };
 }
+/** A non-negative exact fraction, for error bounds of decimal results. */
+interface Ratio {
+  n: bigint;
+  d: bigint;
+}
+const ZERO: Ratio = { n: 0n, d: 1n };
+/** Half a unit in the 18th place: the most a half-even rounding there moves. */
+const HALF_ULP: Ratio = { n: 1n, d: 2n * 10n ** 18n };
+const ratioOf = (text: string): Ratio => {
+  const { units, scale } = decimal(text);
+  return { n: units, d: power(scale) };
+};
+const ratioAdd = (a: Ratio, b: Ratio): Ratio => ({
+  n: a.n * b.d + b.n * a.d,
+  d: a.d * b.d,
+});
+const ratioSub = (a: Ratio, b: Ratio): Ratio => ({
+  n: a.n * b.d - b.n * a.d,
+  d: a.d * b.d,
+});
+const ratioMul = (a: Ratio, b: Ratio): Ratio => ({
+  n: a.n * b.n,
+  d: a.d * b.d,
+});
+const ratioAbs = (a: Ratio): Ratio => ({ n: a.n < 0n ? -a.n : a.n, d: a.d });
+/** `a` rounded half-even to `scale` places, in units of that place. */
+const ratioRound = (a: Ratio, scale: number): bigint =>
+  halfEven(a.n * power(scale), a.d).units;
+
 /** Precision lost that nobody asked for: beyond the supported 18 places. */
 function implicitlyRounded(budget: ProcessingBudget) {
   budget.warnings.add("decimal_rounded");
@@ -506,6 +540,62 @@ export interface CompiledExpression {
   evaluate(row: DataRow, budget?: ProcessingBudget): DataCell;
 }
 
+/** `to` keeps the error bound of `from` (the same value, or its sign changed). */
+function carry(budget: ProcessingBudget, from: DataCell, to: DataCell) {
+  const bound = budget.decimalErrors.get(from);
+  if (bound) budget.decimalErrors.set(to, bound);
+  return to;
+}
+
+/**
+ * The error bound of `cell = x fn y` from the operands' bounds (an operand
+ * without one is exact) and this operation's own `roundings` (at most half
+ * a unit in the 18th place). A quotient whose divisor may be zero within
+ * its bound, or a value rounded more than once, gets none: its roundings
+ * stay unaccounted for, and a ROUND of it keeps the warning.
+ */
+function boundError(
+  budget: ProcessingBudget,
+  cell: DataCell,
+  fn: "add" | "subtract" | "multiply" | "divide",
+  x: Ratio,
+  y: Ratio,
+  a: DataCell,
+  b: DataCell,
+  roundings: number,
+) {
+  const ba = budget.decimalErrors.get(a),
+    bb = budget.decimalErrors.get(b);
+  const ea = ba?.error ?? ZERO,
+    eb = bb?.error ?? ZERO;
+  const ax = ratioAbs(x),
+    ay = ratioAbs(y);
+  let error: Ratio;
+  if (fn === "add" || fn === "subtract") error = ratioAdd(ea, eb);
+  else if (fn === "multiply")
+    error = ratioAdd(
+      ratioAdd(ratioMul(ax, eb), ratioMul(ay, ea)),
+      ratioMul(ea, eb),
+    );
+  else {
+    // |x/y - X/Y| <= (|x|·eb + |y|·ea) / (|y|·(|y| - eb)), when |y| > eb.
+    const margin = ratioSub(ay, eb);
+    if (margin.n <= 0n) return;
+    const top = ratioAdd(ratioMul(ax, eb), ratioMul(ay, ea));
+    const bottom = ratioMul(ay, margin);
+    error = { n: top.n * bottom.d, d: top.d * bottom.n };
+  }
+  if (roundings)
+    error = ratioAdd(
+      error,
+      ratioMul(HALF_ULP, { n: BigInt(roundings), d: 1n }),
+    );
+  const total = (ba?.roundings ?? 0) + (bb?.roundings ?? 0) + roundings;
+  // Only one rounding is traced to ROUND: a value rounded again on its way
+  // keeps its warning.
+  if (total === 1) budget.decimalErrors.set(cell, { error, roundings: total });
+}
+
 /** Compile once, before reading rows. Never eval user code or interpolate SQL. */
 export function compileRowExpression(
   expression: DataExpression,
@@ -793,11 +883,13 @@ export function compileRowExpression(
                   ? Number(cell.value)
                   : cell.value,
         });
-        if (fn === "if") return promote(at(at(0).value === true ? 1 : 2));
+        // The chosen value keeps its error bound.
+        const chosen = (cell: DataCell) => carry(budget, cell, promote(cell));
+        if (fn === "if") return chosen(at(at(0).value === true ? 1 : 2));
         if (fn === "coalesce") {
           for (const arg of args) {
             const cell = arg.run(row, budget);
-            if (cell.value !== null) return promote(cell);
+            if (cell.value !== null) return chosen(cell);
           }
           return {
             value: null,
@@ -875,17 +967,26 @@ export function compileRowExpression(
             dataFail("expression_units_incompatible");
           if (result.type === "decimal") {
             const before = budget.decimalRoundings;
-            const cell = out(
-              exactDecimal(
-                fn as "add" | "subtract" | "multiply" | "divide",
-                toDecimal(a.value, a.type),
-                toDecimal(b!.value, b!.type),
-                budget,
-              ),
+            const x = toDecimal(a.value, a.type),
+              y = toDecimal(b!.value, b!.type);
+            const value = exactDecimal(
+              fn as "add" | "subtract" | "multiply" | "divide",
+              x,
+              y,
+              budget,
             );
-            // Rounded here, from operands that were exact.
-            if (budget.decimalRoundings > before && before === roundings)
-              budget.lastPlaceRounding = cell;
+            const cell = out(value);
+            if (value !== null)
+              boundError(
+                budget,
+                cell,
+                fn as "add" | "subtract" | "multiply" | "divide",
+                ratioOf(x),
+                ratioOf(y),
+                a,
+                b!,
+                budget.decimalRoundings - before,
+              );
             return cell;
           }
           const x = Number(a.value),
@@ -939,18 +1040,23 @@ export function compileRowExpression(
         if (fn === "negate" || fn === "abs") {
           if (a.type === "decimal") {
             const d = decimal(a.value);
-            return out(
-              decimalText(
-                {
-                  units:
-                    fn === "negate"
-                      ? -d.units
-                      : d.units < 0n
+            // ||x| - |X|| <= |x - X|: the bound carries over.
+            return carry(
+              budget,
+              a,
+              out(
+                decimalText(
+                  {
+                    units:
+                      fn === "negate"
                         ? -d.units
-                        : d.units,
-                  scale: d.scale,
-                },
-                budget,
+                        : d.units < 0n
+                          ? -d.units
+                          : d.units,
+                    scale: d.scale,
+                  },
+                  budget,
+                ),
               ),
             );
           }
@@ -966,18 +1072,23 @@ export function compileRowExpression(
             dataFail("expression_round_scale_invalid");
           if (a.type === "decimal") {
             const text = decimalText(decimal(a.value), budget, scale, true);
-            // ROUND(DIVIDE(a, b), 2): the operand's own rounding to 18
-            // places is below the places asked for, so nothing was lost
-            // that the formula did not ask to lose (#645). Unless the
-            // operand sits exactly halfway at those places: rounding twice
-            // may then differ from rounding the exact value once.
-            const fraction = String(a.value).split(".")[1] ?? "";
+            // ROUND(DIVIDE(a, b), 2): when every value the exact operand
+            // can have (within the bound of the roundings before) rounds to
+            // the same result, nothing was lost that the formula did not
+            // ask to lose (#645). Near a halfway point they may not.
+            const bound = budget.decimalErrors.get(a);
             if (
-              a === budget.lastPlaceRounding &&
-              !(fraction.length === scale + 1 && fraction.endsWith("5"))
+              bound &&
+              budget.decimalRoundings - roundings === bound.roundings
             ) {
-              budget.decimalRoundings = roundings;
-              if (!warned) budget.warnings.delete("decimal_rounded");
+              const x = ratioOf(String(a.value));
+              if (
+                ratioRound(ratioSub(x, bound.error), scale) ===
+                ratioRound(ratioAdd(x, bound.error), scale)
+              ) {
+                budget.decimalRoundings = roundings;
+                if (!warned) budget.warnings.delete("decimal_rounded");
+              }
             }
             return out(text);
           }
@@ -1019,7 +1130,7 @@ export function compileRowExpression(
             budget.warnings.add("number_converted_to_decimal");
           const text = String(a.value);
           decimal(text);
-          return out(text);
+          return carry(budget, a, out(text));
         }
         if (fn === "to_number" || fn === "to_integer") {
           if (typeof a.value !== "number" && typeof a.value !== "string")
