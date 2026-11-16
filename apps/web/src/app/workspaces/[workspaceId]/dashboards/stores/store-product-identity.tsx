@@ -43,6 +43,7 @@ export function StoreProductIdentity({
   initial,
   guard,
   locked = false,
+  onUnsaved,
 }: {
   workspaceId: string;
   requestId: string;
@@ -51,6 +52,11 @@ export function StoreProductIdentity({
   guard?: RefObject<IdentityGuard | null>;
   /** Read-only while the scope change beside it applies and navigates. */
   locked?: boolean;
+  /**
+   * Told whether choices are unsaved, for the one leave guard of the page
+   * (#723); the section then has none of its own.
+   */
+  onUnsaved?: (unsaved: boolean) => void;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
@@ -67,7 +73,11 @@ export function StoreProductIdentity({
     [notice, setNotice] = useState<string | null>(null);
   const changed = [...choices.keys()],
     busy = !!pending || locked;
-  useLeaveGuard(changed.length > 0, t("unsaved"));
+  const unsaved = changed.length > 0;
+  useLeaveGuard(!onUnsaved && unsaved, t("unsaved"));
+  useEffect(() => {
+    onUnsaved?.(unsaved);
+  }, [unsaved, onUnsaved]);
   const choiceOf = (product: Product): Choice =>
     choices.get(product.productId) ?? {
       pricing: product.pricing,
