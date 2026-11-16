@@ -503,11 +503,13 @@ export function createStoreTemplateUpdateService(deps: {
   }
 
   /**
-   * The icons of `apps` the daily refresh replaced since (gone from the
-   * workspace's images) → the product's current icon (null: none now).
-   * Applied to the apps an update builds from (withCurrentIcons) and to
-   * the active dashboard's baseline alike, so a refreshed logo is never a
-   * change of either side.
+   * The icons of `apps` gone from the workspace's images since → the
+   * product's current icon (null: none now). Applied to the apps an update
+   * builds from (withCurrentIcons) and to the active dashboard's baseline
+   * alike, so a refreshed logo is never a change of either side. The daily
+   * refresh moves a baseline to its icon's successor of the same resource
+   * itself (replaceImageReferences, #734); here only baselines whose icon
+   * was replaced before that are read as the product's current icon.
    */
   async function iconReplacements(
     tx: Transaction,

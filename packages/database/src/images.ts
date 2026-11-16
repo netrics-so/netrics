@@ -333,9 +333,10 @@ export async function listResourceIcons(
 
 /**
  * Points every use of one image (dashboard and slide logos, slide
- * backgrounds, image widgets) at another image of the same workspace: a refreshed icon
- * replaces the old one where it is shown. Dashboard versions are left
- * alone, so an open studio keeps its draft.
+ * backgrounds, image widgets, template dashboard baselines) at another image
+ * of the same workspace: a refreshed icon replaces the old one where it is
+ * shown. Dashboard versions are left alone, so an open studio keeps its
+ * draft.
  */
 export async function replaceImageReferences(
   tx: Transaction,
@@ -377,6 +378,24 @@ export async function replaceImageReferences(
       and(
         eq(schema.dashboardWidgets.workspaceId, workspaceId),
         eq(schema.dashboardWidgets.imageId, fromImageId),
+      ),
+    );
+  // A template dashboard's baseline (what the template built, and the apps
+  // it was built from) follows too, so an update compares the refreshed
+  // icon of the same resource, not an image that is gone (#734). Image ids
+  // are JSON strings there; the quotes match whole values only.
+  const from = JSON.stringify(fromImageId),
+    to = JSON.stringify(toImageId);
+  await tx
+    .update(schema.dataTemplateRecords)
+    .set({
+      original: sql`replace(${schema.dataTemplateRecords.original}::text, ${from}, ${to})::jsonb`,
+    })
+    .where(
+      and(
+        eq(schema.dataTemplateRecords.workspaceId, workspaceId),
+        eq(schema.dataTemplateRecords.kind, "dashboard"),
+        sql`strpos(${schema.dataTemplateRecords.original}::text, ${from}) > 0`,
       ),
     );
 }
