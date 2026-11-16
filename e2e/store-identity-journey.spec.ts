@@ -285,3 +285,57 @@ test("the apps can still be changed when app identity is over the row limit", as
     page.getByRole("heading", { name: s.editReviewTitle }),
   ).toBeVisible();
 });
+
+/**
+ * The scope form and the app identity share one leave guard (#723):
+ * leaving by a link in the app asks once, however many of them have unsaved
+ * changes, and not at all without any.
+ */
+test("leaving with unsaved scope and identity asks once", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const { storeTemplate: s } = catalog(locale);
+
+  const { workspaceId } = await startWorkspace(page, locale);
+  const { requestId, connections } = await installWithConnections(
+    page,
+    workspaceId,
+  );
+  const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
+  try {
+    await sql`insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${connections.apple}, ${workspaceId}, '1001', 'Focus', 'app')`;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+
+  // The guard asks with the browser's confirm, as on every editor page.
+  const asked: string[] = [];
+  page.on("dialog", (dialog) => {
+    asked.push(dialog.type());
+    void dialog.accept();
+  });
+  const leave = async (change: { scope: boolean; identity: boolean }) => {
+    await page.goto(
+      `/workspaces/${workspaceId}/dashboards/stores?install=${requestId}`,
+    );
+    const pricing = page
+      .locator(`[data-product="${connections.apple}:1001"]`)
+      .getByLabel(s.pricing);
+    await expect(pricing).toBeEnabled();
+    if (change.identity) await pricing.selectOption("free");
+    if (change.scope)
+      await page.getByRole("checkbox", { name: /Second Play/ }).check();
+    asked.length = 0;
+    await page.getByRole("link", { name: s.editMappingLink }).click();
+    await expect(page).toHaveURL(`/workspaces/${workspaceId}/data`);
+    return [...asked];
+  };
+
+  expect(await leave({ scope: false, identity: false })).toEqual([]);
+  expect(await leave({ scope: false, identity: true })).toEqual(["confirm"]);
+  expect(await leave({ scope: true, identity: false })).toEqual(["confirm"]);
+  expect(await leave({ scope: true, identity: true })).toEqual(["confirm"]);
+});

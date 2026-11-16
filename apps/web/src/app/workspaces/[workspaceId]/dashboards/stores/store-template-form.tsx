@@ -46,6 +46,7 @@ export function StoreTemplateForm({
   initialOptions = null,
   identityGuard,
   onApplying,
+  onUnsaved,
 }: {
   workspaceId: string;
   initialConnectionId?: string;
@@ -68,6 +69,11 @@ export function StoreTemplateForm({
    * navigation that follows it (the identity beside the form is locked).
    */
   onApplying?: (applying: boolean) => void;
+  /**
+   * Edit mode: told whether the form has unsaved changes, for the one
+   * leave guard of the page (#723); the form then has none of its own.
+   */
+  onUnsaved?: (unsaved: boolean) => void;
 }) {
   const t = useT("storeTemplate"),
     locale = useLocale(),
@@ -109,7 +115,11 @@ export function StoreTemplateForm({
       omittedApps: string[];
     } | null>(null);
   const initialized = useRef(!!install || !!initialOptions);
-  useLeaveGuard(dirty && !done, t("unsaved"));
+  const unsaved = dirty && !done;
+  useLeaveGuard(!onUnsaved && unsaved, t("unsaved"));
+  useEffect(() => {
+    onUnsaved?.(unsaved);
+  }, [unsaved, onUnsaved]);
   const applying = pending === "create" || (!!install && done);
   useEffect(() => {
     onApplying?.(applying);

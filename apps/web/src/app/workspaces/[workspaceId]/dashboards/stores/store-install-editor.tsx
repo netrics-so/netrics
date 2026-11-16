@@ -5,6 +5,8 @@ import type {
   StoreTemplateProducts,
   StoreTemplateScope,
 } from "@netrics/contracts";
+import { useLeaveGuard } from "@/components/studio-editor/use-leave-guard";
+import { useT } from "@/lib/i18n/client";
 import {
   StoreProductIdentity,
   StoreProductIdentityUnavailable,
@@ -15,7 +17,8 @@ import { StoreTemplateForm } from "./store-template-form";
 /**
  * Edit mode of an install: its app scope and its app identity, which share
  * one unsaved-changes guard (applying the scope saves or discards unsaved
- * identity choices first, #708).
+ * identity choices first, #708), and one leave guard: leaving with either
+ * or both unsaved asks once (#723).
  */
 export function StoreInstallEditor({
   workspaceId,
@@ -34,8 +37,12 @@ export function StoreInstallEditor({
     | { value: StoreTemplateProducts }
     | { error: { status: number; code: string } };
 }) {
+  const t = useT("storeTemplate");
   const guard = useRef<IdentityGuard | null>(null),
-    [applying, setApplying] = useState(false);
+    [applying, setApplying] = useState(false),
+    [scopeUnsaved, setScopeUnsaved] = useState(false),
+    [identityUnsaved, setIdentityUnsaved] = useState(false);
+  useLeaveGuard(scopeUnsaved || identityUnsaved, t("unsaved"));
   return (
     <>
       <StoreTemplateForm
@@ -44,6 +51,7 @@ export function StoreInstallEditor({
         initialOptions={options}
         identityGuard={guard}
         onApplying={setApplying}
+        onUnsaved={setScopeUnsaved}
       />
       <div className="store-template-form">
         {"value" in products ? (
@@ -53,6 +61,7 @@ export function StoreInstallEditor({
             initial={products.value}
             guard={guard}
             locked={applying}
+            onUnsaved={setIdentityUnsaved}
           />
         ) : (
           <StoreProductIdentityUnavailable error={products.error} />
