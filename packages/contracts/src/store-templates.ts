@@ -286,6 +286,12 @@ export const storeTemplateCopyRequestSchema = z.strictObject({
  * developer proceeds, Google Play earnings rows with a positive amount).
  */
 export const storeProductPricingSchema = z.enum(["auto", "paid", "free"]);
+/**
+ * The longest product id that can have settings (characters). The tables
+ * accept longer free-text ids; such a product is listed as not editable
+ * (`store_product_id_too_long`) and a save of it answers 400 with that code.
+ */
+export const STORE_PRODUCT_ID_MAX = 500;
 export type StoreProductPricing = z.infer<typeof storeProductPricingSchema>;
 /** A Vercel Web Analytics project (a resource of a Vercel connection). */
 const storeProductWebsiteSchema = z.strictObject({
@@ -323,6 +329,13 @@ export const storeTemplateProductsSchema = z.object({
       pricing: storeProductPricingSchema,
       hadProceeds: z.boolean(),
       paid: z.boolean(),
+      /**
+       * Why the product's settings cannot be saved; null when they can. An
+       * id longer than STORE_PRODUCT_ID_MAX, or empty (valid in the tables).
+       */
+      notEditable: z
+        .enum(["store_product_id_too_long", "store_product_id_empty"])
+        .nullable(),
       /** `name` is null when the project is no longer listed. */
       website: z
         .object({
@@ -353,6 +366,10 @@ export const storeTemplateProductsRequestSchema = z.strictObject({
   products: z
     .array(
       z.strictObject({
+        /**
+         * At most STORE_PRODUCT_ID_MAX characters; a longer id answers 400
+         * store_product_id_too_long (the transport bound is the tables').
+         */
         productId: z.string().min(1).max(65600),
         pricing: storeProductPricingSchema,
         website: storeProductWebsiteSchema.nullable(),

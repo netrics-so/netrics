@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
+  STORE_PRODUCT_ID_MAX,
   storeTemplateResultSchema,
   type StoreProductPricing,
   type StoreTemplateProducts,
@@ -231,18 +232,20 @@ export function resolveStoreProducts(input: {
    */
   dataApps?: { connectionId: string; appId: string }[];
 }): { productId: string; name: string; apps: ProductApp[] }[] {
-  const names = new Map<string, string>();
+  // coalesce semantics: only null falls back; an empty string is a value
+  // (an empty product id or name stays empty, as in the prepared rows).
+  const names = new Map<string, string | null>();
   for (const row of input.products) {
     const id = row.product_id,
       name = row.product_name;
-    if (typeof id === "string" && id && !names.has(id))
-      names.set(id, typeof name === "string" && name ? name : id);
+    if (typeof id === "string" && !names.has(id))
+      names.set(id, typeof name === "string" ? name : null);
   }
   const mapped = new Map<string, string>();
   for (const row of input.mapping) {
     const key = row.app_key,
       product = row.product_id;
-    if (typeof key === "string" && typeof product === "string" && product)
+    if (typeof key === "string" && typeof product === "string")
       if (!mapped.has(key)) mapped.set(key, product);
   }
   const apps = new Map<string, ProductApp>();
@@ -478,6 +481,12 @@ export async function readStoreProducts(
         pricing,
         hadProceeds,
         paid: pricing === "auto" ? hadProceeds : pricing === "paid",
+        notEditable:
+          productId === ""
+            ? ("store_product_id_empty" as const)
+            : productId.length > STORE_PRODUCT_ID_MAX
+              ? ("store_product_id_too_long" as const)
+              : null,
         website:
           setting?.websiteConnectionId && setting.websiteResourceId
             ? {
@@ -576,6 +585,13 @@ export function createStoreProductService(deps: {
             at,
             policy,
           );
+          // Past the settings key's size: a clear 400, not a failed write.
+          if (
+            input.products.some(
+              (product) => product.productId.length > STORE_PRODUCT_ID_MAX,
+            )
+          )
+            reject("store_product_id_too_long");
           const known = new Set(
             current.products.map((product) => product.productId),
           );

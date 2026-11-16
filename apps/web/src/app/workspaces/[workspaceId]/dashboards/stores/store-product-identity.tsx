@@ -213,12 +213,20 @@ export function StoreProductIdentity({
                 </button>
               </div>
             ) : null}
+            {product.notEditable ? (
+              <p className="help">
+                {apiErrorMessage(
+                  new ApiError(400, product.notEditable),
+                  locale,
+                )}
+              </p>
+            ) : null}
             <div className="field">
               <label htmlFor={`${id}-pricing-${index}`}>{t("pricing")}</label>
               <select
                 id={`${id}-pricing-${index}`}
                 value={choice.pricing}
-                disabled={busy}
+                disabled={busy || !!product.notEditable}
                 onChange={(event) =>
                   choose(product, {
                     pricing: event.target.value as StoreProductPricing,
@@ -240,7 +248,11 @@ export function StoreProductIdentity({
               <select
                 id={`${id}-website-${index}`}
                 value={choice.website}
-                disabled={busy || (!data.websites.length && !choice.website)}
+                disabled={
+                  busy ||
+                  !!product.notEditable ||
+                  (!data.websites.length && !choice.website)
+                }
                 onChange={(event) =>
                   choose(product, { website: event.target.value })
                 }

@@ -809,6 +809,10 @@ apps only; an app only the reports or the mapping name has no icon to fetch.
 - **Website:** a project of a Vercel Web Analytics connection of the same
   workspace, checked when saved.
 
+A product ID longer than 500 characters, or empty, is valid in the tables
+but cannot have settings: it is listed as not editable, and saving it
+answers 400 `store_product_id_too_long`.
+
 The settings are rows of `data_template_products` (migration 0079, forced
 RLS), not fields of the Products table: apps without a product have no row
 there, a website typed into that freely editable table could not be checked

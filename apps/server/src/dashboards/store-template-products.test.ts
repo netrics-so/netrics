@@ -29,7 +29,7 @@ import { apple, google, now } from "./test-helpers.js";
 // an existing install when the settings table arrives.
 
 let db: Database, owner: Sql, workspaceId: string, otherId: string;
-let userId: string, productDatasetId: string;
+let userId: string, productDatasetId: string, mappingDatasetId: string;
 const registry = createDefaultRegistry();
 const vercelId = "33333333-3333-4333-8333-333333333333",
   foreignVercelId = "44444444-4444-4444-8444-444444444444";
@@ -46,9 +46,10 @@ const products = () =>
 /** Rewrites the install's Products table as the customer can in Data & measures. */
 async function editProducts(
   edit: (rows: Record<string, unknown>[]) => Record<string, unknown>[],
+  datasetId = productDatasetId,
 ) {
   const data = createDataService(db, () => new Date(now));
-  const current = await data.readManual(actor(), productDatasetId, {
+  const current = await data.readManual(actor(), datasetId, {
     offset: 0,
     limit: 1000,
   });
@@ -61,7 +62,7 @@ async function editProducts(
       ),
       generationId: current.generationId,
     },
-    productDatasetId,
+    datasetId,
   );
 }
 
@@ -180,7 +181,7 @@ beforeAll(async () => {
         now: new Date(now),
       }),
     );
-  ({ productDatasetId } = await createStoreTemplateService({
+  ({ productDatasetId, mappingDatasetId } = await createStoreTemplateService({
     db,
     registry,
     now: () => new Date(now),
@@ -613,4 +614,31 @@ describe("store product identity", { timeout: 20_000 }, () => {
       expect(elapsed).toBeLessThan(10_000);
     },
   );
+
+  it("lists a product id too long for settings as not editable and refuses it", async () => {
+    // Valid in the mapping table, but past what a settings key can hold:
+    // incompressible, ~4,400 characters.
+    const long = Array.from({ length: 4400 }, (_, index) =>
+      String.fromCharCode(0x4e00 + ((index * 7919) % 20000)),
+    ).join("");
+    await editProducts(
+      (rows) => [
+        ...rows,
+        { app_key: google.id + ":com.example.beta", product_id: long },
+      ],
+      mappingDatasetId,
+    );
+    const read = await products().read(actor(), requestId);
+    expect(
+      read.products.find((product) => product.productId === long),
+    ).toMatchObject({ notEditable: "store_product_id_too_long" });
+    expect(
+      read.products.find((product) => product.productId === gamma),
+    ).toMatchObject({ notEditable: null });
+    await expect(
+      products().update(actor(), requestId, {
+        products: [{ productId: long, pricing: "paid", website: null }],
+      }),
+    ).rejects.toMatchObject({ code: "store_product_id_too_long", status: 400 });
+  });
 });

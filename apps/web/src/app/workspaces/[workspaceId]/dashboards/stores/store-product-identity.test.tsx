@@ -45,6 +45,7 @@ const products: StoreTemplateProducts = {
       pricing: "auto",
       hadProceeds: true,
       paid: true,
+      notEditable: null,
       website: {
         connectionId: VERCEL,
         projectId: "prj_focus",
@@ -67,6 +68,7 @@ const products: StoreTemplateProducts = {
       pricing: "auto",
       hadProceeds: false,
       paid: false,
+      notEditable: null,
       website: null,
     },
   ],
@@ -172,5 +174,29 @@ describe("store product identity", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain("row limit");
     expect(html).not.toContain("<select");
+  });
+
+  it("shows a product whose id cannot have settings as not editable", () => {
+    const html = renderI18n(
+      <StoreProductIdentity
+        workspaceId={W}
+        requestId={REQUEST}
+        initial={{
+          ...products,
+          products: [
+            {
+              ...products.products[1]!,
+              productId: "x".repeat(600),
+              notEditable: "store_product_id_too_long",
+            },
+          ],
+        }}
+      />,
+      "de",
+    );
+    const selects = [...html.matchAll(/<select[^>]*>/g)].map((m) => m[0]);
+    expect(selects).toHaveLength(2);
+    for (const select of selects) expect(select).toContain('disabled=""');
+    expect(html).toContain("Produkt-ID ist zu lang");
   });
 });

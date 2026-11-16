@@ -84,6 +84,21 @@ const variants: Record<string, (tables: Map<string, DataTable>) => void> = {
         { app_key: google.id + ":com.example.gamma", product_id: "__proto__" },
       );
   },
+  // Empty strings are values, not missing: coalesce keeps them.
+  "an empty product id in the mapping and an empty name": (tables) => {
+    tables
+      .get("mapping")!
+      .rows.push(
+        { app_key: google.id + ":com.example.beta", product_id: "" },
+        { app_key: google.id + ":com.example.gamma", product_id: "" },
+      );
+    tables
+      .get("products")!
+      .rows.push(
+        { product_id: "", product_name: "Empty id" },
+        { product_id: google.id + ":com.example.delta", product_name: "" },
+      );
+  },
   // A package Play reports earnings for that discovery never listed.
   "an earnings-only Play package": (tables) => {
     const earnings = tables.get("play-earnings")!;
@@ -103,7 +118,8 @@ const variants: Record<string, (tables: Map<string, DataTable>) => void> = {
 describe("app identity and the preparations", () => {
   for (const [name, edit] of Object.entries(variants))
     it(`agree on every app's product: ${name}`, () => {
-      const tables = inputs();
+      // A deep copy: the fixture tables are shared module constants.
+      const tables = structuredClone(inputs());
       edit(tables);
       const rows = prepared(tables).filter(
         (row) => !row.appKey.endsWith(":__unmapped"),

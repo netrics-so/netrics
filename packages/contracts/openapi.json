@@ -59688,6 +59688,20 @@
                           "paid": {
                             "type": "boolean"
                           },
+                          "notEditable": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "store_product_id_too_long",
+                                  "store_product_id_empty"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "website": {
                             "anyOf": [
                               {
@@ -59730,6 +59744,7 @@
                           "pricing",
                           "hadProceeds",
                           "paid",
+                          "notEditable",
                           "website"
                         ],
                         "additionalProperties": false
@@ -60208,6 +60223,20 @@
                           "paid": {
                             "type": "boolean"
                           },
+                          "notEditable": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "store_product_id_too_long",
+                                  "store_product_id_empty"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "website": {
                             "anyOf": [
                               {
@@ -60250,6 +60279,7 @@
                           "pricing",
                           "hadProceeds",
                           "paid",
+                          "notEditable",
                           "website"
                         ],
                         "additionalProperties": false
