@@ -8,8 +8,8 @@ import {
 import {
   connectionHasResource,
   insertAuditEvent,
-  listNamedResources,
   listResourceIcons,
+  resolveDataPolicy,
   resourceNameKey,
   schema,
   withWorkspace,
@@ -17,6 +17,7 @@ import {
   type ImageRow,
   type Transaction,
 } from "@netrics/database";
+import { DEFAULT_DATA_POLICY, exceedsDataPolicy } from "@netrics/domain";
 import { DataServiceError } from "../data/service.js";
 import { presentImage } from "../images/service.js";
 import { deriveInstallCompletion } from "./store-template-legacy.js";
@@ -50,7 +51,7 @@ export const PROCEEDS_WINDOW_DAYS = 90;
 type Actor = { workspaceId: string; callerId: string };
 type ProductApp = StoreTemplateProducts["products"][number]["apps"][number];
 
-function reject(code: string, status: 400 | 404 | 409 = 400): never {
+function reject(code: string, status: 400 | 404 | 409 | 413 = 400): never {
   throw new DataServiceError(code, status);
 }
 
@@ -146,6 +147,128 @@ export async function appsWithProceeds(
   );
 }
 
+/** An app of an install's connections, as the products resolve it. */
+type CatalogApp = ProductApp;
+
+/**
+ * The products of an install, resolved exactly as the template's
+ * preparations resolve every row (buildStorePreparation): an app's product
+ * is its mapping row's product_id, else its own app key; the product's name
+ * is its Products row's product_name, else its first app's resource name,
+ * else that app's id. The apps are the connections' catalog plus every app
+ * the mapping names (its name then is its id, as in the data without a
+ * resource name). A product without apps is not listed: no data row has
+ * it. Products keep the Products table's order, then their first app's.
+ * store-template-products-parity.test.ts runs both on the same tables.
+ */
+export function resolveStoreProducts(input: {
+  products: Record<string, unknown>[];
+  mapping: Record<string, unknown>[];
+  /** The install's connections and their connectors. */
+  connectors: Map<string, StoreConnectorId>;
+  /** The connections' apps (complete catalog). */
+  apps: CatalogApp[];
+}): { productId: string; name: string; apps: ProductApp[] }[] {
+  const names = new Map<string, string>();
+  for (const row of input.products) {
+    const id = row.product_id,
+      name = row.product_name;
+    if (typeof id === "string" && id && !names.has(id))
+      names.set(id, typeof name === "string" && name ? name : id);
+  }
+  const mapped = new Map<string, string>();
+  for (const row of input.mapping) {
+    const key = row.app_key,
+      product = row.product_id;
+    if (typeof key === "string" && typeof product === "string" && product)
+      if (!mapped.has(key)) mapped.set(key, product);
+  }
+  const apps = new Map<string, ProductApp>();
+  for (const app of input.apps)
+    if (input.connectors.has(app.connectionId) && app.appId !== "__unmapped")
+      if (!apps.has(app.connectionId + ":" + app.appId))
+        apps.set(app.connectionId + ":" + app.appId, app);
+  for (const key of mapped.keys()) {
+    const cut = key.indexOf(":"),
+      connectionId = key.slice(0, cut),
+      appId = key.slice(cut + 1),
+      connectorId = input.connectors.get(connectionId);
+    if (cut < 0 || !connectorId || !appId || appId === "__unmapped") continue;
+    if (!apps.has(key))
+      apps.set(key, { connectionId, appId, name: appId, connectorId });
+  }
+  const grouped = new Map<string, ProductApp[]>();
+  for (const [key, app] of apps) {
+    const productId = mapped.get(key) ?? key;
+    grouped.set(productId, [...(grouped.get(productId) ?? []), app]);
+  }
+  const order = [
+    ...[...names.keys()].filter((id) => grouped.has(id)),
+    ...[...grouped.keys()].filter((id) => !names.has(id)),
+  ];
+  return order.map((productId) => {
+    const productApps = grouped.get(productId)!;
+    return {
+      productId,
+      name: names.get(productId) ?? productApps[0]!.name,
+      apps: productApps,
+    };
+  });
+}
+
+/**
+ * Every discovered resource of the connections (only the selected ones
+ * when a connection syncs a selection), not the 500 that
+ * listNamedResources returns: an app left out would vanish from the
+ * products and its settings be refused. Bounded by the workspace's query
+ * row limit, which answers 413 data_source_row_limit instead of a cut list.
+ */
+async function resourceCatalog(
+  tx: Transaction,
+  workspaceId: string,
+  connectionIds: string[],
+  queryRows: number | null,
+): Promise<{ connectionId: string; resourceId: string; name: string }[]> {
+  if (!connectionIds.length) return [];
+  const rows = await tx.execute(sql`
+    select distinct on (r.connection_id, r.resource_id)
+      r.connection_id, r.resource_id, r.name
+    from connection_resources r
+    join connections c
+      on c.workspace_id = ${workspaceId} and c.id = r.connection_id
+    where r.workspace_id = ${workspaceId}
+      and r.connection_id in (${sql.join(
+        connectionIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+      and not exists (
+        select 1 from metric_definitions m
+        where m.connector_id = c.connector_id
+          and r.kind <> 'resource' and m.dimensions ? r.kind
+      )
+      and (
+        jsonb_typeof(c.config -> 'resourceSelection') is distinct from 'array'
+        or jsonb_array_length(c.config -> 'resourceSelection') = 0
+        or c.config -> 'resourceSelection' ? r.resource_id
+      )
+    order by r.connection_id, r.resource_id, r.name
+    ${queryRows === null ? sql`` : sql`limit ${queryRows + 1}`}`);
+  if (exceedsDataPolicy(rows.length, queryRows))
+    reject("data_source_row_limit", 413);
+  return rows
+    .map((row) => ({
+      connectionId: row.connection_id as string,
+      resourceId: row.resource_id as string,
+      name: row.name as string,
+    }))
+    .sort(
+      (a, b) =>
+        a.connectionId.localeCompare(b.connectionId) ||
+        a.name.localeCompare(b.name) ||
+        a.resourceId.localeCompare(b.resourceId),
+    );
+}
+
 /** The install's product identities (see the module comment). */
 export async function readStoreProducts(
   tx: Transaction,
@@ -186,7 +309,14 @@ export async function readStoreProducts(
     result.mappingDatasetId,
     now,
   );
-  const resources = await listNamedResources(tx, workspaceId, connectionIds);
+  const policy = (await resolveDataPolicy(tx, workspaceId, DEFAULT_DATA_POLICY))
+    .policy;
+  const resources = await resourceCatalog(
+    tx,
+    workspaceId,
+    connectionIds,
+    policy.queryRows,
+  );
   const icons = await listResourceIcons(tx, workspaceId);
   const settings = await tx
     .select()
@@ -206,54 +336,24 @@ export async function readStoreProducts(
       .slice(0, 10),
     now,
   );
-  const appNames = new Map(
-    resources.map((resource) => [
-      resource.connectionId + ":" + resource.resourceId,
-      resource.name,
-    ]),
-  );
-  const appOf = (key: string): ProductApp | null => {
-    const cut = key.indexOf(":"),
-      connectionId = key.slice(0, cut),
-      appId = key.slice(cut + 1),
-      connectorId = connections.get(connectionId);
-    if (cut < 0 || !connectorId || appId === "__unmapped") return null;
-    return {
-      connectionId,
-      appId,
-      name: appNames.get(key) ?? appId,
-      connectorId: connectorId as StoreConnectorId,
-    };
-  };
-  // Products in table order; their apps from the mapping table.
-  const products = new Map<string, { name: string; apps: ProductApp[] }>();
-  for (const row of productRows) {
-    const id = String(row.product_id ?? "");
-    if (!id || id.endsWith(":__unmapped")) continue;
-    products.set(id, { name: String(row.product_name ?? id), apps: [] });
-  }
-  const claimed = new Set<string>();
-  for (const row of mappingRows) {
-    const key = String(row.app_key ?? ""),
-      product = products.get(String(row.product_id ?? ""));
-    const app = appOf(key);
-    if (!product || !app) continue;
-    claimed.add(key);
-    product.apps.push(app);
-  }
-  for (const resource of resources) {
-    const key = resource.connectionId + ":" + resource.resourceId;
-    if (claimed.has(key) || products.has(key)) continue;
-    const app = appOf(key);
-    if (app) products.set(key, { name: app.name, apps: [app] });
-  }
+  const products = resolveStoreProducts({
+    products: productRows,
+    mapping: mappingRows,
+    connectors: connections,
+    apps: resources.map((resource) => ({
+      connectionId: resource.connectionId,
+      appId: resource.resourceId,
+      name: resource.name,
+      connectorId: connections.get(resource.connectionId)!,
+    })),
+  });
   const iconOf = new Map<string, ImageRow>();
   for (const icon of icons) {
     const key = resourceNameKey(icon.connectionId!, icon.resourceId!);
     if (!iconOf.has(key)) iconOf.set(key, icon);
   }
   const settingOf = new Map(settings.map((row) => [row.productId, row]));
-  const websites = await websiteChoices(tx, workspaceId);
+  const websites = await websiteChoices(tx, workspaceId, policy.queryRows);
   const projectName = new Map(
     websites.flatMap((website) =>
       website.projects.map((project) => [
@@ -264,7 +364,8 @@ export async function readStoreProducts(
   );
   return {
     requestId,
-    products: [...products].map(([productId, product]) => {
+    products: products.map((product) => {
+      const productId = product.productId;
       // App Store first: its icon is the app's own artwork (ADR 0015).
       const ordered = [
         ...product.apps.filter(
@@ -318,8 +419,12 @@ export async function readStoreProducts(
   };
 }
 
-/** The workspace's Vercel connections and their (selected) projects. */
-async function websiteChoices(tx: Transaction, workspaceId: string) {
+/** The workspace's Vercel connections and all their (selected) projects. */
+async function websiteChoices(
+  tx: Transaction,
+  workspaceId: string,
+  queryRows: number | null,
+) {
   const vercel = await tx
     .select({ id: schema.connections.id, name: schema.connections.name })
     .from(schema.connections)
@@ -330,10 +435,11 @@ async function websiteChoices(tx: Transaction, workspaceId: string) {
       ),
     )
     .orderBy(asc(schema.connections.name), asc(schema.connections.id));
-  const projects = await listNamedResources(
+  const projects = await resourceCatalog(
     tx,
     workspaceId,
     vercel.map((connection) => connection.id),
+    queryRows,
   );
   return vercel.map((connection) => ({
     connectionId: connection.id,

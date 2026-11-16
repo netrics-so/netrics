@@ -331,7 +331,7 @@ export function registerStoreTemplateRoutes(
               "Read an install's products with their icon, paid or free and linked website",
             tags: ["dashboards"],
             response: storeTemplateProductsSchema,
-            errors: [403, 404, 409, 503],
+            errors: [403, 404, 409, 413, 503],
           }),
         },
         async (request, reply) => {
@@ -361,7 +361,7 @@ export function registerStoreTemplateRoutes(
             tags: ["dashboards"],
             body: storeTemplateProductsRequestSchema,
             response: storeTemplateProductsSchema,
-            errors: [400, 403, 404, 409, 503],
+            errors: [400, 403, 404, 409, 413, 503],
           }),
         },
         async (request, reply) => {

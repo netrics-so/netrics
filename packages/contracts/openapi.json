@@ -59871,6 +59871,27 @@
               }
             }
           },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Request body too large"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Took too long; try again later",
             "content": {
@@ -60387,6 +60408,27 @@
                   ],
                   "additionalProperties": false,
                   "description": "Conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Request body too large"
                 }
               }
             }

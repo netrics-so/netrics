@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createDatabase,
   createRawSqlClient,
+  adminSetDataPolicy,
   createWorkspace,
   ingestDatasetPage,
   schema,
@@ -18,6 +19,7 @@ import {
   createTestDatabase,
   TEST_DATABASE_SETUP_TIMEOUT_MS,
 } from "../test-db.js";
+import { createDataService } from "../data/service.js";
 import { createStoreTemplateService } from "./store-template-service.js";
 import { createStoreProductService } from "./store-template-products.js";
 import { apple, google, now } from "./test-helpers.js";
@@ -27,7 +29,7 @@ import { apple, google, now } from "./test-helpers.js";
 // an existing install when the settings table arrives.
 
 let db: Database, owner: Sql, workspaceId: string, otherId: string;
-let userId: string;
+let userId: string, productDatasetId: string;
 const registry = createDefaultRegistry();
 const vercelId = "33333333-3333-4333-8333-333333333333",
   foreignVercelId = "44444444-4444-4444-8444-444444444444";
@@ -39,6 +41,28 @@ const group = "product:" + groupId,
 const actor = () => ({ workspaceId, callerId: userId, locale: "en" as const });
 const products = () =>
   createStoreProductService({ db, now: () => new Date(now) });
+
+/** Rewrites the install's Products table as the customer can in Data & measures. */
+async function editProducts(
+  edit: (rows: Record<string, unknown>[]) => Record<string, unknown>[],
+) {
+  const data = createDataService(db, () => new Date(now));
+  const current = await data.readManual(actor(), productDatasetId, {
+    offset: 0,
+    limit: 1000,
+  });
+  await data.saveManual(
+    actor(),
+    {
+      definition: current.definition,
+      records: edit(current.records.map((record) => record.values)).map(
+        (values) => ({ values }),
+      ),
+      generationId: current.generationId,
+    },
+    productDatasetId,
+  );
+}
 
 async function ingest(
   source: typeof apple,
@@ -154,7 +178,7 @@ beforeAll(async () => {
         now: new Date(now),
       }),
     );
-  await createStoreTemplateService({
+  ({ productDatasetId } = await createStoreTemplateService({
     db,
     registry,
     now: () => new Date(now),
@@ -172,7 +196,7 @@ beforeAll(async () => {
         ],
       },
     ],
-  });
+  }));
   await test.migrate();
   // Proceeds: the group's App Store app sold in-app purchases; beta earned
   // within 90 days; gamma's only charge is older than 90 days, and its
@@ -381,5 +405,87 @@ describe("store product identity", { timeout: 20_000 }, () => {
       read.products.find((product) => product.productId === gamma),
     ).toMatchObject({ pricing: "paid", paid: true, website: null });
     expect(read.websites).toEqual([]);
+  });
+
+  it("resolves a product like the preparations: a renamed app keeps its app", async () => {
+    // The customer names an app without a linked product in Products.
+    await editProducts((rows) => [
+      ...rows,
+      { product_id: beta, product_name: "Beta renamed" },
+    ]);
+    const read = await products().read(actor(), requestId);
+    expect(
+      read.products.filter((product) => product.productId === beta),
+    ).toEqual([
+      expect.objectContaining({
+        name: "Beta renamed",
+        apps: [expect.objectContaining({ appId: "com.example.beta" })],
+        hadProceeds: true,
+        paid: true,
+        iconSource: { connectionId: google.id, resourceId: "com.example.beta" },
+      }),
+    ]);
+  });
+
+  it("keeps a linked product whose Products row was removed, with its settings", async () => {
+    await products().update(actor(), requestId, {
+      products: [{ productId: group, pricing: "free", website: null }],
+    });
+    await editProducts((rows) =>
+      rows.filter((row) => row.product_id !== group),
+    );
+    const read = await products().read(actor(), requestId);
+    const ids = read.products.map((product) => product.productId);
+    // The mapping still links both apps to the product, as in the data.
+    expect(ids).toContain(group);
+    expect(ids).not.toContain(apple.id + ":a");
+    expect(ids).not.toContain(google.id + ":com.example.alpha");
+    expect(
+      read.products.find((product) => product.productId === group),
+    ).toMatchObject({
+      // The first app's name, as the preparations fall back to it.
+      name: "Apple Example",
+      apps: [
+        expect.objectContaining({ appId: "a" }),
+        expect.objectContaining({ appId: "com.example.alpha" }),
+      ],
+      pricing: "free",
+      paid: false,
+    });
+  });
+
+  it("lists every app of a large catalog and accepts settings for the last", async () => {
+    const many = Array.from({ length: 600 }, (_, index) => ({
+      id: `com.example.many${String(index).padStart(3, "0")}`,
+      name: `Many ${String(index).padStart(3, "0")}`,
+      kind: "Android",
+    }));
+    await withWorkspace(db, { workspaceId }, (tx) =>
+      upsertConnectionResources(tx, {
+        workspaceId,
+        connectionId: google.id,
+        resources: many,
+        now: new Date(now),
+      }),
+    );
+    const read = await products().read(actor(), requestId);
+    const ids = new Set(read.products.map((product) => product.productId));
+    for (const app of many) expect(ids).toContain(google.id + ":" + app.id);
+    const last = google.id + ":" + many.at(-1)!.id;
+    const changed = await products().update(actor(), requestId, {
+      products: [{ productId: last, pricing: "paid", website: null }],
+    });
+    expect(
+      changed.products.find((product) => product.productId === last),
+    ).toMatchObject({ pricing: "paid", paid: true });
+    // Past the workspace's query row limit the read fails; it never cuts.
+    await adminSetDataPolicy(db, workspaceId, { queryRows: 100 });
+    try {
+      await expect(products().read(actor(), requestId)).rejects.toThrow(
+        "data_source_row_limit",
+      );
+    } finally {
+      await adminSetDataPolicy(db, workspaceId, {});
+    }
   });
 });
