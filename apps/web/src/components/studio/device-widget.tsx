@@ -5,6 +5,7 @@ import type { ComponentProps } from "react";
 import type { DeviceWidget } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
+import { deviceStreamFreshness } from "@/lib/freshness";
 import { useLocale } from "@/lib/i18n/client";
 import { useExpired } from "@/lib/use-expired";
 import type { ScreenPlacement } from "@/lib/studio-render";
@@ -184,14 +185,25 @@ export function deviceTableReading(
   };
 }
 
-/** A payload status board's reading (ADR 0019 section 7). */
+/**
+ * A payload status board's reading (ADR 0019 section 7), with each
+ * source's freshness streams when the payload lists them (#727).
+ */
 export function deviceStatusReading(
   widget: Extract<DeviceWidget, { type: "status" }>,
 ): StatusReadingProps {
+  const streams = Object.fromEntries(
+    widget.data.items.flatMap((item) =>
+      item.streams?.length
+        ? [[item.connectionId, item.streams.map(deviceStreamFreshness)]]
+        : [],
+    ),
+  );
   return {
     label: widget.label,
     options: widget.options,
     items: widget.data.items,
+    ...(Object.keys(streams).length > 0 ? { streams } : {}),
   };
 }
 

@@ -209,7 +209,7 @@ const TONE_RANK: Readonly<Record<StatusTone, number>> = {
 export function statusWidgetLayout(input: {
   label: string;
   items: readonly StatusItem[];
-  /** Each source's streams; absent: none listed (as on paired screens). */
+  /** Each source's streams; absent: none listed. */
   streams?: StatusStreams;
   showAge: boolean;
   placement: ScreenPlacement;

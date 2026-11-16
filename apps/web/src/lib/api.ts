@@ -188,12 +188,13 @@ import {
   createGoalRequestSchema,
   deleteGoalResponseSchema,
   goalListResponseSchema,
+  goalReadResponseSchema,
   goalResponseSchema,
   updateGoalRequestSchema,
   type CreateGoalRequest,
   type DeleteGoalResponse,
-  type Goal,
   type GoalListResponse,
+  type GoalReadResponse,
   type GoalResponse,
   type UpdateGoalRequest,
   createThemeRequestSchema,
@@ -1229,20 +1230,19 @@ export function listGoals(
 
 /**
  * One goal with its current progress, from the browser (a goal widget in
- * the Studio and signed-in views, ADR 0019 section 5); null when it was
- * deleted.
+ * the Studio and signed-in views, ADR 0019 section 5), with its metric's
+ * freshness and an overdue "stale" (#727); null when it was deleted.
  */
 export async function fetchGoal(
   workspaceId: string,
   goalId: string,
-): Promise<Goal | null> {
+): Promise<GoalReadResponse | null> {
   try {
-    const { goal } = await browserSend(
-      goalResponseSchema,
+    return await browserSend(
+      goalReadResponseSchema,
       "GET",
       `/v1/workspaces/${workspaceId}/goals/${goalId}`,
     );
-    return goal;
   } catch (cause) {
     if (cause instanceof ApiError && cause.status === 404) return null;
     throw cause;

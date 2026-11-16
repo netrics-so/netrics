@@ -328,11 +328,8 @@ export function useLiveGauge(
   env: StudioEnv,
 ): GaugeReadingProps {
   const locale = useLocale();
-  const {
-    data: goal,
-    error,
-    loading,
-  } = useGoalData(env.workspaceId, widget.goalId);
+  const { data, error, loading } = useGoalData(env.workspaceId, widget.goalId);
+  const goal = data?.goal ?? null;
   const deleted =
     widget.goalId === null || (goal === null && !loading && !error);
   const metric = goal
@@ -372,6 +369,7 @@ export function useLiveGauge(
             loading,
             loaded: goal !== null,
             hasData: reading !== null && reading.value !== null,
+            stale: data?.status === "stale",
           },
           connection,
           locale,
@@ -379,6 +377,7 @@ export function useLiveGauge(
       : { notice: null, status: "ok" as const }),
     source: connection?.name ?? null,
     updatedAt: connection?.state.lastSuccessAt ?? null,
+    freshness: data?.freshness ?? null,
     timeZone: env.timeZone,
     loading,
   };

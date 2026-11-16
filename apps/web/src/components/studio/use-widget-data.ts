@@ -11,7 +11,7 @@ import {
 import type {
   CompareMeasureReading,
   ConnectionFreshnessStream,
-  Goal,
+  GoalReadResponse,
   LatestReviewRequest,
   LatestReviewResponse,
   MetricBreakdownResponse,
@@ -275,14 +275,15 @@ export function useBreakdownData(
 }
 
 /**
- * A goal widget's goal with its current progress (ADR 0019 section 5);
- * null when it has none or it was deleted. Copies of one goal share loads.
+ * A goal widget's goal with its current progress (ADR 0019 section 5),
+ * and its metric's freshness (#727); null when it has none or it was
+ * deleted. Copies of one goal share loads.
  */
 export function useGoalData(
   workspaceId: string,
   goalId: string | null,
   refreshMs = WIDGET_REFRESH_MS,
-): WidgetData<Goal | null> {
+): WidgetData<GoalReadResponse | null> {
   const load = useCallback(
     () =>
       goalId === null ? Promise.resolve(null) : fetchGoal(workspaceId, goalId),

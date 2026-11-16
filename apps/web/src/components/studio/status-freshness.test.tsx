@@ -101,6 +101,45 @@ describe("streamFreshness: one line per stream", () => {
       ).toBe("2026-11-16T20:00:00Z");
   });
 
+  it("uses the rows the server's widgets use (#727)", () => {
+    // The detail lists the selected resources and the connection entry;
+    // widgets and screens read the resources' own rows, the connection
+    // entry only when no resource has one.
+    const stream = (
+      entries: ConnectionFreshnessStream["entries"],
+    ): ConnectionFreshnessStream => ({
+      key: "sales",
+      name: "Sales",
+      kind: "periodic",
+      period: "day",
+      entries,
+    });
+    const whole = entry({
+      dataThrough: "2026-11-10",
+      checkedAt: "2026-11-16T09:00:00Z",
+    });
+    const own = entry({ resource: "app-1" });
+    expect(streamFreshness(stream([whole, own]), null)).toEqual(
+      streamFreshness(stream([own]), null),
+    );
+    expect(streamFreshness(stream([whole]), null)?.freshness.dataThrough).toBe(
+      "2026-11-10",
+    );
+    // Overdue when any row used is, as the server decides "stale".
+    const behind = entry({
+      resource: "app-2",
+      dataThrough: "2026-11-14",
+    });
+    const overdueLater = entry({
+      resource: "app-3",
+      dataThrough: "2026-11-15",
+      overdue: true,
+    });
+    expect(streamFreshness(stream([behind, overdueLater]), null)).toMatchObject(
+      { freshness: { dataThrough: "2026-11-14" }, overdue: true },
+    );
+  });
+
   it("monthly, continuous, overdue and empty streams", () => {
     expect(
       streamFreshness(
