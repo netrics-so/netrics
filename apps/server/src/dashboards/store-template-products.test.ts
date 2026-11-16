@@ -12,7 +12,7 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import type { DataRow } from "@netrics/domain";
+import { DEFAULT_DATA_POLICY, type DataRow } from "@netrics/domain";
 import { createDefaultRegistry } from "../connectors.js";
 import { syncCatalog } from "../sync/catalog.js";
 import {
@@ -37,7 +37,8 @@ const requestId = randomUUID(),
   groupId = randomUUID();
 const group = "product:" + groupId,
   beta = google.id + ":com.example.beta",
-  gamma = google.id + ":com.example.gamma";
+  gamma = google.id + ":com.example.gamma",
+  reported = google.id + ":com.example.reported";
 const actor = () => ({ workspaceId, callerId: userId, locale: "en" as const });
 const products = () =>
   createStoreProductService({ db, now: () => new Date(now) });
@@ -223,6 +224,8 @@ beforeAll(async () => {
       transaction_day: "2026-07-01",
     },
     { app_id: "com.example.gamma", merchant_amount: "-0.30" },
+    // A package the earnings report names but discovery never listed.
+    { app_id: "com.example.reported", merchant_amount: "2.99" },
   ]);
 }, TEST_DATABASE_SETUP_TIMEOUT_MS);
 afterAll(async () => {
@@ -237,7 +240,15 @@ describe("store product identity", { timeout: 20_000 }, () => {
       group,
       beta,
       gamma,
+      reported,
     ]);
+    // Only in the synced reports: named by its id, as in the data.
+    expect(read.products[3]).toMatchObject({
+      name: "com.example.reported",
+      apps: [{ connectionId: google.id, appId: "com.example.reported" }],
+      hadProceeds: true,
+      paid: true,
+    });
     expect(read.products[0]).toMatchObject({
       name: "Example app",
       apps: [
@@ -487,5 +498,21 @@ describe("store product identity", { timeout: 20_000 }, () => {
     } finally {
       await adminSetDataPolicy(db, workspaceId, {});
     }
+  });
+
+  it("bounds the catalog by the deployment's data policy", async () => {
+    const withRows = (queryRows: number | null) =>
+      createStoreProductService({
+        db,
+        now: () => new Date(now),
+        policy: { ...DEFAULT_DATA_POLICY, queryRows },
+      });
+    await expect(withRows(1).read(actor(), requestId)).rejects.toThrow(
+      "data_source_row_limit",
+    );
+    // Unlimited: every app, past the default's ceiling too.
+    expect(
+      (await withRows(null).read(actor(), requestId)).products.length,
+    ).toBeGreaterThan(600);
   });
 });

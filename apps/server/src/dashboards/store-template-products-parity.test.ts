@@ -49,6 +49,15 @@ function resolved(tables: Map<string, DataTable>) {
         connectorId: source.connectorId,
       })),
     ),
+    // The apps of the synced source rows, as readStoreProducts reads them.
+    dataApps: sources.flatMap((source) =>
+      Object.values(source.datasets).flatMap((datasetId) =>
+        (tables.get(datasetId)?.rows ?? []).map((row) => ({
+          connectionId: source.id,
+          appId: String(row.app_id),
+        })),
+      ),
+    ),
   });
 }
 
@@ -58,6 +67,14 @@ const variants: Record<string, (tables: Map<string, DataTable>) => void> = {
     tables.get("products")!.rows.push({
       product_id: google.id + ":com.example.beta",
       product_name: "Beta renamed",
+    });
+  },
+  // A package Play reports earnings for that discovery never listed.
+  "an earnings-only Play package": (tables) => {
+    const earnings = tables.get("play-earnings")!;
+    earnings.rows.push({
+      ...earnings.rows[0]!,
+      app_id: "com.example.reported",
     });
   },
   "a linked product's Products row removed": (tables) => {

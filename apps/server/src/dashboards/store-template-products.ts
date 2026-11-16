@@ -17,10 +17,15 @@ import {
   type ImageRow,
   type Transaction,
 } from "@netrics/database";
-import { DEFAULT_DATA_POLICY, exceedsDataPolicy } from "@netrics/domain";
+import {
+  DEFAULT_DATA_POLICY,
+  exceedsDataPolicy,
+  type DataPolicy,
+} from "@netrics/domain";
 import { DataServiceError } from "../data/service.js";
 import { presentImage } from "../images/service.js";
 import { deriveInstallCompletion } from "./store-template-legacy.js";
+import { STORE_SOURCE_DATASETS } from "./store-template-service.js";
 import type { StoreConnectorId } from "./store-portfolio.js";
 
 /**
@@ -147,6 +152,48 @@ export async function appsWithProceeds(
   );
 }
 
+/**
+ * The apps of the connections' synced source rows the template reads
+ * (STORE_SOURCE_DATASETS), from each dataset's latest generation.
+ */
+export async function appsInData(
+  tx: Transaction,
+  workspaceId: string,
+  connectionIds: string[],
+  now: Date,
+): Promise<{ connectionId: string; appId: string }[]> {
+  if (!connectionIds.length) return [];
+  const at = now.toISOString(),
+    keys = [...new Set(Object.values(STORE_SOURCE_DATASETS).flat())];
+  const rows = await tx.execute(sql`
+    select distinct d.connection_id, r."values"->>'app_id' as app_id
+    from data_datasets d
+    join lateral (
+      select g.id from data_generations g
+      where g.workspace_id = ${workspaceId} and g.dataset_id = d.id
+        and (g.expires_at is null or g.expires_at > ${at}::timestamptz)
+      order by g.sequence desc limit 1
+    ) g on true
+    join data_records r
+      on r.workspace_id = ${workspaceId} and r.generation_id = g.id
+     and (r.expires_at is null or r.expires_at > ${at}::timestamptz)
+    where d.workspace_id = ${workspaceId} and d.kind = 'source'
+      and d.connection_id in (${sql.join(
+        connectionIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+      and d.key in (${sql.join(
+        keys.map((key) => sql`${key}`),
+        sql`, `,
+      )})
+      and coalesce(r."values"->>'app_id', '') <> ''
+    order by 1, 2`);
+  return rows.map((row) => ({
+    connectionId: row.connection_id as string,
+    appId: row.app_id as string,
+  }));
+}
+
 /** An app of an install's connections, as the products resolve it. */
 type CatalogApp = ProductApp;
 
@@ -168,6 +215,12 @@ export function resolveStoreProducts(input: {
   connectors: Map<string, StoreConnectorId>;
   /** The connections' apps (complete catalog). */
   apps: CatalogApp[];
+  /**
+   * The apps of the synced source rows: Play names packages in earnings
+   * reports that discovery never listed, and the preparations build a
+   * product for each (named by its id, as no resource name exists).
+   */
+  dataApps?: { connectionId: string; appId: string }[];
 }): { productId: string; name: string; apps: ProductApp[] }[] {
   const names = new Map<string, string>();
   for (const row of input.products) {
@@ -188,6 +241,18 @@ export function resolveStoreProducts(input: {
     if (input.connectors.has(app.connectionId) && app.appId !== "__unmapped")
       if (!apps.has(app.connectionId + ":" + app.appId))
         apps.set(app.connectionId + ":" + app.appId, app);
+  for (const app of input.dataApps ?? []) {
+    const key = app.connectionId + ":" + app.appId,
+      connectorId = input.connectors.get(app.connectionId);
+    if (!connectorId || !app.appId || app.appId === "__unmapped") continue;
+    if (!apps.has(key))
+      apps.set(key, {
+        connectionId: app.connectionId,
+        appId: app.appId,
+        name: app.appId,
+        connectorId,
+      });
+  }
   for (const key of mapped.keys()) {
     const cut = key.indexOf(":"),
       connectionId = key.slice(0, cut),
@@ -275,6 +340,8 @@ export async function readStoreProducts(
   workspaceId: string,
   requestId: string,
   now: Date,
+  /** The deployment's data policy (NETRICS_DATA_POLICY). */
+  defaults: DataPolicy = DEFAULT_DATA_POLICY,
 ): Promise<StoreTemplateProducts> {
   const [install] = await tx
     .select({ result: schema.dataTemplateInstalls.result })
@@ -309,8 +376,7 @@ export async function readStoreProducts(
     result.mappingDatasetId,
     now,
   );
-  const policy = (await resolveDataPolicy(tx, workspaceId, DEFAULT_DATA_POLICY))
-    .policy;
+  const policy = (await resolveDataPolicy(tx, workspaceId, defaults)).policy;
   const resources = await resourceCatalog(
     tx,
     workspaceId,
@@ -336,6 +402,7 @@ export async function readStoreProducts(
       .slice(0, 10),
     now,
   );
+  const dataApps = await appsInData(tx, workspaceId, connectionIds, now);
   const products = resolveStoreProducts({
     products: productRows,
     mapping: mappingRows,
@@ -346,6 +413,7 @@ export async function readStoreProducts(
       name: resource.name,
       connectorId: connections.get(resource.connectionId)!,
     })),
+    dataApps,
   });
   const iconOf = new Map<string, ImageRow>();
   for (const icon of icons) {
@@ -460,14 +528,18 @@ async function websiteChoices(
 export function createStoreProductService(deps: {
   db: Database;
   now?: () => Date;
+  /** The deployment's data policy (NETRICS_DATA_POLICY). */
+  policy?: DataPolicy;
 }) {
-  const now = deps.now ?? (() => new Date());
+  const now = deps.now ?? (() => new Date()),
+    policy = deps.policy ?? DEFAULT_DATA_POLICY;
   return {
     read(actor: Actor, requestId: string): Promise<StoreTemplateProducts> {
       return withWorkspace(
         deps.db,
         { workspaceId: actor.workspaceId, userId: actor.callerId },
-        (tx) => readStoreProducts(tx, actor.workspaceId, requestId, now()),
+        (tx) =>
+          readStoreProducts(tx, actor.workspaceId, requestId, now(), policy),
       );
     },
     /**
@@ -491,6 +563,7 @@ export function createStoreProductService(deps: {
             actor.workspaceId,
             requestId,
             at,
+            policy,
           );
           const known = new Set(
             current.products.map((product) => product.productId),
@@ -582,7 +655,13 @@ export function createStoreProductService(deps: {
             target: requestId,
             metadata: { products: input.products.length },
           });
-          return readStoreProducts(tx, actor.workspaceId, requestId, at);
+          return readStoreProducts(
+            tx,
+            actor.workspaceId,
+            requestId,
+            at,
+            policy,
+          );
         },
       );
     },
