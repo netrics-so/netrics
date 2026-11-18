@@ -308,6 +308,208 @@ describe("explicit rounding (#645)", () => {
     ).toEqual({ value: "0.02", warnings: ["decimal_rounded"] });
   });
 });
+describe("ROUND after a group average in a preparation (#759)", () => {
+  const scores: DataTable = {
+    fields: [
+      { id: "team", name: "Team", type: "string", nullable: false },
+      { id: "score", name: "Score", type: "decimal", nullable: false },
+    ],
+    rows: [
+      { team: "a", score: "1" },
+      { team: "a", score: "1" },
+      { team: "a", score: "2" },
+      { team: "b", score: "1" },
+      { team: "b", score: "3" },
+    ],
+  };
+  const round = (e: DataExpression, digits: number) =>
+    call("round", e, lit("integer", digits));
+  const average: PreparationNode = {
+    id: "avg",
+    type: "group",
+    input: "src",
+    keys: ["team"],
+    aggregates: [{ id: "avg", name: "Average", op: "avg", fieldId: "score" }],
+  };
+  const calculate = (
+    expression: DataExpression,
+    input = "avg",
+  ): PreparationNode => ({
+    id: "calc",
+    type: "calculate",
+    input,
+    fieldId: "shown",
+    name: "Shown",
+    expression,
+  });
+  const keep: PreparationNode = {
+    id: "keep",
+    type: "select",
+    input: "calc",
+    fields: ["team", "shown"],
+  };
+  const prepare = (nodes: PreparationNode[], table = scores) => {
+    const output = nodes.at(-1)!.id;
+    const result = executePreparation(
+      {
+        version: 1,
+        nodes: [{ id: "src", type: "source", datasetId: "scores" }, ...nodes],
+        outputs: [output],
+      },
+      new Map([["scores", table]]),
+    );
+    return { rows: result.outputs[output]!.rows, warnings: result.warnings };
+  };
+
+  it("does not warn when a ROUND step discards the digits the average lost", () => {
+    expect(prepare([average, calculate(round(field("avg"), 2)), keep])).toEqual(
+      {
+        rows: [
+          { team: "a", shown: "1.33" },
+          { team: "b", shown: "2" },
+        ],
+        warnings: [],
+      },
+    );
+    expect(
+      prepare([average, calculate(round(field("avg"), 17)), keep]).warnings,
+    ).toEqual([]);
+    // Exact steps between the average and the ROUND carry its bound.
+    expect(
+      prepare([
+        average,
+        calculate(
+          round(call("multiply", field("avg"), lit("integer", 100)), 1),
+        ),
+        keep,
+      ]),
+    ).toMatchObject({
+      rows: [{ shown: "133.3" }, { shown: "200" }],
+      warnings: [],
+    });
+    // Steps that pass the column on unread keep the deferral.
+    expect(
+      prepare([
+        average,
+        { id: "named", type: "rename", input: "avg", names: { avg: "Mean" } },
+        {
+          id: "only",
+          type: "filter",
+          input: "named",
+          expression: call("eq", field("team"), lit("string", "a")),
+        },
+        calculate(round(field("avg"), 2), "only"),
+        keep,
+      ]),
+    ).toEqual({ rows: [{ team: "a", shown: "1.33" }], warnings: [] });
+  });
+
+  it("still warns when the lost digits are kept or used", () => {
+    const warns = (nodes: PreparationNode[], table = scores) =>
+      expect(prepare(nodes, table).warnings).toEqual(["decimal_rounded"]);
+    // The average itself is in the output.
+    warns([average]);
+    warns([average, calculate(round(field("avg"), 2))]);
+    // ROUND keeps every digit: 1.333333333333333333 may be 1.3333…33 or …34.
+    warns([average, calculate(round(field("avg"), 18)), keep]);
+    // Used without rounding, or rounded again on the way.
+    warns([
+      average,
+      calculate(call("multiply", field("avg"), lit("integer", 100))),
+      keep,
+    ]);
+    warns([
+      average,
+      calculate(round(call("divide", field("avg"), lit("integer", 7)), 2)),
+      keep,
+    ]);
+    // Read by a filter, a type change or a second group.
+    warns([
+      average,
+      {
+        id: "high",
+        type: "filter",
+        input: "avg",
+        expression: call("gt", field("avg"), lit("decimal", "1.5")),
+      },
+      calculate(round(field("avg"), 2), "high"),
+      keep,
+    ]);
+    warns([
+      average,
+      {
+        id: "text",
+        type: "cast",
+        input: "avg",
+        fieldId: "avg",
+        to: "string",
+        onError: "reject",
+      },
+      {
+        id: "keep",
+        type: "select",
+        input: "text",
+        fields: ["avg"],
+      },
+    ]);
+    warns([
+      average,
+      {
+        id: "again",
+        type: "group",
+        input: "avg",
+        keys: [],
+        aggregates: [{ id: "max", name: "Max", op: "max", fieldId: "avg" }],
+      },
+      calculate(round(field("max"), 2), "again"),
+      { id: "keep", type: "select", input: "calc", fields: ["shown"] },
+    ]);
+    // Halfway only after rounding to 18 places: the average
+    // 0.0149999…9667 is stored as 0.015, which ROUND(…, 2) takes to 0.02
+    // where the exact value rounds to 0.01.
+    const halfway: DataTable = {
+      ...scores,
+      rows: [
+        { team: "a", score: "0.044999999999999999" },
+        { team: "a", score: "0" },
+        { team: "a", score: "0" },
+      ],
+    };
+    expect(
+      prepare([average, calculate(round(field("avg"), 2)), keep], halfway),
+    ).toEqual({
+      rows: [{ team: "a", shown: "0.02" }],
+      warnings: ["decimal_rounded"],
+    });
+  });
+
+  it("leaves exact averages and other steps as they were", () => {
+    const exact: DataTable = { ...scores, rows: scores.rows.slice(3) };
+    expect(prepare([average], exact)).toEqual({
+      rows: [{ team: "b", avg: "2" }],
+      warnings: [],
+    });
+    // A quotient in a calculate step (#645).
+    expect(
+      prepare(
+        [
+          calculate(
+            round(call("divide", field("score"), lit("integer", 3)), 2),
+            "src",
+          ),
+          { id: "keep", type: "select", input: "calc", fields: ["shown"] },
+        ],
+        exact,
+      ),
+    ).toEqual({ rows: [{ shown: "0.33" }, { shown: "1" }], warnings: [] });
+    expect(
+      prepare(
+        [calculate(call("divide", field("score"), lit("integer", 3)), "src")],
+        exact,
+      ).warnings,
+    ).toEqual(["decimal_rounded"]);
+  });
+});
 describe("typed row expressions", () => {
   it.each([
     [true, true, true],
