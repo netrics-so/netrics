@@ -908,9 +908,16 @@ their app and currency order, as amounts in different currencies do not
 rank) and screens show what fits. The overview's ratings show the rating
 and its count, as on the app slides: six columns leave no row in a third of
 the width. A Google Play app's proceeds table sits beside its ratings,
-where a row fits at every theme font scale. At theme font scales above 1
-the overview's four-wide tables hold no row on wide screens (21:9, 16:9,
-4:3); the Studio says so, and screens keep their footer lines.
+where a row fits at every theme font scale. The tables show short column
+heads under their titles (a measure widget's `labels`: "Downloads",
+"Proceeds", "App", "Country", "Ratings"), and the App Store sources name
+their store "App Store", so every table holds a row in every format at
+every theme font scale.
+
+The fit counts text with measured glyph widths (`MEASURE_GLYPH_EMS`: the
+wider of IBM Plex Sans and the system font, regular and semibold), draws
+row lines inside the rows, and keeps one screen pixel of rounding room per
+row.
 
 Version 4 installs get version 5 through the reviewed template update.
 
