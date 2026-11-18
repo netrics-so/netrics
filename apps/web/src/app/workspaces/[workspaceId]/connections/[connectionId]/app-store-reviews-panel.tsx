@@ -22,6 +22,7 @@ import {
   reviewsKeyGuide,
   reviewsKeyCredentials,
   reviewsKeyStrategy,
+  reviewsLead,
   reviewsStatusLabel,
 } from "@/lib/app-store-reviews";
 import {
@@ -185,7 +186,7 @@ export function AppStoreReviewsPanel({
     <div className="card" id="app-store-reviews">
       <h2>{t("title")}</h2>
       <p>
-        <strong>{t("lead")}</strong>
+        <strong>{reviewsLead(status?.status ?? null, locale)}</strong>
       </p>
       <p className="muted">{t("intro")}</p>
 

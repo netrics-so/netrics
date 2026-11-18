@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   adminKeyGuide,
   adminKeyIdOf,
+  analyticsLead,
   analyticsStatusLabel,
   needsEnablement,
   pausedApps,
+  type AnalyticsStatus,
 } from "./app-store-analytics";
 
 describe("App Store analytics card", () => {
@@ -53,6 +55,73 @@ describe("App Store analytics card", () => {
     expect(adminKeyIdOf({ keyId: "short" })).toBeNull();
     expect(adminKeyGuide("en").steps.at(-1)).toMatch(
       /^Revoke the key right afterwards/,
+    );
+  });
+
+  it("words the lead by the apps' status (#771)", () => {
+    const lead = (
+      statuses: AnalyticsStatus[] | null,
+      locale: "en" | "de",
+      keyRefused = false,
+    ) =>
+      analyticsLead(
+        {
+          apps: statuses && statuses.map((status) => ({ status })),
+          keyRefused,
+        },
+        locale,
+      );
+    // No status (loading, failed, or a member who cannot read it): no step.
+    expect(lead(null, "en")).toBe(
+      "Analytics come from Apple’s reports, requested once per app with a temporary Admin key.",
+    );
+    expect(lead(null, "en", true)).toBe(
+      "Analytics are read with the Sales key: upload a new App Store Connect key first.",
+    );
+    expect(lead(["available"], "en", true)).toBe(
+      "Analytics are read with the Sales key: upload a new App Store Connect key first.",
+    );
+    expect(lead([], "en")).toBe(
+      "Analytics: nothing to request yet, this connection reads no apps.",
+    );
+    expect(lead(["available", "not_enabled"], "en")).toBe(
+      "Analytics: request them once with a temporary Admin key.",
+    );
+    expect(lead(["not_enabled", "stopped"], "en")).toBe(
+      "Analytics paused: request them again with a temporary Admin key.",
+    );
+    expect(lead(["available", "requested"], "en")).toBe(
+      "Analytics requested: the first reports arrive in 1–2 days.",
+    );
+    expect(lead(["available", "unknown"], "en")).toBe(
+      "Analytics: the status is unknown right now.",
+    );
+    expect(lead(["available", "available"], "en")).toBe(
+      "Analytics are read with the stored Sales key.",
+    );
+    expect(lead(null, "de")).toBe(
+      "Analysen kommen aus Apples Berichten, einmal pro App mit einem temporären Admin-Schlüssel angefordert.",
+    );
+    expect(lead(null, "de", true)).toBe(
+      "Analysen werden mit dem Sales-Schlüssel gelesen: Lade zuerst einen neuen App-Store-Connect-Schlüssel hoch.",
+    );
+    expect(lead([], "de")).toBe(
+      "Analysen: noch nichts anzufordern, diese Verbindung liest noch keine Apps.",
+    );
+    expect(lead(["not_enabled"], "de")).toBe(
+      "Analysen: einmal mit einem temporären Admin-Schlüssel anfordern.",
+    );
+    expect(lead(["stopped"], "de")).toBe(
+      "Analysen pausiert: erneut mit einem temporären Admin-Schlüssel anfordern.",
+    );
+    expect(lead(["requested"], "de")).toBe(
+      "Analysen angefordert: Die ersten Berichte kommen in 1–2 Tagen.",
+    );
+    expect(lead(["unknown"], "de")).toBe(
+      "Analysen: Der Status ist gerade unbekannt.",
+    );
+    expect(lead(["available"], "de")).toBe(
+      "Analysen: werden mit dem gespeicherten Sales-Schlüssel gelesen.",
     );
   });
 });

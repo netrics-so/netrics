@@ -107,9 +107,12 @@ test("a Customer Support key uploaded for analytics is stored as the reviews key
   });
 
   await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
-  // The two cards say apart what each key is for.
-  await expect(page.getByText(t.appStoreReviews.lead)).toBeVisible();
-  await expect(page.getByText(t.appStoreAnalytics.lead)).toBeVisible();
+  // The two cards say apart what each key is for, by status (#771): no
+  // reviews key yet, and an app whose analytics were never requested.
+  await expect(
+    page.getByText(t.appStoreReviews.lead.not_configured),
+  ).toBeVisible();
+  await expect(page.getByText(t.appStoreAnalytics.lead.enable)).toBeVisible();
 
   await page
     .getByRole("button", { name: t.appStoreAnalytics.enable, exact: true })
@@ -161,5 +164,9 @@ test("a Customer Support key uploaded for analytics is stored as the reviews key
           t.appStoreReviews.status.keySuffix.replace("{keyId}", KEY_ID),
         ),
       ),
+  ).toBeVisible();
+  // Its lead follows the stored key.
+  await expect(
+    page.locator("#app-store-reviews").getByText(t.appStoreReviews.lead.active),
   ).toBeVisible();
 });

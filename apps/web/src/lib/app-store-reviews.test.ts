@@ -5,6 +5,7 @@ import {
   reviewsKeyGuide,
   reviewsKeyCredentials,
   reviewsKeyStrategy,
+  reviewsLead,
   reviewsStatusLabel,
 } from "./app-store-reviews";
 import { webTranslator } from "./i18n/catalogs";
@@ -126,4 +127,37 @@ describe("App Store reviews card", () => {
       expect(intro).not.toMatch(wrong);
     },
   );
+
+  it("words the lead by the key's status (#771)", () => {
+    expect(reviewsLead(null, "en")).toBe(
+      "Reviews need an optional Customer Support key.",
+    );
+    expect(reviewsLead("not_configured", "en")).toBe(
+      "Reviews: add a Customer Support key.",
+    );
+    expect(reviewsLead("active", "en")).toBe(
+      "Reviews are read with the stored Customer Support key.",
+    );
+    expect(reviewsLead("paused", "en")).toBe(
+      "Reviews paused: upload a new Customer Support key.",
+    );
+    expect(reviewsLead("unknown", "en")).toBe(
+      "Reviews: the key’s status is unknown right now.",
+    );
+    expect(reviewsLead(null, "de")).toBe(
+      "Rezensionen: Ein optionaler Customer-Support-Schlüssel liest sie.",
+    );
+    expect(reviewsLead("not_configured", "de")).toBe(
+      "Rezensionen: Füg einen Customer-Support-Schlüssel hinzu.",
+    );
+    expect(reviewsLead("active", "de")).toBe(
+      "Rezensionen: werden mit dem gespeicherten Customer-Support-Schlüssel gelesen.",
+    );
+    expect(reviewsLead("paused", "de")).toBe(
+      "Rezensionen pausiert: Lade einen neuen Customer-Support-Schlüssel hoch.",
+    );
+    expect(reviewsLead("unknown", "de")).toBe(
+      "Rezensionen: Der Status des Schlüssels ist gerade unbekannt.",
+    );
+  });
 });
