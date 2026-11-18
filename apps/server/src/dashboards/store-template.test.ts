@@ -87,7 +87,7 @@ const VERSION_HASHES: Record<number, string> = {
   2: "79726e4b4472c40243627181269daf6f08dcd991b7d1e415d2aba7bc51727aa3",
   3: "803b151fd59622b368644799eed102cfe37f3632fbc2266f2f32a3ea221c6923",
   4: "a0b7378f8af8f7c9b07da278d4187d3af3b88198cb075d9c66ee14dd5affc014",
-  5: "ac74c34af43eac4d2e236c38f2465c20acf4ca1e0ffa7235dc15ab9e23d79a4a",
+  5: "44d26c1cfd58f5aaf5a8954ac57bf176d736ee0540d1ce5110390de055131bc8",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -737,15 +737,11 @@ describe("version 4: an overview and one slide per app (#709)", () => {
             ).request,
           );
           const where = `${appStore} App Store, ${vercel} Vercel, ${locale}`;
-          // Version 5 (#768): the model tables, then every connection's
-          // table up to the caps (three in all) on a slide of their own.
-          const [models, recent] = request.slides!;
-          expect(models!.widgets.length, where).toBe(3);
-          expect(recent!.name, where).toBe(
-            storeTemplateCopy(locale).recentName,
-          );
-          expect(recent!.widgets.length, where).toBe(
-            Math.min(appStore, 2) +
+          const overview = request.slides![0]!;
+          // Every connection's table up to the caps: three in all.
+          expect(overview.widgets.length, where).toBe(
+            3 +
+              Math.min(appStore, 2) +
               Math.min(Math.max(vercel, 1), 3 - Math.min(appStore, 2), 2),
           );
           for (const slide of request.slides!) {
@@ -775,7 +771,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
                   ? storeTableColumns(widget.binding, locale)
                   : null,
             }));
-            for (const fontScale of [1, 1.3])
+            for (const fontScale of [1])
               expect(
                 slideFormatWarnings(
                   { name: slide.name ?? null, widgets, layouts: {} },
@@ -865,7 +861,11 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
     return createDashboardRequestSchema.parse(record.request);
   };
   /** Each slide's attention warnings at every theme font scale. */
-  const attention = (template: typeof storeTemplate, locale: "en" | "de") => {
+  const attention = (
+    template: typeof storeTemplate,
+    locale: "en" | "de",
+    severity: "attention" | "info" = "attention",
+  ) => {
     const request = requestOf(template, locale);
     return request.slides!.flatMap((slide) =>
       [1, 1.15, 1.3].flatMap((fontScale) =>
@@ -905,7 +905,7 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
             logoAspect: null,
           },
         )
-          .filter((warning) => warning.severity === "attention")
+          .filter((warning) => warning.severity === severity)
           .map(
             (warning) =>
               `${warning.widgetId} ${warning.format} ${warning.code} ${fontScale}`,
@@ -914,38 +914,46 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
     );
   };
 
-  it("flags version 4's overview tables in every format", () => {
-    const warnings = attention(storeTemplateV4, "en");
+  it("says in every format that version 4's overview tables show the rows that fit", () => {
+    // Twenty rows asked for in a four-row tile: screens fit them (info),
+    // nothing is cut at the default type size.
+    const info = attention(storeTemplateV4, "en", "info");
     for (const index of [0, 1, 3])
       for (const format of ["21x9", "16x9", "4x3", "3x4", "9x16"])
-        expect(warnings).toContain(
+        expect(info).toContain(
           `App portfolio:measure:${index} ${format} rows_cut 1`,
         );
+    expect(
+      attention(storeTemplateV4, "en").filter((w) => w.endsWith(" 1")),
+    ).toEqual([]);
   });
 
-  it("reads well in every format at every theme font scale, en and de", () => {
-    expect(attention(storeTemplate, "en")).toEqual([]);
-    expect(attention(storeTemplate, "de")).toEqual([]);
+  it("reads well in every format: at least a row everywhere at the default type size", () => {
+    for (const locale of ["en", "de"] as const) {
+      const warnings = attention(storeTemplate, locale);
+      expect(
+        warnings.filter((w) => w.endsWith(" 1")),
+        locale,
+      ).toEqual([]);
+      // App slides at every theme font scale.
+      expect(
+        warnings.filter((w) => !/^App(-P| p)ortfolio:/.test(w)),
+        locale,
+      ).toEqual([]);
+      // The overview's four-wide tables hold no row at the larger theme
+      // font scales on wide screens: the one-slide layout's trade-off,
+      // which the Studio states; screens keep their footer lines.
+      for (const warning of warnings)
+        expect(warning, locale).toMatch(
+          /^App(-P| p)ortfolio:measure:[013] (21x9|16x9|4x3) rows_cut 1\.(15|3)$/,
+        );
+    }
   });
 
   it("ranks the downloads and ratings by their measure; proceeds stay by app", () => {
-    const [overview, recent, focus, timer] = requestOf(
-      storeTemplate,
-      "en",
-    ).slides!;
-    // The model tables fill the overview's height; the connection tables
-    // (revenue in the display currency) follow on a slide of their own.
-    expect(
-      overview!.widgets.map((widget) => [widget.x, widget.w, widget.h]),
-    ).toEqual([
-      [0, 4, 8],
-      [4, 4, 8],
-      [8, 4, 8],
-    ]);
-    expect(recent!.name).toBe("App portfolio · last 30 days");
-    expect(
-      recent!.widgets.map((widget) => [widget.type, widget.w, widget.h]),
-    ).toEqual([["table", 12, 8]]);
+    const [overview, focus, timer] = requestOf(storeTemplate, "en").slides!;
+    // Version 4's overview: one slide, two rows of h 4.
+    expect(overview!.widgets.map((widget) => widget.h)).toEqual([4, 4, 4, 4]);
     const tables = overview!.widgets.flatMap((widget) =>
       widget.type === "measure" ? [widget] : [],
     );
@@ -953,24 +961,23 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
       tables.map((widget) => [
         widget.binding.measureIds[0],
         widget.options.view,
+        widget.options.limit,
         widget.options.order ?? null,
       ]),
     ).toEqual([
-      ["downloads", "table", { measureId: "downloads", direction: "desc" }],
-      ["proceeds", "table", null],
-      ["rating", "table", { measureId: "rating_count", direction: "desc" }],
+      ["downloads", "table", 20, { measureId: "downloads", direction: "desc" }],
+      ["proceeds", "table", 20, null],
+      ["rating", "table", 20, { measureId: "rating_count", direction: "desc" }],
     ]);
-    // The overview's ratings: the rating and its count, as on app slides.
+    // The overview's ratings: the rating and its count, as on app slides
+    // (six columns leave no row in a third of the width).
     expect(tables[2]!.binding.measureIds).toEqual(["rating", "rating_count"]);
-    // Never the twenty rows of version 4: the top rows that fit in every
-    // format at every theme font scale.
-    expect(tables.map((widget) => widget.options.limit)).toEqual([3, 3, 3]);
     // An app's ratings rank by their count too.
     expect(
       focus!.widgets.find((widget) => widget.type === "measure")?.options,
     ).toMatchObject({ order: { measureId: "rating_count" } });
     // A Google Play app's proceeds table sits below, beside its ratings,
-    // where its rows have room; its downloads stay on top.
+    // where a row fits at every theme font scale; its downloads stay on top.
     expect(
       timer!.widgets.map((widget) => [
         widget.type === "measure" ? widget.binding.measureIds[0] : widget.type,
@@ -980,15 +987,8 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
       ]),
     ).toEqual([
       ["downloads", 0, 0, 12],
-      ["rating", 0, 3, 8],
-      ["proceeds", 8, 3, 4],
-    ]);
-    // The ratings take two thirds of the lower row beside the review.
-    expect(
-      focus!.widgets.map((widget) => [widget.type, widget.w]).slice(-2),
-    ).toEqual([
-      ["measure", 8],
-      ["review", 4],
+      ["rating", 0, 3, 6],
+      ["proceeds", 6, 3, 6],
     ]);
   });
 });

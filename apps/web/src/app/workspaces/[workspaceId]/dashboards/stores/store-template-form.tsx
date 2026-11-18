@@ -781,8 +781,7 @@ export function StoreTemplateForm({
             ))}
             {mode === "portfolio" ? <li>{t("slidesDefinition")}</li> : null}
           </ul>
-          {/* Two overview slides (#768): ten app slides fit in twelve. */}
-          {mode === "portfolio" && productCount > 10 ? (
+          {mode === "portfolio" && productCount > 11 ? (
             <p className="notice" role="status">
               {t("tooManyApps", { count: productCount })}
             </p>

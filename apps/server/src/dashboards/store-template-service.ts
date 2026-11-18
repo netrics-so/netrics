@@ -42,7 +42,6 @@ import {
   type StoreTemplateSource,
   type StoreMetric,
   type StoreConnectorId,
-  type StoreTemplateVersion,
 } from "./store-portfolio.js";
 import {
   installIconSources,
@@ -730,10 +729,7 @@ export function createStoreTemplateService(deps: {
                 }
                 if (!dashboardId)
                   throw new Error("store template without dashboard");
-                const omitted = storeAppSlides(
-                  storePortfolio(inputs),
-                  template.version as StoreTemplateVersion,
-                ).omitted;
+                const omitted = storeAppSlides(storePortfolio(inputs)).omitted;
                 const result: StoreTemplateResult = {
                   dashboardId,
                   mappingDatasetId: mapping.datasetId,

@@ -66,7 +66,7 @@ export const dashboardsEn = {
     missingDefinition:
       "Reports can arrive late. Known values remain visible as partial; pending and missing values are not zero. Unallocated account rows remain separate from apps.",
     slidesDefinition:
-      "An overview of all apps (their store tables, then revenue and visitors over the last 30 days), then one slide per app with its icon: revenue for paid apps, downloads, ratings, the latest App Store review and the linked website's visitors. Screens move through the slides on their own.",
+      "An overview slide of all apps, then one slide per app with its icon: revenue for paid apps, downloads, ratings, the latest App Store review and the linked website's visitors. Screens move through the slides on their own.",
     tooManyApps:
       "{count} apps: a dashboard shows at most 12 slides, so the first apps by name get a slide of their own and the others appear on the overview only.",
     omittedApps:
