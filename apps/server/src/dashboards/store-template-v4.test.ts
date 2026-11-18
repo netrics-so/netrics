@@ -461,8 +461,9 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     expect(await updateAvailable(requestId)).toBe(true);
     const { plan, copy } = await applyUpdate(requestId);
     expect(plan).toMatchObject({ fromVersion: 4, toVersion: 5 });
-    // The model tables change (the overview's and each app's ratings):
-    // offered for review like any template change.
+    // The model tables change (the overview's and each app's ratings),
+    // and the App Store's store name: offered for review like any
+    // template change.
     const apps = copy.slides.slice(1);
     expect(
       plan.records
@@ -481,7 +482,14 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
           () => "dashboard:portfolio#widget:app:ratings changed template",
         ),
         "dashboard:portfolio#widget:downloads changed template",
+        "dashboard:portfolio#widget:proceeds changed template",
         "dashboard:portfolio#widget:ratings changed template",
+        // "App Store" instead of "Apple App Store" (short in tables): the
+        // App Store sources' store name, a data draft to publish.
+        ...["downloads", "proceeds", "ratings"].map(
+          (metric) =>
+            `preparation:source:${apple.id}:${metric}#step:calculate_store_name changed template`,
+        ),
       ].sort(),
     );
     expect(copy.slides).toHaveLength(v4.slides.length);

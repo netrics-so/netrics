@@ -87,6 +87,8 @@ export const storeTemplateCopy = (locale: Locale) =>
         visitorsShort: "Website-Besucher",
         downloadsShort: "Downloads",
         proceedsShort: "Erlöse",
+        countryShort: "Land",
+        ratingCountShort: "Anzahl",
         downloadsRecent: "Downloads, letzte 30 Tage",
         visitors: "Website-Besucher, letzte 30 Tage",
         appStore: "App Store",
@@ -140,6 +142,8 @@ export const storeTemplateCopy = (locale: Locale) =>
         visitorsShort: "Website visitors",
         downloadsShort: "Downloads",
         proceedsShort: "Proceeds",
+        countryShort: "Country",
+        ratingCountShort: "Ratings",
         downloadsRecent: "Downloads, last 30 days",
         visitors: "Website visitors, last 30 days",
         appStore: "App Store",
@@ -557,7 +561,14 @@ export function buildStorePreparation(
   calculate(
     "store_name",
     t.store,
-    text(apple ? "Apple App Store" : "Google Play"),
+    // Version 5 (#768): "App Store", short in tables and app labels.
+    text(
+      apple
+        ? templateVersion >= 5
+          ? "App Store"
+          : "Apple App Store"
+        : "Google Play",
+    ),
   );
   if (metric === "downloads") {
     if (apple) {
@@ -1077,6 +1088,8 @@ export function buildStoreModel(
 export function storeTableColumns(
   binding: { groupBy: readonly string[]; measureIds: readonly string[] },
   locale: Locale,
+  /** The widget's short heads (`options.labels`), which win. */
+  labels?: Readonly<Record<string, string>>,
 ): string[] {
   const names = new Map<string, string>();
   for (const metric of ["downloads", "proceeds", "ratings"] as const) {
@@ -1085,7 +1098,7 @@ export function storeTableColumns(
       names.set(entry.id, entry.name);
   }
   return [...binding.groupBy, ...binding.measureIds].map(
-    (id) => names.get(id) ?? id,
+    (id) => labels?.[id] ?? names.get(id) ?? id,
   );
 }
 
@@ -1201,7 +1214,7 @@ export function buildStoreDashboardTemplate(
       widget,
       portfolio,
       version,
-      (binding) => storeTableColumns(binding, locale),
+      (binding, labels) => storeTableColumns(binding, locale, labels),
     );
   const request: CreateDashboardRequest = {
     name,
@@ -1274,14 +1287,23 @@ interface OverviewMeasureTable {
   titles: (t: ReturnType<typeof storeTemplateCopy>) => string[];
   rows: number;
   order: string | null;
+  /** Short column heads by dimension or measure id; the title says more. */
+  labels: (t: ReturnType<typeof storeTemplateCopy>) => Record<string, string>;
 }
 const RATINGS_TABLE: OverviewMeasureTable = {
   titles: (t) => [t.ratings],
+  // The listing names its app and store ("Focus · App Store").
+  labels: (t) => ({
+    listing: t.app,
+    storefront: t.countryShort,
+    rating_count: t.ratingCountShort,
+  }),
   rows: 20,
   order: "rating_count",
 };
 const PROCEEDS_TABLE: OverviewMeasureTable = {
   titles: (t) => [t.proceeds, t.proceedsShort],
+  labels: (t) => ({ proceeds: t.proceedsShort }),
   rows: 20,
   order: null,
 };
@@ -1289,6 +1311,7 @@ const PROCEEDS_TABLE: OverviewMeasureTable = {
 const OVERVIEW_MEASURE_TABLES: Record<string, OverviewMeasureTable> = {
   "widget:downloads": {
     titles: (t) => [t.downloads, t.downloadsShort],
+    labels: (t) => ({ downloads: t.downloadsShort }),
     rows: 20,
     order: "downloads",
   },
@@ -1410,7 +1433,10 @@ function buildPortfolioSlides(
   ) => Extract<Widget, { type: "measure" }>,
   portfolio: StorePortfolio,
   version: StoreTemplateVersion,
-  columnsOf: (binding: { groupBy: string[]; measureIds: string[] }) => string[],
+  columnsOf: (
+    binding: { groupBy: string[]; measureIds: string[] },
+    labels?: Readonly<Record<string, string>>,
+  ) => string[],
 ): {
   request: CreateDashboardRequest;
   widgetKeys: string[];
@@ -1567,7 +1593,10 @@ function buildPortfolioSlides(
           (widget.type === "measure" && widget.options.view === "table")
             ? widget.options.limit
             : null,
-        columns: widget.type === "measure" ? columnsOf(widget.binding) : null,
+        columns:
+          widget.type === "measure"
+            ? columnsOf(widget.binding, widget.options.labels)
+            : null,
       })),
     };
     return scales.every((fontScale) =>
@@ -1606,6 +1635,7 @@ function buildPortfolioSlides(
               options: {
                 view: "table" as const,
                 limit: table.rows,
+                labels: table.labels(t),
                 ...(table.order
                   ? {
                       order: {

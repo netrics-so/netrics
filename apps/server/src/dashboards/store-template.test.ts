@@ -87,7 +87,7 @@ const VERSION_HASHES: Record<number, string> = {
   2: "79726e4b4472c40243627181269daf6f08dcd991b7d1e415d2aba7bc51727aa3",
   3: "803b151fd59622b368644799eed102cfe37f3632fbc2266f2f32a3ea221c6923",
   4: "a0b7378f8af8f7c9b07da278d4187d3af3b88198cb075d9c66ee14dd5affc014",
-  5: "44d26c1cfd58f5aaf5a8954ac57bf176d736ee0540d1ce5110390de055131bc8",
+  5: "1b60a20f456ad63e771238196ea50eeeabb02af3d50f53054c9652ca7effa333",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -768,7 +768,11 @@ describe("version 4: an overview and one slide per app (#709)", () => {
                     : null,
               columns:
                 widget.type === "measure"
-                  ? storeTableColumns(widget.binding, locale)
+                  ? storeTableColumns(
+                      widget.binding,
+                      locale,
+                      widget.options.labels,
+                    )
                   : null,
             }));
             for (const fontScale of [1])
@@ -893,7 +897,11 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
                   : null,
               columns:
                 widget.type === "measure"
-                  ? storeTableColumns(widget.binding, locale)
+                  ? storeTableColumns(
+                      widget.binding,
+                      locale,
+                      widget.options.labels,
+                    )
                   : null,
             })),
           },
@@ -940,13 +948,16 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
         warnings.filter((w) => !/^App(-P| p)ortfolio:/.test(w)),
         locale,
       ).toEqual([]);
-      // The overview's four-wide tables hold no row at the larger theme
-      // font scales on wide screens: the one-slide layout's trade-off,
-      // which the Studio states; screens keep their footer lines.
-      for (const warning of warnings)
-        expect(warning, locale).toMatch(
-          /^App(-P| p)ortfolio:measure:[013] (21x9|16x9|4x3) rows_cut 1\.(15|3)$/,
-        );
+      // At the custom 1.3 the overview's downloads and proceeds hold no
+      // row in a third of a 16:9 or 4:3 screen: the one-slide layout's
+      // trade-off, which the Studio states; screens keep their footer.
+      expect(warnings, locale).toEqual(
+        [
+          "measure:0 16x9 rows_cut 1.3",
+          "measure:1 16x9 rows_cut 1.3",
+          "measure:1 4x3 rows_cut 1.3",
+        ].map((w) => `${storeTemplateCopy(locale).name}:${w}`),
+      );
     }
   });
 
