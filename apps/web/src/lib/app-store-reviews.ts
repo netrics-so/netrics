@@ -36,6 +36,20 @@ export function reviewsKeyGuide(locale: Locale): KeyGuide {
   };
 }
 
+/**
+ * The card's lead, by the key's status (#771); null before the status is
+ * read (or when this member cannot read it): a neutral line.
+ */
+export function reviewsLead(
+  status: ReviewsStatus | null,
+  locale: Locale,
+): string {
+  return webTranslator(
+    locale,
+    "connections.appStoreReviews.lead",
+  )(status ?? "default");
+}
+
 /** One line per status of the reviews key. */
 export function reviewsStatusLabel(
   status: ReviewsStatus,

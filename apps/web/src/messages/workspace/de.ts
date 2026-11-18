@@ -814,7 +814,17 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     },
     appStoreAnalytics: {
       title: "App-Store-Analysen",
-      lead: "Analysen: einmal mit einem temporären Admin-Schlüssel anfordern.",
+      lead: {
+        enable:
+          "Analysen: einmal mit einem temporären Admin-Schlüssel anfordern.",
+        paused:
+          "Analysen pausiert: erneut mit einem temporären Admin-Schlüssel anfordern.",
+        requested:
+          "Analysen angefordert: Die ersten Berichte kommen in 1–2 Tagen.",
+        unknown: "Analysen: Der Status ist gerade unbekannt.",
+        available:
+          "Analysen: werden mit dem gespeicherten Sales-Schlüssel gelesen.",
+      },
       adminOnly:
         "Dieses Formular ist nur für einen temporären Admin-Schlüssel. Der Customer-Support-Schlüssel für Bewertungen und Rezensionen gehört zu „Bewertungen und Rezensionen im App Store“.",
       offer: {
@@ -892,7 +902,17 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     },
     appStoreReviews: {
       title: "Bewertungen und Rezensionen im App Store",
-      lead: "Rezensionen: Füg einen Customer-Support-Schlüssel hinzu.",
+      lead: {
+        default:
+          "Rezensionen: Ein optionaler Customer-Support-Schlüssel liest sie.",
+        not_configured:
+          "Rezensionen: Füg einen Customer-Support-Schlüssel hinzu.",
+        active:
+          "Rezensionen: werden mit dem gespeicherten Customer-Support-Schlüssel gelesen.",
+        paused:
+          "Rezensionen pausiert: Lade einen neuen Customer-Support-Schlüssel hoch.",
+        unknown: "Rezensionen: Der Status des Schlüssels ist gerade unbekannt.",
+      },
       intro:
         "Optional. Rezensionen pro Tag, ihre Sternebewertungen und ihre Herkunft brauchen einen zweiten Teamschlüssel mit der Rolle Customer Support, weil der Sales-Schlüssel keine Rezensionen lesen kann. Für das Widget „Neueste Bewertung“ behält netrics außerdem Titel, Text und Spitznamen der neuesten 50 Rezensionen jeder App, höchstens 90 Tage lang; wird der Schlüssel entfernt, werden sie gelöscht. Die API liefert die Rezensionen, die Kunden geschrieben haben, so wie Apple sie auflistet; sie hat keine Gesamtbewertung, daher entsprechen diese Zahlen nicht der Bewertung im App Store. Verkäufe hängen nie von diesem Schlüssel ab.",
       askToAdd:

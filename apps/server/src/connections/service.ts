@@ -42,7 +42,7 @@ import type {
   Connector,
   ConnectorManifest,
 } from "@netrics/connector-sdk";
-import { ANALYTICS_METRIC_KEYS } from "@netrics/connectors";
+import { ANALYTICS_METRIC_KEYS, ANALYTICS_STREAM } from "@netrics/connectors";
 import {
   DEFAULT_LOCALE,
   connectorHasReviews,
@@ -2956,6 +2956,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     /**
      * App Store analytics per app (#174), read with the connection's stored
      * key: requested or not, stopped, and whether analytics data arrived.
+     * "Available through" is the day the data status shows (#771): the
+     * stored freshness of the analytics stream, not the newest data point.
      */
     async appStoreAnalytics(
       actor: Actor,
@@ -2966,18 +2968,36 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return loaded;
       }
       const { key, selection } = loaded.value;
-      const latest = await inWorkspace(actor, (tx) =>
-        latestObservationByResource(tx, actor.workspaceId, connectionId, [
-          ANALYTICS_METRIC_KEYS.impressions,
-          ANALYTICS_METRIC_KEYS.productPageViews,
-          ANALYTICS_METRIC_KEYS.storeDownloads,
-        ]),
+      const { latest, completeThrough } = await inWorkspace(
+        actor,
+        async (tx) => ({
+          latest: await latestObservationByResource(
+            tx,
+            actor.workspaceId,
+            connectionId,
+            [
+              ANALYTICS_METRIC_KEYS.impressions,
+              ANALYTICS_METRIC_KEYS.productPageViews,
+              ANALYTICS_METRIC_KEYS.storeDownloads,
+            ],
+          ),
+          completeThrough: new Map(
+            (
+              await listConnectionFreshness(tx, actor.workspaceId, connectionId)
+            ).flatMap((row) =>
+              row.stream === ANALYTICS_STREAM && row.dataThrough !== null
+                ? [[row.resource, row.dataThrough] as const]
+                : [],
+            ),
+          ),
+        }),
       );
       const status = await appStoreAnalyticsStatus({
         key,
         http: signedKeys.httpFor(key.provider),
         selection,
         latest,
+        completeThrough,
       });
       if (!status.ok) {
         return fail(400, status.message);

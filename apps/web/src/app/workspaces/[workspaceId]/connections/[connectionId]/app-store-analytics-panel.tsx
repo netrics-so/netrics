@@ -23,6 +23,7 @@ import {
   APP_STORE_CONNECT_KEYS_URL,
   adminKeyGuide,
   adminKeyIdOf,
+  analyticsLead,
   analyticsStatusLabel,
   needsEnablement,
   pausedApps,
@@ -205,7 +206,7 @@ export function AppStoreAnalyticsPanel({
     <div className="card" id="app-store-analytics">
       <h2>{t("title")}</h2>
       <p>
-        <strong>{t("lead")}</strong>
+        <strong>{analyticsLead(status?.apps ?? null, locale)}</strong>
       </p>
       <p className="muted">{t("intro")}</p>
 

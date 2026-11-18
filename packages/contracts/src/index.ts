@@ -782,7 +782,9 @@ export type EnableAppStoreAnalyticsResponse = z.infer<
  * Per app, read with the connection's own key: not_enabled (no ONGOING
  * request), stopped (Apple stopped it: enable again), requested (data
  * pending, the first reports take 1–2 days), available (analytics data
- * stored, `latestDay` the newest), unknown (Apple could not be asked).
+ * stored), unknown (Apple could not be asked). `latestDay` is the day the
+ * app's analytics are complete through, the same date as the connection's
+ * data status (ADR 0025, #771); null before the sync recorded one.
  */
 export const appStoreAnalyticsAppStatusSchema = z.object({
   appId: z.string().min(1),

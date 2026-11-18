@@ -184,15 +184,23 @@ export async function enableAppStoreAnalytics(input: {
  * The analytics state per app, with the connection's stored key (reading
  * requests works with the Sales role): not requested, stopped, requested
  * (data pending), or available when analytics observations are stored.
+ *
+ * `latestDay` is the day the app's analytics are complete through, the
+ * same date as the connection's data status (ADR 0025, #771): the older of
+ * the newest days of the discovery and downloads reports, as the sync
+ * recorded it. The newest stored data point is not used for it: one report
+ * can be a day ahead of the other, and that day is still incomplete.
  */
 export async function appStoreAnalyticsStatus(input: {
   key: SignedKey;
   http: SignedKeyHttp;
   selection: readonly string[] | undefined;
-  /** Newest analytics observation per app ID. */
+  /** Newest analytics observation per app ID: whether data arrived. */
   latest: ReadonlyMap<string, Date>;
+  /** Per app ID, the analytics stream's stored freshness (YYYY-MM-DD). */
+  completeThrough: ReadonlyMap<string, string>;
 }): Promise<AnalyticsResult<AppStoreAnalyticsAppStatus[]>> {
-  const { key, http, latest } = input;
+  const { key, http, latest, completeThrough } = input;
   const tokens: string[] = [];
   const redact = redactor(key, tokens);
   const client = clientOf(key, http, tokens);
@@ -215,8 +223,8 @@ export async function appStoreAnalyticsStatus(input: {
     0,
     MAX_ANALYTICS_APPS,
   )) {
-    const day = latest.get(app.id);
-    const latestDay = day ? day.toISOString().slice(0, 10) : null;
+    const arrived = latest.has(app.id);
+    const latestDay = arrived ? (completeThrough.get(app.id) ?? null) : null;
     try {
       const requests = await listAnalyticsRequests(client, app.id);
       const running = activeRequest(requests);
@@ -227,7 +235,7 @@ export async function appStoreAnalyticsStatus(input: {
           ? requests.length > 0
             ? "stopped"
             : "not_enabled"
-          : latestDay
+          : arrived
             ? "available"
             : "requested",
         latestDay,

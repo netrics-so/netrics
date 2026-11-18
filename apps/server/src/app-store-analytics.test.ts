@@ -8,6 +8,7 @@ vi.setConfig({ testTimeout: 20_000 });
 
 import {
   appStoreAnalyticsStatusResponseSchema,
+  connectionDetailResponseSchema,
   connectionResponseSchema,
   enableAppStoreAnalyticsResponseSchema,
   errorResponseSchema,
@@ -86,6 +87,15 @@ const analytics: FakeAscAnalytics = {
             DISCOVERY_HEADER,
             `2026-09-29\tAlpha Notes\t${NOTES}\tImpression\tNo page\tApp Store search\t\tiPhone\tiOS 26.0\tUS\t800\t700`,
             `2026-09-29\tAlpha Notes\t${NOTES}\tPage view\tProduct page\tApp Store search\t\tiPhone\tiOS 26.0\tUS\t90\t80`,
+          ].join("\n"),
+        },
+        // Discovery is a day ahead of downloads (#771): analytics are
+        // complete only through the older of the two, Sept 29.
+        {
+          processingDate: "2026-09-30",
+          content: [
+            DISCOVERY_HEADER,
+            `2026-09-30\tAlpha Notes\t${NOTES}\tImpression\tNo page\tApp Store search\t\tiPhone\tiOS 26.0\tUS\t810\t710`,
           ].join("\n"),
         },
       ],
@@ -551,6 +561,16 @@ describe("App Store analytics", () => {
       [NOTES, "available", "2026-09-29"],
       [LEDGER, "requested", null],
     ]);
+    // One "through" date on the page (#771): the status card's day is the
+    // data status's, not the newest stored point (Sept 30, discovery only).
+    const detail = connectionDetailResponseSchema.parse(
+      (await call("GET", `/connections/${connectionId}`)).json(),
+    );
+    expect(
+      detail.freshness
+        .find((stream) => stream.key === "analytics")!
+        .entries.map((entry) => [entry.resource, entry.dataThrough]),
+    ).toEqual([[NOTES, "2026-09-29"]]);
   });
 
   it("shows a stopped request as paused", async () => {

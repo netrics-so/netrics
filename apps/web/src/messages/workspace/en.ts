@@ -783,7 +783,15 @@ export const workspaceEn = {
     },
     appStoreAnalytics: {
       title: "App Store analytics",
-      lead: "Analytics: request them once with a temporary Admin key.",
+      /** The lead, by the apps' status (#771). */
+      lead: {
+        enable: "Analytics: request them once with a temporary Admin key.",
+        paused:
+          "Analytics paused: request them again with a temporary Admin key.",
+        requested: "Analytics requested: the first reports arrive in 1–2 days.",
+        unknown: "Analytics: the status is unknown right now.",
+        available: "Analytics: read with the stored Sales key.",
+      },
       adminOnly:
         "This form is only for a temporary Admin key. The Customer Support key for ratings and reviews goes under “App Store ratings and reviews”.",
       offer: {
@@ -857,7 +865,14 @@ export const workspaceEn = {
     },
     appStoreReviews: {
       title: "App Store ratings and reviews",
-      lead: "Reviews: add a Customer Support key.",
+      /** The lead, by the key's status (#771). */
+      lead: {
+        default: "Reviews: an optional Customer Support key reads them.",
+        not_configured: "Reviews: add a Customer Support key.",
+        active: "Reviews: read with the stored Customer Support key.",
+        paused: "Reviews paused: upload a new Customer Support key.",
+        unknown: "Reviews: the key’s status is unknown right now.",
+      },
       intro:
         "Optional. Reviews per day, their star ratings and where they come from need a second team key with the Customer Support role, because the Sales key cannot read reviews. For the latest-review widget, netrics also keeps the title, text and reviewer nickname of each app’s newest 50 reviews, at most 90 days; removing the key deletes them. The API returns the reviews customers wrote, as Apple lists them; it has no aggregate star rating, so these numbers are not the rating shown on the App Store. Sales never depend on this key.",
       askToAdd:

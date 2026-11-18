@@ -2,6 +2,7 @@ export {
   AGREEMENTS_MESSAGE,
   ANALYTICS_METRIC_KEYS,
   ANALYTICS_SEGMENT_HOSTS,
+  ANALYTICS_STREAM,
   PRODUCT_TYPES,
   activeRequest,
   ensureAnalyticsRequest,

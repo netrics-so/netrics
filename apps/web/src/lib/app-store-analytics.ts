@@ -55,6 +55,28 @@ export function needsEnablement(
   );
 }
 
+/**
+ * The card's lead, by the apps' status (#771): what to do next, or that
+ * nothing is left to do. A stopped request comes first, then a missing
+ * one, then data still pending; "available" only when every app has data.
+ * Not loaded yet (or not readable by this member) and no apps: the
+ * one-time step.
+ */
+export function analyticsLead(
+  apps: readonly Pick<AppStoreAnalyticsAppStatus, "status">[] | null,
+  locale: Locale,
+): string {
+  const t = webTranslator(locale, "connections.appStoreAnalytics.lead");
+  if (!apps || apps.length === 0) return t("enable");
+  const has = (status: AnalyticsStatus) =>
+    apps.some((app) => app.status === status);
+  if (has("stopped")) return t("paused");
+  if (has("not_enabled")) return t("enable");
+  if (has("requested")) return t("requested");
+  if (has("unknown")) return t("unknown");
+  return t("available");
+}
+
 /** Apps whose request Apple stopped: shown as paused. */
 export function pausedApps<
   T extends Pick<AppStoreAnalyticsAppStatus, "status">,
