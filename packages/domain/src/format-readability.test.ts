@@ -193,7 +193,7 @@ describe("formatWarnings", () => {
     ]);
   });
 
-  it("rows_cut: a measure table keeps room for its rows and three footer lines (#768)", () => {
+  it("rows_cut: a measure table fits its rows; fewer is info, none is attention (#768)", () => {
     const measure = (rows: number, h = 4): ReadabilityWidget => ({
       id: "m",
       type: "measure",
@@ -204,31 +204,25 @@ describe("formatWarnings", () => {
       label: "Downloads by app and store",
       rows,
     });
-    // At h 4 three rows fit above the scope, refresh and freshness lines.
+    // At h 4 four rows fit above the "N of M" and freshness lines: screens
+    // show those and say so (info).
     const warnings = formatWarnings(slide([measure(20)]), "16x9", context);
     expect(codes(warnings)).toEqual(["16x9 rows_cut m"]);
     expect(warnings[0]).toMatchObject({
-      severity: "attention",
-      rows: { shown: 3, limit: 20 },
+      severity: "info",
+      rows: { shown: 4, limit: 20 },
     });
-    expect(formatWarnings(slide([measure(3)]), "16x9", context)).toEqual([]);
-    expect(codes(formatWarnings(slide([measure(4)]), "16x9", context))).toEqual(
-      ["16x9 rows_cut m"],
-    );
-    const at13 = { ...context, fontScale: 1.3 };
-    expect(formatWarnings(slide([measure(3)]), "16x9", at13)[0]?.rows).toEqual({
-      shown: 2,
-      limit: 3,
-    });
+    expect(formatWarnings(slide([measure(4)]), "16x9", context)).toEqual([]);
     // A full-height table holds many more.
     expect(formatWarnings(slide([measure(10, 8)]), "16x9", context)).toEqual(
       [],
     );
-    // Not even the heads and footer lines fit: zero rows shown.
+    // Not even one row (or the footer) fits: attention.
+    const at13 = { ...context, fontScale: 1.3 };
     const tiny = { ...measure(1, 3), w: 4 };
-    expect(formatWarnings(slide([tiny]), "16x9", at13)[0]?.rows).toEqual({
-      shown: 0,
-      limit: 1,
+    expect(formatWarnings(slide([tiny]), "16x9", at13)[0]).toMatchObject({
+      severity: "attention",
+      rows: { shown: 0, limit: 1 },
     });
     // Without rows (a value view) nothing is measured.
     expect(

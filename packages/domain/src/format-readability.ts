@@ -290,7 +290,8 @@ export type FormatWarningCode =
   | "clock_parts_hidden"
   /**
    * A table's `limit` exceeds the rows that fit (see `rows`); a measure
-   * table's rows are counted above its footer lines.
+   * table's rows are counted above its footer lines, and it is info while
+   * at least one row fits (screens fit the rows).
    */
   | "rows_cut"
   /** A countdown's target has passed: it shows its text when reached. */
@@ -342,6 +343,14 @@ export const FORMAT_WARNING_SEVERITY: Readonly<
 
 /** A status board's `rows_cut`: "+N more" is expected, so info. */
 export const STATUS_ROWS_CUT_SEVERITY: FormatWarningSeverity = "info";
+
+/**
+ * A measure table shows the rows that fit and says "N of M" (#768): fewer
+ * rows than its `limit` is info while at least `MEASURE_TABLE_MIN_ROWS`
+ * fit; fewer than that (or no room for the footer) is attention.
+ */
+export const MEASURE_ROWS_FITTED_SEVERITY: FormatWarningSeverity = "info";
+export const MEASURE_TABLE_MIN_ROWS = 1;
 
 export interface FormatWarningItem {
   format: ScreenFormat;
@@ -521,8 +530,9 @@ export function formatWarnings(
         });
       }
     } else if (widget.type === "measure" && widget.rows) {
-      // A measure table (#768): its rows above the footer lines it keeps
-      // room for; when even those do not fit, none of its rows show.
+      // A measure table (#768) shows the rows that fit above its footer
+      // lines: fewer than asked for is said (info); not even one row, or
+      // not even the footer, is cut (attention).
       const box = contentBoxIn(placement, format, context.showHeader);
       const { rowCapacity } = measureTableLayout({
         label: widget.label ?? "",
@@ -532,10 +542,15 @@ export function formatWarnings(
         columns: widget.columns ?? null,
       });
       if (widget.rows > rowCapacity) {
-        warn("rows_cut", widget.id, null, {
-          shown: rowCapacity,
-          limit: widget.rows,
-        });
+        warn(
+          "rows_cut",
+          widget.id,
+          null,
+          { shown: rowCapacity, limit: widget.rows },
+          rowCapacity >= MEASURE_TABLE_MIN_ROWS
+            ? MEASURE_ROWS_FITTED_SEVERITY
+            : "attention",
+        );
       }
     } else if (widget.type === "status" && widget.rows) {
       // More sources than rows: the last row says "+N more" (info; the

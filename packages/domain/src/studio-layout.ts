@@ -1074,15 +1074,15 @@ export const MEASURE_TABLE_METRICS = {
 
 /**
  * The footer lines a measure table on a screen keeps room for under its
- * rows, each as long as it commonly gets (German, the longer language),
- * wrapped at the widget's width: the "N of M groups" line, a scope line
- * (the slide's app) or the source refresh line, and the freshness line
- * (ADR 0025), which never wraps. Other notices (a stale model, an outage)
- * take rows' room when they show.
+ * rows when its actual lines are not known (the readability check), each
+ * as long as it commonly gets (German, the longer language) and wrapped at
+ * the widget's width: the "N of M groups" line, and the freshness line
+ * (ADR 0025), which never wraps and stands in for the source refresh line
+ * (#769). Screens fit their rows to the lines they actually show
+ * (`measureTableRowsShown`).
  */
 export const MEASURE_TABLE_FOOTER_SAMPLES: readonly (string | null)[] = [
   "20 von 200 Gruppen werden angezeigt.",
-  "Älteste Quellenaktualisierung: 18.11.2026, 12:00",
   null,
 ];
 
@@ -1096,34 +1096,29 @@ export const MEASURE_TABLE_CELL_SAMPLE = "Apple App Store";
 
 export interface MeasureTableLayout {
   titleLines: number;
-  /** Lines of the column heads (1–3) and of each row (1–4). */
+  /** Lines of the column heads and of a row (`MEASURE_TABLE_CELL_SAMPLE`). */
   headLines: number;
   rowLines: number;
   /** Title, column heads, footer lines and the gaps between them, in units. */
   fixedHeight: number;
-  /** One row with its padding and border, in units. */
+  /** One row of `rowLines` lines with its padding and border, in units. */
   rowPitch: number;
-  /** Rows that fit under the column heads, above the footer lines. */
+  /** Rows of `rowLines` lines that fit under the heads, above the footer. */
   rowCapacity: number;
 }
 
-/**
- * A measure widget's table view in a content box (units): how many rows fit
- * between the title and the column heads above and the footer lines below
- * (`MEASURE_TABLE_FOOTER_SAMPLES`, or the first `footerLines` of them). The
- * columns share the width evenly: a head wraps at its column's width (at
- * most three lines), and rows wrap as `MEASURE_TABLE_CELL_SAMPLE` would in
- * a column (at most four lines). Without `columns` (the heads as screens
- * show them) one line each. 0 when not even the heads and footer lines fit.
- */
-export function measureTableLayout(input: {
+interface MeasureTableBox {
   label: string;
+  /** The content box in units: the widget's rect less its padding. */
   width: number;
   height: number;
   fontScale?: number;
+  /** The column heads as shown: grouped dimensions', then measures' names. */
   columns?: readonly string[] | null;
-  footerLines?: number;
-}): MeasureTableLayout {
+}
+
+/** The parts of a measure table's height (see `measureTableLayout`). */
+function measureTableParts(input: MeasureTableBox) {
   const scale = effectiveFontScale(input.fontScale);
   const m = MEASURE_TABLE_METRICS;
   const width = Math.max(0, input.width);
@@ -1135,56 +1130,63 @@ export function measureTableLayout(input: {
     Math.max(1, wrappedLineCount(input.label, width, title, "semibold")),
   );
   const columns = input.columns?.length ? input.columns : null;
+  // Both renderers give every column an even share (a fixed table layout).
   const columnWidth = Math.max(
     0,
     width / (columns?.length ?? 1) - m.cellPadding,
   );
-  const headLines = columns
-    ? Math.min(
-        3,
-        Math.max(
-          1,
-          ...columns.map((name) =>
-            wrappedLineCount(name, columnWidth, cell, "semibold"),
-          ),
-        ),
-      )
-    : 1;
-  const rowLines = columns
-    ? Math.min(
-        4,
-        Math.max(
-          1,
-          wrappedLineCount(MEASURE_TABLE_CELL_SAMPLE, columnWidth, cell),
-        ),
-      )
-    : 1;
-  const line = (lines: number) =>
-    lines * cell * m.lineHeight + m.cellPadding + m.border;
-  const rowPitch = line(rowLines);
-  const samples = MEASURE_TABLE_FOOTER_SAMPLES.slice(
-    0,
+  const lines = (texts: readonly string[], weight: StudioFontWeight) =>
     Math.max(
-      0,
-      Math.floor(input.footerLines ?? MEASURE_TABLE_FOOTER_SAMPLES.length),
-    ),
-  );
-  const footer = samples.reduce<number>(
-    (sum, sample) =>
-      sum +
-      m.gap +
-      (sample === null
-        ? footerSize * m.freshnessLineHeight
-        : Math.max(1, wrappedLineCount(sample, width, footerSize)) *
-          footerSize *
-          m.lineHeight),
-    0,
-  );
-  const fixedHeight =
-    titleLines * title * m.lineHeight + m.gap + line(headLines) + footer;
+      1,
+      ...texts.map((text) => wrappedLineCount(text, columnWidth, cell, weight)),
+    );
+  const row = (count: number) =>
+    count * cell * m.lineHeight + m.cellPadding + m.border;
+  const footerLine = (text: string | null) =>
+    m.gap +
+    (text === null
+      ? footerSize * m.freshnessLineHeight
+      : Math.max(1, wrappedLineCount(text, width, footerSize)) *
+        footerSize *
+        m.lineHeight);
+  const headLines = columns ? lines(columns, "semibold") : 1;
   return {
     titleLines,
     headLines,
+    lines,
+    row,
+    footerLine,
+    /** Title, gap and column heads. */
+    head: titleLines * title * m.lineHeight + m.gap + row(headLines),
+  };
+}
+
+/**
+ * A measure widget's table view in a content box (units), as the
+ * readability check estimates it: the title (at most two lines), the
+ * column heads wrapped at an even share of the width, rows that wrap as
+ * `MEASURE_TABLE_CELL_SAMPLE` would in a column, and the footer lines
+ * (`footer`, null for the one-line freshness line; by default
+ * `MEASURE_TABLE_FOOTER_SAMPLES`). 0 rows when not even the heads and the
+ * footer fit.
+ */
+export function measureTableLayout(
+  input: MeasureTableBox & { footer?: readonly (string | null)[] },
+): MeasureTableLayout {
+  const parts = measureTableParts(input);
+  const rowLines = input.columns?.length
+    ? parts.lines([MEASURE_TABLE_CELL_SAMPLE], "regular")
+    : 1;
+  const rowPitch = parts.row(rowLines);
+  const fixedHeight =
+    parts.head +
+    (input.footer ?? MEASURE_TABLE_FOOTER_SAMPLES).reduce<number>(
+      (sum, line) => sum + parts.footerLine(line),
+      0,
+    );
+  return {
+    titleLines: parts.titleLines,
+    headLines: parts.headLines,
     rowLines,
     fixedHeight,
     rowPitch,
@@ -1193,6 +1195,49 @@ export function measureTableLayout(input: {
       Math.floor((input.height - fixedHeight) / rowPitch + 1e-9),
     ),
   };
+}
+
+/**
+ * The rows a measure table shows on a screen (#768), as both renderers fit
+ * them: the first rows, each as tall as its cells wrap, while they fit
+ * above the footer lines the widget shows (`footer`, null for the
+ * freshness line). Rows give way first: the footer always fits when
+ * anything does. When rows are left out (of those received, or of
+ * `total`), the "N of M" line (`rowsLine`) joins the footer and is
+ * counted. Pure and deterministic: the same input, the same rows.
+ */
+export function measureTableRowsShown(
+  input: MeasureTableBox & {
+    /** The rows' cells as shown, in column order. */
+    rows: readonly (readonly string[])[];
+    /** Every group the query has (`totalRows`); at least `rows.length`. */
+    total: number;
+    footer: readonly (string | null)[];
+    rowsLine: (shown: number, total: number) => string;
+  },
+): { shown: number; rowsLine: string | null } {
+  const parts = measureTableParts(input);
+  const total = Math.max(input.total, input.rows.length);
+  const fit = (footer: readonly (string | null)[]) => {
+    let room =
+      input.height -
+      parts.head -
+      footer.reduce<number>((sum, line) => sum + parts.footerLine(line), 0);
+    let shown = 0;
+    for (const row of input.rows) {
+      room -= parts.row(parts.lines(row, "regular"));
+      if (room < -1e-9) break;
+      shown += 1;
+    }
+    return shown;
+  };
+  const all = fit(input.footer);
+  if (all >= total) return { shown: total, rowsLine: null };
+  // The line's own room comes from the rows; its wording barely changes
+  // with the count, so measure it once at the count without it.
+  const line = input.rowsLine(all, total);
+  const shown = fit([...input.footer, line]);
+  return { shown, rowsLine: input.rowsLine(shown, total) };
 }
 
 /** Rows a table shows: its limit, its rows and the room, whichever is least. */

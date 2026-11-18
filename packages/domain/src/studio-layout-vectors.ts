@@ -25,6 +25,8 @@ import {
   isInsideGrid,
   labelFit,
   legacyGrid,
+  measureTableLayout,
+  measureTableRowsShown,
   legacyLayout,
   meetsMinimumSize,
   parseTextWidget,
@@ -449,6 +451,86 @@ export function buildStudioLayoutVectors() {
     capacity: capacity!,
     shown: tableRowsShown(limit!, rows!, capacity!),
   }));
+  // Measure tables (#768): the readability estimate and the rows screens
+  // fit, with wrapping heads, cells and footer lines.
+  const measureBoxes = [
+    { width: 560, height: 414.2 },
+    { width: 404, height: 414.2 },
+    { width: 1808, height: 892.4 },
+    { width: 200, height: 100 },
+  ];
+  const measureColumns = [
+    null,
+    ["App", "Store", "Downloads and user installs"],
+    ["Store-Eintrag", "Bewertungsland", "Bewertung", "Anzahl Bewertungen"],
+  ];
+  const measureFooters = [
+    undefined,
+    [null],
+    [
+      null,
+      "Some source reports have not arrived yet. Known values are shown as partial.",
+    ],
+  ];
+  const measureLayouts = measureBoxes.flatMap((box) =>
+    ["Downloads", LABELS[5]!].flatMap((label) =>
+      FONT_SCALES.flatMap((fontScale) =>
+        measureColumns.flatMap((columns) =>
+          measureFooters.map((footer) => ({
+            label,
+            ...box,
+            fontScale,
+            columns,
+            footer: footer ?? null,
+            layout: measureTableLayout({
+              label,
+              ...box,
+              fontScale,
+              columns,
+              ...(footer ? { footer } : {}),
+            }),
+          })),
+        ),
+      ),
+    ),
+  );
+  const measureRows = [
+    [],
+    [
+      ["Focus", "Apple App Store", "500"],
+      ["Notes", "Google Play", "460"],
+      ["Focus Timer: Pomodoro & Deep Work", "Apple App Store", "1,234,567"],
+      ["Habit Tracker", "Apple App Store", "420"],
+      ["Budget", "Google Play", "380"],
+      ["Weather Now", "Apple App Store", "340"],
+    ],
+  ];
+  const measureRowsShown = measureBoxes.flatMap((box) =>
+    FONT_SCALES.flatMap((fontScale) =>
+      measureRows.flatMap((rows) =>
+        [rows.length, 40].flatMap((total) =>
+          measureFooters.slice(1).map((footer) => {
+            const input = {
+              label: "Downloads",
+              ...box,
+              fontScale,
+              columns: ["App", "Store", "Downloads"],
+              rows,
+              total,
+              footer: footer!,
+            };
+            return {
+              ...input,
+              ...measureTableRowsShown({
+                ...input,
+                rowsLine: (shown, all) => `Showing ${shown} of ${all} groups.`,
+              }),
+            };
+          }),
+        ),
+      ),
+    ),
+  );
   const tableRowLabels = [
     "/pricing",
     "/blog/how-we-built-a-dashboard-for-the-office-tv",
@@ -973,6 +1055,8 @@ export function buildStudioLayoutVectors() {
     tableRowsShown: tableRowsShownCases,
     tableRowLabels,
     tableChanges,
+    measureLayouts,
+    measureRowsShown,
     reviewLayouts,
     reviewStars,
     statusLayouts,
