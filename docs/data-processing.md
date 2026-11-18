@@ -889,8 +889,8 @@ overview asked for up to twenty rows in a four-row tile, so screens cut
 rows and footer lines. The readability check now measures measure tables
 too (`measureTableLayout`): their title, the column heads (wrapped at an
 even share of the width), the rows (wrapped as a store's name would be)
-and the footer lines a measure table shows ("N of M groups", the oldest
-source refresh, the freshness line). A table whose `limit` exceeds the rows
+and the footer lines a measure table shows ("N of M groups", the slide's
+app or the oldest source refresh, the freshness line). A table whose `limit` exceeds the rows
 that fit gets `rows_cut`, in every format.
 
 Version 5 changes the layout so every format passes at every theme font

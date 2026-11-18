@@ -1075,10 +1075,10 @@ export const MEASURE_TABLE_METRICS = {
 /**
  * The footer lines a measure table on a screen keeps room for under its
  * rows, each as long as it commonly gets (German, the longer language),
- * wrapped at the widget's width: the "N of M groups" line (or the scope
- * line), the source refresh line, and the freshness line (ADR 0025), which
- * never wraps. Other notices (a stale model, an outage) take rows' room
- * when they show.
+ * wrapped at the widget's width: the "N of M groups" line, a scope line
+ * (the slide's app) or the source refresh line, and the freshness line
+ * (ADR 0025), which never wraps. Other notices (a stale model, an outage)
+ * take rows' room when they show.
  */
 export const MEASURE_TABLE_FOOTER_SAMPLES: readonly (string | null)[] = [
   "20 von 200 Gruppen werden angezeigt.",
