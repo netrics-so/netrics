@@ -751,14 +751,20 @@ export function wrappedLineCount(
   maxWidth: number,
   fontSize: number,
   weight: StudioFontWeight = "regular",
+  /** The width of a text; by default the conservative estimate. */
+  widthOf: (
+    text: string,
+    fontSize: number,
+    weight: StudioFontWeight,
+  ) => number = estimateTextWidth,
 ): number {
   const words = text.split(" ").filter((word) => word !== "");
-  const space = estimateTextWidth(" ", fontSize, weight);
+  const space = widthOf(" ", fontSize, weight);
   let lines = 0;
   let current = 0;
   let empty = true;
   for (const word of words) {
-    const width = estimateTextWidth(word, fontSize, weight);
+    const width = widthOf(word, fontSize, weight);
     if (!empty && current + space + width <= maxWidth) {
       current = current + space + width;
       continue;
@@ -774,7 +780,7 @@ export function wrappedLineCount(
       continue;
     }
     for (const char of word) {
-      const charWidth = estimateTextWidth(char, fontSize, weight);
+      const charWidth = widthOf(char, fontSize, weight);
       if (!empty && current + charWidth > maxWidth) {
         lines += 1;
         current = 0;
@@ -1074,13 +1080,6 @@ export const MEASURE_TABLE_METRICS = {
   footer: 24,
   lineHeight: 1.15,
   freshnessLineHeight: 1.3,
-  /**
-   * The measure table's text widths as a share of `estimateTextWidth`,
-   * which is conservative for every label: IBM Plex Sans renders the
-   * table's texts at 0.82–0.95 of the estimate (digits highest), so 0.96
-   * keeps a small margin while rows wrap where they are drawn to (#768).
-   */
-  textFit: 0.96,
 } as const;
 
 /**
@@ -1118,6 +1117,54 @@ export interface MeasureTableLayout {
   rowCapacity: number;
 }
 
+/**
+ * The characters of a measure table's text with their widths in em (#768):
+ * the wider of IBM Plex Sans (the web screens) and the system font (netrics
+ * TV), regular or semibold, plus 2 %. A table's rows then wrap where they
+ * are drawn to; characters outside the table take the conservative
+ * estimate. NetricsKit has the same table (StudioLayout.measureGlyphEms).
+ */
+export const MEASURE_GLYPH_CHARS: readonly string[] = [
+  ..." !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•",
+];
+export const MEASURE_GLYPH_EMS: readonly number[] = [
+  0.241, 0.316, 0.481, 0.728, 0.645, 0.98, 0.728, 0.27, 0.368, 0.368, 0.568,
+  0.645, 0.305, 0.446, 0.305, 0.447, 0.651, 0.612, 0.612, 0.629, 0.645, 0.623,
+  0.653, 0.612, 0.644, 0.653, 0.326, 0.326, 0.645, 0.645, 0.645, 0.528, 0.918,
+  0.686, 0.677, 0.717, 0.707, 0.612, 0.589, 0.734, 0.734, 0.432, 0.556, 0.692,
+  0.547, 0.868, 0.734, 0.76, 0.655, 0.76, 0.678, 0.63, 0.606, 0.718, 0.675,
+  0.97, 0.681, 0.659, 0.639, 0.368, 0.447, 0.368, 0.645, 0.577, 0.612, 0.57,
+  0.612, 0.54, 0.612, 0.57, 0.358, 0.589, 0.6, 0.281, 0.281, 0.574, 0.3, 0.906,
+  0.6, 0.575, 0.612, 0.612, 0.401, 0.509, 0.382, 0.6, 0.535, 0.836, 0.556,
+  0.535, 0.513, 0.371, 0.384, 0.371, 0.645, 0.686, 0.686, 0.686, 0.686, 0.686,
+  0.686, 0.987, 0.717, 0.612, 0.612, 0.612, 0.612, 0.432, 0.432, 0.432, 0.432,
+  0.727, 0.734, 0.76, 0.76, 0.76, 0.76, 0.76, 0.756, 0.718, 0.718, 0.718, 0.718,
+  0.659, 0.655, 0.691, 0.57, 0.57, 0.57, 0.57, 0.57, 0.57, 0.882, 0.54, 0.57,
+  0.57, 0.57, 0.57, 0.281, 0.281, 0.281, 0.281, 0.601, 0.6, 0.575, 0.575, 0.575,
+  0.575, 0.575, 0.583, 0.6, 0.6, 0.6, 0.6, 0.535, 0.612, 0.535, 0.356, 1.056,
+  0.645, 0.645, 0.65, 0.6, 0.868, 0.887, 0.298, 0.298, 0.528, 0.528, 0.446,
+];
+const MEASURE_GLYPHS = new Map(
+  MEASURE_GLYPH_CHARS.map((char, index) => [char, MEASURE_GLYPH_EMS[index]!]),
+);
+
+/** A measure table's text width in units (see `MEASURE_GLYPH_EMS`). */
+export function measureTextWidth(
+  text: string,
+  fontSize: number,
+  weight: StudioFontWeight = "regular",
+): number {
+  let width = 0;
+  for (const char of text) {
+    const em = MEASURE_GLYPHS.get(char);
+    width +=
+      em === undefined
+        ? estimateTextWidth(char, fontSize, weight)
+        : em * fontSize;
+  }
+  return width;
+}
+
 interface MeasureTableBox {
   label: string;
   /** The content box in units: the widget's rect less its padding. */
@@ -1136,29 +1183,30 @@ function measureTableParts(input: MeasureTableBox) {
   const title = m.title * scale,
     cell = m.cell * scale,
     footerSize = m.footer * scale;
-  // Widths in estimate units: the room divided by `textFit`.
-  const fit = (room: number) => Math.max(0, room) / m.textFit;
+  // Text measured with the calibrated widths (`measureTextWidth`).
+  const wrap = (
+    text: string,
+    room: number,
+    size: number,
+    weight: StudioFontWeight = "regular",
+  ) =>
+    wrappedLineCount(text, Math.max(0, room), size, weight, measureTextWidth);
   const titleLines = Math.min(
     STUDIO_LABEL_MAX_LINES,
-    Math.max(1, wrappedLineCount(input.label, fit(width), title, "semibold")),
+    Math.max(1, wrap(input.label, width, title, "semibold")),
   );
   const columns = input.columns?.length ? input.columns : null;
   // Both renderers give every column an even share (a fixed table layout).
-  const columnWidth = fit(width / (columns?.length ?? 1) - m.cellPadding);
+  const columnWidth = width / (columns?.length ?? 1) - m.cellPadding;
   const lines = (texts: readonly string[], weight: StudioFontWeight) =>
-    Math.max(
-      1,
-      ...texts.map((text) => wrappedLineCount(text, columnWidth, cell, weight)),
-    );
+    Math.max(1, ...texts.map((text) => wrap(text, columnWidth, cell, weight)));
   const row = (count: number) =>
     count * cell * m.lineHeight + m.cellPadding + m.border;
   const footerLine = (text: string | null) =>
     m.gap +
     (text === null
       ? footerSize * m.freshnessLineHeight
-      : Math.max(1, wrappedLineCount(text, fit(width), footerSize)) *
-        footerSize *
-        m.lineHeight);
+      : Math.max(1, wrap(text, width, footerSize)) * footerSize * m.lineHeight);
   const headLines = columns ? lines(columns, "semibold") : 1;
   return {
     titleLines,

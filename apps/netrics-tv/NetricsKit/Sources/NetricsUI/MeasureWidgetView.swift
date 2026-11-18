@@ -139,7 +139,9 @@ struct MeasureWidgetView: View {
         }
     }
     private func table(_ rows: [MeasureResultRow], even: Bool = false) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: env.pt(20), verticalSpacing: env.pt(12)) {
+        // A fitted table's rows are as tall as the fit counts them: the
+        // lines plus 10 units above and below (MeasureTableMetrics).
+        Grid(alignment: .leading, horizontalSpacing: env.pt(20), verticalSpacing: env.pt(even ? 0 : 12)) {
             GridRow {
                 ForEach(groupBy, id: \.self) {
                     cell(Text(name($0, dimension: true)).font(font(28, .semibold)), even: even)
@@ -164,6 +166,7 @@ struct MeasureWidgetView: View {
     @ViewBuilder private func cell(_ text: some View, even: Bool) -> some View {
         if even {
             text.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, env.pt(10))
         } else {
             text
         }

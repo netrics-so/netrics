@@ -27,6 +27,9 @@ import {
   legacyGrid,
   measureTableLayout,
   measureTableRowsShown,
+  measureTextWidth,
+  MEASURE_GLYPH_CHARS,
+  MEASURE_GLYPH_EMS,
   legacyLayout,
   meetsMinimumSize,
   parseTextWidget,
@@ -1057,6 +1060,22 @@ export function buildStudioLayoutVectors() {
     tableChanges,
     measureLayouts,
     measureRowsShown,
+    measureGlyphs: {
+      chars: MEASURE_GLYPH_CHARS.join(""),
+      ems: MEASURE_GLYPH_EMS,
+      widths: [
+        "Apple App Store",
+        "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
+        "4.8 ★",
+        "日本",
+      ].flatMap((text) =>
+        (["regular", "semibold"] as const).map((weight) => ({
+          text,
+          weight,
+          width: measureTextWidth(text, 28, weight),
+        })),
+      ),
+    },
     reviewLayouts,
     reviewStars,
     statusLayouts,

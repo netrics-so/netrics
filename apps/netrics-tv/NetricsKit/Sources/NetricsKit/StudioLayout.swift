@@ -391,17 +391,19 @@ public enum StudioLayout {
 
     /** Lines the text takes wrapped greedily at spaces; long words break. */
     public static func wrappedLineCount(
-        _ text: String, maxWidth: Double, fontSize: Double, weight: StudioFontWeight = .regular
+        _ text: String, maxWidth: Double, fontSize: Double, weight: StudioFontWeight = .regular,
+        widthOf: ((String, Double, StudioFontWeight) -> Double)? = nil
     ) -> Int {
+        let widthOf = widthOf ?? { estimateTextWidth($0, fontSize: $1, weight: $2) }
         // Split at U+0020 by code point, as the TypeScript does.
         let words = text.unicodeScalars.split(separator: " ", omittingEmptySubsequences: true)
             .map { String(String.UnicodeScalarView($0)) }
-        let space = estimateTextWidth(" ", fontSize: fontSize, weight: weight)
+        let space = widthOf(" ", fontSize, weight)
         var lines = 0
         var current = 0.0
         var empty = true
         for word in words {
-            let width = estimateTextWidth(word, fontSize: fontSize, weight: weight)
+            let width = widthOf(word, fontSize, weight)
             if !empty && current + space + width <= maxWidth {
                 current = current + space + width
                 continue
@@ -417,7 +419,7 @@ public enum StudioLayout {
                 continue
             }
             for scalar in word.unicodeScalars {
-                let charWidth = estimateTextWidth(String(scalar), fontSize: fontSize, weight: weight)
+                let charWidth = widthOf(String(scalar), fontSize, weight)
                 if !empty && current + charWidth > maxWidth {
                     lines += 1
                     current = 0
@@ -720,14 +722,46 @@ public enum StudioLayout {
         public static let footer = 24.0
         public static let lineHeight = 1.15
         public static let freshnessLineHeight = 1.3
-        /** Text widths as a share of the conservative estimate (textFit in the TypeScript). */
-        public static let textFit = 0.96
     }
 
     /** The footer lines the readability estimate keeps room for; nil is the freshness line. */
     public static let measureTableFooterSamples: [String?] = ["20 von 200 Gruppen werden angezeigt.", nil]
     /** A row label as long as it commonly is (MEASURE_TABLE_CELL_SAMPLE). */
     public static let measureTableCellSample = "Apple App Store"
+
+    /// The characters of a measure table's text and their widths in em
+    /// (MEASURE_GLYPH_CHARS / MEASURE_GLYPH_EMS in the TypeScript): the wider
+    /// of IBM Plex Sans and the system font, regular or semibold, plus 2 %.
+    public static let measureGlyphChars: String = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•"
+    public static let measureGlyphEms: [Double] = [
+        0.241, 0.316, 0.481, 0.728, 0.645, 0.98, 0.728, 0.27, 0.368, 0.368,
+        0.568, 0.645, 0.305, 0.446, 0.305, 0.447, 0.651, 0.612, 0.612, 0.629,
+        0.645, 0.623, 0.653, 0.612, 0.644, 0.653, 0.326, 0.326, 0.645, 0.645,
+        0.645, 0.528, 0.918, 0.686, 0.677, 0.717, 0.707, 0.612, 0.589, 0.734,
+        0.734, 0.432, 0.556, 0.692, 0.547, 0.868, 0.734, 0.76, 0.655, 0.76,
+        0.678, 0.63, 0.606, 0.718, 0.675, 0.97, 0.681, 0.659, 0.639, 0.368,
+        0.447, 0.368, 0.645, 0.577, 0.612, 0.57, 0.612, 0.54, 0.612, 0.57,
+        0.358, 0.589, 0.6, 0.281, 0.281, 0.574, 0.3, 0.906, 0.6, 0.575,
+        0.612, 0.612, 0.401, 0.509, 0.382, 0.6, 0.535, 0.836, 0.556, 0.535,
+        0.513, 0.371, 0.384, 0.371, 0.645, 0.686, 0.686, 0.686, 0.686, 0.686,
+        0.686, 0.987, 0.717, 0.612, 0.612, 0.612, 0.612, 0.432, 0.432, 0.432,
+        0.432, 0.727, 0.734, 0.76, 0.76, 0.76, 0.76, 0.76, 0.756, 0.718,
+        0.718, 0.718, 0.718, 0.659, 0.655, 0.691, 0.57, 0.57, 0.57, 0.57,
+        0.57, 0.57, 0.882, 0.54, 0.57, 0.57, 0.57, 0.57, 0.281, 0.281,
+        0.281, 0.281, 0.601, 0.6, 0.575, 0.575, 0.575, 0.575, 0.575, 0.583,
+        0.6, 0.6, 0.6, 0.6, 0.535, 0.612, 0.535, 0.356, 1.056, 0.645,
+        0.645, 0.65, 0.6, 0.868, 0.887, 0.298, 0.298, 0.528, 0.528, 0.446,
+    ]
+    private static let measureGlyphs: [Unicode.Scalar: Double] = Dictionary(
+        uniqueKeysWithValues: zip(measureGlyphChars.unicodeScalars, measureGlyphEms))
+
+    /// A measure table's text width in units (measureTextWidth in the TypeScript).
+    public static func measureTextWidth(_ text: String, fontSize: Double, weight: StudioFontWeight = .regular) -> Double {
+        text.unicodeScalars.reduce(0) { width, scalar in
+            width + (measureGlyphs[scalar].map { $0 * fontSize }
+                ?? estimateTextWidth(String(scalar), fontSize: fontSize, weight: weight))
+        }
+    }
 
     public struct MeasureTableLayout: Sendable, Equatable {
         public var titleLines: Int
@@ -747,8 +781,13 @@ public enum StudioLayout {
         var footerSize: Double
         var width: Double
 
+        func wrap(_ text: String, _ room: Double, _ size: Double, _ weight: StudioFontWeight = .regular) -> Int {
+            StudioLayout.wrappedLineCount(
+                text, maxWidth: Swift.max(0, room), fontSize: size, weight: weight,
+                widthOf: { StudioLayout.measureTextWidth($0, fontSize: $1, weight: $2) })
+        }
         func lines(_ texts: [String], weight: StudioFontWeight) -> Int {
-            Swift.max(1, texts.map { StudioLayout.wrappedLineCount($0, maxWidth: columnWidth, fontSize: cell, weight: weight) }.max() ?? 1)
+            Swift.max(1, texts.map { wrap($0, columnWidth, cell, weight) }.max() ?? 1)
         }
         func row(_ count: Int) -> Double {
             Double(count) * cell * MeasureTableMetrics.lineHeight + MeasureTableMetrics.cellPadding + MeasureTableMetrics.border
@@ -756,7 +795,7 @@ public enum StudioLayout {
         func footerLine(_ text: String?) -> Double {
             guard let text else { return MeasureTableMetrics.gap + footerSize * MeasureTableMetrics.freshnessLineHeight }
             return MeasureTableMetrics.gap
-                + Double(Swift.max(1, StudioLayout.wrappedLineCount(text, maxWidth: width / MeasureTableMetrics.textFit, fontSize: footerSize)))
+                + Double(Swift.max(1, wrap(text, width, footerSize)))
                 * footerSize * MeasureTableMetrics.lineHeight
         }
     }
@@ -770,9 +809,13 @@ public enum StudioLayout {
         let title = m.title * scale, cell = m.cell * scale
         let titleLines = Swift.min(
             labelMaxLines,
-            Swift.max(1, wrappedLineCount(label, maxWidth: width / m.textFit, fontSize: title, weight: .semibold)))
+            Swift.max(
+                1,
+                wrappedLineCount(
+                    label, maxWidth: width, fontSize: title, weight: .semibold,
+                    widthOf: { measureTextWidth($0, fontSize: $1, weight: $2) })))
         let cols = (columns?.isEmpty ?? true) ? nil : columns
-        let columnWidth = Swift.max(0, width / Double(cols?.count ?? 1) - m.cellPadding) / m.textFit
+        let columnWidth = width / Double(cols?.count ?? 1) - m.cellPadding
         var parts = MeasureTableParts(
             titleLines: titleLines, headLines: 1, head: 0, columnWidth: columnWidth, cell: cell,
             footerSize: m.footer * scale, width: width)

@@ -247,6 +247,18 @@ private func weight(_ any: Any?) -> StudioFontWeight {
         }
     }
 
+    @Test func measureGlyphs() {
+        let g = StudioVectors.root["measureGlyphs"] as! [String: Any]
+        #expect(StudioLayout.measureGlyphChars == g["chars"] as! String)
+        #expect(StudioLayout.measureGlyphEms == (g["ems"] as! [Any]).map { double($0) })
+        for c in g["widths"] as! [[String: Any]] {
+            #expect(
+                close(
+                    StudioLayout.measureTextWidth(c["text"] as! String, fontSize: 28, weight: weight(c["weight"])),
+                    double(c["width"])), "\(c)")
+        }
+    }
+
     @Test func measureRowsShown() {
         let cases = StudioVectors.cases("measureRowsShown")
         #expect(!cases.isEmpty)
@@ -463,3 +475,34 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                 type: .metric, w: 3, h: 2))
     }
 }
+
+#if canImport(CoreText)
+    import CoreText
+
+    /// The measure table's calibrated widths (#768) never fall short of the
+    /// system font netrics TV draws with, regular or semibold: a row the fit
+    /// counts as one line is one line on the TV.
+    @Suite struct MeasureGlyphWidthTests {
+        @Test func coverTheSystemFont() {
+            let texts = [
+                "Apple App Store", "App Store", "Google Play", "Focus · App Store", "Habit Tracker", "Weather Now",
+                "Downloads", "Erlöse", "Anzahl", "Bewertung", "Land", "Country", "Ratings", "Currency", "Währung",
+                "Oldest source refresh: Nov 18, 2026, 11:40 PM", "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
+                "8 of 40 groups", "8 von 40 Gruppen", "1,000", "11,200 JPY", "7.00 USD", "4.8 ★", "WWW MMM mmm",
+            ]
+            for weight in [(CGFloat(0), StudioFontWeight.regular), (CGFloat(0.3), StudioFontWeight.semibold)] {
+                let traits = [kCTFontWeightTrait: weight.0] as CFDictionary
+                let descriptor = CTFontDescriptorCreateWithAttributes(
+                    [kCTFontTraitsAttribute: traits] as CFDictionary)
+                let base = CTFontCreateUIFontForLanguage(.system, 100, nil)!
+                let font = CTFontCreateCopyWithAttributes(base, 100, nil, descriptor)
+                for text in texts {
+                    let line = CTLineCreateWithAttributedString(
+                        NSAttributedString(string: text, attributes: [kCTFontAttributeName as NSAttributedString.Key: font]))
+                    let drawn = CTLineGetTypographicBounds(line, nil, nil, nil) / 100
+                    #expect(drawn <= StudioLayout.measureTextWidth(text, fontSize: 1, weight: weight.1), "\(text)")
+                }
+            }
+        }
+    }
+#endif

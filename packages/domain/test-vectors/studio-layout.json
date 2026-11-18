@@ -29507,11 +29507,11 @@
       "footer": null,
       "layout": {
         "titleLines": 1,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 322.34999999999997,
+        "fixedHeight": 285.31999999999994,
         "rowPitch": 97.05999999999999,
-        "rowCapacity": 0
+        "rowCapacity": 1
       }
     },
     {
@@ -29529,9 +29529,9 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 278.60999999999996,
+        "fixedHeight": 241.57999999999996,
         "rowPitch": 97.05999999999999,
         "rowCapacity": 1
       }
@@ -29552,11 +29552,11 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 354.0899999999999,
+        "fixedHeight": 317.05999999999995,
         "rowPitch": 97.05999999999999,
-        "rowCapacity": 0
+        "rowCapacity": 1
       }
     },
     {
@@ -29759,9 +29759,9 @@
       "footer": null,
       "layout": {
         "titleLines": 1,
-        "headLines": 5,
+        "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 434.44,
+        "fixedHeight": 392.58,
         "rowPitch": 148.57999999999998,
         "rowCapacity": 0
       }
@@ -29782,9 +29782,9 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 5,
+        "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 350.68,
+        "fixedHeight": 308.82,
         "rowPitch": 148.57999999999998,
         "rowCapacity": 0
       }
@@ -29806,9 +29806,9 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 5,
+        "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 470.32,
+        "fixedHeight": 428.46,
         "rowPitch": 148.57999999999998,
         "rowCapacity": 0
       }
@@ -30251,9 +30251,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 369.96,
+        "fixedHeight": 332.92999999999995,
         "rowPitch": 97.05999999999999,
         "rowCapacity": 0
       }
@@ -30273,11 +30273,11 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 326.21999999999997,
+        "fixedHeight": 289.18999999999994,
         "rowPitch": 97.05999999999999,
-        "rowCapacity": 0
+        "rowCapacity": 1
       }
     },
     {
@@ -30296,9 +30296,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 401.69999999999993,
+        "fixedHeight": 364.66999999999996,
         "rowPitch": 97.05999999999999,
         "rowCapacity": 0
       }
@@ -30503,9 +30503,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 5,
+        "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 488.26,
+        "fixedHeight": 446.4,
         "rowPitch": 148.57999999999998,
         "rowCapacity": 0
       }
@@ -30526,9 +30526,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 5,
+        "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 404.5,
+        "fixedHeight": 362.64,
         "rowPitch": 148.57999999999998,
         "rowCapacity": 0
       }
@@ -30550,9 +30550,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 5,
+        "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 524.14,
+        "fixedHeight": 482.28,
         "rowPitch": 148.57999999999998,
         "rowCapacity": 0
       }
@@ -30995,9 +30995,9 @@
       "footer": null,
       "layout": {
         "titleLines": 1,
-        "headLines": 6,
+        "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 428.15,
+        "fixedHeight": 391.1199999999999,
         "rowPitch": 134.08999999999997,
         "rowCapacity": 0
       }
@@ -31017,9 +31017,9 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 6,
+        "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 352.66999999999996,
+        "fixedHeight": 315.63999999999993,
         "rowPitch": 134.08999999999997,
         "rowCapacity": 0
       }
@@ -31040,9 +31040,9 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 6,
+        "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 459.88999999999993,
+        "fixedHeight": 422.8599999999999,
         "rowPitch": 134.08999999999997,
         "rowCapacity": 0
       }
@@ -31739,9 +31739,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 6,
+        "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 475.76,
+        "fixedHeight": 438.7299999999999,
         "rowPitch": 134.08999999999997,
         "rowCapacity": 0
       }
@@ -31761,9 +31761,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 6,
+        "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 400.28,
+        "fixedHeight": 363.24999999999994,
         "rowPitch": 134.08999999999997,
         "rowCapacity": 0
       }
@@ -31784,9 +31784,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 6,
+        "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 507.49999999999994,
+        "fixedHeight": 470.4699999999999,
         "rowPitch": 134.08999999999997,
         "rowCapacity": 0
       }
@@ -33727,10 +33727,10 @@
       "columns": null,
       "footer": null,
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 288,
+        "fixedHeight": 246.6,
         "rowPitch": 55.199999999999996,
         "rowCapacity": 0
       }
@@ -33745,10 +33745,10 @@
         null
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 193.2,
+        "fixedHeight": 151.8,
         "rowPitch": 55.199999999999996,
         "rowCapacity": 0
       }
@@ -33764,10 +33764,10 @@
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 370.8,
+        "fixedHeight": 329.4,
         "rowPitch": 55.199999999999996,
         "rowCapacity": 0
       }
@@ -33784,10 +33784,10 @@
       ],
       "footer": null,
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 610,
+        "fixedHeight": 568.5999999999999,
         "rowPitch": 216.2,
         "rowCapacity": 0
       }
@@ -33806,10 +33806,10 @@
         null
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 515.2,
+        "fixedHeight": 473.79999999999995,
         "rowPitch": 216.2,
         "rowCapacity": 0
       }
@@ -33829,10 +33829,10 @@
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 692.8,
+        "fixedHeight": 651.4,
         "rowPitch": 216.2,
         "rowCapacity": 0
       }
@@ -33850,10 +33850,10 @@
       ],
       "footer": null,
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 14,
         "rowLines": 10,
-        "fixedHeight": 706.5999999999999,
+        "fixedHeight": 665.1999999999999,
         "rowPitch": 345,
         "rowCapacity": 0
       }
@@ -33873,10 +33873,10 @@
         null
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 14,
         "rowLines": 10,
-        "fixedHeight": 611.8,
+        "fixedHeight": 570.4,
         "rowPitch": 345,
         "rowCapacity": 0
       }
@@ -33897,10 +33897,10 @@
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 14,
         "rowLines": 10,
-        "fixedHeight": 789.3999999999999,
+        "fixedHeight": 748,
         "rowPitch": 345,
         "rowCapacity": 0
       }
@@ -33953,7 +33953,7 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 449.30999999999995,
+        "fixedHeight": 417.56999999999994,
         "rowPitch": 60.029999999999994,
         "rowCapacity": 0
       }
@@ -33971,9 +33971,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 13,
+        "headLines": 11,
         "rowLines": 8,
-        "fixedHeight": 798.4499999999998,
+        "fixedHeight": 724.3899999999999,
         "rowPitch": 319.23999999999995,
         "rowCapacity": 0
       }
@@ -33993,9 +33993,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 13,
+        "headLines": 11,
         "rowLines": 8,
-        "fixedHeight": 659.4899999999999,
+        "fixedHeight": 585.4299999999998,
         "rowPitch": 319.23999999999995,
         "rowCapacity": 0
       }
@@ -34016,9 +34016,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 13,
+        "headLines": 11,
         "rowLines": 8,
-        "fixedHeight": 893.6699999999998,
+        "fixedHeight": 787.8699999999998,
         "rowPitch": 319.23999999999995,
         "rowCapacity": 0
       }
@@ -34086,7 +34086,7 @@
         "titleLines": 2,
         "headLines": 15,
         "rowLines": 12,
-        "fixedHeight": 967.7299999999999,
+        "fixedHeight": 935.9899999999999,
         "rowPitch": 467.35999999999996,
         "rowCapacity": 0
       }
@@ -34157,9 +34157,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 936.76,
+        "fixedHeight": 894.9,
         "rowPitch": 357.87999999999994,
         "rowCapacity": 0
       }
@@ -34179,9 +34179,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 781.24,
+        "fixedHeight": 739.3799999999999,
         "rowPitch": 357.87999999999994,
         "rowCapacity": 0
       }
@@ -34202,9 +34202,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 1044.4,
+        "fixedHeight": 1002.54,
         "rowPitch": 357.87999999999994,
         "rowCapacity": 0
       }
@@ -34223,9 +34223,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 17,
+        "headLines": 16,
         "rowLines": 13,
-        "fixedHeight": 1062.34,
+        "fixedHeight": 1020.4799999999999,
         "rowPitch": 567.18,
         "rowCapacity": 0
       }
@@ -34246,9 +34246,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 17,
+        "headLines": 16,
         "rowLines": 13,
-        "fixedHeight": 906.8199999999999,
+        "fixedHeight": 864.9599999999998,
         "rowPitch": 567.18,
         "rowCapacity": 0
       }
@@ -34270,9 +34270,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 17,
+        "headLines": 16,
         "rowLines": 13,
-        "fixedHeight": 1169.98,
+        "fixedHeight": 1128.12,
         "rowPitch": 567.18,
         "rowCapacity": 0
       }
@@ -34285,10 +34285,10 @@
       "columns": null,
       "footer": null,
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 288,
+        "fixedHeight": 246.6,
         "rowPitch": 55.199999999999996,
         "rowCapacity": 0
       }
@@ -34303,10 +34303,10 @@
         null
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 193.2,
+        "fixedHeight": 151.8,
         "rowPitch": 55.199999999999996,
         "rowCapacity": 0
       }
@@ -34322,10 +34322,10 @@
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 370.8,
+        "fixedHeight": 329.4,
         "rowPitch": 55.199999999999996,
         "rowCapacity": 0
       }
@@ -34342,10 +34342,10 @@
       ],
       "footer": null,
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 610,
+        "fixedHeight": 568.5999999999999,
         "rowPitch": 216.2,
         "rowCapacity": 0
       }
@@ -34364,10 +34364,10 @@
         null
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 515.2,
+        "fixedHeight": 473.79999999999995,
         "rowPitch": 216.2,
         "rowCapacity": 0
       }
@@ -34387,10 +34387,10 @@
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 692.8,
+        "fixedHeight": 651.4,
         "rowPitch": 216.2,
         "rowCapacity": 0
       }
@@ -34408,10 +34408,10 @@
       ],
       "footer": null,
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 14,
         "rowLines": 10,
-        "fixedHeight": 706.5999999999999,
+        "fixedHeight": 665.1999999999999,
         "rowPitch": 345,
         "rowCapacity": 0
       }
@@ -34431,10 +34431,10 @@
         null
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 14,
         "rowLines": 10,
-        "fixedHeight": 611.8,
+        "fixedHeight": 570.4,
         "rowPitch": 345,
         "rowCapacity": 0
       }
@@ -34455,10 +34455,10 @@
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
       "layout": {
-        "titleLines": 2,
+        "titleLines": 1,
         "headLines": 14,
         "rowLines": 10,
-        "fixedHeight": 789.3999999999999,
+        "fixedHeight": 748,
         "rowPitch": 345,
         "rowCapacity": 0
       }
@@ -34697,7 +34697,7 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 449.30999999999995,
+        "fixedHeight": 417.56999999999994,
         "rowPitch": 60.029999999999994,
         "rowCapacity": 0
       }
@@ -34715,9 +34715,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 13,
+        "headLines": 11,
         "rowLines": 8,
-        "fixedHeight": 798.4499999999998,
+        "fixedHeight": 724.3899999999999,
         "rowPitch": 319.23999999999995,
         "rowCapacity": 0
       }
@@ -34737,9 +34737,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 13,
+        "headLines": 11,
         "rowLines": 8,
-        "fixedHeight": 659.4899999999999,
+        "fixedHeight": 585.4299999999998,
         "rowPitch": 319.23999999999995,
         "rowCapacity": 0
       }
@@ -34760,9 +34760,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 13,
+        "headLines": 11,
         "rowLines": 8,
-        "fixedHeight": 893.6699999999998,
+        "fixedHeight": 787.8699999999998,
         "rowPitch": 319.23999999999995,
         "rowCapacity": 0
       }
@@ -34830,7 +34830,7 @@
         "titleLines": 2,
         "headLines": 15,
         "rowLines": 12,
-        "fixedHeight": 967.7299999999999,
+        "fixedHeight": 935.9899999999999,
         "rowPitch": 467.35999999999996,
         "rowCapacity": 0
       }
@@ -34901,9 +34901,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 936.76,
+        "fixedHeight": 894.9,
         "rowPitch": 357.87999999999994,
         "rowCapacity": 0
       }
@@ -34923,9 +34923,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 781.24,
+        "fixedHeight": 739.3799999999999,
         "rowPitch": 357.87999999999994,
         "rowCapacity": 0
       }
@@ -34946,9 +34946,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 1044.4,
+        "fixedHeight": 1002.54,
         "rowPitch": 357.87999999999994,
         "rowCapacity": 0
       }
@@ -34967,9 +34967,9 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 17,
+        "headLines": 16,
         "rowLines": 13,
-        "fixedHeight": 1062.34,
+        "fixedHeight": 1020.4799999999999,
         "rowPitch": 567.18,
         "rowCapacity": 0
       }
@@ -34990,9 +34990,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 17,
+        "headLines": 16,
         "rowLines": 13,
-        "fixedHeight": 906.8199999999999,
+        "fixedHeight": 864.9599999999998,
         "rowPitch": 567.18,
         "rowCapacity": 0
       }
@@ -35014,9 +35014,9 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 17,
+        "headLines": 16,
         "rowLines": 13,
-        "fixedHeight": 1169.98,
+        "fixedHeight": 1128.12,
         "rowPitch": 567.18,
         "rowCapacity": 0
       }
@@ -39562,6 +39562,223 @@
       "rowsLine": "Showing 0 of 40 groups."
     }
   ],
+  "measureGlyphs": {
+    "chars": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•",
+    "ems": [
+      0.241,
+      0.316,
+      0.481,
+      0.728,
+      0.645,
+      0.98,
+      0.728,
+      0.27,
+      0.368,
+      0.368,
+      0.568,
+      0.645,
+      0.305,
+      0.446,
+      0.305,
+      0.447,
+      0.651,
+      0.612,
+      0.612,
+      0.629,
+      0.645,
+      0.623,
+      0.653,
+      0.612,
+      0.644,
+      0.653,
+      0.326,
+      0.326,
+      0.645,
+      0.645,
+      0.645,
+      0.528,
+      0.918,
+      0.686,
+      0.677,
+      0.717,
+      0.707,
+      0.612,
+      0.589,
+      0.734,
+      0.734,
+      0.432,
+      0.556,
+      0.692,
+      0.547,
+      0.868,
+      0.734,
+      0.76,
+      0.655,
+      0.76,
+      0.678,
+      0.63,
+      0.606,
+      0.718,
+      0.675,
+      0.97,
+      0.681,
+      0.659,
+      0.639,
+      0.368,
+      0.447,
+      0.368,
+      0.645,
+      0.577,
+      0.612,
+      0.57,
+      0.612,
+      0.54,
+      0.612,
+      0.57,
+      0.358,
+      0.589,
+      0.6,
+      0.281,
+      0.281,
+      0.574,
+      0.3,
+      0.906,
+      0.6,
+      0.575,
+      0.612,
+      0.612,
+      0.401,
+      0.509,
+      0.382,
+      0.6,
+      0.535,
+      0.836,
+      0.556,
+      0.535,
+      0.513,
+      0.371,
+      0.384,
+      0.371,
+      0.645,
+      0.686,
+      0.686,
+      0.686,
+      0.686,
+      0.686,
+      0.686,
+      0.987,
+      0.717,
+      0.612,
+      0.612,
+      0.612,
+      0.612,
+      0.432,
+      0.432,
+      0.432,
+      0.432,
+      0.727,
+      0.734,
+      0.76,
+      0.76,
+      0.76,
+      0.76,
+      0.76,
+      0.756,
+      0.718,
+      0.718,
+      0.718,
+      0.718,
+      0.659,
+      0.655,
+      0.691,
+      0.57,
+      0.57,
+      0.57,
+      0.57,
+      0.57,
+      0.57,
+      0.882,
+      0.54,
+      0.57,
+      0.57,
+      0.57,
+      0.57,
+      0.281,
+      0.281,
+      0.281,
+      0.281,
+      0.601,
+      0.6,
+      0.575,
+      0.575,
+      0.575,
+      0.575,
+      0.575,
+      0.583,
+      0.6,
+      0.6,
+      0.6,
+      0.6,
+      0.535,
+      0.612,
+      0.535,
+      0.356,
+      1.056,
+      0.645,
+      0.645,
+      0.65,
+      0.6,
+      0.868,
+      0.887,
+      0.298,
+      0.298,
+      0.528,
+      0.528,
+      0.446
+    ],
+    "widths": [
+      {
+        "text": "Apple App Store",
+        "weight": "regular",
+        "width": 216.44000000000003
+      },
+      {
+        "text": "Apple App Store",
+        "weight": "semibold",
+        "width": 216.44000000000003
+      },
+      {
+        "text": "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
+        "weight": "regular",
+        "width": 664.496
+      },
+      {
+        "text": "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
+        "weight": "semibold",
+        "width": 664.496
+      },
+      {
+        "text": "4.8 ★",
+        "weight": "regular",
+        "width": 80.94800000000001
+      },
+      {
+        "text": "4.8 ★",
+        "weight": "semibold",
+        "width": 80.94800000000001
+      },
+      {
+        "text": "日本",
+        "weight": "regular",
+        "width": 56
+      },
+      {
+        "text": "日本",
+        "weight": "semibold",
+        "width": 58.800000000000004
+      }
+    ]
+  },
   "reviewLayouts": [
     {
       "label": "Latest review",
