@@ -785,12 +785,18 @@ export const workspaceEn = {
       title: "App Store analytics",
       /** The lead, by the apps' status (#771). */
       lead: {
+        default:
+          "Analytics come from Apple’s reports, requested once per app with a temporary Admin key.",
+        keyRefused:
+          "Analytics are read with the Sales key: upload a new App Store Connect key first.",
+        noApps:
+          "Analytics: nothing to request yet, this connection reads no apps.",
         enable: "Analytics: request them once with a temporary Admin key.",
         paused:
           "Analytics paused: request them again with a temporary Admin key.",
         requested: "Analytics requested: the first reports arrive in 1–2 days.",
         unknown: "Analytics: the status is unknown right now.",
-        available: "Analytics: read with the stored Sales key.",
+        available: "Analytics are read with the stored Sales key.",
       },
       adminOnly:
         "This form is only for a temporary Admin key. The Customer Support key for ratings and reviews goes under “App Store ratings and reviews”.",
@@ -867,9 +873,9 @@ export const workspaceEn = {
       title: "App Store ratings and reviews",
       /** The lead, by the key's status (#771). */
       lead: {
-        default: "Reviews: an optional Customer Support key reads them.",
+        default: "Reviews need an optional Customer Support key.",
         not_configured: "Reviews: add a Customer Support key.",
-        active: "Reviews: read with the stored Customer Support key.",
+        active: "Reviews are read with the stored Customer Support key.",
         paused: "Reviews paused: upload a new Customer Support key.",
         unknown: "Reviews: the key’s status is unknown right now.",
       },

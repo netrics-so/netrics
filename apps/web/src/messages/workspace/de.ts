@@ -815,6 +815,12 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
     appStoreAnalytics: {
       title: "App-Store-Analysen",
       lead: {
+        default:
+          "Analysen kommen aus Apples Berichten, einmal pro App mit einem temporären Admin-Schlüssel angefordert.",
+        keyRefused:
+          "Analysen werden mit dem Sales-Schlüssel gelesen: Lade zuerst einen neuen App-Store-Connect-Schlüssel hoch.",
+        noApps:
+          "Analysen: noch nichts anzufordern, diese Verbindung liest noch keine Apps.",
         enable:
           "Analysen: einmal mit einem temporären Admin-Schlüssel anfordern.",
         paused:

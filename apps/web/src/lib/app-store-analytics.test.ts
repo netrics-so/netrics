@@ -59,13 +59,30 @@ describe("App Store analytics card", () => {
   });
 
   it("words the lead by the apps' status (#771)", () => {
-    const lead = (statuses: AnalyticsStatus[] | null, locale: "en" | "de") =>
-      analyticsLead(statuses && statuses.map((status) => ({ status })), locale);
+    const lead = (
+      statuses: AnalyticsStatus[] | null,
+      locale: "en" | "de",
+      keyRefused = false,
+    ) =>
+      analyticsLead(
+        {
+          apps: statuses && statuses.map((status) => ({ status })),
+          keyRefused,
+        },
+        locale,
+      );
+    // No status (loading, failed, or a member who cannot read it): no step.
     expect(lead(null, "en")).toBe(
-      "Analytics: request them once with a temporary Admin key.",
+      "Analytics come from Apple’s reports, requested once per app with a temporary Admin key.",
+    );
+    expect(lead(null, "en", true)).toBe(
+      "Analytics are read with the Sales key: upload a new App Store Connect key first.",
+    );
+    expect(lead(["available"], "en", true)).toBe(
+      "Analytics are read with the Sales key: upload a new App Store Connect key first.",
     );
     expect(lead([], "en")).toBe(
-      "Analytics: request them once with a temporary Admin key.",
+      "Analytics: nothing to request yet, this connection reads no apps.",
     );
     expect(lead(["available", "not_enabled"], "en")).toBe(
       "Analytics: request them once with a temporary Admin key.",
@@ -80,9 +97,18 @@ describe("App Store analytics card", () => {
       "Analytics: the status is unknown right now.",
     );
     expect(lead(["available", "available"], "en")).toBe(
-      "Analytics: read with the stored Sales key.",
+      "Analytics are read with the stored Sales key.",
     );
     expect(lead(null, "de")).toBe(
+      "Analysen kommen aus Apples Berichten, einmal pro App mit einem temporären Admin-Schlüssel angefordert.",
+    );
+    expect(lead(null, "de", true)).toBe(
+      "Analysen werden mit dem Sales-Schlüssel gelesen: Lade zuerst einen neuen App-Store-Connect-Schlüssel hoch.",
+    );
+    expect(lead([], "de")).toBe(
+      "Analysen: noch nichts anzufordern, diese Verbindung liest noch keine Apps.",
+    );
+    expect(lead(["not_enabled"], "de")).toBe(
       "Analysen: einmal mit einem temporären Admin-Schlüssel anfordern.",
     );
     expect(lead(["stopped"], "de")).toBe(

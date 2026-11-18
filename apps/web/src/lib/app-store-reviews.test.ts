@@ -130,13 +130,13 @@ describe("App Store reviews card", () => {
 
   it("words the lead by the key's status (#771)", () => {
     expect(reviewsLead(null, "en")).toBe(
-      "Reviews: an optional Customer Support key reads them.",
+      "Reviews need an optional Customer Support key.",
     );
     expect(reviewsLead("not_configured", "en")).toBe(
       "Reviews: add a Customer Support key.",
     );
     expect(reviewsLead("active", "en")).toBe(
-      "Reviews: read with the stored Customer Support key.",
+      "Reviews are read with the stored Customer Support key.",
     );
     expect(reviewsLead("paused", "en")).toBe(
       "Reviews paused: upload a new Customer Support key.",

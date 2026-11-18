@@ -573,6 +573,32 @@ describe("App Store analytics", () => {
     ).toEqual([[NOTES, "2026-09-29"]]);
   });
 
+  it("shows stored data without a recorded freshness date as available, with no date", async () => {
+    // E.g. data synced before freshness existed, or discovery rows without
+    // downloads rows: the card shows no date rather than a second
+    // definition of "through" (#771).
+    const saved = await admin`
+      delete from connection_freshness
+      where connection_id = ${connectionId} and stream = 'analytics'
+      returning *
+    `;
+    expect(saved.length).toBe(1);
+    try {
+      expect(
+        (await status()).apps.map((entry) => [
+          entry.appId,
+          entry.status,
+          entry.latestDay,
+        ]),
+      ).toEqual([
+        [NOTES, "available", null],
+        [LEDGER, "requested", null],
+      ]);
+    } finally {
+      await admin`insert into connection_freshness ${admin(saved)}`;
+    }
+  });
+
   it("shows a stopped request as paused", async () => {
     analytics.requests[LEDGER]![0]!.stopped = true;
     try {

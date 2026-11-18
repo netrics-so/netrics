@@ -57,17 +57,26 @@ export function needsEnablement(
 
 /**
  * The card's lead, by the apps' status (#771): what to do next, or that
- * nothing is left to do. A stopped request comes first, then a missing
- * one, then data still pending; "available" only when every app has data.
- * Not loaded yet (or not readable by this member) and no apps: the
- * one-time step.
+ * nothing is left to do. A refused Sales key comes first (nothing can be
+ * read), then a stopped request, a missing one, data still pending, a
+ * status Apple could not tell; "available" only when every app has data.
+ * No status (not loaded, not readable, or not readable by this member,
+ * `apps` null): a neutral line, never a step to take. No apps: nothing to
+ * request yet.
  */
 export function analyticsLead(
-  apps: readonly Pick<AppStoreAnalyticsAppStatus, "status">[] | null,
+  input: {
+    apps: readonly Pick<AppStoreAnalyticsAppStatus, "status">[] | null;
+    /** The stored Sales key was refused. */
+    keyRefused: boolean;
+  },
   locale: Locale,
 ): string {
   const t = webTranslator(locale, "connections.appStoreAnalytics.lead");
-  if (!apps || apps.length === 0) return t("enable");
+  const { apps } = input;
+  if (input.keyRefused) return t("keyRefused");
+  if (!apps) return t("default");
+  if (apps.length === 0) return t("noApps");
   const has = (status: AnalyticsStatus) =>
     apps.some((app) => app.status === status);
   if (has("stopped")) return t("paused");
