@@ -260,7 +260,9 @@ export function createDemoConnector(): Connector {
         : undefined;
       return {
         observations,
-        ...(cursorMs !== undefined ? { nextCursor: isoOf(cursorMs) } : {}),
+        ...(cursorMs !== undefined
+          ? { nextCursor: isoOf(cursorMs), nextFrom: isoOf(cursorMs) }
+          : {}),
         done: true,
       };
     },

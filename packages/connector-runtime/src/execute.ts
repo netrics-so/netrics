@@ -196,6 +196,7 @@ export function assertContextIsPlain(context: ConnectionContext): void {
 
 function validateSyncResult(
   manifest: ConnectorManifest,
+  request: SyncRequest,
   raw: unknown,
 ): SyncResult {
   const parsed = syncResultSchema.safeParse(raw);
@@ -228,8 +229,18 @@ function validateSyncResult(
       throw new ContractViolationError(
         `connector "${manifest.id}": ${problem}`,
       );
+    // The next window may start before this one (a lookback), never after
+    // its end: that would skip data (#758).
+    if (
+      result.nextFrom !== undefined &&
+      Date.parse(result.nextFrom) > Date.parse(request.to)
+    )
+      throw new ContractViolationError(
+        `connector "${manifest.id}" returned a nextFrom after the window's end`,
+      );
   } else {
     delete result.freshness;
+    delete result.nextFrom;
   }
   const metrics = new Map(
     manifest.metrics.map((metric) => [metric.key, metric]),
@@ -310,7 +321,7 @@ export async function executeSync(
   } catch (error) {
     throw classifyConnectorError(connector, error, context);
   }
-  return validateSyncResult(connector.manifest, raw);
+  return validateSyncResult(connector.manifest, parsedRequest.data, raw);
 }
 
 /**

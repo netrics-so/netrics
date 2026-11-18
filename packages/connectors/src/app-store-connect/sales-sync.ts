@@ -368,7 +368,12 @@ async function readSalesPage(
   const selected =
     request.resources === undefined ? undefined : new Set(request.resources);
   if (startMs >= endMs || selected?.size === 0) {
-    return { observations: [], nextCursor: resumeAt(endMs), done: true };
+    return {
+      observations: [],
+      nextCursor: resumeAt(endMs),
+      nextFrom: resumeAt(endMs),
+      done: true,
+    };
   }
 
   const monthStart = startOfMonth(startMs);
@@ -645,9 +650,11 @@ async function readSalesPage(
     : undefined;
   // The next sync starts a few days back (revisions), and never after a
   // day that is not published yet.
+  const resume = resumeAt(Math.min(endMs, pendingMs ?? endMs));
   return {
     observations,
-    nextCursor: resumeAt(Math.min(endMs, pendingMs ?? endMs)),
+    nextCursor: resume,
+    nextFrom: resume,
     ...(freshness ? { freshness } : {}),
     done: true,
   };

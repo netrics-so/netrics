@@ -692,12 +692,18 @@ export function createSearchConsoleConnector(
         request.resources !== undefined &&
         !request.resources.includes(siteUrl)
       ) {
-        return { observations: [], nextCursor: resumeAt, done: true };
+        return {
+          observations: [],
+          nextCursor: resumeAt,
+          nextFrom: resumeAt,
+          done: true,
+        };
       }
       if (startMs >= endMs) {
         return {
           observations: [],
           nextCursor: resumeAt,
+          nextFrom: resumeAt,
           ...freshness(readThrough),
           done: true,
         };
@@ -825,6 +831,7 @@ export function createSearchConsoleConnector(
       return {
         observations,
         nextCursor: resumeAt,
+        nextFrom: resumeAt,
         ...freshness(through),
         done: true,
       };

@@ -988,6 +988,11 @@ export function createAppStoreConnectConnector(
       return {
         ...result,
         nextCursor: salesCursor,
+        // The next incremental window starts at the sales resume stamp (the
+        // lookback days), which the reviews also read from (#758).
+        ...(z.iso.datetime({ offset: false }).safeParse(salesCursor).success
+          ? { nextFrom: salesCursor }
+          : {}),
         ...(freshness.length > 0 ? { freshness } : {}),
         done: true,
       };

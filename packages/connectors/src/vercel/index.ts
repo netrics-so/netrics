@@ -471,7 +471,12 @@ export function createVercelConnector(
         ),
       ).toISOString();
       if (startMs >= toMs) {
-        return { observations: [], nextCursor: resumeAt, done: true };
+        return {
+          observations: [],
+          nextCursor: resumeAt,
+          nextFrom: resumeAt,
+          done: true,
+        };
       }
       const chunkEnd = Math.min(startOfNextUtcMonth(startMs), toMs);
       const monthStart = startOfUtcMonth(startMs);
@@ -613,6 +618,7 @@ export function createVercelConnector(
       return {
         observations,
         nextCursor: resumeAt,
+        nextFrom: resumeAt,
         ...(freshness.length > 0 ? { freshness } : {}),
         done: true,
       };

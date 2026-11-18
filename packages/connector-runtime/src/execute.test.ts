@@ -967,3 +967,45 @@ describe("freshness (SDK 0.2.13, ADR 0025 §2)", () => {
     });
   });
 });
+
+describe("nextFrom (SDK 0.2.15, #758)", () => {
+  const run = (result: object) =>
+    executeSync(
+      connectorWith(demoManifest, () => ({ observations: [], ...result })),
+      baseContext,
+      request,
+    );
+
+  it("passes the next window start of a done result through, a lookback included", async () => {
+    for (const nextFrom of [
+      "2023-12-29T00:00:00.000Z",
+      request.from,
+      request.to,
+    ]) {
+      await expect(run({ nextFrom, done: true })).resolves.toMatchObject({
+        nextFrom,
+      });
+    }
+  });
+
+  it("refuses a next window start after the window's end", async () => {
+    await expect(
+      run({ nextFrom: "2024-01-02T00:00:00.001Z", done: true }),
+    ).rejects.toThrow(/nextFrom after the window's end/);
+  });
+
+  it("refuses a nextFrom that is not an ISO instant", async () => {
+    await expect(run({ nextFrom: "x 2024", done: true })).rejects.toThrow(
+      /invalid sync result/,
+    );
+  });
+
+  it("ignores nextFrom on a page that is not final", async () => {
+    const result = await run({
+      nextFrom: "2030-01-01T00:00:00.000Z",
+      nextCursor: "c",
+      done: false,
+    });
+    expect(result.nextFrom).toBeUndefined();
+  });
+});

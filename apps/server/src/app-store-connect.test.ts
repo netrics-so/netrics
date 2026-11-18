@@ -615,6 +615,44 @@ describe("App Store Connect connections", () => {
     ).toBe(12);
   });
 
+  it("starts each incremental window at the sales lookback, as before #758", async () => {
+    const latest = async () =>
+      (
+        await admin`
+          select r.requested_from, r.cursor_before, r.cursor_after,
+            s.cursor, s.next_from
+          from sync_runs r
+          join connection_state s on s.connection_id = r.connection_id
+          where r.connection_id = ${ids.a}
+          order by r.finished_at desc
+          limit 1
+        `
+      )[0]!;
+    // A row the old engine left at a date cursor, as migration 0081 carries
+    // it over: the cursor stays and its instant is the next window start.
+    const legacy = "2026-09-25T00:00:00.000Z";
+    await admin`
+      update connection_state set cursor = ${legacy}, next_from = ${legacy}
+      where connection_id = ${ids.a}`;
+    await runSync(ids.a);
+    const resumed = await latest();
+    expect((resumed.requested_from as Date).toISOString()).toBe(legacy);
+    expect(resumed.cursor_before).toBe(legacy);
+    // The run ends three lookback days before Oct 1 (Sept 30 is the newest
+    // report day): the cursor the connector reads, and the next window's
+    // explicit start.
+    const lookback = "2026-09-28T00:00:00.000Z";
+    expect(resumed.cursor_after).toBe(lookback);
+    expect(resumed.cursor).toBe(lookback);
+    expect((resumed.next_from as Date).toISOString()).toBe(lookback);
+
+    await runSync(ids.a);
+    const next = await latest();
+    expect((next.requested_from as Date).toISOString()).toBe(lookback);
+    expect(next.cursor_before).toBe(lookback);
+    expect(next.cursor_after).toBe(lookback);
+  });
+
   it("publishes selected apps' raw ratings for model queries and replaces same-day corrections", async () => {
     const sources = await call("GET", "/data/sources");
     expect(sources.statusCode, sources.body).toBe(200);

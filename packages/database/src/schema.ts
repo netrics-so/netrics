@@ -441,7 +441,13 @@ export const connectionState = pgTable(
     pollIntervalSeconds: integer("poll_interval_seconds")
       .notNull()
       .default(300),
+    // The connector's opaque cursor: stored and handed back unchanged, never
+    // read by the host (#758).
     cursor: text("cursor"),
+    // Where the next incremental window starts (#758): the done result's
+    // nextFrom, else the end of the last succeeded window. Null before the
+    // first success; the last success stands in then.
+    nextFrom: timestamp("next_from", { withTimezone: true }),
     // The connection.backfill job whose window the cursor continues (#153).
     // A backfill job starts at its window start unless this is its own id,
     // so a new backfill reads the whole window while a retried or reclaimed

@@ -165,11 +165,20 @@ export const syncResultSchema = z.object({
    * back in a later run (after a failure) with a later `to`. Opaque to the
    * host: see SyncRequest.cursor. The host only compares it with the
    * request's cursor (an unchanged cursor on done=false is a contract
-   * violation) and, for an incremental run, uses a stored cursor that
-   * Date.parse reads as a date as the start of the next window. A done
-   * result without one stores the window's end instead.
+   * violation); it never reads a window from it (#758). A done result
+   * without one clears the stored cursor.
    */
   nextCursor: z.string().min(1).optional(),
+  /**
+   * Optional (SDK 0.2.15, #758), read from a done result only: where the
+   * next incremental window starts, its `from`. Without it the next window
+   * starts at this request's `to`. A connector that re-reads recent days
+   * (a lookback) returns the start of those days here; it may lie before
+   * this request's `from`, never after its `to`. The host stores it next to
+   * the cursor, apart from it, and ignores it on a result with done=false
+   * (a retry after a failed page continues the same window).
+   */
+  nextFrom: z.iso.datetime({ offset: false }).optional(),
   done: z.boolean(),
 });
 export type SyncResult = z.infer<typeof syncResultSchema>;

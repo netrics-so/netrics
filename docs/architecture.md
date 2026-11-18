@@ -272,11 +272,24 @@ shape and versioning: a connector that changes its format must still read, or
 deliberately restart from, every shape it ever returned (a version prefix
 helps), because a stored cursor survives connector upgrades. That includes
 items a connector parks in its cursor, such as a report that is not published
-yet. The host touches a cursor in three narrow ways only: a non-final page
-whose `nextCursor` equals the request's cursor is a contract violation; for an
-incremental run, a stored cursor that `Date.parse` reads as a date is the start
-of the requested window (otherwise the last success is); and a final result
-without a `nextCursor` stores the end of the window.
+yet. The host touches a cursor in one narrow way only: a non-final page whose
+`nextCursor` equals the request's cursor is a contract violation. A final
+result without a `nextCursor` clears the stored cursor.
+
+The window is the host's, kept apart from the cursor (SDK 0.2.15, #758). An
+incremental run's `from` is the `nextFrom` of the last successful run's final
+result (`connection_state.next_from`); a final result without one makes the
+next window start at its own `to`. Without a stored one the last success
+stands in, and for a connection that never succeeded the last 24 hours. A connector that re-reads recent days returns
+their start as `nextFrom` (App Store Connect sales, Apple Ads, Search Console
+and Vercel return their lookback, the demo connector the day containing `to`).
+`nextFrom` may lie before the request's `from`, never after its `to`, and is
+ignored on a non-final page: a retry after a failed page continues the same
+window, and the connector its own checkpoint. Until SDK 0.2.15 the host read a
+stored cursor that `Date.parse` accepted as the next window start, which
+misread opaque cursors (`Date.parse("x 2024")` is a date); migration 0081
+moved the window start of every stored ISO 8601 cursor to `next_from` and left
+the cursor itself as it was.
 
 Connector code can explain what it skipped or parked through `runtime.log`
 (SDK 0.2.14): `debug`, `info`, `warn` and `error`, each with a short message
@@ -360,6 +373,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.12 | Optional `receivedDatasets` in a final `SyncResult` (#666)        |
 | 0.2.13 | Optional `freshnessStreams` and a final `freshness` (ADR 0025)    |
 | 0.2.14 | Optional `runtime.log`, a structured connector logger (#638)      |
+| 0.2.15 | Optional final `nextFrom`, the next window start (#758)           |
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),
@@ -503,8 +517,8 @@ Private definitions may be exported or submitted for community review.
   value, dimensions, source identity, and ingestion timestamp
 - `sync_run` — connection, requested window, cursor, attempt, status, timing,
   error classification, and quota metadata
-- `connection_state` — last success, next due time, cursor/watermark, auth state,
-  and consecutive failures
+- `connection_state` — last success, next due time, opaque cursor, next window
+  start (`next_from`), auth state, and consecutive failures
 
 Use a deterministic series identity derived from metric definition and
 dimensions. Inserts are idempotent for a source identity or deterministic time
