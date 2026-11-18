@@ -3,10 +3,13 @@ import {
   compileRowExpression,
   compareDataValues,
   dataFail,
+  deferRounding,
   exactDecimal,
   ProcessingBudget,
   PROCESSING_LIMITS,
   roundedOnce,
+  roundingMark,
+  useDeferredRounding,
   validateDataValue,
   DataProcessingError,
   type DataCell,
@@ -451,6 +454,24 @@ export function executePreparation(
   const done = new Map<string, DataTable>(),
     visiting = new Set<string>();
   let rejectedRows = 0;
+  /**
+   * Columns of a step's output whose values are group averages with their
+   * one rounding deferred (#759): each value is at most half a unit in the
+   * 18th place off the exact average. A later step that reads such a value
+   * warns, unless a ROUND discards the lost digits; a step that only passes
+   * the column on keeps the deferral; an output that keeps the column
+   * warns. Keys are the deferral tokens of `budget.deferredRoundings`.
+   */
+  const deferred = new Map<DataTable, Map<string, object>>();
+  const deferredOf = (table: DataTable) => new Map(deferred.get(table) ?? []);
+  /** The columns are read as they are: their deferred rounding warns now. */
+  const pay = (columns: Map<string, object>, ids?: readonly string[]) => {
+    for (const [id, token] of [...columns])
+      if (!ids || ids.includes(id)) {
+        useDeferredRounding(budget, token);
+        columns.delete(id);
+      }
+  };
   const execute = (id: string): DataTable => {
     const cached = done.get(id);
     if (cached) return cached;
@@ -468,6 +489,7 @@ export function executePreparation(
     visiting.add(id);
     budget.tick();
     let output: DataTable;
+    let carried = new Map<string, object>();
     if (node.type === "source") {
       const source = sources.get(node.datasetId);
       if (!source) return dataFail("preparation_source_not_found");
@@ -490,6 +512,7 @@ export function executePreparation(
         dataFail("preparation_append_mapping_input_invalid");
       const inputs = node.inputs.map((id) => {
           const input = execute(id);
+          pay(deferredOf(input));
           if (!node.columnMappings || !Object.hasOwn(node.columnMappings, id))
             return input;
           const mapping = node.columnMappings[id]!,
@@ -560,6 +583,8 @@ export function executePreparation(
     } else if (node.type === "join") {
       const left = execute(node.left),
         right = execute(node.right);
+      pay(deferredOf(left));
+      pay(deferredOf(right));
       if (!node.keys.length || node.keys.length > 10 || !node.rightPrefix)
         dataFail("preparation_join_keys_invalid");
       const leftKeys = node.keys.map((k) => k.left),
@@ -620,6 +645,8 @@ export function executePreparation(
       }
     } else {
       const input = execute(node.input);
+      carried = deferredOf(input);
+      const from = Object.fromEntries(carried);
       output = {
         ...input,
         fields: input.fields.map((f) => ({ ...f })),
@@ -634,6 +661,8 @@ export function executePreparation(
         output.rows = input.rows.map((row) =>
           Object.fromEntries(node.fields.map((id) => [id, row[id]])),
         );
+        for (const id of [...carried.keys()])
+          if (!node.fields.includes(id)) carried.delete(id);
       } else if (node.type === "rename") {
         for (const [id, name] of Object.entries(node.names)) {
           fieldOf(input, id);
@@ -645,7 +674,7 @@ export function executePreparation(
         if (filter.result.type !== "boolean")
           dataFail("data_filter_boolean_required");
         output.rows = input.rows
-          .filter((row) => filter.evaluate(row, budget).value === true)
+          .filter((row) => filter.evaluate(row, budget, from).value === true)
           .map((row) => ({ ...row }));
       } else if (node.type === "calculate") {
         if (input.fields.some((f) => f.id === node.fieldId))
@@ -672,7 +701,7 @@ export function executePreparation(
             nullable: true,
           });
         output.rows = input.rows.map((row) => {
-          const result = expression.evaluate(row, budget);
+          const result = expression.evaluate(row, budget, from);
           return {
             ...row,
             [node.fieldId]: result.value,
@@ -691,6 +720,8 @@ export function executePreparation(
         );
         if (original.unit)
           dataFail("preparation_unit_cast_requires_calculation");
+        // Reading the value pays its deferred rounding; the result is new.
+        carried.delete(node.fieldId);
         output.fields = output.fields.map((f) =>
           f.id === node.fieldId
             ? {
@@ -704,7 +735,7 @@ export function executePreparation(
           try {
             return {
               ...row,
-              [node.fieldId]: expression.evaluate(row, budget).value,
+              [node.fieldId]: expression.evaluate(row, budget, from).value,
             };
           } catch (error) {
             const conversion =
@@ -725,6 +756,7 @@ export function executePreparation(
         const field = fieldOf(input, node.fieldId);
         validateDataValue(field.type, node.from, true);
         validateDataValue(field.type, node.to, field.nullable);
+        pay(carried, [field.id]);
         output.rows = input.rows.map((row) => {
           budget.tick();
           const value = row[field.id];
@@ -737,6 +769,7 @@ export function executePreparation(
         });
       } else if (node.type === "deduplicate") {
         keysValid(input, node.keys);
+        pay(carried, node.keys);
         const unique = new Map<string, DataRow>();
         for (const row of input.rows) {
           budget.tick();
@@ -750,6 +783,8 @@ export function executePreparation(
         if (node.keys.length) keysValid(input, node.keys);
         if (!node.aggregates.length || node.aggregates.length > 50)
           dataFail("preparation_aggregate_limit");
+        // Grouping reads its input; only its own averages are deferred.
+        pay(carried);
         const groups = new Map<string, DataRow[]>();
         if (!node.keys.length) groups.set("[]", []);
         for (const row of input.rows) {
@@ -796,7 +831,14 @@ export function executePreparation(
             node.keys.map((k) => [k, rows[0]![k]]),
           );
           node.aggregates.forEach((a) => {
+            const mark = roundingMark(budget);
             const cell = aggregateData({ ...input, rows }, a, budget);
+            // An average rounded once from its exact sum (#759).
+            if (a.op === "avg") {
+              const token = carried.get(a.id) ?? {};
+              deferRounding(budget, mark, cell, token);
+              if (budget.deferredRoundings.has(token)) carried.set(a.id, token);
+            }
             result[a.id] = cell.value;
             if (output.fields.some((f) => f.id === a.id + ".currency"))
               result[a.id + ".currency"] = cell.currency ?? null;
@@ -808,6 +850,7 @@ export function executePreparation(
     validateDataTable(output, budget);
     visiting.delete(id);
     done.set(id, output);
+    if (carried.size) deferred.set(output, carried);
     onNode?.(node, output);
     return output;
   };
@@ -815,6 +858,8 @@ export function executePreparation(
   const outputs = Object.fromEntries(
     graph.outputs.map((id) => [id, execute(id)]),
   );
+  // An output keeps the rounded averages as they are.
+  for (const table of Object.values(outputs)) pay(deferredOf(table));
   return {
     outputs,
     operations: budget.operations,
