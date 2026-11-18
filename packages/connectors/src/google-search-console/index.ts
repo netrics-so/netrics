@@ -682,10 +682,13 @@ export function createSearchConsoleConnector(
         return entries.length > 0 ? { freshness: entries } : {};
       };
       // Where the next incremental sync starts: recent days are not final yet.
+      // Never later than where this run started reading: a run resuming a
+      // checkpoint before `from` (the host's window ignores cursors, #758)
+      // still re-reads the lookback days.
       const resumeAt = new Date(
         Math.max(
           startOfUtcDay(toMs) - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-          fromMs,
+          Math.min(fromMs, startMs),
         ),
       ).toISOString();
       if (

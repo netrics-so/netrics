@@ -357,11 +357,13 @@ async function readSalesPage(
   // Days before `to`, never after yesterday (PT).
   const endMs = Math.min(startOfUtcDay(toMs - 1) + DAY_MS, newestMs + DAY_MS);
 
+  // Never later than where this run started reading (a checkpoint before
+  // `from`, #758), so the lookback days are always re-read.
   const resumeAt = (resolvedEndMs: number) =>
     stamp(
       Math.max(
         resolvedEndMs - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-        startOfUtcDay(fromMs),
+        Math.min(startOfUtcDay(fromMs), startMs),
       ),
     );
 

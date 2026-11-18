@@ -283,9 +283,12 @@ next window start at its own `to`. Without a stored one the last success
 stands in, and for a connection that never succeeded the last 24 hours. A connector that re-reads recent days returns
 their start as `nextFrom` (App Store Connect sales, Apple Ads, Search Console
 and Vercel return their lookback, the demo connector the day containing `to`).
-`nextFrom` may lie before the request's `from`, never after its `to`, and is
-ignored on a non-final page: a retry after a failed page continues the same
-window, and the connector its own checkpoint. Until SDK 0.2.15 the host read a
+`nextFrom` may lie before the request's `from`, by at most the manifest's
+`backfillDays` (one day without them), and never after its `to`. It must be a
+well-formed instant on every page, and is ignored on a non-final page: a retry
+after a failed page continues the same window, and the connector its own
+checkpoint, so a connector's lookback is never later than where a run started
+reading. Until SDK 0.2.15 the host read a
 stored cursor that `Date.parse` accepted as the next window start, which
 misread opaque cursors (`Date.parse("x 2024")` is a date); migration 0081
 moved the window start of every stored ISO 8601 cursor to `next_from` and left

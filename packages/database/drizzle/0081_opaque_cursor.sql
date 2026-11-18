@@ -4,6 +4,10 @@
 -- window start now has its own column, written by the sync engine from a
 -- done result's nextFrom (or the window's end), and the cursor is only ever
 -- handed back to the connector.
+-- Every sync writes connection_state: a lock not granted within 5 s fails the
+-- migration (to be re-run) instead of queueing those writes behind a
+-- long-running transaction.
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 ALTER TABLE "connection_state" ADD COLUMN "next_from" timestamp with time zone;--> statement-breakpoint
 -- Rows written by the old engine keep their next window: a cursor that is an
 -- ISO 8601 instant (every date-like cursor the host or a connector wrote:
@@ -31,4 +35,5 @@ BEGIN
       NULL;
     END;
   END LOOP;
-END $$;
+END $$;--> statement-breakpoint
+SET LOCAL lock_timeout TO DEFAULT;

@@ -174,9 +174,11 @@ export const syncResultSchema = z.object({
    * next incremental window starts, its `from`. Without it the next window
    * starts at this request's `to`. A connector that re-reads recent days
    * (a lookback) returns the start of those days here; it may lie before
-   * this request's `from`, never after its `to`. The host stores it next to
-   * the cursor, apart from it, and ignores it on a result with done=false
-   * (a retry after a failed page continues the same window).
+   * this request's `from` (by at most the manifest's backfillDays, or one
+   * day without them), never after its `to`. The host stores it next to the
+   * cursor, apart from it. It must be a well-formed instant on every page,
+   * and is ignored on a result with done=false (a retry after a failed page
+   * continues the same window).
    */
   nextFrom: z.iso.datetime({ offset: false }).optional(),
   done: z.boolean(),
