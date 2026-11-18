@@ -89,6 +89,10 @@ test("the App portfolio shows an overview and one slide per app with its icon", 
   const tabs = page.getByRole("tab");
   await expect(tabs).toHaveText([
     locale === "de" ? "App-Portfolio" : "App portfolio",
+    // The connection tables' overview slide (#768).
+    locale === "de"
+      ? "App-Portfolio · letzte 30 Tage"
+      : "App portfolio · last 30 days",
     "Focus",
     "Notes",
     "Timer",
@@ -127,10 +131,11 @@ test("the apps past the 12 slides are named at install", async ({
     page.getByText(s.tooManyApps.replace("{count}", "12")),
   ).toBeVisible();
   await page.getByRole("button", { name: s.create }).click();
+  // Two overview slides (#768): ten apps get a slide of their own.
   await expect(
-    page.getByText(s.omittedApps.replace("{apps}", "App 12")),
+    page.getByText(s.omittedApps.replace("{apps}", "App 11, App 12")),
   ).toBeVisible();
   await page.getByRole("link", { name: s.openDashboard }).click();
   await expect(page.getByRole("tab")).toHaveCount(12);
-  await expect(page.getByRole("tab").last()).toHaveText("App 11");
+  await expect(page.getByRole("tab").last()).toHaveText("App 10");
 });

@@ -1049,6 +1049,152 @@ export function tableLayout(input: TableLayoutInput): TableLayout {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Measure table (ADR 0022)
+
+/**
+ * A measure widget's sizes in units, as both renderers draw it (`.sw-measure`
+ * in the web's globals.css, `MeasureWidgetView` on tvOS): the title (36,
+ * semibold, at most two lines), a 12 unit gap between its parts, the table's
+ * rows (28 with 10 units of padding above and below and a hairline, the
+ * column heads the same) and the footer lines (24; the freshness line at
+ * line height 1.3). Line height is 1.15 elsewhere, as on the canvas.
+ */
+export const MEASURE_TABLE_METRICS = {
+  title: 36,
+  gap: 12,
+  cell: 28,
+  /** Padding above and below a cell, and its bottom border. */
+  cellPadding: 20,
+  border: 1,
+  footer: 24,
+  lineHeight: 1.15,
+  freshnessLineHeight: 1.3,
+} as const;
+
+/**
+ * The footer lines a measure table on a screen keeps room for under its
+ * rows, each as long as it commonly gets (German, the longer language),
+ * wrapped at the widget's width: the "N of M groups" line (or the scope
+ * line), the source refresh line, and the freshness line (ADR 0025), which
+ * never wraps. Other notices (a stale model, an outage) take rows' room
+ * when they show.
+ */
+export const MEASURE_TABLE_FOOTER_SAMPLES: readonly (string | null)[] = [
+  "20 von 200 Gruppen werden angezeigt.",
+  "Älteste Quellenaktualisierung: 18.11.2026, 12:00",
+  null,
+];
+
+/**
+ * A cell as long as a row's label commonly is (a store's or an app's
+ * name): where a column is narrower, its rows wrap to as many lines as the
+ * sample, at most four (both renderers wrap cells). An estimate: longer
+ * labels wrap further.
+ */
+export const MEASURE_TABLE_CELL_SAMPLE = "Apple App Store";
+
+export interface MeasureTableLayout {
+  titleLines: number;
+  /** Lines of the column heads (1–3) and of each row (1–4). */
+  headLines: number;
+  rowLines: number;
+  /** Title, column heads, footer lines and the gaps between them, in units. */
+  fixedHeight: number;
+  /** One row with its padding and border, in units. */
+  rowPitch: number;
+  /** Rows that fit under the column heads, above the footer lines. */
+  rowCapacity: number;
+}
+
+/**
+ * A measure widget's table view in a content box (units): how many rows fit
+ * between the title and the column heads above and the footer lines below
+ * (`MEASURE_TABLE_FOOTER_SAMPLES`, or the first `footerLines` of them). The
+ * columns share the width evenly: a head wraps at its column's width (at
+ * most three lines), and rows wrap as `MEASURE_TABLE_CELL_SAMPLE` would in
+ * a column (at most four lines). Without `columns` (the heads as screens
+ * show them) one line each. 0 when not even the heads and footer lines fit.
+ */
+export function measureTableLayout(input: {
+  label: string;
+  width: number;
+  height: number;
+  fontScale?: number;
+  columns?: readonly string[] | null;
+  footerLines?: number;
+}): MeasureTableLayout {
+  const scale = effectiveFontScale(input.fontScale);
+  const m = MEASURE_TABLE_METRICS;
+  const width = Math.max(0, input.width);
+  const title = m.title * scale,
+    cell = m.cell * scale,
+    footerSize = m.footer * scale;
+  const titleLines = Math.min(
+    STUDIO_LABEL_MAX_LINES,
+    Math.max(1, wrappedLineCount(input.label, width, title, "semibold")),
+  );
+  const columns = input.columns?.length ? input.columns : null;
+  const columnWidth = Math.max(
+    0,
+    width / (columns?.length ?? 1) - m.cellPadding,
+  );
+  const headLines = columns
+    ? Math.min(
+        3,
+        Math.max(
+          1,
+          ...columns.map((name) =>
+            wrappedLineCount(name, columnWidth, cell, "semibold"),
+          ),
+        ),
+      )
+    : 1;
+  const rowLines = columns
+    ? Math.min(
+        4,
+        Math.max(
+          1,
+          wrappedLineCount(MEASURE_TABLE_CELL_SAMPLE, columnWidth, cell),
+        ),
+      )
+    : 1;
+  const line = (lines: number) =>
+    lines * cell * m.lineHeight + m.cellPadding + m.border;
+  const rowPitch = line(rowLines);
+  const samples = MEASURE_TABLE_FOOTER_SAMPLES.slice(
+    0,
+    Math.max(
+      0,
+      Math.floor(input.footerLines ?? MEASURE_TABLE_FOOTER_SAMPLES.length),
+    ),
+  );
+  const footer = samples.reduce<number>(
+    (sum, sample) =>
+      sum +
+      m.gap +
+      (sample === null
+        ? footerSize * m.freshnessLineHeight
+        : Math.max(1, wrappedLineCount(sample, width, footerSize)) *
+          footerSize *
+          m.lineHeight),
+    0,
+  );
+  const fixedHeight =
+    titleLines * title * m.lineHeight + m.gap + line(headLines) + footer;
+  return {
+    titleLines,
+    headLines,
+    rowLines,
+    fixedHeight,
+    rowPitch,
+    rowCapacity: Math.max(
+      0,
+      Math.floor((input.height - fixedHeight) / rowPitch + 1e-9),
+    ),
+  };
+}
+
 /** Rows a table shows: its limit, its rows and the room, whichever is least. */
 export function tableRowsShown(
   limit: number,

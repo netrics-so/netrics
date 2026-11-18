@@ -67,7 +67,7 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     missingDefinition:
       "Berichte können später eintreffen. Bekannte Werte bleiben als unvollständig sichtbar; ausstehende und fehlende Werte werden nicht als 0 behandelt. Nicht zugeordnete Kontozeilen bleiben von Apps getrennt.",
     slidesDefinition:
-      "Eine Übersichtsfolie aller Apps, danach eine Folie je App mit ihrem Symbol: Erlöse bei kostenpflichtigen Apps, Downloads, Bewertungen, die neueste App-Store-Rezension und die Besucher der verknüpften Website. Bildschirme wechseln die Folien von selbst.",
+      "Eine Übersicht aller Apps (ihre Store-Tabellen, danach Erlöse und Besucher der letzten 30 Tage), danach eine Folie je App mit ihrem Symbol: Erlöse bei kostenpflichtigen Apps, Downloads, Bewertungen, die neueste App-Store-Rezension und die Besucher der verknüpften Website. Bildschirme wechseln die Folien von selbst.",
     tooManyApps:
       "{count} Apps: Ein Dashboard zeigt höchstens 12 Folien. Die ersten Apps nach Name erhalten eine eigene Folie, die übrigen erscheinen nur in der Übersicht.",
     omittedApps:

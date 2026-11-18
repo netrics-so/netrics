@@ -882,6 +882,36 @@ icons the apps lack are fetched through the resource-icon path ("Use app
 icon"); an icon that cannot be fetched leaves the slide without a logo.
 Version 3 installs get version 4 through the template update.
 
+### Tables that fit their tiles (template version 5)
+
+[#768](https://github.com/netrics-so/netrics/issues/768): version 4's
+overview asked for up to twenty rows in a four-row tile, so screens cut
+rows and footer lines. The readability check now measures measure tables
+too (`measureTableLayout`): their title, the column heads (wrapped at an
+even share of the width), the rows (wrapped as a store's name would be)
+and the footer lines a measure table shows ("N of M groups", the oldest
+source refresh, the freshness line). A table whose `limit` exceeds the rows
+that fit gets `rows_cut`, in every format.
+
+Version 5 changes the layout so every format passes at every theme font
+scale:
+
+- **Overview**: the three model tables at full height; ratings show the
+  rating and its count, as on the app slides. Each asks for the most rows
+  that fit (at most ten; three in this layout) and shows its top rows:
+  downloads by downloads, ratings by rating count (a measure widget's
+  `order`, which ranks groups by one measure before the limit). Proceeds keep their app
+  and currency order: amounts in different currencies do not rank.
+- **Last 30 days** (second overview slide, when there are connection
+  tables): revenue in the display currency and website visitors, at full
+  height. The overview takes two of the twelve slides, so ten apps get a
+  slide of their own (eleven without connection tables).
+- **App slides**: the ratings take two thirds of the lower row (beside the
+  review, or a Google Play app's proceeds, which move there from the top
+  row) and ask for the rows that fit.
+
+Version 4 installs get version 5 through the reviewed template update.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

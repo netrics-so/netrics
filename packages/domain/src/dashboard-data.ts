@@ -7,7 +7,7 @@ import {
   type DataExpression,
   type DataType,
 } from "./data-expression.js";
-import type { ModelQuery } from "./data-model.js";
+import type { ModelQuery, ModelQueryOrder } from "./data-model.js";
 
 export type DashboardFilterType = Exclude<DataType, "json">;
 export type DashboardFilterValue =
@@ -360,6 +360,8 @@ export function dashboardModelQuery(
   scope: DeviceFilterScope = {},
   /** The widget's slide's scope (#707). */
   slide: SlideFilterScope = {},
+  /** A table's top N (#768): its groups by one of its measures. */
+  order?: ModelQueryOrder,
 ): Omit<ModelQuery, "now"> {
   const ids = new Set(filters.map((filter) => filter.id));
   if (ids.size !== filters.length) dataFail("dashboard_filter_ids_not_unique");
@@ -420,6 +422,7 @@ export function dashboardModelQuery(
     groupBy: binding.groupBy,
     limit,
     ...(window === "last" ? { window } : {}),
+    ...(order ? { orderBy: order } : {}),
     ...(filter ? { filter } : {}),
   };
 }

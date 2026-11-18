@@ -13017,6 +13017,27 @@
                               "type": "integer",
                               "minimum": 1,
                               "maximum": 1000
+                            },
+                            "order": {
+                              "type": "object",
+                              "properties": {
+                                "measureId": {
+                                  "type": "string",
+                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                },
+                                "direction": {
+                                  "type": "string",
+                                  "enum": [
+                                    "asc",
+                                    "desc"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "measureId",
+                                "direction"
+                              ],
+                              "additionalProperties": false
                             }
                           }
                         },
@@ -16410,6 +16431,27 @@
                                         "type": "integer",
                                         "minimum": 1,
                                         "maximum": 1000
+                                      },
+                                      "order": {
+                                        "type": "object",
+                                        "properties": {
+                                          "measureId": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          },
+                                          "direction": {
+                                            "type": "string",
+                                            "enum": [
+                                              "asc",
+                                              "desc"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "measureId",
+                                          "direction"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     }
                                   }
@@ -19038,6 +19080,27 @@
                                               "type": "integer",
                                               "minimum": 1,
                                               "maximum": 1000
+                                            },
+                                            "order": {
+                                              "type": "object",
+                                              "properties": {
+                                                "measureId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "direction": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "asc",
+                                                    "desc"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "measureId",
+                                                "direction"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -22001,6 +22064,27 @@
                                               "type": "integer",
                                               "minimum": 1,
                                               "maximum": 1000
+                                            },
+                                            "order": {
+                                              "type": "object",
+                                              "properties": {
+                                                "measureId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "direction": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "asc",
+                                                    "desc"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "measureId",
+                                                "direction"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -24900,6 +24984,27 @@
                                         "type": "integer",
                                         "minimum": 1,
                                         "maximum": 1000
+                                      },
+                                      "order": {
+                                        "type": "object",
+                                        "properties": {
+                                          "measureId": {
+                                            "type": "string",
+                                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                          },
+                                          "direction": {
+                                            "type": "string",
+                                            "enum": [
+                                              "asc",
+                                              "desc"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "measureId",
+                                          "direction"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     }
                                   }
@@ -27538,6 +27643,27 @@
                                               "type": "integer",
                                               "minimum": 1,
                                               "maximum": 1000
+                                            },
+                                            "order": {
+                                              "type": "object",
+                                              "properties": {
+                                                "measureId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "direction": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "asc",
+                                                    "desc"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "measureId",
+                                                "direction"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -30657,6 +30783,27 @@
                                               "type": "integer",
                                               "minimum": 1,
                                               "maximum": 1000
+                                            },
+                                            "order": {
+                                              "type": "object",
+                                              "properties": {
+                                                "measureId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "direction": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "asc",
+                                                    "desc"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "measureId",
+                                                "direction"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -68783,6 +68930,27 @@
                                               "type": "integer",
                                               "minimum": 1,
                                               "maximum": 1000
+                                            },
+                                            "order": {
+                                              "type": "object",
+                                              "properties": {
+                                                "measureId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "direction": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "asc",
+                                                    "desc"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "measureId",
+                                                "direction"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -73008,6 +73176,27 @@
                                               "type": "integer",
                                               "minimum": 1,
                                               "maximum": 1000
+                                            },
+                                            "order": {
+                                              "type": "object",
+                                              "properties": {
+                                                "measureId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "direction": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "asc",
+                                                    "desc"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "measureId",
+                                                "direction"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -87420,6 +87609,27 @@
                                               "type": "integer",
                                               "minimum": 1,
                                               "maximum": 1000
+                                            },
+                                            "order": {
+                                              "type": "object",
+                                              "properties": {
+                                                "measureId": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                },
+                                                "direction": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "asc",
+                                                    "desc"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "measureId",
+                                                "direction"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [

@@ -193,6 +193,95 @@ describe("formatWarnings", () => {
     ]);
   });
 
+  it("rows_cut: a measure table keeps room for its rows and three footer lines (#768)", () => {
+    const measure = (rows: number, h = 4): ReadabilityWidget => ({
+      id: "m",
+      type: "measure",
+      x: 0,
+      y: 0,
+      w: 6,
+      h,
+      label: "Downloads by app and store",
+      rows,
+    });
+    // At h 4 three rows fit above the scope, refresh and freshness lines.
+    const warnings = formatWarnings(slide([measure(20)]), "16x9", context);
+    expect(codes(warnings)).toEqual(["16x9 rows_cut m"]);
+    expect(warnings[0]).toMatchObject({
+      severity: "attention",
+      rows: { shown: 3, limit: 20 },
+    });
+    expect(formatWarnings(slide([measure(3)]), "16x9", context)).toEqual([]);
+    expect(codes(formatWarnings(slide([measure(4)]), "16x9", context))).toEqual(
+      ["16x9 rows_cut m"],
+    );
+    const at13 = { ...context, fontScale: 1.3 };
+    expect(formatWarnings(slide([measure(3)]), "16x9", at13)[0]?.rows).toEqual({
+      shown: 2,
+      limit: 3,
+    });
+    // A full-height table holds many more.
+    expect(formatWarnings(slide([measure(10, 8)]), "16x9", context)).toEqual(
+      [],
+    );
+    // Not even the heads and footer lines fit: zero rows shown.
+    const tiny = { ...measure(1, 3), w: 4 };
+    expect(formatWarnings(slide([tiny]), "16x9", at13)[0]?.rows).toEqual({
+      shown: 0,
+      limit: 1,
+    });
+    // Without rows (a value view) nothing is measured.
+    expect(
+      formatWarnings(slide([{ ...measure(20), rows: null }]), "16x9", context),
+    ).toEqual([]);
+  });
+
+  it("rows_cut: a measure table's narrow columns wrap their heads and rows (#768)", () => {
+    const measure = (columns: string[] | null): ReadabilityWidget => ({
+      id: "m",
+      type: "measure",
+      x: 0,
+      y: 0,
+      w: 4,
+      h: 8,
+      label: "Downloads",
+      rows: 20,
+      columns,
+    });
+    const shown = (columns: string[] | null) =>
+      formatWarnings(slide([measure(columns)]), "16x9", context)[0]?.rows
+        ?.shown;
+    const open = shown(null)!;
+    // One short column: one line per head and row, as without columns.
+    expect(shown(["App"])).toBe(open);
+    // Three columns in a third of the width: the long head takes three
+    // lines and every row two (a store's name wraps).
+    const narrow = shown(["App", "Store", "Downloads and user installs"])!;
+    expect(narrow).toBeLessThan(open);
+    expect(narrow).toBeGreaterThan(0);
+  });
+
+  it("rows_cut on a measure table is checked in every format's own layout", () => {
+    const warnings = slideFormatWarnings(
+      slide([
+        {
+          id: "m",
+          type: "measure",
+          x: 0,
+          y: 0,
+          w: 6,
+          h: 4,
+          label: "Downloads",
+          rows: 20,
+        },
+      ]),
+      context,
+    );
+    expect(Object.values(byFormat(warnings))).toEqual(
+      SCREEN_FORMAT_KEYS.map(() => ["rows_cut m"]),
+    );
+  });
+
   it("rows_cut (info): a 3 × 3 status board lists five sources, then +N more", () => {
     const board = (rows: number): ReadabilityWidget => ({
       id: "s",

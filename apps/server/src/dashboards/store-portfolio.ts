@@ -20,7 +20,7 @@ import {
 export type StoreConnectorId = "app-store-connect" | "google-play";
 export type StoreMetric = "downloads" | "proceeds" | "ratings";
 /** The store template versions this module builds (see store-template.ts). */
-export type StoreTemplateVersion = 1 | 2 | 3 | 4;
+export type StoreTemplateVersion = 1 | 2 | 3 | 4 | 5;
 export interface StoreTemplateSource {
   id: string;
   name: string;
@@ -85,6 +85,9 @@ export const storeTemplateCopy = (locale: Locale) =>
         revenueByApp: "Erlöse nach App, letzte 30 Tage",
         revenueShort: "Erlöse",
         visitorsShort: "Website-Besucher",
+        downloadsShort: "Downloads",
+        proceedsShort: "Erlöse",
+        recentName: "App-Portfolio · letzte 30 Tage",
         downloadsRecent: "Downloads, letzte 30 Tage",
         visitors: "Website-Besucher, letzte 30 Tage",
         appStore: "App Store",
@@ -136,6 +139,9 @@ export const storeTemplateCopy = (locale: Locale) =>
         revenueByApp: "Revenue by app, last 30 days",
         revenueShort: "Revenue",
         visitorsShort: "Website visitors",
+        downloadsShort: "Downloads",
+        proceedsShort: "Proceeds",
+        recentName: "App portfolio · last 30 days",
         downloadsRecent: "Downloads, last 30 days",
         visitors: "Website visitors, last 30 days",
         appStore: "App Store",
@@ -1066,6 +1072,25 @@ export function buildStoreModel(
   };
 }
 
+/**
+ * The column heads a store measure table shows (#768): its grouped
+ * dimensions' names, then its measures', as the template's models name them.
+ */
+export function storeTableColumns(
+  binding: { groupBy: readonly string[]; measureIds: readonly string[] },
+  locale: Locale,
+): string[] {
+  const names = new Map<string, string>();
+  for (const metric of ["downloads", "proceeds", "ratings"] as const) {
+    const model = buildStoreModel(metric, "columns", locale, 3);
+    for (const entry of [...model.dimensions, ...model.measures])
+      names.set(entry.id, entry.name);
+  }
+  return [...binding.groupBy, ...binding.measureIds].map(
+    (id) => names.get(id) ?? id,
+  );
+}
+
 export function buildStoreDashboard(
   name: string,
   models: Record<StoreMetric, string>,
@@ -1086,6 +1111,8 @@ export function buildStoreDashboardTemplate(
   productId?: string,
   /** Version 4: the overview plus one slide per app (not for one app). */
   portfolio?: StorePortfolio,
+  /** The template version the portfolio's slides are built for (4 or 5). */
+  version: StoreTemplateVersion = 4,
 ): {
   request: CreateDashboardRequest;
   widgetKeys: string[];
@@ -1169,7 +1196,15 @@ export function buildStoreDashboardTemplate(
     options: { view: "table" as const, limit: 20 },
   });
   if (portfolio && !productId)
-    return buildPortfolioSlides(name, t, filters, widget, portfolio);
+    return buildPortfolioSlides(
+      name,
+      t,
+      filters,
+      widget,
+      portfolio,
+      version,
+      (binding) => storeTableColumns(binding, locale),
+    );
   const request: CreateDashboardRequest = {
     name,
     settings: { showHeader: true, autoAdvance: false, dataFilters: filters },
@@ -1232,6 +1267,40 @@ const OVERVIEW_TABLES = 2;
 const OVERVIEW_CONNECTION_TABLES = 3;
 /** Rows a connection table of the overview asks for: what fits at h 4. */
 const OVERVIEW_TABLE_ROWS = 3;
+/**
+ * A model table of version 5 (#768): its titles, longest first, the most
+ * rows it asks for, and the measure its top rows are ranked by (null: by
+ * its dimensions, as amounts in different currencies do not rank).
+ */
+interface OverviewMeasureTable {
+  titles: (t: ReturnType<typeof storeTemplateCopy>) => string[];
+  rows: number;
+  order: string | null;
+}
+const RATINGS_TABLE: OverviewMeasureTable = {
+  titles: (t) => [t.ratings],
+  rows: 10,
+  order: "rating_count",
+};
+const PROCEEDS_TABLE: OverviewMeasureTable = {
+  titles: (t) => [t.proceeds, t.proceedsShort],
+  rows: 10,
+  order: null,
+};
+/** Rows an overview connection table asks for at most (version 5). */
+const OVERVIEW_RECENT_ROWS = 10;
+/** The key of the overview's slide of connection tables (version 5). */
+const OVERVIEW_RECENT_SLIDE = "slide:overview-recent";
+/** The overview's model tables (version 5). */
+const OVERVIEW_MEASURE_TABLES: Record<string, OverviewMeasureTable> = {
+  "widget:downloads": {
+    titles: (t) => [t.downloads, t.downloadsShort],
+    rows: 10,
+    order: "downloads",
+  },
+  "widget:proceeds": PROCEEDS_TABLE,
+  "widget:ratings": RATINGS_TABLE,
+};
 /** The connector widgets' period. */
 const RECENT = "last_30_days" as const;
 const ASC_PROCEEDS = "app_store_connect.proceeds",
@@ -1281,19 +1350,26 @@ function overviewTables(portfolio: StorePortfolio) {
  * stays within the Studio's limits (12 slides, 48 data widgets, the
  * overview included); the rest are `omitted` and show in the overview only.
  */
-export function storeAppSlides(portfolio: StorePortfolio): {
+export function storeAppSlides(
+  portfolio: StorePortfolio,
+  version: StoreTemplateVersion = 4,
+): {
   shown: StoreAppIdentity[];
   omitted: StoreAppIdentity[];
 } {
   const tables = overviewTables(portfolio);
   let cost = 3 + tables.revenue.length + tables.visitors.length;
+  // Version 5 (#768): the connection tables have an overview slide of
+  // their own.
+  const overviewSlides =
+    version >= 5 && tables.revenue.length + tables.visitors.length > 0 ? 2 : 1;
   const shown: StoreAppIdentity[] = [],
     omitted: StoreAppIdentity[] = [];
   for (const app of portfolio.apps) {
     const widgets = appSlideWidgets(app).length;
     if (
       omitted.length === 0 &&
-      shown.length < STUDIO_LIMITS.slides - 1 &&
+      shown.length < STUDIO_LIMITS.slides - overviewSlides &&
       cost + widgets <= STUDIO_LIMITS.dataWidgets
     ) {
       shown.push(app);
@@ -1346,6 +1422,8 @@ function buildPortfolioSlides(
     measureIds: string[],
   ) => Extract<Widget, { type: "measure" }>,
   portfolio: StorePortfolio,
+  version: StoreTemplateVersion,
+  columnsOf: (binding: { groupBy: string[]; measureIds: string[] }) => string[],
 ): {
   request: CreateDashboardRequest;
   widgetKeys: string[];
@@ -1435,7 +1513,11 @@ function buildPortfolioSlides(
             0,
             4,
             ["listing", "storefront"],
-            ["rating", "rating_count", "checked", "availability"],
+            // Version 5 (#768): the rating and its count, as on the app
+            // slides; six columns do not fit a third of the width.
+            version >= 5
+              ? ["rating", "rating_count"]
+              : ["rating", "rating_count", "checked", "availability"],
           ),
           "table",
           20,
@@ -1456,6 +1538,22 @@ function buildPortfolioSlides(
     ...row(at(tablesInOrder.slice(0, first), 0)),
     ...row(at(tablesInOrder.slice(first), 4)),
   ];
+  // Version 5 (#768): the model tables fill the overview's height, and the
+  // connection tables (revenue in the display currency, visitors) get an
+  // overview slide of their own after it, also full height.
+  const fullHeight = (items: typeof tablesInOrder) =>
+    row(
+      items.map(({ key, widget }) => ({
+        key,
+        widget: { ...widget, y: 0, h: 8 } as Unplaced,
+      })),
+    );
+  const modelTables = fullHeight(
+    tablesInOrder.filter(({ key }) => key in OVERVIEW_MEASURE_TABLES),
+  );
+  const recentTables = fullHeight(
+    tablesInOrder.filter(({ key }) => !(key in OVERVIEW_MEASURE_TABLES)),
+  );
   // A connection table's title, the longest that leaves it readable in
   // every format at every theme font scale (its rows and label fit).
   const titles = new Map<string, string[]>([
@@ -1485,8 +1583,16 @@ function buildPortfolioSlides(
         y: widget.y,
         w: widget.w,
         h: widget.h,
-        label: widget.type === "table" ? (widget.title ?? null) : null,
-        rows: widget.type === "table" ? widget.options.limit : null,
+        label:
+          widget.type === "table" || widget.type === "measure"
+            ? (widget.title ?? null)
+            : null,
+        rows:
+          widget.type === "table" ||
+          (widget.type === "measure" && widget.options.view === "table")
+            ? widget.options.limit
+            : null,
+        columns: widget.type === "measure" ? columnsOf(widget.binding) : null,
       })),
     };
     return STUDIO_FONT_SCALES.every((fontScale) =>
@@ -1502,7 +1608,73 @@ function buildPortfolioSlides(
       ),
     );
   };
-  const overview = placed.map((entry) => {
+  // Version 5 (#768): each model table asks for the rows that fit its tile
+  // in every format at every theme font scale, above its footer lines,
+  // with the title that leaves the most rows (the longest of those), and
+  // shows its top rows by its measure (proceeds: amounts in different
+  // currencies do not rank, so by app or currency as before).
+  // A connection table's rows adapt on screens; it asks for as many.
+  const fitTables = (
+    widgets: Placed[],
+    specOf: (key: string) => OverviewMeasureTable | undefined,
+  ): Placed[] =>
+    version < 5
+      ? widgets
+      : widgets.map((entry) => {
+          const table = specOf(entry.key);
+          const widget = entry.widget;
+          if (!table || (widget.type !== "measure" && widget.type !== "table"))
+            return entry;
+          const candidates = table.titles(t);
+          const sizedTo = (title: string, limit: number) => ({
+            key: entry.key,
+            widget: {
+              ...widget,
+              title,
+              options:
+                widget.type === "table"
+                  ? { ...widget.options, limit }
+                  : {
+                      view: "table" as const,
+                      limit,
+                      ...(table.order
+                        ? {
+                            order: {
+                              measureId: table.order,
+                              direction: "desc" as const,
+                            },
+                          }
+                        : {}),
+                    },
+            } as Widget,
+          });
+          for (let limit = table.rows; limit > 1; limit--)
+            for (const title of candidates) {
+              const candidate = sizedTo(title, limit);
+              if (
+                readable(
+                  widgets.map((other) =>
+                    other.key === entry.key ? candidate : other,
+                  ),
+                  entry.key,
+                )
+              )
+                return candidate;
+            }
+          return sizedTo(candidates.at(-1)!, 1);
+        });
+  const overviewModels = fitTables(
+    modelTables,
+    (key) => OVERVIEW_MEASURE_TABLES[key],
+  );
+  const overviewRecent = fitTables(recentTables, (key) => {
+    const candidates = titles.get(key);
+    return candidates
+      ? { titles: () => candidates, rows: OVERVIEW_RECENT_ROWS, order: null }
+      : undefined;
+  });
+  const fitted = placed;
+  const overview = fitted.map((entry) => {
     const candidates = titles.get(entry.key);
     if (!candidates) return entry;
     const titled = (title: string) => ({
@@ -1512,7 +1684,7 @@ function buildPortfolioSlides(
     return (
       candidates.map(titled).find((candidate) =>
         readable(
-          placed.map((other) => (other.key === entry.key ? candidate : other)),
+          fitted.map((other) => (other.key === entry.key ? candidate : other)),
           entry.key,
         ),
       ) ?? titled(candidates.at(-1)!)
@@ -1544,7 +1716,10 @@ function buildPortfolioSlides(
       options: { showSparkline: true, showChange: true },
     });
     const band: { key: string; widget: Unplaced }[] = [];
-    if (app.paid)
+    // Version 5 (#768): a Google Play app's proceeds table sits in the
+    // lower row, where its rows have room, beside its ratings.
+    const playProceedsBelow = version >= 5 && app.paid && !store;
+    if (app.paid && !playProceedsBelow)
       band.push({
         key: key("revenue"),
         widget: store
@@ -1618,6 +1793,15 @@ function buildPortfolioSlides(
         ),
       },
     ];
+    if (playProceedsBelow)
+      lower.push({
+        key: key("revenue"),
+        widget: sized(
+          measure("proceeds", 0, 3, 0, 5, ["currency"], ["proceeds"]),
+          "table",
+          5,
+        ),
+      });
     if (store)
       lower.push({
         key: key("review"),
@@ -1633,7 +1817,28 @@ function buildPortfolioSlides(
           options: { minRating: 1, requireText: true, showAuthor: true },
         },
       });
-    const widgets = [...row(band), ...row(lower)];
+    // Version 5 (#768): the ratings take two thirds of the lower row, so
+    // their column heads and rows have room beside the review or proceeds.
+    const lowerRow = (items: { key: string; widget: Unplaced }[]): Placed[] =>
+      version >= 5 && items.length === 2
+        ? items.map(({ key, widget }, index) => ({
+            key,
+            widget: {
+              ...widget,
+              x: index === 0 ? 0 : 8,
+              w: index === 0 ? 8 : 4,
+            } as Widget,
+          }))
+        : row(items);
+    // An app's model tables (version 5): its ratings, and a Google Play
+    // app's proceeds by currency.
+    const widgets = fitTables([...row(band), ...lowerRow(lower)], (entry) =>
+      entry === key("ratings")
+        ? RATINGS_TABLE
+        : entry === key("revenue")
+          ? PROCEEDS_TABLE
+          : undefined,
+    );
     return {
       key: `slide:${slideKey}`,
       widgets,
@@ -1649,16 +1854,34 @@ function buildPortfolioSlides(
       } satisfies Slide,
     };
   };
+  const overviewSlide = (
+    key: string,
+    slideName: string,
+    widgets: Placed[],
+  ) => ({
+    key,
+    widgets,
+    slide: {
+      name: slideName,
+      widgets: widgets.map((placed) => placed.widget),
+    } satisfies Slide,
+  });
   const slides = [
-    {
-      key: "slide:0",
-      widgets: overview,
-      slide: {
-        name: t.name,
-        widgets: overview.map((placed) => placed.widget),
-      } satisfies Slide,
-    },
-    ...storeAppSlides(portfolio).shown.map(appSlide),
+    ...(version >= 5
+      ? [
+          overviewSlide("slide:0", t.name, overviewModels),
+          ...(overviewRecent.length
+            ? [
+                overviewSlide(
+                  OVERVIEW_RECENT_SLIDE,
+                  t.recentName,
+                  overviewRecent,
+                ),
+              ]
+            : []),
+        ]
+      : [overviewSlide("slide:0", t.name, overview)]),
+    ...storeAppSlides(portfolio, version).shown.map(appSlide),
   ];
   return {
     request: {

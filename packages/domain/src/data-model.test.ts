@@ -1161,3 +1161,78 @@ describe("formula measure fields", () => {
     ).toEqual(["revenue"]);
   });
 });
+
+describe("ordering groups by a measure (#768)", () => {
+  const names = (result: ReturnType<typeof querySemanticModel>) =>
+    result.rows.map((row) => row.dimensions.app);
+  it("orders the groups by one measure before paging them: a top N", () => {
+    const query = {
+      measureIds: ["apple-downloads", "play-downloads"],
+      groupBy: ["app"],
+    };
+    // By their dimension without an order: App A, App B.
+    expect(names(querySemanticModel(model, sources, query))).toEqual([
+      "App A",
+      "App B",
+    ]);
+    const top = querySemanticModel(model, sources, {
+      ...query,
+      limit: 1,
+      orderBy: { measureId: "play-downloads", direction: "desc" },
+    });
+    expect(names(top)).toEqual(["App B"]);
+    expect(top.rows[0]!.measures["play-downloads"]!.value).toBe("7");
+    expect(top.totalRows).toBe(2);
+    expect(
+      names(
+        querySemanticModel(model, sources, {
+          ...query,
+          orderBy: { measureId: "apple-downloads", direction: "asc" },
+        }),
+      ),
+    ).toEqual(["App B", "App A"]);
+    // A formula measure orders as well.
+    expect(
+      names(
+        querySemanticModel(model, sources, {
+          measureIds: ["total-downloads"],
+          groupBy: ["app"],
+          orderBy: { measureId: "total-downloads", direction: "desc" },
+        }),
+      ),
+    ).toEqual(["App A", "App B"]);
+  });
+
+  it("puts groups without a value last in either direction", () => {
+    const withC = new Map(sources);
+    withC.set("apps", {
+      ...apps,
+      rows: [...apps.rows, { id: "c", name: "App C", country: "IT" }],
+    });
+    // App C has Play downloads only: no Apple downloads.
+    withC.set("play", {
+      ...play,
+      rows: [...play.rows, { app: "c", downloads: 1 }],
+    });
+    for (const direction of ["asc", "desc"] as const)
+      expect(
+        names(
+          querySemanticModel(model, withC, {
+            measureIds: ["apple-downloads", "play-downloads"],
+            groupBy: ["app"],
+            orderBy: { measureId: "apple-downloads", direction },
+          }),
+        ).at(-1),
+      ).toBe("App C");
+  });
+
+  it("refuses an order by a measure the query does not ask for", () => {
+    expect(() =>
+      querySemanticModel(model, sources, {
+        measureIds: ["apple-downloads"],
+        groupBy: ["app"],
+        orderBy: { measureId: "play-downloads", direction: "desc" },
+      }),
+    ).toThrow("model_result_order_invalid");
+  });
+});

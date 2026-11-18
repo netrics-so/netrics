@@ -29,6 +29,7 @@ import {
   hasWidgetLabel,
   isInsideFormatGrid,
   labelFit,
+  measureTableLayout,
   parseTextWidget,
   placementRect,
   screenFrame,
@@ -287,7 +288,10 @@ export type FormatWarningCode =
   | "header_name_cut"
   /** A clock's date or zone line does not fit, so the screen leaves it out. */
   | "clock_parts_hidden"
-  /** A table's `limit` exceeds the rows that fit (see `rows`). */
+  /**
+   * A table's `limit` exceeds the rows that fit (see `rows`); a measure
+   * table's rows are counted above its footer lines.
+   */
   | "rows_cut"
   /** A countdown's target has passed: it shows its text when reached. */
   | "countdown_passed"
@@ -368,10 +372,16 @@ export interface ReadabilityWidget extends LayoutWidget {
     zone: string | null;
   } | null;
   /**
-   * Tables: the rows asked for (`limit`); status boards: the sources they
-   * list (the chosen ones, or every connection of the workspace).
+   * Tables and measure tables (a measure widget in its table view): the
+   * rows asked for (`limit`); status boards: the sources they list (the
+   * chosen ones, or every connection of the workspace).
    */
   rows?: number | null;
+  /**
+   * Measure tables: the column heads as screens show them (the grouped
+   * dimensions' names, then the measures'); unknown: one line each.
+   */
+  columns?: readonly string[] | null;
   /**
    * Countdowns: the target as an instant (ISO 8601, resolved in the
    * widget's zone, else the workspace's); null when it does not resolve.
@@ -503,6 +513,23 @@ export function formatWarnings(
         width: box.width,
         height: box.height,
         fontScale: context.fontScale,
+      });
+      if (widget.rows > rowCapacity) {
+        warn("rows_cut", widget.id, null, {
+          shown: rowCapacity,
+          limit: widget.rows,
+        });
+      }
+    } else if (widget.type === "measure" && widget.rows) {
+      // A measure table (#768): its rows above the footer lines it keeps
+      // room for; when even those do not fit, none of its rows show.
+      const box = contentBoxIn(placement, format, context.showHeader);
+      const { rowCapacity } = measureTableLayout({
+        label: widget.label ?? "",
+        width: box.width,
+        height: box.height,
+        fontScale: context.fontScale,
+        columns: widget.columns ?? null,
       });
       if (widget.rows > rowCapacity) {
         warn("rows_cut", widget.id, null, {

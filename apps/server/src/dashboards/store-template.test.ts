@@ -7,6 +7,7 @@ import {
   storeTemplateV1,
   storeTemplateV2,
   storeTemplateV3,
+  storeTemplateV4,
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
@@ -17,6 +18,7 @@ import {
   buildStoreModel,
   buildStorePreparation,
   storeAppSlides,
+  storeTableColumns,
   storeTemplateCopy,
   type StoreAppIdentity,
   type StoreMetric,
@@ -85,6 +87,7 @@ const VERSION_HASHES: Record<number, string> = {
   2: "79726e4b4472c40243627181269daf6f08dcd991b7d1e415d2aba7bc51727aa3",
   3: "803b151fd59622b368644799eed102cfe37f3632fbc2266f2f32a3ea221c6923",
   4: "a0b7378f8af8f7c9b07da278d4187d3af3b88198cb075d9c66ee14dd5affc014",
+  5: "ac74c34af43eac4d2e236c38f2465c20acf4ca1e0ffa7235dc15ab9e23d79a4a",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -118,6 +121,12 @@ describe("versioned store template", () => {
     expect(VERSION_HASHES[STORE_TEMPLATE_VERSION]).toBe(
       sha256(JSON.stringify(buildAll(fixtureInputs))),
     );
+  });
+  it("keeps version 4 frozen after the template moves on", () => {
+    expect(storeTemplateV4.version).toBe(4);
+    expect(
+      sha256(JSON.stringify(buildAll(fixtureInputs, storeTemplateV4))),
+    ).toBe(VERSION_HASHES[4]);
   });
   it("keeps version 3 frozen after the template moves on", () => {
     expect(storeTemplateV3.version).toBe(3);
@@ -443,8 +452,13 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       website: null,
     },
   ];
-  const dashboardOf = (inputs: StoreTemplateInputs) => {
-    const record = buildAll(inputs).at(-1)!;
+  // Version 4 as it shipped (frozen); version 5 changes only the
+  // overview's tables and slides (see "fits the overview" and below).
+  const dashboardOf = (
+    inputs: StoreTemplateInputs,
+    template: typeof storeTemplate = storeTemplateV4,
+  ) => {
+    const record = buildAll(inputs, template).at(-1)!;
     if (record.kind !== "dashboard") throw new Error("no dashboard");
     return record;
   };
@@ -704,27 +718,34 @@ describe("version 4: an overview and one slide per app (#709)", () => {
             website: { connectionId: uuid("vercel:0"), projectId: "prj_play" },
           });
           const request = createDashboardRequestSchema.parse(
-            dashboardOf({
-              ...fixtureInputs,
-              locale,
-              connections: [
-                ...asc,
-                {
-                  id: google.id,
-                  name: google.name,
-                  connectorId: google.connectorId,
-                  datasets: google.datasets,
-                },
-              ],
-              apps,
-            }).request,
+            dashboardOf(
+              {
+                ...fixtureInputs,
+                locale,
+                connections: [
+                  ...asc,
+                  {
+                    id: google.id,
+                    name: google.name,
+                    connectorId: google.connectorId,
+                    datasets: google.datasets,
+                  },
+                ],
+                apps,
+              },
+              storeTemplate,
+            ).request,
           );
           const where = `${appStore} App Store, ${vercel} Vercel, ${locale}`;
-          const overview = request.slides![0]!;
-          // Every connection's table up to the caps: three in all.
-          expect(overview.widgets.length, where).toBe(
-            3 +
-              Math.min(appStore, 2) +
+          // Version 5 (#768): the model tables, then every connection's
+          // table up to the caps (three in all) on a slide of their own.
+          const [models, recent] = request.slides!;
+          expect(models!.widgets.length, where).toBe(3);
+          expect(recent!.name, where).toBe(
+            storeTemplateCopy(locale).recentName,
+          );
+          expect(recent!.widgets.length, where).toBe(
+            Math.min(appStore, 2) +
               Math.min(Math.max(vercel, 1), 3 - Math.min(appStore, 2), 2),
           );
           for (const slide of request.slides!) {
@@ -737,10 +758,22 @@ describe("version 4: an overview and one slide per app (#709)", () => {
               w: widget.w,
               h: widget.h,
               label:
-                widget.type === "metric" || widget.type === "table"
+                widget.type === "metric" ||
+                widget.type === "table" ||
+                widget.type === "measure"
                   ? (widget.title ?? null)
                   : null,
-              rows: widget.type === "table" ? widget.options.limit : null,
+              // Measure tables too (#768): their rows above the footer lines.
+              rows:
+                widget.type === "table"
+                  ? widget.options.limit
+                  : widget.type === "measure" && widget.options.view === "table"
+                    ? widget.options.limit
+                    : null,
+              columns:
+                widget.type === "measure"
+                  ? storeTableColumns(widget.binding, locale)
+                  : null,
             }));
             for (const fontScale of [1, 1.3])
               expect(
@@ -799,6 +832,163 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       "3",
       "Second",
       "x",
+    ]);
+  });
+});
+
+describe("version 5: the model tables fit their tiles (#768)", () => {
+  const apps: StoreAppIdentity[] = [
+    {
+      productId: `${apple.id}:1001`,
+      name: "Focus",
+      paid: true,
+      icon: null,
+      appStore: { connectionId: apple.id, appId: "1001" },
+      stores: ["app-store-connect"],
+      website: null,
+    },
+    {
+      productId: `${google.id}:com.timer`,
+      name: "Timer",
+      paid: true,
+      icon: null,
+      appStore: null,
+      stores: ["google-play"],
+      website: null,
+    },
+  ];
+  const requestOf = (template: typeof storeTemplate, locale: "en" | "de") => {
+    const record = buildAll({ ...fixtureInputs, locale, apps }, template).at(
+      -1,
+    )!;
+    if (record.kind !== "dashboard") throw new Error("no dashboard");
+    return createDashboardRequestSchema.parse(record.request);
+  };
+  /** Each slide's attention warnings at every theme font scale. */
+  const attention = (template: typeof storeTemplate, locale: "en" | "de") => {
+    const request = requestOf(template, locale);
+    return request.slides!.flatMap((slide) =>
+      [1, 1.15, 1.3].flatMap((fontScale) =>
+        slideFormatWarnings(
+          {
+            name: slide.name ?? null,
+            layouts: {},
+            widgets: slide.widgets.map((widget, index) => ({
+              id: `${slide.name}:${widget.type}:${index}`,
+              type: widget.type,
+              x: widget.x,
+              y: widget.y,
+              w: widget.w,
+              h: widget.h,
+              label:
+                widget.type === "metric" ||
+                widget.type === "table" ||
+                widget.type === "measure"
+                  ? (widget.title ?? null)
+                  : null,
+              rows:
+                widget.type === "table" ||
+                (widget.type === "measure" && widget.options.view === "table")
+                  ? widget.options.limit
+                  : null,
+              columns:
+                widget.type === "measure"
+                  ? storeTableColumns(widget.binding, locale)
+                  : null,
+            })),
+          },
+          {
+            primaryFormat: "16x9",
+            fontScale,
+            showHeader: true,
+            dashboardName: request.name,
+            logoAspect: null,
+          },
+        )
+          .filter((warning) => warning.severity === "attention")
+          .map(
+            (warning) =>
+              `${warning.widgetId} ${warning.format} ${warning.code} ${fontScale}`,
+          ),
+      ),
+    );
+  };
+
+  it("flags version 4's overview tables in every format", () => {
+    const warnings = attention(storeTemplateV4, "en");
+    for (const index of [0, 1, 3])
+      for (const format of ["21x9", "16x9", "4x3", "3x4", "9x16"])
+        expect(warnings).toContain(
+          `App portfolio:measure:${index} ${format} rows_cut 1`,
+        );
+  });
+
+  it("reads well in every format at every theme font scale, en and de", () => {
+    expect(attention(storeTemplate, "en")).toEqual([]);
+    expect(attention(storeTemplate, "de")).toEqual([]);
+  });
+
+  it("ranks the downloads and ratings by their measure; proceeds stay by app", () => {
+    const [overview, recent, focus, timer] = requestOf(
+      storeTemplate,
+      "en",
+    ).slides!;
+    // The model tables fill the overview's height; the connection tables
+    // (revenue in the display currency) follow on a slide of their own.
+    expect(
+      overview!.widgets.map((widget) => [widget.x, widget.w, widget.h]),
+    ).toEqual([
+      [0, 4, 8],
+      [4, 4, 8],
+      [8, 4, 8],
+    ]);
+    expect(recent!.name).toBe("App portfolio · last 30 days");
+    expect(
+      recent!.widgets.map((widget) => [widget.type, widget.w, widget.h]),
+    ).toEqual([["table", 12, 8]]);
+    const tables = overview!.widgets.flatMap((widget) =>
+      widget.type === "measure" ? [widget] : [],
+    );
+    expect(
+      tables.map((widget) => [
+        widget.binding.measureIds[0],
+        widget.options.view,
+        widget.options.order ?? null,
+      ]),
+    ).toEqual([
+      ["downloads", "table", { measureId: "downloads", direction: "desc" }],
+      ["proceeds", "table", null],
+      ["rating", "table", { measureId: "rating_count", direction: "desc" }],
+    ]);
+    // The overview's ratings: the rating and its count, as on app slides.
+    expect(tables[2]!.binding.measureIds).toEqual(["rating", "rating_count"]);
+    // Never the twenty rows of version 4: the top rows that fit in every
+    // format at every theme font scale.
+    expect(tables.map((widget) => widget.options.limit)).toEqual([3, 3, 3]);
+    // An app's ratings rank by their count too.
+    expect(
+      focus!.widgets.find((widget) => widget.type === "measure")?.options,
+    ).toMatchObject({ order: { measureId: "rating_count" } });
+    // A Google Play app's proceeds table sits below, beside its ratings,
+    // where its rows have room; its downloads stay on top.
+    expect(
+      timer!.widgets.map((widget) => [
+        widget.type === "measure" ? widget.binding.measureIds[0] : widget.type,
+        widget.x,
+        widget.y,
+        widget.w,
+      ]),
+    ).toEqual([
+      ["downloads", 0, 0, 12],
+      ["rating", 0, 3, 8],
+      ["proceeds", 8, 3, 4],
+    ]);
+    // The ratings take two thirds of the lower row beside the review.
+    expect(
+      focus!.widgets.map((widget) => [widget.type, widget.w]).slice(-2),
+    ).toEqual([
+      ["measure", 8],
+      ["review", 4],
     ]);
   });
 });
