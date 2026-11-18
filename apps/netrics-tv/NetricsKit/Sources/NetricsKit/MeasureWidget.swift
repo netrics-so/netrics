@@ -332,6 +332,17 @@ extension MeasureWidgetData {
         if let warning = text.overdueWarning(freshness, status: status, now: now) { return (warning, []) }
         return (nil, text.footer(freshness, status: status, now: now))
     }
+
+    /// Whether a freshness line shows under the tile. Without one the oldest
+    /// source refresh is the tile's time; with one it is left out, as the two
+    /// read as a contradiction side by side (ADR 0025 section 8, #769).
+    public func showsFreshnessLine(
+        now: Date = Date(), language: ScreenLanguage = .en, timeZone: TimeZone = .current,
+        region: Locale = .autoupdatingCurrent
+    ) -> Bool {
+        let lines = freshnessLines(now: now, language: language, timeZone: timeZone, region: region)
+        return lines.warning != nil || !lines.footer.isEmpty
+    }
 }
 
 /** A line under a measure tile, with an id that is unique on the tile. */

@@ -478,8 +478,10 @@ export function MeasureWidgetView({
       ))}
       {/* The freshness line replaces the refresh age (ADR 0025 section 8),
           as on tvOS: they measure different things and read as a
-          contradiction side by side (#769). */}
-      {data?.result?.receivedAt && !data.freshness ? (
+          contradiction side by side (#769). Where no line renders (no
+          freshness, a continuous stream under a warning, an expired
+          result), the refresh age is the widget's only time. */}
+      {data?.result?.receivedAt && !freshness ? (
         <p className="sw-measure-scope">
           {t("dashboard.receivedAt", {
             at: new Intl.DateTimeFormat(locale, {

@@ -552,6 +552,45 @@ private func metricData(_ payload: DeviceDashboardV2) -> MetricWidgetData? {
         #expect(try measure(status: "outage").freshnessStatus == .outage)
     }
 
+    /// A measure with the oldest source refresh, and the given freshness.
+    private func refreshed(freshness: String?, status: String = "ok", sources: String = "ok") throws
+        -> MeasureWidgetData
+    {
+        let json = """
+            {"status": "\(status)", "widgetId": "11111111-1111-4111-8111-111111111111",
+             "sourceHealth": [{"connectionId": "22222222-2222-4222-8222-222222222222", "name": "App Store",
+                               "status": "\(sources)", "lastSuccessAt": "2026-11-16T12:50:00Z"}],
+             "metadata": null, "error": null, "exclusions": [],
+             "result": {"releaseId": null, "rows": [], "warnings": [], "operations": 1, "provenance": [],
+                        "appliedFilter": null, "groupBy": [], "stale": false, "receivedAt": "2026-11-13T11:08:00Z"}
+             \(freshness.map { #", "freshness": \#($0)"# } ?? "")}
+            """
+        return try JSONDecoder().decode(MeasureWidgetData.self, from: Data(json.utf8))
+    }
+
+    @Test func theOldestSourceRefreshShowsOnlyWithoutAFreshnessLine() throws {
+        let periodic = #"""
+            {"kind": "periodic", "stream": "Sales", "fetchedAt": "2026-11-16T12:50:00Z",
+             "dataThrough": "2026-11-15", "nextExpectedAt": "2026-11-16T20:00:00Z"}
+            """#
+        let continuous = #"""
+            {"kind": "continuous", "stream": "Reviews", "fetchedAt": "2026-11-16T12:50:00Z",
+             "nextCheckAt": "2026-11-16T13:30:00Z"}
+            """#
+        func shows(_ data: MeasureWidgetData) -> Bool {
+            data.showsFreshnessLine(now: now, language: .en, timeZone: berlin, region: us24)
+        }
+        // No freshness: the refresh age is the tile's time.
+        let bare = try refreshed(freshness: nil)
+        #expect(bare.result?.receivedAt != nil)
+        #expect(!shows(bare))
+        // A periodic or continuous line replaces it, also under a failing source.
+        #expect(shows(try refreshed(freshness: periodic)))
+        #expect(shows(try refreshed(freshness: continuous)))
+        #expect(shows(try refreshed(freshness: continuous, sources: "auth_failed")))
+        #expect(shows(try refreshed(freshness: continuous, status: "outage")))
+    }
+
     @Test func aPausedReviewCardNeverPromisesTheNextCheck() {
         var data = ReviewWidgetData(status: .authFailed, updatedAt: "2026-11-16T12:50:00Z")
         data.freshness = continuous()

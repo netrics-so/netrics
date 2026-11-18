@@ -190,6 +190,8 @@ test("widgets and the connection page say how far the data reaches", async ({
             widgets: [
               measureWidget(0, "Downloads", downloads),
               measureWidget(6, "Reviews", reviews),
+              // The control: its data loses its freshness on the way (#769).
+              { ...measureWidget(6, "Without freshness", downloads), y: 4 },
               // A signed-in metric widget: its live query's freshness (#727).
               {
                 type: "metric",
@@ -209,20 +211,39 @@ test("widgets and the connection page say how far the data reaches", async ({
     },
   );
   expect(created.status(), await created.text()).toBe(200);
-  const dashboardId = ((await created.json()) as { dashboard: { id: string } })
-    .dashboard.id;
+  const { dashboard } = (await created.json()) as {
+    dashboard: {
+      id: string;
+      slides: { widgets: { id: string; title?: string | null }[] }[];
+    };
+  };
+  const dashboardId = dashboard.id;
+  const control = dashboard.slides
+    .flatMap((slide) => slide.widgets)
+    .find((widget) => widget.title === "Without freshness")?.id;
+  expect(control, "control widget").toBeDefined();
 
   // No journey seeds data generations, so the API sends no oldest source
   // refresh here; the widgets' data gets one, as a connector's synced
-  // dataset gives it (#769).
+  // dataset gives it, and the control widget loses its freshness (#769).
+  let injected = 0;
   await page.route("**/dashboards/data/preview", async (route) => {
     const response = await route.fetch();
+    if (!response.ok()) return route.fulfill({ response });
     const body = (await response.json()) as {
-      widgets: { result?: { receivedAt?: string | null } | null }[];
+      widgets: {
+        widgetId: string;
+        freshness?: unknown;
+        result?: { receivedAt?: string | null } | null;
+      }[];
     };
-    for (const widget of body.widgets)
-      if (widget.result)
+    for (const widget of body.widgets) {
+      if (widget.result) {
         widget.result.receivedAt = new Date(now - 72 * HOUR).toISOString();
+        injected += 1;
+      }
+      if (widget.widgetId === control) delete widget.freshness;
+    }
     await route.fulfill({ response, json: body });
   });
 
@@ -240,7 +261,16 @@ test("widgets and the connection page say how far the data reaches", async ({
   await expect(periodic).toHaveAttribute("title", w.periodic);
   await expect(continuous).toHaveAttribute("title", w.continuous);
   await expect(periodic).not.toHaveClass(/sw-notice/);
-  // The freshness line replaces the oldest source refresh, as on tvOS (#769).
+  // The freshness line replaces the oldest source refresh, as on tvOS
+  // (#769); the control without freshness shows it, so the injected value
+  // did reach the page.
+  await expect(
+    widget("Without freshness").getByText(w.oldest, { exact: false }),
+  ).toHaveCount(1);
+  await expect(
+    widget("Without freshness").locator(".sw-measure-freshness"),
+  ).toHaveCount(0);
+  expect(injected, "widget data with a result").toBeGreaterThan(0);
   for (const title of ["Downloads", "Reviews"])
     await expect(widget(title).getByText(w.oldest)).toHaveCount(0);
   // The metric widget's footer comes from its live query, as on screens.

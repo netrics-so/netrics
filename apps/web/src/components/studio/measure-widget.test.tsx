@@ -556,7 +556,23 @@ describe("loading on screens and viewers (#768)", () => {
 });
 
 describe("the oldest source refresh next to the freshness line (#769)", () => {
-  const view = (withFreshness: boolean, locale: "en" | "de" = "en") =>
+  const fetchedAt = new Date(Date.now() - 600_000).toISOString();
+  const periodic = {
+    kind: "periodic",
+    stream: "Sales",
+    fetchedAt,
+    dataThrough: "2026-11-15",
+  } as const;
+  const continuous = {
+    kind: "continuous",
+    stream: "Reviews",
+    fetchedAt,
+  } as const;
+  const view = (
+    withFreshness: boolean | typeof periodic | typeof continuous,
+    locale: "en" | "de" = "en",
+    state: Partial<DashboardWidgetData> = {},
+  ) =>
     renderI18n(
       <MeasureWidgetView
         widget={{
@@ -570,14 +586,8 @@ describe("the oldest source refresh next to the freshness line (#769)", () => {
             status: "ok",
             error: null,
             exclusions: [],
-            freshness: withFreshness
-              ? {
-                  kind: "periodic",
-                  stream: "Sales",
-                  fetchedAt: new Date(Date.now() - 600_000).toISOString(),
-                  dataThrough: "2026-11-15",
-                }
-              : undefined,
+            freshness:
+              withFreshness === true ? periodic : withFreshness || undefined,
             metadata: {
               modelId: "00000000-0000-4000-8000-000000000002",
               modelName: "Downloads",
@@ -601,6 +611,7 @@ describe("the oldest source refresh next to the freshness line (#769)", () => {
               appliedFilter: null,
               groupBy: [],
             },
+            ...state,
           } as unknown as DashboardWidgetData
         }
       />,
@@ -619,5 +630,37 @@ describe("the oldest source refresh next to the freshness line (#769)", () => {
   it("keeps the oldest source refresh without freshness", () => {
     expect(view(false)).toContain("Oldest source refresh: Nov 15, 2026");
     expect(view(false, "de")).toContain("Älteste Quellenaktualisierung");
+  });
+
+  it("keeps it where the freshness line does not render", () => {
+    const failing = (status: string) => ({
+      sourceHealth: [
+        {
+          connectionId: "00000000-0000-4000-8000-000000000031",
+          name: "Apple team",
+          status,
+          lastSuccessAt: null,
+        },
+      ],
+    });
+    // A continuous stream under a warning shows no line, so the refresh
+    // age stays the widget's only time.
+    for (const state of [
+      { status: "outage" },
+      failing("auth_failed"),
+      failing("needs_reauthorization"),
+      failing("outage"),
+    ] as Partial<DashboardWidgetData>[]) {
+      const html = view(continuous, "en", state);
+      expect(html, JSON.stringify(state)).not.toContain("sw-measure-freshness");
+      expect(html, JSON.stringify(state)).toContain("Oldest source refresh");
+    }
+    // A continuous stream that is fine has its line instead.
+    expect(view(continuous)).toContain("Checked");
+    expect(view(continuous)).not.toContain("Oldest source refresh");
+    // A periodic stream with its covered day and ok: the line only.
+    const ok = view(periodic, "en", { status: "ok" });
+    expect(ok).toContain("Up to Nov 15");
+    expect(ok).not.toContain("Oldest source refresh");
   });
 });
