@@ -29266,8 +29266,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 4
       }
     },
@@ -29284,9 +29284,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 4
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 5
       }
     },
     {
@@ -29303,8 +29303,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 219,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 216,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 3
       }
     },
@@ -29323,8 +29323,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 255.8,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 252.8,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 1
       }
     },
@@ -29345,8 +29345,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 216.2,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 213.2,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 2
       }
     },
@@ -29368,8 +29368,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 283.4,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 280.4,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 1
       }
     },
@@ -29389,8 +29389,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 255.8,
-        "rowPitch": 119.6,
+        "fixedHeight": 252.8,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -29412,8 +29412,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 216.2,
-        "rowPitch": 119.6,
+        "fixedHeight": 213.2,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -29436,8 +29436,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 283.4,
-        "rowPitch": 119.6,
+        "fixedHeight": 280.4,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -29452,8 +29452,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 3
       }
     },
@@ -29470,8 +29470,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 167.51999999999998,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 164.51999999999998,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 4
       }
     },
@@ -29489,9 +29489,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 242.99999999999997,
-        "rowPitch": 60.029999999999994,
-        "rowCapacity": 2
+        "fixedHeight": 239.99999999999997,
+        "rowPitch": 57.029999999999994,
+        "rowCapacity": 3
       }
     },
     {
@@ -29509,8 +29509,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 285.31999999999994,
-        "rowPitch": 97.05999999999999,
+        "fixedHeight": 282.31999999999994,
+        "rowPitch": 94.05999999999999,
         "rowCapacity": 1
       }
     },
@@ -29531,8 +29531,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 241.57999999999996,
-        "rowPitch": 97.05999999999999,
+        "fixedHeight": 238.57999999999996,
+        "rowPitch": 94.05999999999999,
         "rowCapacity": 1
       }
     },
@@ -29554,8 +29554,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 317.05999999999995,
-        "rowPitch": 97.05999999999999,
+        "fixedHeight": 314.05999999999995,
+        "rowPitch": 94.05999999999999,
         "rowCapacity": 1
       }
     },
@@ -29575,9 +29575,9 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 285.31999999999994,
-        "rowPitch": 134.08999999999997,
-        "rowCapacity": 0
+        "fixedHeight": 282.31999999999994,
+        "rowPitch": 131.08999999999997,
+        "rowCapacity": 1
       }
     },
     {
@@ -29598,8 +29598,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 241.57999999999996,
-        "rowPitch": 134.08999999999997,
+        "fixedHeight": 238.57999999999996,
+        "rowPitch": 131.08999999999997,
         "rowCapacity": 1
       }
     },
@@ -29622,8 +29622,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 317.05999999999995,
-        "rowPitch": 134.08999999999997,
+        "fixedHeight": 314.05999999999995,
+        "rowPitch": 131.08999999999997,
         "rowCapacity": 0
       }
     },
@@ -29638,9 +29638,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 267,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 2
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 3
       }
     },
     {
@@ -29656,8 +29656,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 183.23999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 180.23999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 3
       }
     },
@@ -29675,8 +29675,50 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 302.88,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 264,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 2
+      }
+    },
+    {
+      "label": "Downloads",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 1,
+        "headLines": 4,
+        "rowLines": 2,
+        "fixedHeight": 353.69999999999993,
+        "rowPitch": 103.71999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Downloads",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 1,
+        "headLines": 4,
+        "rowLines": 2,
+        "fixedHeight": 305.81999999999994,
+        "rowPitch": 103.71999999999998,
         "rowCapacity": 1
       }
     },
@@ -29690,48 +29732,6 @@
         "Store",
         "Downloads and user installs"
       ],
-      "footer": null,
-      "layout": {
-        "titleLines": 1,
-        "headLines": 4,
-        "rowLines": 2,
-        "fixedHeight": 392.58,
-        "rowPitch": 106.71999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Downloads",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 1,
-        "headLines": 4,
-        "rowLines": 2,
-        "fixedHeight": 308.82,
-        "rowPitch": 106.71999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Downloads",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
       "footer": [
         null,
         "Some source reports have not arrived yet. Known values are shown as partial."
@@ -29740,8 +29740,8 @@
         "titleLines": 1,
         "headLines": 4,
         "rowLines": 2,
-        "fixedHeight": 428.46,
-        "rowPitch": 106.71999999999998,
+        "fixedHeight": 389.5799999999999,
+        "rowPitch": 103.71999999999998,
         "rowCapacity": 0
       }
     },
@@ -29759,10 +29759,10 @@
       "footer": null,
       "layout": {
         "titleLines": 1,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 392.58,
-        "rowPitch": 148.57999999999998,
+        "fixedHeight": 311.84,
+        "rowPitch": 145.57999999999998,
         "rowCapacity": 0
       }
     },
@@ -29782,11 +29782,11 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 308.82,
-        "rowPitch": 148.57999999999998,
-        "rowCapacity": 0
+        "fixedHeight": 263.96,
+        "rowPitch": 145.57999999999998,
+        "rowCapacity": 1
       }
     },
     {
@@ -29806,10 +29806,10 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 4,
+        "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 428.46,
-        "rowPitch": 148.57999999999998,
+        "fixedHeight": 347.71999999999997,
+        "rowPitch": 145.57999999999998,
         "rowCapacity": 0
       }
     },
@@ -29824,8 +29824,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 4
       }
     },
@@ -29842,9 +29842,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 4
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 5
       }
     },
     {
@@ -29861,8 +29861,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 219,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 216,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 3
       }
     },
@@ -29881,8 +29881,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 255.8,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 252.8,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 1
       }
     },
@@ -29903,8 +29903,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 216.2,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 213.2,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 2
       }
     },
@@ -29926,8 +29926,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 283.4,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 280.4,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 1
       }
     },
@@ -29947,8 +29947,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 255.8,
-        "rowPitch": 119.6,
+        "fixedHeight": 252.8,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -29970,8 +29970,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 216.2,
-        "rowPitch": 119.6,
+        "fixedHeight": 213.2,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -29994,8 +29994,8 @@
         "titleLines": 1,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 283.4,
-        "rowPitch": 119.6,
+        "fixedHeight": 280.4,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -30010,8 +30010,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 232.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 229.8,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 3
       }
     },
@@ -30028,566 +30028,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 193.2,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 4
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": null,
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 260.4,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 2,
-        "fixedHeight": 297.2,
-        "rowPitch": 87.39999999999999,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 2,
-        "fixedHeight": 257.59999999999997,
-        "rowPitch": 87.39999999999999,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 2,
-        "fixedHeight": 324.79999999999995,
-        "rowPitch": 87.39999999999999,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 3,
-        "fixedHeight": 297.2,
-        "rowPitch": 119.6,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 3,
-        "fixedHeight": 257.59999999999997,
-        "rowPitch": 119.6,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 3,
-        "fixedHeight": 324.79999999999995,
-        "rowPitch": 119.6,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": null,
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 258.86999999999995,
-        "rowPitch": 60.029999999999994,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": null,
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 215.12999999999997,
-        "rowPitch": 60.029999999999994,
-        "rowCapacity": 3
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": null,
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 290.60999999999996,
-        "rowPitch": 60.029999999999994,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 2,
-        "fixedHeight": 332.92999999999995,
-        "rowPitch": 97.05999999999999,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 2,
-        "fixedHeight": 289.18999999999994,
-        "rowPitch": 97.05999999999999,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 2,
-        "fixedHeight": 364.66999999999996,
-        "rowPitch": 97.05999999999999,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 3,
-        "fixedHeight": 332.92999999999995,
-        "rowPitch": 134.08999999999997,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 3,
-        "fixedHeight": 289.18999999999994,
-        "rowPitch": 134.08999999999997,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 3,
-        "rowLines": 3,
-        "fixedHeight": 364.66999999999996,
-        "rowPitch": 134.08999999999997,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": null,
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 320.82,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": null,
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 237.06,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": null,
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 356.7,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 2,
-        "fixedHeight": 446.4,
-        "rowPitch": 106.71999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 2,
-        "fixedHeight": 362.64,
-        "rowPitch": 106.71999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 2,
-        "fixedHeight": 482.28,
-        "rowPitch": 106.71999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 3,
-        "fixedHeight": 446.4,
-        "rowPitch": 148.57999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 3,
-        "fixedHeight": 362.64,
-        "rowPitch": 148.57999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 3,
-        "fixedHeight": 482.28,
-        "rowPitch": 148.57999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 0.8,
-      "columns": null,
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 232.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 3
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 560,
-      "height": 414.2,
-      "fontScale": 0.8,
-      "columns": null,
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 193.2,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 190.2,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 4
       }
     },
@@ -30595,6 +30037,564 @@
       "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
       "width": 560,
       "height": 414.2,
+      "fontScale": 1,
+      "columns": null,
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 257.4,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 3
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 2,
+        "fixedHeight": 294.2,
+        "rowPitch": 84.39999999999999,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 2,
+        "fixedHeight": 254.59999999999997,
+        "rowPitch": 84.39999999999999,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 2,
+        "fixedHeight": 321.79999999999995,
+        "rowPitch": 84.39999999999999,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 294.2,
+        "rowPitch": 116.6,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 254.59999999999997,
+        "rowPitch": 116.6,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 321.79999999999995,
+        "rowPitch": 116.6,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": null,
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 255.86999999999995,
+        "rowPitch": 57.029999999999994,
+        "rowCapacity": 2
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": null,
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 212.12999999999997,
+        "rowPitch": 57.029999999999994,
+        "rowCapacity": 3
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": null,
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 287.60999999999996,
+        "rowPitch": 57.029999999999994,
+        "rowCapacity": 2
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 2,
+        "fixedHeight": 329.92999999999995,
+        "rowPitch": 94.05999999999999,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 2,
+        "fixedHeight": 286.18999999999994,
+        "rowPitch": 94.05999999999999,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 2,
+        "fixedHeight": 361.66999999999996,
+        "rowPitch": 94.05999999999999,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 329.92999999999995,
+        "rowPitch": 131.08999999999997,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 286.18999999999994,
+        "rowPitch": 131.08999999999997,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 361.66999999999996,
+        "rowPitch": 131.08999999999997,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": null,
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 281.94,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 2
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": null,
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 234.06,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 2
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": null,
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 317.82,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 4,
+        "rowLines": 2,
+        "fixedHeight": 407.52,
+        "rowPitch": 103.71999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 4,
+        "rowLines": 2,
+        "fixedHeight": 359.64,
+        "rowPitch": 103.71999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 4,
+        "rowLines": 2,
+        "fixedHeight": 443.4,
+        "rowPitch": 103.71999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 365.65999999999997,
+        "rowPitch": 145.57999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 317.78,
+        "rowPitch": 145.57999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 3,
+        "rowLines": 3,
+        "fixedHeight": 401.53999999999996,
+        "rowPitch": 145.57999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 0.8,
+      "columns": null,
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 229.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 3
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 0.8,
+      "columns": null,
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 190.2,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 4
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 560,
+      "height": 414.2,
       "fontScale": 0.8,
       "columns": null,
       "footer": [
@@ -30605,9 +30605,9 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 260.4,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 2
+        "fixedHeight": 257.4,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 3
       }
     },
     {
@@ -30625,8 +30625,8 @@
         "titleLines": 2,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 297.2,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 294.2,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 1
       }
     },
@@ -30647,8 +30647,8 @@
         "titleLines": 2,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 257.59999999999997,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 254.59999999999997,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 1
       }
     },
@@ -30670,8 +30670,8 @@
         "titleLines": 2,
         "headLines": 3,
         "rowLines": 2,
-        "fixedHeight": 324.79999999999995,
-        "rowPitch": 87.39999999999999,
+        "fixedHeight": 321.79999999999995,
+        "rowPitch": 84.39999999999999,
         "rowCapacity": 1
       }
     },
@@ -30691,9 +30691,9 @@
         "titleLines": 2,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 297.2,
-        "rowPitch": 119.6,
-        "rowCapacity": 0
+        "fixedHeight": 294.2,
+        "rowPitch": 116.6,
+        "rowCapacity": 1
       }
     },
     {
@@ -30714,8 +30714,8 @@
         "titleLines": 2,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 257.59999999999997,
-        "rowPitch": 119.6,
+        "fixedHeight": 254.59999999999997,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -30738,8 +30738,8 @@
         "titleLines": 2,
         "headLines": 3,
         "rowLines": 3,
-        "fixedHeight": 324.79999999999995,
-        "rowPitch": 119.6,
+        "fixedHeight": 321.79999999999995,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -30754,8 +30754,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 219,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 216,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 3
       }
     },
@@ -30772,9 +30772,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 4
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 5
       }
     },
     {
@@ -30791,8 +30791,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 246.6,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 243.6,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 3
       }
     },
@@ -30811,8 +30811,8 @@
         "titleLines": 1,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 315.59999999999997,
-        "rowPitch": 119.6,
+        "fixedHeight": 312.59999999999997,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -30833,8 +30833,8 @@
         "titleLines": 1,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 248.39999999999998,
-        "rowPitch": 119.6,
+        "fixedHeight": 245.39999999999998,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -30856,8 +30856,8 @@
         "titleLines": 1,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 343.2,
-        "rowPitch": 119.6,
+        "fixedHeight": 340.2,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -30877,8 +30877,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 347.8,
-        "rowPitch": 119.6,
+        "fixedHeight": 344.8,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -30900,8 +30900,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 280.6,
-        "rowPitch": 119.6,
+        "fixedHeight": 277.6,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -30924,8 +30924,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 375.4,
-        "rowPitch": 119.6,
+        "fixedHeight": 372.4,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -30940,9 +30940,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 242.99999999999997,
-        "rowPitch": 60.029999999999994,
-        "rowCapacity": 2
+        "fixedHeight": 239.99999999999997,
+        "rowPitch": 57.029999999999994,
+        "rowCapacity": 3
       }
     },
     {
@@ -30958,8 +30958,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 167.51999999999998,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 164.51999999999998,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 4
       }
     },
@@ -30977,8 +30977,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 274.73999999999995,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 271.73999999999995,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 2
       }
     },
@@ -30997,8 +30997,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 391.1199999999999,
-        "rowPitch": 134.08999999999997,
+        "fixedHeight": 388.1199999999999,
+        "rowPitch": 131.08999999999997,
         "rowCapacity": 0
       }
     },
@@ -31019,8 +31019,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 315.63999999999993,
-        "rowPitch": 134.08999999999997,
+        "fixedHeight": 312.63999999999993,
+        "rowPitch": 131.08999999999997,
         "rowCapacity": 0
       }
     },
@@ -31042,8 +31042,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 422.8599999999999,
-        "rowPitch": 134.08999999999997,
+        "fixedHeight": 419.8599999999999,
+        "rowPitch": 131.08999999999997,
         "rowCapacity": 0
       }
     },
@@ -31063,8 +31063,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 4,
-        "fixedHeight": 391.1199999999999,
-        "rowPitch": 171.11999999999998,
+        "fixedHeight": 388.1199999999999,
+        "rowPitch": 168.11999999999998,
         "rowCapacity": 0
       }
     },
@@ -31086,8 +31086,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 4,
-        "fixedHeight": 315.63999999999993,
-        "rowPitch": 171.11999999999998,
+        "fixedHeight": 312.63999999999993,
+        "rowPitch": 168.11999999999998,
         "rowCapacity": 0
       }
     },
@@ -31110,8 +31110,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 4,
-        "fixedHeight": 422.8599999999999,
-        "rowPitch": 171.11999999999998,
+        "fixedHeight": 419.8599999999999,
+        "rowPitch": 168.11999999999998,
         "rowCapacity": 0
       }
     },
@@ -31126,8 +31126,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 267,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 264,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 2
       }
     },
@@ -31144,8 +31144,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 183.23999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 180.23999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 3
       }
     },
@@ -31163,8 +31163,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 302.88,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 299.88,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 1
       }
     },
@@ -31183,8 +31183,8 @@
         "titleLines": 1,
         "headLines": 6,
         "rowLines": 3,
-        "fixedHeight": 476.29999999999995,
-        "rowPitch": 148.57999999999998,
+        "fixedHeight": 473.29999999999995,
+        "rowPitch": 145.57999999999998,
         "rowCapacity": 0
       }
     },
@@ -31205,8 +31205,8 @@
         "titleLines": 1,
         "headLines": 6,
         "rowLines": 3,
-        "fixedHeight": 392.53999999999996,
-        "rowPitch": 148.57999999999998,
+        "fixedHeight": 389.53999999999996,
+        "rowPitch": 145.57999999999998,
         "rowCapacity": 0
       }
     },
@@ -31228,8 +31228,8 @@
         "titleLines": 1,
         "headLines": 6,
         "rowLines": 3,
-        "fixedHeight": 512.18,
-        "rowPitch": 148.57999999999998,
+        "fixedHeight": 509.17999999999995,
+        "rowPitch": 145.57999999999998,
         "rowCapacity": 0
       }
     },
@@ -31249,8 +31249,8 @@
         "titleLines": 1,
         "headLines": 6,
         "rowLines": 5,
-        "fixedHeight": 476.29999999999995,
-        "rowPitch": 232.29999999999998,
+        "fixedHeight": 473.29999999999995,
+        "rowPitch": 229.29999999999998,
         "rowCapacity": 0
       }
     },
@@ -31272,8 +31272,8 @@
         "titleLines": 1,
         "headLines": 6,
         "rowLines": 5,
-        "fixedHeight": 392.53999999999996,
-        "rowPitch": 232.29999999999998,
+        "fixedHeight": 389.53999999999996,
+        "rowPitch": 229.29999999999998,
         "rowCapacity": 0
       }
     },
@@ -31296,8 +31296,8 @@
         "titleLines": 1,
         "headLines": 6,
         "rowLines": 5,
-        "fixedHeight": 512.18,
-        "rowPitch": 232.29999999999998,
+        "fixedHeight": 509.17999999999995,
+        "rowPitch": 229.29999999999998,
         "rowCapacity": 0
       }
     },
@@ -31312,8 +31312,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 219,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 216,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 3
       }
     },
@@ -31330,9 +31330,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 4
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 5
       }
     },
     {
@@ -31349,8 +31349,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 246.6,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 243.6,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 3
       }
     },
@@ -31369,8 +31369,8 @@
         "titleLines": 1,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 315.59999999999997,
-        "rowPitch": 119.6,
+        "fixedHeight": 312.59999999999997,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -31391,8 +31391,8 @@
         "titleLines": 1,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 248.39999999999998,
-        "rowPitch": 119.6,
+        "fixedHeight": 245.39999999999998,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -31414,8 +31414,8 @@
         "titleLines": 1,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 343.2,
-        "rowPitch": 119.6,
+        "fixedHeight": 340.2,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -31435,8 +31435,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 347.8,
-        "rowPitch": 119.6,
+        "fixedHeight": 344.8,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -31458,8 +31458,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 280.6,
-        "rowPitch": 119.6,
+        "fixedHeight": 277.6,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -31482,8 +31482,8 @@
         "titleLines": 1,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 375.4,
-        "rowPitch": 119.6,
+        "fixedHeight": 372.4,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -31498,212 +31498,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 260.4,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": null,
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 193.2,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 4
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": null,
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 288,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 3,
-        "fixedHeight": 356.99999999999994,
-        "rowPitch": 119.6,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 3,
-        "fixedHeight": 289.79999999999995,
-        "rowPitch": 119.6,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 4,
-        "rowLines": 3,
-        "fixedHeight": 384.59999999999997,
-        "rowPitch": 119.6,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 3,
-        "fixedHeight": 389.2,
-        "rowPitch": 119.6,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 3,
-        "fixedHeight": 322,
-        "rowPitch": 119.6,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 3,
-        "fixedHeight": 416.8,
-        "rowPitch": 119.6,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": null,
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 290.60999999999996,
-        "rowPitch": 60.029999999999994,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": null,
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 215.12999999999997,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 257.4,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 3
       }
     },
@@ -31711,175 +31507,7 @@
       "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
       "width": 404,
       "height": 414.2,
-      "fontScale": 1.15,
-      "columns": null,
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 322.3499999999999,
-        "rowPitch": 60.029999999999994,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 3,
-        "fixedHeight": 438.7299999999999,
-        "rowPitch": 134.08999999999997,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 3,
-        "fixedHeight": 363.24999999999994,
-        "rowPitch": 134.08999999999997,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 3,
-        "fixedHeight": 470.4699999999999,
-        "rowPitch": 134.08999999999997,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 4,
-        "fixedHeight": 438.7299999999999,
-        "rowPitch": 171.11999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 4,
-        "fixedHeight": 363.24999999999994,
-        "rowPitch": 171.11999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.15,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 5,
-        "rowLines": 4,
-        "fixedHeight": 470.4699999999999,
-        "rowPitch": 171.11999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": null,
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 320.82,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 1
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
+      "fontScale": 1,
       "columns": null,
       "footer": [
         null
@@ -31888,194 +31516,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 237.06,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": null,
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 356.7,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 6,
-        "rowLines": 3,
-        "fixedHeight": 530.1199999999999,
-        "rowPitch": 148.57999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 6,
-        "rowLines": 3,
-        "fixedHeight": 446.35999999999996,
-        "rowPitch": 148.57999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 6,
-        "rowLines": 3,
-        "fixedHeight": 566,
-        "rowPitch": 148.57999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 6,
-        "rowLines": 5,
-        "fixedHeight": 530.1199999999999,
-        "rowPitch": 232.29999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 6,
-        "rowLines": 5,
-        "fixedHeight": 446.35999999999996,
-        "rowPitch": 232.29999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 1.3,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null,
-        "Some source reports have not arrived yet. Known values are shown as partial."
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 6,
-        "rowLines": 5,
-        "fixedHeight": 566,
-        "rowPitch": 232.29999999999998,
-        "rowCapacity": 0
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 0.8,
-      "columns": null,
-      "footer": null,
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 260.4,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 2
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 404,
-      "height": 414.2,
-      "fontScale": 0.8,
-      "columns": null,
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 2,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 193.2,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 190.2,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 4
       }
     },
@@ -32083,6 +31525,564 @@
       "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
       "width": 404,
       "height": 414.2,
+      "fontScale": 1,
+      "columns": null,
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 285,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 2
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 4,
+        "rowLines": 3,
+        "fixedHeight": 353.99999999999994,
+        "rowPitch": 116.6,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 4,
+        "rowLines": 3,
+        "fixedHeight": 286.79999999999995,
+        "rowPitch": 116.6,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 4,
+        "rowLines": 3,
+        "fixedHeight": 381.59999999999997,
+        "rowPitch": 116.6,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 3,
+        "fixedHeight": 386.2,
+        "rowPitch": 116.6,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 3,
+        "fixedHeight": 319,
+        "rowPitch": 116.6,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 3,
+        "fixedHeight": 413.8,
+        "rowPitch": 116.6,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": null,
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 287.60999999999996,
+        "rowPitch": 57.029999999999994,
+        "rowCapacity": 2
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": null,
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 212.12999999999997,
+        "rowPitch": 57.029999999999994,
+        "rowCapacity": 3
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": null,
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 319.3499999999999,
+        "rowPitch": 57.029999999999994,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 3,
+        "fixedHeight": 435.7299999999999,
+        "rowPitch": 131.08999999999997,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 3,
+        "fixedHeight": 360.24999999999994,
+        "rowPitch": 131.08999999999997,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 3,
+        "fixedHeight": 467.4699999999999,
+        "rowPitch": 131.08999999999997,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 4,
+        "fixedHeight": 435.7299999999999,
+        "rowPitch": 168.11999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 4,
+        "fixedHeight": 360.24999999999994,
+        "rowPitch": 168.11999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.15,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 5,
+        "rowLines": 4,
+        "fixedHeight": 467.4699999999999,
+        "rowPitch": 168.11999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": null,
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 317.82,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 1
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": null,
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 234.06,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 2
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": null,
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 353.7,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 6,
+        "rowLines": 3,
+        "fixedHeight": 527.1199999999999,
+        "rowPitch": 145.57999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 6,
+        "rowLines": 3,
+        "fixedHeight": 443.35999999999996,
+        "rowPitch": 145.57999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 6,
+        "rowLines": 3,
+        "fixedHeight": 563,
+        "rowPitch": 145.57999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 6,
+        "rowLines": 5,
+        "fixedHeight": 527.1199999999999,
+        "rowPitch": 229.29999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 6,
+        "rowLines": 5,
+        "fixedHeight": 443.35999999999996,
+        "rowPitch": 229.29999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
+        null,
+        "Some source reports have not arrived yet. Known values are shown as partial."
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 6,
+        "rowLines": 5,
+        "fixedHeight": 563,
+        "rowPitch": 229.29999999999998,
+        "rowCapacity": 0
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 0.8,
+      "columns": null,
+      "footer": null,
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 257.4,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 3
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 0.8,
+      "columns": null,
+      "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 2,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 190.2,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 4
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 404,
+      "height": 414.2,
       "fontScale": 0.8,
       "columns": null,
       "footer": [
@@ -32093,8 +32093,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 288,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 285,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 2
       }
     },
@@ -32113,8 +32113,8 @@
         "titleLines": 2,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 356.99999999999994,
-        "rowPitch": 119.6,
+        "fixedHeight": 353.99999999999994,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -32135,8 +32135,8 @@
         "titleLines": 2,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 289.79999999999995,
-        "rowPitch": 119.6,
+        "fixedHeight": 286.79999999999995,
+        "rowPitch": 116.6,
         "rowCapacity": 1
       }
     },
@@ -32158,8 +32158,8 @@
         "titleLines": 2,
         "headLines": 4,
         "rowLines": 3,
-        "fixedHeight": 384.59999999999997,
-        "rowPitch": 119.6,
+        "fixedHeight": 381.59999999999997,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -32179,8 +32179,8 @@
         "titleLines": 2,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 389.2,
-        "rowPitch": 119.6,
+        "fixedHeight": 386.2,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -32202,8 +32202,8 @@
         "titleLines": 2,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 322,
-        "rowPitch": 119.6,
+        "fixedHeight": 319,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -32226,8 +32226,8 @@
         "titleLines": 2,
         "headLines": 5,
         "rowLines": 3,
-        "fixedHeight": 416.8,
-        "rowPitch": 119.6,
+        "fixedHeight": 413.8,
+        "rowPitch": 116.6,
         "rowCapacity": 0
       }
     },
@@ -32242,9 +32242,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32260,9 +32260,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 13
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
       }
     },
     {
@@ -32279,9 +32279,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32299,9 +32299,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32321,9 +32321,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 13
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
       }
     },
     {
@@ -32344,9 +32344,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32365,9 +32365,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32388,9 +32388,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 13
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
       }
     },
     {
@@ -32412,9 +32412,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32428,8 +32428,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -32446,8 +32446,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 167.51999999999998,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 164.51999999999998,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 12
       }
     },
@@ -32465,8 +32465,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -32485,8 +32485,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -32507,8 +32507,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 167.51999999999998,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 164.51999999999998,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 12
       }
     },
@@ -32530,8 +32530,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -32551,8 +32551,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -32574,8 +32574,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 167.51999999999998,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 164.51999999999998,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 12
       }
     },
@@ -32598,8 +32598,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -32614,8 +32614,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -32632,9 +32632,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 183.23999999999998,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 10
+        "fixedHeight": 180.23999999999998,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 11
       }
     },
     {
@@ -32651,8 +32651,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -32671,8 +32671,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -32693,9 +32693,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 183.23999999999998,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 10
+        "fixedHeight": 180.23999999999998,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 11
       }
     },
     {
@@ -32716,8 +32716,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -32737,8 +32737,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -32760,9 +32760,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 183.23999999999998,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 10
+        "fixedHeight": 180.23999999999998,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 11
       }
     },
     {
@@ -32784,8 +32784,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -32800,26 +32800,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
-      }
-    },
-    {
-      "label": "Downloads",
-      "width": 1808,
-      "height": 892.4,
-      "fontScale": 0.8,
-      "columns": null,
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 1,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 13
       }
     },
@@ -32830,6 +32812,24 @@
       "fontScale": 0.8,
       "columns": null,
       "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 1,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
+      }
+    },
+    {
+      "label": "Downloads",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 0.8,
+      "columns": null,
+      "footer": [
         null,
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
@@ -32837,9 +32837,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32857,30 +32857,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
-      }
-    },
-    {
-      "label": "Downloads",
-      "width": 1808,
-      "height": 892.4,
-      "fontScale": 0.8,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 1,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 13
       }
     },
@@ -32895,6 +32873,28 @@
         "Downloads and user installs"
       ],
       "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 1,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
+      }
+    },
+    {
+      "label": "Downloads",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 0.8,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
         null,
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
@@ -32902,9 +32902,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32923,31 +32923,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
-      }
-    },
-    {
-      "label": "Downloads",
-      "width": 1808,
-      "height": 892.4,
-      "fontScale": 0.8,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 1,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 13
       }
     },
@@ -32963,6 +32940,29 @@
         "Anzahl Bewertungen"
       ],
       "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 1,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
+      }
+    },
+    {
+      "label": "Downloads",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 0.8,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
         null,
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
@@ -32970,9 +32970,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -32986,9 +32986,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33004,9 +33004,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 13
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
       }
     },
     {
@@ -33023,9 +33023,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33043,9 +33043,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33065,9 +33065,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 13
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
       }
     },
     {
@@ -33088,9 +33088,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33109,9 +33109,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33132,9 +33132,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 13
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
       }
     },
     {
@@ -33156,9 +33156,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33172,8 +33172,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -33190,8 +33190,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 167.51999999999998,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 164.51999999999998,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 12
       }
     },
@@ -33209,8 +33209,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -33229,8 +33229,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -33251,8 +33251,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 167.51999999999998,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 164.51999999999998,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 12
       }
     },
@@ -33274,8 +33274,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -33295,8 +33295,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -33318,8 +33318,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 167.51999999999998,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 164.51999999999998,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 12
       }
     },
@@ -33342,8 +33342,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 211.26,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 208.26,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 11
       }
     },
@@ -33358,8 +33358,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -33376,9 +33376,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 183.23999999999998,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 10
+        "fixedHeight": 180.23999999999998,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 11
       }
     },
     {
@@ -33395,8 +33395,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -33415,8 +33415,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -33437,9 +33437,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 183.23999999999998,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 10
+        "fixedHeight": 180.23999999999998,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 11
       }
     },
     {
@@ -33460,8 +33460,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -33481,8 +33481,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -33504,9 +33504,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 183.23999999999998,
-        "rowPitch": 64.85999999999999,
-        "rowCapacity": 10
+        "fixedHeight": 180.23999999999998,
+        "rowPitch": 61.85999999999999,
+        "rowCapacity": 11
       }
     },
     {
@@ -33528,8 +33528,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 231.11999999999998,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 228.11999999999998,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 10
       }
     },
@@ -33544,26 +33544,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 1808,
-      "height": 892.4,
-      "fontScale": 0.8,
-      "columns": null,
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 1,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 13
       }
     },
@@ -33574,6 +33556,24 @@
       "fontScale": 0.8,
       "columns": null,
       "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 1,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 0.8,
+      "columns": null,
+      "footer": [
         null,
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
@@ -33581,9 +33581,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33601,30 +33601,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 1808,
-      "height": 892.4,
-      "fontScale": 0.8,
-      "columns": [
-        "App",
-        "Store",
-        "Downloads and user installs"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 1,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 13
       }
     },
@@ -33639,6 +33617,28 @@
         "Downloads and user installs"
       ],
       "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 1,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 0.8,
+      "columns": [
+        "App",
+        "Store",
+        "Downloads and user installs"
+      ],
+      "footer": [
         null,
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
@@ -33646,9 +33646,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33667,31 +33667,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
-      }
-    },
-    {
-      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
-      "width": 1808,
-      "height": 892.4,
-      "fontScale": 0.8,
-      "columns": [
-        "Store-Eintrag",
-        "Bewertungsland",
-        "Bewertung",
-        "Anzahl Bewertungen"
-      ],
-      "footer": [
-        null
-      ],
-      "layout": {
-        "titleLines": 1,
-        "headLines": 1,
-        "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 13
       }
     },
@@ -33707,6 +33684,29 @@
         "Anzahl Bewertungen"
       ],
       "footer": [
+        null
+      ],
+      "layout": {
+        "titleLines": 1,
+        "headLines": 1,
+        "rowLines": 1,
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 14
+      }
+    },
+    {
+      "label": "Ratings and reviews · Wurfel: Würfel-Spiel für die ganze Familie",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 0.8,
+      "columns": [
+        "Store-Eintrag",
+        "Bewertungsland",
+        "Bewertung",
+        "Anzahl Bewertungen"
+      ],
+      "footer": [
         null,
         "Some source reports have not arrived yet. Known values are shown as partial."
       ],
@@ -33714,9 +33714,9 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 191.39999999999998,
-        "rowPitch": 55.199999999999996,
-        "rowCapacity": 12
+        "fixedHeight": 188.39999999999998,
+        "rowPitch": 52.199999999999996,
+        "rowCapacity": 13
       }
     },
     {
@@ -33730,8 +33730,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 246.6,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 243.6,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -33748,8 +33748,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -33767,8 +33767,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 301.79999999999995,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 298.79999999999995,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -33787,8 +33787,8 @@
         "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 568.5999999999999,
-        "rowPitch": 216.2,
+        "fixedHeight": 565.5999999999999,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -33809,8 +33809,8 @@
         "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 473.79999999999995,
-        "rowPitch": 216.2,
+        "fixedHeight": 470.79999999999995,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -33832,8 +33832,8 @@
         "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 623.8,
-        "rowPitch": 216.2,
+        "fixedHeight": 620.8,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -33851,10 +33851,10 @@
       "footer": null,
       "layout": {
         "titleLines": 1,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 665.1999999999999,
-        "rowPitch": 345,
+        "fixedHeight": 630,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -33874,10 +33874,10 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 570.4,
-        "rowPitch": 345,
+        "fixedHeight": 535.1999999999999,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -33898,10 +33898,10 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 720.3999999999999,
-        "rowPitch": 345,
+        "fixedHeight": 685.1999999999999,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -33916,8 +33916,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 354.0899999999999,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 351.0899999999999,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 0
       }
     },
@@ -33934,8 +33934,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 215.12999999999997,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 212.12999999999997,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 0
       }
     },
@@ -33953,8 +33953,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 417.56999999999994,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 414.56999999999994,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 0
       }
     },
@@ -33973,8 +33973,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 7,
-        "fixedHeight": 724.3899999999999,
-        "rowPitch": 282.21,
+        "fixedHeight": 721.3899999999999,
+        "rowPitch": 279.21,
         "rowCapacity": 0
       }
     },
@@ -33995,8 +33995,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 7,
-        "fixedHeight": 585.4299999999998,
-        "rowPitch": 282.21,
+        "fixedHeight": 582.4299999999998,
+        "rowPitch": 279.21,
         "rowCapacity": 0
       }
     },
@@ -34018,8 +34018,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 7,
-        "fixedHeight": 787.8699999999998,
-        "rowPitch": 282.21,
+        "fixedHeight": 784.8699999999998,
+        "rowPitch": 279.21,
         "rowCapacity": 0
       }
     },
@@ -34038,9 +34038,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 15,
-        "rowLines": 11,
-        "fixedHeight": 872.51,
-        "rowPitch": 430.32999999999987,
+        "rowLines": 10,
+        "fixedHeight": 869.51,
+        "rowPitch": 390.2999999999999,
         "rowCapacity": 0
       }
     },
@@ -34061,9 +34061,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 15,
-        "rowLines": 11,
-        "fixedHeight": 733.55,
-        "rowPitch": 430.32999999999987,
+        "rowLines": 10,
+        "fixedHeight": 730.55,
+        "rowPitch": 390.2999999999999,
         "rowCapacity": 0
       }
     },
@@ -34085,9 +34085,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 15,
-        "rowLines": 11,
-        "fixedHeight": 935.9899999999999,
-        "rowPitch": 430.32999999999987,
+        "rowLines": 10,
+        "fixedHeight": 932.9899999999999,
+        "rowPitch": 390.2999999999999,
         "rowCapacity": 0
       }
     },
@@ -34102,8 +34102,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 392.58000000000004,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 389.58000000000004,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 0
       }
     },
@@ -34120,8 +34120,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 237.06,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 234.06,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 0
       }
     },
@@ -34139,8 +34139,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 500.22,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 497.22,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 0
       }
     },
@@ -34159,8 +34159,8 @@
         "titleLines": 2,
         "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 894.9,
-        "rowPitch": 357.87999999999994,
+        "fixedHeight": 891.9,
+        "rowPitch": 354.87999999999994,
         "rowCapacity": 0
       }
     },
@@ -34181,8 +34181,8 @@
         "titleLines": 2,
         "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 739.3799999999999,
-        "rowPitch": 357.87999999999994,
+        "fixedHeight": 736.3799999999999,
+        "rowPitch": 354.87999999999994,
         "rowCapacity": 0
       }
     },
@@ -34204,8 +34204,8 @@
         "titleLines": 2,
         "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 1002.54,
-        "rowPitch": 357.87999999999994,
+        "fixedHeight": 999.54,
+        "rowPitch": 354.87999999999994,
         "rowCapacity": 0
       }
     },
@@ -34224,9 +34224,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 16,
-        "rowLines": 13,
-        "fixedHeight": 1020.4799999999999,
-        "rowPitch": 567.18,
+        "rowLines": 12,
+        "fixedHeight": 1017.4799999999999,
+        "rowPitch": 522.3199999999999,
         "rowCapacity": 0
       }
     },
@@ -34247,9 +34247,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 16,
-        "rowLines": 13,
-        "fixedHeight": 864.9599999999998,
-        "rowPitch": 567.18,
+        "rowLines": 12,
+        "fixedHeight": 861.9599999999998,
+        "rowPitch": 522.3199999999999,
         "rowCapacity": 0
       }
     },
@@ -34271,9 +34271,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 16,
-        "rowLines": 13,
-        "fixedHeight": 1128.12,
-        "rowPitch": 567.18,
+        "rowLines": 12,
+        "fixedHeight": 1125.12,
+        "rowPitch": 522.3199999999999,
         "rowCapacity": 0
       }
     },
@@ -34288,8 +34288,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 246.6,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 243.6,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -34306,8 +34306,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 151.8,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 148.8,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -34325,8 +34325,8 @@
         "titleLines": 1,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 301.79999999999995,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 298.79999999999995,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -34345,8 +34345,8 @@
         "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 568.5999999999999,
-        "rowPitch": 216.2,
+        "fixedHeight": 565.5999999999999,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -34367,8 +34367,8 @@
         "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 473.79999999999995,
-        "rowPitch": 216.2,
+        "fixedHeight": 470.79999999999995,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -34390,8 +34390,8 @@
         "titleLines": 1,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 623.8,
-        "rowPitch": 216.2,
+        "fixedHeight": 620.8,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -34409,10 +34409,10 @@
       "footer": null,
       "layout": {
         "titleLines": 1,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 665.1999999999999,
-        "rowPitch": 345,
+        "fixedHeight": 630,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -34432,10 +34432,10 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 570.4,
-        "rowPitch": 345,
+        "fixedHeight": 535.1999999999999,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -34456,10 +34456,10 @@
       ],
       "layout": {
         "titleLines": 1,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 720.3999999999999,
-        "rowPitch": 345,
+        "fixedHeight": 685.1999999999999,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -34474,8 +34474,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 288,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 285,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -34492,8 +34492,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 193.2,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 190.2,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -34511,8 +34511,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 343.2,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 340.2,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -34531,8 +34531,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 610,
-        "rowPitch": 216.2,
+        "fixedHeight": 607,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -34553,8 +34553,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 515.2,
-        "rowPitch": 216.2,
+        "fixedHeight": 512.2,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -34576,8 +34576,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 665.2,
-        "rowPitch": 216.2,
+        "fixedHeight": 662.2,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -34595,10 +34595,10 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 706.5999999999999,
-        "rowPitch": 345,
+        "fixedHeight": 671.4,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -34618,10 +34618,10 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 611.8,
-        "rowPitch": 345,
+        "fixedHeight": 576.6,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -34642,10 +34642,10 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 761.8,
-        "rowPitch": 345,
+        "fixedHeight": 726.5999999999999,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -34660,8 +34660,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 354.0899999999999,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 351.0899999999999,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 0
       }
     },
@@ -34678,8 +34678,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 215.12999999999997,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 212.12999999999997,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 0
       }
     },
@@ -34697,8 +34697,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 417.56999999999994,
-        "rowPitch": 60.029999999999994,
+        "fixedHeight": 414.56999999999994,
+        "rowPitch": 57.029999999999994,
         "rowCapacity": 0
       }
     },
@@ -34717,8 +34717,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 7,
-        "fixedHeight": 724.3899999999999,
-        "rowPitch": 282.21,
+        "fixedHeight": 721.3899999999999,
+        "rowPitch": 279.21,
         "rowCapacity": 0
       }
     },
@@ -34739,8 +34739,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 7,
-        "fixedHeight": 585.4299999999998,
-        "rowPitch": 282.21,
+        "fixedHeight": 582.4299999999998,
+        "rowPitch": 279.21,
         "rowCapacity": 0
       }
     },
@@ -34762,8 +34762,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 7,
-        "fixedHeight": 787.8699999999998,
-        "rowPitch": 282.21,
+        "fixedHeight": 784.8699999999998,
+        "rowPitch": 279.21,
         "rowCapacity": 0
       }
     },
@@ -34782,9 +34782,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 15,
-        "rowLines": 11,
-        "fixedHeight": 872.51,
-        "rowPitch": 430.32999999999987,
+        "rowLines": 10,
+        "fixedHeight": 869.51,
+        "rowPitch": 390.2999999999999,
         "rowCapacity": 0
       }
     },
@@ -34805,9 +34805,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 15,
-        "rowLines": 11,
-        "fixedHeight": 733.55,
-        "rowPitch": 430.32999999999987,
+        "rowLines": 10,
+        "fixedHeight": 730.55,
+        "rowPitch": 390.2999999999999,
         "rowCapacity": 0
       }
     },
@@ -34829,9 +34829,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 15,
-        "rowLines": 11,
-        "fixedHeight": 935.9899999999999,
-        "rowPitch": 430.32999999999987,
+        "rowLines": 10,
+        "fixedHeight": 932.9899999999999,
+        "rowPitch": 390.2999999999999,
         "rowCapacity": 0
       }
     },
@@ -34846,8 +34846,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 392.58000000000004,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 389.58000000000004,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 0
       }
     },
@@ -34864,8 +34864,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 237.06,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 234.06,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 0
       }
     },
@@ -34883,8 +34883,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 500.22,
-        "rowPitch": 64.85999999999999,
+        "fixedHeight": 497.22,
+        "rowPitch": 61.85999999999999,
         "rowCapacity": 0
       }
     },
@@ -34903,8 +34903,8 @@
         "titleLines": 2,
         "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 894.9,
-        "rowPitch": 357.87999999999994,
+        "fixedHeight": 891.9,
+        "rowPitch": 354.87999999999994,
         "rowCapacity": 0
       }
     },
@@ -34925,8 +34925,8 @@
         "titleLines": 2,
         "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 739.3799999999999,
-        "rowPitch": 357.87999999999994,
+        "fixedHeight": 736.3799999999999,
+        "rowPitch": 354.87999999999994,
         "rowCapacity": 0
       }
     },
@@ -34948,8 +34948,8 @@
         "titleLines": 2,
         "headLines": 13,
         "rowLines": 8,
-        "fixedHeight": 1002.54,
-        "rowPitch": 357.87999999999994,
+        "fixedHeight": 999.54,
+        "rowPitch": 354.87999999999994,
         "rowCapacity": 0
       }
     },
@@ -34968,9 +34968,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 16,
-        "rowLines": 13,
-        "fixedHeight": 1020.4799999999999,
-        "rowPitch": 567.18,
+        "rowLines": 12,
+        "fixedHeight": 1017.4799999999999,
+        "rowPitch": 522.3199999999999,
         "rowCapacity": 0
       }
     },
@@ -34991,9 +34991,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 16,
-        "rowLines": 13,
-        "fixedHeight": 864.9599999999998,
-        "rowPitch": 567.18,
+        "rowLines": 12,
+        "fixedHeight": 861.9599999999998,
+        "rowPitch": 522.3199999999999,
         "rowCapacity": 0
       }
     },
@@ -35015,9 +35015,9 @@
       "layout": {
         "titleLines": 2,
         "headLines": 16,
-        "rowLines": 13,
-        "fixedHeight": 1128.12,
-        "rowPitch": 567.18,
+        "rowLines": 12,
+        "fixedHeight": 1125.12,
+        "rowPitch": 522.3199999999999,
         "rowCapacity": 0
       }
     },
@@ -35032,8 +35032,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 288,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 285,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -35050,8 +35050,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 193.2,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 190.2,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -35069,8 +35069,8 @@
         "titleLines": 2,
         "headLines": 1,
         "rowLines": 1,
-        "fixedHeight": 343.2,
-        "rowPitch": 55.199999999999996,
+        "fixedHeight": 340.2,
+        "rowPitch": 52.199999999999996,
         "rowCapacity": 0
       }
     },
@@ -35089,8 +35089,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 610,
-        "rowPitch": 216.2,
+        "fixedHeight": 607,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -35111,8 +35111,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 515.2,
-        "rowPitch": 216.2,
+        "fixedHeight": 512.2,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -35134,8 +35134,8 @@
         "titleLines": 2,
         "headLines": 11,
         "rowLines": 6,
-        "fixedHeight": 665.2,
-        "rowPitch": 216.2,
+        "fixedHeight": 662.2,
+        "rowPitch": 213.2,
         "rowCapacity": 0
       }
     },
@@ -35153,10 +35153,10 @@
       "footer": null,
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 706.5999999999999,
-        "rowPitch": 345,
+        "fixedHeight": 671.4,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -35176,10 +35176,10 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 611.8,
-        "rowPitch": 345,
+        "fixedHeight": 576.6,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     },
@@ -35200,10 +35200,10 @@
       ],
       "layout": {
         "titleLines": 2,
-        "headLines": 14,
+        "headLines": 13,
         "rowLines": 10,
-        "fixedHeight": 761.8,
-        "rowPitch": 345,
+        "fixedHeight": 726.5999999999999,
+        "rowPitch": 342,
         "rowCapacity": 0
       }
     }
@@ -39565,379 +39565,379 @@
   "measureGlyphs": {
     "chars": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•",
     "regular": [
-      0.241,
-      0.29,
-      0.428,
-      0.728,
-      0.617,
-      0.946,
-      0.708,
-      0.259,
-      0.342,
-      0.342,
-      0.459,
-      0.617,
-      0.278,
-      0.438,
-      0.278,
-      0.391,
-      0.619,
-      0.612,
-      0.612,
-      0.612,
-      0.617,
-      0.612,
-      0.63,
-      0.612,
-      0.612,
-      0.63,
-      0.298,
-      0.298,
-      0.617,
-      0.617,
-      0.617,
-      0.5,
-      0.909,
-      0.654,
-      0.667,
-      0.7,
-      0.693,
-      0.595,
-      0.571,
-      0.721,
-      0.722,
-      0.409,
-      0.521,
-      0.647,
-      0.535,
-      0.848,
-      0.722,
-      0.747,
-      0.619,
-      0.747,
-      0.653,
-      0.606,
-      0.593,
-      0.711,
-      0.644,
-      0.943,
-      0.648,
-      0.625,
-      0.63,
-      0.329,
-      0.391,
-      0.329,
-      0.617,
-      0.577,
-      0.612,
-      0.545,
-      0.592,
-      0.514,
-      0.592,
-      0.56,
-      0.331,
-      0.56,
-      0.58,
-      0.255,
-      0.255,
-      0.538,
-      0.278,
-      0.891,
-      0.58,
-      0.572,
-      0.592,
-      0.592,
-      0.375,
-      0.497,
-      0.359,
-      0.58,
-      0.502,
-      0.784,
-      0.518,
-      0.509,
-      0.478,
-      0.35,
-      0.321,
-      0.35,
-      0.617,
-      0.654,
-      0.654,
-      0.654,
-      0.654,
-      0.654,
-      0.654,
-      0.963,
-      0.7,
-      0.595,
-      0.595,
-      0.595,
-      0.595,
-      0.409,
-      0.409,
-      0.409,
-      0.409,
-      0.716,
-      0.722,
-      0.747,
-      0.747,
-      0.747,
-      0.747,
-      0.747,
-      0.744,
-      0.711,
-      0.711,
-      0.711,
-      0.711,
-      0.625,
-      0.619,
-      0.653,
-      0.545,
-      0.545,
-      0.545,
-      0.545,
-      0.545,
-      0.545,
-      0.882,
-      0.514,
-      0.56,
-      0.56,
-      0.56,
-      0.56,
-      0.255,
-      0.255,
-      0.255,
-      0.255,
-      0.567,
-      0.58,
-      0.572,
-      0.572,
-      0.572,
-      0.572,
-      0.572,
-      0.58,
-      0.58,
-      0.58,
-      0.58,
-      0.58,
-      0.509,
-      0.592,
-      0.509,
-      0.333,
-      1.036,
-      0.638,
-      0.617,
+      0.236,
+      0.284,
+      0.419,
+      0.713,
+      0.605,
+      0.927,
+      0.694,
+      0.254,
+      0.335,
+      0.335,
+      0.45,
+      0.605,
+      0.272,
+      0.429,
+      0.272,
+      0.383,
+      0.607,
+      0.6,
+      0.6,
+      0.6,
+      0.605,
+      0.6,
       0.618,
       0.6,
-      0.848,
-      0.82,
-      0.279,
-      0.279,
-      0.485,
-      0.484,
-      0.438
+      0.6,
+      0.618,
+      0.292,
+      0.292,
+      0.605,
+      0.605,
+      0.605,
+      0.49,
+      0.891,
+      0.641,
+      0.653,
+      0.687,
+      0.679,
+      0.583,
+      0.559,
+      0.707,
+      0.707,
+      0.4,
+      0.51,
+      0.634,
+      0.525,
+      0.832,
+      0.707,
+      0.732,
+      0.606,
+      0.732,
+      0.64,
+      0.594,
+      0.582,
+      0.697,
+      0.631,
+      0.924,
+      0.635,
+      0.613,
+      0.617,
+      0.323,
+      0.383,
+      0.323,
+      0.605,
+      0.565,
+      0.6,
+      0.534,
+      0.58,
+      0.504,
+      0.58,
+      0.549,
+      0.324,
+      0.549,
+      0.568,
+      0.25,
+      0.25,
+      0.527,
+      0.272,
+      0.873,
+      0.568,
+      0.56,
+      0.58,
+      0.58,
+      0.367,
+      0.487,
+      0.351,
+      0.568,
+      0.492,
+      0.768,
+      0.508,
+      0.499,
+      0.468,
+      0.343,
+      0.314,
+      0.343,
+      0.605,
+      0.641,
+      0.641,
+      0.641,
+      0.641,
+      0.641,
+      0.641,
+      0.944,
+      0.687,
+      0.583,
+      0.583,
+      0.583,
+      0.583,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.702,
+      0.707,
+      0.732,
+      0.732,
+      0.732,
+      0.732,
+      0.732,
+      0.73,
+      0.697,
+      0.697,
+      0.697,
+      0.697,
+      0.613,
+      0.606,
+      0.64,
+      0.534,
+      0.534,
+      0.534,
+      0.534,
+      0.534,
+      0.534,
+      0.864,
+      0.504,
+      0.549,
+      0.549,
+      0.549,
+      0.549,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.555,
+      0.568,
+      0.56,
+      0.56,
+      0.56,
+      0.56,
+      0.56,
+      0.568,
+      0.568,
+      0.568,
+      0.568,
+      0.568,
+      0.499,
+      0.58,
+      0.499,
+      0.326,
+      1.016,
+      0.625,
+      0.605,
+      0.605,
+      0.588,
+      0.832,
+      0.803,
+      0.273,
+      0.273,
+      0.475,
+      0.474,
+      0.429
     ],
     "semibold": [
-      0.241,
-      0.316,
-      0.481,
-      0.67,
-      0.645,
-      0.98,
-      0.728,
-      0.27,
-      0.368,
-      0.368,
-      0.568,
-      0.645,
-      0.305,
-      0.446,
-      0.305,
-      0.447,
-      0.651,
-      0.612,
-      0.612,
-      0.629,
-      0.645,
-      0.623,
-      0.653,
-      0.612,
-      0.644,
-      0.653,
-      0.326,
-      0.326,
-      0.645,
-      0.645,
-      0.645,
-      0.528,
-      0.918,
-      0.686,
-      0.677,
-      0.717,
-      0.707,
-      0.612,
-      0.589,
-      0.734,
-      0.734,
-      0.432,
-      0.556,
-      0.692,
-      0.547,
-      0.868,
-      0.734,
-      0.76,
-      0.655,
-      0.76,
+      0.236,
+      0.31,
+      0.472,
+      0.656,
+      0.632,
+      0.961,
+      0.714,
+      0.265,
+      0.36,
+      0.36,
+      0.557,
+      0.632,
+      0.299,
+      0.437,
+      0.299,
+      0.438,
+      0.638,
+      0.6,
+      0.6,
+      0.616,
+      0.632,
+      0.611,
+      0.64,
+      0.6,
+      0.631,
+      0.64,
+      0.319,
+      0.319,
+      0.632,
+      0.632,
+      0.632,
+      0.518,
+      0.9,
+      0.673,
+      0.663,
+      0.703,
+      0.693,
+      0.6,
+      0.578,
+      0.72,
+      0.719,
+      0.423,
+      0.545,
       0.678,
-      0.63,
-      0.606,
-      0.718,
-      0.675,
-      0.97,
-      0.681,
-      0.659,
-      0.639,
-      0.368,
-      0.447,
-      0.368,
-      0.645,
-      0.57,
-      0.612,
-      0.57,
-      0.612,
-      0.54,
-      0.612,
-      0.57,
-      0.358,
+      0.537,
+      0.851,
+      0.719,
+      0.745,
+      0.642,
+      0.745,
+      0.664,
+      0.618,
+      0.595,
+      0.704,
+      0.661,
+      0.951,
+      0.667,
+      0.646,
+      0.626,
+      0.36,
+      0.438,
+      0.36,
+      0.632,
+      0.559,
+      0.6,
+      0.559,
+      0.6,
+      0.529,
+      0.6,
+      0.559,
+      0.351,
+      0.577,
+      0.588,
+      0.276,
+      0.276,
+      0.563,
+      0.294,
+      0.888,
+      0.588,
+      0.563,
+      0.6,
+      0.6,
+      0.394,
+      0.499,
+      0.374,
+      0.588,
+      0.525,
+      0.82,
+      0.545,
+      0.524,
+      0.503,
+      0.364,
+      0.377,
+      0.364,
+      0.632,
+      0.673,
+      0.673,
+      0.673,
+      0.673,
+      0.673,
+      0.673,
+      0.968,
+      0.703,
+      0.6,
+      0.6,
+      0.6,
+      0.6,
+      0.423,
+      0.423,
+      0.423,
+      0.423,
+      0.713,
+      0.719,
+      0.745,
+      0.745,
+      0.745,
+      0.745,
+      0.745,
+      0.742,
+      0.704,
+      0.704,
+      0.704,
+      0.704,
+      0.646,
+      0.642,
+      0.677,
+      0.559,
+      0.559,
+      0.559,
+      0.559,
+      0.559,
+      0.559,
+      0.864,
+      0.529,
+      0.559,
+      0.559,
+      0.559,
+      0.559,
+      0.276,
+      0.276,
+      0.276,
+      0.276,
       0.589,
+      0.588,
+      0.563,
+      0.563,
+      0.563,
+      0.563,
+      0.563,
+      0.571,
+      0.588,
+      0.588,
+      0.588,
+      0.588,
+      0.524,
       0.6,
-      0.281,
-      0.281,
-      0.574,
-      0.3,
-      0.906,
-      0.6,
-      0.575,
-      0.612,
-      0.612,
-      0.401,
-      0.509,
-      0.382,
-      0.6,
-      0.535,
-      0.836,
-      0.556,
-      0.535,
-      0.513,
-      0.371,
-      0.384,
-      0.371,
-      0.645,
-      0.686,
-      0.686,
-      0.686,
-      0.686,
-      0.686,
-      0.686,
-      0.987,
-      0.717,
-      0.612,
-      0.612,
-      0.612,
-      0.612,
-      0.432,
-      0.432,
-      0.432,
-      0.432,
-      0.727,
-      0.734,
-      0.76,
-      0.76,
-      0.76,
-      0.76,
-      0.76,
-      0.756,
-      0.718,
-      0.718,
-      0.718,
-      0.718,
-      0.659,
-      0.655,
-      0.691,
-      0.57,
-      0.57,
-      0.57,
-      0.57,
-      0.57,
-      0.57,
-      0.882,
-      0.54,
-      0.57,
-      0.57,
-      0.57,
-      0.57,
-      0.281,
-      0.281,
-      0.281,
-      0.281,
-      0.601,
-      0.6,
-      0.575,
-      0.575,
-      0.575,
-      0.575,
-      0.575,
-      0.583,
-      0.6,
-      0.6,
-      0.6,
-      0.6,
-      0.535,
-      0.612,
-      0.535,
-      0.356,
-      1.056,
-      0.645,
-      0.645,
-      0.65,
-      0.6,
-      0.868,
-      0.887,
-      0.298,
-      0.298,
-      0.528,
-      0.528,
-      0.446
+      0.524,
+      0.349,
+      1.035,
+      0.632,
+      0.632,
+      0.637,
+      0.588,
+      0.851,
+      0.87,
+      0.293,
+      0.293,
+      0.518,
+      0.518,
+      0.437
     ],
     "widths": [
       {
         "text": "Apple App Store",
         "weight": "regular",
-        "width": 209.10399999999998
+        "width": 204.84800000000004
       },
       {
         "text": "Apple App Store",
         "weight": "semibold",
-        "width": 216.44000000000003
+        "width": 212.21200000000005
       },
       {
         "text": "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
         "weight": "regular",
-        "width": 640.612
+        "width": 627.6759999999998
       },
       {
         "text": "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
         "weight": "semibold",
-        "width": 664.496
+        "width": 651.3639999999999
       },
       {
         "text": "4.8 ★",
         "weight": "regular",
-        "width": 77.952
+        "width": 76.41199999999999
       },
       {
         "text": "4.8 ★",
         "weight": "semibold",
-        "width": 80.94800000000001
+        "width": 79.324
       },
       {
         "text": "日本",
