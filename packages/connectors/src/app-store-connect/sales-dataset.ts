@@ -321,6 +321,7 @@ export async function syncSalesDataset(
     ],
     nextCursor: finished ? result.nextCursor : checkpoint(nextState),
     ...(finished && result.freshness ? { freshness: result.freshness } : {}),
+    ...(finished && result.nextFrom ? { nextFrom: result.nextFrom } : {}),
     done: finished && result.done,
   };
 }

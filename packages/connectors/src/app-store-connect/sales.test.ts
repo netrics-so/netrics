@@ -1202,10 +1202,17 @@ describe("incremental syncs and the two meanings of 404", () => {
       ),
       fake({ reports }).runtime,
     );
+    // The next window starts at the lookback (#758): the host reads it
+    // from nextFrom, never from the cursor, which it hands back as is.
+    expect(first.nextFrom).toBe("2026-09-28T00:00:00.000Z");
+    expect(first.nextCursor).toBe(first.nextFrom);
     const api = fake({ reports });
     const second = await connector(AFTERNOON).sync(
       CONTEXT,
-      request(first.nextCursor!, new Date(AFTERNOON).toISOString(), selection),
+      request(first.nextFrom!, new Date(AFTERNOON).toISOString(), {
+        ...selection,
+        cursor: first.nextCursor!,
+      }),
       api.runtime,
     );
     const firstByIdentity = new Map(
@@ -1247,6 +1254,7 @@ describe("incremental syncs and the two meanings of 404", () => {
     expect(result).toEqual({
       observations: [],
       nextCursor: "2026-10-01T00:00:00.000Z",
+      nextFrom: "2026-10-01T00:00:00.000Z",
       done: true,
     });
     expect(api.requests).toEqual([]);

@@ -229,6 +229,7 @@ describe("without a reviews key", () => {
     expect(result).toEqual({
       observations: [],
       nextCursor: "2026-09-28T00:00:00.000Z",
+      nextFrom: "2026-09-28T00:00:00.000Z",
       done: true,
     });
   });
@@ -487,6 +488,7 @@ describe("reviews sync", () => {
     expect(result).toEqual({
       observations: [],
       nextCursor: "2026-09-28T00:00:00.000Z",
+      nextFrom: "2026-09-28T00:00:00.000Z",
       done: true,
     });
     expect(log.join("\n")).toMatch(/postponed/);

@@ -194,8 +194,11 @@ export function assertContextIsPlain(context: ConnectionContext): void {
   walk(context.credentials, "credentials");
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function validateSyncResult(
   manifest: ConnectorManifest,
+  request: SyncRequest,
   raw: unknown,
 ): SyncResult {
   const parsed = syncResultSchema.safeParse(raw);
@@ -228,8 +231,26 @@ function validateSyncResult(
       throw new ContractViolationError(
         `connector "${manifest.id}": ${problem}`,
       );
+    // The next window may start before this one (a lookback), never after
+    // its end: that would skip data (#758). Nor further back than the
+    // connector's own backfill window (at least a day, for a day-aligned
+    // lookback): a connector never needs to re-read more, and a start like
+    // year 1 would make every later window huge, or (year 0) unstorable.
+    if (result.nextFrom !== undefined) {
+      const nextFromMs = Date.parse(result.nextFrom);
+      if (nextFromMs > Date.parse(request.to))
+        throw new ContractViolationError(
+          `connector "${manifest.id}" returned a nextFrom after the window's end`,
+        );
+      const reachDays = Math.max(manifest.backfillDays ?? 0, 1);
+      if (nextFromMs < Date.parse(request.from) - reachDays * DAY_MS)
+        throw new ContractViolationError(
+          `connector "${manifest.id}" returned a nextFrom more than ${reachDays === 1 ? "1 day" : `${reachDays} days`} before the window's start`,
+        );
+    }
   } else {
     delete result.freshness;
+    delete result.nextFrom;
   }
   const metrics = new Map(
     manifest.metrics.map((metric) => [metric.key, metric]),
@@ -310,7 +331,7 @@ export async function executeSync(
   } catch (error) {
     throw classifyConnectorError(connector, error, context);
   }
-  return validateSyncResult(connector.manifest, raw);
+  return validateSyncResult(connector.manifest, parsedRequest.data, raw);
 }
 
 /**

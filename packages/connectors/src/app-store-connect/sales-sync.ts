@@ -357,18 +357,25 @@ async function readSalesPage(
   // Days before `to`, never after yesterday (PT).
   const endMs = Math.min(startOfUtcDay(toMs - 1) + DAY_MS, newestMs + DAY_MS);
 
+  // Never later than where this run started reading (a checkpoint before
+  // `from`, #758), so the lookback days are always re-read.
   const resumeAt = (resolvedEndMs: number) =>
     stamp(
       Math.max(
         resolvedEndMs - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-        startOfUtcDay(fromMs),
+        Math.min(startOfUtcDay(fromMs), startMs),
       ),
     );
 
   const selected =
     request.resources === undefined ? undefined : new Set(request.resources);
   if (startMs >= endMs || selected?.size === 0) {
-    return { observations: [], nextCursor: resumeAt(endMs), done: true };
+    return {
+      observations: [],
+      nextCursor: resumeAt(endMs),
+      nextFrom: resumeAt(endMs),
+      done: true,
+    };
   }
 
   const monthStart = startOfMonth(startMs);
@@ -645,9 +652,11 @@ async function readSalesPage(
     : undefined;
   // The next sync starts a few days back (revisions), and never after a
   // day that is not published yet.
+  const resume = resumeAt(Math.min(endMs, pendingMs ?? endMs));
   return {
     observations,
-    nextCursor: resumeAt(Math.min(endMs, pendingMs ?? endMs)),
+    nextCursor: resume,
+    nextFrom: resume,
     ...(freshness ? { freshness } : {}),
     done: true,
   };

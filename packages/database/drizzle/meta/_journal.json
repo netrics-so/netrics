@@ -568,6 +568,13 @@
       "when": 1794862306284,
       "tag": "0080_backfills_per_app",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795018269377,
+      "tag": "0081_opaque_cursor",
+      "breakpoints": true
     }
   ]
 }

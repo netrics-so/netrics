@@ -524,6 +524,26 @@ describe("search console connector", () => {
     expect(days.at(-1)).toBe("2024-01-17T00:00:00.000Z");
   });
 
+  it("re-reads the lookback after resuming a checkpoint older than the window (#758)", async () => {
+    // A connection that never succeeded, whose backfill died after a page:
+    // the next incremental run gets the host's default window (the last 24
+    // hours) and the backfill's bare checkpoint, which the host never reads.
+    const { pages, observations } = await syncAll(fake().runtime, {
+      mode: "incremental",
+      from: "2024-01-19T12:00:00.000Z",
+      to: "2024-01-20T12:00:00.000Z",
+      cursor: "2024-01-08T00:00:00.000Z",
+    });
+    const days = of(observations, "clicks").map((o) => o.sourceTimestamp);
+    expect(days[0]).toBe("2024-01-08T00:00:00.000Z");
+    // The next run still starts the lookback days back (days that were not
+    // final yet), not at this window's `from`.
+    const last = pages.at(-1)!;
+    expect(last.done).toBe(true);
+    expect(last.nextFrom).toBe("2024-01-15T00:00:00.000Z");
+    expect(last.nextCursor).toBe("2024-01-15T00:00:00.000Z");
+  });
+
   it("picks up days once Google finalizes them, keeping earlier values", async () => {
     const first = await syncAll(fake().runtime, {
       mode: "incremental",

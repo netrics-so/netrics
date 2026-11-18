@@ -12,6 +12,7 @@ import type {
   Connector,
   ConnectorManifest,
   SyncRequest,
+  SyncResult,
 } from "@netrics/connector-sdk";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import pino from "pino";
@@ -391,6 +392,26 @@ const loggingConnector: Connector = {
 };
 
 /**
+ * Returns `opaqueNext` on a done result and records every request (#758):
+ * what the host hands back as cursor and window.
+ */
+let opaqueRequests: SyncRequest[] = [];
+let opaqueNext: Pick<SyncResult, "nextCursor" | "nextFrom"> = {};
+const opaqueCursorConnector: Connector = {
+  manifest: testManifest("opaque-cursor", "opaque.hits"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    return [];
+  },
+  async sync(_context: ConnectionContext, request: SyncRequest) {
+    opaqueRequests.push(request);
+    return { observations: [], ...opaqueNext, done: true };
+  },
+};
+
+/**
  * A paged provider shaped like Search Console (#145): one page per week of
  * the window, the cursor is the first day of the next page, and every page
  * holds `resources` observations per day. `onPage` runs before a page is
@@ -651,6 +672,7 @@ beforeAll(async () => {
   registry.register(brokenConnector);
   registry.register(leakyConnector);
   registry.register(loggingConnector);
+  registry.register(opaqueCursorConnector);
   registry.register(probeConnector);
   registry.register(revisingConnector);
   registry.register(namingConnector);
@@ -714,6 +736,7 @@ describe("catalog sync", () => {
       "leaky",
       "logging",
       "naming",
+      "opaque-cursor",
       "pager-fresh",
       "pager-large",
       "pager-resume",
@@ -1017,6 +1040,106 @@ describe("sync engine", () => {
     const runs = await syncRunsFor(workspaceA, connectionId);
     expect(String(runs[0]!.error_message)).not.toContain(token);
     expect(String(runs[0]!.error_message)).toContain("[redacted]");
+  });
+
+  describe("opaque cursor and next window start (#758)", () => {
+    const syncOnce = async (connectionId: string) => {
+      const jobId = await enqueue(workspaceA, connectionId, "connection.sync");
+      await waitFor(async () => (await jobRow(jobId))?.status === "succeeded");
+    };
+    const setState = (
+      connectionId: string,
+      values: Partial<typeof schema.connectionState.$inferInsert>,
+    ) =>
+      withWorkspace(appDb, { workspaceId: workspaceA }, (tx) =>
+        tx
+          .update(schema.connectionState)
+          .set(values)
+          .where(eq(schema.connectionState.connectionId, connectionId)),
+      );
+
+    it("hands a cursor Date.parse reads back untouched and never starts a window there", async () => {
+      // Lenient: Date.parse reads this opaque cursor as a day in 2024.
+      expect(Number.isNaN(Date.parse("x 2024"))).toBe(false);
+      opaqueRequests = [];
+      opaqueNext = { nextCursor: "x 2024" };
+      const connectionId = await seedConnection(workspaceA, "opaque-cursor");
+      await syncOnce(connectionId);
+      const state = await stateFor(workspaceA, connectionId);
+      expect(state!.cursor).toBe("x 2024");
+      // No nextFrom: the next window starts at this one's end.
+      expect(state!.nextFrom!.toISOString()).toBe(opaqueRequests[0]!.to);
+
+      await syncOnce(connectionId);
+      const [first, second] = opaqueRequests;
+      expect(second!.cursor).toBe("x 2024");
+      expect(second!.from).toBe(first!.to);
+      expect(Date.parse(second!.from)).toBeGreaterThan(
+        Date.parse("2025-01-01T00:00:00Z"),
+      );
+    });
+
+    it("starts the next incremental window at a done result's nextFrom", async () => {
+      opaqueRequests = [];
+      const connectionId = await seedConnection(workspaceA, "opaque-cursor");
+      // A lookback: the next window re-reads the two days before this one.
+      opaqueNext = { nextCursor: "state-1" };
+      await syncOnce(connectionId);
+      const lookback = new Date(
+        Date.parse(opaqueRequests[0]!.from) - 2 * DAY_MS,
+      ).toISOString();
+      opaqueNext = { nextCursor: "state-2", nextFrom: lookback };
+      await syncOnce(connectionId);
+      expect(opaqueRequests[1]!.cursor).toBe("state-1");
+      expect(
+        (await stateFor(workspaceA, connectionId))!.nextFrom!.toISOString(),
+      ).toBe(lookback);
+
+      // A done result without a cursor clears it; nothing date-like is
+      // stored in its place.
+      opaqueNext = {};
+      await syncOnce(connectionId);
+      expect(opaqueRequests[2]!.from).toBe(lookback);
+      expect(opaqueRequests[2]!.cursor).toBe("state-2");
+      expect((await stateFor(workspaceA, connectionId))!.cursor).toBeNull();
+      const runs = await syncRunsFor(workspaceA, connectionId);
+      expect(runs.at(-1)!.cursor_after).toBeNull();
+
+      await syncOnce(connectionId);
+      expect(opaqueRequests[3]!.cursor).toBeUndefined();
+      expect(opaqueRequests[3]!.from).toBe(opaqueRequests[2]!.to);
+    });
+
+    it("resumes a legacy date cursor at its migrated window start and hands the cursor back", async () => {
+      // As migration 0081 leaves a row the old engine wrote: the ISO cursor
+      // stays, and its instant is the next window start.
+      const legacy = new Date(Date.now() - 3 * DAY_MS).toISOString();
+      opaqueRequests = [];
+      opaqueNext = { nextCursor: "after-legacy" };
+      const connectionId = await seedConnection(workspaceA, "opaque-cursor");
+      await setState(connectionId, {
+        cursor: legacy,
+        nextFrom: new Date(legacy),
+        lastSuccessAt: new Date(Date.now() - DAY_MS),
+      });
+      await syncOnce(connectionId);
+      expect(opaqueRequests[0]!.from).toBe(legacy);
+      expect(opaqueRequests[0]!.cursor).toBe(legacy);
+    });
+
+    it("starts a legacy opaque cursor's window at the last success, as before", async () => {
+      const lastSuccess = new Date(Date.now() - 2 * DAY_MS);
+      opaqueRequests = [];
+      opaqueNext = { nextCursor: "next" };
+      const connectionId = await seedConnection(workspaceA, "opaque-cursor");
+      await setState(connectionId, {
+        cursor: "page-7",
+        lastSuccessAt: lastSuccess,
+      });
+      await syncOnce(connectionId);
+      expect(opaqueRequests[0]!.from).toBe(lastSuccess.toISOString());
+      expect(opaqueRequests[0]!.cursor).toBe("page-7");
+    });
   });
 
   it("writes connector log lines attributed to connection and run, without secrets", async () => {
@@ -1612,7 +1735,11 @@ describe("fresh and resumed backfills (#153)", () => {
     freshPager = { resources: 1, requests: [] };
     await runAttempt("connection.sync", workspaceA, connectionId, 0);
     expect(freshPager.requests[0]!.cursor).toBe(checkpoint);
-    expect(freshPager.requests[0]!.from).toBe(checkpoint);
+    // The host never reads a window from the cursor (#758): the window is
+    // the default one, and the connector continues from its own checkpoint.
+    expect(Date.parse(freshPager.requests[0]!.from)).toBeGreaterThan(
+      Date.parse(checkpoint),
+    );
     const runs = await syncRunsFor(workspaceA, connectionId);
     expect(runs.at(-1)).toMatchObject({
       mode: "incremental",

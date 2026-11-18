@@ -150,6 +150,7 @@ class DatasetBudgetError extends Error {
 
 interface StateRow {
   cursor: string | null;
+  nextFrom: Date | null;
   backfillJobId: string | null;
   lastSuccessAt: Date | null;
   pollIntervalSeconds: number;
@@ -165,7 +166,12 @@ function iso(date: Date): string {
   return date.toISOString();
 }
 
-/** Computes the requested window for this run from the persisted state. */
+/**
+ * Computes the requested window for this run from the persisted state. The
+ * cursor plays no part (#758): it is opaque, and an incremental window
+ * starts where the last success said the next one does (next_from), else at
+ * the last success.
+ */
 function computeWindow(
   mode: SyncMode,
   state: StateRow | null,
@@ -178,11 +184,10 @@ function computeWindow(
       to: now,
     };
   }
-  const cursorTime = state?.cursor ? Date.parse(state.cursor) : Number.NaN;
-  const from = Number.isNaN(cursorTime)
-    ? (state?.lastSuccessAt ??
-      new Date(now.getTime() - INITIAL_INCREMENTAL_WINDOW_MS))
-    : new Date(cursorTime);
+  const from =
+    state?.nextFrom ??
+    state?.lastSuccessAt ??
+    new Date(now.getTime() - INITIAL_INCREMENTAL_WINDOW_MS);
   return { from, to: now };
 }
 
@@ -326,6 +331,7 @@ async function runSync(
     const [state] = await tx
       .select({
         cursor: schema.connectionState.cursor,
+        nextFrom: schema.connectionState.nextFrom,
         backfillJobId: schema.connectionState.backfillJobId,
         backfillJobDatasets: schema.connectionState.backfillJobDatasets,
         lastSuccessAt: schema.connectionState.lastSuccessAt,
@@ -918,6 +924,12 @@ async function runSync(
     let finalReviews: Pick<SyncResult, "reviews" | "reviewWindows"> = {};
     let finalFreshness: NonNullable<SyncResult["freshness"]> = [];
     let finalCursor = startCursor;
+    /**
+     * Where the next incremental window starts (#758): the connector's
+     * nextFrom, else this window's end. A run with an empty window keeps
+     * its start.
+     */
+    let finalNextFrom = window.from;
     if (window.from < window.to) {
       let cursor = startCursor ?? undefined;
       for (let page = 1; ; page += 1) {
@@ -972,7 +984,10 @@ async function runSync(
           finalDatasetPages = result;
           finalReviews = result;
           finalFreshness = result.freshness ?? [];
-          finalCursor = result.nextCursor ?? iso(window.to);
+          finalCursor = result.nextCursor ?? null;
+          finalNextFrom = result.nextFrom
+            ? new Date(result.nextFrom)
+            : window.to;
           break;
         }
         const nextCursor = result.nextCursor;
@@ -1048,6 +1063,7 @@ async function runSync(
           lastSuccessAt: now,
           nextDueAt,
           cursor: finalCursor,
+          nextFrom: finalNextFrom,
           ...backfillMarker,
           ...backfillRecordInsert,
           authState: "ok",
@@ -1060,6 +1076,7 @@ async function runSync(
             lastSuccessAt: now,
             nextDueAt,
             cursor: finalCursor,
+            nextFrom: finalNextFrom,
             ...backfillMarker,
             ...backfillRecordSet,
             authState: "ok",

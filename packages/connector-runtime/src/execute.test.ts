@@ -967,3 +967,84 @@ describe("freshness (SDK 0.2.13, ADR 0025 §2)", () => {
     });
   });
 });
+
+describe("nextFrom (SDK 0.2.15, #758)", () => {
+  const run = (result: object) =>
+    executeSync(
+      connectorWith(demoManifest, () => ({ observations: [], ...result })),
+      baseContext,
+      request,
+    );
+
+  it("passes the next window start of a done result through, a lookback included", async () => {
+    for (const nextFrom of [
+      "2023-12-29T00:00:00.000Z",
+      request.from,
+      request.to,
+    ]) {
+      await expect(run({ nextFrom, done: true })).resolves.toMatchObject({
+        nextFrom,
+      });
+    }
+  });
+
+  it("refuses a next window start after the window's end", async () => {
+    await expect(
+      run({ nextFrom: "2024-01-02T00:00:00.001Z", done: true }),
+    ).rejects.toThrow(/nextFrom after the window's end/);
+  });
+
+  it("refuses a next window start further back than the backfill window", async () => {
+    expect(demoManifest.backfillDays).toBe(90);
+    // 90 days before `from` is the furthest back a demo window may start.
+    await expect(
+      run({ nextFrom: "2023-10-03T00:00:00.000Z", done: true }),
+    ).resolves.toMatchObject({ nextFrom: "2023-10-03T00:00:00.000Z" });
+    for (const nextFrom of [
+      "2023-10-02T23:59:59.999Z",
+      "0001-01-01T00:00:00.000Z",
+      // Valid ISO for zod and JS, but no PostgreSQL timestamp.
+      "0000-01-01T00:00:00.000Z",
+    ]) {
+      await expect(run({ nextFrom, done: true })).rejects.toThrow(
+        /nextFrom more than 90 days before the window's start/,
+      );
+    }
+  });
+
+  it("allows a day's lookback to a connector without a backfill window", async () => {
+    const { backfillDays: _backfillDays, ...rest } = demoManifest;
+    const manifest: ConnectorManifest = { ...rest, supportsBackfill: false };
+    const runWithout = (nextFrom: string) =>
+      executeSync(
+        connectorWith(manifest, () => ({
+          observations: [],
+          nextFrom,
+          done: true,
+        })),
+        baseContext,
+        request,
+      );
+    await expect(runWithout("2023-12-31T00:00:00.000Z")).resolves.toMatchObject(
+      { nextFrom: "2023-12-31T00:00:00.000Z" },
+    );
+    await expect(runWithout("2023-12-30T23:59:59.000Z")).rejects.toThrow(
+      /nextFrom more than 1 day before/,
+    );
+  });
+
+  it("refuses a nextFrom that is not an ISO instant", async () => {
+    await expect(run({ nextFrom: "x 2024", done: true })).rejects.toThrow(
+      /invalid sync result/,
+    );
+  });
+
+  it("ignores nextFrom on a page that is not final", async () => {
+    const result = await run({
+      nextFrom: "2030-01-01T00:00:00.000Z",
+      nextCursor: "c",
+      done: false,
+    });
+    expect(result.nextFrom).toBeUndefined();
+  });
+});

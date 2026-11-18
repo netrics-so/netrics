@@ -776,7 +776,12 @@ export async function syncCampaignPage(
     position.next < oldest ||
     selected?.size === 0
   ) {
-    return { observations: [], nextCursor: resume, done: true };
+    return {
+      observations: [],
+      nextCursor: resume,
+      nextFrom: resume,
+      done: true,
+    };
   }
 
   const range = chunkRange(position, oldest);
@@ -918,6 +923,7 @@ export async function syncCampaignPage(
     return {
       observations,
       nextCursor: resume,
+      nextFrom: resume,
       ...(freshness.length > 0 ? { freshness } : {}),
       done: true,
     };

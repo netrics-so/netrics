@@ -464,14 +464,21 @@ export function createVercelConnector(
         request.cursor ? Date.parse(request.cursor) : Date.parse(request.from),
       );
       // Where the next incremental sync starts: recent days keep changing.
+      // Never later than where this run started reading (a checkpoint before
+      // `from`, #758), so the lookback days are always re-read.
       const resumeAt = new Date(
         Math.max(
           startOfUtcDay(toMs) - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-          Date.parse(request.from),
+          Math.min(Date.parse(request.from), startMs),
         ),
       ).toISOString();
       if (startMs >= toMs) {
-        return { observations: [], nextCursor: resumeAt, done: true };
+        return {
+          observations: [],
+          nextCursor: resumeAt,
+          nextFrom: resumeAt,
+          done: true,
+        };
       }
       const chunkEnd = Math.min(startOfNextUtcMonth(startMs), toMs);
       const monthStart = startOfUtcMonth(startMs);
@@ -613,6 +620,7 @@ export function createVercelConnector(
       return {
         observations,
         nextCursor: resumeAt,
+        nextFrom: resumeAt,
         ...(freshness.length > 0 ? { freshness } : {}),
         done: true,
       };
