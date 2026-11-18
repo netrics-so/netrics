@@ -265,7 +265,9 @@ export function parseDataFormula(
       expect(")");
     } else if (token.text === "-") {
       left = negated(parse(6, depth + 1));
-    } else if (token.text === "NOT") {
+    } else if (token.text === "NOT" && peek().text !== "(") {
+      // Prefix NOT; `NOT(…)` reads as a call below, so the printed form of
+      // any argument count parses back and compiling reports the arity (#760).
       left = { kind: "call", fn: "not", args: [parse(6, depth + 1)] };
     } else if (
       token.kind === "word" &&

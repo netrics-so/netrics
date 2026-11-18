@@ -251,7 +251,8 @@ describe("editable formulas", () => {
       e.kind === "literal"
         ? e.value === null
         : e.kind === "call" && e.args.some(hasNull);
-    let withNull = 0;
+    let withNull = 0,
+      invalid = 0;
     for (const seed of [1, 2, 3]) {
       const random = mulberry32(seed);
       for (let i = 0; i < 10000; i++) {
@@ -260,21 +261,48 @@ describe("editable formulas", () => {
           fields.map((f) => f.id),
           3,
         );
-        // Only expressions that compile can be saved and round-tripped.
-        try {
-          compileRowExpression(e, fields);
-        } catch {
-          continue;
-        }
-        if (hasNull(e)) withNull++;
         const text = formatDataFormula(e, fields);
         const message = `seed ${seed} #${i}: ${text}`;
         const parsed = parseDataFormula(text, fields);
+        // Every expression prints as text that parses back, even one that
+        // does not compile (#760): it keeps its error, e.g. a wrong arity.
+        try {
+          compileRowExpression(e, fields);
+        } catch {
+          invalid++;
+          expect(typedOutcome(parsed), message).toBe(typedOutcome(e));
+          expect(formatDataFormula(parsed, fields), message).toBe(text);
+          continue;
+        }
+        if (hasNull(e)) withNull++;
         expect(typedOutcome(parsed), message).toBe(typedOutcome(e));
         expect(formatDataFormula(parsed, fields), message).toBe(text);
       }
     }
     expect(withNull).toBeGreaterThan(500); // not vacuous
+    expect(invalid).toBeGreaterThan(500);
+  });
+  it("prints NOT with any argument count as text that parses back (#760)", () => {
+    const paid: DataExpression = { kind: "field", fieldId: "paid" };
+    for (const args of [[], [paid, paid], [paid, paid, paid]]) {
+      const e: DataExpression = { kind: "call", fn: "not", args };
+      const text = formatDataFormula(e, fields);
+      expect(parseDataFormula(text, fields), text).toEqual(e);
+      expect(() => compileRowExpression(e, fields), text).toThrow(
+        "expression_arity_invalid",
+      );
+    }
+    // The prefix and call forms of NOT keep their meaning and precedence.
+    for (const [text, printed] of [
+      ["NOT [Paid]", "NOT([Paid])"],
+      ["NOT([Paid])", "NOT([Paid])"],
+      ["NOT ([Paid]) AND [Paid]", "AND(NOT([Paid]), [Paid])"],
+      ["NOT [Paid] = [Paid]", "EQ(NOT([Paid]), [Paid])"],
+      ["NOT NOT [Paid]", "NOT(NOT([Paid]))"],
+    ] as const)
+      expect(formatDataFormula(parseDataFormula(text, fields), fields)).toBe(
+        printed,
+      );
   });
   it("prints a typed NULL as a literal form of its type (#682)", () => {
     const cases: [DataExpression, string][] = [
