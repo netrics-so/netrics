@@ -885,30 +885,32 @@ Version 3 installs get version 4 through the template update.
 ### Tables that fit their tiles (template version 5)
 
 [#768](https://github.com/netrics-so/netrics/issues/768): version 4's
-overview asked for up to twenty rows in a four-row tile, so screens cut
-rows and footer lines. The readability check now measures measure tables
-too (`measureTableLayout`): their title, the column heads (wrapped at an
-even share of the width), the rows (wrapped as a store's name would be)
-and the footer lines a measure table shows ("N of M groups", the slide's
-app or the oldest source refresh, the freshness line). A table whose `limit` exceeds the rows
-that fit gets `rows_cut`, in every format.
+overview asked for up to twenty rows in a four-row tile, and screens cut
+rows and footer lines. Measure tables now fit their tiles, on the web and
+in netrics TV alike (`measureTableRowsShown`, ported to NetricsKit and
+checked against the same test vectors): the title (two lines at most), the
+column heads and the rows, wrapped in even columns, take the room the
+footer lines leave ("N of M groups", the slide's app, the freshness line or
+the oldest source refresh, notices). Rows give way first, so the footer is
+never cut, and "Showing N of M groups" counts the rows on screen. The
+result follows from the payload and the tile's size alone, so nothing is
+measured after drawing; scroll views, whose cards grow with their content,
+show every row.
 
-Version 5 changes the layout so every format passes at every theme font
-scale:
+The readability check estimates the same layout with sample lines: fewer
+rows than the `limit` is `rows_cut` as info; not even one row (or no room
+for the footer) is `rows_cut` as attention.
 
-- **Overview**: the three model tables at full height; ratings show the
-  rating and its count, as on the app slides. Each asks for the most rows
-  that fit (at most ten; three in this layout) and shows its top rows:
-  downloads by downloads, ratings by rating count (a measure widget's
-  `order`, which ranks groups by one measure before the limit). Proceeds keep their app
-  and currency order: amounts in different currencies do not rank.
-- **Last 30 days** (second overview slide, when there are connection
-  tables): revenue in the display currency and website visitors, at full
-  height. The overview takes two of the twelve slides, so ten apps get a
-  slide of their own (eleven without connection tables).
-- **App slides**: the ratings take two thirds of the lower row (beside the
-  review, or a Google Play app's proceeds, which move there from the top
-  row) and ask for the rows that fit.
+Version 5 keeps version 4's single overview. Its model tables ask for their
+top twenty (a measure widget's `order` ranks groups by one measure before
+the limit: downloads by downloads, ratings by rating count; proceeds keep
+their app and currency order, as amounts in different currencies do not
+rank) and screens show what fits. The overview's ratings show the rating
+and its count, as on the app slides: six columns leave no row in a third of
+the width. A Google Play app's proceeds table sits beside its ratings,
+where a row fits at every theme font scale. At theme font scales above 1
+the overview's four-wide tables hold no row on wide screens (21:9, 16:9,
+4:3); the Studio says so, and screens keep their footer lines.
 
 Version 4 installs get version 5 through the reviewed template update.
 
