@@ -265,30 +265,36 @@ describe("measure widget", () => {
       groupBy: [],
     },
   } as unknown as DashboardWidgetData;
-  const view = () => (
+  const view = (withFreshness = true) => (
     <MeasureWidgetView
       widget={{
         title: null,
         options: { view: "table", limit: 20 },
         binding: { measureIds: ["count", "last"], groupBy: [] },
       }}
-      data={data}
+      data={withFreshness ? data : { ...data, freshness: undefined }}
     />
   );
 
   it("shows times in the viewer's zone, the covered day as it is", () => {
     const [auckland, losAngeles] = both(view);
-    // A timestamp value and the oldest source refresh.
+    // A timestamp value; the freshness line replaces the oldest source
+    // refresh (#769).
     expect(auckland).toContain("Nov 17, 2026, 1:30 AM");
-    expect(auckland).toContain("Oldest source refresh: Nov 17, 2026, 1:30 AM");
     expect(losAngeles).toContain("Nov 16, 2026, 4:30 AM");
-    expect(losAngeles).toContain(
-      "Oldest source refresh: Nov 16, 2026, 4:30 AM",
-    );
+    expect(auckland).not.toContain("Oldest source refresh");
     // The next expected data: tomorrow just after midnight in Auckland.
     expect(auckland).toMatch(/Up to Nov 15 · .*tomorrow ~12:30 AM/);
     expect(losAngeles).toMatch(/Up to Nov 15 · .*~3:30 AM/);
     expect(losAngeles).not.toContain("tomorrow");
+  });
+
+  it("shows the oldest source refresh in the viewer's zone without freshness", () => {
+    const [auckland, losAngeles] = both(() => view(false));
+    expect(auckland).toContain("Oldest source refresh: Nov 17, 2026, 1:30 AM");
+    expect(losAngeles).toContain(
+      "Oldest source refresh: Nov 16, 2026, 4:30 AM",
+    );
   });
 });
 

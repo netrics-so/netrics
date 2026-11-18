@@ -145,6 +145,7 @@ const wording = {
     sales: /^Sales up to \w{3} \d{1,2} · next [^~]*~/,
     reviews: /^Reviews checked \d+ min\. ago · next check [^~]*~/,
     notChecked: /not checked yet$/,
+    oldest: "Oldest source refresh",
   },
   de: {
     periodic: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\. · nächste [^~]*~/,
@@ -154,6 +155,7 @@ const wording = {
     sales: / bis \d{1,2}\. \S+ · nächste [^~]*~/,
     reviews: / geprüft vor \d+ Min\. · nächste Prüfung [^~]*~/,
     notChecked: /noch nicht geprüft$/,
+    oldest: "Älteste Quellenaktualisierung",
   },
 } as const;
 
@@ -210,6 +212,20 @@ test("widgets and the connection page say how far the data reaches", async ({
   const dashboardId = ((await created.json()) as { dashboard: { id: string } })
     .dashboard.id;
 
+  // No journey seeds data generations, so the API sends no oldest source
+  // refresh here; the widgets' data gets one, as a connector's synced
+  // dataset gives it (#769).
+  await page.route("**/dashboards/data/preview", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as {
+      widgets: { result?: { receivedAt?: string | null } | null }[];
+    };
+    for (const widget of body.widgets)
+      if (widget.result)
+        widget.result.receivedAt = new Date(now - 72 * HOUR).toISOString();
+    await route.fulfill({ response, json: body });
+  });
+
   // The dashboard: a periodic and a continuous footer, muted.
   await page.goto(`/workspaces/${workspaceId}/dashboards/${dashboardId}`);
   const widget = (title: string) =>
@@ -224,6 +240,9 @@ test("widgets and the connection page say how far the data reaches", async ({
   await expect(periodic).toHaveAttribute("title", w.periodic);
   await expect(continuous).toHaveAttribute("title", w.continuous);
   await expect(periodic).not.toHaveClass(/sw-notice/);
+  // The freshness line replaces the oldest source refresh, as on tvOS (#769).
+  for (const title of ["Downloads", "Reviews"])
+    await expect(widget(title).getByText(w.oldest)).toHaveCount(0);
   // The metric widget's footer comes from its live query, as on screens.
   const metric = page.locator("article.sw-metric").filter({
     has: page.getByRole("heading", { name: "Downloads metric", exact: true }),

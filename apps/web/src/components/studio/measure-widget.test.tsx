@@ -528,3 +528,96 @@ describe("viewer wording on paired screens (#649)", () => {
     expect(de).toContain("Die Importe von Apple team sind pausiert.");
   });
 });
+
+describe("loading on screens and viewers (#768)", () => {
+  const loading = (audience?: "editor" | "viewer") => (
+    <MeasureWidgetView
+      audience={audience}
+      loading
+      data={null}
+      widget={{
+        title: "Downloads",
+        options: { view: "table", limit: 20 },
+        binding: { measureIds: ["downloads"], groupBy: [] },
+      }}
+    />
+  );
+
+  it("says it is loading, not that a preview is", () => {
+    for (const audience of ["editor", "viewer"] as const) {
+      const en = renderI18n(loading(audience));
+      expect(en, audience).toContain("Loading…");
+      expect(en, audience).not.toContain("preview");
+      const de = renderI18n(loading(audience), "de");
+      expect(de, audience).toContain("Wird geladen…");
+      expect(de, audience).not.toContain("Vorschau");
+    }
+  });
+});
+
+describe("the oldest source refresh next to the freshness line (#769)", () => {
+  const view = (withFreshness: boolean, locale: "en" | "de" = "en") =>
+    renderI18n(
+      <MeasureWidgetView
+        widget={{
+          title: "Downloads",
+          options: { view: "value", limit: 20 },
+          binding: { measureIds: ["downloads"], groupBy: [] },
+        }}
+        data={
+          {
+            widgetId: "00000000-0000-4000-8000-000000000001",
+            status: "ok",
+            error: null,
+            exclusions: [],
+            freshness: withFreshness
+              ? {
+                  kind: "periodic",
+                  stream: "Sales",
+                  fetchedAt: new Date(Date.now() - 600_000).toISOString(),
+                  dataThrough: "2026-11-15",
+                }
+              : undefined,
+            metadata: {
+              modelId: "00000000-0000-4000-8000-000000000002",
+              modelName: "Downloads",
+              measures: [{ id: "downloads", name: "Downloads" }],
+              dimensions: [],
+            },
+            result: {
+              releaseId: null,
+              receivedAt: "2026-11-15T11:08:00.000Z",
+              rows: [
+                {
+                  dimensions: {},
+                  measures: {
+                    downloads: { value: 3, type: "integer", status: "ok" },
+                  },
+                },
+              ],
+              warnings: [],
+              operations: 1,
+              provenance: [],
+              appliedFilter: null,
+              groupBy: [],
+            },
+          } as unknown as DashboardWidgetData
+        }
+      />,
+      locale,
+    );
+
+  it("shows only the freshness line when the widget has one, as on tvOS", () => {
+    const en = view(true);
+    expect(en).toContain("Up to Nov 15");
+    expect(en).not.toContain("Oldest source refresh");
+    const de = view(true, "de");
+    expect(de).toContain("Bis 15. Nov.");
+    expect(de).not.toContain("Älteste Quellenaktualisierung");
+  });
+
+  it("keeps the oldest source refresh without freshness", () => {
+    expect(view(false)).toContain("Oldest source refresh: Nov 15, 2026");
+    expect(view(false, "de")).toContain("Älteste Quellenaktualisierung");
+  });
+});
