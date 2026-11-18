@@ -101,6 +101,8 @@ export interface FreshnessReader {
     tx: Transaction,
     connectionIds: readonly string[],
   ): Promise<Map<string, DeviceStatusStream[]>>;
+  /** The mapping tables product scopes resolve through, read once (#767). */
+  readonly scopeMappings: ScopeMappingCache;
 }
 
 export function createFreshnessReader(
@@ -175,6 +177,7 @@ export function createFreshnessReader(
   }
 
   return {
+    scopeMappings: createScopeMappingCache(),
     async read(tx, dependencies) {
       if (!dependencies.length) return { overdue: false };
       await load(
@@ -571,7 +574,30 @@ export interface ScopeRead {
   now: Date;
   /** The deployment's data policy (NETRICS_DATA_POLICY). */
   defaults?: DataPolicy;
+  /**
+   * What one response already read (FreshnessReader.scopeMappings): a
+   * screen's payload resolves the same products for every widget.
+   */
+  cache?: ScopeMappingCache;
 }
+
+/**
+ * The mapping tables one response has read (#767): per dataset id whether
+ * it is a store-template install's mapping, and per mapping its products'
+ * apps (null: the table is gone or not there yet).
+ */
+export interface ScopeMappingCache {
+  isMapping: Map<string, boolean>;
+  products: Map<string, Map<string, string[]> | null>;
+  policy?: DataPolicy;
+}
+
+export function createScopeMappingCache(): ScopeMappingCache {
+  return { isMapping: new Map(), products: new Map() };
+}
+
+/** The scope values that name a linked product (store-template-service). */
+const PRODUCT_PREFIX = "product:";
 
 const APP_KEY =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:.+$/i;
@@ -588,8 +614,9 @@ const NO_MAPPING = new Set([
  * slide's `product:<id>` stands for the apps the install's mapping table
  * maps to it (store-template-products, resolveStoreProducts). The mapping
  * is the one of a store-template install among the model's datasets, read
- * as the model reads it (createDataLoader). Values no mapping row names map
- * to nothing.
+ * as the model reads it (createDataLoader), under the policy's query
+ * timeout. Only `product:` values are resolved; a product no mapping row
+ * names maps to nothing, and its filter then picks no apps.
  */
 async function scopeProductApps(
   tx: Transaction,
@@ -605,7 +632,7 @@ async function scopeProductApps(
         value.kind === "values"
           ? value.values.filter(
               (raw): raw is string =>
-                typeof raw === "string" && !APP_KEY.test(raw),
+                typeof raw === "string" && raw.startsWith(PRODUCT_PREFIX),
             )
           : [],
       ),
@@ -613,51 +640,86 @@ async function scopeProductApps(
   );
   const datasets = [...ids].filter((id) => UUID.test(id));
   if (!read || !products.size || !datasets.length) return apps;
-  const installs = await tx
-    .select({
-      mapping: sql<string>`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
-    })
-    .from(schema.dataTemplateInstalls)
-    .where(
-      and(
-        eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
-        inArray(
-          sql`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
-          datasets,
-        ),
-      ),
-    );
-  if (!installs.length) return apps;
-  const loader = createDataLoader(tx, workspaceId, read.now, {
-    policy: (
+  const cache = read.cache ?? createScopeMappingCache();
+  if (!cache.policy) {
+    cache.policy = (
       await resolveDataPolicy(
         tx,
         workspaceId,
         read.defaults ?? DEFAULT_DATA_POLICY,
       )
-    ).policy,
-    allowPendingResults: true,
-  });
-  for (const { mapping } of installs) {
-    let rows: Record<string, unknown>[];
-    try {
-      rows = (await loader.load(mapping)).rows;
-    } catch (error) {
-      if (error instanceof DataServiceError && NO_MAPPING.has(error.code))
-        continue;
-      throw error;
-    }
-    // As resolveStoreProducts: an app's first mapping row decides.
-    const seen = new Set<string>();
-    for (const row of rows) {
-      const key = row.app_key,
-        product = row.product_id;
-      if (typeof key !== "string" || typeof product !== "string") continue;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (products.has(product) && APP_KEY.test(key))
-        apps.set(product, [...(apps.get(product) ?? []), key]);
-    }
+    ).policy;
+  }
+  const policy = cache.policy;
+  // The policy's query timeout, as dashboard data reads set it.
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+  );
+  const unknown = datasets.filter((id) => !cache.isMapping.has(id));
+  if (unknown.length) {
+    for (const id of unknown) cache.isMapping.set(id, false);
+    for (const install of await tx
+      .select({
+        mapping: sql<string>`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+      })
+      .from(schema.dataTemplateInstalls)
+      .where(
+        and(
+          eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
+          inArray(
+            sql`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+            unknown,
+          ),
+        ),
+      ))
+      cache.isMapping.set(install.mapping, true);
+  }
+  const mappings = datasets.filter((id) => cache.isMapping.get(id));
+  for (const mapping of mappings) {
+    if (!cache.products.has(mapping))
+      cache.products.set(
+        mapping,
+        await readMapping(tx, workspaceId, mapping, read.now, policy),
+      );
+    for (const [product, keys] of cache.products.get(mapping) ?? [])
+      if (products.has(product))
+        apps.set(product, [...(apps.get(product) ?? []), ...keys]);
   }
   return apps;
+}
+
+/** A mapping table's products and their apps; null when it has no rows. */
+async function readMapping(
+  tx: Transaction,
+  workspaceId: string,
+  mapping: string,
+  now: Date,
+  policy: DataPolicy,
+): Promise<Map<string, string[]> | null> {
+  let rows: Record<string, unknown>[];
+  try {
+    rows = (
+      await createDataLoader(tx, workspaceId, now, {
+        policy,
+        allowPendingResults: true,
+      }).load(mapping)
+    ).rows;
+  } catch (error) {
+    if (error instanceof DataServiceError && NO_MAPPING.has(error.code))
+      return null;
+    throw error;
+  }
+  // As resolveStoreProducts: an app's first mapping row decides.
+  const products = new Map<string, string[]>(),
+    seen = new Set<string>();
+  for (const row of rows) {
+    const key = row.app_key,
+      product = row.product_id;
+    if (typeof key !== "string" || typeof product !== "string") continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (product.startsWith(PRODUCT_PREFIX) && APP_KEY.test(key))
+      products.set(product, [...(products.get(product) ?? []), key]);
+  }
+  return products;
 }
