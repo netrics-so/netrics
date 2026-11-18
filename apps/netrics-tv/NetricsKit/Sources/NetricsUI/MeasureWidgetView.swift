@@ -62,8 +62,8 @@ struct MeasureWidgetView: View {
             ForEach(data.scope ?? [], id: \.self) { scope in
                 Text(scope).font(font(24)).foregroundStyle(env.colors.muted)
             }
-            if data.freshness != nil {
-                // The freshness line replaces the refresh age (ADR 0025): the
+            if data.showsFreshnessLine(now: now, language: env.language) {
+                // The freshness line replaces the refresh age (ADR 0025, #769): the
                 // longest form that fits one line, parts dropped from the end;
                 // a provider overdue by a day is the warning instead.
                 let lines = data.freshnessLines(now: now, language: env.language)

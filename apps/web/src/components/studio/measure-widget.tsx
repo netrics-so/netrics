@@ -163,6 +163,7 @@ export function MeasureWidgetView({
   audience?: "editor" | "viewer";
 }) {
   const t = useT("data"),
+    common = useT("common"),
     locale = useLocale();
   const viewer = audience === "viewer";
   // Relative times in the freshness line, worded anew every minute.
@@ -377,7 +378,8 @@ export function MeasureWidgetView({
           {error}
         </p>
       ) : !data ? (
-        <p>{loading ? t("loading") : "—"}</p>
+        // A screen's wording, not the data editor's "Loading preview…" (#768).
+        <p>{loading ? common("loading") : "—"}</p>
       ) : widget.options.view === "value" ? (
         <p className="sw-measure-value">
           {cellText(widget.binding.measureIds[0]!, cell)}
@@ -474,7 +476,12 @@ export function MeasureWidgetView({
           {scope}
         </p>
       ))}
-      {data?.result?.receivedAt ? (
+      {/* The freshness line replaces the refresh age (ADR 0025 section 8),
+          as on tvOS: they measure different things and read as a
+          contradiction side by side (#769). Where no line renders (no
+          freshness, a continuous stream under a warning, an expired
+          result), the refresh age is the widget's only time. */}
+      {data?.result?.receivedAt && !freshness ? (
         <p className="sw-measure-scope">
           {t("dashboard.receivedAt", {
             at: new Intl.DateTimeFormat(locale, {
