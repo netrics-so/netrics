@@ -433,6 +433,7 @@ export function MeasureWidgetView({
       ? measureTableRowsShown({
           label,
           ...contentBox(placement, showHeader),
+          ...(placement.unitPx ? { pixel: 1 / placement.unitPx } : {}),
           fontScale,
           columns: fields.map((field) => field.name),
           rows: cellTexts,
@@ -634,7 +635,8 @@ export function LiveMeasureWidget({
   env,
   fit = false,
 }: {
-  widget: MeasureWidget & Partial<Pick<ScreenPlacement, "unitBox" | "format">>;
+  widget: MeasureWidget &
+    Partial<Pick<ScreenPlacement, "unitBox" | "unitPx" | "format">>;
   env: StudioEnv;
   /** On a slide: a table shows the rows that fit its tile (#768). */
   fit?: boolean;
@@ -643,7 +645,12 @@ export function LiveMeasureWidget({
   const [data, setData] = useState<DashboardWidgetData | null>(null),
     [loading, setLoading] = useState(true);
   // The query: the widget without where it sits on a screen.
-  const { unitBox: _unitBox, format: _format, ...query } = widget;
+  const {
+    unitBox: _unitBox,
+    unitPx: _unitPx,
+    format: _format,
+    ...query
+  } = widget;
   const key = JSON.stringify({
     widget: query,
     filters: env.dataFilters ?? [],

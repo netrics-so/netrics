@@ -66,6 +66,8 @@ export function widgetBoxStyle(
  */
 export interface ScreenPlacement extends StudioPlacement {
   unitBox?: { width: number; height: number } | null;
+  /** CSS pixels per unit on this screen (off the classic canvas). */
+  unitPx?: number | null;
   /** The format the placement is in (absent: `16x9`). */
   format?: ScreenFormat;
 }

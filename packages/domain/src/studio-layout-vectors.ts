@@ -512,24 +512,28 @@ export function buildStudioLayoutVectors() {
     FONT_SCALES.flatMap((fontScale) =>
       measureRows.flatMap((rows) =>
         [rows.length, 40].flatMap((total) =>
-          measureFooters.slice(1).map((footer) => {
-            const input = {
-              label: "Downloads",
-              ...box,
-              fontScale,
-              columns: ["App", "Store", "Downloads"],
-              rows,
-              total,
-              footer: footer!,
-            };
-            return {
-              ...input,
-              ...measureTableRowsShown({
+          measureFooters.slice(1).flatMap((footer) =>
+            [1, 2.8].map((pixel) => {
+              const input = {
+                label: "Downloads",
+                ...box,
+                fontScale,
+                columns: ["App", "Store", "Downloads"],
+                rows,
+                total,
+                footer: footer!,
+                pixel,
+              };
+              return {
                 ...input,
-                rowsLine: (shown, all) => `Showing ${shown} of ${all} groups.`,
-              }),
-            };
-          }),
+                ...measureTableRowsShown({
+                  ...input,
+                  rowsLine: (shown, all) =>
+                    `Showing ${shown} of ${all} groups.`,
+                }),
+              };
+            }),
+          ),
         ),
       ),
     ),

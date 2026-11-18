@@ -38,7 +38,10 @@ struct MeasureWidgetView: View {
         }
         return data.tableFit(
             label: label, measureIds: measureIds, groupBy: groupBy, rows: rows, box: box,
-            fontScale: env.fontScale, labels: options.labels, now: now, language: env.language)
+            fontScale: env.fontScale, labels: options.labels,
+            // Units per screen pixel: each row may round up to a pixel.
+            pixel: env.u > 0 ? 1 / Double(env.u * Swift.max(1, env.displayScale)) : nil,
+            now: now, language: env.language)
     }
     var body: some View {
         let fit = self.fit

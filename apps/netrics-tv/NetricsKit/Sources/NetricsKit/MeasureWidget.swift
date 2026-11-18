@@ -523,8 +523,8 @@ extension MeasureWidgetData {
     /// which grow with their content), every row.
     public func tableFit(
         label: String, measureIds: [String], groupBy: [String], rows: [MeasureResultRow],
-        box: (width: Double, height: Double)?, fontScale: Double, labels: [String: String]? = nil, now: Date = Date(),
-        language: ScreenLanguage = .en
+        box: (width: Double, height: Double)?, fontScale: Double, labels: [String: String]? = nil, pixel: Double? = nil,
+        now: Date = Date(), language: ScreenLanguage = .en
     ) -> (shown: Int, rowsLine: String?) {
         let total = Swift.max(result?.totalRows ?? 0, rows.count)
         let line = { (shown: Int, all: Int) in KitStrings.text(.measureGroupsShown, language, shown, all) }
@@ -540,6 +540,6 @@ extension MeasureWidgetData {
         }
         return StudioLayout.measureTableRowsShown(
             label: label, width: box.width, height: box.height, fontScale: fontScale, columns: names, rows: cells,
-            total: total, footer: footerLines(rows: rows, now: now, language: language), rowsLine: line)
+            total: total, footer: footerLines(rows: rows, now: now, language: language), pixel: pixel, rowsLine: line)
     }
 }

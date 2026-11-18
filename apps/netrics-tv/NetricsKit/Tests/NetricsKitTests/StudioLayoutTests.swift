@@ -268,7 +268,7 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                 label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
                 fontScale: double(c["fontScale"]), columns: c["columns"] as? [String],
                 rows: c["rows"] as! [[String]], total: int(c["total"]),
-                footer: (c["footer"] as! [Any]).map { $0 as? String },
+                footer: (c["footer"] as! [Any]).map { $0 as? String }, pixel: double(c["pixel"]),
                 rowsLine: { "Showing \($0) of \($1) groups." })
             #expect(fit.shown == int(c["shown"]), "\(c)")
             #expect(fit.rowsLine == c["rowsLine"] as? String, "\(c)")

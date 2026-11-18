@@ -218,6 +218,8 @@ export interface WidgetGeometry {
    * classic canvas, where widgets measure themselves as before.
    */
   unitBox: { width: number; height: number } | null;
+  /** CSS pixels per unit; null on the classic canvas. */
+  unitPx: number | null;
 }
 
 export interface CanvasGeometry {
@@ -255,6 +257,7 @@ export function canvasGeometry(
       widget: (placement) => ({
         box: widgetBoxStyle(placement, showHeader),
         unitBox: null,
+        unitPx: null,
       }),
     };
   }
@@ -274,6 +277,7 @@ export function canvasGeometry(
           width: rect.width / frame.unit,
           height: rect.height / frame.unit,
         },
+        unitPx: frame.unit,
       };
     },
   };
