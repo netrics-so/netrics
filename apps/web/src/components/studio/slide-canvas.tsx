@@ -111,7 +111,7 @@ export function LiveWidget({
 }) {
   switch (widget.type) {
     case "measure":
-      return <LiveMeasureWidget widget={widget} env={env} />;
+      return <LiveMeasureWidget widget={widget} env={env} fit />;
     case "metric":
       return <LiveMetricWidget widget={widget} env={env} />;
     case "line":

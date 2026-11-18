@@ -353,6 +353,8 @@ export function DeviceWidgetView({
           }}
           data={widget.data}
           audience="viewer"
+          placement={widget}
+          showHeader={env.showHeader}
         />
       );
     case "metric":

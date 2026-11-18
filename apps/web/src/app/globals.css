@@ -5288,6 +5288,12 @@ a.button.primary:hover {
   margin: 0;
   font-size: calc(var(--u, 1px) * 36 * var(--measure-scale, 1));
   font-weight: 600;
+  /* At most two lines, as measureTableRowsShown counts them (#768). */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 .sw-measure-value {
   margin: auto 0;
@@ -5301,10 +5307,13 @@ a.button.primary:hover {
   margin: 0;
   font-size: calc(var(--u, 1px) * 24 * var(--measure-scale, 1));
   color: var(--t-muted);
+  /* Footer lines never give way: the rows do (#768). */
+  flex-shrink: 0;
 }
 /* The freshness line (ADR 0025): one line; parts that do not fit wrap
    onto a hidden second line, so a narrow widget drops them from the end. */
 .sw-measure-freshness {
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   margin: 0;
@@ -5327,14 +5336,18 @@ a.button.primary:hover {
   overflow: auto;
   min-height: 0;
 }
+/* Columns share the width evenly and cells wrap anywhere, so a row is as
+   tall as measureTableRowsShown estimates (#768). */
 .sw-measure-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: calc(var(--u, 1px) * 28 * var(--measure-scale, 1));
   font-variant-numeric: tabular-nums;
 }
 .sw-measure-table th,
 .sw-measure-table td {
+  overflow-wrap: anywhere;
   padding: calc(var(--u, 1px) * 10);
   text-align: start;
   border-bottom: 1px solid var(--t-border);
