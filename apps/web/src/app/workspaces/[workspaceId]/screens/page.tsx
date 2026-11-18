@@ -46,11 +46,11 @@ interface ScreensPageProps {
 /** The workspace's TVs and browser kiosks, and connecting one (#303). */
 export default async function ScreensPage({ params }: ScreensPageProps) {
   const { workspaceId } = await params;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
   const locale = await getLocale();
   const [t, deviceT] = await Promise.all([getT("screens"), getT("devices")]);
 
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !can(membership.role, "devices:view")) {
     notFound();
@@ -58,16 +58,16 @@ export default async function ScreensPage({ params }: ScreensPageProps) {
   // Every dashboard (#573): screens show theirs whatever the project; the
   // assignment select narrows to the active project in the view.
   const [{ devices: all }, { dashboards }, { projects }] = await Promise.all([
-    listDevices(cookieHeader, workspaceId),
-    listDashboards(cookieHeader, workspaceId),
-    listProjects(cookieHeader, workspaceId),
+    listDevices(forwarded, workspaceId),
+    listDashboards(forwarded, workspaceId),
+    listProjects(forwarded, workspaceId),
   ]);
 
   // The dashboards the screens show, each fetched once and in parallel,
   // for their first slide and theme; custom themes from one list.
   const shown = await Promise.all(
     assignedDashboardIds(all).map((id) =>
-      getDashboard(cookieHeader, workspaceId, id).then(
+      getDashboard(forwarded, workspaceId, id).then(
         (response) => response?.dashboard ?? null,
       ),
     ),
@@ -81,7 +81,7 @@ export default async function ScreensPage({ params }: ScreensPageProps) {
     (dashboard) => dashboard.settings.themeId !== null,
   )
     ? new Map(
-        (await listThemes(cookieHeader, workspaceId)).themes.map((theme) => [
+        (await listThemes(forwarded, workspaceId)).themes.map((theme) => [
           theme.id,
           theme,
         ]),

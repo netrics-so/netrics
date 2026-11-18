@@ -40,7 +40,7 @@ export default async function NewConnectionPage({
 }: NewConnectionPageProps) {
   const { workspaceId } = await params;
   const query = await searchParams;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
   const t = await getT("connections.newPage");
   const roles = await getT("common.roles");
   const outcome = parseOAuthOutcome(query.oauth);
@@ -54,11 +54,11 @@ export default async function NewConnectionPage({
 
   const [{ workspaces }, workspaceResult, { connectors }, detail] =
     await Promise.all([
-      listWorkspaces(cookieHeader),
-      getWorkspace(cookieHeader, workspaceId),
-      listConnectors(cookieHeader),
+      listWorkspaces(forwarded),
+      getWorkspace(forwarded, workspaceId),
+      listConnectors(forwarded),
       connectionParam
-        ? getConnection(cookieHeader, workspaceId, connectionParam)
+        ? getConnection(forwarded, workspaceId, connectionParam)
         : Promise.resolve(null),
     ]);
   const membership = workspaces.find((w) => w.id === workspaceId);
@@ -115,7 +115,7 @@ export default async function NewConnectionPage({
         workspaceId={workspaceId}
         connectors={connectors}
         standings={connectorStandings(
-          (await listConnections(cookieHeader, workspaceId)).connections,
+          (await listConnections(forwarded, workspaceId)).connections,
         )}
         initialConnectorId={connectorParam}
         projectId={membership.activeProjectId}

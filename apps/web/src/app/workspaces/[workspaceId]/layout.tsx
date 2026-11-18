@@ -26,9 +26,9 @@ export default async function WorkspaceLayout({
   children,
 }: WorkspaceLayoutProps) {
   const { workspaceId } = await params;
-  const { cookieHeader, user } = await requireSession();
+  const { forwarded, user } = await requireSession();
   const [{ workspaces }, me] = await Promise.all([
-    listWorkspaces(cookieHeader),
+    listWorkspaces(forwarded),
     getCurrentMe(),
   ]);
   const membership = workspaces.find((w) => w.id === workspaceId);
@@ -38,8 +38,8 @@ export default async function WorkspaceLayout({
   // Source health stays workspace-wide on purpose (#573): a failing
   // source in another project still needs attention.
   const [{ connections }, { projects }] = await Promise.all([
-    listConnections(cookieHeader, workspaceId),
-    listProjects(cookieHeader, workspaceId),
+    listConnections(forwarded, workspaceId),
+    listProjects(forwarded, workspaceId),
   ]);
 
   return (

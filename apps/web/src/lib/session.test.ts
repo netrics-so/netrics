@@ -41,7 +41,9 @@ const sessionBody = {
 describe("getSessionUser", () => {
   it("returns the user for a valid session", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, sessionBody));
-    const user = await getSessionUser("better-auth.session_token=abc");
+    const user = await getSessionUser(
+      new Headers({ cookie: "better-auth.session_token=abc" }),
+    );
     expect(user).toEqual(sessionBody.user);
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:3001/api/auth/get-session",
@@ -51,34 +53,36 @@ describe("getSessionUser", () => {
 
   it("returns null when the API rejects the session (401, e.g. revoked)", async () => {
     fetchMock.mockResolvedValue(jsonResponse(401, null));
-    expect(await getSessionUser("cookie")).toBeNull();
+    expect(await getSessionUser(new Headers({ cookie: "cookie" }))).toBeNull();
   });
 
   it("returns null when the API reports no session (200 with null body, e.g. expired)", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, null));
-    expect(await getSessionUser("cookie")).toBeNull();
+    expect(await getSessionUser(new Headers({ cookie: "cookie" }))).toBeNull();
   });
 
   it("returns null on malformed or unexpected payloads", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { user: { id: 42 } }));
-    expect(await getSessionUser("cookie")).toBeNull();
+    expect(await getSessionUser(new Headers({ cookie: "cookie" }))).toBeNull();
 
     fetchMock.mockResolvedValue(new Response("not json", { status: 200 }));
-    expect(await getSessionUser("cookie")).toBeNull();
+    expect(await getSessionUser(new Headers({ cookie: "cookie" }))).toBeNull();
   });
 
   it("returns null when the API is unreachable", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
-    expect(await getSessionUser("cookie")).toBeNull();
+    expect(await getSessionUser(new Headers({ cookie: "cookie" }))).toBeNull();
   });
 });
 
 describe("requireSession", () => {
-  it("returns the forwarded cookie header and user when authenticated", async () => {
+  it("returns the headers to forward and the user when authenticated", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, sessionBody));
     const result = await requireSession();
     expect(result.user).toEqual(sessionBody.user);
-    expect(result.cookieHeader).toBe("better-auth.session_token=abc");
+    expect(result.forwarded.get("cookie")).toBe(
+      "better-auth.session_token=abc",
+    );
     // The incoming cookie header is forwarded verbatim to the API.
     expect(
       Object.fromEntries(new Headers(fetchMock.mock.calls[0]![1]?.headers)),

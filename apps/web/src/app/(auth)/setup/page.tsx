@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { SetupForm } from "./setup-form";
 import { getSetupStatus } from "@/lib/api";
+import { forwardedHeaders } from "@/lib/api-fetch";
 import { getT } from "@/lib/i18n/server";
 import { getSessionUser } from "@/lib/session";
 
@@ -19,8 +20,8 @@ export default async function SetupPage({
 }: {
   searchParams: Promise<{ token?: string | string[] }>;
 }) {
-  const cookieHeader = (await headers()).get("cookie") ?? "";
-  if (await getSessionUser(cookieHeader)) {
+  const forwarded = forwardedHeaders(await headers());
+  if (await getSessionUser(forwarded)) {
     redirect("/");
   }
   if (!(await getSetupStatus()).setupRequired) {

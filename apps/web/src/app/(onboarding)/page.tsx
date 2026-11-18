@@ -22,8 +22,8 @@ export default async function Home({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { cookieHeader, user } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { forwarded, user } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const query = await searchParams;
   // An OAuth flow that could not name its workspace (expired state, another
   // user's flow) returns here; its message is shown on the workspace page.

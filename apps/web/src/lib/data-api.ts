@@ -50,10 +50,10 @@ const base = (workspaceId: string) => `/v1/workspaces/${workspaceId}/data`;
 async function read<T>(
   schema: z.ZodType<T>,
   path: string,
-  cookie?: string,
+  forwarded?: Headers,
 ): Promise<T> {
-  if (cookie === undefined) return browserSend(schema, "GET", path);
-  const response = await apiFetch(path, { headers: { cookie } });
+  if (forwarded === undefined) return browserSend(schema, "GET", path);
+  const response = await apiFetch(path, { headers: forwarded });
   if (!response.ok)
     throw new ApiError(response.status, "data_operation_failed");
   return schema.parse(await response.json());
@@ -61,7 +61,7 @@ async function read<T>(
 /** Datasets, preparations and models; all, or those of a project scope. */
 export async function getDataWorkspace(
   workspaceId: string,
-  cookie?: string,
+  forwarded?: Headers,
   query?: ProjectFilterQuery,
 ): Promise<DataWorkspace> {
   const filter = projectQueryString(query);
@@ -69,23 +69,23 @@ export async function getDataWorkspace(
     read(
       dataSourcesResponseSchema,
       base(workspaceId) + "/sources" + filter,
-      cookie,
+      forwarded,
     ),
     read(
       preparationListResponseSchema,
       base(workspaceId) + "/preparations" + filter,
-      cookie,
+      forwarded,
     ),
     read(
       modelListResponseSchema,
       base(workspaceId) + "/models" + filter,
-      cookie,
+      forwarded,
     ),
     // An extra: data settings work without it.
     read(
       storeTemplateInstallListSchema,
       `/v1/workspaces/${workspaceId}/dashboard-templates/stores/installs`,
-      cookie,
+      forwarded,
     ).then(
       ({ installs }) => installs,
       () => [],
@@ -97,14 +97,14 @@ export async function getDataWorkspace(
 export async function getModel(
   workspaceId: string,
   id: string,
-  cookie?: string,
+  forwarded?: Headers,
 ): Promise<ModelDraft | null> {
   try {
     return (
       await read(
         modelResponseSchema,
         base(workspaceId) + "/models/" + encodeURIComponent(id),
-        cookie,
+        forwarded,
       )
     ).model;
   } catch (failure) {
@@ -115,13 +115,13 @@ export async function getModel(
 /** The datasets alone, e.g. for the editors' source picker (#573). */
 export async function getDataSources(
   workspaceId: string,
-  cookie?: string,
+  forwarded?: Headers,
   query?: ProjectFilterQuery,
 ): Promise<DataSource[]> {
   const { sources } = await read(
     dataSourcesResponseSchema,
     base(workspaceId) + "/sources" + projectQueryString(query),
-    cookie,
+    forwarded,
   );
   return sources;
 }

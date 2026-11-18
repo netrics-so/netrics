@@ -34,18 +34,18 @@ interface GoalsPageProps {
  */
 export default async function GoalsPage({ params }: GoalsPageProps) {
   const { workspaceId } = await params;
-  const { cookieHeader } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { forwarded } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !can(membership.role, "dashboards:view")) {
     notFound();
   }
   const role = membership.role;
   const [{ goals }, { metrics }, workspace, conversion] = await Promise.all([
-    listGoals(cookieHeader, workspaceId),
-    listWorkspaceMetrics(cookieHeader, workspaceId),
-    getWorkspace(cookieHeader, workspaceId),
-    getCurrencyConversion(cookieHeader, workspaceId),
+    listGoals(forwarded, workspaceId),
+    listWorkspaceMetrics(forwarded, workspaceId),
+    getWorkspace(forwarded, workspaceId),
+    getCurrencyConversion(forwarded, workspaceId),
   ]);
 
   return (

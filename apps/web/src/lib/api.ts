@@ -334,27 +334,28 @@ async function parseResponse<T>(
 
 // ---------------------------------------------------------------------------
 // Server-side fetchers: called from server components/route logic with the
-// incoming request's cookie header forwarded to the API. The cookie is pure
-// transport — the web app never reads or trusts its contents.
+// incoming request's headers forwarded to the API (forwardedHeaders in
+// lib/api-fetch): the cookie, pure transport the web app never reads or
+// trusts, and Accept-Language, so the API answers in the page's language.
 // ---------------------------------------------------------------------------
 
 function serverGet<T>(
   schema: ZodType<T>,
-  cookieHeader: string,
+  forwarded: Headers,
   path: string,
 ): Promise<T> {
-  return apiFetch(path, { headers: { cookie: cookieHeader } }).then(
-    (response) => parseResponse(schema, response),
+  return apiFetch(path, { headers: forwarded }).then((response) =>
+    parseResponse(schema, response),
   );
 }
 
 export function listInvitations(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<InvitationListResponse> {
   return serverGet(
     invitationListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/invitations`,
   );
 }
@@ -379,9 +380,9 @@ export async function getSetupStatus(): Promise<SetupStatusResponse> {
 }
 
 /** Returns null on 401 so pages can redirect to /login themselves. */
-export async function getMe(cookieHeader: string): Promise<MeResponse | null> {
+export async function getMe(forwarded: Headers): Promise<MeResponse | null> {
   const response = await apiFetch("/v1/me", {
-    headers: { cookie: cookieHeader },
+    headers: forwarded,
   });
   if (response.status === 401) {
     return null;
@@ -390,18 +391,18 @@ export async function getMe(cookieHeader: string): Promise<MeResponse | null> {
 }
 
 export function listWorkspaces(
-  cookieHeader: string,
+  forwarded: Headers,
 ): Promise<WorkspaceListResponse> {
-  return serverGet(workspaceListResponseSchema, cookieHeader, "/v1/workspaces");
+  return serverGet(workspaceListResponseSchema, forwarded, "/v1/workspaces");
 }
 
 /** Returns null on 404 (non-member or gone). */
 export async function getWorkspace(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<WorkspaceResponse | null> {
   const response = await apiFetch(`/v1/workspaces/${workspaceId}`, {
-    headers: { cookie: cookieHeader },
+    headers: forwarded,
   });
   if (response.status === 404) {
     return null;
@@ -411,66 +412,66 @@ export async function getWorkspace(
 
 /** Whether amounts can be converted, and into which currencies (#191). */
 export function getCurrencyConversion(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<CurrencyConversionOptionsResponse> {
   return serverGet(
     currencyConversionOptionsResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/currency-conversion`,
   );
 }
 
 export function listMembers(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<MemberListResponse> {
   return serverGet(
     memberListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/members`,
   );
 }
 
 export function listProjects(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<ProjectListResponse> {
   return serverGet(
     projectListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/projects`,
   );
 }
 
 export function listConnectors(
-  cookieHeader: string,
+  forwarded: Headers,
 ): Promise<ConnectorListResponse> {
-  return serverGet(connectorListResponseSchema, cookieHeader, "/v1/connectors");
+  return serverGet(connectorListResponseSchema, forwarded, "/v1/connectors");
 }
 
 /** All connections, or those of a project scope (#573). */
 export function listConnections(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   query?: ProjectFilterQuery,
 ): Promise<ConnectionListResponse> {
   return serverGet(
     connectionListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/connections${projectQueryString(query)}`,
   );
 }
 
 /** Returns null on 404 (gone or from another workspace). */
 export async function getConnection(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   connectionId: string,
 ): Promise<ConnectionDetailResponse | null> {
   const response = await apiFetch(
     `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
-    { headers: { cookie: cookieHeader } },
+    { headers: forwarded },
   );
   if (response.status === 404) {
     return null;
@@ -480,13 +481,13 @@ export async function getConnection(
 
 /** A connection's dataset retention (#492); null when it does not exist. */
 export async function getConnectionRetention(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   connectionId: string,
 ): Promise<ConnectionRetentionResponse | null> {
   const response = await apiFetch(
     `/v1/workspaces/${workspaceId}/connections/${connectionId}/retention`,
-    { headers: { cookie: cookieHeader } },
+    { headers: forwarded },
   );
   if (response.status === 404 || response.status === 403) {
     return null;
@@ -495,7 +496,7 @@ export async function getConnectionRetention(
 }
 
 export function listObservations(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   connectionId: string,
   query: { metricKey?: string; limit?: number; nonZero?: boolean } = {},
@@ -513,7 +514,7 @@ export function listObservations(
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
   return serverGet(
     observationListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/connections/${connectionId}/observations${suffix}`,
   );
 }
@@ -1040,26 +1041,26 @@ export function requestHistoryReload(
 
 /** All dashboards, or those of a project scope (#573). */
 export function listDashboards(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   query?: ProjectFilterQuery & { archived?: "include" },
 ): Promise<DashboardListResponse> {
   return serverGet(
     dashboardListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/dashboards${projectQueryString(query)}`,
   );
 }
 
 /** Returns null on 404. */
 export async function getDashboard(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   dashboardId: string,
 ): Promise<DashboardResponse | null> {
   const response = await apiFetch(
     `/v1/workspaces/${workspaceId}/dashboards/${dashboardId}`,
-    { headers: { cookie: cookieHeader } },
+    { headers: forwarded },
   );
   if (response.status === 404) {
     return null;
@@ -1068,12 +1069,12 @@ export async function getDashboard(
 }
 
 export function listWorkspaceMetrics(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<WorkspaceMetricListResponse> {
   return serverGet(
     workspaceMetricListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/metrics`,
   );
 }
@@ -1146,25 +1147,25 @@ export async function deleteDashboard(
 // ---------------------------------------------------------------------------
 
 export function listThemes(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<ThemeListResponse> {
   return serverGet(
     themeListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/themes`,
   );
 }
 
 /** Returns null on 404. */
 export async function getTheme(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   themeId: string,
 ): Promise<ThemeResponse | null> {
   const response = await apiFetch(
     `/v1/workspaces/${workspaceId}/themes/${themeId}`,
-    { headers: { cookie: cookieHeader } },
+    { headers: forwarded },
   );
   if (response.status === 404) {
     return null;
@@ -1218,12 +1219,12 @@ export async function deleteTheme(
 
 /** The workspace's goals with their current progress. */
 export function listGoals(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<GoalListResponse> {
   return serverGet(
     goalListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/goals`,
   );
 }
@@ -1302,22 +1303,22 @@ export function deleteGoal(
 
 /** The workspace's images with their quota (metadata, never bytes). */
 export function listImages(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<ImageListResponse> {
   return serverGet(
     imageListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/images`,
   );
 }
 
 /** The workspace's images for logos, backgrounds and image widgets. */
 export async function listStudioImages(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<StudioImage[]> {
-  const { images } = await listImages(cookieHeader, workspaceId);
+  const { images } = await listImages(forwarded, workspaceId);
   return images.map((image) => toStudioImage(workspaceId, image));
 }
 
@@ -1543,12 +1544,12 @@ export function lookupPairing(code: string): Promise<LookupPairingResponse> {
 }
 
 export function listDevices(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<DeviceListResponse> {
   return serverGet(
     deviceListResponseSchema,
-    cookieHeader,
+    forwarded,
     `/v1/workspaces/${workspaceId}/devices`,
   );
 }
@@ -1607,12 +1608,12 @@ const storesPath = (workspaceId: string) =>
 
 /** The workspace's store-template installs and their updates (server). */
 export function listStoreTemplateInstalls(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<StoreTemplateInstallList> {
   return serverGet(
     storeTemplateInstallListSchema,
-    cookieHeader,
+    forwarded,
     `${storesPath(workspaceId)}/installs`,
   );
 }
@@ -1655,36 +1656,36 @@ export function applyStoreTemplateUpdate(
 }
 /** The store connections and their apps a template can use (server). */
 export function readStoreTemplateOptions(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
 ): Promise<StoreTemplateOptions> {
   return serverGet(
     storeTemplateOptionsSchema,
-    cookieHeader,
+    forwarded,
     storesPath(workspaceId),
   );
 }
 /** The connections and app scope an install is built from (server). */
 export function readStoreTemplateScope(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   requestId: string,
 ): Promise<StoreTemplateScope> {
   return serverGet(
     storeTemplateScopeSchema,
-    cookieHeader,
+    forwarded,
     `${storesPath(workspaceId)}/installs/${requestId}/scope`,
   );
 }
 /** An install's products: icon, paid or free and website (server). */
 export function readStoreTemplateProducts(
-  cookieHeader: string,
+  forwarded: Headers,
   workspaceId: string,
   requestId: string,
 ): Promise<StoreTemplateProducts> {
   return serverGet(
     storeTemplateProductsSchema,
-    cookieHeader,
+    forwarded,
     `${storesPath(workspaceId)}/installs/${requestId}/products`,
   );
 }

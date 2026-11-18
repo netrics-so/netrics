@@ -305,10 +305,10 @@ describe("project navigation checks: lists (#573)", () => {
   it("server lists name the workspace and carry the filter", async () => {
     const fetch = stubFetch({ dashboards: [], connections: [] });
     const query = navigationQuery(projectScope(null, projects));
-    await listDashboards("cookie", W, query);
-    await listConnections("cookie", W, query);
+    await listDashboards(new Headers({ cookie: "cookie" }), W, query);
+    await listConnections(new Headers({ cookie: "cookie" }), W, query);
     // No query: the full list, e.g. names of what screens show.
-    await listDashboards("cookie", W);
+    await listDashboards(new Headers({ cookie: "cookie" }), W);
     expect(paths(fetch).map((url) => url.slice(url.indexOf("/v1/")))).toEqual([
       `/v1/workspaces/${W}/dashboards?project=all`,
       `/v1/workspaces/${W}/connections?project=all`,

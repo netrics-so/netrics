@@ -32,11 +32,11 @@ export default async function WorkspaceSettingsPage({
   params,
 }: WorkspaceSettingsPageProps) {
   const { workspaceId } = await params;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
 
   const [{ workspaces }, workspaceResult] = await Promise.all([
-    listWorkspaces(cookieHeader),
-    getWorkspace(cookieHeader, workspaceId),
+    listWorkspaces(forwarded),
+    getWorkspace(forwarded, workspaceId),
   ]);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!workspaceResult || !membership) {
@@ -51,7 +51,7 @@ export default async function WorkspaceSettingsPage({
   ]);
   const canRename = can(role, "workspace:rename");
   const conversion = canRename
-    ? await getCurrencyConversion(cookieHeader, workspaceId)
+    ? await getCurrencyConversion(forwarded, workspaceId)
     : null;
 
   return (

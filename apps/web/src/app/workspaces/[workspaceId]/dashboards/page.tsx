@@ -41,12 +41,12 @@ interface DashboardsPageProps {
  */
 export default async function DashboardsPage({ params }: DashboardsPageProps) {
   const { workspaceId } = await params;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
   const locale = await getLocale();
   const t = await getT("workspace");
   const page = await getT("dashboardsPage");
 
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership) {
     notFound();
@@ -56,13 +56,13 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
   // Archived originals (11E) come along for their own section.
   const [{ dashboards: listed }, { projects }, storeInstalls] =
     await Promise.all([
-      listDashboards(cookieHeader, workspaceId, {
+      listDashboards(forwarded, workspaceId, {
         ...navigationQuery(projectScope(membership.activeProjectId, [])),
         archived: "include",
       }),
-      listProjects(cookieHeader, workspaceId),
+      listProjects(forwarded, workspaceId),
       // Updates are an extra: the page works without them.
-      listStoreTemplateInstalls(cookieHeader, workspaceId).then(
+      listStoreTemplateInstalls(forwarded, workspaceId).then(
         ({ installs }) => installs,
         () => [],
       ),
@@ -74,7 +74,7 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
   // (#640) instead of suggesting there is nothing.
   const hiddenInArchived =
     dashboards.length === 0 && scope.active === null && scope.archived.size > 0
-      ? (await listDashboards(cookieHeader, workspaceId)).dashboards.filter(
+      ? (await listDashboards(forwarded, workspaceId)).dashboards.filter(
           (d) =>
             d.archivedAt === null &&
             d.projectId !== null &&

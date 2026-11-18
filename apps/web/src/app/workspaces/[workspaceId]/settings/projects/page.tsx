@@ -28,15 +28,15 @@ export async function generateMetadata(): Promise<Metadata> {
  */
 export default async function ProjectsPage({ params }: ProjectsPageProps) {
   const { workspaceId } = await params;
-  const { cookieHeader } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { forwarded } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership) {
     notFound();
   }
   const role = membership.role;
   const [{ projects }, t] = await Promise.all([
-    listProjects(cookieHeader, workspaceId),
+    listProjects(forwarded, workspaceId),
     getT("projectsPage"),
   ]);
   const canEdit = can(role, "projects:rename");

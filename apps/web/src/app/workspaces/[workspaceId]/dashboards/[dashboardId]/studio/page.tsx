@@ -44,11 +44,11 @@ interface StudioPageProps {
 /** The Studio for one dashboard (ADR 0015, section 9; #223). */
 export default async function StudioPage({ params }: StudioPageProps) {
   const { workspaceId, dashboardId } = await params;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
 
   const [{ workspaces }, dashboardResult] = await Promise.all([
-    listWorkspaces(cookieHeader),
-    getDashboard(cookieHeader, workspaceId, dashboardId),
+    listWorkspaces(forwarded),
+    getDashboard(forwarded, workspaceId, dashboardId),
   ]);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !dashboardResult) {
@@ -76,18 +76,18 @@ export default async function StudioPage({ params }: StudioPageProps) {
     { goals },
     storeInstalls,
   ] = await Promise.all([
-    listWorkspaceMetrics(cookieHeader, workspaceId),
-    listConnections(cookieHeader, workspaceId),
-    getWorkspace(cookieHeader, workspaceId),
-    listThemes(cookieHeader, workspaceId),
-    listImages(cookieHeader, workspaceId),
-    listProjects(cookieHeader, workspaceId),
-    listDashboards(cookieHeader, workspaceId),
-    canManageDevices ? listDevices(cookieHeader, workspaceId) : null,
-    getCurrencyConversion(cookieHeader, workspaceId),
-    listGoals(cookieHeader, workspaceId),
+    listWorkspaceMetrics(forwarded, workspaceId),
+    listConnections(forwarded, workspaceId),
+    getWorkspace(forwarded, workspaceId),
+    listThemes(forwarded, workspaceId),
+    listImages(forwarded, workspaceId),
+    listProjects(forwarded, workspaceId),
+    listDashboards(forwarded, workspaceId),
+    canManageDevices ? listDevices(forwarded, workspaceId) : null,
+    getCurrencyConversion(forwarded, workspaceId),
+    listGoals(forwarded, workspaceId),
     // Store-template updates (11E) are an extra: the Studio works without.
-    listStoreTemplateInstalls(cookieHeader, workspaceId).then(
+    listStoreTemplateInstalls(forwarded, workspaceId).then(
       ({ installs }) => installs,
       () => [],
     ),

@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { apiFetch } from "./api-fetch";
+import { apiFetch, forwardedHeaders } from "./api-fetch";
 
 const getSessionResponseSchema = z
   .object({
@@ -22,15 +22,15 @@ export interface SessionUser {
 
 /**
  * Server-side session check: asks the API's better-auth handler with the
- * incoming cookie header forwarded verbatim. Returns null when there is no
- * valid session.
+ * incoming request's forwarded headers (cookie verbatim, Accept-Language).
+ * Returns null when there is no valid session.
  */
 export async function getSessionUser(
-  cookieHeader: string,
+  forwarded: Headers,
 ): Promise<SessionUser | null> {
   try {
     const response = await apiFetch("/api/auth/get-session", {
-      headers: { cookie: cookieHeader },
+      headers: forwarded,
     });
     if (!response.ok) {
       return null;
@@ -46,17 +46,17 @@ export async function getSessionUser(
 
 /**
  * Guard for authenticated pages: redirects to /login when there is no valid
- * session, otherwise returns the forwarded cookie header (for /v1 fetches)
- * and the session user.
+ * session, otherwise returns the headers to forward on /v1 fetches (cookie
+ * and Accept-Language, #770) and the session user.
  */
 export async function requireSession(): Promise<{
-  cookieHeader: string;
+  forwarded: Headers;
   user: SessionUser;
 }> {
-  const cookieHeader = (await headers()).get("cookie") ?? "";
-  const user = await getSessionUser(cookieHeader);
+  const forwarded = forwardedHeaders(await headers());
+  const user = await getSessionUser(forwarded);
   if (!user) {
     redirect("/login");
   }
-  return { cookieHeader, user };
+  return { forwarded, user };
 }

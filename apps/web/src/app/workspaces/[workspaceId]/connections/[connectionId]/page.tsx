@@ -67,7 +67,7 @@ export default async function ConnectionDetailPage({
 }: ConnectionDetailPageProps) {
   const { workspaceId, connectionId } = await params;
   const query = await searchParams;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
   const locale = await getLocale();
   const t = await getT("connections.detail");
   const stores = await getT("storeTemplate");
@@ -77,9 +77,9 @@ export default async function ConnectionDetailPage({
   const historyT = await getT("connections.history");
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
-    listWorkspaces(cookieHeader),
-    getWorkspace(cookieHeader, workspaceId),
-    getConnection(cookieHeader, workspaceId, connectionId),
+    listWorkspaces(forwarded),
+    getWorkspace(forwarded, workspaceId),
+    getConnection(forwarded, workspaceId, connectionId),
   ]);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!workspaceResult || !membership || !detail) {
@@ -96,17 +96,17 @@ export default async function ConnectionDetailPage({
     retentionResult,
     { projects },
   ] = await Promise.all([
-    listConnectors(cookieHeader),
-    listObservations(cookieHeader, workspaceId, connectionId, { limit: 100 }),
+    listConnectors(forwarded),
+    listObservations(forwarded, workspaceId, connectionId, { limit: 100 }),
     // The list leaves out values of 0 (#623): days without downloads or
     // reviews would otherwise bury the values that changed.
-    listObservations(cookieHeader, workspaceId, connectionId, {
+    listObservations(forwarded, workspaceId, connectionId, {
       limit: 100,
       nonZero: true,
     }),
-    listWorkspaceMetrics(cookieHeader, workspaceId),
-    getConnectionRetention(cookieHeader, workspaceId, connectionId),
-    listProjects(cookieHeader, workspaceId),
+    listWorkspaceMetrics(forwarded, workspaceId),
+    getConnectionRetention(forwarded, workspaceId, connectionId),
+    listProjects(forwarded, workspaceId),
   ]);
   // Dataset retention (#492), for connectors that collect data tables.
   const retention =

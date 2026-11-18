@@ -36,8 +36,8 @@ export default async function StoreUpdatePage({
   params: Promise<{ workspaceId: string; requestId: string }>;
 }) {
   const { workspaceId, requestId } = await params;
-  const { cookieHeader } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { forwarded } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership) notFound();
   const role = membership.role;
@@ -58,11 +58,11 @@ export default async function StoreUpdatePage({
       </div>
     );
   const [{ installs }, devices, { dashboards }] = await Promise.all([
-    listStoreTemplateInstalls(cookieHeader, workspaceId),
+    listStoreTemplateInstalls(forwarded, workspaceId),
     can(role, "devices:view")
-      ? listDevices(cookieHeader, workspaceId).then(({ devices }) => devices)
+      ? listDevices(forwarded, workspaceId).then(({ devices }) => devices)
       : null,
-    listDashboards(cookieHeader, workspaceId, { archived: "include" }),
+    listDashboards(forwarded, workspaceId, { archived: "include" }),
   ]);
   const install = installs.find((entry) => entry.requestId === requestId);
   if (!install) notFound();
