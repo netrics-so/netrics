@@ -726,6 +726,12 @@ describe("a measure table fits its tile (#768)", () => {
     expect(html).not.toContain("Showing");
   });
 
+  it("shows no column heads when not even a row fits, and says so", () => {
+    const html = view(20, { w: 4, h: 2 });
+    expect(html).not.toContain("<table");
+    expect(html).toContain("Showing 0 of 20 groups.");
+  });
+
   it("shows every row where cards grow with their content (scroll view)", () => {
     expect(shownRows(view(20))).toBe(20);
   });

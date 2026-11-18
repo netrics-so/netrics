@@ -1626,11 +1626,14 @@ function buildPortfolioSlides(
               entry.key,
               scales,
             );
-          // Readable at every scale if a wording is; else at the default.
-          return (
-            candidates.find((candidate) => fits(candidate)) ??
-            candidates.find((candidate) => fits(candidate, [1])) ??
-            candidates.at(-1)!
+          // The wording readable at the most theme font scales (from the
+          // default up), the longest of those.
+          const reach = (candidate: Placed) =>
+            STUDIO_FONT_SCALES.filter((_, index) =>
+              fits(candidate, STUDIO_FONT_SCALES.slice(0, index + 1)),
+            ).length;
+          return candidates.reduce((best, candidate) =>
+            reach(candidate) > reach(best) ? candidate : best,
           );
         });
   const fitted = fitTables(placed, (key) => OVERVIEW_MEASURE_TABLES[key]);

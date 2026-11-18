@@ -55,8 +55,9 @@ struct MeasureWidgetView: View {
             } else if rows.isEmpty {
                 Text(KitStrings.text(.noDataYet, env.language)).font(font(28))
             } else if fitsTile {
-                // A fitted table (#768): even columns that wrap, no scrolling.
-                table(Array(rows.prefix(fit.shown)), even: true)
+                // A fitted table (#768): even columns that wrap, no scrolling;
+                // none when not even a row fits ("0 of N" says so).
+                if fit.shown > 0 { table(Array(rows.prefix(fit.shown)), even: true) }
             } else {
                 ScrollView([.vertical, .horizontal]) {
                     VStack(alignment: .leading, spacing: env.pt(12)) {
