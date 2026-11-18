@@ -10,6 +10,8 @@ struct MeasureWidgetView: View {
     let data: MeasureWidgetData
     let env: WidgetEnv
     var scroll = false
+    /** Where the tile sits (#768): a table shows the rows that fit; nil in scroll cards. */
+    var placement: ScreenPlacement? = nil
     var now = Date()
     @State private var expiryClock = Date()
     private var expired: Bool { data.expired(at: max(now, expiryClock)) }
@@ -22,7 +24,23 @@ struct MeasureWidgetView: View {
         (dimension ? data.metadata?.dimensions : data.metadata?.measures)?.first { $0.id == id }?.name
             ?? id
     }
+    /// The rows the table shows and its "N of M" line (#768): fitted to the
+    /// tile above the footer lines, deterministic from the payload and the
+    /// tile's size, so nothing is measured after drawing.
+    private var fitsTile: Bool {
+        placement != nil && !scroll && options.view != "value" && (options.view == "table" || !chartSafe)
+    }
+    private var fit: (shown: Int, rowsLine: String?) {
+        let box = placement.flatMap { placement -> (width: Double, height: Double)? in
+            guard fitsTile else { return nil }
+            return StudioRender.contentBox(placement.cells, showHeader: env.showHeader, unitBox: placement.unitBox)
+        }
+        return data.tableFit(
+            label: label, measureIds: measureIds, groupBy: groupBy, rows: rows, box: box,
+            fontScale: env.fontScale, now: now, language: env.language)
+    }
     var body: some View {
+        let fit = self.fit
         VStack(alignment: .leading, spacing: env.pt(12)) {
             Text(label).font(font(36, .semibold)).foregroundStyle(env.colors.label).lineLimit(
                 scroll ? nil : 2)
@@ -36,17 +54,20 @@ struct MeasureWidgetView: View {
                 .frame(maxWidth: .infinity, maxHeight: scroll ? nil : .infinity, alignment: .leading)
             } else if rows.isEmpty {
                 Text(KitStrings.text(.noDataYet, env.language)).font(font(28))
+            } else if fitsTile {
+                // A fitted table (#768): even columns that wrap, no scrolling.
+                table(Array(rows.prefix(fit.shown)), even: true)
             } else {
                 ScrollView([.vertical, .horizontal]) {
                     VStack(alignment: .leading, spacing: env.pt(12)) {
                         if !chartSafe {
-                            table
+                            table(Array(rows.prefix(fit.shown)))
                         } else if options.view == "bar" {
                             bars
                         } else if options.view == "line" {
                             line
                         } else {
-                            table
+                            table(Array(rows.prefix(fit.shown)))
                         }
                     }
                 }
@@ -55,8 +76,8 @@ struct MeasureWidgetView: View {
                 Text(KitStrings.text(.measureStale, env.language))
                     .font(font(24)).foregroundStyle(env.colors.muted)
             }
-            if let total = data.result?.totalRows, total > rows.count {
-                Text(verbatim: KitStrings.text(.measureGroupsShown, env.language, rows.count, total))
+            if let rowsLine = fit.rowsLine {
+                Text(verbatim: rowsLine)
                     .font(font(24)).foregroundStyle(env.colors.muted)
             }
             ForEach(data.scope ?? [], id: \.self) { scope in
@@ -115,24 +136,34 @@ struct MeasureWidgetView: View {
             expiryClock = Date()
         }
     }
-    private var table: some View {
+    private func table(_ rows: [MeasureResultRow], even: Bool = false) -> some View {
         Grid(alignment: .leading, horizontalSpacing: env.pt(20), verticalSpacing: env.pt(12)) {
             GridRow {
                 ForEach(groupBy, id: \.self) {
-                    Text(name($0, dimension: true)).font(font(28, .semibold))
+                    cell(Text(name($0, dimension: true)).font(font(28, .semibold)), even: even)
                 }
-                ForEach(measureIds, id: \.self) { Text(name($0)).font(font(28, .semibold)) }
+                ForEach(measureIds, id: \.self) { cell(Text(name($0)).font(font(28, .semibold)), even: even) }
             }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 GridRow {
                     ForEach(groupBy, id: \.self) {
-                        Text(data.dimensionText(row, dimension: $0, language: env.language))
+                        cell(Text(data.dimensionText(row, dimension: $0, language: env.language)), even: even)
                     }
                     ForEach(measureIds, id: \.self) {
-                        Text(data.text(row.measures[$0], measure: $0, language: env.language)).monospacedDigit()
+                        cell(
+                            Text(data.text(row.measures[$0], measure: $0, language: env.language)).monospacedDigit(),
+                            even: even)
                     }
                 }.font(font(28))
             }
+        }
+    }
+    /// A cell of a fitted table: an even share of the width, wrapping.
+    @ViewBuilder private func cell(_ text: some View, even: Bool) -> some View {
+        if even {
+            text.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+        } else {
+            text
         }
     }
     private var chartSafe: Bool {
@@ -187,7 +218,7 @@ struct MeasureWidgetView: View {
                 }
                 context.stroke(path, with: .color(env.colors.accent), lineWidth: env.pt(3))
             }.frame(width: env.pt(500), height: env.pt(180))
-            table
+            table(rows)
         }
     }
 }
