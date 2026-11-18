@@ -418,7 +418,7 @@ export function MeasureWidgetView({
   const total = Math.max(data?.result?.totalRows ?? 0, rows.length);
   const rowsLine = (shown: number, all: number) =>
     t("dashboard.shownRows", { shown, total: all });
-  const cellTexts = tableRows.map((row, index) =>
+  const cellTexts = tableRows.map((row) =>
     fields.map((field, column) =>
       column >= widget.binding.groupBy.length
         ? String(row[field.id])
