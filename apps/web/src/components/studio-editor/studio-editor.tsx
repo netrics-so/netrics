@@ -454,7 +454,7 @@ export function StudioEditor({
           ]),
         );
         return [...entry.binding.groupBy, ...entry.binding.measureIds].map(
-          (id) => names.get(id) ?? id,
+          (id) => entry.options.labels?.[id] ?? names.get(id) ?? id,
         );
       },
     };

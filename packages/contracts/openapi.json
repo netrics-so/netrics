@@ -13038,6 +13038,18 @@
                                 "direction"
                               ],
                               "additionalProperties": false
+                            },
+                            "labels": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string",
+                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                              },
+                              "additionalProperties": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 60
+                              }
                             }
                           }
                         },
@@ -16452,6 +16464,18 @@
                                           "direction"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "labels": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 60
+                                        }
                                       }
                                     }
                                   }
@@ -19101,6 +19125,18 @@
                                                 "direction"
                                               ],
                                               "additionalProperties": false
+                                            },
+                                            "labels": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              }
                                             }
                                           },
                                           "required": [
@@ -22085,6 +22121,18 @@
                                                 "direction"
                                               ],
                                               "additionalProperties": false
+                                            },
+                                            "labels": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              }
                                             }
                                           },
                                           "required": [
@@ -25005,6 +25053,18 @@
                                           "direction"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      "labels": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 60
+                                        }
                                       }
                                     }
                                   }
@@ -27664,6 +27724,18 @@
                                                 "direction"
                                               ],
                                               "additionalProperties": false
+                                            },
+                                            "labels": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              }
                                             }
                                           },
                                           "required": [
@@ -30804,6 +30876,18 @@
                                                 "direction"
                                               ],
                                               "additionalProperties": false
+                                            },
+                                            "labels": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              }
                                             }
                                           },
                                           "required": [
@@ -68951,6 +69035,18 @@
                                                 "direction"
                                               ],
                                               "additionalProperties": false
+                                            },
+                                            "labels": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              }
                                             }
                                           },
                                           "required": [
@@ -73197,6 +73293,18 @@
                                                 "direction"
                                               ],
                                               "additionalProperties": false
+                                            },
+                                            "labels": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              }
                                             }
                                           },
                                           "required": [
@@ -87630,6 +87738,18 @@
                                                 "direction"
                                               ],
                                               "additionalProperties": false
+                                            },
+                                            "labels": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              }
                                             }
                                           },
                                           "required": [

@@ -300,7 +300,8 @@ export function MeasureWidgetView({
       );
       return {
         id,
-        name: dimension?.name ?? id,
+        // A table's shorter head (#768), else the model's name.
+        name: widget.options.labels?.[id] ?? dimension?.name ?? id,
         type: dimension?.type ?? "string",
         nullable: true,
       } as DataField;
@@ -310,8 +311,10 @@ export function MeasureWidgetView({
         ({
           id: `measure.${id}`,
           name:
+            widget.options.labels?.[id] ??
             data?.metadata?.measures.find((measure) => measure.id === id)
-              ?.name ?? id,
+              ?.name ??
+            id,
           type: rows[0]?.measures[id]?.type ?? "decimal",
           nullable: true,
         }) as DataField,

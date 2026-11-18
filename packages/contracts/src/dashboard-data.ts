@@ -72,6 +72,12 @@ export const measureWidgetOptionsSchema = z.object({
   order: z
     .strictObject({ measureId: id, direction: z.enum(["asc", "desc"]) })
     .optional(),
+  /**
+   * Shorter column heads for a table, by dimension or measure id (#768):
+   * "Downloads" where the widget's title already says "Downloads and user
+   * installs". Without one, the model's name.
+   */
+  labels: z.record(id, z.string().trim().min(1).max(60)).optional(),
 });
 export const dashboardFilterValuesSchema = z.record(
   id,

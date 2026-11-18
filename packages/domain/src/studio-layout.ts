@@ -1074,6 +1074,13 @@ export const MEASURE_TABLE_METRICS = {
   footer: 24,
   lineHeight: 1.15,
   freshnessLineHeight: 1.3,
+  /**
+   * The measure table's text widths as a share of `estimateTextWidth`,
+   * which is conservative for every label: IBM Plex Sans renders the
+   * table's texts at 0.82–0.95 of the estimate (digits highest), so 0.96
+   * keeps a small margin while rows wrap where they are drawn to (#768).
+   */
+  textFit: 0.96,
 } as const;
 
 /**
@@ -1129,16 +1136,15 @@ function measureTableParts(input: MeasureTableBox) {
   const title = m.title * scale,
     cell = m.cell * scale,
     footerSize = m.footer * scale;
+  // Widths in estimate units: the room divided by `textFit`.
+  const fit = (room: number) => Math.max(0, room) / m.textFit;
   const titleLines = Math.min(
     STUDIO_LABEL_MAX_LINES,
-    Math.max(1, wrappedLineCount(input.label, width, title, "semibold")),
+    Math.max(1, wrappedLineCount(input.label, fit(width), title, "semibold")),
   );
   const columns = input.columns?.length ? input.columns : null;
   // Both renderers give every column an even share (a fixed table layout).
-  const columnWidth = Math.max(
-    0,
-    width / (columns?.length ?? 1) - m.cellPadding,
-  );
+  const columnWidth = fit(width / (columns?.length ?? 1) - m.cellPadding);
   const lines = (texts: readonly string[], weight: StudioFontWeight) =>
     Math.max(
       1,
@@ -1150,7 +1156,7 @@ function measureTableParts(input: MeasureTableBox) {
     m.gap +
     (text === null
       ? footerSize * m.freshnessLineHeight
-      : Math.max(1, wrappedLineCount(text, width, footerSize)) *
+      : Math.max(1, wrappedLineCount(text, fit(width), footerSize)) *
         footerSize *
         m.lineHeight);
   const headLines = columns ? lines(columns, "semibold") : 1;

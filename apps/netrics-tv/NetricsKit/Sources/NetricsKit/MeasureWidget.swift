@@ -389,9 +389,12 @@ extension MeasureWidgetData {
 public struct MeasureWidgetOptions: Codable, Sendable, Equatable {
     public var view: String
     public var limit: Int
-    public init(view: String = "value", limit: Int = 20) {
+    /** Shorter column heads by dimension or measure id (#768); nil: the model's names. */
+    public var labels: [String: String]? = nil
+    public init(view: String = "value", limit: Int = 20, labels: [String: String]? = nil) {
         self.view = view
         self.limit = limit
+        self.labels = labels
     }
 }
 
@@ -520,7 +523,8 @@ extension MeasureWidgetData {
     /// which grow with their content), every row.
     public func tableFit(
         label: String, measureIds: [String], groupBy: [String], rows: [MeasureResultRow],
-        box: (width: Double, height: Double)?, fontScale: Double, now: Date = Date(), language: ScreenLanguage = .en
+        box: (width: Double, height: Double)?, fontScale: Double, labels: [String: String]? = nil, now: Date = Date(),
+        language: ScreenLanguage = .en
     ) -> (shown: Int, rowsLine: String?) {
         let total = Swift.max(result?.totalRows ?? 0, rows.count)
         let line = { (shown: Int, all: Int) in KitStrings.text(.measureGroupsShown, language, shown, all) }
@@ -528,8 +532,8 @@ extension MeasureWidgetData {
             return (rows.count, total > rows.count ? line(rows.count, total) : nil)
         }
         let names =
-            groupBy.map { id in metadata?.dimensions.first { $0.id == id }?.name ?? id }
-            + measureIds.map { id in metadata?.measures.first { $0.id == id }?.name ?? id }
+            groupBy.map { id in labels?[id] ?? metadata?.dimensions.first { $0.id == id }?.name ?? id }
+            + measureIds.map { id in labels?[id] ?? metadata?.measures.first { $0.id == id }?.name ?? id }
         let cells = rows.map { row in
             groupBy.map { dimensionText(row, dimension: $0, language: language) }
                 + measureIds.map { text(row.measures[$0], measure: $0, language: language) }

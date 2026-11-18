@@ -234,8 +234,10 @@ export async function loadReadabilityInputs(
         widget.modelBinding,
       ).data;
       if (!names || !binding) return null;
+      const labels = measureWidgetOptionsSchema.safeParse(widget.options).data
+        ?.labels;
       return [...binding.groupBy, ...binding.measureIds].map(
-        (id) => names.get(id) ?? id,
+        (id) => labels?.[id] ?? names.get(id) ?? id,
       );
     },
     labelOf(widget) {

@@ -21,7 +21,8 @@ struct MeasureWidgetView: View {
     }
     private var rows: [MeasureResultRow] { expired ? [] : data.result?.rows ?? [] }
     private func name(_ id: String, dimension: Bool = false) -> String {
-        (dimension ? data.metadata?.dimensions : data.metadata?.measures)?.first { $0.id == id }?.name
+        options.labels?[id]
+            ?? (dimension ? data.metadata?.dimensions : data.metadata?.measures)?.first { $0.id == id }?.name
             ?? id
     }
     /// The rows the table shows and its "N of M" line (#768): fitted to the
@@ -37,7 +38,7 @@ struct MeasureWidgetView: View {
         }
         return data.tableFit(
             label: label, measureIds: measureIds, groupBy: groupBy, rows: rows, box: box,
-            fontScale: env.fontScale, now: now, language: env.language)
+            fontScale: env.fontScale, labels: options.labels, now: now, language: env.language)
     }
     var body: some View {
         let fit = self.fit

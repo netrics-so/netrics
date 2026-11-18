@@ -720,6 +720,8 @@ public enum StudioLayout {
         public static let footer = 24.0
         public static let lineHeight = 1.15
         public static let freshnessLineHeight = 1.3
+        /** Text widths as a share of the conservative estimate (textFit in the TypeScript). */
+        public static let textFit = 0.96
     }
 
     /** The footer lines the readability estimate keeps room for; nil is the freshness line. */
@@ -754,7 +756,7 @@ public enum StudioLayout {
         func footerLine(_ text: String?) -> Double {
             guard let text else { return MeasureTableMetrics.gap + footerSize * MeasureTableMetrics.freshnessLineHeight }
             return MeasureTableMetrics.gap
-                + Double(Swift.max(1, StudioLayout.wrappedLineCount(text, maxWidth: width, fontSize: footerSize)))
+                + Double(Swift.max(1, StudioLayout.wrappedLineCount(text, maxWidth: width / MeasureTableMetrics.textFit, fontSize: footerSize)))
                 * footerSize * MeasureTableMetrics.lineHeight
         }
     }
@@ -767,9 +769,10 @@ public enum StudioLayout {
         let width = Swift.max(0, inputWidth)
         let title = m.title * scale, cell = m.cell * scale
         let titleLines = Swift.min(
-            labelMaxLines, Swift.max(1, wrappedLineCount(label, maxWidth: width, fontSize: title, weight: .semibold)))
+            labelMaxLines,
+            Swift.max(1, wrappedLineCount(label, maxWidth: width / m.textFit, fontSize: title, weight: .semibold)))
         let cols = (columns?.isEmpty ?? true) ? nil : columns
-        let columnWidth = Swift.max(0, width / Double(cols?.count ?? 1) - m.cellPadding)
+        let columnWidth = Swift.max(0, width / Double(cols?.count ?? 1) - m.cellPadding) / m.textFit
         var parts = MeasureTableParts(
             titleLines: titleLines, headLines: 1, head: 0, columnWidth: columnWidth, cell: cell,
             footerSize: m.footer * scale, width: width)
