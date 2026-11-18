@@ -716,7 +716,7 @@ public enum StudioLayout {
         public static let gap = 12.0
         public static let cell = 28.0
         public static let cellPadding = 20.0
-        public static let border = 1.0
+        public static let border = 3.0
         public static let footer = 24.0
         public static let lineHeight = 1.15
         public static let freshnessLineHeight = 1.3

@@ -1064,9 +1064,13 @@ export const MEASURE_TABLE_METRICS = {
   title: 36,
   gap: 12,
   cell: 28,
-  /** Padding above and below a cell, and its bottom border. */
+  /** Padding above and below a cell. */
   cellPadding: 20,
-  border: 1,
+  /**
+   * A row's hairline (1 px): up to 3 units on the smallest screens (a
+   * phone's 0.36 px unit), so rows never overrun their room.
+   */
+  border: 3,
   footer: 24,
   lineHeight: 1.15,
   freshnessLineHeight: 1.3,
