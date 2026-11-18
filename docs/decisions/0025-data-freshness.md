@@ -287,9 +287,12 @@ it computes the widget's data:
   stream listing that dataset key; an `observation:<connection>:<metric>`
   binding resolves through the metric definition to its key and stream.
   `resources:` bindings (names only) and manual datasets have no stream.
-  Resources come from the slide scope when it names one, else every
-  selected resource. This extends `modelSourceHealth`, which already walks
-  the same bindings.
+  Resources are the apps the slide scope and a screen's scope pick on
+  each connection (#767): a scope value naming a resource, or a linked
+  product (`product:<id>`) resolved through its install's mapping table to
+  its apps. A connection the scope names no app of adds no rows; a scope
+  that picks no apps leaves every selected resource. This extends
+  `modelSourceHealth`, which already walks the same bindings.
 - **Latest-review widgets**: the connector's stream with key `reviews`;
   no metric or dataset carries review text, so a connector that ingests
   review text declares its reviews in a stream with that key. Resources as
