@@ -183,16 +183,12 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
     expect(dashboard.original.request.name).toBe("App portfolio");
     const widgets =
       await owner`select id, model_id from dashboard_widgets where dashboard_id=${installed.dashboardId}`;
-    const slides =
-      await owner`select id from dashboard_slides where dashboard_id=${installed.dashboardId} order by position`;
+    const [slide] =
+      await owner`select id from dashboard_slides where dashboard_id=${installed.dashboardId}`;
     expect(Object.keys(dashboard.widget_keys).sort()).toEqual(
-      [...slides.map((s) => s.id), ...widgets.map((w) => w.id)].sort(),
+      [slide!.id, ...widgets.map((w) => w.id)].sort(),
     );
-    // Version 5 (#768): the model tables, then the connection tables.
-    expect(slides.map((s) => dashboard.widget_keys[s.id])).toEqual([
-      "slide:0",
-      "slide:overview-recent",
-    ]);
+    expect(dashboard.widget_keys[slide!.id]).toBe("slide:0");
     // The measure tables by their model; version 4's revenue by app in the
     // display currency by its App Store connection. No app is listed yet:
     // no app slides.
@@ -614,16 +610,7 @@ describe("atomic editable store templates", { timeout: TIMEOUT_MS }, () => {
         const result = await queryDashboardData(
           tx,
           workspaceId,
-          // Every row, not only the rows an overview table fits (#768).
-          [
-            {
-              scope: {},
-              widgets: widgets.map((widget) => ({
-                ...widget,
-                options: { ...(widget.options as object), limit: 20 },
-              })),
-            },
-          ],
+          [{ scope: {}, widgets }],
           dashboard!.dataFilters,
           {},
           new Date(now),
