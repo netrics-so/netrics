@@ -250,7 +250,8 @@ private func weight(_ any: Any?) -> StudioFontWeight {
     @Test func measureGlyphs() {
         let g = StudioVectors.root["measureGlyphs"] as! [String: Any]
         #expect(StudioLayout.measureGlyphChars == g["chars"] as! String)
-        #expect(StudioLayout.measureGlyphEms == (g["ems"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsRegular == (g["regular"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsSemibold == (g["semibold"] as! [Any]).map { double($0) })
         for c in g["widths"] as! [[String: Any]] {
             #expect(
                 close(

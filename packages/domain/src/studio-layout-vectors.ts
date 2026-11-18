@@ -1062,7 +1062,8 @@ export function buildStudioLayoutVectors() {
     measureRowsShown,
     measureGlyphs: {
       chars: MEASURE_GLYPH_CHARS.join(""),
-      ems: MEASURE_GLYPH_EMS,
+      regular: MEASURE_GLYPH_EMS.regular,
+      semibold: MEASURE_GLYPH_EMS.semibold,
       widths: [
         "Apple App Store",
         "Älteste Quellenaktualisierung: 18.11.2026, 23:58",

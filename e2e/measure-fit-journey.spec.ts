@@ -151,8 +151,7 @@ test("measure tables show the rows that fit their tiles, and no fewer", async ({
             line:
               lines
                 .map((line) => line.textContent ?? "")
-                .find((text) => /\d+\D+\d+/.test(text) && /20|40/.test(text)) ??
-              "",
+                .find((text) => /(of|von) 40\b/.test(text)) ?? "",
             leftover: bottom - last,
             rowHeight: Math.min(...rows.map((row) => row.height)),
             gap,
@@ -165,8 +164,9 @@ test("measure tables show the rows that fit their tiles, and no fewer", async ({
       expect(table.rows, where).toBeGreaterThan(0);
       expect(table.clipped, where).toBe(0);
       expect(table.cut, where).toBe(0);
-      expect(table.line, where).toContain(String(table.rows));
-      expect(table.line, where).toContain("40");
+      expect(table.line, where).toMatch(
+        new RegExp(`\\b${table.rows} (of|von) 40\\b`),
+      );
       // Not wasteful: one more row would not have fit.
       expect(table.leftover, where).toBeLessThan(table.rowHeight);
     }

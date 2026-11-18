@@ -729,18 +729,37 @@ public enum StudioLayout {
     /** A row label as long as it commonly is (MEASURE_TABLE_CELL_SAMPLE). */
     public static let measureTableCellSample = "Apple App Store"
 
-    /// The characters of a measure table's text and their widths in em
-    /// (MEASURE_GLYPH_CHARS / MEASURE_GLYPH_EMS in the TypeScript): the wider
-    /// of IBM Plex Sans and the system font, regular or semibold, plus 2 %.
+    /// The characters of a measure table's text and their widths in em,
+    /// regular and semibold (MEASURE_GLYPH_CHARS / MEASURE_GLYPH_EMS in the
+    /// TypeScript): the wider of IBM Plex Sans and the system font, plus 2 %.
     public static let measureGlyphChars: String = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•"
-    public static let measureGlyphEms: [Double] = [
-        0.241, 0.316, 0.481, 0.728, 0.645, 0.98, 0.728, 0.27, 0.368, 0.368,
+    public static let measureGlyphEmsRegular: [Double] = [
+        0.241, 0.29, 0.428, 0.728, 0.617, 0.946, 0.708, 0.259, 0.342, 0.342,
+        0.459, 0.617, 0.278, 0.438, 0.278, 0.391, 0.619, 0.612, 0.612, 0.612,
+        0.617, 0.612, 0.63, 0.612, 0.612, 0.63, 0.298, 0.298, 0.617, 0.617,
+        0.617, 0.5, 0.909, 0.654, 0.667, 0.7, 0.693, 0.595, 0.571, 0.721,
+        0.722, 0.409, 0.521, 0.647, 0.535, 0.848, 0.722, 0.747, 0.619, 0.747,
+        0.653, 0.606, 0.593, 0.711, 0.644, 0.943, 0.648, 0.625, 0.63, 0.329,
+        0.391, 0.329, 0.617, 0.577, 0.612, 0.545, 0.592, 0.514, 0.592, 0.56,
+        0.331, 0.56, 0.58, 0.255, 0.255, 0.538, 0.278, 0.891, 0.58, 0.572,
+        0.592, 0.592, 0.375, 0.497, 0.359, 0.58, 0.502, 0.784, 0.518, 0.509,
+        0.478, 0.35, 0.321, 0.35, 0.617, 0.654, 0.654, 0.654, 0.654, 0.654,
+        0.654, 0.963, 0.7, 0.595, 0.595, 0.595, 0.595, 0.409, 0.409, 0.409,
+        0.409, 0.716, 0.722, 0.747, 0.747, 0.747, 0.747, 0.747, 0.744, 0.711,
+        0.711, 0.711, 0.711, 0.625, 0.619, 0.653, 0.545, 0.545, 0.545, 0.545,
+        0.545, 0.545, 0.882, 0.514, 0.56, 0.56, 0.56, 0.56, 0.255, 0.255,
+        0.255, 0.255, 0.567, 0.58, 0.572, 0.572, 0.572, 0.572, 0.572, 0.58,
+        0.58, 0.58, 0.58, 0.58, 0.509, 0.592, 0.509, 0.333, 1.036, 0.638,
+        0.617, 0.618, 0.6, 0.848, 0.82, 0.279, 0.279, 0.485, 0.484, 0.438,
+    ]
+    public static let measureGlyphEmsSemibold: [Double] = [
+        0.241, 0.316, 0.481, 0.67, 0.645, 0.98, 0.728, 0.27, 0.368, 0.368,
         0.568, 0.645, 0.305, 0.446, 0.305, 0.447, 0.651, 0.612, 0.612, 0.629,
         0.645, 0.623, 0.653, 0.612, 0.644, 0.653, 0.326, 0.326, 0.645, 0.645,
         0.645, 0.528, 0.918, 0.686, 0.677, 0.717, 0.707, 0.612, 0.589, 0.734,
         0.734, 0.432, 0.556, 0.692, 0.547, 0.868, 0.734, 0.76, 0.655, 0.76,
         0.678, 0.63, 0.606, 0.718, 0.675, 0.97, 0.681, 0.659, 0.639, 0.368,
-        0.447, 0.368, 0.645, 0.577, 0.612, 0.57, 0.612, 0.54, 0.612, 0.57,
+        0.447, 0.368, 0.645, 0.57, 0.612, 0.57, 0.612, 0.54, 0.612, 0.57,
         0.358, 0.589, 0.6, 0.281, 0.281, 0.574, 0.3, 0.906, 0.6, 0.575,
         0.612, 0.612, 0.401, 0.509, 0.382, 0.6, 0.535, 0.836, 0.556, 0.535,
         0.513, 0.371, 0.384, 0.371, 0.645, 0.686, 0.686, 0.686, 0.686, 0.686,
@@ -752,13 +771,21 @@ public enum StudioLayout {
         0.6, 0.6, 0.6, 0.6, 0.535, 0.612, 0.535, 0.356, 1.056, 0.645,
         0.645, 0.65, 0.6, 0.868, 0.887, 0.298, 0.298, 0.528, 0.528, 0.446,
     ]
-    private static let measureGlyphs: [Unicode.Scalar: Double] = Dictionary(
-        uniqueKeysWithValues: zip(measureGlyphChars.unicodeScalars, measureGlyphEms))
+    private static let measureGlyphsRegular: [Unicode.Scalar: Double] = Dictionary(
+        uniqueKeysWithValues: zip(measureGlyphChars.unicodeScalars, measureGlyphEmsRegular))
+    private static let measureGlyphsSemibold: [Unicode.Scalar: Double] = Dictionary(
+        uniqueKeysWithValues: zip(measureGlyphChars.unicodeScalars, measureGlyphEmsSemibold))
 
     /// A measure table's text width in units (measureTextWidth in the TypeScript).
     public static func measureTextWidth(_ text: String, fontSize: Double, weight: StudioFontWeight = .regular) -> Double {
-        text.unicodeScalars.reduce(0) { width, scalar in
-            width + (measureGlyphs[scalar].map { $0 * fontSize }
+        let table: [Unicode.Scalar: Double]? =
+            switch weight {
+            case .regular: measureGlyphsRegular
+            case .semibold: measureGlyphsSemibold
+            default: nil
+            }
+        return text.unicodeScalars.reduce(0) { width, scalar in
+            width + (table?[scalar].map { $0 * fontSize }
                 ?? estimateTextWidth(String(scalar), fontSize: fontSize, weight: weight))
         }
     }
