@@ -485,9 +485,7 @@ export function MeasureWidgetView({
       ) : rows.length === 0 ? (
         <p>{viewer ? t("dashboard.viewer.noData") : t("noRows")}</p>
       ) : (widget.options.view === "table" || unsafe) &&
-        fit.shown ===
-          0 ? // Not even a row fits the tile (#768): its footer says "0 of N",
-      // and no column heads are cut off.
+        fit.shown === 0 ? // and no column heads are cut off. // Not even a row fits the tile (#768): its footer says "0 of N",
       null : widget.options.view === "table" || unsafe ? (
         <div className="sw-measure-table-scroll">
           <table className="sw-measure-table">
