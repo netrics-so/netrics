@@ -708,6 +708,118 @@ public enum StudioLayout {
         Swift.max(0, Swift.min(limit, rows, rowCapacity))
     }
 
+    // MARK: Measure table (#768)
+
+    /** A measure widget's sizes in units (MEASURE_TABLE_METRICS in the TypeScript). */
+    public enum MeasureTableMetrics {
+        public static let title = 36.0
+        public static let gap = 12.0
+        public static let cell = 28.0
+        public static let cellPadding = 20.0
+        public static let border = 1.0
+        public static let footer = 24.0
+        public static let lineHeight = 1.15
+        public static let freshnessLineHeight = 1.3
+    }
+
+    /** The footer lines the readability estimate keeps room for; nil is the freshness line. */
+    public static let measureTableFooterSamples: [String?] = ["20 von 200 Gruppen werden angezeigt.", nil]
+    /** A row label as long as it commonly is (MEASURE_TABLE_CELL_SAMPLE). */
+    public static let measureTableCellSample = "Apple App Store"
+
+    public struct MeasureTableLayout: Sendable, Equatable {
+        public var titleLines: Int
+        public var headLines: Int
+        public var rowLines: Int
+        public var fixedHeight: Double
+        public var rowPitch: Double
+        public var rowCapacity: Int
+    }
+
+    private struct MeasureTableParts {
+        var titleLines: Int
+        var headLines: Int
+        var head: Double
+        var columnWidth: Double
+        var cell: Double
+        var footerSize: Double
+        var width: Double
+
+        func lines(_ texts: [String], weight: StudioFontWeight) -> Int {
+            Swift.max(1, texts.map { StudioLayout.wrappedLineCount($0, maxWidth: columnWidth, fontSize: cell, weight: weight) }.max() ?? 1)
+        }
+        func row(_ count: Int) -> Double {
+            Double(count) * cell * MeasureTableMetrics.lineHeight + MeasureTableMetrics.cellPadding + MeasureTableMetrics.border
+        }
+        func footerLine(_ text: String?) -> Double {
+            guard let text else { return MeasureTableMetrics.gap + footerSize * MeasureTableMetrics.freshnessLineHeight }
+            return MeasureTableMetrics.gap
+                + Double(Swift.max(1, StudioLayout.wrappedLineCount(text, maxWidth: width, fontSize: footerSize)))
+                * footerSize * MeasureTableMetrics.lineHeight
+        }
+    }
+
+    private static func measureTableParts(
+        label: String, width inputWidth: Double, fontScale: Double?, columns: [String]?
+    ) -> MeasureTableParts {
+        let scale = effectiveFontScale(fontScale)
+        let m = MeasureTableMetrics.self
+        let width = Swift.max(0, inputWidth)
+        let title = m.title * scale, cell = m.cell * scale
+        let titleLines = Swift.min(
+            labelMaxLines, Swift.max(1, wrappedLineCount(label, maxWidth: width, fontSize: title, weight: .semibold)))
+        let cols = (columns?.isEmpty ?? true) ? nil : columns
+        let columnWidth = Swift.max(0, width / Double(cols?.count ?? 1) - m.cellPadding)
+        var parts = MeasureTableParts(
+            titleLines: titleLines, headLines: 1, head: 0, columnWidth: columnWidth, cell: cell,
+            footerSize: m.footer * scale, width: width)
+        parts.headLines = cols.map { parts.lines($0, weight: .semibold) } ?? 1
+        parts.head = Double(titleLines) * title * m.lineHeight + m.gap + parts.row(parts.headLines)
+        return parts
+    }
+
+    /** The readability estimate of a measure table (measureTableLayout in the TypeScript). */
+    public static func measureTableLayout(
+        label: String, width: Double, height: Double, fontScale: Double? = nil, columns: [String]? = nil,
+        footer: [String?]? = nil
+    ) -> MeasureTableLayout {
+        let parts = measureTableParts(label: label, width: width, fontScale: fontScale, columns: columns)
+        let rowLines = (columns?.isEmpty ?? true) ? 1 : parts.lines([measureTableCellSample], weight: .regular)
+        let rowPitch = parts.row(rowLines)
+        let fixedHeight = parts.head + (footer ?? measureTableFooterSamples).reduce(0) { $0 + parts.footerLine($1) }
+        return MeasureTableLayout(
+            titleLines: parts.titleLines, headLines: parts.headLines, rowLines: rowLines, fixedHeight: fixedHeight,
+            rowPitch: rowPitch, rowCapacity: Swift.max(0, Int(((height - fixedHeight) / rowPitch + 1e-9).rounded(.down))))
+    }
+
+    /**
+     * The rows a measure table shows on a screen (measureTableRowsShown in
+     * the TypeScript): the first rows, each as tall as its cells wrap, above
+     * the footer lines; rows give way first, and the "N of M" line joins the
+     * footer when rows are left out.
+     */
+    public static func measureTableRowsShown(
+        label: String, width: Double, height: Double, fontScale: Double? = nil, columns: [String]? = nil,
+        rows: [[String]], total inputTotal: Int, footer: [String?], rowsLine: (Int, Int) -> String
+    ) -> (shown: Int, rowsLine: String?) {
+        let parts = measureTableParts(label: label, width: width, fontScale: fontScale, columns: columns)
+        let total = Swift.max(inputTotal, rows.count)
+        func fit(_ lines: [String?]) -> Int {
+            var room = height - parts.head - lines.reduce(0) { $0 + parts.footerLine($1) }
+            var shown = 0
+            for row in rows {
+                room -= parts.row(parts.lines(row, weight: .regular))
+                if room < -1e-9 { break }
+                shown += 1
+            }
+            return shown
+        }
+        let all = fit(footer)
+        if all >= total { return (total, nil) }
+        let shown = fit(footer + [rowsLine(all, total)])
+        return (shown, rowsLine(shown, total))
+    }
+
     /** A row label's size: shrunk down to cellMin, then truncated. */
     public static func tableRowLabel(_ text: String, labelWidth: Double, cell: Double, cellMin: Double)
         -> (size: Double, truncated: Bool)

@@ -229,6 +229,39 @@ private func weight(_ any: Any?) -> StudioFontWeight {
         }
     }
 
+    @Test func measureLayouts() {
+        let cases = StudioVectors.cases("measureLayouts")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let footer = (c["footer"] as? [Any]).map { $0.map { $0 as? String } }
+            let layout = StudioLayout.measureTableLayout(
+                label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                fontScale: double(c["fontScale"]), columns: c["columns"] as? [String], footer: footer)
+            let e = c["layout"] as! [String: Any]
+            #expect(layout.titleLines == int(e["titleLines"]), "\(c)")
+            #expect(layout.headLines == int(e["headLines"]), "\(c)")
+            #expect(layout.rowLines == int(e["rowLines"]), "\(c)")
+            #expect(close(layout.fixedHeight, double(e["fixedHeight"])), "\(c)")
+            #expect(close(layout.rowPitch, double(e["rowPitch"])), "\(c)")
+            #expect(layout.rowCapacity == int(e["rowCapacity"]), "\(c)")
+        }
+    }
+
+    @Test func measureRowsShown() {
+        let cases = StudioVectors.cases("measureRowsShown")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let fit = StudioLayout.measureTableRowsShown(
+                label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                fontScale: double(c["fontScale"]), columns: c["columns"] as? [String],
+                rows: c["rows"] as! [[String]], total: int(c["total"]),
+                footer: (c["footer"] as! [Any]).map { $0 as? String },
+                rowsLine: { "Showing \($0) of \($1) groups." })
+            #expect(fit.shown == int(c["shown"]), "\(c)")
+            #expect(fit.rowsLine == c["rowsLine"] as? String, "\(c)")
+        }
+    }
+
     @Test func tableRowsShown() {
         for c in StudioVectors.cases("tableRowsShown") {
             #expect(
