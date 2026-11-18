@@ -60,15 +60,15 @@ export default async function WorkspaceHomePage({
     redirect(`${workspacePath(workspaceId, "sources")}?${forward}`);
   }
   const outcome = parseOAuthOutcome(query.oauth);
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
   const [t, roles] = await Promise.all([
     getT("workspace"),
     getT("common.roles"),
   ]);
 
   const [{ workspaces }, workspaceResult] = await Promise.all([
-    listWorkspaces(cookieHeader),
-    getWorkspace(cookieHeader, workspaceId),
+    listWorkspaces(forwarded),
+    getWorkspace(forwarded, workspaceId),
   ]);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!workspaceResult || !membership) {
@@ -85,11 +85,11 @@ export default async function WorkspaceHomePage({
     { connections: allConnections },
     devices,
   ] = await Promise.all([
-    listDashboards(cookieHeader, workspaceId, scoped),
-    listConnections(cookieHeader, workspaceId, scoped),
-    listConnections(cookieHeader, workspaceId),
+    listDashboards(forwarded, workspaceId, scoped),
+    listConnections(forwarded, workspaceId, scoped),
+    listConnections(forwarded, workspaceId),
     can(role, "devices:view")
-      ? listDevices(cookieHeader, workspaceId).then((r) =>
+      ? listDevices(forwarded, workspaceId).then((r) =>
           r.devices.filter((device) => device.revokedAt === null),
         )
       : null,

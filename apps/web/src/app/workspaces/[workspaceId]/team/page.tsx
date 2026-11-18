@@ -22,11 +22,11 @@ interface TeamPageProps {
 /** Members, their roles and invitations (#302; was in settings). */
 export default async function TeamPage({ params }: TeamPageProps) {
   const { workspaceId } = await params;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
 
   const [{ workspaces }, me] = await Promise.all([
-    listWorkspaces(cookieHeader),
-    getMe(cookieHeader),
+    listWorkspaces(forwarded),
+    getMe(forwarded),
   ]);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !me) {
@@ -40,9 +40,9 @@ export default async function TeamPage({ params }: TeamPageProps) {
     getT("workspaceSettings"),
   ]);
   const [{ members }, { invitations }] = await Promise.all([
-    listMembers(cookieHeader, workspaceId),
+    listMembers(forwarded, workspaceId),
     canAddMembers
-      ? listInvitations(cookieHeader, workspaceId)
+      ? listInvitations(forwarded, workspaceId)
       : Promise.resolve({ invitations: [] }),
   ]);
 

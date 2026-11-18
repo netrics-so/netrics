@@ -24,8 +24,8 @@ export default async function StoreTemplatesPage({
 }) {
   const { workspaceId } = await params,
     query = await searchParams;
-  const { cookieHeader } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { forwarded } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const workspace = workspaces.find(
     (workspace) => workspace.id === workspaceId,
   );
@@ -39,9 +39,9 @@ export default async function StoreTemplatesPage({
       can(workspace.role, "dashboards:create") &&
       can(workspace.role, "data:edit");
     const install = allowed
-      ? (
-          await listStoreTemplateInstalls(cookieHeader, workspaceId)
-        ).installs.find((entry) => entry.requestId === installId)
+      ? (await listStoreTemplateInstalls(forwarded, workspaceId)).installs.find(
+          (entry) => entry.requestId === installId,
+        )
       : undefined;
     if (allowed && !install) notFound();
     // A newer template version is reviewed first, as the server requires.
@@ -50,15 +50,11 @@ export default async function StoreTemplatesPage({
     const [scope, options, products] =
       install && install.error === null && !versionUpdate
         ? await Promise.all([
-            readStoreTemplateScope(cookieHeader, workspaceId, installId),
-            readStoreTemplateOptions(cookieHeader, workspaceId),
+            readStoreTemplateScope(forwarded, workspaceId, installId),
+            readStoreTemplateOptions(forwarded, workspaceId),
             // App identity failing (e.g. over the row limit) must not take
             // the scope editor with it: the section explains it in place.
-            readStoreTemplateProducts(
-              cookieHeader,
-              workspaceId,
-              installId,
-            ).then(
+            readStoreTemplateProducts(forwarded, workspaceId, installId).then(
               (value) => ({ value }),
               (error: unknown) => ({
                 error:

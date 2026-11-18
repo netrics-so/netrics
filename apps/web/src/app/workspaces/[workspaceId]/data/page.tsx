@@ -26,18 +26,18 @@ export default async function DataPage({
 }) {
   const { workspaceId } = await params,
     { model, preparation } = await searchParams,
-    { cookieHeader } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+    { forwarded } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !can(membership.role, "data:edit")) notFound();
   // Lists follow the active project (#573); the server reads an archived
   // one back as null ("All projects").
   const [{ projects }, lists] = await Promise.all([
-    listProjects(cookieHeader, workspaceId),
+    listProjects(forwarded, workspaceId),
     loadDataLists(
       workspaceId,
       projectScope(membership.activeProjectId, []),
-      cookieHeader,
+      forwarded,
     ),
   ]);
   // ?model=<id> opens that model, e.g. from the Studio to publish it
@@ -46,7 +46,7 @@ export default async function DataPage({
   const openModel =
     typeof model === "string" &&
     !lists.data.models.some((entry) => entry.id === model)
-      ? await getModel(workspaceId, model, cookieHeader).catch(() => null)
+      ? await getModel(workspaceId, model, forwarded).catch(() => null)
       : null;
   return (
     <DataWorkspace

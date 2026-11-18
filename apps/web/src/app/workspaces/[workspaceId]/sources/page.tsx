@@ -55,13 +55,13 @@ export default async function SourcesPage({
   const outcome = parseOAuthOutcome(query.oauth);
   const disconnected = parseDisconnected(query);
   const keyRemoved = parseKeyRemoved(query);
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
   const locale = await getLocale();
   const t = await getT("workspace");
   const s = await getT("sources");
   const dashboardsT = await getT("dashboardsPage");
 
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership) {
     notFound();
@@ -71,12 +71,12 @@ export default async function SourcesPage({
   // stays workspace-wide.
   const [{ connections }, { connectors }, { projects }] = await Promise.all([
     listConnections(
-      cookieHeader,
+      forwarded,
       workspaceId,
       navigationQuery(projectScope(membership.activeProjectId, [])),
     ),
-    listConnectors(cookieHeader),
-    listProjects(cookieHeader, workspaceId),
+    listConnectors(forwarded),
+    listProjects(forwarded, workspaceId),
   ]);
   const projectName = activeProjectName(
     projectScope(membership.activeProjectId, projects),

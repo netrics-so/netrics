@@ -289,11 +289,17 @@ describe("the API in the caller's language", () => {
 
   it("follows Accept-Language when the user has no setting", async () => {
     await setLocale(null);
+    const german = await catalog({ "accept-language": "de-DE,de;q=0.9" });
+    expect(german.find((entry) => entry.id === "demo")!.name).toBe(
+      "Demo-Connector",
+    );
+    // The wizard texts the web's server components fetch (#770).
+    const appStore = german.find((entry) => entry.id === "app-store-connect")!;
+    expect(appStore.description).toMatch(/^Downloads, In-App-Käufe/);
     expect(
-      (await catalog({ "accept-language": "de-DE,de;q=0.9" })).find(
-        (entry) => entry.id === "demo",
-      )!.name,
-    ).toBe("Demo-Connector");
+      (appStore.configSchema.properties as Record<string, { title: string }>)
+        .vendorNumber!.title,
+    ).toBe("Anbieternummer");
     expect(
       (await catalog({ "accept-language": "fr" })).find(
         (entry) => entry.id === "demo",

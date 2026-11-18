@@ -44,15 +44,15 @@ export default async function WelcomePage({
 }: WelcomePageProps) {
   const { workspaceId } = await params;
   const { step: requested } = await searchParams;
-  const { cookieHeader } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { forwarded } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership) {
     notFound();
   }
   const [{ connections }, { dashboards }] = await Promise.all([
-    listConnections(cookieHeader, workspaceId),
-    listDashboards(cookieHeader, workspaceId),
+    listConnections(forwarded, workspaceId),
+    listDashboards(forwarded, workspaceId),
   ]);
   const canConnect = can(membership.role, "connections:create");
   const step = onboardingStep({
@@ -63,7 +63,7 @@ export default async function WelcomePage({
   });
 
   if (step === "source") {
-    const { connectors } = await listConnectors(cookieHeader);
+    const { connectors } = await listConnectors(forwarded);
     return (
       <OnboardingFrame step="source">
         <SourceStep

@@ -18,13 +18,13 @@ interface ThemePageProps {
 
 export default async function ThemePage({ params }: ThemePageProps) {
   const { workspaceId, themeId } = await params;
-  const { cookieHeader } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { forwarded } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !can(membership.role, "dashboards:view")) {
     notFound();
   }
-  const result = await getTheme(cookieHeader, workspaceId, themeId);
+  const result = await getTheme(forwarded, workspaceId, themeId);
   if (!result) {
     notFound();
   }

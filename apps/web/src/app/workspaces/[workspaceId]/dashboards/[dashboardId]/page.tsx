@@ -45,12 +45,12 @@ interface DashboardPageProps {
 
 export default async function DashboardPage({ params }: DashboardPageProps) {
   const { workspaceId, dashboardId } = await params;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
   const t = await getT("dashboard");
 
   const [{ workspaces }, dashboardResult] = await Promise.all([
-    listWorkspaces(cookieHeader),
-    getDashboard(cookieHeader, workspaceId, dashboardId),
+    listWorkspaces(forwarded),
+    getDashboard(forwarded, workspaceId, dashboardId),
   ]);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !dashboardResult) {
@@ -66,7 +66,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     can(membership.role, "dashboards:create");
   const installs =
     archived || canChangeApps
-      ? await listStoreTemplateInstalls(cookieHeader, workspaceId).then(
+      ? await listStoreTemplateInstalls(forwarded, workspaceId).then(
           ({ installs }) => installs,
           () => [],
         )
@@ -83,15 +83,15 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   const tu = await getT("storeUpdate");
   const [{ metrics }, { connections }, workspaceResult, customTheme, images] =
     await Promise.all([
-      listWorkspaceMetrics(cookieHeader, workspaceId),
-      listConnections(cookieHeader, workspaceId),
-      getWorkspace(cookieHeader, workspaceId),
+      listWorkspaceMetrics(forwarded, workspaceId),
+      listConnections(forwarded, workspaceId),
+      getWorkspace(forwarded, workspaceId),
       dashboard.settings.themeId
-        ? getTheme(cookieHeader, workspaceId, dashboard.settings.themeId)
+        ? getTheme(forwarded, workspaceId, dashboard.settings.themeId)
         : null,
       // Only dashboards that show images ask for them.
       referencedImageIds(dashboard).length > 0
-        ? listStudioImages(cookieHeader, workspaceId)
+        ? listStudioImages(forwarded, workspaceId)
         : [],
     ]);
   const byId: Record<string, TileConnection> = Object.fromEntries(

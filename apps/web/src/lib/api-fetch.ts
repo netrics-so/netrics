@@ -149,6 +149,26 @@ export function outboundHeaders(
 }
 
 /**
+ * What a server-side call (server components, the session check) forwards
+ * from the browser request it is made for: the session cookie, as pure
+ * transport, and Accept-Language, so the API resolves the same language as
+ * the page (user setting, instance default, then Accept-Language; ADR 0016,
+ * #770). Nothing else of the browser's headers crosses.
+ */
+const FORWARDED_REQUEST_HEADERS = ["cookie", "accept-language"] as const;
+
+export function forwardedHeaders(incoming: Headers): Headers {
+  const headers = new Headers();
+  for (const name of FORWARDED_REQUEST_HEADERS) {
+    const value = incoming.get(name);
+    if (value) {
+      headers.set(name, value);
+    }
+  }
+  return headers;
+}
+
+/**
  * The API URL of `path`, an absolute path on the API ("/v1/me?x=1"). A
  * scheme-relative or absolute URL is refused, so no caller can send these
  * headers to another host.

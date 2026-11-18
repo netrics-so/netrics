@@ -4,6 +4,7 @@ import { cache } from "react";
 import type { MeResponse } from "@netrics/contracts";
 
 import { getMe } from "./api";
+import { forwardedHeaders } from "./api-fetch";
 
 /**
  * The signed-in user and memberships for this request, or null; one
@@ -11,12 +12,12 @@ import { getMe } from "./api";
  * language, the page). Requests without a session cookie skip the call.
  */
 export const getCurrentMe = cache(async (): Promise<MeResponse | null> => {
-  const cookieHeader = (await headers()).get("cookie") ?? "";
-  if (!cookieHeader.includes("better-auth.session_token")) {
+  const forwarded = forwardedHeaders(await headers());
+  if (!forwarded.get("cookie")?.includes("better-auth.session_token")) {
     return null;
   }
   try {
-    return await getMe(cookieHeader);
+    return await getMe(forwarded);
   } catch {
     // The page itself reports an unreachable API; the nav and the language
     // fall back instead of failing the whole layout.

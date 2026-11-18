@@ -6,6 +6,7 @@ import { can } from "@netrics/domain";
 
 import { ApproveDeviceForm, type ApprovableWorkspace } from "./approve-form";
 import { listDashboards, listProjects, listWorkspaces } from "@/lib/api";
+import { forwardedHeaders } from "@/lib/api-fetch";
 import { getT } from "@/lib/i18n/server";
 import { pickableDashboards } from "@/lib/project-pickers";
 import { projectScope } from "@/lib/project-scope";
@@ -35,13 +36,13 @@ export default async function ApproveDevicePage({
   const code = typeof raw === "string" ? raw.slice(0, 20) : "";
   const here = `/devices/approve${code ? `?code=${encodeURIComponent(code)}` : ""}`;
 
-  const cookieHeader = (await headers()).get("cookie") ?? "";
-  const user = await getSessionUser(cookieHeader);
+  const forwarded = forwardedHeaders(await headers());
+  const user = await getSessionUser(forwarded);
   if (!user) {
     redirect(`/login?next=${encodeURIComponent(here)}`);
   }
 
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { workspaces } = await listWorkspaces(forwarded);
   const manageable = workspaces.filter((workspace) =>
     can(workspace.role, "devices:manage"),
   );
@@ -50,8 +51,8 @@ export default async function ApproveDevicePage({
   const approvable: ApprovableWorkspace[] = await Promise.all(
     manageable.map(async (workspace) => {
       const [{ dashboards }, { projects }] = await Promise.all([
-        listDashboards(cookieHeader, workspace.id),
-        listProjects(cookieHeader, workspace.id),
+        listDashboards(forwarded, workspace.id),
+        listProjects(forwarded, workspace.id),
       ]);
       return {
         id: workspace.id,

@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { InvitationActions } from "./invitation-actions";
 import { getInvitationPreview } from "@/lib/api";
+import { forwardedHeaders } from "@/lib/api-fetch";
 import { getT } from "@/lib/i18n/server";
 import { getSessionUser } from "@/lib/session";
 
@@ -47,8 +48,8 @@ export default async function InvitePage({
     );
   }
 
-  const cookieHeader = (await headers()).get("cookie") ?? "";
-  const user = await getSessionUser(cookieHeader);
+  const forwarded = forwardedHeaders(await headers());
+  const user = await getSessionUser(forwarded);
 
   return (
     <>

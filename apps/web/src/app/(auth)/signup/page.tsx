@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { SignupForm } from "./signup-form";
 import { getSetupStatus } from "@/lib/api";
+import { forwardedHeaders } from "@/lib/api-fetch";
 import { getT } from "@/lib/i18n/server";
 import { getSessionUser } from "@/lib/session";
 
@@ -16,8 +17,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function SignupPage() {
-  const cookieHeader = (await headers()).get("cookie") ?? "";
-  if (await getSessionUser(cookieHeader)) {
+  const forwarded = forwardedHeaders(await headers());
+  if (await getSessionUser(forwarded)) {
     redirect("/");
   }
   const setup = await getSetupStatus();

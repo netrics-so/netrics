@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { LoginForm } from "./login-form";
 import { getSetupStatus } from "@/lib/api";
+import { forwardedHeaders } from "@/lib/api-fetch";
 import { getT } from "@/lib/i18n/server";
 import { safeNextPath } from "@/lib/next-path";
 import { getSessionUser } from "@/lib/session";
@@ -22,8 +23,8 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string | string[] }>;
 }) {
   const next = safeNextPath((await searchParams).next) ?? "/";
-  const cookieHeader = (await headers()).get("cookie") ?? "";
-  if (await getSessionUser(cookieHeader)) {
+  const forwarded = forwardedHeaders(await headers());
+  if (await getSessionUser(forwarded)) {
     redirect(next);
   }
   const setup = await getSetupStatus();

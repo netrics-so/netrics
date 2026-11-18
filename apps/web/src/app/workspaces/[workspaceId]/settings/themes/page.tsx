@@ -26,14 +26,14 @@ export async function generateMetadata(): Promise<Metadata> {
 /** Built-in and custom dashboard themes (#216). */
 export default async function ThemesPage({ params }: ThemesPageProps) {
   const { workspaceId } = await params;
-  const { cookieHeader } = await requireSession();
-  const { workspaces } = await listWorkspaces(cookieHeader);
+  const { forwarded } = await requireSession();
+  const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership || !can(membership.role, "dashboards:view")) {
     notFound();
   }
   const canEdit = can(membership.role, "dashboards:update");
-  const { builtins, themes } = await listThemes(cookieHeader, workspaceId);
+  const { builtins, themes } = await listThemes(forwarded, workspaceId);
   const takenNames = themes.map((theme) => theme.name);
   const [t, locale] = await Promise.all([getT("themes"), getLocale()]);
 

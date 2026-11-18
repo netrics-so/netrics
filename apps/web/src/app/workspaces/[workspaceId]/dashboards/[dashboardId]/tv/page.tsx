@@ -35,10 +35,10 @@ interface TvPageProps {
  */
 export default async function TvPage({ params }: TvPageProps) {
   const { workspaceId, dashboardId } = await params;
-  const { cookieHeader } = await requireSession();
+  const { forwarded } = await requireSession();
   const [workspaceResult, dashboardResult] = await Promise.all([
-    getWorkspace(cookieHeader, workspaceId),
-    getDashboard(cookieHeader, workspaceId, dashboardId),
+    getWorkspace(forwarded, workspaceId),
+    getDashboard(forwarded, workspaceId, dashboardId),
   ]);
   if (!workspaceResult || !dashboardResult) {
     notFound();
@@ -46,13 +46,13 @@ export default async function TvPage({ params }: TvPageProps) {
   const { dashboard } = dashboardResult;
   const [{ metrics }, { connections }, customTheme, images] = await Promise.all(
     [
-      listWorkspaceMetrics(cookieHeader, workspaceId),
-      listConnections(cookieHeader, workspaceId),
+      listWorkspaceMetrics(forwarded, workspaceId),
+      listConnections(forwarded, workspaceId),
       dashboard.settings.themeId
-        ? getTheme(cookieHeader, workspaceId, dashboard.settings.themeId)
+        ? getTheme(forwarded, workspaceId, dashboard.settings.themeId)
         : null,
       referencedImageIds(dashboard).length > 0
-        ? listStudioImages(cookieHeader, workspaceId)
+        ? listStudioImages(forwarded, workspaceId)
         : [],
     ],
   );
