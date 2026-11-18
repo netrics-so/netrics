@@ -11,6 +11,7 @@ import {
   measureViewWindow,
   connectionResourceKey,
   slideScopeConflicts,
+  scopedFreshnessResources,
   slideScopeResource,
   validateDeviceFilterScope,
   validateMeasureView,
@@ -435,6 +436,63 @@ describe("shared dashboard filters", () => {
         "123",
       ).conflict,
     ).toBe(false);
+  });
+  it("picks a connection's apps of a scope for freshness (#767)", () => {
+    const apple = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e001",
+      play = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e002";
+    const app = (...values: unknown[]) => ({
+      app: { kind: "values" as const, values },
+    });
+    const one = app(connectionResourceKey(apple, "123"));
+    expect(scopedFreshnessResources(one, apple, [])).toEqual(["123"]);
+    // An App Store app's slide names no Play app: Play adds nothing.
+    expect(scopedFreshnessResources(one, play, [])).toEqual([]);
+    // A linked product stands for its apps, of either store.
+    const products = new Map([
+      [
+        "product:wurfel",
+        [
+          connectionResourceKey(apple, "123"),
+          connectionResourceKey(apple, "456"),
+          connectionResourceKey(play, "com.example"),
+        ],
+      ],
+    ]);
+    expect(
+      scopedFreshnessResources(app("product:wurfel"), apple, [], products),
+    ).toEqual(["123", "456"]);
+    expect(
+      scopedFreshnessResources(app("product:wurfel"), play, [], products),
+    ).toEqual(["com.example"]);
+    // Two filters that pick apps leave those both pick.
+    expect(
+      scopedFreshnessResources(
+        {
+          ...app("product:wurfel"),
+          other: {
+            kind: "values",
+            values: [connectionResourceKey(apple, "456")],
+          },
+        },
+        apple,
+        [],
+        products,
+      ),
+    ).toEqual(["456"]);
+    // Every resource: no scope, an excluded filter, values that are not
+    // apps (an unknown product, a store, null), or a range.
+    for (const [scope, exclusions] of [
+      [{}, []],
+      [one, [{ filterId: "app", reason: "All apps" }]],
+      [app("product:unknown"), []],
+      [app(connectionResourceKey(apple, "123"), "google"), []],
+      [app(null), []],
+      [app(), []],
+      [{ day: { kind: "range" as const, from: "2026-11-01", to: null } }, []],
+    ] as const)
+      expect(
+        scopedFreshnessResources(scope, apple, exclusions, products),
+      ).toBeUndefined();
   });
   it("validates types and ordered ranges before executing", () => {
     expect(() =>

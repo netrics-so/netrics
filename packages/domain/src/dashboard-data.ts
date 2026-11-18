@@ -292,6 +292,58 @@ export function slideScopeResource(
 }
 
 /**
+ * The resources of a connection a scope leaves a widget's freshness (#767,
+ * ADR 0025 section 6): what a slide's or a screen's scope picks among the
+ * apps of one connection a measure widget's model reads.
+ *
+ * A filter picks apps when the widget does not exclude it and each of its
+ * values names apps: a connection resource (connectionResourceKey), or a
+ * value `apps` resolves to them (a linked product's `product:<id>`, through
+ * the install's mapping table). Its resources of this connection are the
+ * apps its values name there; none when they name only other connections'
+ * apps, which then add nothing to the widget's freshness. Filters with any
+ * other value pick nothing (they are not about apps). Two filters that pick
+ * apps leave the apps both pick.
+ *
+ * Undefined: no filter picks apps, so every selected resource counts.
+ */
+export function scopedFreshnessResources(
+  scope: SlideFilterScope,
+  connectionId: string,
+  exclusions: readonly DashboardFilterExclusion[],
+  /** App keys (connectionResourceKey) per value that names a product. */
+  apps: ReadonlyMap<string, readonly string[]> = new Map(),
+): string[] | undefined {
+  let picked: Set<string> | undefined;
+  for (const [filterId, value] of Object.entries(scope)) {
+    if (
+      value.kind !== "values" ||
+      !value.values.length ||
+      exclusions.some((exclusion) => exclusion.filterId === filterId)
+    )
+      continue;
+    const named = value.values.map((raw) =>
+      typeof raw !== "string"
+        ? null
+        : RESOURCE_KEY.test(raw)
+          ? [raw]
+          : apps.get(raw)?.filter((key) => RESOURCE_KEY.test(key)) || null,
+    );
+    if (named.some((keys) => keys === null || !keys.length)) continue;
+    const own = new Set<string>();
+    for (const key of named.flat()) {
+      const [, connection, resource] = RESOURCE_KEY.exec(key!)!;
+      if (connection!.toLowerCase() === connectionId.toLowerCase())
+        own.add(resource!);
+    }
+    picked = picked
+      ? new Set([...picked].filter((resource) => own.has(resource)))
+      : own;
+  }
+  return picked && [...picked];
+}
+
+/**
  * No filter disappears silently. Unmapped widgets must declare an exclusion.
  * `scope` is a paired screen's fixed scope: like a fixed value it is
  * conjoined with every choice and can never be excluded, and a scope the

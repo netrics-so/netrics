@@ -412,6 +412,7 @@ export async function queryDashboardMeasure(
             slideScope,
             input.binding.exclusions,
             deviceScope,
+            { now, defaults, cache: freshnessReader.scopeMappings },
           ),
         );
       const { policy } = await resolveDataPolicy(

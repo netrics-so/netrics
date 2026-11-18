@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -15,7 +17,11 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import { DEFAULT_DATA_POLICY } from "@netrics/domain";
+import {
+  DEFAULT_DATA_POLICY,
+  type DashboardDataFilter,
+  type SlideFilterScope,
+} from "@netrics/domain";
 
 import {
   queryDashboardData,
@@ -812,6 +818,430 @@ describe("measure widget freshness (ADR 0025 §6)", () => {
     expect(data.freshness).toMatchObject({
       dataThrough: "2026-11-13",
       fetchedAt: at(-5 * MINUTE).toISOString(),
+    });
+  });
+});
+
+describe("app slide freshness (#767)", () => {
+  // An App Portfolio model over an App Store and a Google Play connection:
+  // a slide's app, or its linked product, counts only its own apps' rows.
+  const store: Record<string, string> = {};
+  let storeModelId: string;
+  let appFilter: DashboardDataFilter;
+  let mappingDatasetId: string;
+
+  beforeAll(async () => {
+    store.apple = await connection("App Store");
+    store.play = await connection("Google Play");
+    const rows = [
+      // The App Store app's ratings: checked today, the next one due.
+      [store.apple, "app-1", "2026-11-15", at(8 * HOUR)],
+      [store.apple, "app-2", "2026-11-14", at(7 * HOUR)],
+      // Google Play's rating report: an older day and no next time.
+      [store.play, "app-1", "2026-11-11", null],
+      [store.play, "app-2", "2026-11-13", at(6 * HOUR)],
+    ] as const;
+    for (const [connectionId, resource, dataThrough, nextExpectedAt] of rows)
+      await freshness(connectionId, "analytics", {
+        resource,
+        dataThrough,
+        nextExpectedAt,
+        checkedAt: at(-5 * MINUTE),
+      });
+    const service = createDataService(db, () => NOW);
+    const actor = { workspaceId, callerId };
+    // The install's mapping table links app-2 of both stores as one product.
+    const mapping = await service.saveManual(actor, {
+      definition: {
+        key: "store_mapping_freshness",
+        name: "Mapping",
+        version: 1,
+        mode: "snapshot",
+        grain: "One product per source app",
+        keyFields: ["app_key"],
+        retentionDays: null,
+        fields: ["app_key", "product_id"].map((id) => ({
+          id,
+          name: id,
+          type: "string" as const,
+          nullable: false,
+          classification: "internal" as const,
+        })),
+      },
+      records: [
+        {
+          values: { app_key: `${store.apple}:app-2`, product_id: "product:p" },
+        },
+        { values: { app_key: `${store.play}:app-2`, product_id: "product:p" } },
+      ],
+    });
+    const views = (connectionId: string) =>
+      `observation:${connectionId}:${metricIds["fresh.views"]}`;
+    // As the template's preparations: each row's app key, its mapping
+    // row's product, else the app key itself (resolveStoreProducts).
+    const resource =
+      "dimension." + createHash("sha256").update("resource").digest("hex");
+    const keyed = (id: string, input: string, connectionId: string) => ({
+      id,
+      type: "calculate" as const,
+      input,
+      fieldId: "app_key",
+      name: "App key",
+      expression: {
+        kind: "call" as const,
+        fn: "concat" as const,
+        args: [
+          {
+            kind: "literal" as const,
+            type: "string" as const,
+            value: `${connectionId}:`,
+          },
+          { kind: "field" as const, fieldId: resource },
+        ],
+      },
+    });
+    const preparation = await service.savePreparation(actor, {
+      name: "Store views",
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "apple", type: "source", datasetId: views(store.apple) },
+          { id: "play", type: "source", datasetId: views(store.play) },
+          { id: "mapping", type: "source", datasetId: mapping.datasetId },
+          keyed("apple_keyed", "apple", store.apple!),
+          keyed("play_keyed", "play", store.play!),
+          { id: "all", type: "append", inputs: ["apple_keyed", "play_keyed"] },
+          {
+            id: "mapped",
+            type: "join",
+            left: "all",
+            right: "mapping",
+            keys: [{ left: "app_key", right: "app_key" }],
+            mode: "left",
+            cardinality: "many_to_one",
+            rightPrefix: "map.",
+          },
+          {
+            id: "products",
+            type: "calculate",
+            input: "mapped",
+            fieldId: "product",
+            name: "Product",
+            expression: {
+              kind: "call",
+              fn: "coalesce",
+              args: [
+                { kind: "field", fieldId: "map.product_id" },
+                { kind: "field", fieldId: "app_key" },
+              ],
+            },
+          },
+        ],
+        outputs: ["products"],
+      },
+    });
+    await service.publishPreparation(actor, preparation.preparation.id, 1);
+    const prepared = `prepared:${preparation.preparation.id}:products`;
+    const model = await service.saveModel(actor, {
+      name: "Store views",
+      definition: {
+        version: 1,
+        datasets: [prepared],
+        relationships: [],
+        dimensions: [
+          {
+            id: "app",
+            name: "App",
+            datasetId: prepared,
+            fieldId: "product",
+          },
+        ],
+        measures: [
+          {
+            id: "views",
+            name: "Views",
+            kind: "aggregate",
+            datasetId: prepared,
+            aggregate: {
+              id: "views",
+              name: "Views",
+              op: "sum",
+              fieldId: "value",
+            },
+          },
+        ],
+      },
+    });
+    await service.publishModel(actor, model.model.id, 1);
+    storeModelId = model.model.id;
+    mappingDatasetId = mapping.datasetId;
+    await owner`
+      insert into data_template_installs (workspace_id, request_id,
+        request_hash, result)
+      values (${workspaceId}, gen_random_uuid(), ${"0".repeat(64)},
+        ${owner.json({ mappingDatasetId: mapping.datasetId })})`;
+    appFilter = {
+      id: "app",
+      name: "App",
+      type: "string",
+      mode: "values",
+      mappings: [{ modelId: storeModelId, dimensionId: "app" }],
+      defaultValue: null,
+    };
+  });
+
+  const measure = (slide: SlideFilterScope, screen: SlideFilterScope = {}) =>
+    withWorkspace(db, { workspaceId }, (tx) =>
+      queryDashboardMeasure(
+        tx,
+        workspaceId,
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          binding: {
+            modelId: storeModelId,
+            measureIds: ["views"],
+            groupBy: ["app"],
+            exclusions: [],
+          },
+          options: { view: "table", limit: 20 },
+        },
+        [appFilter],
+        {},
+        NOW,
+        DEFAULT_DATA_POLICY,
+        "en",
+        screen,
+        slide,
+        createFreshnessReader(workspaceId, manifests),
+      ),
+    );
+  const app = (...values: string[]) => ({
+    app: { kind: "values" as const, values },
+  });
+  /** The apps (products) whose rows the widget shows. */
+  const shown = (data: Awaited<ReturnType<typeof measure>>) =>
+    (data.result?.rows ?? []).map((row) => row.dimensions.app).sort();
+
+  it("counts only the App Store app's rows on its slide", async () => {
+    const data = await measure(app(`${store.apple}:app-1`));
+    // Its rows are the App Store app's, and so is its freshness.
+    expect(shown(data)).toEqual([`${store.apple}:app-1`]);
+    expect(data.freshness).toMatchObject({
+      dataThrough: "2026-11-15",
+      nextExpectedAt: at(8 * HOUR).toISOString(),
+    });
+  });
+
+  it("counts the apps of both stores on a linked product's slide", async () => {
+    const data = await measure(app("product:p"));
+    expect(shown(data)).toEqual(["product:p"]);
+    expect(data.freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+      nextExpectedAt: at(6 * HOUR).toISOString(),
+    });
+  });
+
+  it("resolves a screen's product scope as a slide's", async () => {
+    const data = await measure({}, app("product:p"));
+    expect(data.freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+      nextExpectedAt: at(6 * HOUR).toISOString(),
+    });
+  });
+
+  it("keeps an unscoped widget's freshness over every app", async () => {
+    const data = await measure({});
+    expect(data.freshness).toMatchObject({ dataThrough: "2026-11-11" });
+    expect(data.freshness).not.toHaveProperty("nextExpectedAt");
+  });
+
+  it("has no freshness, and no rows, where slide and screen share no app", async () => {
+    const data = await measure(
+      app(`${store.apple}:app-1`),
+      app(`${store.play}:app-1`),
+    );
+    expect(shown(data)).toEqual([]);
+    expect(data.freshness).toBeUndefined();
+  });
+
+  it("counts only the apps a slide and a screen share", async () => {
+    // The slide shows the App Store and the Play app-1, the screen Play's.
+    const data = await measure(
+      app(`${store.apple}:app-1`, `${store.play}:app-1`),
+      app(`${store.play}:app-1`),
+    );
+    expect(shown(data)).toEqual([`${store.play}:app-1`]);
+    expect(data.freshness).toMatchObject({ dataThrough: "2026-11-11" });
+    expect(data.freshness).not.toHaveProperty("nextExpectedAt");
+    // Two App Store apps on the slide, one of them on the screen.
+    const apple = await measure(
+      app(`${store.apple}:app-1`, `${store.play}:app-1`),
+      app(`${store.apple}:app-1`),
+    );
+    expect(shown(apple)).toEqual([`${store.apple}:app-1`]);
+    expect(apple.freshness).toMatchObject({
+      dataThrough: "2026-11-15",
+      nextExpectedAt: at(8 * HOUR).toISOString(),
+    });
+  });
+
+  it("falls back to every app for a product no mapping row names", async () => {
+    const data = await measure(app("product:unknown"));
+    expect(shown(data)).toEqual([]);
+    expect(data.freshness).toMatchObject({ dataThrough: "2026-11-11" });
+    expect(data.freshness).not.toHaveProperty("nextExpectedAt");
+  });
+
+  it("falls back to every app when the mapping table has expired", async () => {
+    const bindings = {
+      [`observation:${store.apple}:${metricIds["fresh.views"]}`]: [],
+      [`observation:${store.play}:${metricIds["fresh.views"]}`]: [],
+      [mappingDatasetId]: [],
+    };
+    const read = (now: Date) =>
+      withWorkspace(db, { workspaceId }, async (tx) =>
+        createFreshnessReader(workspaceId, manifests).read(
+          tx,
+          await modelFreshnessDependencies(
+            tx,
+            workspaceId,
+            { bindings, dependencies: {} },
+            app("product:p"),
+            [],
+            {},
+            { now },
+          ),
+        ),
+      );
+    expect((await read(NOW)).freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+    });
+    await owner`update data_generations set expires_at = ${at(-HOUR)}
+      where dataset_id = ${mappingDatasetId}`;
+    try {
+      const found = await read(NOW);
+      expect(found.freshness).toMatchObject({ dataThrough: "2026-11-11" });
+      expect(found.freshness).not.toHaveProperty("nextExpectedAt");
+    } finally {
+      await owner`update data_generations set expires_at = null
+        where dataset_id = ${mappingDatasetId}`;
+    }
+  });
+
+  it("reads a response's mapping table once for every widget", async () => {
+    const reader = createFreshnessReader(workspaceId, manifests);
+    const resolve = () =>
+      withWorkspace(db, { workspaceId }, async (tx) =>
+        reader.read(
+          tx,
+          await modelFreshnessDependencies(
+            tx,
+            workspaceId,
+            {
+              bindings: {
+                [`observation:${store.play}:${metricIds["fresh.views"]}`]: [],
+                [mappingDatasetId]: [],
+              },
+              dependencies: {},
+            },
+            app("product:p"),
+            [],
+            {},
+            { now: NOW, cache: reader.scopeMappings },
+          ),
+        ),
+      );
+    expect((await resolve()).freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+    });
+    expect([...reader.scopeMappings.products.keys()]).toEqual([
+      mappingDatasetId,
+    ]);
+    // Read from the cache, not the table: an edit since is not seen.
+    const cached = reader.scopeMappings.products.get(mappingDatasetId);
+    reader.scopeMappings.products.set(
+      mappingDatasetId,
+      new Map([["product:p", [`${store.play}:app-1`]]]),
+    );
+    expect((await resolve()).freshness).toMatchObject({
+      dataThrough: "2026-11-11",
+    });
+    expect(cached?.get("product:p")).toHaveLength(2);
+  });
+
+  it("reads the mapping table under the policy's query timeout", async () => {
+    const timeout = await withWorkspace(db, { workspaceId }, async (tx) => {
+      await modelFreshnessDependencies(
+        tx,
+        workspaceId,
+        { bindings: { [mappingDatasetId]: [] }, dependencies: {} },
+        app("product:p"),
+        [],
+        {},
+        {
+          now: NOW,
+          defaults: { ...DEFAULT_DATA_POLICY, queryTimeoutMs: 4321 },
+        },
+      );
+      const [row] = await tx.execute<{ timeout: string }>(
+        sql`select current_setting('statement_timeout') as timeout`,
+      );
+      return row!.timeout;
+    });
+    expect(timeout).toBe("4321ms");
+  });
+
+  it("resolves no product for store values or app keys", async () => {
+    const reader = createFreshnessReader(workspaceId, manifests);
+    await withWorkspace(db, { workspaceId }, (tx) =>
+      modelFreshnessDependencies(
+        tx,
+        workspaceId,
+        { bindings: { [mappingDatasetId]: [] }, dependencies: {} },
+        app("app_store", `${store.apple}:app-1`),
+        [],
+        {},
+        { now: NOW, cache: reader.scopeMappings },
+      ),
+    );
+    expect(reader.scopeMappings.isMapping.size).toBe(0);
+    expect(reader.scopeMappings.products.size).toBe(0);
+  });
+
+  it("gives a screen the slide's freshness (device payload)", async () => {
+    const dashboard = await dashboardWith("App Portfolio");
+    await owner`update dashboards set data_filters = ${owner.json([appFilter] as never)}
+      where id = ${dashboard}`;
+    const binding = {
+      modelId: storeModelId,
+      measureIds: ["views"],
+      groupBy: [],
+      exclusions: [],
+    };
+    for (const [position, scope, title] of [
+      [0, {}, "All apps"],
+      [1, app(`${store.apple}:app-1`), "Wurfel"],
+      [2, app("product:p"), "voilà"],
+    ] as const)
+      await widget(dashboard, await slideOf(dashboard, position, scope), {
+        type: "measure",
+        title,
+        y: 0,
+        model_id: storeModelId,
+        model_binding: binding,
+        options: { view: "value", limit: 20 },
+      });
+    const payload = await v2(dashboard);
+    expect(dataOf(payload, "All apps").freshness).toMatchObject({
+      dataThrough: "2026-11-11",
+    });
+    expect(dataOf(payload, "Wurfel").freshness).toMatchObject({
+      dataThrough: "2026-11-15",
+      nextExpectedAt: at(8 * HOUR).toISOString(),
+    });
+    expect(dataOf(payload, "voilà").freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+      nextExpectedAt: at(6 * HOUR).toISOString(),
     });
   });
 });

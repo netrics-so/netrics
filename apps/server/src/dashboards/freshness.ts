@@ -1,26 +1,30 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DeviceStatusStream, WidgetFreshness } from "@netrics/contracts";
 import type {
   ConnectorManifest,
   FreshnessStream,
 } from "@netrics/connector-sdk";
 import {
+  resolveDataPolicy,
   schema,
   type ConnectionFreshnessRow,
   type Transaction,
 } from "@netrics/database";
 import {
+  DEFAULT_DATA_POLICY,
   DEFAULT_LOCALE,
   isFreshnessLate,
   isFreshnessOverdue,
   localizedFreshnessStreamName,
   RESOURCE_DIMENSION,
-  slideScopeResource,
+  scopedFreshnessResources,
   type DashboardFilterExclusion,
+  type DataPolicy,
   type Locale,
   type SlideFilterScope,
 } from "@netrics/domain";
 
+import { createDataLoader, DataServiceError } from "../data/service.js";
 import {
   relevantFreshnessRows,
   selectedResourcesOf,
@@ -97,6 +101,8 @@ export interface FreshnessReader {
     tx: Transaction,
     connectionIds: readonly string[],
   ): Promise<Map<string, DeviceStatusStream[]>>;
+  /** The mapping tables product scopes resolve through, read once (#767). */
+  readonly scopeMappings: ScopeMappingCache;
 }
 
 export function createFreshnessReader(
@@ -171,6 +177,7 @@ export function createFreshnessReader(
   }
 
   return {
+    scopeMappings: createScopeMappingCache(),
     async read(tx, dependencies) {
       if (!dependencies.length) return { overdue: false };
       await load(
@@ -448,6 +455,7 @@ export async function modelFreshnessDependencies(
   exclusions: readonly DashboardFilterExclusion[],
   /** A paired screen's fixed scope; it can never be excluded. */
   deviceScope: SlideFilterScope = {},
+  read?: ScopeRead,
 ): Promise<FreshnessDependency[]> {
   return sourceFreshnessDependencies(
     tx,
@@ -456,6 +464,7 @@ export async function modelFreshnessDependencies(
     slideScope,
     exclusions,
     deviceScope,
+    read,
   );
 }
 
@@ -463,9 +472,11 @@ export async function modelFreshnessDependencies(
  * The streams of a model's datasets. A source dataset resolves to its
  * connection's dataset key, an observation dataset through its metric
  * definition to the metric key. `resources:` and manual datasets have no
- * stream. The resource is the one the slide scope names for the
- * connection, else the one a screen's scope names (#500), else every
- * selected resource.
+ * stream. The resources are the apps of the connection that both the
+ * slide's scope and a screen's scope (#500) pick, a linked product's
+ * through the install's mapping table (scopedFreshnessResources, #767); a
+ * connection neither scope names an app of adds nothing, and a scope that
+ * picks no apps leaves every selected resource.
  */
 export async function sourceFreshnessDependencies(
   tx: Transaction,
@@ -475,6 +486,8 @@ export async function sourceFreshnessDependencies(
   exclusions: readonly DashboardFilterExclusion[],
   /** A paired screen's fixed scope; it can never be excluded. */
   deviceScope: SlideFilterScope = {},
+  /** How to read the mapping a product scope resolves through (#767). */
+  read?: ScopeRead,
 ): Promise<FreshnessDependency[]> {
   const datasetIds: string[] = [];
   const observations: { connectionId: string; metricId: string }[] = [];
@@ -529,16 +542,184 @@ export async function sourceFreshnessDependencies(
       if (key !== undefined) found.push({ connectionId, key, metric: true });
     }
   }
-  return found.map(({ connectionId, key, metric }) => {
-    const named = (scoped: { resource?: string; conflict: boolean }) =>
-      scoped.resource !== undefined && !scoped.conflict
-        ? scoped.resource
-        : undefined;
-    const resource =
-      named(slideScopeResource(slideScope, connectionId, exclusions)) ??
-      named(slideScopeResource(deviceScope, connectionId, []));
-    return metric
-      ? { connectionId, metricKey: key, resource }
-      : { connectionId, datasetKey: key, resource };
+  const apps = await scopeProductApps(
+    tx,
+    workspaceId,
+    ids,
+    [slideScope, deviceScope],
+    read,
+  );
+  return found.flatMap(({ connectionId, key, metric }) => {
+    const slide = scopedFreshnessResources(
+        slideScope,
+        connectionId,
+        exclusions,
+        apps,
+      ),
+      screen = scopedFreshnessResources(deviceScope, connectionId, [], apps);
+    const resources =
+      slide && screen
+        ? slide.filter((resource) => screen.includes(resource))
+        : (slide ?? screen);
+    return (resources ?? [undefined]).map((resource) =>
+      metric
+        ? { connectionId, metricKey: key, resource }
+        : { connectionId, datasetKey: key, resource },
+    );
   });
+}
+
+/** When and under which data policy a scope's mapping table is read. */
+export interface ScopeRead {
+  now: Date;
+  /** The deployment's data policy (NETRICS_DATA_POLICY). */
+  defaults?: DataPolicy;
+  /**
+   * What one response already read (FreshnessReader.scopeMappings): a
+   * screen's payload resolves the same products for every widget.
+   */
+  cache?: ScopeMappingCache;
+}
+
+/**
+ * The mapping tables one response has read (#767): per dataset id whether
+ * it is a store-template install's mapping, and per mapping its products'
+ * apps (null: the table is gone or not there yet).
+ */
+export interface ScopeMappingCache {
+  isMapping: Map<string, boolean>;
+  products: Map<string, Map<string, string[]> | null>;
+  policy?: DataPolicy;
+}
+
+export function createScopeMappingCache(): ScopeMappingCache {
+  return { isMapping: new Map(), products: new Map() };
+}
+
+/** The scope values that name a linked product (store-template-service). */
+const PRODUCT_PREFIX = "product:";
+
+const APP_KEY =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:.+$/i;
+
+/** Mapping tables that are gone or not there yet map nothing. */
+const NO_MAPPING = new Set([
+  "data_source_expired",
+  "data_source_history_unavailable",
+  "data_source_not_found",
+]);
+
+/**
+ * The apps of each product a scope names (#767): a store-template app
+ * slide's `product:<id>` stands for the apps the install's mapping table
+ * maps to it (store-template-products, resolveStoreProducts). The mapping
+ * is the one of a store-template install among the model's datasets, read
+ * as the model reads it (createDataLoader), under the policy's query
+ * timeout. Only `product:` values are resolved; a product no mapping row
+ * names maps to nothing, and its filter then picks no apps.
+ */
+async function scopeProductApps(
+  tx: Transaction,
+  workspaceId: string,
+  ids: ReadonlySet<string>,
+  scopes: readonly SlideFilterScope[],
+  read: ScopeRead | undefined,
+): Promise<Map<string, string[]>> {
+  const apps = new Map<string, string[]>();
+  const products = new Set(
+    scopes.flatMap((scope) =>
+      Object.values(scope).flatMap((value) =>
+        value.kind === "values"
+          ? value.values.filter(
+              (raw): raw is string =>
+                typeof raw === "string" && raw.startsWith(PRODUCT_PREFIX),
+            )
+          : [],
+      ),
+    ),
+  );
+  const datasets = [...ids].filter((id) => UUID.test(id));
+  if (!read || !products.size || !datasets.length) return apps;
+  const cache = read.cache ?? createScopeMappingCache();
+  if (!cache.policy) {
+    cache.policy = (
+      await resolveDataPolicy(
+        tx,
+        workspaceId,
+        read.defaults ?? DEFAULT_DATA_POLICY,
+      )
+    ).policy;
+  }
+  const policy = cache.policy;
+  // The policy's query timeout, as dashboard data reads set it.
+  await tx.execute(
+    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+  );
+  const unknown = datasets.filter((id) => !cache.isMapping.has(id));
+  if (unknown.length) {
+    for (const id of unknown) cache.isMapping.set(id, false);
+    for (const install of await tx
+      .select({
+        mapping: sql<string>`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+      })
+      .from(schema.dataTemplateInstalls)
+      .where(
+        and(
+          eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
+          inArray(
+            sql`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+            unknown,
+          ),
+        ),
+      ))
+      cache.isMapping.set(install.mapping, true);
+  }
+  const mappings = datasets.filter((id) => cache.isMapping.get(id));
+  for (const mapping of mappings) {
+    if (!cache.products.has(mapping))
+      cache.products.set(
+        mapping,
+        await readMapping(tx, workspaceId, mapping, read.now, policy),
+      );
+    for (const [product, keys] of cache.products.get(mapping) ?? [])
+      if (products.has(product))
+        apps.set(product, [...(apps.get(product) ?? []), ...keys]);
+  }
+  return apps;
+}
+
+/** A mapping table's products and their apps; null when it has no rows. */
+async function readMapping(
+  tx: Transaction,
+  workspaceId: string,
+  mapping: string,
+  now: Date,
+  policy: DataPolicy,
+): Promise<Map<string, string[]> | null> {
+  let rows: Record<string, unknown>[];
+  try {
+    rows = (
+      await createDataLoader(tx, workspaceId, now, {
+        policy,
+        allowPendingResults: true,
+      }).load(mapping)
+    ).rows;
+  } catch (error) {
+    if (error instanceof DataServiceError && NO_MAPPING.has(error.code))
+      return null;
+    throw error;
+  }
+  // As resolveStoreProducts: an app's first mapping row decides.
+  const products = new Map<string, string[]>(),
+    seen = new Set<string>();
+  for (const row of rows) {
+    const key = row.app_key,
+      product = row.product_id;
+    if (typeof key !== "string" || typeof product !== "string") continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (product.startsWith(PRODUCT_PREFIX) && APP_KEY.test(key))
+      products.set(product, [...(products.get(product) ?? []), key]);
+  }
+  return products;
 }
