@@ -1890,7 +1890,50 @@ function buildPortfolioSlides(
       });
     // An app's model tables (version 5): its ratings, and a Google Play
     // app's proceeds by currency.
-    const fittedTables = fitTables([...row(band), ...row(lower)], (entry) =>
+    // Version 6: a linked product's total with its split takes the left
+    // third's upper half (four rows: both stores' lines and their
+    // freshness at every theme font scale), its latest review the lower
+    // half; the band (h 3) and the tables (h 5) share the other two thirds.
+    const linkedRows = (): Placed[] => {
+      const place = (
+        entries: { key: string; widget: Unplaced }[],
+        y: number,
+        h: number,
+      ): Placed[] => {
+        const count = entries.length,
+          base = Math.floor(8 / count),
+          extra = 8 - base * count;
+        let x = 4;
+        return entries.map(({ key, widget }, index) => {
+          const w = index < extra ? base + 1 : base;
+          const placed = { key, widget: { ...widget, x, y, w, h } as Widget };
+          x += w;
+          return placed;
+        });
+      };
+      const downloads = band.find((entry) => entry.key === key("downloads"))!;
+      const review = lower.find((entry) => entry.key === key("review"));
+      const top = band.filter((entry) => entry !== downloads);
+      const tables = lower.filter((entry) => entry !== review);
+      return [
+        {
+          key: downloads.key,
+          widget: { ...downloads.widget, x: 0, y: 0, w: 4, h: 4 } as Widget,
+        },
+        ...place(top, 0, 3),
+        ...(top.length ? place(tables, 3, 5) : place(tables, 0, 8)),
+        ...(review
+          ? [
+              {
+                key: review.key,
+                widget: { ...review.widget, x: 0, y: 4, w: 4, h: 4 } as Widget,
+              },
+            ]
+          : []),
+      ];
+    };
+    const rows = linked ? linkedRows() : [...row(band), ...row(lower)];
+    const fittedTables = fitTables(rows, (entry) =>
       entry === key("ratings")
         ? RATINGS_TABLE
         : entry === key("revenue")

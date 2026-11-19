@@ -926,6 +926,40 @@ swapped in.
 
 Version 4 installs get version 5 through the reviewed template update.
 
+### Both stores on a linked product's slide (template version 6)
+
+[#784](https://github.com/netrics-so/netrics/issues/784): a product in both
+stores showed only its App Store app's numbers on its slide. From version
+6 its slide shows both stores:
+
+- **Downloads**: a total with a line per store ("635", "App Store 412",
+  "Google Play 223"): the downloads model in a value view grouped by store.
+  A measure value view with a grouping shows its total and its groups; the
+  server adds the total (`totals`) for a sum or count over a complete
+  result, one per currency, and screens show the groups alone where a
+  total makes no sense. The total shrinks (84 down to 36 units) before a
+  group's line gives way (`measureSplitLayout`, on the web and netrics TV,
+  with shared test vectors); the readability check counts its lines.
+  Like the overview's tables it covers the date filter's range, not the
+  last 30 days.
+- **Revenue** (paid): the App Store's revenue in the display currency over
+  the last 30 days, as before, and beside the ratings Google Play's
+  proceeds per currency (a measure table of the proceeds model for the
+  Google Play store). Models do not convert currencies, so the two are not
+  added up.
+- **Ratings** per store listing and the App Store's latest review, as
+  before.
+
+The total takes the left third's upper half (four rows, so both stores'
+lines and their freshness fit at every theme font scale) and the latest
+review the lower half; the App Store revenue and website visitors (three
+rows) and the ratings and Google Play proceeds (five rows) share the other
+two thirds. A single-store app keeps version 5's slide; a free product has
+no revenue widgets. The freshness line of a tile that combines both stores lists
+each store's day and next time (ADR 0025 sections 7 and 8). Version 5
+installs get version 6 through the reviewed template update; only the
+linked products' slides change.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

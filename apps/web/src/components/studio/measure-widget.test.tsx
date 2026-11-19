@@ -818,7 +818,7 @@ describe("a total with its split, and freshness per source (#784)", () => {
     html
       .replace(/<[^>]+>/g, "|")
       .replace(/\|+/g, "|")
-      .replace(/ /g, " ");
+      .replace(/\u202f/g, " ");
 
   it("shows the total and a line per store", () => {
     const html = text(view(data(), { w: 4, h: 3 }));

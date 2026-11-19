@@ -32,7 +32,6 @@ import {
   measureTableLayout,
   measureSplitLayout,
   MEASURE_SPLIT_SAMPLES,
-  MEASURE_TABLE_FOOTER_SAMPLES,
   parseTextWidget,
   placementRect,
   screenFrame,
@@ -574,7 +573,7 @@ export function formatWarnings(
           { length: widget.splitLines },
           () => MEASURE_SPLIT_SAMPLES.line,
         ),
-        footer: MEASURE_TABLE_FOOTER_SAMPLES,
+        footer: MEASURE_SPLIT_SAMPLES.footer,
       });
       if (!fit.fits)
         warn("rows_cut", widget.id, null, {

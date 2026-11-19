@@ -529,8 +529,9 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     expect(await updateAvailable(requestId)).toBe(true);
     const { plan, copy } = await applyUpdate(requestId);
     expect(plan).toMatchObject({ fromVersion: 5, toVersion: 6 });
-    // Only the linked product's downloads change; single-store apps and
-    // the overview stay as they were.
+    // Only the linked product's slide changes (its downloads, and where
+    // its ratings and review sit); single-store apps and the overview stay
+    // as they were.
     expect(
       plan.records
         .flatMap((record) => record.items)
@@ -541,7 +542,11 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
             item.outcome,
           ].join(" "),
         ),
-    ).toEqual(["dashboard:portfolio#widget:app:downloads changed template"]);
+    ).toEqual([
+      "dashboard:portfolio#widget:app:downloads changed template",
+      "dashboard:portfolio#widget:app:ratings changed template",
+      "dashboard:portfolio#widget:app:review changed template",
+    ]);
     // Nothing changes on screens until the copy is swapped in.
     expect(shape((await readDashboard(result.dashboardId)).slides[2]!)).toEqual(
       shape(v5.slides[2]!),

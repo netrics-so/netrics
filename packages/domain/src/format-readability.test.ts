@@ -231,7 +231,7 @@ describe("formatWarnings", () => {
   });
 
   it("rows_cut: a total with its split shows every group line (#784)", () => {
-    const split = (lines: number, h = 3, w = 4): ReadabilityWidget => ({
+    const split = (lines: number, h = 4, w = 4): ReadabilityWidget => ({
       id: "s",
       type: "measure",
       x: 0,
@@ -242,8 +242,12 @@ describe("formatWarnings", () => {
       rows: null,
       splitLines: lines,
     });
-    // Two stores' lines under the total, in a third of a 16:9 band.
+    // Two stores' lines under the total, in a third of a 16:9 slide's
+    // upper half; a three-row band leaves no room for the smallest total.
     expect(formatWarnings(slide([split(2)]), "16x9", context)).toEqual([]);
+    expect(
+      codes(formatWarnings(slide([split(2, 3)]), "16x9", context)),
+    ).toEqual(["16x9 rows_cut s"]);
     // Twenty groups do not fit under a total of the smallest size: cut.
     const warnings = formatWarnings(slide([split(20)]), "16x9", context);
     expect(codes(warnings)).toEqual(["16x9 rows_cut s"]);

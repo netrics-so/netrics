@@ -1442,11 +1442,16 @@ export const MEASURE_SPLIT_METRICS = {
 
 /**
  * What the readability check assumes of a total with its split, which it
- * checks without data: a seven-digit total and a store's line.
+ * checks without data: a seven-digit total, a store's line, and its
+ * footer: a slide scope's line ("App: …") and a freshness line over two
+ * stores that takes a line per store (#784).
  */
 export const MEASURE_SPLIT_SAMPLES = {
   total: "1.234.567",
   line: ["Google Play", "1.234.567"] as const,
+  footer: ["App: Focus Timer: Pomodoro", null, null] as readonly (
+    string | null
+  )[],
 } as const;
 
 /**
@@ -1532,13 +1537,23 @@ export function measureSplitLayout(
     const fitted = layout(shown, footer);
     if (fitted.ok || shown === 0)
       return {
-        valueSize: Math.max(0, fitted.valueSize),
+        // Never below the smallest size: a total too large for its tile
+        // is the readability check's to flag, never drawn unreadably.
+        valueSize:
+          input.total === null
+            ? 0
+            : Math.max(v.valueMin * scale, fitted.valueSize),
         shown,
         rowsLine: line,
         fits: false,
       };
   }
-  return { valueSize: 0, shown: 0, rowsLine: null, fits: false };
+  return {
+    valueSize: input.total === null ? 0 : v.valueMin * scale,
+    shown: 0,
+    rowsLine: null,
+    fits: false,
+  };
 }
 
 /** Rows a table shows: its limit, its rows and the room, whichever is least. */

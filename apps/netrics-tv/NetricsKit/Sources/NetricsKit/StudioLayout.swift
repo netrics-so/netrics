@@ -1023,10 +1023,14 @@ public enum StudioLayout {
         while shown >= 0 {
             let line = rowsLine?(shown, all)
             let fitted = layout(shown, line.map { footer + [$0] } ?? footer)
-            if fitted.ok || shown == 0 { return (Swift.max(0, fitted.valueSize), shown, line, false) }
+            // Never below the smallest size: the readability check flags a
+            // total too large for its tile; it is never drawn unreadably.
+            if fitted.ok || shown == 0 {
+                return (total == nil ? 0 : Swift.max(v.valueMin * scale, fitted.valueSize), shown, line, false)
+            }
             shown -= 1
         }
-        return (0, 0, nil, false)
+        return (total == nil ? 0 : v.valueMin * scale, 0, nil, false)
     }
 
     /** A row label's size: shrunk down to cellMin, then truncated. */

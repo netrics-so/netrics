@@ -4,7 +4,8 @@ Status: accepted design (2026-11-16;
 [#701](https://github.com/netrics-so/netrics/issues/701), milestone 11.2).
 Implemented by #702 (SDK, storage, scheduler), #703 (connectors), #704
 (widget data and device payload), #705 (web) and #706 (netrics TV). It
-describes no shipped behaviour yet.
+describes no shipped behaviour yet. Amended 2026-11-19 by #784: widgets
+that combine sources list each source's freshness (sections 7 and 8).
 
 Extends ADR 0015 (widgets), ADR 0018 section 5 (freshness footer) and
 ADR 0022 (models and their sources).
@@ -329,6 +330,30 @@ complete only up to it), ties broken by the earliest `nextExpectedAt`;
 there is no periodic row. `fetchedAt` is the oldest `checked_at` of all
 rows used; `nextCheckAt` the earliest `next_due_at` of their connections.
 
+**Per source** ([#784](https://github.com/netrics-so/netrics/issues/784),
+2026-11-19; replaces "the least fresh source wins" for screens): when the
+rows used come from more than one connector, the object also carries
+`sources`, one summary per connector by the same rule over that
+connector's rows (several connections of one connector are one source),
+in name order:
+
+```ts
+sources?: Array<{
+  source: string; // "App Store", "Google Play"; else the connector's name
+  // and the fields above: kind, stream, fetchedAt, dataThrough, period,
+  // nextExpectedAt, late, nextCheckAt
+}>; // 2 to 10 entries; absent for one connector
+```
+
+The source is named by its store for the store connectors ("App Store"
+for App Store Connect, "Google Play"), else by the connector's name in
+the payload's language. The top-level fields stay the least fresh
+summary, so clients that do not know `sources` show what they showed
+before. Under the old rule a model over App Store sales and Google Play
+installs showed Play's older day and dropped App Store's next time; now
+screens list both. `overdue` and `status: "stale"` are unchanged: any row
+overdue makes the widget stale.
+
 **Late** is decided from stored values, not the clock:
 `next_expected_at + grace < checked_at`, i.e. a sync after the expected
 time still did not find the period; `expected_from` plays no part. A row
@@ -374,6 +399,29 @@ Lists that cover several streams (a connection's page, a detail view)
 prefix the stream name: "Sales up to Nov 15 · next ~21:00", "Reviews
 checked 10 min ago · next check ~14:30". Widgets do not repeat it; their
 label already names the metric.
+
+**Several sources** (section 7's `sources`, #784): a widget lists each
+source by name with its own parts, on the web and on netrics TV alike, in
+the first of these forms that fits one line of the tile's content width
+(measured with the fit's glyph widths, `freshnessLevelFit`):
+
+| Form                                    | English                                                                                 | German                                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 1. Full                                 | App Store up to Nov 17 · next ~9:00 PM · Google Play up to Nov 11 · fetched 10 min. ago | App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov. · abgerufen vor 10 Min. |
+| 2. Without the fetch                    | App Store up to Nov 17 · next ~9:00 PM · Google Play up to Nov 11                       | App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov.                         |
+| 3. Days only (the "next" parts dropped) | App Store up to Nov 17 · Google Play up to Nov 11                                       | App Store bis 17. Nov. · Google Play bis 11. Nov.                                          |
+| 4. Short days                           | App Store up to 11/17 · Google Play up to 11/11                                         | App Store bis 17.11. · Google Play bis 11.11.                                              |
+| 5. A line per source                    | App Store up to 11/17 ⏎ Google Play up to 11/11                                         | App Store bis 17.11. ⏎ Google Play bis 11.11.                                              |
+
+A source is never left out and no form is cut: where even form 4 does
+not fit, each source takes its own line (form 5). A measure table's fit
+(#768) counts the chosen form's lines as freshness lines, so rows give
+way, not the footer. A late source reads "Nov 12 not published yet" in
+forms 1 and 2; a continuous one "Vercel checked 10 min ago". Under a
+warning every form keeps only the days (and "not published yet"); a
+provider overdue by a day keeps its one warning line. Scroll cards, which
+grow with their content, show form 2 and let it wrap. A monthly source
+keeps its month's name in form 4. One source keeps the single line above.
 
 Precedence, highest first:
 

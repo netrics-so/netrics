@@ -464,7 +464,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
   const APP_SLIDE_HASHES: Record<number, string> = {
     4: "034364f9fb26ab383278ff8a92015b88fdb1c4d10bc165055f877cb2ec827622",
     5: "71bd572ac6b0d3e39dae1b4f718cf6fdf3ca2b5e261f1c11ee82617d73b4df3d",
-    6: "7d85022a2b46aea4922ebc9f23d738ebe5b37d53a2a949e6e0bcebc4719685cd",
+    6: "feda3b8dcb58f02f8db9dbe233dec05e9bada2093ef64b490c1584df6262c268",
   };
   it("needs a version bump for any app slide change; 4 and 5 stay frozen", () => {
     const hash = (template: typeof storeTemplate) =>
@@ -506,31 +506,32 @@ describe("version 4: an overview and one slide per app (#709)", () => {
         widget.h,
       ]),
     ).toEqual([
+      // Both stores' downloads: the total and a line per store, in the
+      // left third's upper half (room for both lines at every font scale).
+      ["measure:downloads:value", "Downloads", 0, 0, 4, 4],
       // The App Store's revenue in the display currency, as before.
       [
         "metric:app_store_connect.proceeds",
         "Revenue, last 30 days · App Store",
-        0,
+        4,
         0,
         4,
         3,
       ],
-      // Both stores' downloads: the total and a line per store.
-      ["measure:downloads:value", "Downloads and user installs", 4, 0, 4, 3],
       ["metric:vercel.visitors", "Website visitors, last 30 days", 8, 0, 4, 3],
-      ["measure:rating:table", "Store ratings", 0, 3, 4, 5],
+      ["measure:rating:table", "Store ratings", 4, 3, 4, 5],
       // Google Play's proceeds per currency, beside the ratings.
       [
         "measure:proceeds:table",
         "Proceeds after fees · Google Play",
-        4,
+        8,
         3,
         4,
         5,
       ],
-      ["review", null, 8, 3, 4, 5],
+      ["review", null, 0, 4, 4, 4],
     ]);
-    const split = paid.widgets[1]!;
+    const split = paid.widgets[0]!;
     if (split.type !== "measure") throw new Error("not a measure");
     expect(split.binding.groupBy).toEqual(["store"]);
     expect(split.options).toMatchObject({ view: "value", limit: 2 });
@@ -963,6 +964,16 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
       stores: ["google-play"],
       website: null,
     },
+    // Version 6 (#784): the widest linked product, paid, with a website.
+    {
+      productId: "product:both",
+      name: "Both Stores",
+      paid: true,
+      icon: null,
+      appStore: { connectionId: apple.id, appId: "1002" },
+      stores: ["app-store-connect", "google-play"],
+      website: { connectionId: apple.id, projectId: "prj_both" },
+    },
   ];
   const requestOf = (template: typeof storeTemplate, locale: "en" | "de") => {
     const record = buildAll({ ...fixtureInputs, locale, apps }, template).at(
@@ -1000,6 +1011,12 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
               rows:
                 widget.type === "table" ||
                 (widget.type === "measure" && widget.options.view === "table")
+                  ? widget.options.limit
+                  : null,
+              splitLines:
+                widget.type === "measure" &&
+                widget.options.view === "value" &&
+                widget.binding.groupBy.length
                   ? widget.options.limit
                   : null,
               columns:
@@ -1063,7 +1080,9 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
   it("ranks the downloads and ratings by their measure; proceeds stay by app", () => {
     const [overview, focus, timer] = requestOf(storeTemplate, "en").slides!;
     // Version 4's overview: one slide, two rows of h 4.
-    expect(overview!.widgets.map((widget) => widget.h)).toEqual([4, 4, 4, 4]);
+    expect(overview!.widgets.map((widget) => widget.h)).toEqual([
+      4, 4, 4, 4, 4,
+    ]);
     const tables = overview!.widgets.flatMap((widget) =>
       widget.type === "measure" ? [widget] : [],
     );
