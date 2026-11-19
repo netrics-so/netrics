@@ -427,6 +427,53 @@ export function dashboardModelQuery(
   };
 }
 
+/** A measure widget's options as far as they reach its binding (#768). */
+export interface MeasureTableOptions {
+  view: DashboardMeasureView;
+  order?: ModelQueryOrder;
+  labels?: Record<string, string>;
+}
+
+/**
+ * The order a measure widget's query applies (#768): a table's, by one of
+ * the measures it shows. An order on another view (a chart keeps its
+ * dimension order, a time series its latest points) or by a measure the
+ * binding no longer has is ignored, never refused.
+ */
+export function measureQueryOrder(
+  binding: Pick<MeasureWidgetBinding, "measureIds">,
+  options: MeasureTableOptions,
+): ModelQueryOrder | undefined {
+  const order = options.order;
+  return order &&
+    options.view === "table" &&
+    binding.measureIds.includes(order.measureId)
+    ? order
+    : undefined;
+}
+
+/**
+ * A measure widget's options after its binding or view changed (#768): the
+ * order only while it is a table of that measure, the column labels only
+ * for the dimensions and measures it still shows.
+ */
+export function measureOptionsForBinding<O extends MeasureTableOptions>(
+  binding: Pick<MeasureWidgetBinding, "measureIds" | "groupBy">,
+  options: O,
+): O {
+  const { order: _order, labels, ...rest } = options;
+  const order = measureQueryOrder(binding, options);
+  const shown = new Set([...binding.groupBy, ...binding.measureIds]);
+  const kept = labels
+    ? Object.fromEntries(Object.entries(labels).filter(([id]) => shown.has(id)))
+    : {};
+  return {
+    ...rest,
+    ...(order ? { order } : {}),
+    ...(Object.keys(kept).length ? { labels: kept } : {}),
+  } as O;
+}
+
 /** Time-ordered charts show the most recent `limit` points (still ascending);
  * tables and categorical charts show the first page of the ordered groups. */
 export function measureViewWindow(

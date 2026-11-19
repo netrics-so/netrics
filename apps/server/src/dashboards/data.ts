@@ -11,6 +11,7 @@ import {
 } from "@netrics/contracts";
 import {
   dashboardModelQuery,
+  measureQueryOrder,
   measureViewWindow,
   compareDataValues,
   dimensionValueLabels,
@@ -273,7 +274,8 @@ export async function validateDashboardMeasure(
     "first",
     {},
     slideScope,
-    options.order,
+    // An order the binding or view no longer fits is ignored (#768).
+    measureQueryOrder(binding, options),
   );
   // Validate the shape and filter paths using the published schema, even with no current rows.
   const tables = new Map(
@@ -439,7 +441,7 @@ export async function queryDashboardMeasure(
         ),
         deviceScope,
         slideScope,
-        input.options.order,
+        measureQueryOrder(input.binding, input.options),
       );
       const result = await queryDataModel(
         savepoint,

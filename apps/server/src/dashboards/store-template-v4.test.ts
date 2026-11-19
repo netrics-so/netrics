@@ -12,8 +12,11 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import type { StoreTemplatePlan } from "@netrics/contracts";
-import type { DataRow } from "@netrics/domain";
+import {
+  replaceDashboardRequestSchema,
+  type StoreTemplatePlan,
+} from "@netrics/contracts";
+import { measureOptionsForBinding, type DataRow } from "@netrics/domain";
 import { createDefaultRegistry } from "../connectors.js";
 import { syncCatalog } from "../sync/catalog.js";
 import { createDataService } from "../data/service.js";
@@ -513,6 +516,73 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
           .filter((w) => w.severity === "attention")
           .map((w) => `${s.name} ${w.format} ${w.code}`),
       ).toEqual([]);
+  });
+
+  it("saves a version 5 table edited in the Studio (#768)", async () => {
+    const result = await install(storeTemplate, randomUUID());
+    const dashboard = await readDashboard(result.dashboardId);
+    const service = createDashboardService({ db });
+    const save = (slides: typeof dashboard.slides, version: number) =>
+      service.replace(
+        actor(),
+        result.dashboardId,
+        replaceDashboardRequestSchema.parse({
+          version,
+          name: dashboard.name,
+          projectId: dashboard.projectId,
+          slides: slides.map(
+            ({ formatWarnings: _warnings, ...slide }) => slide,
+          ),
+        }),
+      );
+    // The ratings table ranks by its rating count; unticking that measure
+    // left the order behind before the Studio dropped it: it is ignored.
+    const untick = (keep: (options: object, binding: object) => object) =>
+      dashboard.slides.map((slide, index) =>
+        index !== 0
+          ? slide
+          : {
+              ...slide,
+              widgets: slide.widgets.map((widget) => {
+                if (
+                  widget.type !== "measure" ||
+                  !widget.binding.measureIds.includes("rating_count")
+                )
+                  return widget;
+                const binding = { ...widget.binding, measureIds: ["rating"] };
+                return {
+                  ...widget,
+                  binding,
+                  options: keep(widget.options, binding),
+                };
+              }),
+            },
+      ) as typeof dashboard.slides;
+    const kept = await save(
+      untick((options) => options),
+      dashboard.version,
+    );
+    expect(kept.ok, JSON.stringify(kept)).toBe(true);
+    // What the Studio saves now: no order or label for the removed measure.
+    const studio = untick((options, binding) =>
+      measureOptionsForBinding(
+        binding as { measureIds: string[]; groupBy: string[] },
+        options as { view: "table" },
+      ),
+    );
+    const ratings = studio[0]!.widgets.find(
+      (widget) =>
+        widget.type === "measure" && widget.binding.groupBy.includes("listing"),
+    )!;
+    expect(ratings.type === "measure" && ratings.options).toMatchObject({
+      view: "table",
+      labels: { listing: expect.any(String), storefront: expect.any(String) },
+    });
+    expect(ratings.type === "measure" && "order" in ratings.options).toBe(
+      false,
+    );
+    const saved = await save(studio, dashboard.version + 1);
+    expect(saved.ok, JSON.stringify(saved)).toBe(true);
   });
 
   it("offers an app that turned free, or got a website, as an update", async () => {

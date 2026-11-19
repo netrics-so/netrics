@@ -8,6 +8,7 @@ import type {
 import {
   formatDataFormula,
   measureInteractionDimension,
+  measureOptionsForBinding,
   parseDataFormula,
   type DashboardDataFilter,
 } from "@netrics/domain";
@@ -93,41 +94,53 @@ export function MeasureFields({
     ? filterDraft !== undefined
     : formula !== publishedFormula;
   const [error, setError] = useState<string | null>(null);
-  const update = (patch: Partial<typeof widget.binding>) =>
-    dispatch({
-      type: "updateWidget",
-      widgetId: widget.id,
-      patch: { binding: { ...widget.binding, ...patch } },
-    });
-  function changeView(view: typeof widget.options.view) {
+  // A binding that loses a measure or dimension drops the table order and
+  // column labels it named (#768): a template's top N by a measure, or its
+  // short heads, never outlive what the widget shows.
+  const update = (patch: Partial<typeof widget.binding>) => {
+    const binding = { ...widget.binding, ...patch };
     dispatch({
       type: "updateWidget",
       widgetId: widget.id,
       patch: {
-        options: { ...widget.options, view },
-        binding: {
-          ...widget.binding,
-          measureIds:
-            view === "table"
-              ? widget.binding.measureIds
-              : view === "value"
-                ? [valueViewMeasureId(model, widget.binding.measureIds)]
-                : widget.binding.measureIds.slice(0, 1),
-          groupBy:
-            view === "value"
-              ? []
-              : widget.binding.groupBy.length
-                ? widget.binding.groupBy.slice(0, view === "table" ? 3 : 1)
-                : (model?.dimensions
-                    .filter(
-                      (dimension) =>
-                        view !== "line" ||
-                        dimension.type === "date" ||
-                        dimension.type === "timestamp",
-                    )
-                    .slice(0, 1)
-                    .map((dimension) => dimension.id) ?? []),
-        },
+        binding,
+        options: measureOptionsForBinding(binding, widget.options),
+      },
+    });
+  };
+  function changeView(view: typeof widget.options.view) {
+    const binding = {
+      ...widget.binding,
+      measureIds:
+        view === "table"
+          ? widget.binding.measureIds
+          : view === "value"
+            ? [valueViewMeasureId(model, widget.binding.measureIds)]
+            : widget.binding.measureIds.slice(0, 1),
+      groupBy:
+        view === "value"
+          ? []
+          : widget.binding.groupBy.length
+            ? widget.binding.groupBy.slice(0, view === "table" ? 3 : 1)
+            : (model?.dimensions
+                .filter(
+                  (dimension) =>
+                    view !== "line" ||
+                    dimension.type === "date" ||
+                    dimension.type === "timestamp",
+                )
+                .slice(0, 1)
+                .map((dimension) => dimension.id) ?? []),
+    };
+    dispatch({
+      type: "updateWidget",
+      widgetId: widget.id,
+      patch: {
+        binding,
+        options: measureOptionsForBinding(binding, {
+          ...widget.options,
+          view,
+        }),
       },
     });
   }
