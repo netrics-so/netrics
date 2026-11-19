@@ -1,5 +1,5 @@
 {
-  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-campaign-reports and https://developer.apple.com/documentation/apple-ads-platform-api/appscampaignreportresponse), checked 2026-10-29; IDs, names and numbers are synthetic. TO BE CONFIRMED by #370 captures: every AppsMetrics count is present on each granularMetrics entry (Apple's examples show only some), promotedObjectId names the promoted app, and a paused or deleted campaign still has its rows.",
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-campaign-reports and https://developer.apple.com/documentation/apple-ads-platform-api/appscampaignreportresponse), checked 2026-10-29; IDs, names and numbers are synthetic. Confirmed by #370 (report-campaigns-4100000004.json): promotedObjectId names the promoted app and a paused campaign still has its rows; a real day without activity is the date alone, a day with activity has every count. Still open: a deleted campaign's rows.",
   "result": {
     "rows": [
       {

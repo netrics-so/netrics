@@ -30,8 +30,9 @@ export const APPLE_ADS_API = `https://${APPLE_ADS_HOST}`;
  * Below this many requests left in the current window (`RateLimit-
  * Remaining`), the client stops before Apple answers 429 and the job
  * retries later. Apple publishes no quota (ADR 0020 section 9); its own
- * sample client pauses below 5. TO BE CONFIRMED by #370: the
- * `RateLimit-Limit` values seen in practice.
+ * sample client pauses below 5. Seen in practice (#370): a limit of 200
+ * resetting every second on most calls, 3000 per 59 seconds on
+ * `/v1/campaigns/query`, so the budget rarely stops a sync for long.
  */
 export const MIN_REMAINING_REQUESTS = 5;
 

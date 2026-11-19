@@ -606,19 +606,19 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "netrics liest Apple Ads als API-Benutzer deines eigenen Apple-Ads-Kontos, mit einem Schlüsselpaar, das netrics für dich erzeugt. Das dauert ein paar Minuten, und gespeichert wird erst, wenn Apple den Schlüssel angenommen hat.",
       step1Title: "Einen API-Benutzer verwenden",
       step1Body:
-        "Ein Account Admin lädt unter Account Settings → User Management einen Benutzer mit der Rolle API Account Read Only ein, oder mit Limited Access: API Read Only, um nur einige Kampagnengruppen freizugeben. Dieser Benutzer nimmt die Einladung an und meldet sich bei Apple Ads an. Ein vorhandener API-Benutzer geht auch.",
+        "Ein Account Admin lädt unter Account Settings → User Management einen Benutzer mit der Rolle API Account Read Only ein, oder mit der eingeschränkten Rolle API Read Only, um nur einige Kampagnengruppen freizugeben. Dieser Benutzer nimmt die Einladung an und meldet sich bei Apple Ads an. Ein vorhandener API-Benutzer geht auch, ein Admin-Login nicht: Apple Ads bietet den öffentlichen Schlüssel nur Benutzern mit einer API-Rolle an.",
       openUserManagement:
         "Apple Ads öffnen (Account Settings → User Management)",
       inviteHelp: "So lädst du Benutzer ein",
       step2Title: "Öffentlichen Schlüssel in Apple Ads einfügen",
       step2Body:
-        "Öffne als API-Benutzer Account Settings → API. Füg diesen öffentlichen Schlüssel unter Public key ein und speichere.",
+        "Öffne als API-Benutzer Account Settings → API und wähl API-Client generieren. Füg diesen öffentlichen Schlüssel ein und speichere.",
       openApi: "Apple Ads öffnen (Account Settings → API)",
       oneKeyNote:
         "Hat dieser API-Benutzer schon einen öffentlichen Schlüssel, den eine andere netrics-Verbindung nutzt, stoppt ein Ersetzen in Apple Ads diese Verbindung. Wähl unten alle Werbekonten, die du brauchst, in einem Durchgang.",
       step3Title: "Die IDs aus Apple Ads eingeben",
       step3Body:
-        "Apple Ads zeigt clientId, teamId und keyId über dem öffentlichen Schlüssel. Kopier sie hierher; fügst du den ganzen Block ein, werden alle drei ausgefüllt.",
+        "Sobald der öffentliche Schlüssel eingefügt ist, zeigt Apple Ads clientId, teamId und keyId; die teamId kann gleich der clientId sein. Kopier sie hierher; fügst du den ganzen Block ein, werden alle drei ausgefüllt.",
       blockFilled:
         "Client-ID, Team-ID und Schlüssel-ID aus dem eingefügten Text übernommen.",
       step4Title: "Werbekonten wählen",
@@ -788,9 +788,9 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
             "Der private EC-P-256-Schlüssel, dessen öffentlichen Schlüssel du unter Account Settings → API gespeichert hast (PEM).",
         },
         steps: {
-          "1": "Ein Account Admin lädt unter Account Settings → User Management in Apple Ads einen API-Benutzer mit der Rolle API Account Read Only ein (oder Limited Access: API Read Only für einige Kampagnengruppen). Der API-Benutzer nimmt die Einladung an und meldet sich bei Apple Ads an.",
-          "2": "Öffne als API-Benutzer Account Settings → API, füg den öffentlichen Schlüssel ein und speichere.",
-          "3": "Kopier clientId, teamId und keyId, die Apple Ads über dem öffentlichen Schlüssel zeigt.",
+          "1": "Ein Account Admin lädt unter Account Settings → User Management in Apple Ads einen API-Benutzer mit der Rolle API Account Read Only ein (oder mit der eingeschränkten Rolle API Read Only für einige Kampagnengruppen). Ein Admin-Login kann nicht der API-Benutzer sein: Apple Ads bietet den öffentlichen Schlüssel nur Benutzern mit einer API-Rolle an. Der API-Benutzer nimmt die Einladung an und meldet sich bei Apple Ads an.",
+          "2": "Öffne als API-Benutzer Account Settings → API, wähl API-Client generieren, füg den öffentlichen Schlüssel ein und speichere.",
+          "3": "Kopier clientId, teamId und keyId, die Apple Ads für den Schlüssel zeigt. Die teamId kann gleich der clientId sein.",
           "4": "Gib die Werte unten ein. netrics prüft den Schlüssel bei Apple, bevor etwas gespeichert wird.",
         },
         links: {
@@ -814,11 +814,11 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         notPem:
           "Das sieht nicht nach einem privaten .p8-Schlüssel aus: Er sollte mit -----BEGIN PRIVATE KEY----- beginnen.",
         appleAdsClientId:
-          "Die Client-ID beginnt mit SEARCHADS. und einer ID, etwa SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads zeigt sie als clientId über dem öffentlichen Schlüssel.",
+          "Die Client-ID beginnt mit SEARCHADS. und einer ID, etwa SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads zeigt sie als clientId, sobald der öffentliche Schlüssel eingefügt ist.",
         appleAdsTeamId:
-          "Die Team-ID beginnt mit SEARCHADS. und einer ID, etwa SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads zeigt sie als teamId über dem öffentlichen Schlüssel.",
+          "Die Team-ID beginnt mit SEARCHADS. und einer ID, etwa SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads zeigt sie als teamId, sobald der öffentliche Schlüssel eingefügt ist.",
         appleAdsKeyId:
-          "Die Schlüssel-ID ist eine ID mit Bindestrichen, etwa a273d0d3-4d9e-458c-a173-0db8619ca7d7. Apple Ads zeigt sie als keyId über dem öffentlichen Schlüssel.",
+          "Die Schlüssel-ID ist eine ID mit Bindestrichen, etwa a273d0d3-4d9e-458c-a173-0db8619ca7d7. Apple Ads zeigt sie als keyId, sobald der öffentliche Schlüssel eingefügt ist.",
         appleAdsKeyIdSearchAds:
           "Das sieht nach einer Client-ID oder Team-ID aus. Die Schlüssel-ID hat kein SEARCHADS. davor, etwa a273d0d3-4d9e-458c-a173-0db8619ca7d7.",
       },

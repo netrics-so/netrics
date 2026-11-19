@@ -9,8 +9,8 @@ import type {
 /**
  * An offline stand-in for the parts of the Apple Ads Platform API the
  * connector uses, answering with fixtures shaped after Apple's
- * documentation (each fixture names its page; #370's captures confirm
- * them). An API user is known by its access tokens; any other token gets a
+ * documentation or captured from a real account (each fixture's
+ * `_fixture` note says which, #370). An API user is known by its access tokens; any other token gets a
  * 401. Ad-account-scoped calls must carry `X-AP-Context: adAccountId=<id>`
  * of an account in the user's ACL with an API role, otherwise 403 (as a
  * token cannot read another account).
@@ -447,9 +447,12 @@ export interface FakeAppleAds {
 }
 
 const DEFAULT_API_ROLES = [
+  // What /v1/acls of a real read-only API user says (#370).
+  "API Read Only",
   "API Account Read Only",
   "Limited Access: API Read Only",
   "API Account Manager",
+  "API Read & Write",
   "Limited Access: API Read & Write",
   "Admin",
 ];

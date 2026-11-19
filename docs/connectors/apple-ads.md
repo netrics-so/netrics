@@ -10,11 +10,10 @@ Campaign Management API v5, which Apple sunsets on 2027-01-26.
 > Status: preview (milestone 10). The key exchange (#369), the generated key
 > pair (#371), ad-account discovery (#373), the campaign report sync (#374),
 > the guided setup (#375), ad groups (#376, #394) and keywords (#396) are in
-> place, tested against documented
-> response shapes. Apple Ads is available in development only until the
-> owner's captured responses (#370) and the exit gate (#378) confirm them.
-> Wording marked _to be confirmed_ below is checked against the real Apple
-> Ads UI at the exit gate.
+> place, tested against documented response shapes and against shapes
+> captured from a real account (#370). Apple Ads is available in
+> development only until the exit gate (#378). Points marked _to be
+> confirmed_ below are still open.
 
 ## Connect
 
@@ -26,18 +25,23 @@ the private key never leaves netrics, not even to be shown once. The wizard
 
 1. **Use an API user.** An Account Admin invites a user under
    **Account Settings → User Management** with the role
-   **API Account Read Only**, or **Limited Access: API Read Only** to share
-   only some campaign groups (see [Roles](#roles)). The user accepts the
-   invitation and signs in to Apple Ads. An existing API user works too.
+   **API Account Read Only**, or the limited-access role **API Read Only**
+   to share only some campaign groups (see [Roles](#roles)). The user
+   accepts the invitation and signs in to Apple Ads. An existing API user
+   works too. An Admin login cannot be the API user: under Account
+   Settings → API an Admin sees only the list of service providers with
+   access, and no field for a public key.
    Apple explains invitations in
    [Inviting users](https://ads.apple.com/help/advanced/0011-invite-users-to-your-account/).
 2. **Paste the public key.** netrics shows the generated public key with a
    **Copy** button. Signed in as the API user, open **Account Settings →
-   API**, paste it under **Public key** and save. The pending private key
+   API**, choose **Generate API Client** (German UI: **API-Client
+   generieren**), paste it and save. The pending private key
    is kept encrypted for you, in this workspace, for 24 hours; after that,
    generate a new pair.
-3. **Enter the IDs.** Apple Ads then shows `clientId`, `teamId` and `keyId`
-   above the public key. Copy them into the three fields; pasting the whole
+3. **Enter the IDs.** Once the key is pasted, Apple Ads shows `clientId`,
+   `teamId` and `keyId`; the team ID can be the same as the client ID.
+   Copy them into the three fields; pasting the whole
    block into any of them fills in all three. The fields are checked as you
    type: client ID and team ID start with `SEARCHADS.` followed by an ID,
    and the key ID is an ID with dashes.
@@ -77,17 +81,22 @@ team ID and key ID, which are not secret; the private key shows only as
 
 ## Roles
 
-| Role (Apple Ads)                 | Works | Notes                                                                 |
-| -------------------------------- | ----- | --------------------------------------------------------------------- |
-| API Account Read Only            | Yes   | Recommended: reads every campaign of the ad account, changes nothing. |
-| Limited Access: API Read Only    | Yes   | Reads only the campaign groups shared with the user.                  |
-| API Account Manager              | Yes   | Works, but can change campaigns. netrics never writes; avoid it.      |
-| Limited Access: API Read & Write | Yes   | As above, for some campaign groups.                                   |
-| Admin                            | Yes   | Works, but grants far more than netrics needs.                        |
-| Any non-API role                 | No    | Apple refuses API access. netrics says the user needs an API role.    |
+| Role (Apple Ads UI)               | Works | Notes                                                                                              |
+| --------------------------------- | ----- | -------------------------------------------------------------------------------------------------- |
+| API Account Read Only             | Yes   | Recommended: reads every campaign of the ad account, changes nothing.                              |
+| API Read Only (limited access)    | Yes   | Reads only the campaign groups shared with the user.                                               |
+| API Account Manager               | Yes   | Works, but can change campaigns. netrics never writes; avoid it.                                   |
+| API Read & Write (limited access) | Yes   | As above, for some campaign groups.                                                                |
+| Account Admin                     | No    | Not as the API user: Apple Ads offers an Admin no public-key field. An Admin invites the API user. |
+| Any other role                    | No    | Apple refuses API access. netrics says the user needs an API role.                                 |
 
 The role is per ad account: an API user may read one ad account and not
-another. _To be confirmed_ (#370): the exact role strings Apple returns.
+another. The API's names differ from the UI's: for a user invited with
+API Account Read Only, `GET /v1/acls` answers the role `API Read Only`
+(#370). netrics accepts that and the names in Apple's documentation
+(`API Account Read Only`, `Limited Access: API Read Only`, …). _To be
+confirmed_: the strings Apple returns for the limited-access and
+read-and-write roles.
 
 ## Several ad accounts
 
@@ -150,12 +159,14 @@ they can sit side by side in one workspace.
 - Apple names no time at which a day is complete, so netrics shows no
   "next" time for Apple Ads; the connection syncs every 6 hours.
 - The first sync reads the last **12 months**, newest first, capped by what
-  Apple keeps (_to be confirmed_ by #370). It reads whole calendar months
-  in requests of at most 90 days.
+  Apple keeps (_to be confirmed_: the account checked in #370 had no
+  campaigns old enough to show where Apple's history ends). It reads
+  whole calendar months in requests of at most 90 days. A range without
+  numbers is an empty answer, not an error.
 - After that, netrics syncs every **6 hours** and reads the last **3 days**
   again each time, because Apple attributes installs late
-  (_to be confirmed_ by #370: whether the day before yesterday still
-  changes).
+  (_to be confirmed_: whether the day before yesterday still changes needs
+  two captures on consecutive days).
 - A day with no campaign activity counts as zero only once it is older than
   those 3 days.
 - Ad groups and keywords are read per campaign over the same days, only
@@ -171,8 +182,12 @@ they can sit side by side in one workspace.
   whatever your workspace's time zone, and tiles carry the label "Days in
   America/Los_Angeles, as in Apple Ads".
 - **Spend stays in the ad account's currency.** Apple reports it as a
-  decimal string; netrics stores whole minor units of that currency
-  (cents, yen, fils) without rounding through floating point. Amounts in
+  decimal string with up to four decimals (`3.8127`); netrics stores whole
+  minor units of that currency (cents, yen, fils), rounded half to even per
+  day and row, never through floating point. A month's sum can therefore
+  differ from Apple's total by a few cents, and the "Others" ad group or
+  keyword of a day can hold a cent of rounding, even below zero, so that
+  ad-group and keyword sums still equal the campaign's. Amounts in
   different currencies are separate series and never add up; the display
   currency of a dashboard converts only for display, at daily ECB
   reference rates, labelled approximate.
@@ -279,7 +294,10 @@ There is no Brand template for an ad account.
 
 ## Limits
 
-Apple publishes no fixed quota. Responses carry `RateLimit-Remaining`;
+Apple publishes no fixed quota. Seen in practice (#370): `RateLimit-Limit`
+200 per second on most calls (`RateLimit-Reset` 1), and 3,000 per minute
+on `POST /v1/campaigns/query` (reset 59). Responses carry
+`RateLimit-Remaining`;
 netrics ends a sync early when only a few requests are left and pauses the
 connection until `RateLimit-Reset` (a minute without one). A 429 is retried
 after a short `Retry-After`; a longer one pauses the connection until then.

@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ADS_STREAM,
+  AMOUNT_ROUNDED_NOTE,
   appleAdsManifest,
   addDays,
   adAccountToday,
@@ -475,6 +476,167 @@ describe("documented report shapes", () => {
         campaign: "5100000001",
       }),
     ).toBe(80);
+  });
+});
+
+/**
+ * One page on the shapes captured from a real account (#370,
+ * fixtures/report-*-4100000004.json and report-*-5100000011.json): EUR,
+ * Europe/Berlin, 2026-10-26 to 2026-10-29. Campaign 5100000012 has no ad
+ * groups or keywords with numbers: Apple answers report-empty.
+ */
+async function capturedPage(now = Date.parse("2026-11-15T12:00:00.000Z")) {
+  const totals = fixture("report-campaigns-4100000004");
+  const countries = fixture("report-countries-4100000004");
+  const empty = fixture("report-empty");
+  const fetch = async (url: string, init?: { body?: string }) => {
+    const body = JSON.parse(init?.body ?? "{}") as ReportBody;
+    const headers = {
+      "ratelimit-limit": "200",
+      "ratelimit-remaining": "199",
+      "ratelimit-reset": "1",
+    };
+    const path = new URL(url).pathname;
+    const campaignId = String(body.filters?.[0]?.value);
+    if (path === "/v1/reports/apps/adgroups/query") {
+      return jsonResponse(
+        200,
+        campaignId === "5100000011"
+          ? fixture("report-adgroups-5100000011")
+          : empty,
+        headers,
+      );
+    }
+    if (path === "/v1/reports/apps/keywords/query") {
+      return jsonResponse(
+        200,
+        campaignId === "5100000011"
+          ? fixture("report-keywords-5100000011")
+          : empty,
+        headers,
+      );
+    }
+    return jsonResponse(200, body.groupBy ? countries : totals, headers);
+  };
+  const api = createAppleAdsClient(fetch, TOKEN);
+  const notes: string[] = [];
+  const result = await syncCampaignPage(
+    api,
+    {
+      mode: "incremental",
+      from: "2026-10-26T00:00:00.000Z",
+      to: "2026-10-30T00:00:00.000Z",
+    },
+    {
+      now,
+      adAccountId: "4100000004",
+      currency: "EUR",
+      timeZone: "Europe/Berlin",
+      note: (code) => notes.push(code),
+    },
+  );
+  return { result, notes };
+}
+
+describe("captured report shapes (#370)", () => {
+  const C1 = "5100000011";
+  const C2 = "5100000012";
+  const day = (date: string) => ({
+    sourceTimestamp: `${date}T00:00:00.000Z`,
+  });
+  const on = (observations: Observation[], date: string) =>
+    observations.filter((o) => o.sourceTimestamp === day(date).sourceTimestamp);
+
+  it("reads days sent as their date alone as zero, and the others in full", async () => {
+    const { result } = await capturedPage();
+    expect(syncResultSchema.safeParse(result).success).toBe(true);
+    const main = mainRows(result.observations);
+    const spend = APPLE_ADS_METRIC_KEYS.spend;
+    // 2026-10-27 is a date-only entry for C1: zero, not a failure.
+    expect(sum(on(main, "2026-10-27"), spend, { campaign: C1 })).toBe(0);
+    // Four decimals, rounded: 3.8127 EUR is 381 cents, 2.1934 EUR 219.
+    expect(sum(on(main, "2026-10-26"), spend, { campaign: C1 })).toBe(381);
+    expect(sum(on(main, "2026-10-29"), spend, { campaign: C1 })).toBe(219);
+    // A day with impressions but no spend ("0") keeps its impressions.
+    expect(
+      sum(on(main, "2026-10-28"), APPLE_ADS_METRIC_KEYS.impressions, {
+        campaign: C1,
+      }),
+    ).toBe(37);
+    expect(
+      sum(main, APPLE_ADS_METRIC_KEYS.installs, {
+        campaign: C2,
+        attribution: "view",
+      }),
+    ).toBe(1);
+    expect(new Set(main.map((o) => o.dimensions.resource))).toEqual(
+      new Set(["1000000004"]),
+    );
+  });
+
+  it("stores no zeros for a date-only day within the lookback, but zeros once it is settled", async () => {
+    // 2026-10-29 in Berlin: the 27th is within the last 3 days, and C1's
+    // entry for it is the date alone. Apple may still fill it.
+    const recent = await capturedPage(Date.parse("2026-10-29T12:00:00.000Z"));
+    expect(
+      on(recent.result.observations, "2026-10-27").filter(
+        (o) => o.dimensions.campaign === C1,
+      ),
+    ).toEqual([]);
+    // C2 has numbers that day and keeps them.
+    expect(
+      sum(
+        on(mainRows(recent.result.observations), "2026-10-27"),
+        APPLE_ADS_METRIC_KEYS.spend,
+        { campaign: C2 },
+      ),
+    ).toBe(110);
+    // Settled (2026-11-15), the same day is an explicit zero.
+    const settled = await capturedPage();
+    const of27 = on(mainRows(settled.result.observations), "2026-10-27").filter(
+      (o) => o.dimensions.campaign === C1,
+    );
+    expect(of27.length).toBeGreaterThan(0);
+    expect(of27.every((o) => o.value === 0)).toBe(true);
+  });
+
+  it("notes that amounts with four decimals were rounded", async () => {
+    const { notes } = await capturedPage();
+    expect(notes).toContain(AMOUNT_ROUNDED_NOTE);
+  });
+
+  it("takes the country from the grouped row's metadata", async () => {
+    const { result } = await capturedPage();
+    const spend = APPLE_ADS_METRIC_KEYS.spend;
+    const main = mainRows(result.observations);
+    expect(sum(main, spend, { campaign: C1, country: "GB" })).toBe(600);
+    expect(sum(main, spend, { campaign: C2, country: "NL" })).toBe(149);
+    expect(sum(main, spend, { country: OTHERS })).toBe(0);
+  });
+
+  it("puts what the rounded ad groups and keywords leave of a campaign into Others", async () => {
+    const { result } = await capturedPage();
+    const byAdGroup = APPLE_ADS_AD_GROUP_METRIC_KEYS.spend;
+    const ofAdGroups = adGroupRows(result.observations);
+    // On the 26th 2.7075 + 1.1052 = 3.8127 EUR, but rounded per row they
+    // are 271 + 111 cents against the campaign's 381: Others holds -1, so
+    // the ad groups still add up to the campaign.
+    const of26 = on(ofAdGroups, "2026-10-26");
+    expect(sum(of26, byAdGroup, { campaign: C1, ad_group: OTHERS })).toBe(-1);
+    expect(sum(of26, byAdGroup, { campaign: C1 })).toBe(381);
+    expect(sum(ofAdGroups, byAdGroup, { campaign: C1 })).toBe(600);
+    // Search Match spend is in no keyword row: Others has it.
+    const byKeyword = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
+    expect(sum(result.observations, byKeyword, { campaign: C1 })).toBe(600);
+    expect(
+      sum(result.observations, byKeyword, {
+        campaign: C1,
+        keyword: "7100000011",
+      }),
+    ).toBe(296);
+    expect(
+      sum(result.observations, byKeyword, { campaign: C1, keyword: OTHERS }),
+    ).toBe(600 - 296 - 75);
   });
 });
 

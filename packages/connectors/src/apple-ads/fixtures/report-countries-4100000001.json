@@ -1,5 +1,5 @@
 {
-  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-campaign-reports, groupBy countryOrRegion; https://developer.apple.com/documentation/apple-ads-platform-api/appsreportingcampaign), checked 2026-10-29; IDs, names and numbers are synthetic. TO BE CONFIRMED by #370 captures: where a grouped row names its country or region. AppsReportingCampaign has countryOrRegion in metadata (the US and CA rows); the campaigns report example puts it in each granularMetrics entry (the GB row). Both are read. The breakdown here leaves 0.25 USD and 100 impressions of 2026-10-27 out of the campaign total, as hidden rows would: they go to Others.",
+  "_fixture": "Shape from Apple's documentation (https://developer.apple.com/documentation/apple-ads-platform-api/get-app-campaign-reports, groupBy countryOrRegion; https://developer.apple.com/documentation/apple-ads-platform-api/appsreportingcampaign), checked 2026-10-29; IDs, names and numbers are synthetic. A real account's grouped rows name the country in metadata (#370, report-countries-4100000004.json); the GB row's day-entry country follows Apple's example and is still read. The breakdown here leaves 0.25 USD and 100 impressions of 2026-10-27 out of the campaign total, as hidden rows would: they go to Others.",
   "result": {
     "rows": [
       {

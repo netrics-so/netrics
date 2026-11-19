@@ -47,7 +47,13 @@ const US = "4100000001";
 const EU = "4100000002";
 const MAPS = "4100000003";
 
+/** The ad accounts of acls-captured.json (#370), both in one org. */
+const CAPTURED = "4100000004";
+const CAPTURED_ORG = "4000000004";
+const CAPTURED_TWO = "4100000005";
+
 const USER_ONE: FakeApiUser = { tokens: [TOKEN], acls: "acls-one" };
+const USER_CAPTURED: FakeApiUser = { tokens: [TOKEN], acls: "acls-captured" };
 const USER_SEVERAL: FakeApiUser = { tokens: [TOKEN], acls: "acls-several" };
 
 const noSleep = async () => {};
@@ -823,6 +829,93 @@ describe("sync", () => {
       expect(request.context).toBe(`adAccountId=${US}`);
       expect(request.token).toBe(TOKEN);
     }
+  });
+});
+
+describe("captured shapes (#370)", () => {
+  it("passes the check for a user whose ACL says API Read Only, Apple's real role string", async () => {
+    // Apple documents "API Account Read Only"; a real read-only API user's
+    // ACL answers "API Read Only".
+    const api = fake({ users: [USER_CAPTURED] });
+    expect(
+      await connector().check(context({ adAccountId: CAPTURED }), api.runtime),
+    ).toEqual({ ok: true });
+    expect(await connector().check(context({}), api.runtime)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("lists both ad accounts of the org as selectable, in EUR and Europe/Berlin", async () => {
+    const api = fake({ users: [USER_CAPTURED] });
+    const resources = await connector().discover(context({}), api.runtime);
+    expect(
+      resources.map(({ id, name, metadata }) => ({
+        id,
+        name,
+        selectable: metadata?.selectable,
+        currency: metadata?.currency,
+        timeZone: metadata?.timeZone,
+        orgId: metadata?.orgId,
+        roles: metadata?.roles,
+      })),
+    ).toEqual([
+      {
+        id: CAPTURED,
+        name: "Example Studio",
+        selectable: true,
+        currency: "EUR",
+        timeZone: "Europe/Berlin",
+        orgId: CAPTURED_ORG,
+        roles: ["API Read Only"],
+      },
+      {
+        id: CAPTURED_TWO,
+        name: "Example Studio 2",
+        selectable: true,
+        currency: "EUR",
+        timeZone: "Europe/Berlin",
+        orgId: CAPTURED_ORG,
+        roles: ["API Read Only"],
+      },
+    ]);
+  });
+
+  // A regression test: the code before #370 read this page too.
+  it("names the campaigns of a page without totalCount", async () => {
+    const api = fake({ users: [USER_CAPTURED] });
+    const resources = await connector().discover(
+      context({ adAccountId: CAPTURED }),
+      api.runtime,
+    );
+    expect(
+      resources
+        .filter((resource) => resource.kind === RESOURCE_KINDS.campaign)
+        .map(({ id, name, metadata }) => ({
+          id,
+          name,
+          appId: metadata?.appId,
+          status: metadata?.status,
+        })),
+    ).toEqual([
+      {
+        id: "5100000011",
+        name: "Example – Search GB",
+        appId: "1000000004",
+        status: "PAUSED",
+      },
+      {
+        id: "5100000012",
+        name: "Example – Search NL",
+        appId: "1000000004",
+        status: "PAUSED",
+      },
+      {
+        id: "5100000013",
+        name: "Example – Conversions GB",
+        appId: "1000000004",
+        status: "PAUSED",
+      },
+    ]);
   });
 });
 

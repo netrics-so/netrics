@@ -158,9 +158,9 @@ export const appleAdsProvider: SignedKeyProviderDefinition = {
   generatedKeyPair: true,
   setup: {
     steps: [
-      "An Account Admin invites an API user under Account Settings → User Management in Apple Ads, with the API Account Read Only role (or Limited Access: API Read Only for some campaign groups). The API user accepts the invitation and signs in to Apple Ads.",
-      "As the API user, open Account Settings → API, paste the public key and save.",
-      "Copy the clientId, teamId and keyId Apple Ads shows above the public key.",
+      "An Account Admin invites an API user under Account Settings → User Management in Apple Ads, with the role API Account Read Only (or the limited-access role API Read Only for some campaign groups). An Admin login cannot be the API user: Apple Ads offers the public key only to users with an API role. The API user accepts the invitation and signs in to Apple Ads.",
+      "As the API user, open Account Settings → API, choose Generate API Client, paste the public key and save.",
+      "Copy the clientId, teamId and keyId Apple Ads shows for the key. The teamId can be the same as the clientId.",
       "Enter the values below. netrics checks the key with Apple before it stores anything.",
     ],
     url: APPLE_ADS_SIGN_IN_URL,
@@ -182,6 +182,6 @@ export const appleAdsProvider: SignedKeyProviderDefinition = {
     unauthorized:
       "Apple Ads refused the access token: the key was removed, or the API user lost access. Set up a new Apple Ads key.",
     forbidden:
-      "Apple Ads refused access: the API user needs an API role, such as API Account Read Only, in this ad account. A non-API role removes API access. Ask an Account Admin to change the role, or set up a new key.",
+      "Apple Ads refused access: the API user needs an API role, such as API Account Read Only (API Read Only in Apple's answers), in this ad account. A non-API role removes API access. Ask an Account Admin to change the role, or set up a new key.",
   },
 };

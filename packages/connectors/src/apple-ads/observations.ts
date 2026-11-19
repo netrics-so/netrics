@@ -51,8 +51,8 @@ export interface AppleAdsRowIdentity {
   /**
    * The promoted app's Apple ID: `promotedObjectId` of the campaign
    * metadata (AppsReportingCampaign, "the Adam ID of the promoted App
-   * Store app"). TO BE CONFIRMED by the owner's captures (#370): ADR 0020
-   * lists the field that names the promoted app as an open check. It is
+   * Store app"), a digit string beside `promotedObjectType: "APPSTORE_APP"`
+   * and `promotedObject.name` in a real account's reports (#370). It is
    * the `resource` dimension, as App Store Connect's app ID is, so ad
    * installs and App Store downloads of one app sit on one dashboard.
    */
@@ -163,9 +163,11 @@ const count = z.number().int().nonnegative();
 /**
  * The fields of Apple's `AppsMetrics` (one entry of `granularMetrics`) that
  * netrics stores. Field names and types are from Apple's documentation
- * (https://developer.apple.com/documentation/Apple-Ads-Platform-API/AppsMetrics);
- * TO BE CONFIRMED against the owner's captures (#370). Ratios, average
- * costs and pre-orders are ignored.
+ * (https://developer.apple.com/documentation/Apple-Ads-Platform-API/AppsMetrics),
+ * confirmed by a real account's reports (#370): a day with activity
+ * carries every one of them, plus ratios, average costs and pre-orders,
+ * which are ignored. A day without activity is the date alone
+ * (isEmptyDay).
  */
 export const appsDayMetricsSchema = z
   .object({
@@ -185,6 +187,25 @@ export const appsDayMetricsSchema = z
   })
   .loose();
 export type AppsDayMetrics = z.infer<typeof appsDayMetricsSchema>;
+
+/**
+ * Whether a `granularMetrics` entry is a day without activity. Apple lists
+ * every day of a `DAILY` range and sends such a day as its date alone
+ * (`{"date": "2026-10-01"}`), without zeros (#370's captures). Any other
+ * field, a metric or not, makes it a day with numbers, which must then
+ * carry all of them.
+ */
+export function isEmptyDay(raw: unknown): raw is { date: string } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return false;
+  }
+  const keys = Object.keys(raw);
+  return (
+    keys.length === 1 &&
+    keys[0] === "date" &&
+    typeof (raw as { date: unknown }).date === "string"
+  );
+}
 
 export interface DayObservationsOptions {
   /** The ad account's currency (`AdAccount.currency`). */
@@ -265,6 +286,10 @@ export function parseDayMetrics(
   raw: unknown,
   options: DayObservationsOptions,
 ): { date: string; values: DayValues } {
+  if (isEmptyDay(raw)) {
+    reportDayTimestamp(raw.date);
+    return { date: raw.date, values: zeroDayValues() };
+  }
   const parsed = appsDayMetricsSchema.safeParse(raw);
   if (!parsed.success) {
     throw new AppleAdsReportError("Apple Ads report has malformed metrics");
@@ -298,7 +323,7 @@ export function parseDayMetrics(
     throw error;
   }
   for (const [, field] of ATTRIBUTED) {
-    // TO BE CONFIRMED (#370): Apple documents the total as tap plus view.
+    // Apple documents the total as tap plus view; #370's captures agree.
     if (
       metrics[`tap${field}`] + metrics[`view${field}`] !==
       metrics[`total${field}`]

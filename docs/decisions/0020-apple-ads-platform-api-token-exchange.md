@@ -47,7 +47,9 @@ Product rules, as in ADR 0012 and ADR 0014:
   `SEARCHADS.<uuid>`) and a key ID. Apple never holds the private key.
 - **Access.** `GET /v1/me` returns `{userId, orgId}`; `GET /v1/acls` returns
   one entry per ad account with `{adAccount{id,name,orgId}, roles[]}`. Roles
-  include `API Account Read Only` and `Limited Access: API Read Only`.
+  include `API Account Read Only` and `Limited Access: API Read Only` in
+  Apple's documentation; a real read-only API user's ACL says
+  `API Read Only` (#370).
   `GET /v1/ad-accounts/{id}` returns `timezone`, `currency`,
   `productFeatures` (`APPSTORE_APP_MANUAL` or `BUSINESS_BRAND_MANUAL`; an
   account is App Store or Maps, never both) and `systemStatus`. Calls in an
@@ -188,9 +190,11 @@ button; the private key is never shown, not even once.
 ### 4. Credential path
 
 The customer's Account Admin invites an API user with **API Account Read
-Only** (or Limited Access: API Read Only for some campaign groups). That
-user pastes the netrics public key under Account Settings → API and enters
-the client ID, team ID and key ID in netrics. This is the same on the
+Only** (or the limited-access role API Read Only for some campaign
+groups). That user opens Account Settings → API, chooses Generate API
+Client, pastes the netrics public key and enters the client ID, team ID
+and key ID in netrics. An Admin login cannot be the API user: the Admin's
+API tab lists service providers only and has no public-key field (#370). This is the same on the
 hosted service and self-hosted, with no instance configuration.
 
 A registered third-party OAuth app would make the hosted service a few
@@ -318,9 +322,50 @@ merge before the captures confirm them.
 
 ## Open checks (#370 and the exit gate #378)
 
-- How many months of daily data Apple keeps (backfill cap).
-- Which `metadata` field names the promoted app and its Apple ID.
-- The `RateLimit-Limit` values seen in practice.
-- Whether the day before yesterday still changes (lookback of 3 days).
-- Whether the owner's account has pre-orders.
-- The role names and Apple Ads UI labels match the wizard copy.
+Confirmed by responses captured from a real account (Platform API 1.0,
+2026-11, #370; the fixtures marked "Shape captured from a real account"
+keep their shapes with IDs, names and amounts replaced):
+
+- Roles: a user invited with the UI role API Account Read Only appears in
+  `/v1/acls` as `API Read Only`, not the documented
+  `API Account Read Only`. The connector accepts both, and the
+  limited-access names of Apple's help and documentation.
+- An Admin login cannot be the API user: its Account Settings → API tab
+  shows only service-provider grants, no public-key field. The key field
+  ("Generate API Client") appears for a user with an API role; after the
+  key is pasted Apple shows clientId, teamId (here equal to the clientId)
+  and keyId.
+- The promoted app: campaign report rows carry `metadata.promotedObjectId`
+  (the app's Apple ID as a digit string), `promotedObjectType`
+  `APPSTORE_APP` and `promotedObject.name`.
+- Rate limits: `RateLimit-Limit` 200 with `RateLimit-Reset` 1 (seconds) on
+  most calls, 3000 with reset 59 on `POST /v1/campaigns/query`; responses
+  carry an `apple-request-id` header.
+- Pre-orders: the account has none (every `*PreOrdersPlaced` is 0); the
+  fields are present and ignored.
+- Empty result: a report without rows answers
+  `{"result":{},"pagination":{"offset":0,"pageSize":0,"totalCount":0}}`.
+- Report days: a `DAILY` report lists every day of the range; a day
+  without activity is `{"date": …}` alone, which netrics reads as zero.
+  A day with activity carries every AppsMetrics field, and each total is
+  tap plus view. Amounts have up to four decimals and are rounded half to
+  even to minor units per day and row.
+- Country rows (`groupBy: ["countryOrRegion"]`) name the country in
+  `metadata.countryOrRegion`. Ad-group and keyword rows name their
+  `campaignId`; keyword rows have `text`, no `name`. Search Match spend is
+  in no keyword row.
+- The token answer has `access_token`, `token_type` `Bearer` and
+  `expires_in` 3600. An ad account's ID can equal its `orgId`.
+
+Still open:
+
+- How many months of daily data Apple keeps (backfill cap). Not
+  determined: the account has no data old enough, so reports 13, 25 and
+  37 months back were empty whatever Apple keeps.
+- Whether the day before yesterday still changes (lookback of 3 days):
+  needs a second capture on a later day of the same range.
+- The role strings of the limited-access and read-and-write roles.
+- A one-day report without `granularity` (answers in `totalMetrics`
+  only): the captured day had no activity.
+- `/v1/apps/{adamId}`, `/v1/adgroups/query` and `/v1/keywords/query`
+  (names for discovery) were not captured.
