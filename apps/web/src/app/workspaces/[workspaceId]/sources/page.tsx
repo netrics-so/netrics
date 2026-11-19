@@ -222,7 +222,11 @@ export default async function SourcesPage({
                           {t("finishSetup")}
                         </Link>
                       ) : (
-                        <HealthBadge health={connection.state.health} />
+                        <HealthBadge
+                          health={connection.state.health}
+                          rateLimitedUntil={connection.state.rateLimitedUntil}
+                          connectorName={connection.connectorName}
+                        />
                       )}
                     </td>
                     <td className="muted">

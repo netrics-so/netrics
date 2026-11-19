@@ -1,6 +1,7 @@
-import type {
-  ConnectorFetchInit,
-  ConnectorResponse,
+import {
+  RateLimitedError,
+  type ConnectorFetchInit,
+  type ConnectorResponse,
 } from "@netrics/connector-sdk";
 import { z } from "zod";
 
@@ -158,24 +159,52 @@ export class AppleAdsApiError extends Error {
 }
 
 /**
- * The current rate-limit window is nearly used up (`RateLimit-Remaining`
- * below the threshold): a retryable failure, so a sync ends early and the
- * job comes back after the window reset.
+ * Apple's window is short (it resets within a minute or two); without a
+ * `RateLimit-Reset` the host waits this long before asking again.
  */
-export class AppleAdsRateBudgetError extends Error {
+const DEFAULT_RESET_SECONDS = 60;
+
+/**
+ * The current rate-limit window is nearly used up (`RateLimit-Remaining`
+ * below the threshold): the sync ends early, and the host runs the
+ * connection's jobs again after the window reset (RateLimitedError, #781).
+ */
+export class AppleAdsRateBudgetError extends RateLimitedError {
   readonly remaining: number;
   /** `RateLimit-Reset` in seconds, when Apple sent one. */
   readonly resetSeconds: number | undefined;
 
-  constructor(remaining: number, resetSeconds?: number) {
+  constructor(remaining: number, resetSeconds?: number, now = Date.now()) {
     super(
       `Apple Ads' request limit is nearly used up (${remaining} left${
         resetSeconds !== undefined ? `, resets in ${resetSeconds} s` : ""
-      }). netrics tries again later.`,
+      }). netrics continues after the reset.`,
+      new Date(now + (resetSeconds ?? DEFAULT_RESET_SECONDS) * 1000),
     );
     this.name = "AppleAdsRateBudgetError";
     this.remaining = remaining;
     this.resetSeconds = resetSeconds;
+  }
+}
+
+/**
+ * A 429 whose `Retry-After` (or `RateLimit-Reset`) is too long to wait for
+ * within a call: the host runs the connection's jobs again after it (#781).
+ */
+export class AppleAdsRateLimitedError extends RateLimitedError {
+  readonly status = 429;
+  readonly body: AppleAdsErrorBody;
+  readonly retryAfterSeconds: number;
+
+  constructor(
+    body: AppleAdsErrorBody,
+    retryAfterSeconds: number,
+    now = Date.now(),
+  ) {
+    super(describe(429, body), new Date(now + retryAfterSeconds * 1000));
+    this.name = "AppleAdsRateLimitedError";
+    this.body = body;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -322,13 +351,21 @@ export function createAppleAdsClient(
         appleAdsErrorBody(response),
         retryAfter,
       );
+      // Retry-After first, then RateLimit-Reset (Apple's order).
+      const wait =
+        response.status === 429 ? (retryAfter ?? seen.resetSeconds) : undefined;
+      if (
+        wait !== undefined &&
+        (!signal || attempt >= MAX_ATTEMPTS || wait > MAX_RETRY_AFTER_SECONDS)
+      ) {
+        // A known reset: the host waits for it instead of retrying (#781).
+        throw new AppleAdsRateLimitedError(error.body, wait);
+      }
       if (!signal || !error.isRetryable || attempt >= MAX_ATTEMPTS) {
         throw error;
       }
       if (response.status === 429) {
-        // Retry-After first, then RateLimit-Reset (Apple's order).
-        const wait = retryAfter ?? seen.resetSeconds;
-        if (wait === undefined || wait > MAX_RETRY_AFTER_SECONDS) {
+        if (wait === undefined) {
           throw error;
         }
         // The window starts over after the wait.

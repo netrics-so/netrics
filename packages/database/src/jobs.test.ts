@@ -13,6 +13,7 @@ import {
   claimJobs,
   completeJob,
   deferJob,
+  deferJobUntil,
   enqueueJob,
   enqueueSyncJob,
   requestConnectionBackfill,
@@ -496,6 +497,56 @@ describe("claim_jobs", () => {
     await schedulerClient`update jobs set status = 'succeeded' where id = ${staleId}`;
   });
 
+  it("keeps claiming when a stale job's requeue meets a waiting duplicate (#781)", async () => {
+    // A crashed sync whose connection got a "Sync now" meanwhile: requeued
+    // as pending it would be a second waiting sync (jobs_one_pending_sync).
+    const [connection] = await withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      (tx) =>
+        tx
+          .insert(schema.connections)
+          .values({
+            workspaceId: workspaceA,
+            connectorId: "demo",
+            name: "Stale duplicate",
+          })
+          .returning({ id: schema.connections.id }),
+    );
+    const connectionId = connection!.id;
+    const stale = await seedJob({
+      workspaceId: workspaceA,
+      connectionId,
+      kind: "connection.sync",
+    });
+    await schedulerClient`
+      update jobs set status = 'running', locked_by = 'crashed-worker',
+        locked_at = now() - interval '1 hour'
+      where id = ${stale}`;
+    const waiting = await seedJob({
+      workspaceId: workspaceA,
+      connectionId,
+      kind: "connection.sync",
+    });
+    const other = await seedJob({ workspaceId: workspaceB });
+
+    const claimed = (await claimJobs(schedulerDb, "w-dup", 10, 1800)).map(
+      (job) => job.id,
+    );
+    // The queue goes on: another workspace's job is claimed.
+    expect(claimed).toContain(other);
+    const rows = await schedulerClient`
+      select id, status, last_error, run_at > now() + interval '20 seconds' as later
+      from jobs where id in (${stale}, ${waiting})`;
+    const byId = new Map(rows.map((row) => [row.id as string, row]));
+    expect(byId.get(stale)).toMatchObject({ status: "failed" });
+    expect(String(byId.get(stale)!.last_error)).toContain("superseded");
+    // The waiting sync stays, no sooner than the requeue would have run.
+    expect(byId.get(waiting)).toMatchObject({ status: "pending", later: true });
+    await schedulerClient`
+      update jobs set status = 'succeeded' where id in (${waiting}, ${other})`;
+  });
+
   function connectWithOAuth(
     workspaceId: string,
     names: string[],
@@ -554,21 +605,75 @@ describe("claim_jobs", () => {
       expect(started).toHaveLength(1);
       expect(first).toEqual(expect.arrayContaining([jobOther, jobKeyed]));
 
-      // A backfill that hands over to a continuation keeps the app's slot.
-      expect(await deferJob(schedulerDb, started[0]!, "w-cap")).toBe(true);
-      await schedulerClient`update jobs set run_at = now() + interval '1 hour' where id = ${started[0]!}`;
       const waiting = google.filter((id) => id !== started[0]);
+      const claimNow = async () =>
+        (await claimJobs(schedulerDb, "w-cap", 10, 3600, 1)).map(
+          (job) => job.id,
+        );
+
+      // A backfill that hands over to a continuation keeps the app's slot,
+      // also in the second before its next segment is due (#781 review).
+      expect(await deferJob(schedulerDb, started[0]!, "w-cap")).toBe(true);
+      expect((await claimNow()).filter((id) => waiting.includes(id))).toEqual(
+        [],
+      );
+      await schedulerClient`update jobs set run_at = now() - interval '1 second' where id = ${started[0]!}`;
+      const resumed = await claimNow();
+      expect(resumed).toContain(started[0]);
+      expect(resumed.filter((id) => waiting.includes(id))).toEqual([]);
+
+      // Waiting out a retry backoff, it keeps its slot too.
       expect(
-        (await claimJobs(schedulerDb, "w-cap", 10, 3600, 1))
-          .map((job) => job.id)
-          .filter((id) => waiting.includes(id)),
-      ).toEqual([]);
+        await failJob(schedulerDb, started[0]!, "w-cap", "transient", {
+          retryable: true,
+        }),
+      ).toMatchObject({ status: "continuing" });
+      expect((await claimNow()).filter((id) => waiting.includes(id))).toEqual(
+        [],
+      );
+      await schedulerClient`update jobs set run_at = now() - interval '1 second' where id = ${started[0]!}`;
+      expect(await claimNow()).toContain(started[0]);
+
+      // Its connection waits for a provider's rate-limit reset (#781): it
+      // holds no slot, and another workspace's backfill of the app starts.
+      const owner = postgres(testDb.adminUrl, { max: 1 });
+      const [limited] = await owner<
+        { connection_id: string; workspace_id: string }[]
+      >`select connection_id, workspace_id from jobs where id = ${started[0]!}`;
+      try {
+        await owner`
+          insert into connection_state (connection_id, workspace_id, rate_limited_until)
+          values (${limited!.connection_id}, ${limited!.workspace_id}, now() + interval '1 hour')`;
+        expect(
+          await deferJobUntil(
+            schedulerDb,
+            started[0]!,
+            "w-cap",
+            new Date(Date.now() + 60 * 60 * 1000),
+            { continuation: { syncWindow: { mode: "backfill" } } },
+          ),
+        ).toBe(true);
+        const meanwhile = (await claimNow()).filter((id) =>
+          waiting.includes(id),
+        );
+        expect(meanwhile).toHaveLength(1);
+        // Once the reset has passed it waits for a free slot again.
+        await owner`update connection_state set rate_limited_until = now() - interval '1 second'
+          where connection_id = ${limited!.connection_id}`;
+        await schedulerClient`update jobs set run_at = now() - interval '1 second' where id = ${started[0]!}`;
+        expect(await claimNow()).not.toContain(started[0]);
+        await schedulerClient`update jobs set status = 'succeeded' where id = ${meanwhile[0]!}`;
+        waiting.splice(waiting.indexOf(meanwhile[0]!), 1);
+      } finally {
+        await owner`delete from connection_state where connection_id = ${limited!.connection_id}`;
+        await owner.end({ timeout: 5 });
+      }
 
       // No cap (0): the others are claimed as before.
       const uncapped = (await claimJobs(schedulerDb, "w-cap", 10, 3600, 0))
         .map((job) => job.id)
         .filter((id) => waiting.includes(id));
-      expect(uncapped.sort()).toEqual([...waiting].sort());
+      expect(uncapped).toEqual(waiting);
     } finally {
       await schedulerClient`
         update jobs set status = 'succeeded'
@@ -765,6 +870,77 @@ describe("completeJob / failJob", () => {
     expect(await deferJob(schedulerDb, id, "w-defer")).toBe(false);
     expect(await completeJob(schedulerDb, id, "w-next")).toBe(true);
   });
+  it("defers a running sync beside a waiting one without breaking the queue (#781)", async () => {
+    const [connection] = await withWorkspace(
+      db,
+      { workspaceId: workspaceA },
+      (tx) =>
+        tx
+          .insert(schema.connections)
+          .values({
+            workspaceId: workspaceA,
+            connectorId: "demo",
+            name: "Deferred duplicate",
+          })
+          .returning({ id: schema.connections.id }),
+    );
+    const connectionId = connection!.id;
+    const running = await seedJob({
+      workspaceId: workspaceA,
+      connectionId,
+      kind: "connection.sync",
+    });
+    await claimJobs(schedulerDb, "w-defer-dup", 100, 3600);
+    // "Sync now" while it runs: a second sync waits.
+    const waiting = await seedJob({
+      workspaceId: workspaceA,
+      connectionId,
+      kind: "connection.sync",
+    });
+    const reset = new Date(Date.now() + 30 * 60 * 1000);
+    expect(
+      await deferJobUntil(schedulerDb, running, "w-defer-dup", reset, {
+        note: "rate limited",
+      }),
+    ).toBe(true);
+    const rows = await schedulerClient`
+      select id, status, attempts, run_at, locked_by from jobs
+      where id in (${running}, ${waiting})`;
+    const byId = new Map(rows.map((row) => [row.id as string, row]));
+    expect(byId.get(running)).toMatchObject({
+      status: "failed",
+      attempts: 0,
+      locked_by: null,
+    });
+    expect(byId.get(waiting)!.status).toBe("pending");
+    expect(new Date(byId.get(waiting)!.run_at as string).getTime()).toBe(
+      reset.getTime(),
+    );
+
+    // A retryable failure beside a waiting sync: the same, and the queue
+    // stays claimable.
+    await schedulerClient`update jobs set run_at = now() where id = ${waiting}`;
+    expect(
+      (await claimJobs(schedulerDb, "w-fail-dup", 100, 3600)).map(
+        (job) => job.id,
+      ),
+    ).toContain(waiting);
+    const another = await seedJob({
+      workspaceId: workspaceA,
+      connectionId,
+      kind: "connection.sync",
+    });
+    expect(
+      await failJob(schedulerDb, waiting, "w-fail-dup", "transient", {
+        retryable: true,
+      }),
+    ).toMatchObject({ status: "failed", attempts: 1 });
+    const [kept] =
+      await schedulerClient`select status from jobs where id = ${another}`;
+    expect(kept!.status).toBe("pending");
+    await schedulerClient`update jobs set status = 'succeeded' where id = ${another}`;
+  });
+
   it("completes a running job exactly once", async () => {
     const id = await seedJob({ workspaceId: workspaceA });
     await claimJobs(schedulerDb, "w-complete", 5, 3600);

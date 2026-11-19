@@ -876,6 +876,13 @@ export const connectionStateViewSchema = z.object({
   nextDueAt: z.iso.datetime().nullable(),
   consecutiveFailures: z.number().int().nonnegative(),
   pollIntervalSeconds: z.number().int().positive(),
+  /**
+   * The provider's request limit is used up until then (#781); syncing
+   * continues after it. Null when no limit holds. Not a failure: health
+   * and authState stay as they are. Absent from an API deployed before
+   * its web app.
+   */
+  rateLimitedUntil: z.iso.datetime().nullable().optional(),
 });
 export type ConnectionStateView = z.infer<typeof connectionStateViewSchema>;
 
@@ -1089,7 +1096,13 @@ export const syncRunSchema = z.object({
   attempt: z.number().int().positive(),
   startedAt: z.iso.datetime(),
   finishedAt: z.iso.datetime().nullable(),
-  errorClass: z.enum(["auth", "transient", "contract", "budget"]).nullable(),
+  /**
+   * rate_limited (#781): the provider's request limit was used up until a
+   * known reset; the run stopped there and the connection waits for it.
+   */
+  errorClass: z
+    .enum(["auth", "transient", "contract", "budget", "rate_limited"])
+    .nullable(),
   errorMessage: z.string().nullable(),
   observationsWritten: z.number().int().nonnegative(),
 });

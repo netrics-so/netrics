@@ -21,7 +21,9 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.14: optional runtime.log, a structured connector logger (#638).
 // 0.2.15: optional done-SyncResult nextFrom, the next incremental window
 // start; the host no longer reads a window from the cursor (#758).
-export const SDK_VERSION = "0.2.15";
+// 0.2.16: RateLimitedError, a provider limit with a known reset: the host
+// defers the connection's jobs to it instead of retrying (#781).
+export const SDK_VERSION = "0.2.16";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

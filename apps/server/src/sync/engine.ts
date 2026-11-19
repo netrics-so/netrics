@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import type { DataPolicy } from "@netrics/domain";
 
 import {
@@ -13,6 +13,7 @@ import {
 } from "@netrics/connector-runtime";
 import {
   observationKey,
+  RateLimitedError,
   type ConnectionContext,
   type Observation,
   type SyncMode,
@@ -49,6 +50,7 @@ import { refreshConnectionIcons } from "../images/resource-icons.js";
 import {
   NonRetryableJobError,
   ContinueJobError,
+  DeferJobError,
   TerminalJobError,
   type JobHandler,
   type JobHandlerContext,
@@ -116,6 +118,34 @@ export interface SyncEngineDeps {
 type ErrorClass = "auth" | "transient" | "contract" | "budget";
 
 /**
+ * Bounds of a provider's reset (#781): never sooner than a few seconds (a
+ * reset in the past or right now), never later than a day (a provider's
+ * clock or header gone wrong must not park a connection for weeks).
+ */
+const MIN_RATE_LIMIT_WAIT_MS = 5_000;
+const MAX_RATE_LIMIT_WAIT_MS = 24 * 60 * 60 * 1000;
+/**
+ * Jitter added to a reset: a tenth of the wait, at most a minute, so the
+ * connections of one provider account do not all return at the same second.
+ */
+const MAX_RATE_LIMIT_JITTER_MS = 60_000;
+
+/** When a rate-limited connection runs again: the bounded reset plus jitter. */
+export function rateLimitedRunAt(
+  retryAt: string,
+  now: Date,
+  random: () => number = Math.random,
+): Date {
+  const wait = Math.min(
+    Math.max(Date.parse(retryAt) - now.getTime(), MIN_RATE_LIMIT_WAIT_MS),
+    MAX_RATE_LIMIT_WAIT_MS,
+  );
+  const jitter =
+    random() * Math.min(MAX_RATE_LIMIT_JITTER_MS, Math.max(1_000, wait / 10));
+  return new Date(now.getTime() + wait + Math.floor(jitter));
+}
+
+/**
  * Dataset store failures that are not the connector's fault. Storage
  * failures (the store redacts every database error, including
  * serialization failures, deadlocks, timeouts and lost connections, to
@@ -154,6 +184,7 @@ interface StateRow {
   backfillJobId: string | null;
   lastSuccessAt: Date | null;
   pollIntervalSeconds: number;
+  rateLimitedUntil: Date | null;
 }
 
 /** error_message / last_error are persisted verbatim: redact and truncate. */
@@ -336,6 +367,7 @@ async function runSync(
         backfillJobDatasets: schema.connectionState.backfillJobDatasets,
         lastSuccessAt: schema.connectionState.lastSuccessAt,
         pollIntervalSeconds: schema.connectionState.pollIntervalSeconds,
+        rateLimitedUntil: schema.connectionState.rateLimitedUntil,
       })
       .from(schema.connectionState)
       .where(eq(schema.connectionState.connectionId, connectionId))
@@ -368,6 +400,18 @@ async function runSync(
     config: loaded.connection.config as Record<string, unknown>,
   };
   const state = loaded.state;
+  // The provider's limit is used up (#781): no job of the connection asks
+  // it before the reset. This one waits too, without a run or a retry.
+  if (state?.rateLimitedUntil && state.rateLimitedUntil > now) {
+    log.info(
+      { until: iso(state.rateLimitedUntil) },
+      "sync waits for the provider's rate limit",
+    );
+    throw new DeferJobError(
+      state.rateLimitedUntil,
+      `The provider's rate limit is used up until ${iso(state.rateLimitedUntil)}.`,
+    );
+  }
   /**
    * Where this run starts (#153). An incremental run continues from the
    * stored cursor. A backfill reads the connector's whole window: fresh, it
@@ -520,6 +564,96 @@ async function runSync(
       );
     }
     log.warn({ errorClass, err: message }, "sync run failed");
+  };
+
+  /**
+   * The provider's request limit is used up until a known reset (#781): no
+   * failure and no outage. Records the run as rate_limited (with what
+   * earlier pages committed). The provider answered, so a streak of
+   * failures before it is over: the failure count goes back to 0 and an
+   * outage to ok (the status board reads both, #721); other auth states
+   * stay. Moves every waiting job of the connection to the reset. Returns the
+   * error that puts this job back to wait: a backfill, or a run that
+   * committed pages, keeps its window as a continuation, so it resumes
+   * from its checkpoint and holds the connection until it is done.
+   */
+  const rateLimited = async (error: RateLimitedError): Promise<Error> => {
+    const runAt = rateLimitedRunAt(error.retryAt, new Date());
+    const runAtSql = sql`${iso(runAt)}::timestamptz`;
+    const message = safeMessage(error);
+    try {
+      await withWorkspace(appDb, { workspaceId }, async (tx) => {
+        await tx.insert(schema.syncRuns).values({
+          workspaceId,
+          connectionId,
+          mode,
+          requestedFrom: window.from,
+          requestedTo: window.to,
+          cursorBefore: startCursor,
+          cursorAfter: progress.pagesCommitted > 0 ? progress.cursor : null,
+          attempt,
+          status: "failed",
+          startedAt: now,
+          finishedAt: new Date(),
+          errorClass: "rate_limited",
+          errorMessage: message,
+          observationsWritten: progress.observationsWritten,
+        });
+        await tx
+          .insert(schema.connectionState)
+          .values({
+            connectionId,
+            workspaceId,
+            pollIntervalSeconds,
+            rateLimitedUntil: runAt,
+            nextDueAt: runAt,
+            consecutiveFailures: 0,
+          })
+          .onConflictDoUpdate({
+            target: schema.connectionState.connectionId,
+            set: {
+              rateLimitedUntil: runAt,
+              nextDueAt: sql`greatest(coalesce(${schema.connectionState.nextDueAt}, ${runAtSql}), ${runAtSql})`,
+              authState: sql`case when ${schema.connectionState.authState} = 'outage' then 'ok' else ${schema.connectionState.authState} end`,
+              consecutiveFailures: 0,
+            },
+          });
+        await tx
+          .update(schema.jobs)
+          .set({
+            runAt: sql`greatest(${schema.jobs.runAt}, ${runAtSql})`,
+          })
+          .where(
+            and(
+              eq(schema.jobs.workspaceId, workspaceId),
+              eq(schema.jobs.connectionId, connectionId),
+              ne(schema.jobs.id, job.id),
+              inArray(schema.jobs.kind, [
+                "connection.sync",
+                "connection.backfill",
+              ]),
+              inArray(schema.jobs.status, ["pending", "continuing"]),
+            ),
+          );
+      });
+    } catch (recordingError) {
+      log.error(
+        { err: safeMessage(recordingError) },
+        "failed to record rate limit",
+      );
+    }
+    log.warn(
+      { retryAt: error.retryAt, runAt: iso(runAt), err: message },
+      "sync rate limited by the provider",
+    );
+    const holdWindow = mode === "backfill" || progress.pagesCommitted > 0;
+    return new DeferJobError(
+      runAt,
+      message,
+      holdWindow
+        ? { syncWindow: { mode, from: iso(window.from), to: iso(window.to) } }
+        : undefined,
+    );
   };
 
   // Registry lookup: an unknown connector id means catalog drift — permanent.
@@ -714,6 +848,7 @@ async function runSync(
       (result) => !result.ok,
     );
   } catch (error) {
+    if (error instanceof RateLimitedError) throw await rateLimited(error);
     const authError = await authFailure(error);
     if (authError) {
       throw authError;
@@ -1069,6 +1204,7 @@ async function runSync(
           authState: "ok",
           authReason: null,
           consecutiveFailures: 0,
+          rateLimitedUntil: null,
         })
         .onConflictDoUpdate({
           target: schema.connectionState.connectionId,
@@ -1082,6 +1218,7 @@ async function runSync(
             authState: "ok",
             authReason: null,
             consecutiveFailures: 0,
+            rateLimitedUntil: null,
           },
         });
       await tx.insert(schema.syncRuns).values({
@@ -1101,6 +1238,7 @@ async function runSync(
     });
   } catch (error) {
     if (error instanceof ContinueJobError) throw error;
+    if (error instanceof RateLimitedError) throw await rateLimited(error);
     const authError = await authFailure(error);
     if (authError) {
       throw authError;

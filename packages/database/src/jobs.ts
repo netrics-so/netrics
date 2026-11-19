@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
 
-import type { Db, Transaction } from "./context.js";
+import { hasSqlstate, type Db, type Transaction } from "./context.js";
 import * as schema from "./schema.js";
 
 // Typed wrappers around the durable job queue (ADR 0006). Two calling
@@ -168,6 +168,112 @@ export async function deferJob(
 }
 
 /**
+ * At most one sync and one backfill of a connection wait as `pending`
+ * (jobs_one_pending_sync, jobs_one_pending_backfill). A running job that
+ * goes back to `pending` while another of its kind already waits (a "Sync
+ * now" queued while it ran) would break that rule (#781 review): instead,
+ * the waiting job stays, runs no sooner than `runAt` (the later of the
+ * two), and the running one ends as `failed`, superseded. Returns false
+ * when the job is not running under `workerId`'s lease or nothing waits
+ * any more (the caller may then requeue it as usual).
+ */
+async function supersedeByWaiting(
+  schedulerDb: Db | Transaction,
+  jobId: string,
+  workerId: string,
+  runAt: ReturnType<typeof sql>,
+  note: string,
+  options: { countAttempt: boolean },
+): Promise<boolean> {
+  const rows = await schedulerDb.execute(sql`
+    with job as (
+      select id, kind, connection_id from jobs
+      where id = ${jobId}::uuid and status = 'running' and locked_by = ${workerId}
+      for update
+    ),
+    waiting as (
+      update jobs w set run_at = greatest(w.run_at, ${runAt})
+      from job
+      where w.kind = job.kind and w.connection_id = job.connection_id
+        and w.status = 'pending' and w.id <> job.id
+      returning w.id
+    )
+    update jobs
+    set status = 'failed', locked_by = null, locked_at = null,
+        attempts = attempts + ${options.countAttempt ? 1 : 0},
+        last_error = ${`${note} (superseded by a waiting job of the connection)`.slice(0, 500)}
+    where id = ${jobId}::uuid and status = 'running' and locked_by = ${workerId}
+      and exists (select 1 from waiting)
+    returning id`);
+  return rows.length === 1;
+}
+
+/** The unique index on waiting jobs refused the update (see above). */
+function waitingCollision(error: unknown): boolean {
+  return hasSqlstate(error, "23505");
+}
+
+/**
+ * Puts a running job back to wait until `runAt` without consuming a retry
+ * (#781: a provider rate limit with a known reset). With a continuation the
+ * job continues (status continuing, which also keeps the connection's other
+ * jobs waiting behind it, see claim_jobs); otherwise it keeps the status a
+ * retry would give it. When that is `pending` and another job of its kind
+ * already waits, the waiting one stays and runs no sooner than `runAt`
+ * (supersedeByWaiting). `note` lands in last_error: callers pass an already
+ * redacted message. Fenced on the lease like completeJob.
+ */
+export async function deferJobUntil(
+  schedulerDb: Db | Transaction,
+  jobId: string,
+  workerId: string,
+  runAt: Date,
+  options: { continuation?: Record<string, unknown>; note?: string } = {},
+): Promise<boolean> {
+  const { continuation, note } = options;
+  const at = sql`${runAt.toISOString()}::timestamptz`;
+  const requeue = async () =>
+    (
+      await schedulerDb.execute(sql`update jobs
+    set status = ${
+      continuation === undefined
+        ? sql`case when payload ? 'continuation' then 'continuing' else 'pending' end`
+        : sql`'continuing'`
+    },
+        run_at = ${at},
+        locked_by = null, locked_at = null, last_error = ${note ?? null},
+        payload = ${
+          continuation === undefined
+            ? sql`payload`
+            : sql`jsonb_set(payload, '{continuation}', ${JSON.stringify(continuation)}::jsonb)`
+        }
+    where id = ${jobId}::uuid and status = 'running' and locked_by = ${workerId}
+    returning id`)
+    ).length === 1;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await requeue();
+    } catch (error) {
+      if (!waitingCollision(error) || attempt >= 2) throw error;
+    }
+    if (
+      await supersedeByWaiting(
+        schedulerDb,
+        jobId,
+        workerId,
+        at,
+        note ?? "deferred",
+        {
+          countAttempt: false,
+        },
+      )
+    ) {
+      return true;
+    }
+  }
+}
+
+/**
  * Extends the lease of a running job held by `workerId`. Workers call this
  * periodically while a handler runs so long jobs are not reclaimed as stale.
  * Returns false when the lease is no longer held (the job was reclaimed).
@@ -205,6 +311,47 @@ export interface FailJobResult {
  * not running under `workerId`'s lease (fenced, like completeJob).
  */
 export async function failJob(
+  schedulerDb: Db | Transaction,
+  jobId: string,
+  workerId: string,
+  error: string,
+  options: { retryable: boolean; deadLetter?: boolean },
+): Promise<FailJobResult | null> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await failJobOnce(schedulerDb, jobId, workerId, error, options);
+    } catch (failure) {
+      // A retry would wait as `pending` beside another waiting job of its
+      // kind (#781 review): the waiting one stays, no sooner than this
+      // retry would have run, and this one ends superseded.
+      if (!waitingCollision(failure) || attempt >= 2) throw failure;
+    }
+    const [job] = await schedulerDb.execute(
+      sql`select now() + least(power(2, attempts + 1) * interval '15 seconds',
+            interval '15 minutes') as run_at, attempts
+          from jobs where id = ${jobId}::uuid`,
+    );
+    if (!job) return null;
+    if (
+      await supersedeByWaiting(
+        schedulerDb,
+        jobId,
+        workerId,
+        sql`${asDate(job.run_at).toISOString()}::timestamptz`,
+        error,
+        { countAttempt: true },
+      )
+    ) {
+      return {
+        status: "failed",
+        attempts: (job.attempts as number) + 1,
+        runAt: asDate(job.run_at),
+      };
+    }
+  }
+}
+
+async function failJobOnce(
   schedulerDb: Db | Transaction,
   jobId: string,
   workerId: string,

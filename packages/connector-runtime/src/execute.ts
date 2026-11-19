@@ -1,4 +1,4 @@
-import { validateDatasetPage } from "@netrics/connector-sdk";
+import { RateLimitedError, validateDatasetPage } from "@netrics/connector-sdk";
 import {
   CURRENCY_DIMENSION,
   CURRENCY_MINOR_UNIT,
@@ -69,7 +69,7 @@ export class ConnectorTimeoutError extends Error {
 /**
  * An egress violation means the connector reached for a host it did not
  * declare (or a private address): a broken connector, never retried.
- * Everything else is a redacted, retryable provider failure.
+ * A RateLimitedError keeps its class and retryAt. Everything else is a redacted, retryable provider failure.
  */
 function classifyConnectorError(
   connector: Connector,
@@ -85,6 +85,15 @@ function classifyConnectorError(
   if (error instanceof EgressDeniedError) {
     return new ContractViolationError(
       `connector "${connector.manifest.id}": ${error.message}`,
+    );
+  }
+  // A provider limit with a known reset (SDK 0.2.16, #781): the host defers
+  // the connection's jobs to retryAt. The retryAt is a timestamp the class
+  // validated; only the message can carry credential material.
+  if (error instanceof RateLimitedError) {
+    return new RateLimitedError(
+      redactCredentialValues(error.message, context.credentials),
+      error.retryAt,
     );
   }
   return redactConnectorError(error, context.credentials);

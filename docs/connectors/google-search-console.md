@@ -128,9 +128,10 @@ day adds 0 to both sums.
   per day; each day's rows are fetched in pages of 2,500 (`startRow`).
 - Search Console allows about 1,200 queries per minute per property and
   user. When Google answers with a quota error (429, or 403 with a rate-limit
-  reason), netrics waits briefly and retries; a longer wait or the daily
-  quota ends the sync, which is retried later. The dashboard keeps the last
-  values meanwhile.
+  reason), netrics waits briefly and retries. A longer `Retry-After`, or the
+  daily quota (it resets at midnight Pacific Time), pauses the connection
+  until then; syncing continues there where it stopped. The dashboard keeps
+  the last values meanwhile.
 
 ## When something goes wrong
 

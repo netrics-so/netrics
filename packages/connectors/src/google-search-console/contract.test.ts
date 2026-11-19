@@ -13,6 +13,7 @@ import {
   freshnessEntry,
   runConnectorContractTests,
 } from "@netrics/connector-sdk/testing";
+import { RateLimitedError } from "@netrics/connector-sdk";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -27,6 +28,7 @@ import {
   parseConfig,
   searchConsoleManifest,
 } from "./index.js";
+import { nextPacificMidnight, QUOTA_EXCEEDED_WAIT_MS } from "./api.js";
 import {
   FAKE_TOKEN,
   createFakeSearchConsole,
@@ -405,15 +407,25 @@ describe("search console connector against recorded responses", () => {
     expect(waits).toEqual([1000, 2000]);
 
     let daily = 0;
-    await expect(
-      connector().discover(
+    // 10:30 in Los Angeles (PST): the daily quota resets at midnight there.
+    const error = await createSearchConsoleConnector({
+      now: () => Date.parse("2024-12-30T18:30:00.000Z"),
+    })
+      .discover(
         context(),
         recordedRuntime(() => {
           daily += 1;
           return reply(403, fixture("error-daily-quota"));
         }),
-      ),
-    ).rejects.toThrow(/quota is used up.*dailyLimitExceeded/);
+      )
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as Error).message).toMatch(
+      /quota is used up.*dailyLimitExceeded/,
+    );
+    expect((error as RateLimitedError).retryAt).toBe(
+      "2024-12-31T08:00:00.000Z",
+    );
     expect(daily).toBe(1);
   });
 
@@ -871,12 +883,17 @@ describe("search console connector", () => {
     expect(waits).toEqual([2000, 2000, 4000]);
   });
 
-  it("gives up on a far rate-limit reset and on persistent outages", async () => {
+  it("hands a far rate-limit reset to the host, and gives up on persistent outages", async () => {
     const far = fake({
       failures: [{ status: 429, headers: { "retry-after": "3600" } }],
     });
-    await expect(connector().discover(context(), far.runtime)).rejects.toThrow(
-      /quota is used up/,
+    const error = await connector()
+      .discover(context(), far.runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as Error).message).toMatch(/quota is used up/);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(clock() + 3_600_000).toISOString(),
     );
     const down = fake({
       failures: Array.from({ length: 4 }, () => ({ status: 500 })),
@@ -1043,5 +1060,74 @@ describe("search console freshness", () => {
       fake().runtime,
     );
     expect(result.freshness).toBeUndefined();
+  });
+});
+
+describe("quota resets (#781)", () => {
+  const quotaExceeded = {
+    error: {
+      code: 403,
+      message: "Quota exceeded.",
+      errors: [
+        {
+          message: "Quota exceeded.",
+          domain: "usageLimits",
+          reason: "quotaExceeded",
+        },
+      ],
+    },
+  };
+  const at = Date.parse("2024-12-30T18:30:00.000Z");
+
+  it("waits 15 minutes for 'quota exceeded' (it may be the 10-minute load quota), not until midnight", async () => {
+    const error = await createSearchConsoleConnector({ now: () => at })
+      .discover(
+        context(),
+        recordedRuntime(() => reply(403, quotaExceeded)),
+      )
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(at + QUOTA_EXCEEDED_WAIT_MS).toISOString(),
+    );
+  });
+
+  it("follows a Retry-After on 'quota exceeded'", async () => {
+    const error = await createSearchConsoleConnector({ now: () => at })
+      .discover(
+        context(),
+        recordedRuntime(() =>
+          reply(403, quotaExceeded, { "retry-after": "3600" }),
+        ),
+      )
+      .catch((caught: unknown) => caught);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(at + 3_600_000).toISOString(),
+    );
+  });
+
+  it("finds the next midnight in Los Angeles, on the daylight-saving days too", () => {
+    // An ordinary winter day (PST, UTC-8).
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2024-12-30T18:30:00.000Z"))),
+    ).toEqual(new Date("2024-12-31T08:00:00.000Z"));
+    // 2026-03-08, 01:00 PST: the clocks spring forward at 02:00, so the
+    // day has 23 hours and the next midnight is PDT (UTC-7).
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2026-03-08T09:00:00.000Z"))),
+    ).toEqual(new Date("2026-03-09T07:00:00.000Z"));
+    // 2026-11-01, 00:30 PDT: the clocks fall back at 02:00, so the day has
+    // 25 hours and the next midnight is PST (UTC-8).
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2026-11-01T07:30:00.000Z"))),
+    ).toEqual(new Date("2026-11-02T08:00:00.000Z"));
+    // A minute before midnight: the one a minute later.
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2026-11-02T07:59:00.000Z"))),
+    ).toEqual(new Date("2026-11-02T08:00:00.000Z"));
+    // Exactly at midnight: the next day's.
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2026-11-02T08:00:00.000Z"))),
+    ).toEqual(new Date("2026-11-03T08:00:00.000Z"));
   });
 });
