@@ -187,10 +187,11 @@ export const widgetFreshnessSchema = z.object({
    * A widget whose rows come from more than one connector (#784): each
    * one's summary, in name order, so screens list every source's day and
    * next time ("App Store up to Nov 17 · next ~9 PM · Google Play up to
-   * Nov 11") instead of the least fresh one's only. The fields above stay
+   * Nov 11") instead of the least fresh one's only: one per connector,
+   * never one left out (bounded at 50). The fields above stay
    * the least fresh, for clients that do not know `sources`.
    */
-  sources: z.array(widgetFreshnessSourceSchema).min(2).max(10).optional(),
+  sources: z.array(widgetFreshnessSourceSchema).min(2).max(50).optional(),
 });
 export type WidgetFreshness = z.infer<typeof widgetFreshnessSchema>;
 export const dashboardWidgetDataSchema = z.object({

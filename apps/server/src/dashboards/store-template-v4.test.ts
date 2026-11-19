@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createDatabase,
   createRawSqlClient,
+  findDashboard,
   createWorkspace,
   ingestDatasetPage,
   replaceImageReferences,
@@ -16,7 +17,13 @@ import {
   replaceDashboardRequestSchema,
   type StoreTemplatePlan,
 } from "@netrics/contracts";
-import { measureOptionsForBinding, type DataRow } from "@netrics/domain";
+import {
+  DEFAULT_DATA_POLICY,
+  measureOptionsForBinding,
+  type DataRow,
+} from "@netrics/domain";
+import { queryDashboardData } from "./data.js";
+import { createFreshnessReader } from "./freshness.js";
 import { createDefaultRegistry } from "../connectors.js";
 import { syncCatalog } from "../sync/catalog.js";
 import { createDataService } from "../data/service.js";
@@ -643,6 +650,93 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     );
     const saved = await save(studio, dashboard.version + 1);
     expect(saved.ok, JSON.stringify(saved)).toBe(true);
+  });
+
+  it("adds Google Play's proceeds when a linked product turns paid, its freshness Google Play's only (#784)", async () => {
+    const requestId = randomUUID();
+    await install(storeTemplateV5, requestId);
+    // Notes (both stores) turns paid with a website.
+    const notes = "product:8b0f8a8e-2f7a-4d55-9f43-3c3f1d1b0e01";
+    await products().update(actor(), requestId, {
+      products: [
+        {
+          productId: notes,
+          pricing: "paid",
+          website: { connectionId: vercelId, projectId: "prj_focus" },
+        },
+      ],
+    });
+    const { plan, copy } = await applyUpdate(requestId);
+    expect(plan).toMatchObject({ fromVersion: 5, toVersion: 6 });
+    const items = plan.records
+      .flatMap((record) => record.items)
+      .filter((item) => item.ref.includes(appSlideKey(notes)))
+      .map((item) =>
+        [item.ref.replace(/app-[0-9a-f]{16}/, "app"), item.change].join(" "),
+      )
+      .sort();
+    // Revenue, Google Play's proceeds and visitors arrive; downloads,
+    // ratings and the review move to the linked layout.
+    expect(items).toEqual(
+      [
+        "dashboard:portfolio#widget:app:downloads changed",
+        "dashboard:portfolio#widget:app:play-proceeds added",
+        "dashboard:portfolio#widget:app:ratings changed",
+        "dashboard:portfolio#widget:app:review changed",
+        "dashboard:portfolio#widget:app:revenue added",
+        "dashboard:portfolio#widget:app:visitors added",
+      ].sort(),
+    );
+    const slide = copy.slides.find((s) => s.name?.startsWith("Notes"))!;
+    // In reading order: the top row, then down.
+    expect(shape(slide)).toEqual([
+      "measure:downloads",
+      "measure:rating+rating_count",
+      "metric:app_store_connect.proceeds",
+      "measure:proceeds",
+      "metric:vercel.visitors",
+      "review:1002",
+    ]);
+    expect(
+      slide.formatWarnings.filter((w) => w.severity === "attention"),
+    ).toEqual([]);
+    // Freshness: App Store sales and Google Play earnings both stored; the
+    // Google Play proceeds tile (its binding fixes the store) lists Google
+    // Play's only, the downloads total both.
+    await owner`delete from connection_freshness where workspace_id = ${workspaceId}`;
+    for (const [connectionId, stream, resource, through] of [
+      [apple.id, "sales", "", "2026-11-03"],
+      [google.id, "earnings", "com.notes", "2026-10-31"],
+      [google.id, "installs", "com.notes", "2026-11-01"],
+    ] as const)
+      await owner`
+        insert into connection_freshness (workspace_id, connection_id, stream,
+          resource, data_through, time_zone, checked_at, advanced_at)
+        values (${workspaceId}, ${connectionId}, ${stream}, ${resource},
+          ${through}, 'America/Los_Angeles', ${now}, ${now})`;
+    const data = await withWorkspace(db, { workspaceId }, async (tx) => {
+      const dashboard = await findDashboard(tx, workspaceId, copy.id);
+      return queryDashboardData(
+        tx,
+        workspaceId,
+        dashboard!.slides,
+        dashboard!.dataFilters,
+        {},
+        at(),
+        DEFAULT_DATA_POLICY,
+        "en",
+        createFreshnessReader(workspaceId, registry, "en"),
+      );
+    });
+    const of = (index: number) =>
+      data.widgets.find((entry) => entry.widgetId === slide.widgets[index]!.id)!
+        .freshness;
+    expect(of(3)).toMatchObject({ stream: "Earnings", period: "month" });
+    expect(of(3)).not.toHaveProperty("sources");
+    expect(of(0)?.sources?.map((source) => source.source)).toEqual([
+      "App Store",
+      "Google Play",
+    ]);
   });
 
   it("offers an app that turned free, or got a website, as an update", async () => {

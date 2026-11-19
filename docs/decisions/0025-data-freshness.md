@@ -342,7 +342,7 @@ sources?: Array<{
   source: string; // "App Store", "Google Play"; else the connector's name
   // and the fields above: kind, stream, fetchedAt, dataThrough, period,
   // nextExpectedAt, late, nextCheckAt
-}>; // 2 to 10 entries; absent for one connector
+}>; // 2 to 50 entries, one per connector, never one left out; absent for one connector
 ```
 
 The source is named by its store for the store connectors ("App Store"

@@ -718,7 +718,14 @@ export function measureSplitTotals(
       });
       continue;
     }
-    const sum = exactDecimal("add", String(current.value), String(cell.value));
+    // A sum past the processing limits leaves the widget without a total,
+    // never fails it.
+    let sum: string | null;
+    try {
+      sum = exactDecimal("add", String(current.value), String(cell.value));
+    } catch {
+      return undefined;
+    }
     if (sum === null) return undefined;
     // Numbers stay numbers (integers within the safe range), text stays text.
     const numbers =

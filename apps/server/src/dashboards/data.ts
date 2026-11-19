@@ -435,6 +435,7 @@ export async function queryDashboardMeasure(
             input.binding.exclusions,
             deviceScope,
             { now, defaults, cache: freshnessReader.scopeMappings },
+            input.binding.filter,
           ),
         );
       const { policy } = await resolveDataPolicy(

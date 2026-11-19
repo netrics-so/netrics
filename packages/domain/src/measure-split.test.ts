@@ -51,6 +51,18 @@ describe("measureSplitTotals", () => {
     ).toEqual([{ value: 7, type: "integer", status: "partial" }]);
   });
 
+  it("has none, without failing, when the sum passes the processing limits", () => {
+    const huge = "9".repeat(5000);
+    expect(
+      measureSplitTotals(sum, "m", {
+        rows: [
+          row({ value: huge, type: "decimal" }),
+          row({ value: huge, type: "decimal" }),
+        ],
+      }),
+    ).toBeUndefined();
+  });
+
   it("has none where a total makes no sense", () => {
     const rows = [row({ value: 1 }), row({ value: 2 })];
     // Not additive: an average, a last value, a formula.

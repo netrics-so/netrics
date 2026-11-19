@@ -1022,6 +1022,46 @@ describe("app slide freshness (#767)", () => {
   const shown = (data: Awaited<ReturnType<typeof measure>>) =>
     (data.result?.rows ?? []).map((row) => row.dimensions.app).sort();
 
+  it("counts a widget's own fixed app as a scope (#784)", async () => {
+    const data = await withWorkspace(db, { workspaceId }, (tx) =>
+      queryDashboardMeasure(
+        tx,
+        workspaceId,
+        {
+          id: "66666666-6666-4666-8666-666666666666",
+          binding: {
+            modelId: storeModelId,
+            measureIds: ["views"],
+            groupBy: ["app"],
+            exclusions: [],
+            filter: {
+              kind: "call",
+              fn: "eq",
+              args: [
+                { kind: "field", fieldId: "app" },
+                { kind: "literal", type: "string", value: "product:p" },
+              ],
+            },
+          },
+          options: { view: "table", limit: 20 },
+        },
+        [appFilter],
+        {},
+        NOW,
+        DEFAULT_DATA_POLICY,
+        "en",
+        {},
+        {},
+        createFreshnessReader(workspaceId, manifests),
+      ),
+    );
+    // As on the linked product's slide, not every app's (2026-11-11).
+    expect(data.freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+      nextExpectedAt: at(6 * HOUR).toISOString(),
+    });
+  });
+
   it("gives a grouped value view its total with the split (#784)", async () => {
     const data = await withWorkspace(db, { workspaceId }, (tx) =>
       queryDashboardMeasure(
