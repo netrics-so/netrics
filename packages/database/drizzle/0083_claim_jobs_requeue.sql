@@ -9,12 +9,16 @@
 --    one would have; the stale one ends as `failed`, superseded.
 --
 -- 2. The per-app backfill cap (#635) no longer counts a continuing backfill
---    that waits for a later run_at (a provider's rate-limit reset, up to a
---    day): it holds no provider quota while it waits, so other workspaces'
---    backfills of the same OAuth app may run meanwhile. When it is due it
---    counts again; until a slot is free it waits. It still owns its
---    connection while it waits (the continuing check below is unchanged),
---    so the connection's incremental sync does not run ahead of it.
+--    whose connection waits for a provider's rate-limit reset
+--    (connection_state.rate_limited_until in the future, up to a day): it
+--    holds no provider quota while it waits, so other workspaces' backfills
+--    of the same OAuth app may run meanwhile. Once the reset has passed it
+--    counts again; until a slot is free it waits. Every other continuing
+--    backfill keeps its slot until it finishes, as in 0080: one between two
+--    segments (run_at a second ahead) and one waiting out a retry backoff
+--    (failJob or the stale requeue, 30 s to 15 min) alike. The waiting
+--    backfill still owns its connection (the continuing check below is
+--    unchanged), so the connection's incremental sync does not run ahead.
 --
 -- SECURITY DEFINER under the migration role as before (0006, 0080).
 SET LOCAL lock_timeout = '5s';--> statement-breakpoint
@@ -110,7 +114,8 @@ BEGIN
                OR (c.created_at, c.id) < (v_candidate.created_at, v_candidate.id))
       );
       -- Backfills share the OAuth app's quota across workspaces (#635). A
-      -- continuing one that waits for a later run_at holds no slot (#781).
+      -- continuing one whose connection waits for a rate-limit reset holds
+      -- no slot (#781); every other one keeps its slot until it finishes.
       IF v_candidate.kind = 'connection.backfill' AND coalesce(p_backfills_per_app, 0) > 0 THEN
         v_connector := NULL;
         v_provider := NULL;
@@ -128,7 +133,10 @@ BEGIN
             AND bo.provider = v_provider
             AND (b.status = 'running'
                  OR (b.status = 'continuing'
-                     AND b.run_at <= now()
+                     AND NOT EXISTS (
+                       SELECT 1 FROM connection_state s
+                       WHERE s.connection_id = b.connection_id
+                         AND s.rate_limited_until > now())
                      AND (v_candidate.status = 'pending'
                           OR (b.created_at, b.id) < (v_candidate.created_at, v_candidate.id))))
         ) >= p_backfills_per_app;
@@ -149,3 +157,5 @@ $$;
 REVOKE ALL ON FUNCTION claim_jobs(text, integer, interval, integer) FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION claim_jobs(text, integer, interval, integer) TO netrics_scheduler;
+--> statement-breakpoint
+SET LOCAL lock_timeout TO DEFAULT;

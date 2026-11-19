@@ -605,46 +605,75 @@ describe("claim_jobs", () => {
       expect(started).toHaveLength(1);
       expect(first).toEqual(expect.arrayContaining([jobOther, jobKeyed]));
 
-      // A backfill that hands over to a continuation keeps the app's slot
-      // (it is due again and goes first).
-      expect(await deferJob(schedulerDb, started[0]!, "w-cap")).toBe(true);
-      await schedulerClient`update jobs set run_at = now() - interval '1 second' where id = ${started[0]!}`;
       const waiting = google.filter((id) => id !== started[0]);
-      const resumed = (await claimJobs(schedulerDb, "w-cap", 10, 3600, 1)).map(
-        (job) => job.id,
+      const claimNow = async () =>
+        (await claimJobs(schedulerDb, "w-cap", 10, 3600, 1)).map(
+          (job) => job.id,
+        );
+
+      // A backfill that hands over to a continuation keeps the app's slot,
+      // also in the second before its next segment is due (#781 review).
+      expect(await deferJob(schedulerDb, started[0]!, "w-cap")).toBe(true);
+      expect((await claimNow()).filter((id) => waiting.includes(id))).toEqual(
+        [],
       );
+      await schedulerClient`update jobs set run_at = now() - interval '1 second' where id = ${started[0]!}`;
+      const resumed = await claimNow();
       expect(resumed).toContain(started[0]);
       expect(resumed.filter((id) => waiting.includes(id))).toEqual([]);
 
-      // Waiting for a provider's rate-limit reset (#781), it holds no slot:
-      // another workspace's backfill of the same app starts meanwhile.
+      // Waiting out a retry backoff, it keeps its slot too.
       expect(
-        await deferJobUntil(
-          schedulerDb,
-          started[0]!,
-          "w-cap",
-          new Date(Date.now() + 60 * 60 * 1000),
-          { continuation: { syncWindow: { mode: "backfill" } } },
-        ),
-      ).toBe(true);
-      const meanwhile = (await claimJobs(schedulerDb, "w-cap", 10, 3600, 1))
-        .map((job) => job.id)
-        .filter((id) => waiting.includes(id));
-      expect(meanwhile).toHaveLength(1);
-      // Once the reset is due it waits for a free slot again.
+        await failJob(schedulerDb, started[0]!, "w-cap", "transient", {
+          retryable: true,
+        }),
+      ).toMatchObject({ status: "continuing" });
+      expect((await claimNow()).filter((id) => waiting.includes(id))).toEqual(
+        [],
+      );
       await schedulerClient`update jobs set run_at = now() - interval '1 second' where id = ${started[0]!}`;
-      expect(
-        (await claimJobs(schedulerDb, "w-cap", 10, 3600, 1)).map(
-          (job) => job.id,
-        ),
-      ).not.toContain(started[0]);
-      await schedulerClient`update jobs set status = 'succeeded' where id = ${meanwhile[0]!}`;
+      expect(await claimNow()).toContain(started[0]);
+
+      // Its connection waits for a provider's rate-limit reset (#781): it
+      // holds no slot, and another workspace's backfill of the app starts.
+      const owner = postgres(testDb.adminUrl, { max: 1 });
+      const [limited] = await owner<
+        { connection_id: string; workspace_id: string }[]
+      >`select connection_id, workspace_id from jobs where id = ${started[0]!}`;
+      try {
+        await owner`
+          insert into connection_state (connection_id, workspace_id, rate_limited_until)
+          values (${limited!.connection_id}, ${limited!.workspace_id}, now() + interval '1 hour')`;
+        expect(
+          await deferJobUntil(
+            schedulerDb,
+            started[0]!,
+            "w-cap",
+            new Date(Date.now() + 60 * 60 * 1000),
+            { continuation: { syncWindow: { mode: "backfill" } } },
+          ),
+        ).toBe(true);
+        const meanwhile = (await claimNow()).filter((id) =>
+          waiting.includes(id),
+        );
+        expect(meanwhile).toHaveLength(1);
+        // Once the reset has passed it waits for a free slot again.
+        await owner`update connection_state set rate_limited_until = now() - interval '1 second'
+          where connection_id = ${limited!.connection_id}`;
+        await schedulerClient`update jobs set run_at = now() - interval '1 second' where id = ${started[0]!}`;
+        expect(await claimNow()).not.toContain(started[0]);
+        await schedulerClient`update jobs set status = 'succeeded' where id = ${meanwhile[0]!}`;
+        waiting.splice(waiting.indexOf(meanwhile[0]!), 1);
+      } finally {
+        await owner`delete from connection_state where connection_id = ${limited!.connection_id}`;
+        await owner.end({ timeout: 5 });
+      }
 
       // No cap (0): the others are claimed as before.
       const uncapped = (await claimJobs(schedulerDb, "w-cap", 10, 3600, 0))
         .map((job) => job.id)
         .filter((id) => waiting.includes(id));
-      expect(uncapped).toEqual(waiting.filter((id) => id !== meanwhile[0]));
+      expect(uncapped).toEqual(waiting);
     } finally {
       await schedulerClient`
         update jobs set status = 'succeeded'

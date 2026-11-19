@@ -15,4 +15,5 @@ ALTER TABLE "sync_runs" DROP CONSTRAINT "sync_runs_error_class_valid";--> statem
 -- the rest of the migration's transaction either way; sync_runs is pruned by
 -- the history retention, so the check is short.)
 ALTER TABLE "sync_runs" ADD CONSTRAINT "sync_runs_error_class_valid" CHECK ("sync_runs"."error_class" in ('auth', 'transient', 'contract', 'budget', 'rate_limited')) NOT VALID;--> statement-breakpoint
-ALTER TABLE "sync_runs" VALIDATE CONSTRAINT "sync_runs_error_class_valid";
+ALTER TABLE "sync_runs" VALIDATE CONSTRAINT "sync_runs_error_class_valid";--> statement-breakpoint
+SET LOCAL lock_timeout TO DEFAULT;
