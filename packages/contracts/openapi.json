@@ -13180,6 +13180,20 @@
                                 "minLength": 1,
                                 "maxLength": 60
                               }
+                            },
+                            "period": {
+                              "type": "string",
+                              "enum": [
+                                "today",
+                                "this_week",
+                                "last_7_days",
+                                "this_month",
+                                "last_30_days",
+                                "this_quarter",
+                                "last_90_days",
+                                "this_year",
+                                "last_12_months"
+                              ]
                             }
                           }
                         },
@@ -16927,6 +16941,20 @@
                                           "minLength": 1,
                                           "maxLength": 60
                                         }
+                                      },
+                                      "period": {
+                                        "type": "string",
+                                        "enum": [
+                                          "today",
+                                          "this_week",
+                                          "last_7_days",
+                                          "this_month",
+                                          "last_30_days",
+                                          "this_quarter",
+                                          "last_90_days",
+                                          "this_year",
+                                          "last_12_months"
+                                        ]
                                       }
                                     }
                                   }
@@ -19588,6 +19616,20 @@
                                                 "minLength": 1,
                                                 "maxLength": 60
                                               }
+                                            },
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -22584,6 +22626,20 @@
                                                 "minLength": 1,
                                                 "maxLength": 60
                                               }
+                                            },
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -25516,6 +25572,20 @@
                                           "minLength": 1,
                                           "maxLength": 60
                                         }
+                                      },
+                                      "period": {
+                                        "type": "string",
+                                        "enum": [
+                                          "today",
+                                          "this_week",
+                                          "last_7_days",
+                                          "this_month",
+                                          "last_30_days",
+                                          "this_quarter",
+                                          "last_90_days",
+                                          "this_year",
+                                          "last_12_months"
+                                        ]
                                       }
                                     }
                                   }
@@ -28187,6 +28257,20 @@
                                                 "minLength": 1,
                                                 "maxLength": 60
                                               }
+                                            },
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -31339,6 +31423,20 @@
                                                 "minLength": 1,
                                                 "maxLength": 60
                                               }
+                                            },
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -69563,6 +69661,20 @@
                                                 "minLength": 1,
                                                 "maxLength": 60
                                               }
+                                            },
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -74469,6 +74581,20 @@
                                                 "minLength": 1,
                                                 "maxLength": 60
                                               }
+                                            },
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -89700,6 +89826,20 @@
                                                 "minLength": 1,
                                                 "maxLength": 60
                                               }
+                                            },
+                                            "period": {
+                                              "type": "string",
+                                              "enum": [
+                                                "today",
+                                                "this_week",
+                                                "last_7_days",
+                                                "this_month",
+                                                "last_30_days",
+                                                "this_quarter",
+                                                "last_90_days",
+                                                "this_year",
+                                                "last_12_months"
+                                              ]
                                             }
                                           },
                                           "required": [

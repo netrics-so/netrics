@@ -56,16 +56,17 @@ struct MeasureWidgetView: View {
             label: label, measureIds: measureIds, groupBy: groupBy, rows: rows, box: fitsTile ? box : nil,
             fontScale: env.fontScale, labels: options.labels, pixel: pixel, now: now, language: env.language)
     }
-    private var splitFit: (valueSize: Double, shown: Int, rowsLine: String?) {
+    private var splitFit: (valueSize: Double, valueLines: Int?, shown: Int, rowsLine: String?) {
         data.splitFit(
             label: label, measureIds: measureIds, groupBy: groupBy, rows: rows, box: fitsSplit ? box : nil,
             fontScale: env.fontScale, pixel: pixel, now: now, language: env.language)
     }
     /// A freshness line over several sources (#784): the form that fits
     /// the tile, a line each; nil for one source.
-    private var sourceLines: [String]? {
-        data.freshnessSourceLines(
-            width: fitsLayout ? box?.width : nil, fontScale: env.fontScale, now: now, language: env.language)
+    private var sourceLayout: MeasureWidgetData.FreshnessSourceLayout? {
+        data.freshnessSourceLayout(
+            width: fitsLayout ? box?.width : nil, scroll: scroll, fontScale: env.fontScale, now: now,
+            language: env.language)
     }
     /// A line of `size` units as the fit counts it (#768): the system font's
     /// own lines are taller (1.18 em) than the 1.15 the web draws.
@@ -136,13 +137,20 @@ struct MeasureWidgetView: View {
                 if let warning = lines.warning {
                     Text(verbatim: "⚠ \(warning)").font(font(24)).foregroundStyle(env.colors.warning)
                         .modifier(footer())
-                } else if let sourceLines {
-                    // Several sources (#784): the form that fits, chosen as the fit
-                    // counts it; never cut, a line per source as the last form.
-                    ForEach(Array(sourceLines.enumerated()), id: \.offset) { _, line in
-                        Text(verbatim: line).lineLimit(scroll ? nil : 1)
-                            .font(font(24).monospacedDigit()).foregroundStyle(env.colors.muted)
-                            .modifier(footer(StudioLayout.MeasureTableMetrics.freshnessLineHeight))
+                } else if let sourceLayout {
+                    // Several sources (#784): the form that fits, never cut; a
+                    // line per source as the last form.
+                    switch sourceLayout {
+                    case .lines(let lines):
+                        // Chosen as the fit counts it (or a scroll card, which wraps).
+                        sourceLines(lines, limit: scroll ? nil : 1)
+                    case .firstThatFits(let levels):
+                        // Unfitted tile: the first form that fits its actual width.
+                        ViewThatFits(in: .horizontal) {
+                            ForEach(Array(levels.enumerated()), id: \.offset) { index, lines in
+                                sourceLines(lines, limit: index == levels.count - 1 ? nil : 1)
+                            }
+                        }
                     }
                 } else if scroll {
                     if let first = candidates.first {
@@ -191,6 +199,16 @@ struct MeasureWidgetView: View {
             expiryClock = Date()
         }
     }
+    /// A freshness form's lines (#784), one Text each.
+    private func sourceLines(_ lines: [String], limit: Int?) -> some View {
+        VStack(alignment: .leading, spacing: env.pt(12)) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(verbatim: line).lineLimit(limit)
+                    .font(font(24).monospacedDigit()).foregroundStyle(env.colors.muted)
+                    .modifier(footer(StudioLayout.MeasureTableMetrics.freshnessLineHeight))
+            }
+        }
+    }
     /// A total with its split (#784): the total, then a line per group,
     /// label leading and value trailing; the groups alone without a total.
     @ViewBuilder private var splitView: some View {
@@ -200,8 +218,9 @@ struct MeasureWidgetView: View {
             Text(KitStrings.text(.noDataYet, env.language)).font(font(28))
         } else {
             if let total = data.splitTotal(measureIds: measureIds, language: env.language) {
+                // Wraps between its amounts only, on the lines the fit counts.
                 Text(verbatim: total)
-                    .font(env.font(fit.valueSize, .semibold)).monospacedDigit().lineLimit(1)
+                    .font(env.font(fit.valueSize, .semibold)).monospacedDigit().lineLimit(fit.valueLines)
                     .modifier(
                         MeasureLineHeight(
                             points: fitsSplit

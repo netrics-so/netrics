@@ -560,8 +560,12 @@ export function formatWarnings(
         );
       }
     } else if (widget.type === "measure" && widget.splitLines) {
-      // A total with its split (#784): every group line and a total of at
-      // least the smallest size above the footer lines, else cut.
+      // A total with its split (#784): its total of at least the smallest
+      // size and the group lines above the footer lines, else cut. The
+      // check has no data: it counts the lines asked for, at most
+      // MEASURE_SPLIT_SAMPLES.lines (a split is a few groups, such as the
+      // stores; more lines than fit give way with "N of M" on screens).
+      const lines = Math.min(widget.splitLines, MEASURE_SPLIT_SAMPLES.lines);
       const box = contentBoxIn(placement, format, context.showHeader);
       const fit = measureSplitLayout({
         label: widget.label ?? "",
@@ -569,17 +573,11 @@ export function formatWarnings(
         height: box.height,
         fontScale: context.fontScale,
         total: MEASURE_SPLIT_SAMPLES.total,
-        lines: Array.from(
-          { length: widget.splitLines },
-          () => MEASURE_SPLIT_SAMPLES.line,
-        ),
+        lines: Array.from({ length: lines }, () => MEASURE_SPLIT_SAMPLES.line),
         footer: MEASURE_SPLIT_SAMPLES.footer,
       });
       if (!fit.fits)
-        warn("rows_cut", widget.id, null, {
-          shown: fit.shown,
-          limit: widget.splitLines,
-        });
+        warn("rows_cut", widget.id, null, { shown: fit.shown, limit: lines });
     } else if (widget.type === "status" && widget.rows) {
       // More sources than rows: the last row says "+N more" (info; the
       // problems sort first, ADR 0019 section 7).

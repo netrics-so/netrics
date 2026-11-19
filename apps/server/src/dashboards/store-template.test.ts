@@ -464,7 +464,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
   const APP_SLIDE_HASHES: Record<number, string> = {
     4: "034364f9fb26ab383278ff8a92015b88fdb1c4d10bc165055f877cb2ec827622",
     5: "71bd572ac6b0d3e39dae1b4f718cf6fdf3ca2b5e261f1c11ee82617d73b4df3d",
-    6: "feda3b8dcb58f02f8db9dbe233dec05e9bada2093ef64b490c1584df6262c268",
+    6: "51f02f191476194328d5376d9bd30561e60337fd6a4451036c944bd950b99b46",
   };
   it("needs a version bump for any app slide change; 4 and 5 stay frozen", () => {
     const hash = (template: typeof storeTemplate) =>
@@ -506,36 +506,49 @@ describe("version 4: an overview and one slide per app (#709)", () => {
         widget.h,
       ]),
     ).toEqual([
-      // Both stores' downloads: the total and a line per store, in the
-      // left third's upper half (room for both lines at every font scale).
-      ["measure:downloads:value", "Downloads", 0, 0, 4, 4],
-      // The App Store's revenue in the display currency, as before.
-      [
-        "metric:app_store_connect.proceeds",
-        "Revenue, last 30 days · App Store",
-        4,
-        0,
-        4,
-        3,
-      ],
-      ["metric:vercel.visitors", "Website visitors, last 30 days", 8, 0, 4, 3],
-      ["measure:rating:table", "Store ratings", 4, 3, 4, 5],
-      // Google Play's proceeds per currency, beside the ratings.
+      // Both stores' downloads over the last 30 days: the total and a line
+      // per store, in the left third's upper half; Google Play's proceeds
+      // per currency below it.
+      ["measure:downloads:value", "Downloads, last 30 days", 0, 0, 4, 4],
       [
         "measure:proceeds:table",
         "Proceeds after fees · Google Play",
-        8,
+        0,
+        4,
+        4,
+        4,
+      ],
+      // The ratings five columns wide over the latest review.
+      ["measure:rating:table", "Store ratings", 4, 0, 5, 5],
+      ["review", null, 4, 5, 5, 3],
+      // The App Store's revenue in the display currency, as before, and
+      // the website's visitors.
+      [
+        "metric:app_store_connect.proceeds",
+        "Revenue, last 30 days · App Store",
+        9,
+        0,
         3,
         4,
-        5,
       ],
-      ["review", null, 0, 4, 4, 4],
+      ["metric:vercel.visitors", "Website visitors, last 30 days", 9, 4, 3, 4],
     ]);
     const split = paid.widgets[0]!;
     if (split.type !== "measure") throw new Error("not a measure");
     expect(split.binding.groupBy).toEqual(["store"]);
-    expect(split.options).toMatchObject({ view: "value", limit: 2 });
-    const play = paid.widgets[4]!;
+    // Its own period, like the App Store widgets'; the date filter does
+    // not change it (and says so).
+    expect(split.options).toMatchObject({
+      view: "value",
+      limit: 2,
+      period: "last_30_days",
+    });
+    expect(split.binding.exclusions.map((e) => e.filterId)).toContain("day");
+    // The ratings' heads fit five columns: the rating's is its star.
+    const ratings = paid.widgets[2]!;
+    if (ratings.type !== "measure") throw new Error("not a measure");
+    expect(ratings.options.labels).toMatchObject({ rating: "★" });
+    const play = paid.widgets[1]!;
     if (play.type !== "measure") throw new Error("not a measure");
     expect(play.binding.filter).toEqual({
       kind: "call",
@@ -548,7 +561,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
     // Free: no revenue on either store; the review stays the App Store's.
     expect(
       slideOf(linked(false, false)).widgets.map((widget) => widget.type),
-    ).toEqual(["measure", "measure", "review"]);
+    ).toEqual(["measure", "review", "measure"]);
     // A single-store app keeps version 5's slide.
     for (const single of [apps[0]!, apps[1]!])
       expect(
@@ -687,7 +700,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       website: null,
     });
     const many = Array.from({ length: 14 }, (_, n) => free(n));
-    const slides = storeAppSlides({ apps: many, appStore: [] });
+    const slides = storeAppSlides({ apps: many, appStore: [] }, 4);
     expect(slides.shown.map((app) => app.name)).toEqual(
       many.slice(0, 11).map((app) => app.name),
     );
@@ -708,10 +721,13 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       productId: `${apple.id}:${n}`,
       name: `Paid ${String(n).padStart(2, "0")}`,
     }));
-    const budget = storeAppSlides({
-      apps: paid,
-      appStore: [{ id: apple.id, name: apple.name }],
-    });
+    const budget = storeAppSlides(
+      {
+        apps: paid,
+        appStore: [{ id: apple.id, name: apple.name }],
+      },
+      4,
+    );
     expect(budget.shown).toHaveLength(8);
     expect(budget.omitted).toHaveLength(3);
     const request = createDashboardRequestSchema.parse(

@@ -90,6 +90,8 @@ export const storeTemplateCopy = (locale: Locale) =>
         countryShort: "Land",
         ratingCountShort: "Anzahl",
         downloadsRecent: "Downloads, letzte 30 Tage",
+        downloads30: "Downloads, 30 Tage",
+        ownPeriod: "Zeigt die letzten 30 Tage, nicht den Zeitraum des Filters.",
         visitors: "Website-Besucher, letzte 30 Tage",
         appStore: "App Store",
         connectionOwn:
@@ -145,6 +147,8 @@ export const storeTemplateCopy = (locale: Locale) =>
         countryShort: "Country",
         ratingCountShort: "Ratings",
         downloadsRecent: "Downloads, last 30 days",
+        downloads30: "Downloads, 30 days",
+        ownPeriod: "Shows the last 30 days, not the filter's range.",
         visitors: "Website visitors, last 30 days",
         appStore: "App Store",
         connectionOwn:
@@ -1307,6 +1311,14 @@ const PROCEEDS_TABLE: OverviewMeasureTable = {
   rows: 20,
   order: null,
 };
+/**
+ * A linked product's ratings (version 6, #784): the rating's head is its
+ * star, so no head breaks inside a word in five columns.
+ */
+const LINKED_RATINGS_TABLE: OverviewMeasureTable = {
+  ...RATINGS_TABLE,
+  labels: (t) => ({ ...RATINGS_TABLE.labels(t), rating: "★" }),
+};
 /** A linked product's Google Play proceeds (version 6, #784). */
 const PLAY_PROCEEDS_TABLE: OverviewMeasureTable = {
   titles: (t) =>
@@ -1354,7 +1366,7 @@ export function linksBothStores(
 /** The widgets an app's slide shows, in reading order. */
 export function appSlideWidgets(
   app: StoreAppIdentity,
-  version: StoreTemplateVersion = 5,
+  version: StoreTemplateVersion,
 ): string[] {
   return [
     ...(app.paid ? ["revenue"] : []),
@@ -1397,7 +1409,7 @@ function overviewTables(portfolio: StorePortfolio) {
  */
 export function storeAppSlides(
   portfolio: StorePortfolio,
-  version: StoreTemplateVersion = 5,
+  version: StoreTemplateVersion,
 ): {
   shown: StoreAppIdentity[];
   omitted: StoreAppIdentity[];
@@ -1770,18 +1782,36 @@ function buildPortfolioSlides(
               5,
             ),
       });
-    if (linked)
-      // Both stores' downloads and user installs over the date filter's
-      // range: the total and a line per store (a value view by store).
+    if (linked) {
+      // Both stores' downloads and user installs over the last 30 days, as
+      // the App Store widgets read theirs: the total and a line per store
+      // (a value view by store with its own period, which the date filter
+      // does not change).
+      const downloads = measure(
+        "downloads",
+        0,
+        0,
+        0,
+        3,
+        ["store"],
+        ["downloads"],
+      );
+      const { x: _x, w: _w, ...unplaced } = downloads;
       band.push({
         key: key("downloads"),
-        widget: sized(
-          measure("downloads", 0, 0, 0, 3, ["store"], ["downloads"]),
-          "value",
-          2,
-        ),
+        widget: {
+          ...unplaced,
+          binding: {
+            ...downloads.binding,
+            exclusions: [
+              ...downloads.binding.exclusions,
+              { filterId: "day", reason: t.ownPeriod },
+            ],
+          },
+          options: { view: "value", limit: 2, period: RECENT },
+        },
       });
-    else if (store)
+    } else if (store)
       band.push({
         key: key("downloads"),
         widget: metric(
@@ -1895,47 +1925,53 @@ function buildPortfolioSlides(
     // freshness at every theme font scale), its latest review the lower
     // half; the band (h 3) and the tables (h 5) share the other two thirds.
     const linkedRows = (): Placed[] => {
-      const place = (
-        entries: { key: string; widget: Unplaced }[],
+      const at = (
+        entry: { key: string; widget: Unplaced } | undefined,
+        x: number,
         y: number,
+        w: number,
         h: number,
-      ): Placed[] => {
-        const count = entries.length,
-          base = Math.floor(8 / count),
-          extra = 8 - base * count;
-        let x = 4;
-        return entries.map(({ key, widget }, index) => {
-          const w = index < extra ? base + 1 : base;
-          const placed = { key, widget: { ...widget, x, y, w, h } as Widget };
-          x += w;
-          return placed;
-        });
-      };
-      const downloads = band.find((entry) => entry.key === key("downloads"))!;
-      const review = lower.find((entry) => entry.key === key("review"));
-      const top = band.filter((entry) => entry !== downloads);
-      const tables = lower.filter((entry) => entry !== review);
-      return [
-        {
-          key: downloads.key,
-          widget: { ...downloads.widget, x: 0, y: 0, w: 4, h: 4 } as Widget,
-        },
-        ...place(top, 0, 3),
-        ...(top.length ? place(tables, 3, 5) : place(tables, 0, 8)),
-        ...(review
+      ): Placed[] =>
+        entry
           ? [
               {
-                key: review.key,
-                widget: { ...review.widget, x: 0, y: 4, w: 4, h: 4 } as Widget,
+                key: entry.key,
+                widget: { ...entry.widget, x, y, w, h } as Widget,
               },
             ]
-          : []),
+          : [];
+      const find = (kind: string) =>
+        [...band, ...lower].find((entry) => entry.key === key(kind));
+      const visitors = find("visitors"),
+        revenue = find("revenue");
+      return [
+        // The left third: the total with its split; below it Google
+        // Play's proceeds (paid) or the latest review (free).
+        ...at(find("downloads"), 0, 0, 4, 4),
+        ...(revenue
+          ? [
+              ...at(find("play-proceeds"), 0, 4, 4, 4),
+              // The ratings five columns wide over the latest review;
+              // revenue and visitors on the right.
+              ...at(find("ratings"), 4, 0, 5, 5),
+              ...at(find("review"), 4, 5, 5, 3),
+              ...at(revenue, 9, 0, 3, visitors ? 4 : 8),
+              ...at(visitors, 9, 4, 3, 4),
+            ]
+          : [
+              ...at(find("review"), 0, 4, 4, 4),
+              // Free: visitors over the ratings, eight columns wide.
+              ...at(visitors, 4, 0, 8, 3),
+              ...at(find("ratings"), 4, visitors ? 3 : 0, 8, visitors ? 5 : 8),
+            ]),
       ];
     };
     const rows = linked ? linkedRows() : [...row(band), ...row(lower)];
     const fittedTables = fitTables(rows, (entry) =>
       entry === key("ratings")
-        ? RATINGS_TABLE
+        ? linked
+          ? LINKED_RATINGS_TABLE
+          : RATINGS_TABLE
         : entry === key("revenue")
           ? PROCEEDS_TABLE
           : entry === key("play-proceeds")
@@ -1961,7 +1997,7 @@ function buildPortfolioSlides(
                 STUDIO_FONT_SCALES.slice(0, index + 1),
               ),
             ).length;
-          return [t.downloads, t.downloadsShort]
+          return [t.downloadsRecent, t.downloads30]
             .map(titled)
             .reduce((best, candidate) =>
               reach(candidate) > reach(best) ? candidate : best,

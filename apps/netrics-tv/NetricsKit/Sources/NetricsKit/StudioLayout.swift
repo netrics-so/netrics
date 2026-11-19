@@ -992,7 +992,7 @@ public enum StudioLayout {
         label: String, width inputWidth: Double, height: Double, fontScale: Double? = nil, total: String?,
         lines: [(String, String)], footer: [String?], pixel: Double? = nil, font: MeasureFont = .any,
         rowsLine: ((Int, Int) -> String)? = nil
-    ) -> (valueSize: Double, shown: Int, rowsLine: String?, fits: Bool) {
+    ) -> (valueSize: Double, valueLines: Int, shown: Int, rowsLine: String?, fits: Bool) {
         let parts = measureTableParts(
             label: label, width: inputWidth, fontScale: fontScale, columns: nil, pixel: pixel, font: font)
         let scale = effectiveFontScale(fontScale)
@@ -1005,32 +1005,54 @@ public enum StudioLayout {
             Double(Swift.max(1, parts.wrap("\(line.0) \(line.1)", width - pixelUnits, cell)))
                 * (cell * m.lineHeight + pixelUnits)
         }
-        let totalWidth = total.map { measureTextWidth($0, fontSize: 1, weight: .semibold, font: font) } ?? 0
-        let widest = totalWidth > 0 ? (width - pixelUnits) / totalWidth : v.value * scale
-        func layout(_ shown: Int, _ footer: [String?]) -> (valueSize: Double, ok: Bool) {
+        func totalLines(_ size: Double) -> Int {
+            guard let total else { return 0 }
+            return Swift.max(1, parts.wrap(total, width - pixelUnits, size, .semibold))
+        }
+        let most = v.value * scale, least = v.valueMin * scale
+        // The largest size from 84 down to 36 at which the total fits the
+        // width on as few lines as the room holds: it wraps between its
+        // amounts, so width never makes a group line give way.
+        func value(_ room: Double) -> (size: Double, lines: Int)? {
+            guard let total else { return room >= -1e-9 ? (0, 0) : nil }
+            for lines in 1...8 {
+                let tall = (room - pixelUnits * Double(lines)) / (Double(lines) * v.valueLineHeight)
+                if tall < least - 1e-9 { return nil }
+                var size = Swift.min(most, tall)
+                let oneLine = measureTextWidth(total, fontSize: 1, weight: .semibold, font: font)
+                if lines == 1 && oneLine > 0 { size = Swift.min(size, (width - pixelUnits) / oneLine) }
+                while size >= least - 1e-9 {
+                    if totalLines(size) <= lines { return (size, lines) }
+                    size -= 0.5 * scale
+                }
+            }
+            return nil
+        }
+        func layout(_ shown: Int, _ footer: [String?]) -> (size: Double, lines: Int)? {
             let linesHeight = lines.prefix(shown).reduce(0) { $0 + lineHeight($1) }
             let room =
                 height - head - footer.reduce(0) { $0 + parts.footerLine($1) }
                 - (shown > 0 ? linesHeight + m.gap : 0)
-            guard total != nil else { return (0, room >= -1e-9) }
-            let valueSize = Swift.min(v.value * scale, widest, (room - pixelUnits) / v.valueLineHeight)
-            return (valueSize, valueSize >= v.valueMin * scale - 1e-9)
+            return value(room)
         }
         let all = lines.count
-        let full = layout(all, footer)
-        if full.ok { return (Swift.max(0, full.valueSize), all, nil, true) }
+        if let full = layout(all, footer) { return (full.size, full.lines, all, nil, true) }
         var shown = all - 1
         while shown >= 0 {
             let line = rowsLine?(shown, all)
-            let fitted = layout(shown, line.map { footer + [$0] } ?? footer)
-            // Never below the smallest size: the readability check flags a
-            // total too large for its tile; it is never drawn unreadably.
-            if fitted.ok || shown == 0 {
-                return (total == nil ? 0 : Swift.max(v.valueMin * scale, fitted.valueSize), shown, line, false)
+            if let fitted = layout(shown, line.map { footer + [$0] } ?? footer) {
+                return (fitted.size, fitted.lines, shown, line, false)
             }
             shown -= 1
         }
-        return (total == nil ? 0 : v.valueMin * scale, 0, nil, false)
+        // Not even the total fits: at its smallest size, never drawn
+        // unreadably (the readability check flags it).
+        return (total == nil ? 0 : least, totalLines(least), 0, all > 0 ? rowsLine?(0, all) : nil, false)
+    }
+
+    /** A total as measureSplitLayout breaks it: amounts kept whole, joined by " · ". */
+    public static func measureSplitTotalText(_ amounts: [String]) -> String {
+        amounts.map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: " · ")
     }
 
     /** A row label's size: shrunk down to cellMin, then truncated. */

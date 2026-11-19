@@ -33,6 +33,7 @@ import {
   measureTableRowsShown,
   freshnessLevelFit,
   measureSplitLayout,
+  measureSplitTotalText,
   type DataField,
 } from "@netrics/domain";
 
@@ -475,10 +476,13 @@ export function MeasureWidgetView({
     data !== null &&
     widget.options.view === "value" &&
     widget.binding.groupBy.length > 0;
+  // Amounts kept whole; a total in several currencies wraps between them.
   const splitTotal = data?.totals?.length
-    ? data.totals
-        .map((cell) => format(cell.value, cell.type, cell.currency, cell.unit))
-        .join(" · ")
+    ? measureSplitTotalText(
+        data.totals.map((cell) =>
+          format(cell.value, cell.type, cell.currency, cell.unit),
+        ),
+      )
     : null;
   const splitLines = splits
     ? rows.map(
@@ -519,6 +523,7 @@ export function MeasureWidgetView({
         })
       : {
           valueSize: 84 * fontScale,
+          valueLines: 1,
           shown: splitLines.length,
           rowsLine: null,
           fits: true,

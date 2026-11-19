@@ -29,6 +29,7 @@ import {
   measureTableRowsShown,
   freshnessLevelFit,
   measureSplitLayout,
+  measureSplitTotalText,
   measureTextWidth,
   MEASURE_GLYPH_CHARS,
   MEASURE_GLYPH_EMS,
@@ -460,6 +461,8 @@ export function buildStudioLayoutVectors() {
   // fit, with wrapping heads, cells and footer lines.
   const measureBoxes = [
     { width: 560, height: 414.2 },
+    // The review's probe: a two-currency total in a narrow, tall tile.
+    { width: 420, height: 600 },
     { width: 404, height: 414.2 },
     { width: 1808, height: 892.4 },
     { width: 200, height: 100 },
@@ -590,6 +593,14 @@ export function buildStudioLayoutVectors() {
       lines: [
         ["App Store", "12,00 EUR"],
         ["Google Play", "3,40 USD"],
+      ],
+    },
+    // A total in two currencies: wraps between its amounts (#784 review).
+    {
+      total: measureSplitTotalText(["1.234,56 EUR", "789,00 USD"]),
+      lines: [
+        ["App Store", "1.000,00 EUR · 789,00 USD"],
+        ["Google Play", "234,56 EUR"],
       ],
     },
   ] as const;

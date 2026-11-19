@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   DATA_TYPES,
   DASHBOARD_MEASURE_VIEWS,
+  PERIODS,
   type DashboardDataFilter,
   type DashboardFilterValue,
   type MeasureWidgetBinding,
@@ -79,6 +80,13 @@ export const measureWidgetOptionsSchema = z.object({
    * installs". Without one, the model's name.
    */
   labels: z.record(id, z.string().trim().min(1).max(60)).optional(),
+  /**
+   * A period of the workspace's days the widget reads (#784): "last 30
+   * days" on the model's reporting-date dimension, as connection widgets
+   * read theirs, whatever the dashboard's date filter says (which the
+   * widget should then exclude). Absent: the filters' range.
+   */
+  period: z.enum(PERIODS).optional(),
 });
 export const dashboardFilterValuesSchema = z.record(
   id,

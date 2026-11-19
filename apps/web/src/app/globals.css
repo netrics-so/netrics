@@ -5344,7 +5344,8 @@ a.button.primary:hover {
   margin: auto 0 0;
   flex-shrink: 0;
   font-weight: 600;
-  white-space: nowrap;
+  /* Breaks only between amounts (no-break spaces inside each), on the
+     lines measureSplitLayout counts. */
   overflow-wrap: normal;
 }
 .sw-measure-split {

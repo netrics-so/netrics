@@ -100,6 +100,23 @@ private var both: WidgetFreshness {
         #expect(data.footerLines(rows: [], now: now, language: .en, freshnessLineCount: 2).filter { $0 == nil }.count == 2)
     }
 
+    @Test func anUnfittedTileGetsEveryFormToFitItsWidth() {
+        let data = MeasureWidgetData(scope: nil, metadata: nil, result: nil, error: nil, exclusions: [], freshness: both)
+        // No width and no scroll card: every form, the last a line per
+        // source, so the view picks one that fits and never cuts.
+        guard case .firstThatFits(let levels) = data.freshnessSourceLayout(
+            width: nil, scroll: false, fontScale: 1, now: now, language: .en)
+        else { Issue.record("expected every form"); return }
+        #expect(levels.count >= 4)
+        #expect(levels.last?.count == 2)
+        // A fitted tile and a scroll card get one form's lines.
+        #expect(
+            data.freshnessSourceLayout(width: 300, scroll: false, fontScale: 1, now: now, language: .en)
+                == .lines(data.freshnessSourceLines(width: 300, fontScale: 1, now: now, language: .en)!))
+        guard case .lines = data.freshnessSourceLayout(width: nil, scroll: true, fontScale: 1, now: now, language: .en)
+        else { Issue.record("expected one form"); return }
+    }
+
     @Test func aTotalWithItsSplit() {
         let cell = { (value: Double) in MeasureCell(value: .number(value), type: "integer", status: "ok") }
         var data = MeasureWidgetData(

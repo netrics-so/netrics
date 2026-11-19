@@ -737,3 +737,40 @@ export function measureSplitTotals(
   }
   return totals.size ? [...totals.values()] : undefined;
 }
+
+/**
+ * A measure widget's own period (#784) as a filter on the model's
+ * reporting-date dimension: `from <= day <= to`, joined to the binding's
+ * own filter. The model needs such a dimension; otherwise the widget
+ * fails with `dashboard_measure_period_unsupported`.
+ */
+export function measurePeriodBinding<B extends MeasureWidgetBinding>(
+  binding: B,
+  dimensions: readonly { id: string; timeAlignment?: string }[],
+  range: { from: string; to: string } | null,
+): B {
+  if (!range) return binding;
+  const day = dimensions.find(
+    (dimension) => dimension.timeAlignment === "reporting_date",
+  );
+  if (!day) dataFail("dashboard_measure_period_unsupported");
+  const bound = (fn: "gte" | "lte", value: string): DataExpression => ({
+    kind: "call",
+    fn,
+    args: [
+      { kind: "field", fieldId: day.id },
+      { kind: "literal", type: "date", value },
+    ],
+  });
+  const period: DataExpression = {
+    kind: "call",
+    fn: "and",
+    args: [bound("gte", range.from), bound("lte", range.to)],
+  };
+  return {
+    ...binding,
+    filter: binding.filter
+      ? { kind: "call", fn: "and", args: [binding.filter, period] }
+      : period,
+  };
+}

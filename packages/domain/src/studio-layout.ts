@@ -1449,6 +1449,8 @@ export const MEASURE_SPLIT_METRICS = {
 export const MEASURE_SPLIT_SAMPLES = {
   total: "1.234.567",
   line: ["Google Play", "1.234.567"] as const,
+  /** The group lines checked at most (two stores). */
+  lines: 2,
   footer: ["App: Focus Timer: Pomodoro", null, null] as readonly (
     string | null
   )[],
@@ -1462,7 +1464,11 @@ export const MEASURE_SPLIT_SAMPLES = {
  */
 export function measureSplitLayout(
   input: MeasureTableBox & {
-    /** The total as shown, null without one (the groups alone). */
+    /**
+     * The total as shown, null without one (the groups alone): per
+     * currency, `measureSplitTotalText` (each amount kept on one line,
+     * breaks only between them).
+     */
     total: string | null;
     /** A group's line as shown: its label and its value. */
     lines: readonly (readonly [string, string])[];
@@ -1471,6 +1477,8 @@ export function measureSplitLayout(
   },
 ): {
   valueSize: number;
+  /** Lines the total takes (amounts in several currencies wrap). */
+  valueLines: number;
   shown: number;
   rowsLine: string | null;
   fits: boolean;
@@ -1486,6 +1494,8 @@ export function measureSplitLayout(
       : 1;
   const cell = m.cell * scale;
   const head = parts.titleLines * m.title * scale * m.lineHeight + m.gap;
+  const widthOf = (text: string, at: number, weight: StudioFontWeight) =>
+    measureTextWidth(text, at, weight, input.font);
   const lineHeight = ([label, value]: readonly [string, string]) =>
     Math.max(
       1,
@@ -1494,16 +1504,39 @@ export function measureSplitLayout(
         width - pixel,
         cell,
         "regular",
-        (text, at, weight) => measureTextWidth(text, at, weight, input.font),
+        widthOf,
       ),
     ) *
     (cell * m.lineHeight + pixel);
-  const totalWidth =
-    input.total === null
+  const total = input.total;
+  const totalLines = (size: number) =>
+    total === null
       ? 0
-      : measureTextWidth(input.total, 1, "semibold", input.font);
-  const widest =
-    totalWidth > 0 ? (width - pixel) / totalWidth : v.value * scale;
+      : Math.max(
+          1,
+          wrappedLineCount(total, width - pixel, size, "semibold", widthOf),
+        );
+  const most = v.value * scale,
+    least = v.valueMin * scale;
+  // The total's size in `room`: the largest from 84 units down to 36 at
+  // which it fits the width on as few lines as the room holds. Width is
+  // never a reason for a group line to give way: the total wraps between
+  // its amounts instead.
+  const value = (room: number): { size: number; lines: number } | null => {
+    if (total === null) return room >= -1e-9 ? { size: 0, lines: 0 } : null;
+    for (let lines = 1; lines <= 8; lines++) {
+      const tall = (room - pixel * lines) / (lines * v.valueLineHeight);
+      if (tall < least - 1e-9) return null;
+      // The largest size at most `tall` whose text takes `lines` lines.
+      let size = Math.min(most, tall);
+      const oneLine = measureTextWidth(total, 1, "semibold", input.font);
+      if (lines === 1 && oneLine > 0)
+        size = Math.min(size, (width - pixel) / oneLine);
+      for (; size >= least - 1e-9; size -= 0.5 * scale)
+        if (totalLines(size) <= lines) return { size, lines };
+    }
+    return null;
+  };
   const layout = (shown: number, footer: readonly (string | null)[]) => {
     const lines = input.lines
       .slice(0, shown)
@@ -1513,47 +1546,49 @@ export function measureSplitLayout(
       head -
       footer.reduce<number>((sum, line) => sum + parts.footerLine(line), 0) -
       (shown ? lines + m.gap : 0);
-    if (input.total === null) return { valueSize: 0, ok: room >= -1e-9 };
-    const valueSize = Math.min(
-      v.value * scale,
-      widest,
-      (room - pixel) / v.valueLineHeight,
-    );
-    return { valueSize, ok: valueSize >= v.valueMin * scale - 1e-9 };
+    return value(room);
   };
   const all = input.lines.length;
   const full = layout(all, input.footer);
-  if (full.ok)
+  if (full)
     return {
-      valueSize: Math.max(0, full.valueSize),
+      valueSize: full.size,
+      valueLines: full.lines,
       shown: all,
       rowsLine: null,
       fits: true,
     };
-  // Lines give way, from the end; "N of M" joins the footer.
+  // Lines give way for height, from the end; "N of M" joins the footer.
   for (let shown = all - 1; shown >= 0; shown--) {
     const line = input.rowsLine?.(shown, all) ?? null;
     const footer = line === null ? input.footer : [...input.footer, line];
     const fitted = layout(shown, footer);
-    if (fitted.ok || shown === 0)
+    if (fitted)
       return {
-        // Never below the smallest size: a total too large for its tile
-        // is the readability check's to flag, never drawn unreadably.
-        valueSize:
-          input.total === null
-            ? 0
-            : Math.max(v.valueMin * scale, fitted.valueSize),
+        valueSize: fitted.size,
+        valueLines: fitted.lines,
         shown,
         rowsLine: line,
         fits: false,
       };
   }
+  // Not even the total fits: at its smallest size (never drawn unreadably;
+  // the readability check flags it), wrapped between its amounts.
   return {
-    valueSize: input.total === null ? 0 : v.valueMin * scale,
+    valueSize: total === null ? 0 : least,
+    valueLines: totalLines(least),
     shown: 0,
-    rowsLine: null,
+    rowsLine: all ? (input.rowsLine?.(0, all) ?? null) : null,
     fits: false,
   };
+}
+
+/**
+ * A total as `measureSplitLayout` and the renderers break it (#784): its
+ * amounts joined by " · ", each kept on one line (no-break spaces inside).
+ */
+export function measureSplitTotalText(amounts: readonly string[]): string {
+  return amounts.map((amount) => amount.replace(/ /g, "\u00a0")).join(" · ");
 }
 
 /** Rows a table shows: its limit, its rows and the room, whichever is least. */

@@ -13,6 +13,8 @@ import {
   dashboardModelQuery,
   measureQueryOrder,
   measureSplitTotals,
+  measurePeriodBinding,
+  compareMeasureWindows,
   measureViewWindow,
   compareDataValues,
   dimensionValueLabels,
@@ -41,6 +43,7 @@ import {
 } from "@netrics/domain";
 import {
   schema,
+  findWorkspace,
   resolveDataPolicy,
   type Transaction,
   type DashboardWidgetRow,
@@ -232,6 +235,14 @@ export async function validateDashboardMeasure(
   if (binding.interaction)
     measureInteractionDimension(filters, binding, options.view);
   const model = await publishedModel(tx, workspaceId, binding.modelId);
+  // A widget's own period (#784) reads the model's reporting-date dimension.
+  if (
+    options.period &&
+    !model.definition.dimensions.some(
+      (dimension) => dimension.timeAlignment === "reporting_date",
+    )
+  )
+    throw new DataServiceError("dashboard_measure_period_unsupported");
   for (const filter of filters) {
     const mapping = filter.mappings.find(
       (mapping) => mapping.modelId === binding.modelId,
@@ -434,10 +445,23 @@ export async function queryDashboardMeasure(
       await savepoint.execute(
         sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
       );
+      // The widget's own period (#784): the workspace's days, as
+      // connection widgets read theirs.
+      const binding = input.options.period
+        ? measurePeriodBinding(
+            input.binding,
+            release.definition.dimensions,
+            compareMeasureWindows(
+              input.options.period,
+              now,
+              (await findWorkspace(savepoint, workspaceId))?.timeZone ?? "UTC",
+            ).current,
+          )
+        : input.binding;
       const query = dashboardModelQuery(
         filters,
         values,
-        input.binding,
+        binding,
         input.options.limit,
         measureViewWindow(
           input.options.view,

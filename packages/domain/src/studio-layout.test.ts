@@ -16,7 +16,9 @@ import {
   fitTextSize,
   freshnessLevelFit,
   measureSplitLayout,
+  measureSplitTotalText,
   measureTextWidth,
+  wrappedLineCount,
   isInsideGrid,
   labelFit,
   labelFits,
@@ -40,7 +42,6 @@ import {
   textWidgetSizes,
   widgetRect,
   widgetTypeScale,
-  wrappedLineCount,
   zoneCity,
   zoneLabel,
   zoneLabelSample,
@@ -1034,6 +1035,7 @@ describe("measureSplitLayout (#784)", () => {
   it("shows the total at full size and every line where they fit", () => {
     expect(measureSplitLayout(split)).toEqual({
       valueSize: 84,
+      valueLines: 1,
       shown: 2,
       rowsLine: null,
       fits: true,
@@ -1052,6 +1054,38 @@ describe("measureSplitLayout (#784)", () => {
     expect(fit.shown).toBeLessThan(2);
     expect(fit.rowsLine).toBe(`${fit.shown} of 2`);
   });
+  it("wraps a wide total between its amounts instead of dropping lines", () => {
+    const fit = measureSplitLayout({
+      ...split,
+      width: 420,
+      height: 600,
+      total: measureSplitTotalText(["1.234,56 EUR", "789,00 USD"]),
+      lines: [
+        ["App Store", "1.000,00 EUR · 789,00 USD"],
+        ["Google Play", "234,56 EUR"],
+      ],
+    });
+    expect(fit.shown).toBe(2);
+    expect(fit.fits).toBe(true);
+    expect(fit.valueSize).toBeGreaterThanOrEqual(36);
+    // At that size each line of the total fits the width.
+    const total = measureSplitTotalText(["1.234,56 EUR", "789,00 USD"]);
+    expect(
+      wrappedLineCount(total, 420 - 1, fit.valueSize, "semibold", (t, at, w) =>
+        measureTextWidth(t, at, w),
+      ),
+    ).toBeLessThanOrEqual(fit.valueLines);
+    // A single amount too wide for one line at 84 units shrinks first.
+    const narrow = measureSplitLayout({
+      ...split,
+      width: 200,
+      total: measureSplitTotalText(["1.234.567"]),
+    });
+    expect(narrow.shown).toBe(2);
+    expect(narrow.valueLines).toBe(1);
+    expect(narrow.valueSize).toBeLessThan(84);
+  });
+
   it("fits the groups alone without a total", () => {
     expect(measureSplitLayout({ ...split, total: null }).fits).toBe(true);
   });

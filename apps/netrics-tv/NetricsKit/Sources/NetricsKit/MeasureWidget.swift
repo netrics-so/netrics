@@ -356,6 +356,29 @@ extension MeasureWidgetData {
     /// units (StudioLayout.freshnessLevelFit, as the web); nil for one
     /// source. Without a width (scroll cards) the form without "fetched",
     /// which wraps.
+    /// How a tile draws a freshness line over several sources (#784): a
+    /// fitted tile (known width) or a scroll card the form's lines as they
+    /// are; an unfitted tile every form, longest first, for the view to
+    /// pick the first that fits its actual width (the last a line per
+    /// source), so the line is never cut.
+    public enum FreshnessSourceLayout: Equatable, Sendable {
+        case lines([String])
+        case firstThatFits([[String]])
+    }
+
+    public func freshnessSourceLayout(
+        width: Double?, scroll: Bool, fontScale: Double, now: Date = Date(), language: ScreenLanguage = .en,
+        timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+    ) -> FreshnessSourceLayout? {
+        if width == nil && !scroll {
+            let levels = freshnessSourceLevels(now: now, language: language, timeZone: timeZone, region: region)
+            return levels.isEmpty ? nil : .firstThatFits(levels)
+        }
+        return freshnessSourceLines(
+            width: width, fontScale: fontScale, now: now, language: language, timeZone: timeZone, region: region
+        ).map { .lines($0) }
+    }
+
     public func freshnessSourceLines(
         width: Double?, fontScale: Double, now: Date = Date(), language: ScreenLanguage = .en,
         timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
@@ -616,7 +639,7 @@ extension MeasureWidgetData {
     /// nil without one.
     public func splitTotal(measureIds: [String], language: ScreenLanguage = .en) -> String? {
         guard let totals, !totals.isEmpty, let id = measureIds.first else { return nil }
-        return totals.map { text($0, measure: id, language: language) }.joined(separator: " · ")
+        return StudioLayout.measureSplitTotalText(totals.map { text($0, measure: id, language: language) })
     }
 
     /// How a total with its split fits its tile (StudioLayout.measureSplitLayout,
@@ -626,10 +649,13 @@ extension MeasureWidgetData {
         label: String, measureIds: [String], groupBy: [String], rows: [MeasureResultRow],
         box: (width: Double, height: Double)?, fontScale: Double, pixel: Double? = nil, now: Date = Date(),
         language: ScreenLanguage = .en
-    ) -> (valueSize: Double, shown: Int, rowsLine: String?) {
+    ) -> (valueSize: Double, valueLines: Int?, shown: Int, rowsLine: String?) {
         let lines = splitLines(measureIds: measureIds, groupBy: groupBy, rows: rows, language: language)
         guard let box else {
-            return (StudioLayout.MeasureSplitMetrics.value * StudioLayout.effectiveFontScale(fontScale), lines.count, nil)
+            return (
+                StudioLayout.MeasureSplitMetrics.value * StudioLayout.effectiveFontScale(fontScale), nil, lines.count,
+                nil
+            )
         }
         let fit = StudioLayout.measureSplitLayout(
             label: label, width: box.width, height: box.height, fontScale: fontScale,
@@ -637,6 +663,6 @@ extension MeasureWidgetData {
             footer: footer(rows: rows, width: box.width, fontScale: fontScale, now: now, language: language),
             pixel: pixel, font: .tv,
             rowsLine: { KitStrings.text(.measureGroupsShown, language, $0, $1) })
-        return (fit.valueSize, fit.shown, fit.rowsLine)
+        return (fit.valueSize, fit.valueLines, fit.shown, fit.rowsLine)
     }
 }

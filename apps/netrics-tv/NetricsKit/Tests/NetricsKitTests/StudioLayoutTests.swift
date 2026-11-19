@@ -304,6 +304,7 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                 font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!,
                 rowsLine: { "Showing \($0) of \($1) groups." })
             #expect(close(fit.valueSize, double(c["valueSize"])), "\(c)")
+            #expect(fit.valueLines == int(c["valueLines"]), "\(c)")
             #expect(fit.shown == int(c["shown"]), "\(c)")
             #expect(fit.rowsLine == c["rowsLine"] as? String, "\(c)")
             #expect(fit.fits == bool(c["fits"]), "\(c)")

@@ -248,11 +248,14 @@ describe("formatWarnings", () => {
     expect(
       codes(formatWarnings(slide([split(2, 3)]), "16x9", context)),
     ).toEqual(["16x9 rows_cut s"]);
-    // Twenty groups do not fit under a total of the smallest size: cut.
-    const warnings = formatWarnings(slide([split(20)]), "16x9", context);
-    expect(codes(warnings)).toEqual(["16x9 rows_cut s"]);
-    expect(warnings[0]).toMatchObject({ severity: "attention" });
-    expect(warnings[0]!.rows!.shown).toBeLessThan(20);
+    // Without data the check counts at most two lines, whatever the
+    // limit: screens let lines past the room give way with "N of M".
+    expect(formatWarnings(slide([split(20)]), "16x9", context)).toEqual([]);
+    const warnings = formatWarnings(slide([split(20, 3)]), "16x9", context);
+    expect(warnings[0]).toMatchObject({
+      severity: "attention",
+      rows: { limit: 2 },
+    });
   });
 
   it("rows_cut: a measure table's narrow columns wrap their heads and rows (#768)", () => {
