@@ -43,13 +43,25 @@ struct MeasureWidgetView: View {
             pixel: env.u > 0 ? 1 / Double(env.u * Swift.max(1, env.displayScale)) : nil,
             now: now, language: env.language)
     }
+    /// A line of `size` units as the fit counts it (#768): the system font's
+    /// own lines are taller (1.18 em) than the 1.15 the web draws.
+    private func line(_ size: Double, _ height: Double = StudioLayout.MeasureTableMetrics.lineHeight) -> CGFloat {
+        env.pt(size * env.fontScale * height)
+    }
+    /// A footer line of a fitted table: counted height, never compressed,
+    /// so the rows give way, not the footer.
+    private func footer(_ height: Double = StudioLayout.MeasureTableMetrics.lineHeight) -> MeasureLineHeight {
+        MeasureLineHeight(points: fitsTile ? line(24, height) : nil, fixed: fitsTile)
+    }
     var body: some View {
         let fit = self.fit
         VStack(alignment: .leading, spacing: env.pt(12)) {
             Text(label).font(font(36, .semibold)).foregroundStyle(env.colors.label).lineLimit(
-                scroll ? nil : 2)
+                scroll ? nil : 2
+            )
+            .modifier(MeasureLineHeight(points: fitsTile ? line(36) : nil, fixed: fitsTile))
             if let error = data.viewerError(expired: expired, language: env.language) {
-                Text(error).font(font(24)).foregroundStyle(env.colors.muted)
+                Text(error).font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             } else if options.view == "value" {
                 Text(
                     measureIds.first.map { data.text(rows.first?.measures[$0], measure: $0, language: env.language) } ?? "—"
@@ -79,14 +91,14 @@ struct MeasureWidgetView: View {
             }
             if data.result?.stale == true {
                 Text(KitStrings.text(.measureStale, env.language))
-                    .font(font(24)).foregroundStyle(env.colors.muted)
+                    .font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             }
             if let rowsLine = fit.rowsLine {
                 Text(verbatim: rowsLine)
-                    .font(font(24)).foregroundStyle(env.colors.muted)
+                    .font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             }
             ForEach(data.scope ?? [], id: \.self) { scope in
-                Text(scope).font(font(24)).foregroundStyle(env.colors.muted)
+                Text(scope).font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             }
             if data.showsFreshnessLine(now: now, language: env.language) {
                 // The freshness line replaces the refresh age (ADR 0025, #769): the
@@ -96,14 +108,17 @@ struct MeasureWidgetView: View {
                 let candidates = lines.footer
                 if let warning = lines.warning {
                     Text(verbatim: "⚠ \(warning)").font(font(24)).foregroundStyle(env.colors.warning)
+                        .modifier(footer())
                 } else if scroll {
                     if let first = candidates.first {
                         Text(verbatim: first).font(font(24).monospacedDigit()).foregroundStyle(env.colors.muted)
+                            .modifier(footer(StudioLayout.MeasureTableMetrics.freshnessLineHeight))
                     }
                 } else {
                     ViewThatFits(in: .horizontal) {
                         ForEach(candidates, id: \.self) { line in
                             Text(verbatim: line).lineLimit(1)
+                                .modifier(footer(StudioLayout.MeasureTableMetrics.freshnessLineHeight))
                         }
                     }
                     .font(font(24).monospacedDigit()).foregroundStyle(env.colors.muted)
@@ -114,21 +129,21 @@ struct MeasureWidgetView: View {
                         .measureOldestRefresh, env.language,
                         RelativeTime.describe(received, now: now, language: env.language))
                 )
-                .font(font(24)).foregroundStyle(env.colors.muted)
+                .font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             }
             if data.result?.pendingSources?.isEmpty == false {
-                Text(KitStrings.text(.sourceReportsPending, env.language)).font(font(24)).foregroundStyle(env.colors.muted)
+                Text(KitStrings.text(.sourceReportsPending, env.language)).font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             }
             // A wall screen's wording: the state, not the editor's remedy (#676).
             // Partial data and the warning count: two different lines at most.
             ForEach(data.viewerWarnings(rows: rows, language: env.language), id: \.self) { notice in
-                Text(notice).font(font(24)).foregroundStyle(env.colors.muted)
+                Text(notice).font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             }
             ForEach(data.viewerSourceNotices(language: env.language)) { notice in
-                Text(notice.text).font(font(24)).foregroundStyle(env.colors.muted)
+                Text(notice.text).font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             }
             ForEach(data.exclusions, id: \.filterId) { exclusion in
-                Text(exclusion.reason).font(font(24)).foregroundStyle(env.colors.muted)
+                Text(exclusion.reason).font(font(24)).foregroundStyle(env.colors.muted).modifier(footer())
             }
         }
         .foregroundStyle(env.colors.text)
@@ -168,7 +183,8 @@ struct MeasureWidgetView: View {
     /// A cell of a fitted table: an even share of the width, wrapping.
     @ViewBuilder private func cell(_ text: some View, even: Bool) -> some View {
         if even {
-            text.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+            text.modifier(MeasureLineHeight(points: line(28), fixed: false))
+                .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, env.pt(10))
         } else {
             text
@@ -227,6 +243,22 @@ struct MeasureWidgetView: View {
                 context.stroke(path, with: .color(env.colors.accent), lineWidth: env.pt(3))
             }.frame(width: env.pt(500), height: env.pt(180))
             table(rows)
+        }
+    }
+}
+
+/// Exact line height for the measure tile's texts (#768), as
+/// HeaderNameLineHeight does for the header; `fixed` keeps a line's full
+/// height when the tile is tight.
+struct MeasureLineHeight: ViewModifier {
+    let points: CGFloat?
+    let fixed: Bool
+
+    func body(content: Content) -> some View {
+        if let points {
+            content.lineHeight(.exact(points: points)).fixedSize(horizontal: false, vertical: fixed)
+        } else {
+            content
         }
     }
 }

@@ -481,27 +481,50 @@ private func weight(_ any: Any?) -> StudioFontWeight {
     import CoreText
 
     /// The measure table's calibrated widths (#768) never fall short of the
-    /// system font netrics TV draws with, regular or semibold: a row the fit
-    /// counts as one line is one line on the TV.
+    /// system font netrics TV draws with: regular and semibold, tabular
+    /// digits (`.monospacedDigit()`), at the sizes it draws (24, 28 and 36
+    /// units at every theme font scale, on 1080p and 4K screens), where the
+    /// system font tracks wider than at large sizes.
     @Suite struct MeasureGlyphWidthTests {
-        @Test func coverTheSystemFont() {
+        static func font(_ size: CGFloat, semibold: Bool) -> CTFont {
+            let traits = [kCTFontWeightTrait: semibold ? 0.3 : 0.0] as CFDictionary
+            let base = CTFontCreateCopyWithAttributes(
+                CTFontCreateUIFontForLanguage(.system, size, nil)!, size, nil,
+                CTFontDescriptorCreateWithAttributes([kCTFontTraitsAttribute: traits] as CFDictionary))
+            let tabular: [[CFString: Any]] = [[
+                kCTFontFeatureTypeIdentifierKey: kNumberSpacingType,
+                kCTFontFeatureSelectorIdentifierKey: kMonospacedNumbersSelector,
+            ]]
+            return CTFontCreateCopyWithAttributes(
+                base, size, nil,
+                CTFontDescriptorCreateWithAttributes([kCTFontFeatureSettingsAttribute: tabular] as CFDictionary))
+        }
+
+        @Test func coverTheSystemFontAtTheDrawnSizes() {
             let texts = [
                 "Apple App Store", "App Store", "Google Play", "Focus · App Store", "Habit Tracker", "Weather Now",
                 "Downloads", "Erlöse", "Anzahl", "Bewertung", "Land", "Country", "Ratings", "Currency", "Währung",
                 "Oldest source refresh: Nov 18, 2026, 11:40 PM", "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
-                "8 of 40 groups", "8 von 40 Gruppen", "1,000", "11,200 JPY", "7.00 USD", "4.8 ★", "WWW MMM mmm",
+                "8 of 40 groups", "8 von 40 Gruppen", "1,000", "1.111", "11,200 JPY", "7.00 USD", "4.8 ★",
+                "WWW MMM mmm",
             ]
-            for weight in [(CGFloat(0), StudioFontWeight.regular), (CGFloat(0.3), StudioFontWeight.semibold)] {
-                let traits = [kCTFontWeightTrait: weight.0] as CFDictionary
-                let descriptor = CTFontDescriptorCreateWithAttributes(
-                    [kCTFontTraitsAttribute: traits] as CFDictionary)
-                let base = CTFontCreateUIFontForLanguage(.system, 100, nil)!
-                let font = CTFontCreateCopyWithAttributes(base, 100, nil, descriptor)
-                for text in texts {
-                    let line = CTLineCreateWithAttributedString(
-                        NSAttributedString(string: text, attributes: [kCTFontAttributeName as NSAttributedString.Key: font]))
-                    let drawn = CTLineGetTypographicBounds(line, nil, nil, nil) / 100
-                    #expect(drawn <= StudioLayout.measureTextWidth(text, fontSize: 1, weight: weight.1), "\(text)")
+            for semibold in [false, true] {
+                for base in [24.0, 28.0, 36.0] {
+                    for scale in [1.0, 1.15, 1.3] {
+                        for screen in [1.0, 2.0] {
+                            let size = base * scale * screen
+                            let font = Self.font(CGFloat(size), semibold: semibold)
+                            for text in texts {
+                                let line = CTLineCreateWithAttributedString(
+                                    NSAttributedString(
+                                        string: text, attributes: [kCTFontAttributeName as NSAttributedString.Key: font]))
+                                let drawn = CTLineGetTypographicBounds(line, nil, nil, nil)
+                                let counted = StudioLayout.measureTextWidth(
+                                    text, fontSize: size, weight: semibold ? .semibold : .regular)
+                                #expect(drawn <= counted + 1e-6, "\(text) at \(size), semibold \(semibold)")
+                            }
+                        }
+                    }
                 }
             }
         }
