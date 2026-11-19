@@ -1226,6 +1226,86 @@ describe("ordering groups by a measure (#768)", () => {
       ).toBe("App C");
   });
 
+  it("keeps tied groups in their dimension order, in either direction", () => {
+    const tied = new Map(sources);
+    tied.set("play", {
+      ...play,
+      rows: [
+        { app: "a", downloads: 5 },
+        { app: "b", downloads: 5 },
+      ],
+    });
+    for (const direction of ["asc", "desc"] as const)
+      expect(
+        names(
+          querySemanticModel(model, tied, {
+            measureIds: ["play-downloads"],
+            groupBy: ["app"],
+            orderBy: { measureId: "play-downloads", direction },
+          }),
+        ),
+      ).toEqual(["App A", "App B"]);
+  });
+
+  it("ranks amounts within their currency, never across currencies", () => {
+    const sales: DataTable = {
+      fields: [
+        { id: "app", name: "App", type: "string", nullable: false },
+        {
+          id: "amount",
+          name: "Amount",
+          type: "decimal",
+          nullable: false,
+          unit: "currency",
+          currencyField: "cur",
+        },
+        { id: "cur", name: "Currency", type: "string", nullable: false },
+      ],
+      rows: [
+        { app: "A", amount: "700", cur: "JPY" },
+        { app: "B", amount: "9", cur: "USD" },
+        { app: "C", amount: "12", cur: "USD" },
+        { app: "D", amount: "8", cur: "EUR" },
+      ],
+      provenance: [{ datasetId: "sales", generationId: "sales-1" }],
+    };
+    const salesModel: SemanticModelDefinition = {
+      version: 1,
+      datasets: ["sales"],
+      relationships: [],
+      dimensions: [
+        { id: "app", name: "App", datasetId: "sales", fieldId: "app" },
+        { id: "cur", name: "Currency", datasetId: "sales", fieldId: "cur" },
+      ],
+      measures: [
+        {
+          id: "revenue",
+          name: "Revenue",
+          kind: "aggregate",
+          datasetId: "sales",
+          aggregate: {
+            id: "revenue",
+            name: "Revenue",
+            op: "sum",
+            fieldId: "amount",
+          },
+        },
+      ],
+    };
+    const ranked = querySemanticModel(salesModel, new Map([["sales", sales]]), {
+      measureIds: ["revenue"],
+      groupBy: ["app", "cur"],
+      orderBy: { measureId: "revenue", direction: "desc" },
+    });
+    // Currencies by code, amounts within each: 700 JPY never outranks USD.
+    expect(ranked.rows.map((row) => row.dimensions.app)).toEqual([
+      "D",
+      "A",
+      "C",
+      "B",
+    ]);
+  });
+
   it("refuses an order by a measure the query does not ask for", () => {
     expect(() =>
       querySemanticModel(model, sources, {
