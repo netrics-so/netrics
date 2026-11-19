@@ -1319,6 +1319,16 @@ const LINKED_RATINGS_TABLE: OverviewMeasureTable = {
   ...RATINGS_TABLE,
   labels: (t) => ({ ...RATINGS_TABLE.labels(t), rating: "★" }),
 };
+/**
+ * A paid linked product's ratings (version 6, #784): the listing, its
+ * country and its rating, no count, so both stores' rows fit a third of
+ * the width at every theme font scale (the model needs the country).
+ */
+const LINKED_PAID_RATINGS_TABLE: OverviewMeasureTable = {
+  ...LINKED_RATINGS_TABLE,
+  labels: (t) => ({ listing: t.app, storefront: t.countryShort, rating: "★" }),
+  order: null,
+};
 /** A linked product's Google Play proceeds (version 6, #784). */
 const PLAY_PROCEEDS_TABLE: OverviewMeasureTable = {
   titles: (t) =>
@@ -1944,6 +1954,18 @@ function buildPortfolioSlides(
         [...band, ...lower].find((entry) => entry.key === key(kind));
       const visitors = find("visitors"),
         revenue = find("revenue");
+      const ratingOnly = (
+        entry: { key: string; widget: Unplaced } | undefined,
+      ) =>
+        entry && entry.widget.type === "measure"
+          ? {
+              key: entry.key,
+              widget: {
+                ...entry.widget,
+                binding: { ...entry.widget.binding, measureIds: ["rating"] },
+              },
+            }
+          : entry;
       return [
         // The left third: the total with its split; below it Google
         // Play's proceeds (paid) or the latest review (free).
@@ -1954,8 +1976,10 @@ function buildPortfolioSlides(
               // The ratings (their rating's head is its star) over the App
               // Store's revenue; visitors over the latest review, which
               // keeps four rows for its text.
-              ...at(find("ratings"), 4, 0, 4, 5),
-              ...at(revenue, 4, 5, 4, 3),
+              // The ratings without their count, six rows high: both
+              // stores' listings fit at every theme font scale.
+              ...at(ratingOnly(find("ratings")), 4, 0, 4, 6),
+              ...at(revenue, 4, 6, 4, 2),
               ...at(visitors, 8, 0, 4, 4),
               ...at(find("review"), 8, visitors ? 4 : 0, 4, visitors ? 4 : 8),
             ]
@@ -1971,7 +1995,9 @@ function buildPortfolioSlides(
     const fittedTables = fitTables(rows, (entry) =>
       entry === key("ratings")
         ? linked
-          ? LINKED_RATINGS_TABLE
+          ? app.paid
+            ? LINKED_PAID_RATINGS_TABLE
+            : LINKED_RATINGS_TABLE
           : RATINGS_TABLE
         : entry === key("revenue")
           ? PROCEEDS_TABLE

@@ -12,6 +12,8 @@ export function dataErrorCodeKey(code: string) {
   if (code === "dashboard_measure_window_range_required")
     return "windowRangeDefault";
   if (code === "dashboard_filter_window_unsupported") return "windowFilterMode";
+  if (code === "dashboard_measure_period_unsupported")
+    return "periodUnsupported";
   if (code === "model_window_time_grouping_required") return "windowGrouping";
   if (/model_window_time_(filter_unsupported|dimension_conflict)/.test(code))
     return "windowFilter";

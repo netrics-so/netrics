@@ -25,7 +25,15 @@ import {
   type StoreMetric,
 } from "./store-portfolio.js";
 import { storeAppIdentities } from "./store-template-products.js";
-import { slideFormatWarnings, slideLayoutProblem } from "@netrics/domain";
+import {
+  contentBoxIn,
+  freshnessLevelFit,
+  measureTableRowsShown,
+  SCREEN_FORMAT_KEYS,
+  slideFormatWarnings,
+  slideLayoutFor,
+  slideLayoutProblem,
+} from "@netrics/domain";
 import { apple, google } from "./test-helpers.js";
 import {
   createDashboardRequestSchema,
@@ -464,7 +472,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
   const APP_SLIDE_HASHES: Record<number, string> = {
     4: "034364f9fb26ab383278ff8a92015b88fdb1c4d10bc165055f877cb2ec827622",
     5: "71bd572ac6b0d3e39dae1b4f718cf6fdf3ca2b5e261f1c11ee82617d73b4df3d",
-    6: "69eb191c746dd69a6bd581a1db3f5bbf3739a1400eafb0545c1b2cba4723bee1",
+    6: "f82668316c1a0539003330cceea75e453f0e7a01239acb2bdfb71e3d6fa9f3f8",
   };
   it("needs a version bump for any app slide change; 4 and 5 stay frozen", () => {
     const hash = (template: typeof storeTemplate) =>
@@ -518,16 +526,17 @@ describe("version 4: an overview and one slide per app (#709)", () => {
         4,
         4,
       ],
-      // The ratings over the App Store's revenue in the display currency,
-      // as before; the website's visitors over the latest review.
-      ["measure:rating:table", "Store ratings", 4, 0, 4, 5],
+      // The ratings (listing, country, star; six rows) over the App
+      // Store's revenue in the display currency, as before; the website's
+      // visitors over the latest review.
+      ["measure:rating:table", "Store ratings", 4, 0, 4, 6],
       [
         "metric:app_store_connect.proceeds",
         "Revenue, last 30 days · App Store",
         4,
-        5,
+        6,
         4,
-        3,
+        2,
       ],
       ["metric:vercel.visitors", "Website visitors, last 30 days", 8, 0, 4, 4],
       ["review", null, 8, 4, 4, 4],
@@ -547,6 +556,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
     const ratings = paid.widgets[2]!;
     if (ratings.type !== "measure") throw new Error("not a measure");
     expect(ratings.options.labels).toMatchObject({ rating: "★" });
+    expect(ratings.binding.measureIds).toEqual(["rating"]);
     const play = paid.widgets[1]!;
     if (play.type !== "measure") throw new Error("not a measure");
     expect(play.binding.filter).toEqual({
@@ -561,6 +571,91 @@ describe("version 4: an overview and one slide per app (#709)", () => {
     expect(
       slideOf(linked(false, false)).widgets.map((widget) => widget.type),
     ).toEqual(["measure", "review", "measure"]);
+    // Both stores' listings show in the ratings table in every format, at
+    // the default size and at 1.3, in English and German: rows with
+    // realistic cells above the footer the slide shows (its app, both
+    // stores' days as the freshness line takes them).
+    for (const locale of ["en", "de"] as const)
+      for (const app of [
+        linked(true, true),
+        linked(false, true),
+        linked(true, false),
+      ]) {
+        const shown = slideOf({ ...app, name: "Focus Timer" }, locale);
+        const ratings = shown.widgets.find(
+          (widget) =>
+            widget.type === "measure" &&
+            widget.binding.measureIds[0] === "rating",
+        )!;
+        if (ratings.type !== "measure") throw new Error("not a measure");
+        const columns = storeTableColumns(
+          ratings.binding,
+          locale,
+          ratings.options.labels,
+        );
+        const de = locale === "de";
+        const cells = (listing: string, country: string, rating: string) =>
+          [listing, country, rating, de ? "1.280" : "1,280"].slice(
+            0,
+            columns.length,
+          );
+        const rows = [
+          cells(
+            "Focus Timer · App Store",
+            de ? "Deutschland" : "Germany",
+            de ? "4,6 ★" : "4.6 ★",
+          ),
+          cells(
+            "Focus Timer · Google Play",
+            de ? "Alle Länder" : "All countries",
+            de ? "4,3 ★" : "4.3 ★",
+          ),
+        ];
+        const levels = de
+          ? [
+              ["App Store bis 17. Nov. · Google Play bis 11. Nov."],
+              ["App Store bis 17.11. · Google Play bis 11.11."],
+              ["App Store bis 17.11.", "Google Play bis 11.11."],
+            ]
+          : [
+              ["App Store up to Nov 17 · Google Play up to Nov 11"],
+              ["App Store up to 11/17 · Google Play up to 11/11"],
+              ["App Store up to 11/17", "Google Play up to 11/11"],
+            ];
+        const widgets = shown.widgets.map((widget, index) => ({
+          ...widget,
+          id: widget === ratings ? "ratings" : `w${index}`,
+        }));
+        for (const format of SCREEN_FORMAT_KEYS)
+          for (const fontScale of [1, 1.3]) {
+            const placement = slideLayoutFor({
+              widgets,
+              primaryFormat: "16x9",
+              format,
+              custom: null,
+            })
+              .flat()
+              .find((entry) => entry.id === "ratings")!;
+            const box = contentBoxIn(placement, format, true);
+            const freshness = levels[
+              freshnessLevelFit(levels, box.width, fontScale)
+            ]!.map(() => null);
+            const fit = measureTableRowsShown({
+              label: ratings.title ?? "",
+              ...box,
+              fontScale,
+              columns,
+              rows,
+              total: rows.length,
+              footer: [`${de ? "App" : "App"}: Focus Timer`, ...freshness],
+              rowsLine: (a, b) => `${a} / ${b}`,
+            });
+            expect(
+              fit.shown,
+              `${locale} ${app.paid ? "paid" : "free"} ${app.website ? "site" : ""} ${format} ${fontScale}`,
+            ).toBe(2);
+          }
+      }
     // A single-store app keeps version 5's slide.
     for (const single of [apps[0]!, apps[1]!])
       expect(

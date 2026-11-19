@@ -652,6 +652,8 @@ export const dataEn = {
         "This comparison needs a complete date range. Choose both a start and an end date.",
       windowRangeDefault:
         "This comparison needs a date range. Add a shared date filter set to Range on its date, with a default start and end date, or show the measure grouped by that date.",
+      periodUnsupported:
+        "This widget reads its own period, but its model has no reporting date dimension. Choose a model with a reporting date, or remove the period.",
       windowFilterMode:
         "Rolling and comparison measures can only follow a date filter that selects a range. Set its control to Range, or exclude this widget from it.",
       windowFilter:

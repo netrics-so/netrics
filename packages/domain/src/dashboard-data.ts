@@ -7,6 +7,7 @@ import {
   type DataExpression,
   type DataType,
 } from "./data-expression.js";
+import { compareMeasureFilter } from "./compare-measure.js";
 import type { ModelQuery, ModelQueryOrder } from "./data-model.js";
 
 export type DashboardFilterType = Exclude<DataType, "json">;
@@ -761,19 +762,8 @@ export function measurePeriodBinding<B extends MeasureWidgetBinding>(
     (dimension) => dimension.timeAlignment === "reporting_date",
   );
   if (!day) dataFail("dashboard_measure_period_unsupported");
-  const bound = (fn: "gte" | "lte", value: string): DataExpression => ({
-    kind: "call",
-    fn,
-    args: [
-      { kind: "field", fieldId: day.id },
-      { kind: "literal", type: "date", value },
-    ],
-  });
-  const period: DataExpression = {
-    kind: "call",
-    fn: "and",
-    args: [bound("gte", range.from), bound("lte", range.to)],
-  };
+  // The same date range a compare widget reads its windows with.
+  const period = compareMeasureFilter(day.id, range);
   return {
     ...binding,
     filter: binding.filter

@@ -4,7 +4,11 @@ import type {
   PublishedModelCatalog,
 } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
-import { MeasureFields, valueViewMeasureId } from "./measure-fields";
+import {
+  MeasureFields,
+  optionsForModel,
+  valueViewMeasureId,
+} from "./measure-fields";
 
 const models: PublishedModelCatalog["models"] = [
   {
@@ -91,5 +95,31 @@ describe("measure binding fields", () => {
     expect(valueViewMeasureId(models[0], ["daily", "revenue"])).toBe("daily");
     expect(valueViewMeasureId(models[0], ["revenue7", "byApp"])).toBe("byApp");
     expect(valueViewMeasureId(models[0], ["revenue7"])).toBe("revenue");
+  });
+});
+
+describe("switching the model (#784)", () => {
+  it("drops the old model's period, order and labels", () => {
+    expect(
+      optionsForModel(
+        {
+          view: "value",
+          limit: 2,
+          period: "last_30_days",
+          order: { measureId: "downloads", direction: "desc" },
+          labels: { downloads: "Downloads" },
+        },
+        models[0]!,
+      ),
+    ).toEqual({ view: "value", limit: 2 });
+    // A measure that needs a grouping opens as a table.
+    expect(
+      optionsForModel(
+        { view: "value", limit: 20 },
+        {
+          measures: [{ id: "byApp", requiredDimensions: ["app"] }],
+        },
+      ).view,
+    ).toBe("table");
   });
 });

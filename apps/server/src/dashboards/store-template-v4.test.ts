@@ -691,7 +691,7 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     // In reading order: the top row, then down.
     expect(shape(slide)).toEqual([
       "measure:downloads",
-      "measure:rating+rating_count",
+      "measure:rating",
       "metric:vercel.visitors",
       "measure:proceeds",
       "review:1002",

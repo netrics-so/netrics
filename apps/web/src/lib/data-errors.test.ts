@@ -10,4 +10,9 @@ describe("data error keys", () => {
     expect(dataErrorCodeKey("expression_numeric_required")).toBe("numeric");
     expect(dataErrorCodeKey("expression_units_incompatible")).toBe("units");
   });
+  it("says a widget's own period needs a reporting date (#784)", () => {
+    expect(dataErrorCodeKey("dashboard_measure_period_unsupported")).toBe(
+      "periodUnsupported",
+    );
+  });
 });

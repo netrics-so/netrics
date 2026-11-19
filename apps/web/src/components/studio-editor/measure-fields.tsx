@@ -27,6 +27,31 @@ function perDateMeasure(model: CatalogModel | undefined, measureId: string) {
 }
 /** The measure the single-value view keeps: a chosen one with a single
  * value, else the model's first such, else the first chosen. */
+/**
+ * A measure widget's options when its model changes: the new model's first
+ * measure in a table where it needs a grouping, else a value; no order,
+ * labels or own period of the old model (#768, #784), as exclusions go.
+ */
+export function optionsForModel<
+  O extends Extract<DashboardWidget, { type: "measure" }>["options"],
+>(
+  options: O,
+  next: { measures: { id: string; requiredDimensions?: string[] }[] },
+): O {
+  const required = next.measures[0]?.requiredDimensions ?? [];
+  const { period: _period, ...rest } = options;
+  return {
+    ...measureOptionsForBinding(
+      {
+        measureIds: next.measures.slice(0, 1).map((measure) => measure.id),
+        groupBy: required.slice(0, 3),
+      },
+      rest as O,
+    ),
+    view: required.length && required.length <= 3 ? "table" : "value",
+  };
+}
+
 export function valueViewMeasureId(
   model: CatalogModel | undefined,
   measureIds: string[],
@@ -173,11 +198,7 @@ export function MeasureFields({
                   groupBy: required.slice(0, 3),
                   exclusions: [],
                 },
-                options: {
-                  ...widget.options,
-                  view:
-                    required.length && required.length <= 3 ? "table" : "value",
-                },
+                options: optionsForModel(widget.options, next),
               },
             });
           }}
