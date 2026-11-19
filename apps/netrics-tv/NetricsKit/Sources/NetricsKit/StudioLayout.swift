@@ -903,11 +903,13 @@ public enum StudioLayout {
                     label, maxWidth: width, fontSize: title, weight: .semibold,
                     widthOf: { measureTextWidth($0, fontSize: $1, weight: $2, font: font) })))
         let cols = (columns?.isEmpty ?? true) ? nil : columns
-        let columnWidth = width / Double(cols?.count ?? 1) - m.cellPadding
+        let pixelUnits = pixel.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 1
+        // A pixel less than the column: glyphs at small sizes may round wider.
+        let columnWidth = width / Double(cols?.count ?? 1) - m.cellPadding - pixelUnits
         var parts = MeasureTableParts(
             titleLines: titleLines, headLines: 1, head: 0, columnWidth: columnWidth, cell: cell,
             footerSize: m.footer * scale, width: width,
-            pixel: pixel.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 1, font: font)
+            pixel: pixelUnits, font: font)
         parts.headLines = cols.map { parts.lines($0, weight: .semibold) } ?? 1
         parts.head = Double(titleLines) * title * m.lineHeight + m.gap + parts.row(parts.headLines)
         return parts

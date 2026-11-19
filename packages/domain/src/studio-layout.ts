@@ -1297,13 +1297,15 @@ function measureTableParts(input: MeasureTableBox) {
   );
   const columns = input.columns?.length ? input.columns : null;
   // Both renderers give every column an even share (a fixed table layout).
-  const columnWidth = width / (columns?.length ?? 1) - m.cellPadding;
-  const lines = (texts: readonly string[], weight: StudioFontWeight) =>
-    Math.max(1, ...texts.map((text) => wrap(text, columnWidth, cell, weight)));
   const pixel =
     input.pixel !== undefined && Number.isFinite(input.pixel) && input.pixel > 0
       ? input.pixel
       : 1;
+  // A pixel less than the column: glyphs at a screen's small sizes may
+  // round wider than their share (#768).
+  const columnWidth = width / (columns?.length ?? 1) - m.cellPadding - pixel;
+  const lines = (texts: readonly string[], weight: StudioFontWeight) =>
+    Math.max(1, ...texts.map((text) => wrap(text, columnWidth, cell, weight)));
   const row = (count: number) =>
     count * (cell * m.lineHeight + pixel) + m.cellPadding + m.border;
   const footerLine = (text: string | null) =>
