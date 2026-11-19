@@ -569,9 +569,10 @@ async function runSync(
   /**
    * The provider's request limit is used up until a known reset (#781): no
    * failure and no outage. Records the run as rate_limited (with what
-   * earlier pages committed), keeps the connection's auth state (an outage
-   * becomes ok again: the provider answered) and its failure count, and
-   * moves every waiting job of the connection to the reset. Returns the
+   * earlier pages committed). The provider answered, so a streak of
+   * failures before it is over: the failure count goes back to 0 and an
+   * outage to ok (the status board reads both, #721); other auth states
+   * stay. Moves every waiting job of the connection to the reset. Returns the
    * error that puts this job back to wait: a backfill, or a run that
    * committed pages, keeps its window as a continuation, so it resumes
    * from its checkpoint and holds the connection until it is done.
@@ -606,6 +607,7 @@ async function runSync(
             pollIntervalSeconds,
             rateLimitedUntil: runAt,
             nextDueAt: runAt,
+            consecutiveFailures: 0,
           })
           .onConflictDoUpdate({
             target: schema.connectionState.connectionId,
@@ -613,6 +615,7 @@ async function runSync(
               rateLimitedUntil: runAt,
               nextDueAt: sql`greatest(coalesce(${schema.connectionState.nextDueAt}, ${runAtSql}), ${runAtSql})`,
               authState: sql`case when ${schema.connectionState.authState} = 'outage' then 'ok' else ${schema.connectionState.authState} end`,
+              consecutiveFailures: 0,
             },
           });
         await tx

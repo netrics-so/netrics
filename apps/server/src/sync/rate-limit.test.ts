@@ -73,6 +73,8 @@ const manifest: ConnectorManifest = {
 let limitedUntil: Date | null = null;
 /** The cursors the connector was asked for, per mode. */
 const requests: Array<{ mode: string; cursor: string | null }> = [];
+/** While set, a sync waits for it before it answers. */
+let gate: Promise<void> | null = null;
 
 const limitedConnector: Connector = {
   manifest,
@@ -84,6 +86,7 @@ const limitedConnector: Connector = {
   },
   async sync(_context: ConnectionContext, request: SyncRequest) {
     requests.push({ mode: request.mode, cursor: request.cursor ?? null });
+    if (gate) await gate;
     const first = request.mode === "backfill" && !request.cursor;
     if (limitedUntil && !first) {
       throw new RateLimitedError(
@@ -279,8 +282,9 @@ describe("a provider rate limit with a known reset (#781)", () => {
     expect(waiting.run_at.getTime()).toBeGreaterThanOrEqual(retryAt.getTime());
 
     const state = await stateOf(connectionId);
-    expect(state.consecutiveFailures).toBe(10);
-    // A provider that answers 429 is up: no outage.
+    // A provider that answers 429 is up: the failure streak is over and
+    // there is no outage (the status board reads both, #721).
+    expect(state.consecutiveFailures).toBe(0);
     expect(state.authState).toBe("ok");
     expect(state.rateLimitedUntil?.getTime()).toBe(deferred.run_at.getTime());
     expect(state.nextDueAt!.getTime()).toBeGreaterThanOrEqual(
@@ -362,6 +366,35 @@ describe("a provider rate limit with a known reset (#781)", () => {
     expect((await job(sync)).attempts).toBe(0);
     expect(requests).toEqual([]);
     expect(await runsOf(connectionId)).toEqual([]);
+  });
+
+  it("keeps the queue running when a deferred sync meets a waiting one (review of #781)", async () => {
+    requests.length = 0;
+    const connectionId = await seedConnection();
+    let release!: () => void;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const retryAt = new Date(Date.now() + 60 * 60 * 1000);
+    limitedUntil = retryAt;
+    const running = await enqueue(connectionId, "connection.sync");
+    await waitFor(async () => requests.length > 0);
+    // "Sync now" while it runs: a second sync waits.
+    const waiting = await enqueue(connectionId, "connection.sync");
+    release();
+    gate = null;
+    await waitFor(async () => (await job(running)).status !== "running");
+
+    expect((await job(running)).status).toBe("failed");
+    const kept = await job(waiting);
+    expect(kept.status).toBe("pending");
+    expect(kept.run_at.getTime()).toBeGreaterThanOrEqual(retryAt.getTime());
+    // Other connections' jobs are still claimed.
+    limitedUntil = null;
+    const other = await seedConnection();
+    const next = await enqueue(other, "connection.sync");
+    await waitFor(async () => (await job(next)).status === "succeeded");
+    await owner`update jobs set status = 'failed' where id = ${waiting}`;
   });
 
   it("bounds a reset far in the future to a day", async () => {
