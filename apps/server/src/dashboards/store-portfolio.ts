@@ -1313,7 +1313,7 @@ const PROCEEDS_TABLE: OverviewMeasureTable = {
 };
 /**
  * A linked product's ratings (version 6, #784): the rating's head is its
- * star, so no head breaks inside a word in five columns.
+ * star, so no head breaks inside a word in a third of the width.
  */
 const LINKED_RATINGS_TABLE: OverviewMeasureTable = {
   ...RATINGS_TABLE,
@@ -1951,12 +1951,13 @@ function buildPortfolioSlides(
         ...(revenue
           ? [
               ...at(find("play-proceeds"), 0, 4, 4, 4),
-              // The ratings five columns wide over the latest review;
-              // revenue and visitors on the right.
-              ...at(find("ratings"), 4, 0, 5, 5),
-              ...at(find("review"), 4, 5, 5, 3),
-              ...at(revenue, 9, 0, 3, visitors ? 4 : 8),
-              ...at(visitors, 9, 4, 3, 4),
+              // The ratings (their rating's head is its star) over the App
+              // Store's revenue; visitors over the latest review, which
+              // keeps four rows for its text.
+              ...at(find("ratings"), 4, 0, 4, 5),
+              ...at(revenue, 4, 5, 4, 3),
+              ...at(visitors, 8, 0, 4, 4),
+              ...at(find("review"), 8, visitors ? 4 : 0, 4, visitors ? 4 : 8),
             ]
           : [
               ...at(find("review"), 0, 4, 4, 4),

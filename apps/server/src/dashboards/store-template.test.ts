@@ -464,7 +464,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
   const APP_SLIDE_HASHES: Record<number, string> = {
     4: "034364f9fb26ab383278ff8a92015b88fdb1c4d10bc165055f877cb2ec827622",
     5: "71bd572ac6b0d3e39dae1b4f718cf6fdf3ca2b5e261f1c11ee82617d73b4df3d",
-    6: "51f02f191476194328d5376d9bd30561e60337fd6a4451036c944bd950b99b46",
+    6: "69eb191c746dd69a6bd581a1db3f5bbf3739a1400eafb0545c1b2cba4723bee1",
   };
   it("needs a version bump for any app slide change; 4 and 5 stay frozen", () => {
     const hash = (template: typeof storeTemplate) =>
@@ -518,20 +518,19 @@ describe("version 4: an overview and one slide per app (#709)", () => {
         4,
         4,
       ],
-      // The ratings five columns wide over the latest review.
-      ["measure:rating:table", "Store ratings", 4, 0, 5, 5],
-      ["review", null, 4, 5, 5, 3],
-      // The App Store's revenue in the display currency, as before, and
-      // the website's visitors.
+      // The ratings over the App Store's revenue in the display currency,
+      // as before; the website's visitors over the latest review.
+      ["measure:rating:table", "Store ratings", 4, 0, 4, 5],
       [
         "metric:app_store_connect.proceeds",
         "Revenue, last 30 days · App Store",
-        9,
-        0,
-        3,
         4,
+        5,
+        4,
+        3,
       ],
-      ["metric:vercel.visitors", "Website visitors, last 30 days", 9, 4, 3, 4],
+      ["metric:vercel.visitors", "Website visitors, last 30 days", 8, 0, 4, 4],
+      ["review", null, 8, 4, 4, 4],
     ]);
     const split = paid.widgets[0]!;
     if (split.type !== "measure") throw new Error("not a measure");

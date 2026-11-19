@@ -692,10 +692,10 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     expect(shape(slide)).toEqual([
       "measure:downloads",
       "measure:rating+rating_count",
-      "metric:app_store_connect.proceeds",
-      "measure:proceeds",
       "metric:vercel.visitors",
+      "measure:proceeds",
       "review:1002",
+      "metric:app_store_connect.proceeds",
     ]);
     expect(
       slide.formatWarnings.filter((w) => w.severity === "attention"),

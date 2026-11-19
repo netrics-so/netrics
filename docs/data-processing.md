@@ -959,9 +959,10 @@ stores showed only its App Store app's numbers on its slide. From version
 The total takes the left third's upper half (four rows, so both stores'
 lines and their freshness fit at every theme font scale); below it a paid
 product's Google Play proceeds, else its latest review. A paid product's
-ratings are five columns wide (the rating's head is its star) over the
-latest review, with revenue and visitors on the right; a free product's
-ratings take the other two thirds under its visitors. A total in several
+ratings (the rating's head is its star) sit over the App Store's revenue
+in the middle third, its visitors over the latest review (four rows for
+its text) on the right; a free product's ratings take the other two
+thirds under its visitors. A total in several
 currencies wraps between its amounts instead of letting group lines go.
 The Google Play proceeds' freshness names Google Play only: a widget's own
 fixed store or app counts as its scope. A single-store app keeps version 5's slide; a free product has
