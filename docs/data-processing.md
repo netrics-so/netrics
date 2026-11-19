@@ -914,10 +914,15 @@ heads under their titles (a measure widget's `labels`: "Downloads",
 their store "App Store", so every table holds a row in every format at
 every theme font scale.
 
-The fit counts text with measured glyph widths (`MEASURE_GLYPH_EMS`: the
-wider of IBM Plex Sans and the system font, regular and semibold), draws
-row lines inside the rows, and keeps one screen pixel of rounding room per
-row.
+The fit counts text with measured glyph widths per renderer
+(`MEASURE_GLYPH_EMS`: IBM Plex Sans on the web, the system font with
+tabular digits on netrics TV, regular and semibold; the readability check
+counts the wider), draws row lines inside the rows, and keeps a screen
+pixel of rounding room per line and per column. netrics TV draws the
+tile's texts at the line heights the fit counts, and its footer lines
+never shrink. A version 4 install sees "… · App Store" on its screens
+once the update's data drafts are published, before the dashboard copy is
+swapped in.
 
 Version 4 installs get version 5 through the reviewed template update.
 
