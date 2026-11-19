@@ -34,6 +34,7 @@ const DEFAULT_POLL_INTERVAL_SECONDS = 300;
 
 export function toStateView(
   state: ConnectionStateRow | null,
+  now: Date = new Date(),
 ): ConnectionStateView {
   const authState: ConnectionAuthState = state
     ? (state.authState as ConnectionAuthState)
@@ -54,6 +55,11 @@ export function toStateView(
     consecutiveFailures: state?.consecutiveFailures ?? 0,
     pollIntervalSeconds:
       state?.pollIntervalSeconds ?? DEFAULT_POLL_INTERVAL_SECONDS,
+    // Only while it holds (#781): a past reset means nothing.
+    rateLimitedUntil:
+      state?.rateLimitedUntil && state.rateLimitedUntil > now
+        ? state.rateLimitedUntil.toISOString()
+        : null,
   };
 }
 

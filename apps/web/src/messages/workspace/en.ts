@@ -18,6 +18,9 @@ export const workspaceEn = {
       needs_reauthorization: "Needs reconnect",
       outage: "Outage",
     },
+    /** The provider's request limit is used up until a reset (#781). */
+    rateLimited: "{connector} limit reached, continuing at {time}",
+    rateLimitedDay: "{connector} limit reached, continuing on {date} at {time}",
   },
   workspace: {
     connectTv: "Connect a TV",
@@ -321,6 +324,15 @@ export const workspaceEn = {
         started: "Started",
         finished: "Finished",
       },
+      /** A failed run's error class (#781), ahead of the provider's text. */
+      errorClass: {
+        auth: "Sign-in refused",
+        transient: "Temporary error",
+        contract: "Connector error",
+        budget: "Storage limit reached",
+        rate_limited: "Provider limit reached, continuing after the reset",
+      },
+      rateLimit: "Rate limit",
       runStatus: {
         running: "running",
         continued: "continuing",

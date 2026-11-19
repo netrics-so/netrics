@@ -706,6 +706,12 @@ button.danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--success) 8%, var(--surface));
 }
 
+/* The provider's request limit holds (#781): syncing waits, nothing broke. */
+.health-badge.rate_limited {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--surface));
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+
 .health-badge.auth_failed,
 .health-badge.needs_reauthorization,
 .health-badge.outage {

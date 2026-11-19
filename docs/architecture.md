@@ -311,6 +311,28 @@ log only ids, dates, counts and statuses, never personal data or provider
 payloads. `recordingLogger()` in `@netrics/connector-sdk/testing` records the
 lines in tests.
 
+A connector that meets a provider's request limit with a known reset (a 429
+with `Retry-After` or a reset header, a daily quota) throws
+`RateLimitedError(message, retryAt)` (SDK 0.2.16, #781). The runtime keeps the
+class and `retryAt` across the credential boundary (it redacts the message as
+for every error). The host does not count it as a failure: the run is
+recorded with the error class `rate_limited` and what earlier pages
+committed, the connection's failure count stays, an `outage` auth state
+becomes `ok` again (the provider answered), and
+`connection_state.rate_limited_until` holds the reset, bounded to between 5
+seconds and a day ahead, plus up to a minute of jitter (a tenth of the wait
+when that is shorter). Every waiting job of the connection moves to that
+time, and the job itself waits without consuming a retry: a backfill, and a
+run that committed pages, keep their window as a continuation, so they
+resume from their checkpoint and hold the connection until they are done. A
+job that starts while the limit holds waits too, without calling the
+connector. The next successful run clears it. Connectors pace themselves
+where the provider reports what is left (Vercel and Apple Ads stop a few
+requests before the window runs out). A rate limit whose reset the provider
+does not name stays an ordinary thrown error, retried with the queue's
+backoff (App Store Connect's rolling hourly limit, Google Cloud Storage's
+429 for Play reports).
+
 Use JSON-compatible transport objects even inside TypeScript. A future isolated
 runner can then use the same contract over JSON-RPC or another process boundary.
 
@@ -377,6 +399,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.13 | Optional `freshnessStreams` and a final `freshness` (ADR 0025)    |
 | 0.2.14 | Optional `runtime.log`, a structured connector logger (#638)      |
 | 0.2.15 | Optional final `nextFrom`, the next window start (#758)           |
+| 0.2.16 | `RateLimitedError` with `retryAt`: wait for a known reset (#781)  |
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),

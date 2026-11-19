@@ -26,6 +26,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       needs_reauthorization: "Neu verbinden",
       outage: "Ausfall",
     },
+    rateLimited: "{connector}-Limit erreicht, weiter um {time}",
+    rateLimitedDay: "{connector}-Limit erreicht, weiter am {date} um {time}",
   },
   workspace: {
     connectTv: "TV verbinden",
@@ -335,6 +337,15 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         started: "Gestartet",
         finished: "Beendet",
       },
+      errorClass: {
+        auth: "Anmeldung abgelehnt",
+        transient: "Vorübergehender Fehler",
+        contract: "Fehler im Connector",
+        budget: "Speicherlimit erreicht",
+        rate_limited:
+          "Limit des Anbieters erreicht, weiter nach dem Zurücksetzen",
+      },
+      rateLimit: "Anfragelimit",
       runStatus: {
         running: "läuft",
         continued: "wird fortgesetzt",

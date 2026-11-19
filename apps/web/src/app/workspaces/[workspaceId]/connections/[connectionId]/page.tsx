@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { can } from "@netrics/domain";
 
-import { HealthBadge } from "../../health-badge";
+import { HealthBadge, RateLimitText } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
 import { OAuthOutcomeBanner } from "../oauth-outcome";
 import { ReconnectBanner } from "../reconnect-banner";
@@ -19,6 +19,7 @@ import { SignedKeyPanel } from "./signed-key-panel";
 import { RetentionSettings } from "./retention-settings";
 import { ConnectionProject } from "./connection-project";
 import { ConnectionFreshness } from "./connection-freshness";
+import { SyncRunError } from "./sync-run-error";
 import {
   getConnection,
   getConnectionRetention,
@@ -157,6 +158,8 @@ export default async function ConnectionDetailPage({
     ? appleAdsConnectionAccount(connection.config)
     : null;
   const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
+  // The provider's request limit holds (#781): syncing continues after it.
+  const rateLimitedUntil = connection.state.rateLimitedUntil ?? null;
   // History status (#617): a backfill waits or runs, or datasets that no
   // backfill has read yet (added by a connector update) hold partial history.
   const historyLoading =
@@ -176,7 +179,11 @@ export default async function ConnectionDetailPage({
       <h1>{connection.name}</h1>
       <p className="subtitle">
         {connection.connectorName} {connection.connectorVersion} ·{" "}
-        <HealthBadge health={connection.state.health} />
+        <HealthBadge
+          health={connection.state.health}
+          rateLimitedUntil={rateLimitedUntil}
+          connectorName={connection.connectorName}
+        />
       </p>
       <p className="muted">
         <Link href={`/workspaces/${workspaceId}/sources`}>{t("back")}</Link>
@@ -288,6 +295,17 @@ export default async function ConnectionDetailPage({
             {health(`authStates.${connection.state.authState}`)}
           </span>
         </div>
+        {rateLimitedUntil ? (
+          <div className="row">
+            <span className="label">{t("rateLimit")}</span>
+            <span className="value">
+              <RateLimitText
+                rateLimitedUntil={rateLimitedUntil}
+                connectorName={connection.connectorName}
+              />
+            </span>
+          </div>
+        ) : null}
         <div className="row">
           <span className="label">{t("consecutiveFailures")}</span>
           <span className="value">{connection.state.consecutiveFailures}</span>
@@ -586,9 +604,7 @@ export default async function ConnectionDetailPage({
                   <td>{run.observationsWritten}</td>
                   <td>{run.attempt}</td>
                   <td className="muted">
-                    {run.errorClass
-                      ? `${run.errorClass}: ${run.errorMessage ?? ""}`
-                      : "—"}
+                    <SyncRunError run={run} />
                   </td>
                   <td className="muted">
                     {relativeTime(run.startedAt, locale)}

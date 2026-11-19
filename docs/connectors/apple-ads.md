@@ -280,8 +280,10 @@ There is no Brand template for an ad account.
 ## Limits
 
 Apple publishes no fixed quota. Responses carry `RateLimit-Remaining`;
-netrics ends a sync early, and retries later, when only a few requests are
-left. A 429 is retried after Apple's `Retry-After`, a server error with a
+netrics ends a sync early when only a few requests are left and pauses the
+connection until `RateLimit-Reset` (a minute without one). A 429 is retried
+after a short `Retry-After`; a longer one pauses the connection until then.
+Syncing continues where it stopped. A server error is retried with a
 backoff. The limit belongs to the API user, so connections that share a key
 share it.
 

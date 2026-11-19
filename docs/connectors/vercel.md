@@ -56,9 +56,13 @@ Every value is a daily count per project, dated by Vercel's reporting day
   read as far back as Vercel allows.
 - Afterwards the connection syncs every 15 minutes and re-reads yesterday
   and today, which Vercel is still counting.
-- Vercel allows a limited number of API calls per minute. Short waits are
-  absorbed; otherwise the sync is retried later and the dashboard shows the
-  last values.
+- Vercel allows a limited number of API calls per window and reports with
+  every answer how many are left and when the window resets. netrics stops
+  a few requests before the limit: a reset within 30 seconds is waited
+  out, a later one pauses the connection until then. Its syncs, the first
+  backfill included, continue right after the reset where they stopped,
+  and the connection shows "Vercel limit reached, continuing at …" rather
+  than an outage. The dashboard shows the last values meanwhile.
 
 ## When numbers arrive
 
@@ -76,6 +80,7 @@ until the day ends.
 | "The token cannot see any projects"                    | Give the token the project's or team's scope.                                             |
 | "Web Analytics is not enabled for …"                   | Enable Web Analytics in the project's **Analytics** tab in Vercel.                        |
 | "The token no longer has access to … projects"         | Use a token that covers them, or remove them from the connection.                         |
+| "Vercel limit reached, continuing at …"                | Nothing: syncing continues after Vercel's reset.                                          |
 | "Vercel's API rate limit is used up" / "not answering" | Nothing: netrics retries automatically.                                                   |
 
 After a new token is saved, syncing restarts right away.
