@@ -13,9 +13,26 @@
  * connection's config. It stays a preview until the exit gate (#378)
  * passes; the gate itself runs on the hosted service and on a self-hosted
  * install with NETRICS_PREVIEW_CONNECTORS=apple-ads. Once it passes,
- * "apple-ads" leaves this set and is available everywhere.
+ * "apple-ads" leaves this set and is available everywhere; a variable that
+ * still names it is then ignored with a warning.
  *
  * Kept apart from connectors.ts so the server config can validate the
  * opt-in without loading the connector bundle.
  */
 export const PREVIEW_CONNECTORS: ReadonlySet<string> = new Set(["apple-ads"]);
+
+/**
+ * The IDs of every connector in the bundle (createDefaultRegistry), finished
+ * or preview, so the config can tell a typo in NETRICS_PREVIEW_CONNECTORS
+ * (refused) from a connector that has graduated from preview since the
+ * variable was set (ignored with a warning, so upgrading never stops an
+ * instance). connectors.test.ts keeps it equal to the registry.
+ */
+export const BUNDLE_CONNECTORS: ReadonlySet<string> = new Set([
+  "demo",
+  "vercel",
+  "google-search-console",
+  "app-store-connect",
+  "google-play",
+  "apple-ads",
+]);

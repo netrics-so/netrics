@@ -122,8 +122,8 @@ describe("loadConfig", () => {
     expect([...loadMigrationConfig({}).previewConnectors]).toEqual([]);
   });
 
-  it("refuses unknown and finished connectors as previews (#378)", () => {
-    for (const value of ["apple-adz", "demo", "apple-ads,vercel"]) {
+  it("refuses IDs that are no connector of this release (#378)", () => {
+    for (const value of ["apple-adz", "apple-ads,vercl"]) {
       for (const load of [loadConfig, loadMigrationConfig]) {
         expect(() => load({ NETRICS_PREVIEW_CONNECTORS: value })).toThrow(
           ConfigError,
@@ -133,8 +133,19 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-adz" }),
     ).toThrow(
-      /"apple-adz" is not a preview connector \(preview connectors: apple-ads\)/,
+      /"apple-adz" is not a connector of this release \(preview connectors: apple-ads\)/,
     );
+  });
+
+  it("ignores finished connectors, so a preview's graduation never stops an instance (#378)", () => {
+    for (const load of [loadConfig, loadMigrationConfig]) {
+      const config = load({
+        NETRICS_PREVIEW_CONNECTORS: "demo,apple-ads,demo",
+      });
+      expect([...config.previewConnectors]).toEqual(["apple-ads"]);
+      expect(config.previewConnectorsIgnored).toEqual(["demo"]);
+    }
+    expect(loadConfig({}).previewConnectorsIgnored).toEqual([]);
   });
 
   it("trusts private proxy hops by default", () => {

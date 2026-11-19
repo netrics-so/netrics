@@ -64,3 +64,39 @@ export function createDefaultRegistry(
   }
   return registry;
 }
+
+/** The two log levels logRegisteredConnectors uses (pino, Fastify). */
+export interface ConnectorLog {
+  info(details: object, message: string): void;
+  warn(details: object, message: string): void;
+}
+
+/**
+ * Logs, once at startup, which connectors this process registered, and
+ * warns about NETRICS_PREVIEW_CONNECTORS entries that are no longer
+ * previews (ignored). Every service logs it, so a service whose variable
+ * differs from the others shows in the logs. IDs only, no secrets.
+ */
+export function logRegisteredConnectors(
+  log: ConnectorLog,
+  registry: ConnectorRegistry,
+  options: { previewConnectorsIgnored?: readonly string[] } = {},
+): void {
+  const ignored = options.previewConnectorsIgnored ?? [];
+  if (ignored.length > 0) {
+    log.warn(
+      { ignored },
+      "NETRICS_PREVIEW_CONNECTORS names connectors that are not previews (any more); they are registered anyway, remove them from the variable",
+    );
+  }
+  log.info(
+    {
+      connectors: registry.list().map(({ manifest }) => manifest.id),
+      previews: registry
+        .list()
+        .map(({ manifest }) => manifest.id)
+        .filter((id) => PREVIEW_CONNECTORS.has(id)),
+    },
+    "connectors registered",
+  );
+}

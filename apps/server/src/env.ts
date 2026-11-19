@@ -12,7 +12,7 @@ import {
 } from "@netrics/contracts";
 import { DEFAULT_BACKFILLS_PER_APP } from "@netrics/database";
 
-import { PREVIEW_CONNECTORS } from "./preview-connectors.js";
+import { BUNDLE_CONNECTORS, PREVIEW_CONNECTORS } from "./preview-connectors.js";
 import { Secret } from "./secret.js";
 
 // Obviously insecure fixed fallback so local development and tests work with
@@ -118,9 +118,13 @@ const proxySecrets = z
   );
 
 // Preview connectors the operator turns on in production (#378):
-// comma-separated connector IDs, each one of PREVIEW_CONNECTORS. A typo or a
-// finished connector fails startup instead of being ignored. Unset: none.
-// Outside production every preview connector is registered anyway.
+// comma-separated connector IDs. An ID that is no connector of the bundle
+// (a typo) fails startup instead of being ignored. A bundle connector that
+// is not (or no longer) a preview is already registered everywhere: it is
+// ignored and reported in `ignored`, which the processes log as a warning,
+// so a release that finishes a preview never stops an instance that still
+// names it. Unset: none. Outside production every preview connector is
+// registered anyway.
 const previewConnectors = z
   .string()
   .optional()
@@ -133,15 +137,20 @@ const previewConnectors = z
   .superRefine((ids, ctx) => {
     // Connector IDs are not secrets; naming the bad entry helps fix a typo.
     for (const id of ids) {
-      if (!PREVIEW_CONNECTORS.has(id)) {
+      if (!BUNDLE_CONNECTORS.has(id)) {
         ctx.addIssue({
           code: "custom",
-          message: `"${id}" is not a preview connector (preview connectors: ${[...PREVIEW_CONNECTORS].join(", ") || "none"})`,
+          message: `"${id}" is not a connector of this release (preview connectors: ${[...PREVIEW_CONNECTORS].join(", ") || "none"})`,
         });
       }
     }
   })
-  .transform((ids): ReadonlySet<string> => new Set(ids));
+  .transform(
+    (ids): { enabled: ReadonlySet<string>; ignored: readonly string[] } => ({
+      enabled: new Set(ids.filter((id) => PREVIEW_CONNECTORS.has(id))),
+      ignored: [...new Set(ids.filter((id) => !PREVIEW_CONNECTORS.has(id)))],
+    }),
+  );
 
 /** An instance's OAuth app at one provider (ADR 0012). */
 export interface OAuthClientConfig {
@@ -432,7 +441,8 @@ const envSchema = z
           : null,
     } satisfies Record<string, OAuthClientConfig | null>,
     exchangeRates: env.NETRICS_EXCHANGE_RATES === "ecb",
-    previewConnectors: env.NETRICS_PREVIEW_CONNECTORS,
+    previewConnectors: env.NETRICS_PREVIEW_CONNECTORS.enabled,
+    previewConnectorsIgnored: env.NETRICS_PREVIEW_CONNECTORS.ignored,
     dataPolicy: env.NETRICS_DATA_POLICY,
     defaultLocale: env.NETRICS_DEFAULT_LOCALE ?? null,
     imageQuota: {
@@ -531,7 +541,8 @@ const migrationEnvSchema = z
           env.NETRICS_SCHEDULER_DB_PASSWORD ??
           (production ? undefined : "netrics_scheduler"),
       },
-      previewConnectors: env.NETRICS_PREVIEW_CONNECTORS,
+      previewConnectors: env.NETRICS_PREVIEW_CONNECTORS.enabled,
+      previewConnectorsIgnored: env.NETRICS_PREVIEW_CONNECTORS.ignored,
       version: env.APP_VERSION,
       commit: env.GIT_SHA,
     };

@@ -9,8 +9,13 @@ import {
 import { validateConnectionConfig } from "@netrics/contracts";
 import { describe, expect, it } from "vitest";
 
-import { createDefaultRegistry, PREVIEW_CONNECTORS } from "./connectors.js";
+import {
+  createDefaultRegistry,
+  logRegisteredConnectors,
+  PREVIEW_CONNECTORS,
+} from "./connectors.js";
 import { loadConfig, loadMigrationConfig } from "./env.js";
+import { BUNDLE_CONNECTORS } from "./preview-connectors.js";
 
 describe("createDefaultRegistry", () => {
   it("keeps Apple Ads out of production until its setup is finished (#374, #375)", () => {
@@ -64,6 +69,53 @@ describe("createDefaultRegistry", () => {
           .map(({ manifest }) => manifest.id),
       );
     }
+  });
+
+  it("keeps BUNDLE_CONNECTORS equal to the bundle, previews included (#378)", () => {
+    const ids = createDefaultRegistry({ nodeEnv: "development" })
+      .list()
+      .map(({ manifest }) => manifest.id);
+    expect([...BUNDLE_CONNECTORS].sort()).toEqual([...ids].sort());
+    for (const id of PREVIEW_CONNECTORS) {
+      expect(BUNDLE_CONNECTORS.has(id)).toBe(true);
+    }
+  });
+
+  it("logs the registered connectors and warns about ignored entries (#378)", () => {
+    const lines: Array<[string, object, string]> = [];
+    const log = {
+      info: (details: object, message: string) =>
+        lines.push(["info", details, message]),
+      warn: (details: object, message: string) =>
+        lines.push(["warn", details, message]),
+    };
+    logRegisteredConnectors(
+      log,
+      createDefaultRegistry({ nodeEnv: "production" }),
+    );
+    expect(lines).toEqual([
+      [
+        "info",
+        {
+          connectors: [
+            "demo",
+            "vercel",
+            "google-search-console",
+            "app-store-connect",
+            "google-play",
+          ],
+          previews: [],
+        },
+        "connectors registered",
+      ],
+    ]);
+    lines.length = 0;
+    logRegisteredConnectors(log, createDefaultRegistry(), {
+      previewConnectorsIgnored: ["demo"],
+    });
+    expect(lines.map(([level]) => level)).toEqual(["warn", "info"]);
+    expect(lines[0]![1]).toEqual({ ignored: ["demo"] });
+    expect(lines[1]![1]).toMatchObject({ previews: ["apple-ads"] });
   });
 
   it("builds the same bundle from the API and the migration config (#378)", () => {

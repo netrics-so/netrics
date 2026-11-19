@@ -23,7 +23,10 @@ import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import { createAuthService, type AuthService } from "./auth/index.js";
 import { registerClientAddress, servesAuthFlow } from "./client-address.js";
 import { logSerializers } from "./log-serializers.js";
-import { createDefaultRegistry } from "./connectors.js";
+import {
+  createDefaultRegistry,
+  logRegisteredConnectors,
+} from "./connectors.js";
 import { createOnboarding } from "./onboarding.js";
 import { createCredentialKeyring } from "./credentials.js";
 import type { Config } from "./env.js";
@@ -168,6 +171,7 @@ export async function buildApp(
   );
 
   const registry = deps.registry ?? createDefaultRegistry(config);
+  logRegisteredConnectors(app.log, registry, config);
   const credentialKeyring = createCredentialKeyring(
     config.appEncryptionKey,
     config.appEncryptionKeysPrevious,

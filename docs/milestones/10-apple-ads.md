@@ -115,7 +115,8 @@ chosen ad account and stores its ID, name, currency and time zone; #370
 confirmed the fixtures. The exit gate (#378) runs with that opt-in on the
 hosted service and on a self-hosted Docker Compose install. Once it passes,
 a later change removes `apple-ads` from `PREVIEW_CONNECTORS`, which lifts
-the hold for every installation without the variable. Connector docs:
+the hold for every installation; a leftover opt-in is then ignored with a
+warning. Connector docs:
 [docs/connectors/apple-ads.md](../connectors/apple-ads.md).
 
 **Report windows (#374).** Each sync page reads whole calendar months in
