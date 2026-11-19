@@ -960,6 +960,75 @@ public enum StudioLayout {
         return (shown, rowsLine(shown, total))
     }
 
+    /**
+     * A freshness line that lists several sources (freshnessLevelFit in the
+     * TypeScript, #784): the first of its forms, longest first, whose every
+     * line fits the width on one line at the footer size; else the last.
+     */
+    public static func freshnessLevelFit(
+        levels: [[String]], width: Double, fontScale: Double? = nil, font: MeasureFont = .any
+    ) -> Int {
+        let size = MeasureTableMetrics.footer * effectiveFontScale(fontScale)
+        let index = levels.firstIndex { lines in
+            lines.allSatisfy { measureTextWidth($0, fontSize: size, weight: .regular, font: font) <= width + 1e-9 }
+        }
+        return index ?? Swift.max(0, levels.count - 1)
+    }
+
+    /** A total with its split's sizes (MEASURE_SPLIT_METRICS in the TypeScript, #784). */
+    public enum MeasureSplitMetrics {
+        public static let value = 84.0
+        public static let valueMin = 36.0
+        public static let valueLineHeight = 1.1
+    }
+
+    /**
+     * How a total with its split fits its tile (measureSplitLayout in the
+     * TypeScript, #784): the total's size, and the group lines shown; lines
+     * give way from the end, with the "N of M" line, when even the smallest
+     * total does not fit.
+     */
+    public static func measureSplitLayout(
+        label: String, width inputWidth: Double, height: Double, fontScale: Double? = nil, total: String?,
+        lines: [(String, String)], footer: [String?], pixel: Double? = nil, font: MeasureFont = .any,
+        rowsLine: ((Int, Int) -> String)? = nil
+    ) -> (valueSize: Double, shown: Int, rowsLine: String?, fits: Bool) {
+        let parts = measureTableParts(
+            label: label, width: inputWidth, fontScale: fontScale, columns: nil, pixel: pixel, font: font)
+        let scale = effectiveFontScale(fontScale)
+        let m = MeasureTableMetrics.self, v = MeasureSplitMetrics.self
+        let width = Swift.max(0, inputWidth)
+        let pixelUnits = parts.pixel
+        let cell = m.cell * scale
+        let head = Double(parts.titleLines) * m.title * scale * m.lineHeight + m.gap
+        func lineHeight(_ line: (String, String)) -> Double {
+            Double(Swift.max(1, parts.wrap("\(line.0) \(line.1)", width - pixelUnits, cell)))
+                * (cell * m.lineHeight + pixelUnits)
+        }
+        let totalWidth = total.map { measureTextWidth($0, fontSize: 1, weight: .semibold, font: font) } ?? 0
+        let widest = totalWidth > 0 ? (width - pixelUnits) / totalWidth : v.value * scale
+        func layout(_ shown: Int, _ footer: [String?]) -> (valueSize: Double, ok: Bool) {
+            let linesHeight = lines.prefix(shown).reduce(0) { $0 + lineHeight($1) }
+            let room =
+                height - head - footer.reduce(0) { $0 + parts.footerLine($1) }
+                - (shown > 0 ? linesHeight + m.gap : 0)
+            guard total != nil else { return (0, room >= -1e-9) }
+            let valueSize = Swift.min(v.value * scale, widest, (room - pixelUnits) / v.valueLineHeight)
+            return (valueSize, valueSize >= v.valueMin * scale - 1e-9)
+        }
+        let all = lines.count
+        let full = layout(all, footer)
+        if full.ok { return (Swift.max(0, full.valueSize), all, nil, true) }
+        var shown = all - 1
+        while shown >= 0 {
+            let line = rowsLine?(shown, all)
+            let fitted = layout(shown, line.map { footer + [$0] } ?? footer)
+            if fitted.ok || shown == 0 { return (Swift.max(0, fitted.valueSize), shown, line, false) }
+            shown -= 1
+        }
+        return (0, 0, nil, false)
+    }
+
     /** A row label's size: shrunk down to cellMin, then truncated. */
     public static func tableRowLabel(_ text: String, labelWidth: Double, cell: Double, cellMin: Double)
         -> (size: Double, truncated: Bool)

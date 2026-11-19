@@ -8,6 +8,7 @@ import {
   storeTemplateV2,
   storeTemplateV3,
   storeTemplateV4,
+  storeTemplateV5,
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
@@ -88,6 +89,9 @@ const VERSION_HASHES: Record<number, string> = {
   3: "803b151fd59622b368644799eed102cfe37f3632fbc2266f2f32a3ea221c6923",
   4: "a0b7378f8af8f7c9b07da278d4187d3af3b88198cb075d9c66ee14dd5affc014",
   5: "62b47283b5c76be5eb2de73a7c8166d5a4e98ed2d4b7a5f7011547ccdf6a7c22",
+  // Version 6 changes only app slides, which `fixtureInputs` has none of:
+  // `APP_SLIDE_HASHES` guards them.
+  6: "62b47283b5c76be5eb2de73a7c8166d5a4e98ed2d4b7a5f7011547ccdf6a7c22",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -452,6 +456,109 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       website: null,
     },
   ];
+  /**
+   * The content hash of the versions with app slides, built from
+   * `fixtureInputs` with `apps` (#784): a change to what app slides build
+   * needs a new version too.
+   */
+  const APP_SLIDE_HASHES: Record<number, string> = {
+    4: "034364f9fb26ab383278ff8a92015b88fdb1c4d10bc165055f877cb2ec827622",
+    5: "71bd572ac6b0d3e39dae1b4f718cf6fdf3ca2b5e261f1c11ee82617d73b4df3d",
+    6: "7d85022a2b46aea4922ebc9f23d738ebe5b37d53a2a949e6e0bcebc4719685cd",
+  };
+  it("needs a version bump for any app slide change; 4 and 5 stay frozen", () => {
+    const hash = (template: typeof storeTemplate) =>
+      sha256(JSON.stringify(buildAll({ ...fixtureInputs, apps }, template)));
+    expect({
+      4: hash(storeTemplateV4),
+      5: hash(storeTemplateV5),
+      [STORE_TEMPLATE_VERSION]: hash(storeTemplate),
+    }).toEqual(APP_SLIDE_HASHES);
+    expect(APP_SLIDE_HASHES[6]).not.toBe(APP_SLIDE_HASHES[5]);
+  });
+  it("shows both stores on a linked product's slide from version 6 (#784)", () => {
+    const linked = (paid: boolean, website: boolean) => ({
+      ...apps[2]!,
+      paid,
+      website: website
+        ? { connectionId: apple.id, projectId: "prj_example" }
+        : null,
+    });
+    const slideOf = (app: StoreAppIdentity, locale: "en" | "de" = "en") => {
+      const dashboard = dashboardOf(
+        { ...fixtureInputs, locale, apps: [app] },
+        storeTemplate,
+      );
+      return createDashboardRequestSchema.parse(dashboard.request).slides![1]!;
+    };
+    const paid = slideOf(linked(true, true));
+    expect(
+      paid.widgets.map((widget) => [
+        widget.type === "measure"
+          ? `measure:${widget.binding.measureIds[0]}:${widget.options.view}`
+          : widget.type === "review"
+            ? "review"
+            : `${widget.type}:${(widget as { metricKey: string }).metricKey}`,
+        widget.title,
+        widget.x,
+        widget.y,
+        widget.w,
+        widget.h,
+      ]),
+    ).toEqual([
+      // The App Store's revenue in the display currency, as before.
+      [
+        "metric:app_store_connect.proceeds",
+        "Revenue, last 30 days · App Store",
+        0,
+        0,
+        4,
+        3,
+      ],
+      // Both stores' downloads: the total and a line per store.
+      ["measure:downloads:value", "Downloads and user installs", 4, 0, 4, 3],
+      ["metric:vercel.visitors", "Website visitors, last 30 days", 8, 0, 4, 3],
+      ["measure:rating:table", "Store ratings", 0, 3, 4, 5],
+      // Google Play's proceeds per currency, beside the ratings.
+      [
+        "measure:proceeds:table",
+        "Proceeds after fees · Google Play",
+        4,
+        3,
+        4,
+        5,
+      ],
+      ["review", null, 8, 3, 4, 5],
+    ]);
+    const split = paid.widgets[1]!;
+    if (split.type !== "measure") throw new Error("not a measure");
+    expect(split.binding.groupBy).toEqual(["store"]);
+    expect(split.options).toMatchObject({ view: "value", limit: 2 });
+    const play = paid.widgets[4]!;
+    if (play.type !== "measure") throw new Error("not a measure");
+    expect(play.binding.filter).toEqual({
+      kind: "call",
+      fn: "eq",
+      args: [
+        { kind: "field", fieldId: "store" },
+        { kind: "literal", type: "string", value: "google" },
+      ],
+    });
+    // Free: no revenue on either store; the review stays the App Store's.
+    expect(
+      slideOf(linked(false, false)).widgets.map((widget) => widget.type),
+    ).toEqual(["measure", "measure", "review"]);
+    // A single-store app keeps version 5's slide.
+    for (const single of [apps[0]!, apps[1]!])
+      expect(
+        dashboardOf({ ...fixtureInputs, apps: [single] }, storeTemplate).request
+          .slides![1],
+      ).toEqual(
+        dashboardOf({ ...fixtureInputs, apps: [single] }, storeTemplateV5)
+          .request.slides![1],
+      );
+  });
+
   // Version 4 as it shipped (frozen); version 5 changes only the
   // overview's tables and slides (see "fits the overview" and below).
   const dashboardOf = (

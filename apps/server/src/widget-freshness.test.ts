@@ -1022,6 +1022,43 @@ describe("app slide freshness (#767)", () => {
   const shown = (data: Awaited<ReturnType<typeof measure>>) =>
     (data.result?.rows ?? []).map((row) => row.dimensions.app).sort();
 
+  it("gives a grouped value view its total with the split (#784)", async () => {
+    const data = await withWorkspace(db, { workspaceId }, (tx) =>
+      queryDashboardMeasure(
+        tx,
+        workspaceId,
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          binding: {
+            modelId: storeModelId,
+            measureIds: ["views"],
+            groupBy: ["app"],
+            exclusions: [],
+          },
+          options: { view: "value", limit: 20 },
+        },
+        [appFilter],
+        {},
+        NOW,
+        DEFAULT_DATA_POLICY,
+        "en",
+        {},
+        app("product:p", `${store.apple}:app-1`),
+        createFreshnessReader(workspaceId, manifests),
+      ),
+    );
+    const groups = data.result!.rows.map(
+      (row) => row.measures.views!.value as number,
+    );
+    expect(groups).toHaveLength(2);
+    expect(data.totals).toEqual([
+      expect.objectContaining({
+        value: groups[0]! + groups[1]!,
+        status: "ok",
+      }),
+    ]);
+  });
+
   it("counts only the App Store app's rows on its slide", async () => {
     const data = await measure(app(`${store.apple}:app-1`));
     // Its rows are the App Store app's, and so is its freshness.

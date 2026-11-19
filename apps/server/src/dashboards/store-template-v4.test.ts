@@ -36,6 +36,7 @@ import {
   storeTemplate,
   storeTemplateV3,
   storeTemplateV4,
+  storeTemplateV5,
 } from "./store-template.js";
 import { appSlideKey } from "./store-portfolio.js";
 import { apple, google, now } from "./test-helpers.js";
@@ -340,13 +341,10 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
         "measure:rating+rating_count",
         "review:1001",
       ],
-      // Free; its latest review is its App Store app's, though the Play
-      // app comes first in the product.
-      [
-        "metric:app_store_connect.downloads",
-        "measure:rating+rating_count",
-        "review:1002",
-      ],
+      // Free, in both stores (version 6, #784): both stores' downloads (a
+      // total with a line per store); its latest review is its App Store
+      // app's, though the Play app comes first in the product.
+      ["measure:downloads", "measure:rating+rating_count", "review:1002"],
       // Free, Google Play only: no revenue, no review.
       ["measure:downloads", "measure:rating+rating_count"],
     ]);
@@ -462,7 +460,7 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
       v4.slides[0]!.formatWarnings.filter((w) => w.code === "rows_cut").length,
     ).toBeGreaterThan(0);
     expect(await updateAvailable(requestId)).toBe(true);
-    const { plan, copy } = await applyUpdate(requestId);
+    const { plan, copy } = await applyUpdate(requestId, storeTemplateV5);
     expect(plan).toMatchObject({ fromVersion: 4, toVersion: 5 });
     // The model tables change (the overview's and each app's ratings),
     // and the App Store's store name: offered for review like any
@@ -516,6 +514,63 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
           .filter((w) => w.severity === "attention")
           .map((w) => `${s.name} ${w.format} ${w.code}`),
       ).toEqual([]);
+  });
+
+  it("offers both stores on a linked product's slide to a version 5 install as a reviewed update (#784)", async () => {
+    const requestId = randomUUID();
+    const result = await install(storeTemplateV5, requestId);
+    const v5 = await readDashboard(result.dashboardId);
+    // Version 5: the linked product (Notes) shows its App Store app only.
+    expect(shape(v5.slides[2]!)).toEqual([
+      "metric:app_store_connect.downloads",
+      "measure:rating+rating_count",
+      "review:1002",
+    ]);
+    expect(await updateAvailable(requestId)).toBe(true);
+    const { plan, copy } = await applyUpdate(requestId);
+    expect(plan).toMatchObject({ fromVersion: 5, toVersion: 6 });
+    // Only the linked product's downloads change; single-store apps and
+    // the overview stay as they were.
+    expect(
+      plan.records
+        .flatMap((record) => record.items)
+        .map((item) =>
+          [
+            item.ref.replace(/app-[0-9a-f]{16}/, "app"),
+            item.change,
+            item.outcome,
+          ].join(" "),
+        ),
+    ).toEqual(["dashboard:portfolio#widget:app:downloads changed template"]);
+    // Nothing changes on screens until the copy is swapped in.
+    expect(shape((await readDashboard(result.dashboardId)).slides[2]!)).toEqual(
+      shape(v5.slides[2]!),
+    );
+    const notes = copy.slides[2]!;
+    expect(shape(notes)).toEqual([
+      "measure:downloads",
+      "measure:rating+rating_count",
+      "review:1002",
+    ]);
+    const split = notes.widgets[0]!;
+    if (split.type !== "measure") throw new Error("not a measure");
+    expect(split.binding.groupBy).toEqual(["store"]);
+    expect(split.options).toMatchObject({ view: "value", limit: 2 });
+    for (const slide of [...copy.slides, ...v5.slides])
+      expect(
+        slide.formatWarnings
+          .filter((w) => w.severity === "attention")
+          .map((w) => `${slide.name} ${w.format} ${w.code}`),
+      ).toEqual([]);
+    const swapped = await updates().swap(
+      actor(),
+      (await updates().list(actor())).installs.find(
+        (entry) => entry.requestId === requestId,
+      )!.openUpdate!.id,
+      "dashboard:portfolio",
+    );
+    expect(swapped.dashboards[0]!.swappedAt).not.toBeNull();
+    expect(await updateAvailable(requestId)).toBe(false);
   });
 
   it("saves a version 5 table edited in the Studio (#768)", async () => {

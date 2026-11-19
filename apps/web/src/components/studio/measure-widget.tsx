@@ -288,18 +288,21 @@ export function MeasureWidgetView({
     : measureFreshnessLine(data, { locale, now: clock.getTime(), timeZone });
   // The form of a several-source line that fits the tile (#784): one line
   // each, counted by the fit; off a slide (scroll cards) the longest.
-  const sourceLines = freshness?.levels.length
-    ? freshness.levels[
-        placement
-          ? freshnessLevelFit(
-              freshness.levels,
-              contentBox(placement, showHeader).width,
-              fontScale,
-              "web",
-            )
-          : 0
-      ]!
-    : null;
+  // A provider overdue by a day keeps its one warning line, as on tvOS.
+  const sourceLines =
+    freshness?.levels.length && !freshness.warning
+      ? freshness.levels[
+          placement
+            ? freshnessLevelFit(
+                freshness.levels,
+                contentBox(placement, showHeader).width,
+                fontScale,
+                "web",
+              )
+            : // Cards grow: every source's day and next time, wrapping.
+              Math.max(0, freshness.levels.length - 4)
+        ]!
+      : null;
   const freshnessFooter: null[] = freshness
     ? (sourceLines ?? [null]).map(() => null)
     : [];
@@ -482,6 +485,8 @@ export function MeasureWidgetView({
         (row) =>
           [
             widget.binding.groupBy
+              // The amount names its currency already (as on tvOS).
+              .filter((id) => id !== "currency")
               .map(
                 (id) =>
                   row.dimensionLabels?.[id] ??
@@ -571,7 +576,7 @@ export function MeasureWidgetView({
       ) : !data ? (
         // A screen's wording, not the data editor's "Loading preview…" (#768).
         <p>{loading ? common("loading") : "—"}</p>
-      ) : split ? (
+      ) : split && rows.length > 0 ? (
         <>
           {splitTotal !== null ? (
             <p
@@ -720,7 +725,6 @@ export function MeasureWidgetView({
             key={`freshness-${index}`}
             className={[
               "sw-measure-freshness",
-              freshness.warning ? "sw-measure-freshness--overdue" : "",
               placement ? "" : "sw-measure-freshness--wrap",
             ]
               .filter(Boolean)

@@ -497,10 +497,8 @@ export function validateMeasureView(
     new Set(binding.groupBy).size !== binding.groupBy.length
   )
     dataFail("dashboard_measure_binding_invalid");
-  if (
-    view === "value" &&
-    (binding.measureIds.length !== 1 || binding.groupBy.length !== 0)
-  )
+  // A value is one measure; grouped, it is a total with its split (#784).
+  if (view === "value" && binding.measureIds.length !== 1)
     dataFail("dashboard_measure_value_grain_invalid");
   if (
     (view === "bar" || view === "line") &&

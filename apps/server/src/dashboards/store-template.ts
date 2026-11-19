@@ -55,7 +55,13 @@ export const STORE_TEMPLATE_ID = "store_portfolio";
  * rows; downloads and ratings show their top rows (by downloads, by rating
  * count). Everything else is version 4's.
  */
-export const STORE_TEMPLATE_VERSION = 5;
+/**
+ * 6: a product in both stores shows both stores on its slide (#784): its
+ * downloads as a total with a line per store, and Google Play's proceeds
+ * per currency beside the App Store's revenue. Everything else is version
+ * 5's.
+ */
+export const STORE_TEMPLATE_VERSION = 6;
 
 export const storeMetrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
 
@@ -389,6 +395,8 @@ export const storeTemplateV2: StoreTemplateDefinition = defineStoreTemplate(2);
 export const storeTemplateV3: StoreTemplateDefinition = defineStoreTemplate(3);
 /** Version 4, frozen like version 1 (`store-template.test.ts`). */
 export const storeTemplateV4: StoreTemplateDefinition = defineStoreTemplate(4);
+/** Version 5, frozen like version 1 (`store-template.test.ts`). */
+export const storeTemplateV5: StoreTemplateDefinition = defineStoreTemplate(5);
 
 /** What version 4 builds the slides from: the apps and App Store accounts. */
 export function storePortfolio(inputs: StoreTemplateInputs) {
