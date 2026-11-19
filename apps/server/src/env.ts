@@ -12,6 +12,7 @@ import {
 } from "@netrics/contracts";
 import { DEFAULT_BACKFILLS_PER_APP } from "@netrics/database";
 
+import { PREVIEW_CONNECTORS } from "./preview-connectors.js";
 import { Secret } from "./secret.js";
 
 // Obviously insecure fixed fallback so local development and tests work with
@@ -116,6 +117,32 @@ const proxySecrets = z
       }),
   );
 
+// Preview connectors the operator turns on in production (#378):
+// comma-separated connector IDs, each one of PREVIEW_CONNECTORS. A typo or a
+// finished connector fails startup instead of being ignored. Unset: none.
+// Outside production every preview connector is registered anyway.
+const previewConnectors = z
+  .string()
+  .optional()
+  .transform((value) =>
+    (value ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  )
+  .superRefine((ids, ctx) => {
+    // Connector IDs are not secrets; naming the bad entry helps fix a typo.
+    for (const id of ids) {
+      if (!PREVIEW_CONNECTORS.has(id)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `"${id}" is not a preview connector (preview connectors: ${[...PREVIEW_CONNECTORS].join(", ") || "none"})`,
+        });
+      }
+    }
+  })
+  .transform((ids): ReadonlySet<string> => new Set(ids));
+
 /** An instance's OAuth app at one provider (ADR 0012). */
 export interface OAuthClientConfig {
   clientId: string;
@@ -219,6 +246,7 @@ const envSchema = z
     // converted amounts; "off" fetches nothing and keeps every amount per
     // currency. Read at runtime by the scheduler and the API alike.
     NETRICS_EXCHANGE_RATES: z.enum(["ecb", "off"]).default("ecb"),
+    NETRICS_PREVIEW_CONNECTORS: previewConnectors,
     NETRICS_DATA_POLICY: z
       .string()
       .default("{}")
@@ -404,6 +432,7 @@ const envSchema = z
           : null,
     } satisfies Record<string, OAuthClientConfig | null>,
     exchangeRates: env.NETRICS_EXCHANGE_RATES === "ecb",
+    previewConnectors: env.NETRICS_PREVIEW_CONNECTORS,
     dataPolicy: env.NETRICS_DATA_POLICY,
     defaultLocale: env.NETRICS_DEFAULT_LOCALE ?? null,
     imageQuota: {
@@ -461,6 +490,8 @@ const migrationEnvSchema = z
     DATABASE_URL: z.url().optional(),
     NETRICS_APP_DB_PASSWORD: rolePasswordSchema.optional(),
     NETRICS_SCHEDULER_DB_PASSWORD: rolePasswordSchema.optional(),
+    // migrate syncs the connector catalog, so it reads the same opt-in.
+    NETRICS_PREVIEW_CONNECTORS: previewConnectors,
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
@@ -500,6 +531,7 @@ const migrationEnvSchema = z
           env.NETRICS_SCHEDULER_DB_PASSWORD ??
           (production ? undefined : "netrics_scheduler"),
       },
+      previewConnectors: env.NETRICS_PREVIEW_CONNECTORS,
       version: env.APP_VERSION,
       commit: env.GIT_SHA,
     };

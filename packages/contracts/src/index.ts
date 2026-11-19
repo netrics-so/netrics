@@ -559,6 +559,12 @@ export const connectorCatalogEntrySchema = z.object({
    */
   available: z.boolean(),
   unavailable: connectorUnavailableSchema.nullable(),
+  /**
+   * True for a connector that is not finished yet (a preview, #378): it may
+   * still change. Production instances list one only when the operator
+   * turned it on (NETRICS_PREVIEW_CONNECTORS). Absent means false.
+   */
+  preview: z.boolean().optional(),
 });
 export type ConnectorCatalogEntry = z.infer<typeof connectorCatalogEntrySchema>;
 

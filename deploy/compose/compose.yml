@@ -38,6 +38,9 @@ services:
       DATABASE_MIGRATION_URL: postgres://netrics:${POSTGRES_PASSWORD}@postgres:5432/netrics
       NETRICS_APP_DB_PASSWORD: ${NETRICS_APP_DB_PASSWORD:?set NETRICS_APP_DB_PASSWORD in .env}
       NETRICS_SCHEDULER_DB_PASSWORD: ${NETRICS_SCHEDULER_DB_PASSWORD:?set NETRICS_SCHEDULER_DB_PASSWORD in .env}
+      # Preview connectors to turn on (README, "Preview connectors"); the
+      # catalog sync, the api and the worker must agree.
+      NETRICS_PREVIEW_CONNECTORS: ${NETRICS_PREVIEW_CONNECTORS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,6 +82,9 @@ services:
       # Proxies whose forwarded client address the API believes; default
       # loopback,linklocal,uniquelocal (the Compose network).
       NETRICS_TRUSTED_PROXIES: ${NETRICS_TRUSTED_PROXIES:-}
+      # Preview connectors to turn on, e.g. apple-ads; unset: none. Set the
+      # same on migrate and the worker.
+      NETRICS_PREVIEW_CONNECTORS: ${NETRICS_PREVIEW_CONNECTORS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   worker:
@@ -93,6 +99,8 @@ services:
       NETRICS_DATA_POLICY: ${NETRICS_DATA_POLICY:-}
       NETRICS_OAUTH_GOOGLE_CLIENT_ID: ${NETRICS_OAUTH_GOOGLE_CLIENT_ID:-}
       NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: ${NETRICS_OAUTH_GOOGLE_CLIENT_SECRET:-}
+      # The worker syncs only connectors it has, so it reads the same opt-in.
+      NETRICS_PREVIEW_CONNECTORS: ${NETRICS_PREVIEW_CONNECTORS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
   scheduler:

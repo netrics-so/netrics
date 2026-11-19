@@ -150,6 +150,26 @@ and workspaces that have not chosen one, `NETRICS_DEFAULT_LOCALE=de` in
 `.env` makes German the default (unset: English; it applies to the `api`
 and the `web` app).
 
+### Preview connectors
+
+Connectors that are not finished yet ship in the images as previews and
+stay off: the catalogue does not list them, and nothing can connect or sync
+them. To try one, name it in `NETRICS_PREVIEW_CONNECTORS` in `.env`
+(comma-separated IDs; today only `apple-ads`) and run
+`docker compose up -d`. It applies to `migrate` (the connector catalog),
+the `api` and the `worker`. The catalogue then lists the connector with a
+"Preview" tag: it works, but its setup, data or dashboards may still
+change before it is final. An unknown ID, or one that is not a preview,
+stops the server at startup with an error naming it.
+
+Removing an ID from the variable hides the connector again. Its
+connections and stored data stay, but their syncs fail (no such connector)
+until it is turned back on, so delete those connections first if you are
+done with the preview. Once a preview is finished, a release turns it on for every
+installation and says so in its notes. Remove the ID from the variable
+when you upgrade to that release: a connector that is no longer a preview
+is refused like a typo.
+
 ### Image quota
 
 Dashboards can show uploaded images (PNG, JPEG or WebP, at most 1 MiB and

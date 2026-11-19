@@ -212,6 +212,33 @@ describe("ConnectorCatalogue", () => {
     expect(html).toContain('href="/workspaces/w/connections/c2"');
   });
 
+  it("marks a preview connector, in English and German (#378)", () => {
+    const connectors = [
+      ...CONNECTORS,
+      entry({
+        id: "apple-ads",
+        name: "Apple Ads",
+        category: "ads",
+        preview: true,
+      }),
+    ];
+    const html = render({ connectors });
+    expect(html.match(/class="catalogue-preview"/g)).toHaveLength(1);
+    expect(html).toMatch(
+      /Ads<span aria-hidden="true"> · <\/span><span class="catalogue-preview" title="Not final yet: this connector may still change.">Preview<\/span>/,
+    );
+    const de = renderI18n(
+      <ConnectorCatalogue
+        workspaceId="w"
+        connectors={connectors}
+        standings={standings}
+        mode={{ kind: "links", canCreate: true }}
+      />,
+      "de",
+    );
+    expect(de).toMatch(/class="catalogue-preview"[^>]*>Vorschau</);
+  });
+
   it("picks a connector in place in the wizard", () => {
     const html = render({
       mode: { kind: "pick", selectedId: "vercel", onPick: () => {} },

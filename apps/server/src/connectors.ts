@@ -8,44 +8,45 @@ import {
   createVercelConnector,
 } from "@netrics/connectors";
 
-/**
- * Connectors in the bundle that are not finished for users yet (roadmap
- * rule 6: unfinished UI stays unavailable outside development). They are
- * registered in development and tests only, so a production installation
- * neither lists nor connects nor syncs them, and its catalog has no rows
- * for them.
- *
- * Apple Ads (milestone 10): the sync produces data since #374, and the
- * guided setup of #375 generates the key, lists the ad accounts and stores
- * the chosen accounts' ID, name, currency and time zone in each
- * connection's config. It stays a preview until Apple's real answers are
- * confirmed (#370) and the exit gate (#378) passes: production lists no
- * Apple Ads connector, so its wizard and connection page are unreachable.
- */
-export const PREVIEW_CONNECTORS: ReadonlySet<string> = new Set(["apple-ads"]);
+import { PREVIEW_CONNECTORS } from "./preview-connectors.js";
+
+export { PREVIEW_CONNECTORS };
 
 export interface DefaultRegistryOptions {
   /**
    * The server's NODE_ENV. Preview connectors are left out in
-   * "production". Default: "development".
+   * "production" unless listed in `previewConnectors`. Default:
+   * "development".
    */
   nodeEnv?: "development" | "test" | "production";
+  /**
+   * Preview connectors the operator turned on for production
+   * (NETRICS_PREVIEW_CONNECTORS, validated by the server config). Ignored
+   * outside production, where every preview connector is registered.
+   * Default: none.
+   */
+  previewConnectors?: ReadonlySet<string>;
 }
 
 /**
  * The connector bundle compiled into this server image: the demo connector,
  * Vercel Web Analytics, Google Search Console, App Store Connect and Apple
- * Ads (outside production only, PREVIEW_CONNECTORS). Reviewed connectors
- * join here per the architecture's distribution workflow. The runtime only
- * knows the registry; which connectors ship is decided by the application
- * (#39). OAuth connectors are listed as unavailable until their provider is
+ * Ads (a preview, PREVIEW_CONNECTORS: outside production, or in production
+ * when listed in NETRICS_PREVIEW_CONNECTORS). Reviewed connectors join here
+ * per the architecture's distribution workflow. The runtime only knows the
+ * registry; which connectors ship is decided by the application (#39).
+ * OAuth connectors are listed as unavailable until their provider is
  * configured (ADR 0012); signed-key connectors need the host's provider
  * (ADR 0014).
+ *
+ * API, worker, migrate (catalog sync) and the operator CLI all pass the
+ * same config, so they agree on the bundle.
  */
 export function createDefaultRegistry(
   options: DefaultRegistryOptions = {},
 ): ConnectorRegistry {
-  const preview = (options.nodeEnv ?? "development") !== "production";
+  const allPreviews = (options.nodeEnv ?? "development") !== "production";
+  const enabledPreviews = options.previewConnectors ?? new Set<string>();
   const registry = new ConnectorRegistry();
   const connectors = [
     createDemoConnector(),
@@ -56,7 +57,8 @@ export function createDefaultRegistry(
     createAppleAdsConnector(),
   ];
   for (const connector of connectors) {
-    if (preview || !PREVIEW_CONNECTORS.has(connector.manifest.id)) {
+    const id = connector.manifest.id;
+    if (allPreviews || !PREVIEW_CONNECTORS.has(id) || enabledPreviews.has(id)) {
       registry.register(connector);
     }
   }

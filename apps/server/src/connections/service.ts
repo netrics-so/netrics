@@ -135,6 +135,7 @@ import {
   PENDING_KEY_UNUSABLE,
   type PendingKeyStore,
 } from "../signed-keys/pending-keys.js";
+import { PREVIEW_CONNECTORS } from "../preview-connectors.js";
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   applyFreshness,
@@ -1856,6 +1857,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             presentAuthStrategy(strategy, signedKeys),
           ),
           ...oauthProviders.connectorAvailability(manifest, signedKeys),
+          preview: PREVIEW_CONNECTORS.has(manifest.id),
         };
       });
     },

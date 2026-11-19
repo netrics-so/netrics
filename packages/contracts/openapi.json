@@ -81942,6 +81942,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "preview": {
+                            "type": "boolean"
                           }
                         },
                         "required": [

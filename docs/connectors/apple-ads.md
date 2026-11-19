@@ -11,9 +11,12 @@ Campaign Management API v5, which Apple sunsets on 2027-01-26.
 > pair (#371), ad-account discovery (#373), the campaign report sync (#374),
 > the guided setup (#375), ad groups (#376, #394) and keywords (#396) are in
 > place, tested against documented response shapes and against shapes
-> captured from a real account (#370). Apple Ads is available in
-> development only until the exit gate (#378). Points marked _to be
-> confirmed_ below are still open.
+> captured from a real account (#370). Until the exit gate (#378) passes,
+> Apple Ads is available in development, and in production only where the
+> operator sets `NETRICS_PREVIEW_CONNECTORS=apple-ads` (see
+> [Preview connectors](../../deploy/compose/README.md#preview-connectors));
+> the catalogue then marks it "Preview". Points marked _to be confirmed_
+> below are still open.
 
 ## Connect
 

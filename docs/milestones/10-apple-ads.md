@@ -105,12 +105,17 @@ built and tested on fixtures. #372 needs #370 to confirm the field that
 names the promoted app; #374 needs it for retention; #375's copy is checked
 against the real Apple Ads UI at the exit gate.
 
-**Availability.** The `apple-ads` connector is registered in development
-and tests only (`PREVIEW_CONNECTORS` in `apps/server/src/connectors.ts`,
-roadmap rule 6). The sync produces data since #374, and the guided setup of
-#375 creates one connection per chosen ad account and stores its ID, name,
-currency and time zone; the hold ends once #370 confirms the fixtures and
-the exit gate (#378) passes. Connector docs:
+**Availability.** The `apple-ads` connector is a preview
+(`PREVIEW_CONNECTORS` in `apps/server/src/preview-connectors.ts`, roadmap
+rule 6): registered in development and tests, and in production only where
+the operator turns it on with `NETRICS_PREVIEW_CONNECTORS=apple-ads` (api,
+worker and migrate), which lists it with a "Preview" tag. The sync produces
+data since #374, and the guided setup of #375 creates one connection per
+chosen ad account and stores its ID, name, currency and time zone; #370
+confirmed the fixtures. The exit gate (#378) runs with that opt-in on the
+hosted service and on a self-hosted Docker Compose install. Once it passes,
+a later change removes `apple-ads` from `PREVIEW_CONNECTORS`, which lifts
+the hold for every installation without the variable. Connector docs:
 [docs/connectors/apple-ads.md](../connectors/apple-ads.md).
 
 **Report windows (#374).** Each sync page reads whole calendar months in

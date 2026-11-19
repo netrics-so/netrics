@@ -137,6 +137,14 @@ function CatalogueCard({
           <h3>{connector.name}</h3>
           <span className="catalogue-tag">
             {t(`categories.${connector.category}`)}
+            {connector.preview ? (
+              <>
+                <span aria-hidden="true"> · </span>
+                <span className="catalogue-preview" title={t("previewHint")}>
+                  {t("preview")}
+                </span>
+              </>
+            ) : null}
           </span>
         </div>
       </div>

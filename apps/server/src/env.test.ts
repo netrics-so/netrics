@@ -106,6 +106,37 @@ describe("loadConfig", () => {
     expect(config.commit).toBe("dev");
   });
 
+  it("turns on no preview connector unless listed (#378)", () => {
+    expect([...loadConfig({}).previewConnectors]).toEqual([]);
+    expect([
+      ...loadConfig({ NETRICS_PREVIEW_CONNECTORS: "" }).previewConnectors,
+    ]).toEqual([]);
+    expect([
+      ...loadConfig({ NETRICS_PREVIEW_CONNECTORS: " apple-ads , " })
+        .previewConnectors,
+    ]).toEqual(["apple-ads"]);
+    expect([
+      ...loadMigrationConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-ads" })
+        .previewConnectors,
+    ]).toEqual(["apple-ads"]);
+    expect([...loadMigrationConfig({}).previewConnectors]).toEqual([]);
+  });
+
+  it("refuses unknown and finished connectors as previews (#378)", () => {
+    for (const value of ["apple-adz", "demo", "apple-ads,vercel"]) {
+      for (const load of [loadConfig, loadMigrationConfig]) {
+        expect(() => load({ NETRICS_PREVIEW_CONNECTORS: value })).toThrow(
+          ConfigError,
+        );
+      }
+    }
+    expect(() =>
+      loadConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-adz" }),
+    ).toThrow(
+      /"apple-adz" is not a preview connector \(preview connectors: apple-ads\)/,
+    );
+  });
+
   it("trusts private proxy hops by default", () => {
     expect(loadConfig({}).trustedProxies).toEqual([
       "loopback",

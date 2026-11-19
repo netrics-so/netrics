@@ -374,3 +374,7 @@ a.catalogue-cta--fix:hover {
 .apple-ads-setup .setup-step > p {
   margin: 0 0 8px;
 }
+
+.catalogue-preview {
+  color: var(--warning-text);
+}
