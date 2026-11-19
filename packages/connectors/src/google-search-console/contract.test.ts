@@ -28,6 +28,7 @@ import {
   parseConfig,
   searchConsoleManifest,
 } from "./index.js";
+import { nextPacificMidnight, QUOTA_EXCEEDED_WAIT_MS } from "./api.js";
 import {
   FAKE_TOKEN,
   createFakeSearchConsole,
@@ -1059,5 +1060,74 @@ describe("search console freshness", () => {
       fake().runtime,
     );
     expect(result.freshness).toBeUndefined();
+  });
+});
+
+describe("quota resets (#781)", () => {
+  const quotaExceeded = {
+    error: {
+      code: 403,
+      message: "Quota exceeded.",
+      errors: [
+        {
+          message: "Quota exceeded.",
+          domain: "usageLimits",
+          reason: "quotaExceeded",
+        },
+      ],
+    },
+  };
+  const at = Date.parse("2024-12-30T18:30:00.000Z");
+
+  it("waits 15 minutes for 'quota exceeded' (it may be the 10-minute load quota), not until midnight", async () => {
+    const error = await createSearchConsoleConnector({ now: () => at })
+      .discover(
+        context(),
+        recordedRuntime(() => reply(403, quotaExceeded)),
+      )
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(at + QUOTA_EXCEEDED_WAIT_MS).toISOString(),
+    );
+  });
+
+  it("follows a Retry-After on 'quota exceeded'", async () => {
+    const error = await createSearchConsoleConnector({ now: () => at })
+      .discover(
+        context(),
+        recordedRuntime(() =>
+          reply(403, quotaExceeded, { "retry-after": "3600" }),
+        ),
+      )
+      .catch((caught: unknown) => caught);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(at + 3_600_000).toISOString(),
+    );
+  });
+
+  it("finds the next midnight in Los Angeles, on the daylight-saving days too", () => {
+    // An ordinary winter day (PST, UTC-8).
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2024-12-30T18:30:00.000Z"))),
+    ).toEqual(new Date("2024-12-31T08:00:00.000Z"));
+    // 2026-03-08, 01:00 PST: the clocks spring forward at 02:00, so the
+    // day has 23 hours and the next midnight is PDT (UTC-7).
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2026-03-08T09:00:00.000Z"))),
+    ).toEqual(new Date("2026-03-09T07:00:00.000Z"));
+    // 2026-11-01, 00:30 PDT: the clocks fall back at 02:00, so the day has
+    // 25 hours and the next midnight is PST (UTC-8).
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2026-11-01T07:30:00.000Z"))),
+    ).toEqual(new Date("2026-11-02T08:00:00.000Z"));
+    // A minute before midnight: the one a minute later.
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2026-11-02T07:59:00.000Z"))),
+    ).toEqual(new Date("2026-11-02T08:00:00.000Z"));
+    // Exactly at midnight: the next day's.
+    expect(
+      new Date(nextPacificMidnight(Date.parse("2026-11-02T08:00:00.000Z"))),
+    ).toEqual(new Date("2026-11-03T08:00:00.000Z"));
   });
 });
