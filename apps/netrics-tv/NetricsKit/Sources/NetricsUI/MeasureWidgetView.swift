@@ -13,6 +13,8 @@ struct MeasureWidgetView: View {
     /** Where the tile sits (#768): a table shows the rows that fit; nil in scroll cards. */
     var placement: ScreenPlacement? = nil
     var now = Date()
+    /** Tests only: draw this many rows instead of the fitted ones. */
+    var rowsDrawn: Int? = nil
     @State private var expiryClock = Date()
     private var expired: Bool { data.expired(at: max(now, expiryClock)) }
 
@@ -54,7 +56,8 @@ struct MeasureWidgetView: View {
         MeasureLineHeight(points: fitsTile ? line(24, height) : nil, fixed: fitsTile)
     }
     var body: some View {
-        let fit = self.fit
+        let fitted = self.fit
+        let fit = (shown: rowsDrawn ?? fitted.shown, rowsLine: fitted.rowsLine)
         VStack(alignment: .leading, spacing: env.pt(12)) {
             Text(label).font(font(36, .semibold)).foregroundStyle(env.colors.label).lineLimit(
                 scroll ? nil : 2
@@ -159,7 +162,9 @@ struct MeasureWidgetView: View {
     private func table(_ rows: [MeasureResultRow], even: Bool = false) -> some View {
         // A fitted table's rows are as tall as the fit counts them: the
         // lines plus 10 units above and below (MeasureTableMetrics).
-        Grid(alignment: .leading, horizontalSpacing: env.pt(20), verticalSpacing: env.pt(even ? 0 : 12)) {
+        // Fitted: even columns with 10 units of padding on each side, as the
+        // web's cells and the fit count them.
+        Grid(alignment: .leading, horizontalSpacing: env.pt(even ? 0 : 20), verticalSpacing: env.pt(even ? 0 : 12)) {
             GridRow {
                 ForEach(groupBy, id: \.self) {
                     cell(Text(name($0, dimension: true)).font(font(28, .semibold)), even: even)
@@ -185,7 +190,7 @@ struct MeasureWidgetView: View {
         if even {
             text.modifier(MeasureLineHeight(points: line(28), fixed: false))
                 .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, env.pt(10))
+                .padding(env.pt(10))
         } else {
             text
         }

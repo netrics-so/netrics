@@ -540,6 +540,8 @@ extension MeasureWidgetData {
         }
         return StudioLayout.measureTableRowsShown(
             label: label, width: box.width, height: box.height, fontScale: fontScale, columns: names, rows: cells,
-            total: total, footer: footerLines(rows: rows, now: now, language: language), pixel: pixel, rowsLine: line)
+            total: total, footer: footerLines(rows: rows, now: now, language: language), pixel: pixel,
+            // netrics TV draws in the system font.
+            font: .tv, rowsLine: line)
     }
 }

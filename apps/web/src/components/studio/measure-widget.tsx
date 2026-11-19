@@ -434,6 +434,8 @@ export function MeasureWidgetView({
           label,
           ...contentBox(placement, showHeader),
           ...(placement.unitPx ? { pixel: 1 / placement.unitPx } : {}),
+          // Web screens draw in IBM Plex Sans.
+          font: "web",
           fontScale,
           columns: fields.map((field) => field.name),
           rows: cellTexts,

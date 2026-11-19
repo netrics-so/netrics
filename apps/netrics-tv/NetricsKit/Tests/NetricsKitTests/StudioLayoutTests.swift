@@ -250,12 +250,17 @@ private func weight(_ any: Any?) -> StudioFontWeight {
     @Test func measureGlyphs() {
         let g = StudioVectors.root["measureGlyphs"] as! [String: Any]
         #expect(StudioLayout.measureGlyphChars == g["chars"] as! String)
-        #expect(StudioLayout.measureGlyphEmsRegular == (g["regular"] as! [Any]).map { double($0) })
-        #expect(StudioLayout.measureGlyphEmsSemibold == (g["semibold"] as! [Any]).map { double($0) })
+        let web = g["web"] as! [String: Any], tv = g["tv"] as! [String: Any]
+        #expect(StudioLayout.measureGlyphEmsWebRegular == (web["regular"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsWebSemibold == (web["semibold"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsTVRegular == (tv["regular"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsTVSemibold == (tv["semibold"] as! [Any]).map { double($0) })
         for c in g["widths"] as! [[String: Any]] {
             #expect(
                 close(
-                    StudioLayout.measureTextWidth(c["text"] as! String, fontSize: 28, weight: weight(c["weight"])),
+                    StudioLayout.measureTextWidth(
+                        c["text"] as! String, fontSize: 28, weight: weight(c["weight"]),
+                        font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!),
                     double(c["width"])), "\(c)")
         }
     }
@@ -269,6 +274,7 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                 fontScale: double(c["fontScale"]), columns: c["columns"] as? [String],
                 rows: c["rows"] as! [[String]], total: int(c["total"]),
                 footer: (c["footer"] as! [Any]).map { $0 as? String }, pixel: double(c["pixel"]),
+                font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!,
                 rowsLine: { "Showing \($0) of \($1) groups." })
             #expect(fit.shown == int(c["shown"]), "\(c)")
             #expect(fit.rowsLine == c["rowsLine"] as? String, "\(c)")
@@ -520,7 +526,7 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                                         string: text, attributes: [kCTFontAttributeName as NSAttributedString.Key: font]))
                                 let drawn = CTLineGetTypographicBounds(line, nil, nil, nil)
                                 let counted = StudioLayout.measureTextWidth(
-                                    text, fontSize: size, weight: semibold ? .semibold : .regular)
+                                    text, fontSize: size, weight: semibold ? .semibold : .regular, font: .tv)
                                 #expect(drawn <= counted + 1e-6, "\(text) at \(size), semibold \(semibold)")
                             }
                         }

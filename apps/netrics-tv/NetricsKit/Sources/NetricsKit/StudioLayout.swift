@@ -730,64 +730,120 @@ public enum StudioLayout {
     public static let measureTableCellSample = "Apple App Store"
 
     /// The characters of a measure table's text and their widths in em,
-    /// regular and semibold (MEASURE_GLYPH_CHARS / MEASURE_GLYPH_EMS in the
-    /// TypeScript): the wider of IBM Plex Sans and the system font (tabular digits, at the
-    /// drawn sizes), rounded up to 0.001 em.
+    /// regular and semibold, per renderer (MEASURE_GLYPH_CHARS and
+    /// MEASURE_GLYPH_EMS in the TypeScript): IBM Plex Sans on the web, the
+    /// system font here (tabular digits, at the drawn sizes, plus 0.5 % for
+    /// its tracking at small sizes), rounded up.
     public static let measureGlyphChars: String = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•"
-    public static let measureGlyphEmsRegular: [Double] = [
-        0.236, 0.284, 0.42, 0.713, 0.619, 0.927, 0.694, 0.268, 0.337, 0.337,
-        0.45, 0.619, 0.272, 0.443, 0.272, 0.383, 0.619, 0.619, 0.619, 0.619,
-        0.619, 0.619, 0.619, 0.619, 0.619, 0.619, 0.292, 0.292, 0.619, 0.619,
-        0.619, 0.503, 0.891, 0.649, 0.653, 0.7, 0.693, 0.583, 0.559, 0.721,
-        0.713, 0.4, 0.51, 0.634, 0.539, 0.845, 0.713, 0.746, 0.606, 0.746,
-        0.64, 0.607, 0.595, 0.71, 0.645, 0.938, 0.649, 0.626, 0.631, 0.337,
-        0.383, 0.337, 0.619, 0.565, 0.6, 0.534, 0.58, 0.515, 0.58, 0.549,
-        0.324, 0.563, 0.568, 0.25, 0.25, 0.527, 0.272, 0.873, 0.568, 0.56,
-        0.58, 0.58, 0.367, 0.487, 0.351, 0.568, 0.497, 0.768, 0.508, 0.5,
-        0.484, 0.343, 0.314, 0.343, 0.619, 0.649, 0.649, 0.649, 0.649, 0.649,
-        0.649, 0.958, 0.7, 0.583, 0.583, 0.583, 0.583, 0.4, 0.4, 0.4,
-        0.4, 0.715, 0.713, 0.746, 0.746, 0.746, 0.746, 0.746, 0.743, 0.71,
-        0.71, 0.71, 0.71, 0.626, 0.616, 0.64, 0.534, 0.534, 0.534, 0.534,
-        0.534, 0.534, 0.864, 0.515, 0.549, 0.549, 0.549, 0.549, 0.25, 0.25,
-        0.25, 0.25, 0.556, 0.568, 0.56, 0.56, 0.56, 0.56, 0.56, 0.568,
-        0.568, 0.568, 0.568, 0.568, 0.5, 0.58, 0.5, 0.326, 1.03, 0.625,
-        0.619, 0.619, 0.588, 0.845, 0.803, 0.273, 0.273, 0.475, 0.474, 0.443,
+    public static let measureGlyphEmsWebRegular: [Double] = [
+        0.236, 0.284, 0.419, 0.713, 0.598, 0.927, 0.694, 0.242, 0.335, 0.335,
+        0.45, 0.6, 0.272, 0.399, 0.272, 0.383, 0.6, 0.6, 0.6, 0.6,
+        0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.292, 0.292, 0.6, 0.6,
+        0.6, 0.477, 0.891, 0.641, 0.653, 0.621, 0.671, 0.583, 0.559, 0.695,
+        0.707, 0.4, 0.51, 0.634, 0.501, 0.812, 0.707, 0.708, 0.606, 0.708,
+        0.64, 0.581, 0.572, 0.678, 0.609, 0.891, 0.613, 0.593, 0.58, 0.317,
+        0.383, 0.317, 0.6, 0.565, 0.6, 0.534, 0.58, 0.504, 0.58, 0.549,
+        0.324, 0.528, 0.568, 0.25, 0.25, 0.527, 0.272, 0.873, 0.568, 0.56,
+        0.58, 0.58, 0.367, 0.487, 0.351, 0.568, 0.492, 0.768, 0.508, 0.499,
+        0.464, 0.343, 0.314, 0.343, 0.6, 0.641, 0.641, 0.641, 0.641, 0.641,
+        0.641, 0.907, 0.621, 0.583, 0.583, 0.583, 0.583, 0.4, 0.4, 0.4,
+        0.4, 0.674, 0.707, 0.708, 0.708, 0.708, 0.708, 0.708, 0.708, 0.678,
+        0.678, 0.678, 0.678, 0.593, 0.606, 0.64, 0.534, 0.534, 0.534, 0.534,
+        0.534, 0.534, 0.864, 0.504, 0.549, 0.549, 0.549, 0.549, 0.25, 0.25,
+        0.25, 0.25, 0.555, 0.568, 0.56, 0.56, 0.56, 0.56, 0.56, 0.568,
+        0.568, 0.568, 0.568, 0.568, 0.499, 0.58, 0.499, 0.326, 1.016, 0.625,
+        0.595, 0.605, 0.588, 0.78, 0.803, 0.273, 0.273, 0.475, 0.474, 0.396,
     ]
-    public static let measureGlyphEmsSemibold: [Double] = [
-        0.236, 0.312, 0.472, 0.656, 0.646, 0.961, 0.714, 0.279, 0.374, 0.374,
-        0.557, 0.646, 0.299, 0.451, 0.299, 0.438, 0.646, 0.646, 0.646, 0.646,
-        0.646, 0.646, 0.646, 0.646, 0.646, 0.646, 0.319, 0.319, 0.646, 0.646,
-        0.646, 0.532, 0.9, 0.685, 0.663, 0.717, 0.706, 0.6, 0.578, 0.734,
-        0.733, 0.423, 0.549, 0.678, 0.55, 0.864, 0.723, 0.759, 0.642, 0.759,
-        0.664, 0.631, 0.608, 0.718, 0.675, 0.964, 0.681, 0.66, 0.64, 0.374,
-        0.438, 0.374, 0.646, 0.572, 0.6, 0.559, 0.6, 0.543, 0.6, 0.559,
-        0.351, 0.591, 0.588, 0.276, 0.276, 0.563, 0.294, 0.888, 0.588, 0.572,
-        0.6, 0.6, 0.394, 0.511, 0.374, 0.588, 0.526, 0.82, 0.545, 0.534,
-        0.507, 0.374, 0.377, 0.374, 0.646, 0.685, 0.685, 0.685, 0.685, 0.685,
-        0.685, 0.981, 0.717, 0.6, 0.6, 0.6, 0.6, 0.423, 0.423, 0.423,
-        0.423, 0.727, 0.723, 0.759, 0.759, 0.759, 0.759, 0.759, 0.755, 0.718,
-        0.718, 0.718, 0.718, 0.66, 0.646, 0.677, 0.559, 0.559, 0.559, 0.559,
-        0.559, 0.559, 0.877, 0.543, 0.559, 0.559, 0.559, 0.559, 0.276, 0.276,
-        0.276, 0.276, 0.589, 0.588, 0.572, 0.572, 0.572, 0.572, 0.572, 0.572,
-        0.588, 0.588, 0.588, 0.588, 0.534, 0.6, 0.534, 0.349, 1.048, 0.646,
-        0.646, 0.646, 0.588, 0.864, 0.87, 0.293, 0.293, 0.518, 0.518, 0.451,
+    public static let measureGlyphEmsWebSemibold: [Double] = [
+        0.236, 0.31, 0.472, 0.656, 0.601, 0.961, 0.714, 0.261, 0.338, 0.338,
+        0.557, 0.6, 0.299, 0.402, 0.299, 0.438, 0.6, 0.6, 0.6, 0.6,
+        0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.319, 0.319, 0.6, 0.6,
+        0.6, 0.494, 0.9, 0.673, 0.663, 0.643, 0.69, 0.6, 0.578, 0.712,
+        0.719, 0.423, 0.545, 0.678, 0.522, 0.817, 0.719, 0.713, 0.642, 0.713,
+        0.664, 0.612, 0.581, 0.69, 0.638, 0.949, 0.656, 0.633, 0.6, 0.329,
+        0.438, 0.329, 0.6, 0.559, 0.6, 0.559, 0.6, 0.513, 0.6, 0.559,
+        0.351, 0.545, 0.588, 0.276, 0.276, 0.563, 0.294, 0.888, 0.588, 0.563,
+        0.6, 0.6, 0.394, 0.499, 0.374, 0.588, 0.525, 0.82, 0.545, 0.524,
+        0.503, 0.364, 0.377, 0.364, 0.6, 0.673, 0.673, 0.673, 0.673, 0.673,
+        0.673, 0.951, 0.643, 0.6, 0.6, 0.6, 0.6, 0.423, 0.423, 0.423,
+        0.423, 0.694, 0.719, 0.713, 0.713, 0.713, 0.713, 0.713, 0.713, 0.69,
+        0.69, 0.69, 0.69, 0.633, 0.642, 0.677, 0.559, 0.559, 0.559, 0.559,
+        0.559, 0.559, 0.864, 0.513, 0.559, 0.559, 0.559, 0.559, 0.276, 0.276,
+        0.276, 0.276, 0.589, 0.588, 0.563, 0.563, 0.563, 0.563, 0.563, 0.571,
+        0.588, 0.588, 0.588, 0.588, 0.524, 0.6, 0.524, 0.349, 1.035, 0.627,
+        0.586, 0.637, 0.588, 0.78, 0.87, 0.293, 0.293, 0.518, 0.518, 0.42,
     ]
-    private static let measureGlyphsRegular: [Unicode.Scalar: Double] = Dictionary(
-        uniqueKeysWithValues: zip(measureGlyphChars.unicodeScalars, measureGlyphEmsRegular))
-    private static let measureGlyphsSemibold: [Unicode.Scalar: Double] = Dictionary(
-        uniqueKeysWithValues: zip(measureGlyphChars.unicodeScalars, measureGlyphEmsSemibold))
+    public static let measureGlyphEmsTVRegular: [Double] = [
+        0.223, 0.282, 0.422, 0.622, 0.622, 0.837, 0.687, 0.269, 0.338, 0.338,
+        0.419, 0.622, 0.234, 0.445, 0.234, 0.295, 0.622, 0.622, 0.622, 0.622,
+        0.622, 0.622, 0.622, 0.622, 0.622, 0.622, 0.234, 0.234, 0.622, 0.622,
+        0.622, 0.506, 0.893, 0.653, 0.622, 0.704, 0.696, 0.569, 0.545, 0.724,
+        0.717, 0.24, 0.512, 0.618, 0.541, 0.849, 0.717, 0.749, 0.595, 0.749,
+        0.616, 0.61, 0.598, 0.714, 0.648, 0.943, 0.652, 0.63, 0.634, 0.338,
+        0.295, 0.338, 0.622, 0.544, 0.517, 0.519, 0.571, 0.518, 0.571, 0.529,
+        0.319, 0.566, 0.556, 0.221, 0.22, 0.502, 0.219, 0.823, 0.544, 0.548,
+        0.567, 0.566, 0.326, 0.482, 0.318, 0.544, 0.5, 0.733, 0.485, 0.503,
+        0.487, 0.338, 0.231, 0.338, 0.622, 0.653, 0.653, 0.653, 0.653, 0.653,
+        0.653, 0.963, 0.704, 0.569, 0.569, 0.569, 0.569, 0.24, 0.24, 0.24,
+        0.24, 0.719, 0.717, 0.749, 0.749, 0.749, 0.749, 0.749, 0.747, 0.714,
+        0.714, 0.714, 0.714, 0.63, 0.619, 0.56, 0.519, 0.519, 0.519, 0.519,
+        0.519, 0.519, 0.856, 0.518, 0.529, 0.529, 0.529, 0.529, 0.221, 0.221,
+        0.221, 0.221, 0.558, 0.544, 0.548, 0.548, 0.548, 0.548, 0.548, 0.548,
+        0.544, 0.544, 0.544, 0.544, 0.503, 0.567, 0.503, 0.234, 1.035, 0.622,
+        0.622, 0.622, 0.544, 0.849, 0.637, 0.234, 0.234, 0.386, 0.386, 0.445,
+    ]
+    public static let measureGlyphEmsTVSemibold: [Double] = [
+        0.217, 0.314, 0.46, 0.643, 0.649, 0.892, 0.707, 0.281, 0.376, 0.376,
+        0.448, 0.649, 0.254, 0.453, 0.254, 0.31, 0.649, 0.649, 0.649, 0.649,
+        0.649, 0.649, 0.649, 0.649, 0.649, 0.649, 0.254, 0.254, 0.649, 0.649,
+        0.649, 0.534, 0.901, 0.689, 0.644, 0.72, 0.71, 0.582, 0.558, 0.737,
+        0.736, 0.265, 0.552, 0.651, 0.553, 0.869, 0.727, 0.763, 0.62, 0.763,
+        0.642, 0.635, 0.611, 0.721, 0.678, 0.969, 0.684, 0.663, 0.643, 0.376,
+        0.31, 0.376, 0.649, 0.575, 0.517, 0.547, 0.598, 0.546, 0.597, 0.556,
+        0.353, 0.594, 0.585, 0.243, 0.243, 0.536, 0.244, 0.861, 0.575, 0.574,
+        0.594, 0.594, 0.362, 0.513, 0.351, 0.575, 0.528, 0.781, 0.523, 0.536,
+        0.509, 0.376, 0.248, 0.376, 0.649, 0.689, 0.689, 0.689, 0.689, 0.689,
+        0.689, 0.986, 0.72, 0.582, 0.582, 0.582, 0.582, 0.265, 0.265, 0.265,
+        0.265, 0.73, 0.727, 0.763, 0.763, 0.763, 0.763, 0.763, 0.759, 0.721,
+        0.721, 0.721, 0.721, 0.663, 0.649, 0.612, 0.547, 0.547, 0.547, 0.547,
+        0.547, 0.547, 0.882, 0.546, 0.556, 0.556, 0.556, 0.556, 0.243, 0.243,
+        0.243, 0.243, 0.582, 0.575, 0.574, 0.574, 0.574, 0.574, 0.574, 0.574,
+        0.575, 0.575, 0.575, 0.575, 0.536, 0.594, 0.536, 0.254, 1.053, 0.649,
+        0.649, 0.649, 0.575, 0.869, 0.701, 0.254, 0.254, 0.43, 0.43, 0.453,
+    ]
+
+    /// Whose text a measure table counts (MeasureFont in the TypeScript).
+    public enum MeasureFont: String, Sendable { case web, tv, any }
+
+    private static func glyphs(_ ems: [Double]) -> [Unicode.Scalar: Double] {
+        Dictionary(uniqueKeysWithValues: zip(measureGlyphChars.unicodeScalars, ems))
+    }
+    private static let webRegular = glyphs(measureGlyphEmsWebRegular)
+    private static let webSemibold = glyphs(measureGlyphEmsWebSemibold)
+    private static let tvRegular = glyphs(measureGlyphEmsTVRegular)
+    private static let tvSemibold = glyphs(measureGlyphEmsTVSemibold)
 
     /// A measure table's text width in units (measureTextWidth in the TypeScript).
-    public static func measureTextWidth(_ text: String, fontSize: Double, weight: StudioFontWeight = .regular) -> Double {
-        let table: [Unicode.Scalar: Double]? =
+    public static func measureTextWidth(
+        _ text: String, fontSize: Double, weight: StudioFontWeight = .regular, font: MeasureFont = .any
+    ) -> Double {
+        let tables: ([Unicode.Scalar: Double], [Unicode.Scalar: Double])? =
             switch weight {
-            case .regular: measureGlyphsRegular
-            case .semibold: measureGlyphsSemibold
+            case .regular: (webRegular, tvRegular)
+            case .semibold: (webSemibold, tvSemibold)
             default: nil
             }
         return text.unicodeScalars.reduce(0) { width, scalar in
-            width + (table?[scalar].map { $0 * fontSize }
-                ?? estimateTextWidth(String(scalar), fontSize: fontSize, weight: weight))
+            guard let tables, let web = tables.0[scalar], let tv = tables.1[scalar] else {
+                return width + estimateTextWidth(String(scalar), fontSize: fontSize, weight: weight)
+            }
+            let em =
+                switch font {
+                case .web: web
+                case .tv: tv
+                case .any: Swift.max(web, tv)
+                }
+            return width + em * fontSize
         }
     }
 
@@ -809,11 +865,12 @@ public enum StudioLayout {
         var footerSize: Double
         var width: Double
         var pixel: Double
+        var font: MeasureFont
 
         func wrap(_ text: String, _ room: Double, _ size: Double, _ weight: StudioFontWeight = .regular) -> Int {
             StudioLayout.wrappedLineCount(
                 text, maxWidth: Swift.max(0, room), fontSize: size, weight: weight,
-                widthOf: { StudioLayout.measureTextWidth($0, fontSize: $1, weight: $2) })
+                widthOf: { [font] in StudioLayout.measureTextWidth($0, fontSize: $1, weight: $2, font: font) })
         }
         func lines(_ texts: [String], weight: StudioFontWeight) -> Int {
             Swift.max(1, texts.map { wrap($0, columnWidth, cell, weight) }.max() ?? 1)
@@ -831,7 +888,8 @@ public enum StudioLayout {
     }
 
     private static func measureTableParts(
-        label: String, width inputWidth: Double, fontScale: Double?, columns: [String]?, pixel: Double?
+        label: String, width inputWidth: Double, fontScale: Double?, columns: [String]?, pixel: Double?,
+        font: MeasureFont
     ) -> MeasureTableParts {
         let scale = effectiveFontScale(fontScale)
         let m = MeasureTableMetrics.self
@@ -843,13 +901,13 @@ public enum StudioLayout {
                 1,
                 wrappedLineCount(
                     label, maxWidth: width, fontSize: title, weight: .semibold,
-                    widthOf: { measureTextWidth($0, fontSize: $1, weight: $2) })))
+                    widthOf: { measureTextWidth($0, fontSize: $1, weight: $2, font: font) })))
         let cols = (columns?.isEmpty ?? true) ? nil : columns
         let columnWidth = width / Double(cols?.count ?? 1) - m.cellPadding
         var parts = MeasureTableParts(
             titleLines: titleLines, headLines: 1, head: 0, columnWidth: columnWidth, cell: cell,
             footerSize: m.footer * scale, width: width,
-            pixel: pixel.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 1)
+            pixel: pixel.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 1, font: font)
         parts.headLines = cols.map { parts.lines($0, weight: .semibold) } ?? 1
         parts.head = Double(titleLines) * title * m.lineHeight + m.gap + parts.row(parts.headLines)
         return parts
@@ -858,9 +916,10 @@ public enum StudioLayout {
     /** The readability estimate of a measure table (measureTableLayout in the TypeScript). */
     public static func measureTableLayout(
         label: String, width: Double, height: Double, fontScale: Double? = nil, columns: [String]? = nil,
-        footer: [String?]? = nil, pixel: Double? = nil
+        footer: [String?]? = nil, pixel: Double? = nil, font: MeasureFont = .any
     ) -> MeasureTableLayout {
-        let parts = measureTableParts(label: label, width: width, fontScale: fontScale, columns: columns, pixel: pixel)
+        let parts = measureTableParts(
+            label: label, width: width, fontScale: fontScale, columns: columns, pixel: pixel, font: font)
         let rowLines = (columns?.isEmpty ?? true) ? 1 : parts.lines([measureTableCellSample], weight: .regular)
         let rowPitch = parts.row(rowLines)
         let fixedHeight = parts.head + (footer ?? measureTableFooterSamples).reduce(0) { $0 + parts.footerLine($1) }
@@ -877,10 +936,11 @@ public enum StudioLayout {
      */
     public static func measureTableRowsShown(
         label: String, width: Double, height: Double, fontScale: Double? = nil, columns: [String]? = nil,
-        rows: [[String]], total inputTotal: Int, footer: [String?], pixel: Double? = nil,
+        rows: [[String]], total inputTotal: Int, footer: [String?], pixel: Double? = nil, font: MeasureFont = .any,
         rowsLine: (Int, Int) -> String
     ) -> (shown: Int, rowsLine: String?) {
-        let parts = measureTableParts(label: label, width: width, fontScale: fontScale, columns: columns, pixel: pixel)
+        let parts = measureTableParts(
+            label: label, width: width, fontScale: fontScale, columns: columns, pixel: pixel, font: font)
         let total = Swift.max(inputTotal, rows.count)
         func fit(_ lines: [String?]) -> Int {
             var room = height - parts.head - lines.reduce(0) { $0 + parts.footerLine($1) }

@@ -513,7 +513,13 @@ export function buildStudioLayoutVectors() {
       measureRows.flatMap((rows) =>
         [rows.length, 40].flatMap((total) =>
           measureFooters.slice(1).flatMap((footer) =>
-            [1, 2.8].map((pixel) => {
+            (
+              [
+                [1, "any"],
+                [2.8, "tv"],
+                [1, "web"],
+              ] as const
+            ).map(([pixel, font]) => {
               const input = {
                 label: "Downloads",
                 ...box,
@@ -523,6 +529,7 @@ export function buildStudioLayoutVectors() {
                 total,
                 footer: footer!,
                 pixel,
+                font,
               };
               return {
                 ...input,
@@ -1066,19 +1073,22 @@ export function buildStudioLayoutVectors() {
     measureRowsShown,
     measureGlyphs: {
       chars: MEASURE_GLYPH_CHARS.join(""),
-      regular: MEASURE_GLYPH_EMS.regular,
-      semibold: MEASURE_GLYPH_EMS.semibold,
+      web: MEASURE_GLYPH_EMS.web,
+      tv: MEASURE_GLYPH_EMS.tv,
       widths: [
         "Apple App Store",
         "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
         "4.8 ★",
         "日本",
       ].flatMap((text) =>
-        (["regular", "semibold"] as const).map((weight) => ({
-          text,
-          weight,
-          width: measureTextWidth(text, 28, weight),
-        })),
+        (["regular", "semibold"] as const).flatMap((weight) =>
+          (["web", "tv", "any"] as const).map((font) => ({
+            text,
+            weight,
+            font,
+            width: measureTextWidth(text, 28, weight, font),
+          })),
+        ),
       ),
     },
     reviewLayouts,
