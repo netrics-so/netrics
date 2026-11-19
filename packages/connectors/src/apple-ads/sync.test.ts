@@ -485,7 +485,7 @@ describe("documented report shapes", () => {
  * Europe/Berlin, 2026-10-26 to 2026-10-29. Campaign 5100000012 has no ad
  * groups or keywords with numbers: Apple answers report-empty.
  */
-async function capturedPage() {
+async function capturedPage(now = Date.parse("2026-11-15T12:00:00.000Z")) {
   const totals = fixture("report-campaigns-4100000004");
   const countries = fixture("report-countries-4100000004");
   const empty = fixture("report-empty");
@@ -528,7 +528,7 @@ async function capturedPage() {
       to: "2026-10-30T00:00:00.000Z",
     },
     {
-      now: Date.parse("2026-11-15T12:00:00.000Z"),
+      now,
       adAccountId: "4100000004",
       currency: "EUR",
       timeZone: "Europe/Berlin",
@@ -574,6 +574,32 @@ describe("captured report shapes (#370)", () => {
     );
   });
 
+  it("stores no zeros for a date-only day within the lookback, but zeros once it is settled", async () => {
+    // 2026-10-29 in Berlin: the 27th is within the last 3 days, and C1's
+    // entry for it is the date alone. Apple may still fill it.
+    const recent = await capturedPage(Date.parse("2026-10-29T12:00:00.000Z"));
+    expect(
+      on(recent.result.observations, "2026-10-27").filter(
+        (o) => o.dimensions.campaign === C1,
+      ),
+    ).toEqual([]);
+    // C2 has numbers that day and keeps them.
+    expect(
+      sum(
+        on(mainRows(recent.result.observations), "2026-10-27"),
+        APPLE_ADS_METRIC_KEYS.spend,
+        { campaign: C2 },
+      ),
+    ).toBe(110);
+    // Settled (2026-11-15), the same day is an explicit zero.
+    const settled = await capturedPage();
+    const of27 = on(mainRows(settled.result.observations), "2026-10-27").filter(
+      (o) => o.dimensions.campaign === C1,
+    );
+    expect(of27.length).toBeGreaterThan(0);
+    expect(of27.every((o) => o.value === 0)).toBe(true);
+  });
+
   it("notes that amounts with four decimals were rounded", async () => {
     const { notes } = await capturedPage();
     expect(notes).toContain(AMOUNT_ROUNDED_NOTE);
@@ -583,8 +609,8 @@ describe("captured report shapes (#370)", () => {
     const { result } = await capturedPage();
     const spend = APPLE_ADS_METRIC_KEYS.spend;
     const main = mainRows(result.observations);
-    expect(sum(main, spend, { campaign: C1, country: "DE" })).toBe(600);
-    expect(sum(main, spend, { campaign: C2, country: "AT" })).toBe(149);
+    expect(sum(main, spend, { campaign: C1, country: "GB" })).toBe(600);
+    expect(sum(main, spend, { campaign: C2, country: "NL" })).toBe(149);
     expect(sum(main, spend, { country: OTHERS })).toBe(0);
   });
 

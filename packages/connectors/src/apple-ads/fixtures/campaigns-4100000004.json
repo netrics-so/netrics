@@ -19,7 +19,7 @@
       "displayStatus": "PAUSED",
       "id": 5100000011,
       "modificationTime": "2026-10-12T08:00:00.000",
-      "name": "Example – Search DE",
+      "name": "Example – Search GB",
       "paymentModel": "PAYG",
       "promotedObjectId": "1000000004",
       "promotedObjectType": "APPSTORE_APP",
@@ -36,7 +36,7 @@
       "systemStatusReasons": ["PAUSED_BY_USER"],
       "targeting": {
         "countryOrRegion": {
-          "include": ["DE"]
+          "include": ["GB"]
         },
         "supplyPlacement": {
           "include": ["APPSTORE_SEARCH_RESULTS"]
@@ -61,7 +61,7 @@
       "displayStatus": "PAUSED",
       "id": 5100000012,
       "modificationTime": "2026-10-12T08:00:00.000",
-      "name": "Example – Search AT",
+      "name": "Example – Search NL",
       "paymentModel": "PAYG",
       "promotedObjectId": "1000000004",
       "promotedObjectType": "APPSTORE_APP",
@@ -78,7 +78,7 @@
       "systemStatusReasons": ["PAUSED_BY_USER"],
       "targeting": {
         "countryOrRegion": {
-          "include": ["AT"]
+          "include": ["NL"]
         },
         "supplyPlacement": {
           "include": ["APPSTORE_SEARCH_RESULTS"]
@@ -107,7 +107,7 @@
       "displayStatus": "PAUSED",
       "id": 5100000013,
       "modificationTime": "2026-10-12T08:00:00.000",
-      "name": "Example – Max conversions DE",
+      "name": "Example – Conversions GB",
       "paymentModel": "PAYG",
       "promotedObjectId": "1000000004",
       "promotedObjectType": "APPSTORE_APP",
@@ -124,7 +124,7 @@
       "systemStatusReasons": ["PAUSED_BY_USER"],
       "targeting": {
         "countryOrRegion": {
-          "include": ["DE"]
+          "include": ["GB"]
         },
         "supplyPlacement": {
           "include": ["APPSTORE_SEARCH_RESULTS"]

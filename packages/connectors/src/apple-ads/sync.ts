@@ -17,8 +17,10 @@ import {
   AppleAdsReportError,
   appleAdsDimensions,
   countryValue,
+  isEmptyDay,
   isZeroDayValues,
   parseDayMetrics,
+  reportDayTimestamp,
   valueObservations,
   zeroDayValues,
   type AppleAdsRowIdentity,
@@ -555,6 +557,12 @@ async function adGroupDays(
       adGroups.set(adGroup, days);
     }
     for (const raw of rowDays(row, range)) {
+      // A date-only entry is a day without data, not a zero (#370): an
+      // old one becomes zero below, a recent one stays absent.
+      if (isEmptyDay(raw)) {
+        reportDayTimestamp(raw.date);
+        continue;
+      }
       const { date, values } = parseDayMetrics(raw, parseOptions);
       if (!inRange(date, range)) continue;
       days.set(date, values);
@@ -686,6 +694,12 @@ async function keywordDays(
       keyword: row.metadata.id,
     } as AppleAdsRowIdentity)[APPLE_ADS_DIMENSIONS.keyword]!;
     for (const raw of rowDays(row, range)) {
+      // A date-only entry is a day without data, not a zero (#370): an
+      // old one becomes zero below, a recent one stays absent.
+      if (isEmptyDay(raw)) {
+        reportDayTimestamp(raw.date);
+        continue;
+      }
       const { date, values } = parseDayMetrics(raw, parseOptions);
       if (!inRange(date, range)) continue;
       let day = byDay.get(date);
@@ -817,6 +831,12 @@ export async function syncCampaignPage(
     const entry = campaignOf(campaigns, row, selected);
     if (!entry) continue;
     for (const raw of rowDays(row, range)) {
+      // A date-only entry is a day without data, not a zero (#370): an
+      // old one becomes zero below, a recent one stays absent.
+      if (isEmptyDay(raw)) {
+        reportDayTimestamp(raw.date);
+        continue;
+      }
       const { date, values } = parseDayMetrics(raw, parseOptions);
       if (inRange(date, range)) entry.totals.set(date, values);
     }
@@ -825,6 +845,12 @@ export async function syncCampaignPage(
     const entry = campaignOf(campaigns, row, selected);
     if (!entry) continue;
     for (const raw of rowDays(row, range)) {
+      // A date-only entry is a day without data, not a zero (#370): an
+      // old one becomes zero below, a recent one stays absent.
+      if (isEmptyDay(raw)) {
+        reportDayTimestamp(raw.date);
+        continue;
+      }
       const { date, values } = parseDayMetrics(raw, parseOptions);
       if (!inRange(date, range)) continue;
       const reported = countryOf(row, raw);

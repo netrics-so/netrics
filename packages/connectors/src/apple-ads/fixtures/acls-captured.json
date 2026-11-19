@@ -1,5 +1,5 @@
 {
-  "_fixture": "Shape captured from a real account 2026-11 (#370); IDs, names and amounts replaced. A user invited with the read-only API role: Apple answers the role \"API Read Only\", and the first ad account's ID equals the orgId.",
+  "_fixture": "Shape captured from a real account 2026-11 (#370); IDs, names and amounts replaced. A user invited with the read-only API role: Apple answers the role \"API Read Only\". Both ad accounts belong to one org.",
   "result": {
     "acls": [
       {
@@ -7,15 +7,15 @@
         "adAccount": {
           "id": 4100000004,
           "name": "Example Studio",
-          "orgId": 4100000004
+          "orgId": 4000000004
         }
       },
       {
         "roles": ["API Read Only"],
         "adAccount": {
           "id": 4100000005,
-          "name": "Example Studio Kids",
-          "orgId": 4100000004
+          "name": "Example Studio 2",
+          "orgId": 4000000004
         }
       }
     ]

@@ -99,6 +99,7 @@ const API_ROLES = new Set([
   "API Account Read Only",
   "Limited Access: API Read Only",
   "API Account Manager",
+  "API Read & Write",
   "Limited Access: API Read & Write",
   "Admin",
 ]);

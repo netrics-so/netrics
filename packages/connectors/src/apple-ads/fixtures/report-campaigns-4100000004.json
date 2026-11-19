@@ -174,7 +174,7 @@
           "id": 5100000011,
           "promotedObjectType": "APPSTORE_APP",
           "promotedObjectId": "1000000004",
-          "name": "Example – Search DE",
+          "name": "Example – Search GB",
           "status": "PAUSED",
           "deleted": false,
           "displayStatus": "PAUSED",
@@ -191,7 +191,7 @@
               "include": ["APPSTORE_SEARCH_RESULTS"]
             },
             "countryOrRegion": {
-              "include": ["DE"]
+              "include": ["GB"]
             }
           },
           "dailyBudget": {
@@ -340,7 +340,7 @@
           "id": 5100000012,
           "promotedObjectType": "APPSTORE_APP",
           "promotedObjectId": "1000000004",
-          "name": "Example – Search AT",
+          "name": "Example – Search NL",
           "status": "PAUSED",
           "deleted": false,
           "displayStatus": "PAUSED",
@@ -357,7 +357,7 @@
               "include": ["APPSTORE_SEARCH_RESULTS"]
             },
             "countryOrRegion": {
-              "include": ["AT"]
+              "include": ["NL"]
             }
           },
           "dailyBudget": {

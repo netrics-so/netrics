@@ -195,12 +195,16 @@ export type AppsDayMetrics = z.infer<typeof appsDayMetricsSchema>;
  * field, a metric or not, makes it a day with numbers, which must then
  * carry all of them.
  */
-function isEmptyDay(raw: unknown): raw is { date: string } {
+export function isEmptyDay(raw: unknown): raw is { date: string } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     return false;
   }
   const keys = Object.keys(raw);
-  return keys.length === 1 && keys[0] === "date";
+  return (
+    keys.length === 1 &&
+    keys[0] === "date" &&
+    typeof (raw as { date: unknown }).date === "string"
+  );
 }
 
 export interface DayObservationsOptions {
@@ -283,9 +287,6 @@ export function parseDayMetrics(
   options: DayObservationsOptions,
 ): { date: string; values: DayValues } {
   if (isEmptyDay(raw)) {
-    if (typeof raw.date !== "string") {
-      throw new AppleAdsReportError("Apple Ads report has a malformed date");
-    }
     reportDayTimestamp(raw.date);
     return { date: raw.date, values: zeroDayValues() };
   }

@@ -47,9 +47,10 @@ const US = "4100000001";
 const EU = "4100000002";
 const MAPS = "4100000003";
 
-/** The ad accounts of acls-captured.json (#370): the first one's ID is the orgId. */
+/** The ad accounts of acls-captured.json (#370), both in one org. */
 const CAPTURED = "4100000004";
-const CAPTURED_KIDS = "4100000005";
+const CAPTURED_ORG = "4000000004";
+const CAPTURED_TWO = "4100000005";
 
 const USER_ONE: FakeApiUser = { tokens: [TOKEN], acls: "acls-one" };
 const USER_CAPTURED: FakeApiUser = { tokens: [TOKEN], acls: "acls-captured" };
@@ -864,21 +865,22 @@ describe("captured shapes (#370)", () => {
         selectable: true,
         currency: "EUR",
         timeZone: "Europe/Berlin",
-        orgId: CAPTURED,
+        orgId: CAPTURED_ORG,
         roles: ["API Read Only"],
       },
       {
-        id: CAPTURED_KIDS,
-        name: "Example Studio Kids",
+        id: CAPTURED_TWO,
+        name: "Example Studio 2",
         selectable: true,
         currency: "EUR",
         timeZone: "Europe/Berlin",
-        orgId: CAPTURED,
+        orgId: CAPTURED_ORG,
         roles: ["API Read Only"],
       },
     ]);
   });
 
+  // A regression test: the code before #370 read this page too.
   it("names the campaigns of a page without totalCount", async () => {
     const api = fake({ users: [USER_CAPTURED] });
     const resources = await connector().discover(
@@ -897,19 +899,19 @@ describe("captured shapes (#370)", () => {
     ).toEqual([
       {
         id: "5100000011",
-        name: "Example – Search DE",
+        name: "Example – Search GB",
         appId: "1000000004",
         status: "PAUSED",
       },
       {
         id: "5100000012",
-        name: "Example – Search AT",
+        name: "Example – Search NL",
         appId: "1000000004",
         status: "PAUSED",
       },
       {
         id: "5100000013",
-        name: "Example – Max conversions DE",
+        name: "Example – Conversions GB",
         appId: "1000000004",
         status: "PAUSED",
       },

@@ -2,7 +2,7 @@
   "_fixture": "Shape captured from a real account 2026-11 (#370); IDs, names and amounts replaced.",
   "result": {
     "name": "Example Studio",
-    "orgId": 4100000004,
+    "orgId": 4000000004,
     "timezone": "Europe/Berlin",
     "currency": "EUR",
     "paymentModel": "PAYG",
@@ -17,7 +17,7 @@
     ],
     "productFeatures": ["APPSTORE_APP_MANUAL"],
     "id": 4100000004,
-    "creationTime": "2026-07-01T09:00:00.000",
+    "creationTime": "2026-05-12T09:00:00.000",
     "modificationTime": "2026-10-01T09:00:00.000"
   }
 }
