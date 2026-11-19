@@ -88,12 +88,15 @@ import {
 // stops starting campaigns once FAN_OUT_BUDGET_MS have passed and leaves
 // the rest of the batch to the next page (the cursor is the same).
 
-/** Days a backfill reads: 12 months, capped by Apple's retention (#370). */
+/**
+ * Days a backfill reads: 12 months. Apple's retention is still open: the
+ * account captured in #370 had no data old enough to show it.
+ */
 export const APPLE_ADS_BACKFILL_DAYS = 365;
 /**
  * Days every sync reads again, today included: Apple's attribution settles
- * over a few days (ADR 0020 section 8). TO BE CONFIRMED by #370: whether
- * the day before yesterday still changes.
+ * over a few days (ADR 0020 section 8). Still open after #370: whether the
+ * day before yesterday still changes (it needs captures on two days).
  */
 export const LOOKBACK_DAYS = 3;
 
@@ -283,7 +286,7 @@ function campaignOf(
 ): CampaignDays | undefined {
   const app = row.metadata.promotedObjectId;
   if (app === null || app === undefined || app === "") {
-    // TO BE CONFIRMED by #370: `promotedObjectId` names the promoted app.
+    // `promotedObjectId` names the promoted app (#370's captures).
     throw new AppleAdsReportError(
       "Apple Ads report has a campaign without its promoted app",
     );

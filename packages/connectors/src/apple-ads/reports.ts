@@ -276,7 +276,7 @@ export async function readAdGroupReport(
     { ...query, byCountry: false },
     "ad-group report",
   );
-  // TO BE CONFIRMED by #370: every ad-group row names its campaignId.
+  // Every ad-group row names its campaignId (#370's captures).
   refuseOtherCampaigns(rows, query.campaignId, "ad-group report", "ad group");
   return rows;
 }
@@ -297,7 +297,7 @@ export async function readKeywordReport(
     "keyword report",
     1,
   );
-  // TO BE CONFIRMED by #370: every keyword row names its campaignId.
+  // Every keyword row names its campaignId (#370's captures).
   refuseOtherCampaigns(rows, query.campaignId, "keyword report", "keyword");
   return rows;
 }
@@ -321,9 +321,9 @@ export function rowDays(
 
 /**
  * The country or region of a grouped row. Apple's AppsReportingCampaign
- * has `countryOrRegion` in the row's `metadata`; the campaigns report's
- * example shows it in each `granularMetrics` entry instead. Both are read,
- * the day's first. TO BE CONFIRMED by #370's captures.
+ * has `countryOrRegion` in the row's `metadata`, where a real account's
+ * reports have it (#370); the campaigns report's example shows it in each
+ * `granularMetrics` entry instead. Both are read, the day's first.
  */
 export function countryOf(
   row: ReportRow,

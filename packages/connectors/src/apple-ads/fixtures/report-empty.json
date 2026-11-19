@@ -1,0 +1,9 @@
+{
+  "_fixture": "Shape captured from a real account 2026-11 (#370); IDs, names and amounts replaced. Any report with no rows in the range (a campaign without numbers, a range before the account's first campaign): result is an empty object, without rows.",
+  "result": {},
+  "pagination": {
+    "offset": 0,
+    "pageSize": 0,
+    "totalCount": 0
+  }
+}

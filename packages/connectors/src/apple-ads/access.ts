@@ -21,7 +21,8 @@ import {
 // - Get User ACL ("Each access token binds to exactly one org"):
 //   https://developer.apple.com/documentation/apple-ads-platform-api/get-user-acls
 // - UserAcl (roles: Admin, API Account Manager, API Account Read Only,
-//   Limited Access: API Read & Write, Limited Access: API Read Only):
+//   Limited Access: API Read & Write, Limited Access: API Read Only; a real
+//   read-only API user's ACL says "API Read Only", #370):
 //   https://developer.apple.com/documentation/apple-ads-platform-api/useracl
 // - AdAccount (id, name, orgId, timezone, currency, systemStatus,
 //   systemStatusReasons, productFeatures):
@@ -51,15 +52,23 @@ import {
 export type AccessResult = { ok: true } | { ok: false; message: string };
 
 /**
- * The roles that read the API (UserAcl's roles reference). The read-only
- * ones are what the setup asks for; the others read too. Any other value
- * is a UI role without API access. TO BE CONFIRMED by #370: the role
- * strings an API Read Only user's ACL carries.
+ * The roles that read the API. `/v1/acls` of a real user invited with the
+ * UI role API Account Read Only answers "API Read Only" (#370), not
+ * UserAcl's documented "API Account Read Only". Apple's help on inviting
+ * users names the limited-access API roles "API Read Only" and "API Read &
+ * Write", UserAcl "Limited Access: API Read Only" and "Limited Access: API
+ * Read & Write"; all of them are accepted, since only the first is
+ * confirmed. The read-only ones are what the setup asks for; the others
+ * read too. Any other value is a UI role without API access. "Admin"
+ * stays because UserAcl lists it, though the Apple Ads UI offers an Admin
+ * no public-key field, so an Admin login cannot be the API user.
  */
 export const API_ROLES: readonly string[] = [
+  "API Read Only",
   "API Account Read Only",
   "Limited Access: API Read Only",
   "API Account Manager",
+  "API Read & Write",
   "Limited Access: API Read & Write",
   "Admin",
 ];

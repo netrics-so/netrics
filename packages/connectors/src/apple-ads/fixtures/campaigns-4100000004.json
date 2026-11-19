@@ -1,0 +1,139 @@
+{
+  "_fixture": "Shape captured from a real account 2026-11 (#370); IDs, names and amounts replaced. Asked with pagination only (no filter, no fetchTotalCount): pagination has no totalCount, and pageSize is the number of campaigns returned.",
+  "result": [
+    {
+      "adAccountId": 4100000004,
+      "bidStrategy": {
+        "bidStrategyGoal": "TAP",
+        "bidStrategyType": "MANUAL_CPT"
+      },
+      "billingEvent": "TAPS",
+      "creationTime": "2026-08-03T09:00:00.000",
+      "dailyBudget": {
+        "value": {
+          "amount": "10",
+          "currency": "EUR"
+        }
+      },
+      "deleted": false,
+      "displayStatus": "PAUSED",
+      "id": 5100000011,
+      "modificationTime": "2026-10-12T08:00:00.000",
+      "name": "Example – Search DE",
+      "paymentModel": "PAYG",
+      "promotedObjectId": "1000000004",
+      "promotedObjectType": "APPSTORE_APP",
+      "regulationResponses": [
+        {
+          "regulationType": "CAMPAIGN_SAPIN_LAW",
+          "responseValue": "NOT_ANSWERED"
+        }
+      ],
+      "startTime": "2026-08-03T00:00:00.000",
+      "status": "PAUSED",
+      "systemStatus": "NOT_RUNNING",
+      "systemStatusLimitingReasons": [],
+      "systemStatusReasons": ["PAUSED_BY_USER"],
+      "targeting": {
+        "countryOrRegion": {
+          "include": ["DE"]
+        },
+        "supplyPlacement": {
+          "include": ["APPSTORE_SEARCH_RESULTS"]
+        }
+      }
+    },
+    {
+      "adAccountId": 4100000004,
+      "bidStrategy": {
+        "bidStrategyGoal": "TAP",
+        "bidStrategyType": "MANUAL_CPT"
+      },
+      "billingEvent": "TAPS",
+      "creationTime": "2026-08-03T09:00:00.000",
+      "dailyBudget": {
+        "value": {
+          "amount": "25",
+          "currency": "EUR"
+        }
+      },
+      "deleted": false,
+      "displayStatus": "PAUSED",
+      "id": 5100000012,
+      "modificationTime": "2026-10-12T08:00:00.000",
+      "name": "Example – Search AT",
+      "paymentModel": "PAYG",
+      "promotedObjectId": "1000000004",
+      "promotedObjectType": "APPSTORE_APP",
+      "regulationResponses": [
+        {
+          "regulationType": "CAMPAIGN_SAPIN_LAW",
+          "responseValue": "NOT_ANSWERED"
+        }
+      ],
+      "startTime": "2026-08-03T00:00:00.000",
+      "status": "PAUSED",
+      "systemStatus": "NOT_RUNNING",
+      "systemStatusLimitingReasons": [],
+      "systemStatusReasons": ["PAUSED_BY_USER"],
+      "targeting": {
+        "countryOrRegion": {
+          "include": ["AT"]
+        },
+        "supplyPlacement": {
+          "include": ["APPSTORE_SEARCH_RESULTS"]
+        }
+      }
+    },
+    {
+      "adAccountId": 4100000004,
+      "bidStrategy": {
+        "bid": {
+          "amount": "0.15",
+          "currency": "EUR"
+        },
+        "bidStrategyGoal": "INSTALL",
+        "bidStrategyType": "MAX_CONVERSIONS"
+      },
+      "billingEvent": "TAPS",
+      "creationTime": "2026-09-07T09:00:00.000",
+      "dailyBudget": {
+        "value": {
+          "amount": "10",
+          "currency": "EUR"
+        }
+      },
+      "deleted": false,
+      "displayStatus": "PAUSED",
+      "id": 5100000013,
+      "modificationTime": "2026-10-12T08:00:00.000",
+      "name": "Example – Max conversions DE",
+      "paymentModel": "PAYG",
+      "promotedObjectId": "1000000004",
+      "promotedObjectType": "APPSTORE_APP",
+      "regulationResponses": [
+        {
+          "regulationType": "CAMPAIGN_SAPIN_LAW",
+          "responseValue": "NOT_ANSWERED"
+        }
+      ],
+      "startTime": "2026-09-07T00:00:00.000",
+      "status": "PAUSED",
+      "systemStatus": "NOT_RUNNING",
+      "systemStatusLimitingReasons": [],
+      "systemStatusReasons": ["PAUSED_BY_USER"],
+      "targeting": {
+        "countryOrRegion": {
+          "include": ["DE"]
+        },
+        "supplyPlacement": {
+          "include": ["APPSTORE_SEARCH_RESULTS"]
+        }
+      }
+    }
+  ],
+  "pagination": {
+    "pageSize": 3,
+    "offset": 0
+  }
+}

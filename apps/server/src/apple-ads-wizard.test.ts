@@ -87,7 +87,8 @@ const MAPS: FakeAdAccount = {
   campaigns: [],
 };
 const ACL = {
-  [US.id]: ["API Account Read Only"],
+  // The role string a real read-only API user's ACL carries (#370).
+  [US.id]: ["API Read Only"],
   [EU.id]: ["Limited Access: API Read Only"],
   [MAPS.id]: ["API Account Read Only"],
 };

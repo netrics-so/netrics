@@ -19,6 +19,7 @@ import {
   OTHERS,
   reportDayTimestamp,
 } from "./index.js";
+import { fixture } from "./test-helpers.js";
 
 /** One day of `AppsMetrics` as Apple documents it (#370 confirms). */
 function day(overrides: Record<string, unknown> = {}) {
@@ -358,6 +359,47 @@ describe("dayObservations", () => {
     expect(log.mock.calls[0]![0]).toMatch(
       new RegExp(`^${AMOUNT_ROUNDED_NOTE}: `),
     );
+  });
+
+  it("reads a day Apple sends as its date alone as zeros (#370)", () => {
+    // A DAILY report lists every day of its range; a day without activity
+    // is `{"date": …}` with no metrics at all.
+    const note = vi.fn();
+    const observations = dayObservations(
+      CAMPAIGN,
+      { date: "2026-10-27" },
+      options(note),
+    );
+    expect(observations.length).toBe(
+      dayObservations(CAMPAIGN, day(), options()).length,
+    );
+    for (const observation of observations) {
+      expect(observation.value).toBe(0);
+      expect(observation.sourceTimestamp).toBe("2026-10-27T00:00:00.000Z");
+    }
+    expect(note).not.toHaveBeenCalled();
+    expect(() =>
+      dayObservations(CAMPAIGN, { date: "2026-10-27 05" }, options()),
+    ).toThrow(AppleAdsReportError);
+    // A day with some metrics must have all of them.
+    expect(() =>
+      dayObservations(
+        CAMPAIGN,
+        { date: "2026-10-27", impressions: 3 },
+        options(),
+      ),
+    ).toThrow(AppleAdsReportError);
+  });
+
+  it("reads every day entry of a captured report (#370)", () => {
+    const report = fixture("report-campaigns-4100000004") as {
+      result: { rows: Array<{ granularMetrics: unknown[] }> };
+    };
+    const entries = report.result.rows.flatMap((row) => row.granularMetrics);
+    expect(entries.length).toBe(8);
+    for (const entry of entries) {
+      expect(() => dayObservations(CAMPAIGN, entry, options())).not.toThrow();
+    }
   });
 
   it.each([

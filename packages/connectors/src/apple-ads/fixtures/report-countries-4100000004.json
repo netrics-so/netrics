@@ -1,0 +1,383 @@
+{
+  "_fixture": "Shape captured from a real account 2026-11 (#370); IDs, names and amounts replaced. DAILY over 2026-10-26 to 2026-10-29 in the ad account's days (ORTZ): every day of the range is listed, a day without activity as its date alone; a day with activity carries every AppsMetrics field, ratios and pre-orders included, amounts with up to 4 decimals. groupBy [\"countryOrRegion\"]: the country is metadata.countryOrRegion, not a field of the day entries; each campaign here targets one country. Campaign 5100000013 has no numbers and no row.",
+  "result": {
+    "rows": [
+      {
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "6.0061",
+            "currency": "EUR"
+          },
+          "impressions": 214,
+          "taps": 22,
+          "ttr": 0.1028,
+          "cpt": {
+            "amount": "0.273",
+            "currency": "EUR"
+          },
+          "cpm": {
+            "amount": "28.0659",
+            "currency": "EUR"
+          },
+          "tapInstalls": 14,
+          "tapInstallCPI": {
+            "amount": "0.429",
+            "currency": "EUR"
+          },
+          "totalNewDownloads": 13,
+          "totalRedownloads": 1,
+          "viewInstalls": 0,
+          "totalInstalls": 14,
+          "tapNewDownloads": 13,
+          "tapRedownloads": 1,
+          "viewNewDownloads": 0,
+          "viewRedownloads": 0,
+          "totalAvgCPI": {
+            "amount": "0.429",
+            "currency": "EUR"
+          },
+          "totalInstallRate": 0.6364,
+          "tapInstallRate": 0.6364,
+          "tapPreOrdersPlaced": 0,
+          "viewPreOrdersPlaced": 0,
+          "totalPreOrdersPlaced": 0
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": {
+              "amount": "3.8127",
+              "currency": "EUR"
+            },
+            "impressions": 118,
+            "taps": 15,
+            "ttr": 0.1271,
+            "cpt": {
+              "amount": "0.2542",
+              "currency": "EUR"
+            },
+            "cpm": {
+              "amount": "32.311",
+              "currency": "EUR"
+            },
+            "tapInstalls": 10,
+            "tapInstallCPI": {
+              "amount": "0.3813",
+              "currency": "EUR"
+            },
+            "totalNewDownloads": 10,
+            "totalRedownloads": 0,
+            "viewInstalls": 0,
+            "totalInstalls": 10,
+            "tapNewDownloads": 10,
+            "tapRedownloads": 0,
+            "viewNewDownloads": 0,
+            "viewRedownloads": 0,
+            "totalAvgCPI": {
+              "amount": "0.3813",
+              "currency": "EUR"
+            },
+            "totalInstallRate": 0.6667,
+            "tapInstallRate": 0.6667,
+            "tapPreOrdersPlaced": 0,
+            "viewPreOrdersPlaced": 0,
+            "totalPreOrdersPlaced": 0
+          },
+          {
+            "date": "2026-10-27"
+          },
+          {
+            "date": "2026-10-28",
+            "localSpend": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "impressions": 37,
+            "taps": 0,
+            "ttr": 0,
+            "cpt": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "cpm": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "tapInstalls": 0,
+            "tapInstallCPI": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "totalNewDownloads": 0,
+            "totalRedownloads": 0,
+            "viewInstalls": 0,
+            "totalInstalls": 0,
+            "tapNewDownloads": 0,
+            "tapRedownloads": 0,
+            "viewNewDownloads": 0,
+            "viewRedownloads": 0,
+            "totalAvgCPI": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "totalInstallRate": 0,
+            "tapInstallRate": 0,
+            "tapPreOrdersPlaced": 0,
+            "viewPreOrdersPlaced": 0,
+            "totalPreOrdersPlaced": 0
+          },
+          {
+            "date": "2026-10-29",
+            "localSpend": {
+              "amount": "2.1934",
+              "currency": "EUR"
+            },
+            "impressions": 59,
+            "taps": 7,
+            "ttr": 0.1186,
+            "cpt": {
+              "amount": "0.3133",
+              "currency": "EUR"
+            },
+            "cpm": {
+              "amount": "37.1763",
+              "currency": "EUR"
+            },
+            "tapInstalls": 4,
+            "tapInstallCPI": {
+              "amount": "0.5484",
+              "currency": "EUR"
+            },
+            "totalNewDownloads": 3,
+            "totalRedownloads": 1,
+            "viewInstalls": 0,
+            "totalInstalls": 4,
+            "tapNewDownloads": 3,
+            "tapRedownloads": 1,
+            "viewNewDownloads": 0,
+            "viewRedownloads": 0,
+            "totalAvgCPI": {
+              "amount": "0.5484",
+              "currency": "EUR"
+            },
+            "totalInstallRate": 0.5714,
+            "tapInstallRate": 0.5714,
+            "tapPreOrdersPlaced": 0,
+            "viewPreOrdersPlaced": 0,
+            "totalPreOrdersPlaced": 0
+          }
+        ],
+        "metadata": {
+          "promotedObject": {
+            "name": "Example App"
+          },
+          "id": 5100000011,
+          "promotedObjectType": "APPSTORE_APP",
+          "promotedObjectId": "1000000004",
+          "name": "Example – Search DE",
+          "status": "PAUSED",
+          "deleted": false,
+          "displayStatus": "PAUSED",
+          "modificationTime": "2026-10-12T08:00:00.000",
+          "creationTime": "2026-08-03T09:00:00.000",
+          "adAccountId": 4100000004,
+          "systemStatusReasons": ["PAUSED_BY_USER"],
+          "systemStatus": "NOT_RUNNING",
+          "startTime": "2026-08-03T00:00:00.000",
+          "billingEvent": "TAPS",
+          "systemStatusLimitingReasons": [],
+          "targeting": {
+            "supplyPlacement": {
+              "include": ["APPSTORE_SEARCH_RESULTS"]
+            },
+            "countryOrRegion": {
+              "include": ["DE"]
+            }
+          },
+          "dailyBudget": {
+            "value": {
+              "amount": "10",
+              "currency": "EUR"
+            }
+          },
+          "bidStrategy": {
+            "bidStrategyType": "MANUAL_CPT"
+          },
+          "countryOrRegion": "DE"
+        }
+      },
+      {
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "1.49",
+            "currency": "EUR"
+          },
+          "impressions": 31,
+          "taps": 5,
+          "ttr": 0.1613,
+          "cpt": {
+            "amount": "0.298",
+            "currency": "EUR"
+          },
+          "cpm": {
+            "amount": "48.0645",
+            "currency": "EUR"
+          },
+          "tapInstalls": 3,
+          "tapInstallCPI": {
+            "amount": "0.4967",
+            "currency": "EUR"
+          },
+          "totalNewDownloads": 4,
+          "totalRedownloads": 0,
+          "viewInstalls": 1,
+          "totalInstalls": 4,
+          "tapNewDownloads": 3,
+          "tapRedownloads": 0,
+          "viewNewDownloads": 1,
+          "viewRedownloads": 0,
+          "totalAvgCPI": {
+            "amount": "0.3725",
+            "currency": "EUR"
+          },
+          "totalInstallRate": 0.8,
+          "tapInstallRate": 0.6,
+          "tapPreOrdersPlaced": 0,
+          "viewPreOrdersPlaced": 0,
+          "totalPreOrdersPlaced": 0
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26"
+          },
+          {
+            "date": "2026-10-27",
+            "localSpend": {
+              "amount": "1.0983",
+              "currency": "EUR"
+            },
+            "impressions": 23,
+            "taps": 4,
+            "ttr": 0.1739,
+            "cpt": {
+              "amount": "0.2746",
+              "currency": "EUR"
+            },
+            "cpm": {
+              "amount": "47.7522",
+              "currency": "EUR"
+            },
+            "tapInstalls": 2,
+            "tapInstallCPI": {
+              "amount": "0.5492",
+              "currency": "EUR"
+            },
+            "totalNewDownloads": 3,
+            "totalRedownloads": 0,
+            "viewInstalls": 1,
+            "totalInstalls": 3,
+            "tapNewDownloads": 2,
+            "tapRedownloads": 0,
+            "viewNewDownloads": 1,
+            "viewRedownloads": 0,
+            "totalAvgCPI": {
+              "amount": "0.3661",
+              "currency": "EUR"
+            },
+            "totalInstallRate": 0.75,
+            "tapInstallRate": 0.5,
+            "tapPreOrdersPlaced": 0,
+            "viewPreOrdersPlaced": 0,
+            "totalPreOrdersPlaced": 0
+          },
+          {
+            "date": "2026-10-28",
+            "localSpend": {
+              "amount": "0.3917",
+              "currency": "EUR"
+            },
+            "impressions": 8,
+            "taps": 1,
+            "ttr": 0.125,
+            "cpt": {
+              "amount": "0.3917",
+              "currency": "EUR"
+            },
+            "cpm": {
+              "amount": "48.9625",
+              "currency": "EUR"
+            },
+            "tapInstalls": 1,
+            "tapInstallCPI": {
+              "amount": "0.3917",
+              "currency": "EUR"
+            },
+            "totalNewDownloads": 1,
+            "totalRedownloads": 0,
+            "viewInstalls": 0,
+            "totalInstalls": 1,
+            "tapNewDownloads": 1,
+            "tapRedownloads": 0,
+            "viewNewDownloads": 0,
+            "viewRedownloads": 0,
+            "totalAvgCPI": {
+              "amount": "0.3917",
+              "currency": "EUR"
+            },
+            "totalInstallRate": 1,
+            "tapInstallRate": 1,
+            "tapPreOrdersPlaced": 0,
+            "viewPreOrdersPlaced": 0,
+            "totalPreOrdersPlaced": 0
+          },
+          {
+            "date": "2026-10-29"
+          }
+        ],
+        "metadata": {
+          "promotedObject": {
+            "name": "Example App"
+          },
+          "id": 5100000012,
+          "promotedObjectType": "APPSTORE_APP",
+          "promotedObjectId": "1000000004",
+          "name": "Example – Search AT",
+          "status": "PAUSED",
+          "deleted": false,
+          "displayStatus": "PAUSED",
+          "modificationTime": "2026-10-12T08:00:00.000",
+          "creationTime": "2026-08-03T09:00:00.000",
+          "adAccountId": 4100000004,
+          "systemStatusReasons": ["PAUSED_BY_USER"],
+          "systemStatus": "NOT_RUNNING",
+          "startTime": "2026-08-03T00:00:00.000",
+          "billingEvent": "TAPS",
+          "systemStatusLimitingReasons": [],
+          "targeting": {
+            "supplyPlacement": {
+              "include": ["APPSTORE_SEARCH_RESULTS"]
+            },
+            "countryOrRegion": {
+              "include": ["AT"]
+            }
+          },
+          "dailyBudget": {
+            "value": {
+              "amount": "25",
+              "currency": "EUR"
+            }
+          },
+          "bidStrategy": {
+            "bidStrategyType": "MANUAL_CPT"
+          },
+          "countryOrRegion": "AT"
+        }
+      }
+    ]
+  },
+  "pagination": {
+    "offset": 0,
+    "pageSize": 2,
+    "totalCount": 2
+  }
+}

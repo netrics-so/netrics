@@ -94,6 +94,8 @@ export function apiUserCredentials(user: FakeApiUserKey) {
 }
 
 const API_ROLES = new Set([
+  // A real read-only API user's ACL (#370).
+  "API Read Only",
   "API Account Read Only",
   "Limited Access: API Read Only",
   "API Account Manager",

@@ -1,0 +1,263 @@
+{
+  "_fixture": "Shape captured from a real account 2026-11 (#370); IDs, names and amounts replaced. POST /v1/reports/apps/searchterms/query with the campaignId filter; documentation only, netrics does not read search terms. searchTermSource is TARGETED or AUTO; searchTermText is null for terms Apple does not name (low volume). Search-term metrics have no cpm.",
+  "result": {
+    "rows": [
+      {
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "2.9645",
+            "currency": "EUR"
+          },
+          "impressions": 80,
+          "taps": 10,
+          "ttr": 0.125,
+          "cpt": {
+            "amount": "0.2964",
+            "currency": "EUR"
+          },
+          "tapInstalls": 6,
+          "tapInstallCPI": {
+            "amount": "0.4941",
+            "currency": "EUR"
+          },
+          "totalNewDownloads": 6,
+          "totalRedownloads": 0,
+          "viewInstalls": 0,
+          "totalInstalls": 6,
+          "tapNewDownloads": 6,
+          "tapRedownloads": 0,
+          "viewNewDownloads": 0,
+          "viewRedownloads": 0,
+          "totalAvgCPI": {
+            "amount": "0.4941",
+            "currency": "EUR"
+          },
+          "totalInstallRate": 0.6,
+          "tapInstallRate": 0.6,
+          "tapPreOrdersPlaced": 0,
+          "viewPreOrdersPlaced": 0,
+          "totalPreOrdersPlaced": 0
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26",
+            "localSpend": {
+              "amount": "1.7543",
+              "currency": "EUR"
+            },
+            "impressions": 47,
+            "taps": 6,
+            "ttr": 0.1277,
+            "cpt": {
+              "amount": "0.2924",
+              "currency": "EUR"
+            },
+            "tapInstalls": 4,
+            "tapInstallCPI": {
+              "amount": "0.4386",
+              "currency": "EUR"
+            },
+            "totalNewDownloads": 4,
+            "totalRedownloads": 0,
+            "viewInstalls": 0,
+            "totalInstalls": 4,
+            "tapNewDownloads": 4,
+            "tapRedownloads": 0,
+            "viewNewDownloads": 0,
+            "viewRedownloads": 0,
+            "totalAvgCPI": {
+              "amount": "0.4386",
+              "currency": "EUR"
+            },
+            "totalInstallRate": 0.6667,
+            "tapInstallRate": 0.6667,
+            "tapPreOrdersPlaced": 0,
+            "viewPreOrdersPlaced": 0,
+            "totalPreOrdersPlaced": 0
+          },
+          {
+            "date": "2026-10-27"
+          },
+          {
+            "date": "2026-10-28"
+          },
+          {
+            "date": "2026-10-29",
+            "localSpend": {
+              "amount": "1.2102",
+              "currency": "EUR"
+            },
+            "impressions": 33,
+            "taps": 4,
+            "ttr": 0.1212,
+            "cpt": {
+              "amount": "0.3026",
+              "currency": "EUR"
+            },
+            "tapInstalls": 2,
+            "tapInstallCPI": {
+              "amount": "0.6051",
+              "currency": "EUR"
+            },
+            "totalNewDownloads": 2,
+            "totalRedownloads": 0,
+            "viewInstalls": 0,
+            "totalInstalls": 2,
+            "tapNewDownloads": 2,
+            "tapRedownloads": 0,
+            "viewNewDownloads": 0,
+            "viewRedownloads": 0,
+            "totalAvgCPI": {
+              "amount": "0.6051",
+              "currency": "EUR"
+            },
+            "totalInstallRate": 0.5,
+            "tapInstallRate": 0.5,
+            "tapPreOrdersPlaced": 0,
+            "viewPreOrdersPlaced": 0,
+            "totalPreOrdersPlaced": 0
+          }
+        ],
+        "metadata": {
+          "campaignId": 5100000011,
+          "adAccountId": 4100000004,
+          "searchTermText": "example app",
+          "searchTermSource": "TARGETED",
+          "keyword": {
+            "deleted": false,
+            "id": 7100000011,
+            "text": "example app",
+            "status": "ENABLED",
+            "matchType": "EXACT",
+            "bid": {
+              "amount": "0.8",
+              "currency": "EUR"
+            },
+            "modificationTime": "2026-09-08T09:00:00.000",
+            "creationTime": "2026-09-08T09:00:00.000",
+            "displayStatus": "CAMPAIGN_ON_HOLD"
+          },
+          "adGroupId": 6100000011,
+          "adGroup": {
+            "name": "Exact",
+            "deleted": false
+          }
+        }
+      },
+      {
+        "totalMetrics": {
+          "localSpend": {
+            "amount": "0",
+            "currency": "EUR"
+          },
+          "impressions": 3,
+          "taps": 0,
+          "ttr": 0,
+          "cpt": {
+            "amount": "0",
+            "currency": "EUR"
+          },
+          "tapInstalls": 0,
+          "tapInstallCPI": {
+            "amount": "0",
+            "currency": "EUR"
+          },
+          "totalNewDownloads": 0,
+          "totalRedownloads": 0,
+          "viewInstalls": 0,
+          "totalInstalls": 0,
+          "tapNewDownloads": 0,
+          "tapRedownloads": 0,
+          "viewNewDownloads": 0,
+          "viewRedownloads": 0,
+          "totalAvgCPI": {
+            "amount": "0",
+            "currency": "EUR"
+          },
+          "totalInstallRate": 0,
+          "tapInstallRate": 0,
+          "tapPreOrdersPlaced": 0,
+          "viewPreOrdersPlaced": 0,
+          "totalPreOrdersPlaced": 0
+        },
+        "granularMetrics": [
+          {
+            "date": "2026-10-26"
+          },
+          {
+            "date": "2026-10-27"
+          },
+          {
+            "date": "2026-10-28",
+            "localSpend": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "impressions": 3,
+            "taps": 0,
+            "ttr": 0,
+            "cpt": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "tapInstalls": 0,
+            "tapInstallCPI": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "totalNewDownloads": 0,
+            "totalRedownloads": 0,
+            "viewInstalls": 0,
+            "totalInstalls": 0,
+            "tapNewDownloads": 0,
+            "tapRedownloads": 0,
+            "viewNewDownloads": 0,
+            "viewRedownloads": 0,
+            "totalAvgCPI": {
+              "amount": "0",
+              "currency": "EUR"
+            },
+            "totalInstallRate": 0,
+            "tapInstallRate": 0,
+            "tapPreOrdersPlaced": 0,
+            "viewPreOrdersPlaced": 0,
+            "totalPreOrdersPlaced": 0
+          },
+          {
+            "date": "2026-10-29"
+          }
+        ],
+        "metadata": {
+          "campaignId": 5100000011,
+          "adAccountId": 4100000004,
+          "searchTermText": null,
+          "searchTermSource": "TARGETED",
+          "keyword": {
+            "deleted": false,
+            "id": 7100000012,
+            "text": "example game",
+            "status": "ENABLED",
+            "matchType": "EXACT",
+            "bid": {
+              "amount": "0.8",
+              "currency": "EUR"
+            },
+            "modificationTime": "2026-09-08T09:00:00.000",
+            "creationTime": "2026-09-08T09:00:00.000",
+            "displayStatus": "CAMPAIGN_ON_HOLD"
+          },
+          "adGroupId": 6100000011,
+          "adGroup": {
+            "name": "Exact",
+            "deleted": false
+          }
+        }
+      }
+    ]
+  },
+  "pagination": {
+    "offset": 0,
+    "pageSize": 2,
+    "totalCount": 2
+  }
+}

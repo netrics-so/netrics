@@ -117,7 +117,8 @@ describe("Apple Ads setup (#375)", () => {
     for (const expected of [
       "1. Use an API user",
       "API Account Read Only",
-      "Limited Access: API Read Only",
+      "limited-access role API Read Only",
+      "Generate API Client",
       "Account Settings → User Management",
       "2. Paste the public key in Apple Ads",
       "Generate key pair",
@@ -140,6 +141,7 @@ describe("Apple Ads setup (#375)", () => {
       "1. Einen API-Benutzer verwenden",
       "2. Öffentlichen Schlüssel in Apple Ads einfügen",
       "3. Die IDs aus Apple Ads eingeben",
+      "API-Client generieren",
       "Schlüssel prüfen und Werbekonten finden",
       "Client-ID",
       "Schlüssel-ID",

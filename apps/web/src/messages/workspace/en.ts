@@ -516,9 +516,9 @@ export const workspaceEn = {
             "The EC P-256 private key whose public key you saved under Account Settings → API (PEM).",
         },
         steps: {
-          "1": "An Account Admin invites an API user under Account Settings → User Management in Apple Ads, with the API Account Read Only role (or Limited Access: API Read Only for some campaign groups). The API user accepts the invitation and signs in to Apple Ads.",
-          "2": "As the API user, open Account Settings → API, paste the public key and save.",
-          "3": "Copy the clientId, teamId and keyId Apple Ads shows above the public key.",
+          "1": "An Account Admin invites an API user under Account Settings → User Management in Apple Ads, with the role API Account Read Only (or the limited-access role API Read Only for some campaign groups). An Admin login cannot be the API user: Apple Ads offers the public key only to users with an API role. The API user accepts the invitation and signs in to Apple Ads.",
+          "2": "As the API user, open Account Settings → API, choose Generate API Client, paste the public key and save.",
+          "3": "Copy the clientId, teamId and keyId Apple Ads shows for the key. The teamId can be the same as the clientId.",
           "4": "Enter the values below. netrics checks the key with Apple before it stores anything.",
         },
         links: {
@@ -542,11 +542,11 @@ export const workspaceEn = {
         notPem:
           "This does not look like a .p8 private key: it should start with -----BEGIN PRIVATE KEY-----.",
         appleAdsClientId:
-          "The client ID starts with SEARCHADS. followed by an ID, like SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads shows it as clientId above the public key.",
+          "The client ID starts with SEARCHADS. followed by an ID, like SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads shows it as clientId once the public key is pasted.",
         appleAdsTeamId:
-          "The team ID starts with SEARCHADS. followed by an ID, like SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads shows it as teamId above the public key.",
+          "The team ID starts with SEARCHADS. followed by an ID, like SEARCHADS.27478e71-3bb0-4588-998c-182e2b405577. Apple Ads shows it as teamId once the public key is pasted.",
         appleAdsKeyId:
-          "The key ID is an ID with dashes, like a273d0d3-4d9e-458c-a173-0db8619ca7d7. Apple Ads shows it as keyId above the public key.",
+          "The key ID is an ID with dashes, like a273d0d3-4d9e-458c-a173-0db8619ca7d7. Apple Ads shows it as keyId once the public key is pasted.",
         appleAdsKeyIdSearchAds:
           "This looks like a client ID or team ID. The key ID has no SEARCHADS. prefix, like a273d0d3-4d9e-458c-a173-0db8619ca7d7.",
       },
@@ -693,18 +693,18 @@ export const workspaceEn = {
         "netrics reads Apple Ads as an API user of your own Apple Ads account, with a key pair netrics generates for you. It takes a few minutes, and nothing is stored until Apple has accepted the key.",
       step1Title: "Use an API user",
       step1Body:
-        "An Account Admin invites a user under Account Settings → User Management with the role API Account Read Only, or Limited Access: API Read Only to share only some campaign groups. That user accepts the invitation and signs in to Apple Ads. An existing API user works too.",
+        "An Account Admin invites a user under Account Settings → User Management with the role API Account Read Only, or the limited-access role API Read Only to share only some campaign groups. That user accepts the invitation and signs in to Apple Ads. An existing API user works too; an Admin login does not, because Apple Ads offers the public key only to users with an API role.",
       openUserManagement: "Open Apple Ads (Account Settings → User Management)",
       inviteHelp: "How to invite users",
       step2Title: "Paste the public key in Apple Ads",
       step2Body:
-        "Signed in as the API user, open Account Settings → API. Paste this public key under Public key, then save.",
+        "Signed in as the API user, open Account Settings → API and choose Generate API Client. Paste this public key, then save.",
       openApi: "Open Apple Ads (Account Settings → API)",
       oneKeyNote:
         "If this API user already has a public key that another netrics connection uses, replacing it in Apple Ads stops that connection. Choose all the ad accounts you need below, in one go.",
       step3Title: "Enter the IDs Apple Ads shows",
       step3Body:
-        "Apple Ads shows clientId, teamId and keyId above the public key. Copy them here; pasting the whole block fills in all three.",
+        "Once the public key is pasted, Apple Ads shows clientId, teamId and keyId; the teamId can be the same as the clientId. Copy them here; pasting the whole block fills in all three.",
       blockFilled:
         "Filled in the client ID, team ID and key ID from the pasted text.",
       step4Title: "Choose the ad accounts",
