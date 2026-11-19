@@ -122,8 +122,10 @@ test("measure tables show the rows that fit their tiles, and no fewer", async ({
     await tv.goto(`/workspaces/${workspaceId}/dashboards/${dashboardId}/tv`);
     await expect(tv.locator(".sw-measure-table").first()).toBeVisible();
     await expect(tv.locator(".sw-measure tbody tr").first()).toBeVisible();
-    const tables = await tv.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>(".sw-measure")]
+    // Measured once the screen's fonts are in, as viewers see it.
+    const tables = await tv.evaluate(async () => {
+      await document.fonts.ready;
+      return [...document.querySelectorAll<HTMLElement>(".sw-measure")]
         .filter((el) => el.getBoundingClientRect().height > 0)
         .map((el) => {
           const box = el.getBoundingClientRect();
@@ -156,8 +158,8 @@ test("measure tables show the rows that fit their tiles, and no fewer", async ({
             rowHeight: Math.min(...rows.map((row) => row.height)),
             gap,
           };
-        }),
-    );
+        });
+    });
     expect(tables.length).toBeGreaterThan(0);
     for (const table of tables) {
       const where = `${viewport.width}×${viewport.height} ${JSON.stringify(table)}`;
