@@ -106,6 +106,48 @@ describe("loadConfig", () => {
     expect(config.commit).toBe("dev");
   });
 
+  it("turns on no preview connector unless listed (#378)", () => {
+    expect([...loadConfig({}).previewConnectors]).toEqual([]);
+    expect([
+      ...loadConfig({ NETRICS_PREVIEW_CONNECTORS: "" }).previewConnectors,
+    ]).toEqual([]);
+    expect([
+      ...loadConfig({ NETRICS_PREVIEW_CONNECTORS: " apple-ads , " })
+        .previewConnectors,
+    ]).toEqual(["apple-ads"]);
+    expect([
+      ...loadMigrationConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-ads" })
+        .previewConnectors,
+    ]).toEqual(["apple-ads"]);
+    expect([...loadMigrationConfig({}).previewConnectors]).toEqual([]);
+  });
+
+  it("refuses IDs that are no connector of this release (#378)", () => {
+    for (const value of ["apple-adz", "apple-ads,vercl"]) {
+      for (const load of [loadConfig, loadMigrationConfig]) {
+        expect(() => load({ NETRICS_PREVIEW_CONNECTORS: value })).toThrow(
+          ConfigError,
+        );
+      }
+    }
+    expect(() =>
+      loadConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-adz" }),
+    ).toThrow(
+      /"apple-adz" is not a connector of this release \(preview connectors: apple-ads\)/,
+    );
+  });
+
+  it("ignores finished connectors, so a preview's graduation never stops an instance (#378)", () => {
+    for (const load of [loadConfig, loadMigrationConfig]) {
+      const config = load({
+        NETRICS_PREVIEW_CONNECTORS: "demo,apple-ads,demo",
+      });
+      expect([...config.previewConnectors]).toEqual(["apple-ads"]);
+      expect(config.previewConnectorsIgnored).toEqual(["demo"]);
+    }
+    expect(loadConfig({}).previewConnectorsIgnored).toEqual([]);
+  });
+
   it("trusts private proxy hops by default", () => {
     expect(loadConfig({}).trustedProxies).toEqual([
       "loopback",

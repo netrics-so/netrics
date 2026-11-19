@@ -1,4 +1,7 @@
-import { createDefaultRegistry } from "./connectors.js";
+import {
+  createDefaultRegistry,
+  logRegisteredConnectors,
+} from "./connectors.js";
 import {
   createDatabase,
   findRolesWithDefaultPasswords,
@@ -31,10 +34,18 @@ try {
   // installation-level and read-only for the application roles (#36).
   const ownerDb = createDatabase(config.databaseMigrationUrl, { max: 1 });
   try {
-    await syncCatalog(
-      ownerDb,
-      createDefaultRegistry({ nodeEnv: config.nodeEnv }),
+    const registry = createDefaultRegistry(config);
+    logRegisteredConnectors(
+      {
+        info: (details, message) =>
+          console.log(`${message}: ${JSON.stringify(details)}`),
+        warn: (details, message) =>
+          console.warn(`${message}: ${JSON.stringify(details)}`),
+      },
+      registry,
+      config,
     );
+    await syncCatalog(ownerDb, registry);
     // Backups name and carry the release that wrote them (#642).
     await recordInstalledVersion(ownerDb, {
       version: config.version,

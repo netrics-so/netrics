@@ -64,6 +64,8 @@ export const sourcesEn = {
     addAnotherName: "Add another {name} connection",
     fixName: "Fix {name}",
     detailsName: "Why {name} is not available",
+    preview: "Preview",
+    previewHint: "Not final yet: this connector may still change.",
     customApi: {
       name: "Custom API",
       tag: "Coming later",

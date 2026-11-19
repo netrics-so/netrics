@@ -165,7 +165,7 @@ try {
     }
     const result = await requestOperatorBackfill(
       db,
-      createDefaultRegistry({ nodeEnv: config.nodeEnv }),
+      createDefaultRegistry(config),
       {
         workspaceId: values.workspace,
         connectionId: values.connection,

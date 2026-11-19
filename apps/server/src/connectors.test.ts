@@ -9,7 +9,13 @@ import {
 import { validateConnectionConfig } from "@netrics/contracts";
 import { describe, expect, it } from "vitest";
 
-import { createDefaultRegistry, PREVIEW_CONNECTORS } from "./connectors.js";
+import {
+  createDefaultRegistry,
+  logRegisteredConnectors,
+  PREVIEW_CONNECTORS,
+} from "./connectors.js";
+import { loadConfig, loadMigrationConfig } from "./env.js";
+import { BUNDLE_CONNECTORS } from "./preview-connectors.js";
 
 describe("createDefaultRegistry", () => {
   it("keeps Apple Ads out of production until its setup is finished (#374, #375)", () => {
@@ -27,6 +33,110 @@ describe("createDefaultRegistry", () => {
       expect(createDefaultRegistry({ nodeEnv }).get("apple-ads")).toBeDefined();
     }
     expect(createDefaultRegistry().get("apple-ads")).toBeDefined();
+  });
+
+  it("registers an opted-in preview connector in production (#378)", () => {
+    const optedIn = createDefaultRegistry({
+      nodeEnv: "production",
+      previewConnectors: new Set(["apple-ads"]),
+    });
+    expect(optedIn.list().map(({ manifest }) => manifest.id)).toEqual([
+      "demo",
+      "vercel",
+      "google-search-console",
+      "app-store-connect",
+      "google-play",
+      "apple-ads",
+    ]);
+    expect(
+      createDefaultRegistry({
+        nodeEnv: "production",
+        previewConnectors: new Set(),
+      }).get("apple-ads"),
+    ).toBeUndefined();
+    // Outside production the opt-in changes nothing.
+    for (const previewConnectors of [
+      new Set<string>(),
+      new Set(["apple-ads"]),
+    ]) {
+      expect(
+        createDefaultRegistry({ nodeEnv: "development", previewConnectors })
+          .list()
+          .map(({ manifest }) => manifest.id),
+      ).toEqual(
+        createDefaultRegistry()
+          .list()
+          .map(({ manifest }) => manifest.id),
+      );
+    }
+  });
+
+  it("keeps BUNDLE_CONNECTORS equal to the bundle, previews included (#378)", () => {
+    const ids = createDefaultRegistry({ nodeEnv: "development" })
+      .list()
+      .map(({ manifest }) => manifest.id);
+    expect([...BUNDLE_CONNECTORS].sort()).toEqual([...ids].sort());
+    for (const id of PREVIEW_CONNECTORS) {
+      expect(BUNDLE_CONNECTORS.has(id)).toBe(true);
+    }
+  });
+
+  it("logs the registered connectors and warns about ignored entries (#378)", () => {
+    const lines: Array<[string, object, string]> = [];
+    const log = {
+      info: (details: object, message: string) =>
+        lines.push(["info", details, message]),
+      warn: (details: object, message: string) =>
+        lines.push(["warn", details, message]),
+    };
+    logRegisteredConnectors(
+      log,
+      createDefaultRegistry({ nodeEnv: "production" }),
+    );
+    expect(lines).toEqual([
+      [
+        "info",
+        {
+          connectors: [
+            "demo",
+            "vercel",
+            "google-search-console",
+            "app-store-connect",
+            "google-play",
+          ],
+          previews: [],
+        },
+        "connectors registered",
+      ],
+    ]);
+    lines.length = 0;
+    logRegisteredConnectors(log, createDefaultRegistry(), {
+      previewConnectorsIgnored: ["demo"],
+    });
+    expect(lines.map(([level]) => level)).toEqual(["warn", "info"]);
+    expect(lines[0]![1]).toEqual({ ignored: ["demo"] });
+    expect(lines[1]![1]).toMatchObject({ previews: ["apple-ads"] });
+  });
+
+  it("builds the same bundle from the API and the migration config (#378)", () => {
+    const env = {
+      NODE_ENV: "production",
+      NETRICS_PREVIEW_CONNECTORS: "apple-ads",
+    };
+    const ids = (registry: ReturnType<typeof createDefaultRegistry>) =>
+      registry.list().map(({ manifest }) => manifest.id);
+    const api = loadConfig({
+      ...env,
+      BETTER_AUTH_URL: "https://app.example.com",
+      WEB_ORIGIN: "https://app.example.com",
+      BETTER_AUTH_SECRET: "x".repeat(32),
+      APP_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+    });
+    const migrate = loadMigrationConfig(env);
+    expect(ids(createDefaultRegistry(api))).toContain("apple-ads");
+    expect(ids(createDefaultRegistry(migrate))).toEqual(
+      ids(createDefaultRegistry(api)),
+    );
   });
 
   it("ships the demo connector", () => {

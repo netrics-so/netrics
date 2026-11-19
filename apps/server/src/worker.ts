@@ -4,7 +4,10 @@ import pino, { type Logger } from "pino";
 
 import { logSerializers } from "./log-serializers.js";
 
-import { createDefaultRegistry } from "./connectors.js";
+import {
+  createDefaultRegistry,
+  logRegisteredConnectors,
+} from "./connectors.js";
 import {
   claimJobs,
   completeJob,
@@ -358,7 +361,8 @@ export async function startWorker(config: Config): Promise<void> {
   const appDb = createDatabase(config.databaseUrl, {
     max: config.workerConcurrency + 2,
   });
-  const registry = createDefaultRegistry({ nodeEnv: config.nodeEnv });
+  const registry = createDefaultRegistry(config);
+  logRegisteredConnectors(logger, registry, config);
   const credentialKeyring = createCredentialKeyring(
     config.appEncryptionKey,
     config.appEncryptionKeysPrevious,

@@ -64,6 +64,8 @@ export const sourcesDe: Catalog<typeof sourcesEn> = {
     addAnotherName: "Weitere {name}-Verbindung hinzufügen",
     fixName: "{name} reparieren",
     detailsName: "Warum {name} nicht verfügbar ist",
+    preview: "Vorschau",
+    previewHint: "Noch nicht fertig: Dieser Connector kann sich noch ändern.",
     customApi: {
       name: "Eigene API",
       tag: "Kommt später",

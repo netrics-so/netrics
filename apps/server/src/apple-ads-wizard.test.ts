@@ -11,6 +11,7 @@ import {
   connectionPreviewResponseSchema,
   connectionResponseSchema,
   connectionsResponseSchema,
+  connectorListResponseSchema,
   errorResponseSchema,
   signedKeyPairResponseSchema,
   workspaceListResponseSchema,
@@ -309,6 +310,21 @@ describe("Apple Ads guided setup (#375)", () => {
       }
     ).connectors.find((entry) => entry.id === "apple-ads")!.authStrategies[0]!;
     expect(strategy.generatedKeyPair).toBe(true);
+  });
+
+  it("marks Apple Ads as a preview in the catalog, and finished connectors not (#378)", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/connectors",
+      headers: { cookie: owner },
+    });
+    const { connectors } = connectorListResponseSchema.parse(response.json());
+    const previews = connectors.filter((entry) => entry.preview);
+    expect(previews.map((entry) => entry.id)).toEqual(["apple-ads"]);
+    expect(connectors.length).toBeGreaterThan(1);
+    for (const entry of connectors) {
+      expect(entry.preview).toBe(entry.id === "apple-ads");
+    }
   });
 
   it("lists the ad accounts with a generated key, without consuming it", async () => {
