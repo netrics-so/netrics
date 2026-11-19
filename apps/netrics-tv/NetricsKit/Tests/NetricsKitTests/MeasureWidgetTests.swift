@@ -21,6 +21,28 @@ import Testing
         #expect(try cell("150", currency: "JPY", unit: "currency_minor").text(language: .en) == "150 JPY")
         #expect(try cell("4.5", unit: "stars").text(language: .en) == "4.5 ★")
     }
+    /// A measure table on a TV shows the rows that fit its tile above its
+    /// footer lines and says how many of all (#768), as the web does.
+    @Test func fitsTableRowsToTheTileAndCountsThem() throws {
+        let rows = (1...20).map { #"{"dimensions":{"app":"App \#($0)"},"measures":{"downloads":{"value":\#(100 - $0),"type":"integer","status":"ok"}}}"# }
+        let json = #"{"metadata":{"modelId":"m","modelName":"Downloads","measures":[{"id":"downloads","name":"Downloads"}],"dimensions":[{"id":"app","name":"App"}]},"result":{"rows":["# + rows.joined(separator: ",") + #"],"totalRows":20,"warnings":[],"provenance":[],"stale":false},"exclusions":[]}"#
+        let data = try JSONDecoder().decode(MeasureWidgetData.self, from: Data(json.utf8))
+        let rowsOf = data.result!.rows
+        func fit(_ box: (width: Double, height: Double)?, rows: [MeasureResultRow]) -> (shown: Int, rowsLine: String?) {
+            data.tableFit(
+                label: "Downloads", measureIds: ["downloads"], groupBy: ["app"], rows: rows, box: box,
+                fontScale: 1, now: Date(timeIntervalSince1970: 0), language: .en)
+        }
+        let small = fit((560, 414.2), rows: rowsOf)
+        #expect(small.shown > 0 && small.shown < 20)
+        #expect(small.rowsLine == "\(small.shown) of 20 groups")
+        // A taller tile shows more; deterministic.
+        #expect(fit((560, 892.4), rows: rowsOf).shown > small.shown)
+        #expect(fit((560, 414.2), rows: rowsOf) == small)
+        // Scroll cards (no box): every row, the line only for groups not received.
+        #expect(fit(nil, rows: rowsOf) == (20, nil))
+        #expect(fit((560, 892.4), rows: Array(rowsOf.prefix(2))).rowsLine == "2 of 20 groups")
+    }
     @Test func decodesAndCachesTypedPublishedResultsAndExpiresThemOffline() throws {
         let json =
             #"{"id":"measure-1","type":"measure","x":0,"y":0,"w":4,"h":3,"label":"Contribution","measureIds":["margin"],"groupBy":[],"options":{"view":"value","limit":20},"data":{"widgetId":"measure-1","scope":["Country: DE"],"metadata":{"modelId":"m","modelName":"Portfolio","measures":[{"id":"margin","name":"Contribution"}],"dimensions":[]},"result":{"releaseId":"release-1","expiresAt":"2026-11-06T00:00:00.000Z","rows":[{"dimensions":{},"measures":{"margin":{"value":"9007199254740993.12","type":"decimal","unit":"currency","currency":"EUR","status":"ok"}}}],"warnings":[],"provenance":[{"datasetId":"sales","generationId":"generation-1"}],"stale":false},"error":null,"exclusions":[]}}"#

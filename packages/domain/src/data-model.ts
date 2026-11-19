@@ -97,6 +97,16 @@ export interface ModelQuery {
    * skipped from the end, and rows are still returned in ascending order, so a
    * time series shows its most recent points. */
   window?: "first" | "last";
+  /**
+   * Groups ordered by one of `measureIds` (#768), groups without a value
+   * last, ties in the groups' own order, before `limit` and `offset` page
+   * them: a table's top N. Without it, groups follow their dimensions.
+   */
+  orderBy?: ModelQueryOrder;
+}
+export interface ModelQueryOrder {
+  measureId: string;
+  direction: "asc" | "desc";
 }
 export interface ModelMeasureResult extends DataCell {
   status: "ok" | "missing" | "partial";
@@ -687,6 +697,12 @@ export function querySemanticModel(
     dataFail("model_result_limit_invalid");
   if (query.window !== undefined && !["first", "last"].includes(query.window))
     dataFail("model_result_window_invalid");
+  if (
+    query.orderBy !== undefined &&
+    (!query.measureIds.includes(query.orderBy.measureId) ||
+      !["asc", "desc"].includes(query.orderBy.direction))
+  )
+    dataFail("model_result_order_invalid");
   const usedDatasets = new Set<string>();
   const now = query.now ?? new Date().toISOString();
   validateDataValue("timestamp", now, false);
@@ -1274,7 +1290,11 @@ export function querySemanticModel(
     undatedCache.set(cacheKey, result);
     return result;
   };
-  const windowedMeasure = (values: DataRow, id: string): ModelMeasureResult => {
+  const windowedMeasure = (
+    values: DataRow,
+    id: string,
+    shown = true,
+  ): ModelMeasureResult => {
     const w = windowPlan!;
     const date = w.grouped
       ? (values[w.dimensionId] as string | null)
@@ -1284,7 +1304,7 @@ export function querySemanticModel(
         dataKey(dimensionFields, values, w.partitionBy),
         id,
       );
-      useDeferredRounding(budget, undatedResult);
+      if (shown) useDeferredRounding(budget, undatedResult);
       return undatedResult;
     }
     const windowed = evaluateWindowed(
@@ -1295,13 +1315,19 @@ export function querySemanticModel(
       false,
     );
     // Shown as it is: a deferred rounding warns (#680).
-    useDeferredRounding(budget, windowed);
+    if (shown) useDeferredRounding(budget, windowed);
     const { incomplete: _incomplete, ...result } = windowed;
     return result;
   };
-  for (const [key, values] of orderedGroups.slice(start, end)) {
-    const cache = new Map<string, ModelMeasureResult>();
+  // Each group's measures, evaluated once: ordering by a measure (#768)
+  // reads the groups it then leaves out, and those never warn.
+  const groupCaches = new Map<string, Map<string, ModelMeasureResult>>();
+  const evaluatorOf = (key: string) => {
+    let cache = groupCaches.get(key);
+    if (!cache) groupCaches.set(key, (cache = new Map()));
+    const groupCache = cache;
     const evaluate = (id: string): ModelMeasureResult => {
+      const cache = groupCache;
       const cached = cache.get(id);
       if (cached) return cached;
       const m = measures.get(id)!;
@@ -1339,6 +1365,52 @@ export function querySemanticModel(
       cache.set(id, result);
       return result;
     };
+    return evaluate;
+  };
+  if (query.orderBy) {
+    const { measureId, direction } = query.orderBy;
+    const sign = direction === "desc" ? -1 : 1;
+    const valueOf = new Map(
+      orderedGroups.map(([key, values]) => {
+        const cell = windowPlan
+          ? windowedMeasure(values, measureId, false)
+          : evaluatorOf(key)(measureId);
+        return [key, cell] as const;
+      }),
+    );
+    const position = new Map(
+      orderedGroups.map(([key], index) => [key, index] as const),
+    );
+    // Numbers by value; amounts by value within a currency, currencies by
+    // code (amounts in different currencies are never compared).
+    orderedGroups.sort(([a], [b]) => {
+      budget.tick();
+      const left = valueOf.get(a)!,
+        right = valueOf.get(b)!;
+      const missing =
+        Number(left.value === null || left.value === undefined) -
+        Number(right.value === null || right.value === undefined);
+      if (missing) return missing;
+      if (left.value !== null && left.value !== undefined) {
+        const currency = (left.currency ?? "").localeCompare(
+          right.currency ?? "",
+          "und",
+        );
+        if (currency) return currency;
+        if (left.type === right.type && left.type !== "json") {
+          const comparison = compareDataValues(
+            left.type,
+            left.value,
+            right.value,
+          );
+          if (comparison) return sign * comparison;
+        }
+      }
+      return position.get(a)! - position.get(b)!;
+    });
+  }
+  for (const [key, values] of orderedGroups.slice(start, end)) {
+    const evaluate = evaluatorOf(key);
     const labels = Object.fromEntries(
       query.groupBy.flatMap((id) => {
         const dimension = dimensions.get(id)!;

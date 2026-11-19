@@ -41,6 +41,7 @@ import {
   zoneCity,
   zoneLabel,
   zoneLabelSample,
+  measureTableRowsShown,
 } from "./studio-layout.js";
 
 const HD = { width: 1920, height: 1080 };
@@ -894,5 +895,96 @@ describe("test vectors", () => {
       writeFileSync(path, text);
     }
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(JSON.parse(text));
+  });
+});
+
+describe("measureTableRowsShown (#768)", () => {
+  const rowsLine = (shown: number, total: number) =>
+    `Showing ${shown} of ${total} groups.`;
+  const box = {
+    label: "Downloads",
+    width: 500,
+    height: 400,
+    columns: ["App", "Downloads"],
+  };
+  const rows = (count: number, label = "Focus") =>
+    Array.from({ length: count }, () => [label, "500"]);
+
+  it("shows every row that fits, and no line when all are shown", () => {
+    expect(
+      measureTableRowsShown({
+        ...box,
+        rows: rows(2),
+        total: 2,
+        footer: [null],
+        rowsLine,
+      }),
+    ).toEqual({ shown: 2, rowsLine: null });
+  });
+
+  it("gives rows way to the footer and counts the N of M line", () => {
+    const many = measureTableRowsShown({
+      ...box,
+      rows: rows(20),
+      total: 20,
+      footer: [null],
+      rowsLine,
+    });
+    expect(many.shown).toBeGreaterThan(0);
+    expect(many.shown).toBeLessThan(20);
+    expect(many.rowsLine).toBe(`Showing ${many.shown} of 20 groups.`);
+    // More footer lines: fewer rows, never a cut footer.
+    const notices = measureTableRowsShown({
+      ...box,
+      rows: rows(20),
+      total: 20,
+      footer: [null, "Some source data is missing.", "1 data warning"],
+      rowsLine,
+    });
+    expect(notices.shown).toBeLessThan(many.shown);
+    // Wrapping rows take more room.
+    const long = measureTableRowsShown({
+      ...box,
+      rows: rows(20, "Focus Timer: Pomodoro & Deep Work"),
+      total: 20,
+      footer: [null],
+      rowsLine,
+    });
+    expect(long.shown).toBeLessThan(many.shown);
+    // Deterministic: the same input, the same rows.
+    expect(
+      measureTableRowsShown({
+        ...box,
+        rows: rows(20),
+        total: 20,
+        footer: [null],
+        rowsLine,
+      }),
+    ).toEqual(many);
+  });
+
+  it("says N of M when the query has more groups than it received", () => {
+    expect(
+      measureTableRowsShown({
+        ...box,
+        rows: rows(2),
+        total: 9,
+        footer: [null],
+        rowsLine,
+      }),
+    ).toEqual({ shown: 2, rowsLine: "Showing 2 of 9 groups." });
+  });
+
+  it("shows no rows when not even the footer fits", () => {
+    expect(
+      measureTableRowsShown({
+        ...box,
+        height: 60,
+        rows: rows(3),
+        total: 3,
+        footer: [null],
+        rowsLine,
+      }).shown,
+    ).toBe(0);
   });
 });

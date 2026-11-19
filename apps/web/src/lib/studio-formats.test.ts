@@ -217,6 +217,35 @@ describe("draftFormatWarnings", () => {
     expect(ours.some((warning) => warning.code === "label_cut")).toBe(true);
   });
 
+  it("counts a measure table's rows above its footer lines, as the server (#768)", () => {
+    const table = (limit: number): DashboardWidget =>
+      ({
+        type: "measure",
+        id: ID(7),
+        x: 0,
+        y: 0,
+        w: 6,
+        h: 4,
+        title: "Downloads",
+        binding: {
+          modelId: ID(8),
+          measureIds: ["downloads"],
+          groupBy: ["app"],
+          exclusions: [],
+        },
+        options: { view: "table", limit },
+      }) as DashboardWidget;
+    const cut = (limit: number) =>
+      draftFormatWarnings(
+        { id: ID(1), name: null, widgets: [table(limit)] },
+        context,
+      )
+        .filter((warning) => warning.code === "rows_cut")
+        .map((warning) => warning.format);
+    expect(cut(20)).toEqual(["16x9", "9x16", "21x9", "4x3", "3x4"]);
+    expect(cut(3)).toEqual([]);
+  });
+
   it("reports continuation pages of a full slide in portrait", () => {
     const warnings = draftFormatWarnings(
       { id: ID(1), name: null, widgets: FULL },

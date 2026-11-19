@@ -7,7 +7,7 @@ import {
   type DataExpression,
   type DataType,
 } from "./data-expression.js";
-import type { ModelQuery } from "./data-model.js";
+import type { ModelQuery, ModelQueryOrder } from "./data-model.js";
 
 export type DashboardFilterType = Exclude<DataType, "json">;
 export type DashboardFilterValue =
@@ -360,6 +360,8 @@ export function dashboardModelQuery(
   scope: DeviceFilterScope = {},
   /** The widget's slide's scope (#707). */
   slide: SlideFilterScope = {},
+  /** A table's top N (#768): its groups by one of its measures. */
+  order?: ModelQueryOrder,
 ): Omit<ModelQuery, "now"> {
   const ids = new Set(filters.map((filter) => filter.id));
   if (ids.size !== filters.length) dataFail("dashboard_filter_ids_not_unique");
@@ -420,8 +422,56 @@ export function dashboardModelQuery(
     groupBy: binding.groupBy,
     limit,
     ...(window === "last" ? { window } : {}),
+    ...(order ? { orderBy: order } : {}),
     ...(filter ? { filter } : {}),
   };
+}
+
+/** A measure widget's options as far as they reach its binding (#768). */
+export interface MeasureTableOptions {
+  view: DashboardMeasureView;
+  order?: ModelQueryOrder;
+  labels?: Record<string, string>;
+}
+
+/**
+ * The order a measure widget's query applies (#768): a table's, by one of
+ * the measures it shows. An order on another view (a chart keeps its
+ * dimension order, a time series its latest points) or by a measure the
+ * binding no longer has is ignored, never refused.
+ */
+export function measureQueryOrder(
+  binding: Pick<MeasureWidgetBinding, "measureIds">,
+  options: MeasureTableOptions,
+): ModelQueryOrder | undefined {
+  const order = options.order;
+  return order &&
+    options.view === "table" &&
+    binding.measureIds.includes(order.measureId)
+    ? order
+    : undefined;
+}
+
+/**
+ * A measure widget's options after its binding or view changed (#768): the
+ * order only while it is a table of that measure, the column labels only
+ * for the dimensions and measures it still shows.
+ */
+export function measureOptionsForBinding<O extends MeasureTableOptions>(
+  binding: Pick<MeasureWidgetBinding, "measureIds" | "groupBy">,
+  options: O,
+): O {
+  const { order: _order, labels, ...rest } = options;
+  const order = measureQueryOrder(binding, options);
+  const shown = new Set([...binding.groupBy, ...binding.measureIds]);
+  const kept = labels
+    ? Object.fromEntries(Object.entries(labels).filter(([id]) => shown.has(id)))
+    : {};
+  return {
+    ...rest,
+    ...(order ? { order } : {}),
+    ...(Object.keys(kept).length ? { labels: kept } : {}),
+  } as O;
 }
 
 /** Time-ordered charts show the most recent `limit` points (still ascending);

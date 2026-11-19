@@ -23,7 +23,7 @@ struct WidgetView: View {
         case .measure(let measures, let groups, let options, let data):
             TimelineView(.everyMinute) { context in
                 MeasureWidgetView(label: widget.label ?? "", measureIds: measures, groupBy: groups,
-                    options: options, data: data, env: env, now: context.date)
+                    options: options, data: data, env: env, placement: placement, now: context.date)
             }.surface(env)
 
         case .metric(let options, let data):

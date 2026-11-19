@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { compileRowExpression } from "./data-expression.js";
 import {
   dashboardModelQuery,
+  measureOptionsForBinding,
+  measureQueryOrder,
   formatDataDate,
   MEASURE_UNIT_FRACTION_DIGITS,
   roundDecimalText,
@@ -756,5 +758,56 @@ describe("display formatting (#619)", () => {
     );
     expect(roundDecimalText("12", 2)).toBe("12");
     expect(MEASURE_UNIT_FRACTION_DIGITS.stars).toBe(2);
+  });
+});
+
+describe("a measure table's order and labels follow its binding (#768)", () => {
+  const order = { measureId: "rating_count", direction: "desc" as const };
+  const binding = {
+    measureIds: ["rating", "rating_count"],
+    groupBy: ["listing", "storefront"],
+  };
+  const options = {
+    view: "table" as const,
+    limit: 20,
+    order,
+    labels: { listing: "App", storefront: "Country", rating_count: "Ratings" },
+  };
+
+  it("applies a table's order by a measure it shows", () => {
+    expect(measureQueryOrder(binding, options)).toEqual(order);
+  });
+
+  it("ignores an order on another view or by a measure no longer bound", () => {
+    // A date-grouped chart keeps its latest points, not the top N.
+    expect(measureQueryOrder(binding, { ...options, view: "line" })).toBe(
+      undefined,
+    );
+    expect(measureQueryOrder(binding, { ...options, view: "bar" })).toBe(
+      undefined,
+    );
+    expect(
+      measureQueryOrder({ ...binding, measureIds: ["rating"] }, options),
+    ).toBe(undefined);
+  });
+
+  it("drops the order and labels a changed binding or view no longer shows", () => {
+    expect(
+      measureOptionsForBinding(
+        { measureIds: ["rating"], groupBy: ["listing"] },
+        options,
+      ),
+    ).toEqual({ view: "table", limit: 20, labels: { listing: "App" } });
+    expect(
+      measureOptionsForBinding(binding, { ...options, view: "bar" as const }),
+    ).toEqual({ view: "bar", limit: 20, labels: options.labels });
+    expect(
+      measureOptionsForBinding(
+        { measureIds: ["rating"], groupBy: [] },
+        options,
+      ),
+    ).toEqual({ view: "table", limit: 20 });
+    // Unchanged when everything is still shown.
+    expect(measureOptionsForBinding(binding, options)).toEqual(options);
   });
 });

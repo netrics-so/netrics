@@ -238,6 +238,11 @@ export interface DraftReadabilityContext {
   labelOf(widget: DashboardWidget): string | null;
   /** The workspace's connections: what a board of every source lists. */
   sourceCount?: number;
+  /**
+   * A measure table's column heads, from its model's published release
+   * (#768), as the server reads them; unknown: null.
+   */
+  columnsOf?(widget: DashboardWidget): string[] | null;
 }
 
 /** A slide of the draft, with the custom layouts stored for it. */
@@ -257,6 +262,15 @@ function readabilityWidget(
   const [base] = layoutWidgets([widget]);
   if (isDataWidgetType(widget.type)) {
     return { ...base!, label: context.labelOf(widget) };
+  }
+  if (widget.type === "measure") {
+    // A measure table's rows above its footer lines (#768), as the server.
+    return {
+      ...base!,
+      label: widget.title,
+      rows: widget.options.view === "table" ? widget.options.limit : null,
+      columns: context.columnsOf?.(widget) ?? null,
+    };
   }
   if (widget.type === "status") {
     return {

@@ -389,9 +389,12 @@ extension MeasureWidgetData {
 public struct MeasureWidgetOptions: Codable, Sendable, Equatable {
     public var view: String
     public var limit: Int
-    public init(view: String = "value", limit: Int = 20) {
+    /** Shorter column heads by dimension or measure id (#768); nil: the model's names. */
+    public var labels: [String: String]? = nil
+    public init(view: String = "value", limit: Int = 20, labels: [String: String]? = nil) {
         self.view = view
         self.limit = limit
+        self.labels = labels
     }
 }
 
@@ -489,5 +492,56 @@ public enum DataFormat {
             cache[key] = formatter
             return formatter.string(from: value)
         }
+    }
+}
+
+extension MeasureWidgetData {
+    /// The lines a measure tile shows besides its rows and the "N of M"
+    /// line, in the order MeasureWidgetView draws them; nil is the one-line
+    /// freshness line (#768). They decide how many rows fit.
+    public func footerLines(rows: [MeasureResultRow], now: Date = Date(), language: ScreenLanguage = .en) -> [String?] {
+        var lines: [String?] = []
+        if result?.stale == true { lines.append(KitStrings.text(.measureStale, language)) }
+        lines += (scope ?? []).map { $0 }
+        if showsFreshnessLine(now: now, language: language) {
+            let freshness = freshnessLines(now: now, language: language)
+            lines.append(freshness.warning.map { "⚠ \($0)" })
+        } else if let received = result?.receivedAt {
+            lines.append(
+                KitStrings.text(.measureOldestRefresh, language, RelativeTime.describe(received, now: now, language: language)))
+        }
+        if result?.pendingSources?.isEmpty == false { lines.append(KitStrings.text(.sourceReportsPending, language)) }
+        lines += viewerWarnings(rows: rows, language: language).map { $0 }
+        lines += viewerSourceNotices(language: language).map { $0.text }
+        lines += exclusions.map { $0.reason }
+        return lines
+    }
+
+    /// The rows a measure table shows in its tile and its "N of M" line
+    /// (StudioLayout.measureTableRowsShown, as the web): rows give way to
+    /// the footer, never the other way round. Without a box (scroll cards,
+    /// which grow with their content), every row.
+    public func tableFit(
+        label: String, measureIds: [String], groupBy: [String], rows: [MeasureResultRow],
+        box: (width: Double, height: Double)?, fontScale: Double, labels: [String: String]? = nil, pixel: Double? = nil,
+        now: Date = Date(), language: ScreenLanguage = .en
+    ) -> (shown: Int, rowsLine: String?) {
+        let total = Swift.max(result?.totalRows ?? 0, rows.count)
+        let line = { (shown: Int, all: Int) in KitStrings.text(.measureGroupsShown, language, shown, all) }
+        guard let box, !rows.isEmpty else {
+            return (rows.count, total > rows.count ? line(rows.count, total) : nil)
+        }
+        let names =
+            groupBy.map { id in labels?[id] ?? metadata?.dimensions.first { $0.id == id }?.name ?? id }
+            + measureIds.map { id in labels?[id] ?? metadata?.measures.first { $0.id == id }?.name ?? id }
+        let cells = rows.map { row in
+            groupBy.map { dimensionText(row, dimension: $0, language: language) }
+                + measureIds.map { text(row.measures[$0], measure: $0, language: language) }
+        }
+        return StudioLayout.measureTableRowsShown(
+            label: label, width: box.width, height: box.height, fontScale: fontScale, columns: names, rows: cells,
+            total: total, footer: footerLines(rows: rows, now: now, language: language), pixel: pixel,
+            // netrics TV draws in the system font.
+            font: .tv, rowsLine: line)
     }
 }

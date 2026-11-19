@@ -664,3 +664,75 @@ describe("the oldest source refresh next to the freshness line (#769)", () => {
     expect(ok).not.toContain("Oldest source refresh");
   });
 });
+
+describe("a measure table fits its tile (#768)", () => {
+  const data = (count: number, totalRows = count) =>
+    ({
+      widgetId: "00000000-0000-4000-8000-000000000001",
+      status: "ok",
+      error: null,
+      exclusions: [],
+      metadata: {
+        modelId: "00000000-0000-4000-8000-000000000002",
+        modelName: "Downloads",
+        measures: [{ id: "downloads", name: "Downloads" }],
+        dimensions: [{ id: "app", name: "App", type: "string" }],
+      },
+      result: {
+        releaseId: null,
+        rows: Array.from({ length: count }, (_, index) => ({
+          dimensions: { app: `App ${index + 1}` },
+          measures: {
+            downloads: { value: 100 - index, type: "integer", status: "ok" },
+          },
+        })),
+        totalRows,
+        warnings: [],
+        operations: 1,
+        provenance: [],
+        appliedFilter: null,
+        groupBy: [],
+      },
+    }) as unknown as DashboardWidgetData;
+  const view = (rows: number, placement?: { w: number; h: number }) =>
+    renderI18n(
+      <MeasureWidgetView
+        widget={{
+          title: "Downloads",
+          options: { view: "table", limit: 20 },
+          binding: { measureIds: ["downloads"], groupBy: ["app"] },
+        }}
+        data={data(rows)}
+        {...(placement
+          ? { placement: { x: 0, y: 0, ...placement }, showHeader: true }
+          : {})}
+      />,
+    );
+  const shownRows = (html: string) => html.match(/<tr>/g)!.length - 1;
+
+  it("shows the rows that fit and says how many of all", () => {
+    const html = view(20, { w: 4, h: 4 });
+    const shown = shownRows(html);
+    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeLessThan(20);
+    expect(html).toContain(`Showing ${shown} of 20 groups.`);
+    // A taller tile shows more.
+    expect(shownRows(view(20, { w: 4, h: 8 }))).toBeGreaterThan(shown);
+  });
+
+  it("shows every row, without the line, when they fit", () => {
+    const html = view(2, { w: 4, h: 8 });
+    expect(shownRows(html)).toBe(2);
+    expect(html).not.toContain("Showing");
+  });
+
+  it("shows no column heads when not even a row fits, and says so", () => {
+    const html = view(20, { w: 4, h: 2 });
+    expect(html).not.toContain("<table");
+    expect(html).toContain("Showing 0 of 20 groups.");
+  });
+
+  it("shows every row where cards grow with their content (scroll view)", () => {
+    expect(shownRows(view(20))).toBe(20);
+  });
+});

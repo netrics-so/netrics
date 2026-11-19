@@ -882,6 +882,50 @@ icons the apps lack are fetched through the resource-icon path ("Use app
 icon"); an icon that cannot be fetched leaves the slide without a logo.
 Version 3 installs get version 4 through the template update.
 
+### Tables that fit their tiles (template version 5)
+
+[#768](https://github.com/netrics-so/netrics/issues/768): version 4's
+overview asked for up to twenty rows in a four-row tile, and screens cut
+rows and footer lines. Measure tables now fit their tiles, on the web and
+in netrics TV alike (`measureTableRowsShown`, ported to NetricsKit and
+checked against the same test vectors): the title (two lines at most), the
+column heads and the rows, wrapped in even columns, take the room the
+footer lines leave ("N of M groups", the slide's app, the freshness line or
+the oldest source refresh, notices). Rows give way first, so the footer is
+never cut, and "Showing N of M groups" counts the rows on screen. The
+result follows from the payload and the tile's size alone, so nothing is
+measured after drawing; scroll views, whose cards grow with their content,
+show every row.
+
+The readability check estimates the same layout with sample lines: fewer
+rows than the `limit` is `rows_cut` as info; not even one row (or no room
+for the footer) is `rows_cut` as attention.
+
+Version 5 keeps version 4's single overview. Its model tables ask for their
+top twenty (a measure widget's `order` ranks groups by one measure before
+the limit: downloads by downloads, ratings by rating count; proceeds keep
+their app and currency order, as amounts in different currencies do not
+rank) and screens show what fits. The overview's ratings show the rating
+and its count, as on the app slides: six columns leave no row in a third of
+the width. A Google Play app's proceeds table sits beside its ratings,
+where a row fits at every theme font scale. The tables show short column
+heads under their titles (a measure widget's `labels`: "Downloads",
+"Proceeds", "App", "Country", "Ratings"), and the App Store sources name
+their store "App Store", so every table holds a row in every format at
+every theme font scale.
+
+The fit counts text with measured glyph widths per renderer
+(`MEASURE_GLYPH_EMS`: IBM Plex Sans on the web, the system font with
+tabular digits on netrics TV, regular and semibold; the readability check
+counts the wider), draws row lines inside the rows, and keeps a screen
+pixel of rounding room per line and per column. netrics TV draws the
+tile's texts at the line heights the fit counts, and its footer lines
+never shrink. A version 4 install sees "… · App Store" on its screens
+once the update's data drafts are published, before the dashboard copy is
+swapped in.
+
+Version 4 installs get version 5 through the reviewed template update.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

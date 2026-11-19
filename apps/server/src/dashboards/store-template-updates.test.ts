@@ -1966,9 +1966,17 @@ describe("the updated dashboard copy", { timeout: TIMEOUT_MS }, () => {
     // The original and its screen are untouched; the copy has none.
     expect(await devicesOn(copy.id)).toEqual([]);
     expect(await devicesOn(installed.dashboardId)).toEqual([screenId]);
-    expect(await readDashboard(workspaceId, installed.dashboardId)).toEqual(
-      original,
-    );
+    // Its content; its readability follows the published models' column
+    // names (#768), which the drafts just changed.
+    const content = (dashboard: typeof original) => ({
+      ...dashboard,
+      slides: dashboard.slides.map(
+        ({ formatWarnings: _warnings, ...slide }) => slide,
+      ),
+    });
+    expect(
+      content(await readDashboard(workspaceId, installed.dashboardId)),
+    ).toEqual(content(original));
     // The record keeps its original until the swap.
     expect(await recordOf(requestId, "dashboard:portfolio")).toMatchObject({
       record_id: installed.dashboardId,

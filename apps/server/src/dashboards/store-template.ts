@@ -48,7 +48,14 @@ export const STORE_TEMPLATE_ID = "store_portfolio";
  * The apps are an input (`apps`), read from the product identity (#708)
  * when an install or update is built; the data records are version 3's.
  */
-export const STORE_TEMPLATE_VERSION = 4;
+/**
+ * 5: the overview's model tables (#768) ask for the rows that fit their
+ * tiles in every format at every theme font scale, above the footer lines
+ * a measure table shows, with a shorter title where that leaves more
+ * rows; downloads and ratings show their top rows (by downloads, by rating
+ * count). Everything else is version 4's.
+ */
+export const STORE_TEMPLATE_VERSION = 5;
 
 export const storeMetrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
 
@@ -351,6 +358,7 @@ const defineStoreTemplate = (
         inputs.locale,
         inputs.fixedProduct ?? undefined,
         version >= 4 ? storePortfolio(inputs) : undefined,
+        version,
       );
       return {
         kind: "dashboard",
@@ -379,6 +387,8 @@ export const storeTemplateV1: StoreTemplateDefinition = defineStoreTemplate(1);
 export const storeTemplateV2: StoreTemplateDefinition = defineStoreTemplate(2);
 /** Version 3, frozen like version 1 (`store-template.test.ts`). */
 export const storeTemplateV3: StoreTemplateDefinition = defineStoreTemplate(3);
+/** Version 4, frozen like version 1 (`store-template.test.ts`). */
+export const storeTemplateV4: StoreTemplateDefinition = defineStoreTemplate(4);
 
 /** What version 4 builds the slides from: the apps and App Store accounts. */
 export function storePortfolio(inputs: StoreTemplateInputs) {

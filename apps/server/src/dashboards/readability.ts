@@ -2,16 +2,20 @@ import {
   clockWidgetOptionsSchema,
   statusWidgetOptionsSchema,
   countdownWidgetOptionsSchema,
+  measureWidgetBindingSchema,
+  measureWidgetOptionsSchema,
   tableWidgetOptionsSchema,
   textWidgetOptionsSchema,
   type FormatWarning,
 } from "@netrics/contracts";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   findGoalsByIds,
   findImages,
   findWorkspace,
   listConnectionIds,
   listWorkspaceMetrics,
+  schema,
   type Dashboard,
   type DashboardWidgetRow,
   type Transaction,
@@ -37,8 +41,9 @@ import { resolveThemeTokens } from "../themes/service.js";
  * Readability per format for the dashboard API (ADR 0017 section 6, #280):
  * every slide checked in every format, auto or custom, with the labels as
  * the screens show them in the reader's language. Pure domain checks over
- * what the read already loaded, plus at most three small queries (the
- * metric names, the theme, the logo's size).
+ * what the read already loaded, plus a few small queries (the metric
+ * names, the theme, the logo's size, and with measure tables their models'
+ * column names).
  */
 
 /** What the checks need besides the dashboard: loaded once per read. */
@@ -64,6 +69,11 @@ export interface ReadabilityInputs {
   sourceCount: number;
   /** The names of the goals the dashboard's goal widgets show, by id. */
   goalNames: ReadonlyMap<string, string>;
+  /**
+   * A measure table's column heads (#768): its grouped dimensions' and its
+   * measures' names in its model's published release; null when unknown.
+   */
+  columnsOf?(widget: DashboardWidgetRow): string[] | null;
 }
 
 export async function loadReadabilityInputs(
@@ -99,6 +109,61 @@ export async function loadReadabilityInputs(
   const goalNames = new Map(
     [...goals.values()].map((goal) => [goal.id, goal.name]),
   );
+  // A measure table's column heads, from its models' published releases
+  // (one query, only with measure tables).
+  const modelIds = [
+    ...new Set(
+      dashboard.slides.flatMap((slide) =>
+        slide.widgets.flatMap((widget) =>
+          widget.type === "measure" &&
+          widget.modelId !== null &&
+          measureWidgetOptionsSchema.safeParse(widget.options).data?.view ===
+            "table"
+            ? [widget.modelId]
+            : [],
+        ),
+      ),
+    ),
+  ];
+  const modelNames = new Map<string, Map<string, string>>();
+  if (modelIds.length)
+    for (const row of await tx
+      .select({
+        id: schema.dataModels.id,
+        definition: schema.dataModelReleases.definition,
+      })
+      .from(schema.dataModels)
+      .innerJoin(
+        schema.dataModelReleases,
+        and(
+          eq(schema.dataModelReleases.workspaceId, workspaceId),
+          eq(schema.dataModelReleases.modelId, schema.dataModels.id),
+          eq(
+            schema.dataModelReleases.version,
+            schema.dataModels.publishedVersion,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.dataModels.workspaceId, workspaceId),
+          inArray(schema.dataModels.id, modelIds),
+        ),
+      )) {
+      const definition = row.definition as {
+        dimensions?: { id: string; name: string }[];
+        measures?: { id: string; name: string }[];
+      };
+      modelNames.set(
+        row.id,
+        new Map(
+          [
+            ...(definition.dimensions ?? []),
+            ...(definition.measures ?? []),
+          ].map((entry) => [entry.id, entry.name]),
+        ),
+      );
+    }
   const tokens = await resolveThemeTokens(tx, workspaceId, dashboard);
   let logoAspect: number | null = null;
   const slideLogoAspects = new Map<string, number | null>();
@@ -163,6 +228,18 @@ export async function loadReadabilityInputs(
     goalNames,
     locale,
     now: new Date(),
+    columnsOf(widget) {
+      const names = widget.modelId ? modelNames.get(widget.modelId) : undefined;
+      const binding = measureWidgetBindingSchema.safeParse(
+        widget.modelBinding,
+      ).data;
+      if (!names || !binding) return null;
+      const labels = measureWidgetOptionsSchema.safeParse(widget.options).data
+        ?.labels;
+      return [...binding.groupBy, ...binding.measureIds].map(
+        (id) => labels?.[id] ?? names.get(id) ?? id,
+      );
+    },
     labelOf(widget) {
       // A latest review has no metric (ADR 0019 section 12).
       if (widget.type === "review") {
@@ -213,6 +290,18 @@ export function dashboardFormatWarnings(
           ...base,
           label: inputs.labelOf(widget),
           rows: tableWidgetOptionsSchema.safeParse(widget.options).data?.limit,
+        };
+      }
+      if (type === "measure") {
+        // A measure table's rows above its footer lines (#768).
+        const options = measureWidgetOptionsSchema.safeParse(
+          widget.options,
+        ).data;
+        return {
+          ...base,
+          label: widget.title,
+          rows: options?.view === "table" ? options.limit : null,
+          columns: inputs.columnsOf?.(widget) ?? null,
         };
       }
       if (isDataWidgetType(type) || type === "review") {

@@ -229,6 +229,58 @@ private func weight(_ any: Any?) -> StudioFontWeight {
         }
     }
 
+    @Test func measureLayouts() {
+        let cases = StudioVectors.cases("measureLayouts")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let footer = (c["footer"] as? [Any]).map { $0.map { $0 as? String } }
+            let layout = StudioLayout.measureTableLayout(
+                label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                fontScale: double(c["fontScale"]), columns: c["columns"] as? [String], footer: footer)
+            let e = c["layout"] as! [String: Any]
+            #expect(layout.titleLines == int(e["titleLines"]), "\(c)")
+            #expect(layout.headLines == int(e["headLines"]), "\(c)")
+            #expect(layout.rowLines == int(e["rowLines"]), "\(c)")
+            #expect(close(layout.fixedHeight, double(e["fixedHeight"])), "\(c)")
+            #expect(close(layout.rowPitch, double(e["rowPitch"])), "\(c)")
+            #expect(layout.rowCapacity == int(e["rowCapacity"]), "\(c)")
+        }
+    }
+
+    @Test func measureGlyphs() {
+        let g = StudioVectors.root["measureGlyphs"] as! [String: Any]
+        #expect(StudioLayout.measureGlyphChars == g["chars"] as! String)
+        let web = g["web"] as! [String: Any], tv = g["tv"] as! [String: Any]
+        #expect(StudioLayout.measureGlyphEmsWebRegular == (web["regular"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsWebSemibold == (web["semibold"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsTVRegular == (tv["regular"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsTVSemibold == (tv["semibold"] as! [Any]).map { double($0) })
+        for c in g["widths"] as! [[String: Any]] {
+            #expect(
+                close(
+                    StudioLayout.measureTextWidth(
+                        c["text"] as! String, fontSize: 28, weight: weight(c["weight"]),
+                        font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!),
+                    double(c["width"])), "\(c)")
+        }
+    }
+
+    @Test func measureRowsShown() {
+        let cases = StudioVectors.cases("measureRowsShown")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let fit = StudioLayout.measureTableRowsShown(
+                label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                fontScale: double(c["fontScale"]), columns: c["columns"] as? [String],
+                rows: c["rows"] as! [[String]], total: int(c["total"]),
+                footer: (c["footer"] as! [Any]).map { $0 as? String }, pixel: double(c["pixel"]),
+                font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!,
+                rowsLine: { "Showing \($0) of \($1) groups." })
+            #expect(fit.shown == int(c["shown"]), "\(c)")
+            #expect(fit.rowsLine == c["rowsLine"] as? String, "\(c)")
+        }
+    }
+
     @Test func tableRowsShown() {
         for c in StudioVectors.cases("tableRowsShown") {
             #expect(
@@ -430,3 +482,57 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                 type: .metric, w: 3, h: 2))
     }
 }
+
+#if canImport(CoreText)
+    import CoreText
+
+    /// The measure table's calibrated widths (#768) never fall short of the
+    /// system font netrics TV draws with: regular and semibold, tabular
+    /// digits (`.monospacedDigit()`), at the sizes it draws (24, 28 and 36
+    /// units at every theme font scale, on 1080p and 4K screens), where the
+    /// system font tracks wider than at large sizes.
+    @Suite struct MeasureGlyphWidthTests {
+        static func font(_ size: CGFloat, semibold: Bool) -> CTFont {
+            let traits = [kCTFontWeightTrait: semibold ? 0.3 : 0.0] as CFDictionary
+            let base = CTFontCreateCopyWithAttributes(
+                CTFontCreateUIFontForLanguage(.system, size, nil)!, size, nil,
+                CTFontDescriptorCreateWithAttributes([kCTFontTraitsAttribute: traits] as CFDictionary))
+            let tabular: [[CFString: Any]] = [[
+                kCTFontFeatureTypeIdentifierKey: kNumberSpacingType,
+                kCTFontFeatureSelectorIdentifierKey: kMonospacedNumbersSelector,
+            ]]
+            return CTFontCreateCopyWithAttributes(
+                base, size, nil,
+                CTFontDescriptorCreateWithAttributes([kCTFontFeatureSettingsAttribute: tabular] as CFDictionary))
+        }
+
+        @Test func coverTheSystemFontAtTheDrawnSizes() {
+            let texts = [
+                "Apple App Store", "App Store", "Google Play", "Focus · App Store", "Habit Tracker", "Weather Now",
+                "Downloads", "Erlöse", "Anzahl", "Bewertung", "Land", "Country", "Ratings", "Currency", "Währung",
+                "Oldest source refresh: Nov 18, 2026, 11:40 PM", "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
+                "8 of 40 groups", "8 von 40 Gruppen", "1,000", "1.111", "11,200 JPY", "7.00 USD", "4.8 ★",
+                "WWW MMM mmm",
+            ]
+            for semibold in [false, true] {
+                for base in [24.0, 28.0, 36.0] {
+                    for scale in [1.0, 1.15, 1.3] {
+                        for screen in [1.0, 2.0] {
+                            let size = base * scale * screen
+                            let font = Self.font(CGFloat(size), semibold: semibold)
+                            for text in texts {
+                                let line = CTLineCreateWithAttributedString(
+                                    NSAttributedString(
+                                        string: text, attributes: [kCTFontAttributeName as NSAttributedString.Key: font]))
+                                let drawn = CTLineGetTypographicBounds(line, nil, nil, nil)
+                                let counted = StudioLayout.measureTextWidth(
+                                    text, fontSize: size, weight: semibold ? .semibold : .regular, font: .tv)
+                                #expect(drawn <= counted + 1e-6, "\(text) at \(size), semibold \(semibold)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+#endif

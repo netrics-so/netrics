@@ -64,6 +64,20 @@ export const measureWidgetBindingSchema: z.ZodType<MeasureWidgetBinding> =
 export const measureWidgetOptionsSchema = z.object({
   view: z.enum(DASHBOARD_MEASURE_VIEWS).default("value"),
   limit: z.number().int().min(1).max(1000).default(20),
+  /**
+   * The groups by one of the widget's measures instead of by its
+   * dimensions (#768): a table's top `limit`. Groups without a value come
+   * last; amounts are ranked within their currency.
+   */
+  order: z
+    .strictObject({ measureId: id, direction: z.enum(["asc", "desc"]) })
+    .optional(),
+  /**
+   * Shorter column heads for a table, by dimension or measure id (#768):
+   * "Downloads" where the widget's title already says "Downloads and user
+   * installs". Without one, the model's name.
+   */
+  labels: z.record(id, z.string().trim().min(1).max(60)).optional(),
 });
 export const dashboardFilterValuesSchema = z.record(
   id,

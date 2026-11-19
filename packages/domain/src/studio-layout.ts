@@ -751,14 +751,20 @@ export function wrappedLineCount(
   maxWidth: number,
   fontSize: number,
   weight: StudioFontWeight = "regular",
+  /** The width of a text; by default the conservative estimate. */
+  widthOf: (
+    text: string,
+    fontSize: number,
+    weight: StudioFontWeight,
+  ) => number = estimateTextWidth,
 ): number {
   const words = text.split(" ").filter((word) => word !== "");
-  const space = estimateTextWidth(" ", fontSize, weight);
+  const space = widthOf(" ", fontSize, weight);
   let lines = 0;
   let current = 0;
   let empty = true;
   for (const word of words) {
-    const width = estimateTextWidth(word, fontSize, weight);
+    const width = widthOf(word, fontSize, weight);
     if (!empty && current + space + width <= maxWidth) {
       current = current + space + width;
       continue;
@@ -774,7 +780,7 @@ export function wrappedLineCount(
       continue;
     }
     for (const char of word) {
-      const charWidth = estimateTextWidth(char, fontSize, weight);
+      const charWidth = widthOf(char, fontSize, weight);
       if (!empty && current + charWidth > maxWidth) {
         lines += 1;
         current = 0;
@@ -1047,6 +1053,355 @@ export function tableLayout(input: TableLayoutInput): TableLayout {
     },
     compact,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Measure table (ADR 0022)
+
+/**
+ * A measure widget's sizes in units, as both renderers draw it (`.sw-measure`
+ * in the web's globals.css, `MeasureWidgetView` on tvOS): the title (36,
+ * semibold, at most two lines), a 12 unit gap between its parts, the table's
+ * rows (28 with 10 units of padding above and below and a hairline, the
+ * column heads the same) and the footer lines (24; the freshness line at
+ * line height 1.3). Line height is 1.15 elsewhere, as on the canvas.
+ */
+export const MEASURE_TABLE_METRICS = {
+  title: 36,
+  gap: 12,
+  cell: 28,
+  /** Padding above and below a cell. */
+  cellPadding: 20,
+  /** A row's hairline is drawn inside it (an inset shadow): no height. */
+  border: 0,
+  footer: 24,
+  lineHeight: 1.15,
+  freshnessLineHeight: 1.3,
+} as const;
+
+/**
+ * The footer lines a measure table on a screen keeps room for under its
+ * rows when its actual lines are not known (the readability check), each
+ * as long as it commonly gets (German, the longer language) and wrapped at
+ * the widget's width: the "N of M groups" line, and the freshness line
+ * (ADR 0025), which never wraps and stands in for the source refresh line
+ * (#769). Screens fit their rows to the lines they actually show
+ * (`measureTableRowsShown`).
+ */
+export const MEASURE_TABLE_FOOTER_SAMPLES: readonly (string | null)[] = [
+  "20 von 200 Gruppen werden angezeigt.",
+  null,
+];
+
+/**
+ * A cell as long as a row's label commonly is (a store's or an app's
+ * name): where a column is narrower, its rows wrap to as many lines as the
+ * sample, at most four (both renderers wrap cells). An estimate: longer
+ * labels wrap further.
+ */
+export const MEASURE_TABLE_CELL_SAMPLE = "Apple App Store";
+
+export interface MeasureTableLayout {
+  titleLines: number;
+  /** Lines of the column heads and of a row (`MEASURE_TABLE_CELL_SAMPLE`). */
+  headLines: number;
+  rowLines: number;
+  /** Title, column heads, footer lines and the gaps between them, in units. */
+  fixedHeight: number;
+  /** One row of `rowLines` lines with its padding and border, in units. */
+  rowPitch: number;
+  /** Rows of `rowLines` lines that fit under the heads, above the footer. */
+  rowCapacity: number;
+}
+
+/**
+ * The characters of a measure table's text with their widths in em (#768),
+ * regular and semibold, per renderer: IBM Plex Sans on web screens, the
+ * system font on netrics TV (tabular digits, at the sizes it draws: 24, 28
+ * and 36 units at every theme font scale, 1080p and 4K, plus 0.5 % for
+ * its tracking at small sizes), rounded up to 0.001 em. Kerning only narrows a text, so the sums never fall short.
+ * Other characters, and bold, take the conservative estimate. NetricsKit
+ * has the same tables (StudioLayout.measureGlyph*).
+ */
+export const MEASURE_GLYPH_CHARS: readonly string[] = [
+  ..." !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•",
+];
+export const MEASURE_GLYPH_EMS = {
+  web: {
+    regular: [
+      0.236, 0.284, 0.419, 0.713, 0.598, 0.927, 0.694, 0.242, 0.335, 0.335,
+      0.45, 0.6, 0.272, 0.399, 0.272, 0.383, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+      0.6, 0.6, 0.6, 0.292, 0.292, 0.6, 0.6, 0.6, 0.477, 0.891, 0.641, 0.653,
+      0.621, 0.671, 0.583, 0.559, 0.695, 0.707, 0.4, 0.51, 0.634, 0.501, 0.812,
+      0.707, 0.708, 0.606, 0.708, 0.64, 0.581, 0.572, 0.678, 0.609, 0.891,
+      0.613, 0.593, 0.58, 0.317, 0.383, 0.317, 0.6, 0.565, 0.6, 0.534, 0.58,
+      0.504, 0.58, 0.549, 0.324, 0.528, 0.568, 0.25, 0.25, 0.527, 0.272, 0.873,
+      0.568, 0.56, 0.58, 0.58, 0.367, 0.487, 0.351, 0.568, 0.492, 0.768, 0.508,
+      0.499, 0.464, 0.343, 0.314, 0.343, 0.6, 0.641, 0.641, 0.641, 0.641, 0.641,
+      0.641, 0.907, 0.621, 0.583, 0.583, 0.583, 0.583, 0.4, 0.4, 0.4, 0.4,
+      0.674, 0.707, 0.708, 0.708, 0.708, 0.708, 0.708, 0.708, 0.678, 0.678,
+      0.678, 0.678, 0.593, 0.606, 0.64, 0.534, 0.534, 0.534, 0.534, 0.534,
+      0.534, 0.864, 0.504, 0.549, 0.549, 0.549, 0.549, 0.25, 0.25, 0.25, 0.25,
+      0.555, 0.568, 0.56, 0.56, 0.56, 0.56, 0.56, 0.568, 0.568, 0.568, 0.568,
+      0.568, 0.499, 0.58, 0.499, 0.326, 1.016, 0.625, 0.595, 0.605, 0.588, 0.78,
+      0.803, 0.273, 0.273, 0.475, 0.474, 0.396,
+    ],
+    semibold: [
+      0.236, 0.31, 0.472, 0.656, 0.601, 0.961, 0.714, 0.261, 0.338, 0.338,
+      0.557, 0.6, 0.299, 0.402, 0.299, 0.438, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+      0.6, 0.6, 0.6, 0.319, 0.319, 0.6, 0.6, 0.6, 0.494, 0.9, 0.673, 0.663,
+      0.643, 0.69, 0.6, 0.578, 0.712, 0.719, 0.423, 0.545, 0.678, 0.522, 0.817,
+      0.719, 0.713, 0.642, 0.713, 0.664, 0.612, 0.581, 0.69, 0.638, 0.949,
+      0.656, 0.633, 0.6, 0.329, 0.438, 0.329, 0.6, 0.559, 0.6, 0.559, 0.6,
+      0.513, 0.6, 0.559, 0.351, 0.545, 0.588, 0.276, 0.276, 0.563, 0.294, 0.888,
+      0.588, 0.563, 0.6, 0.6, 0.394, 0.499, 0.374, 0.588, 0.525, 0.82, 0.545,
+      0.524, 0.503, 0.364, 0.377, 0.364, 0.6, 0.673, 0.673, 0.673, 0.673, 0.673,
+      0.673, 0.951, 0.643, 0.6, 0.6, 0.6, 0.6, 0.423, 0.423, 0.423, 0.423,
+      0.694, 0.719, 0.713, 0.713, 0.713, 0.713, 0.713, 0.713, 0.69, 0.69, 0.69,
+      0.69, 0.633, 0.642, 0.677, 0.559, 0.559, 0.559, 0.559, 0.559, 0.559,
+      0.864, 0.513, 0.559, 0.559, 0.559, 0.559, 0.276, 0.276, 0.276, 0.276,
+      0.589, 0.588, 0.563, 0.563, 0.563, 0.563, 0.563, 0.571, 0.588, 0.588,
+      0.588, 0.588, 0.524, 0.6, 0.524, 0.349, 1.035, 0.627, 0.586, 0.637, 0.588,
+      0.78, 0.87, 0.293, 0.293, 0.518, 0.518, 0.42,
+    ],
+  },
+  tv: {
+    regular: [
+      0.223, 0.282, 0.422, 0.622, 0.622, 0.837, 0.687, 0.269, 0.338, 0.338,
+      0.419, 0.622, 0.234, 0.445, 0.234, 0.295, 0.622, 0.622, 0.622, 0.622,
+      0.622, 0.622, 0.622, 0.622, 0.622, 0.622, 0.234, 0.234, 0.622, 0.622,
+      0.622, 0.506, 0.893, 0.653, 0.622, 0.704, 0.696, 0.569, 0.545, 0.724,
+      0.717, 0.24, 0.512, 0.618, 0.541, 0.849, 0.717, 0.749, 0.595, 0.749,
+      0.616, 0.61, 0.598, 0.714, 0.648, 0.943, 0.652, 0.63, 0.634, 0.338, 0.295,
+      0.338, 0.622, 0.544, 0.517, 0.519, 0.571, 0.518, 0.571, 0.529, 0.319,
+      0.566, 0.556, 0.221, 0.22, 0.502, 0.219, 0.823, 0.544, 0.548, 0.567,
+      0.566, 0.326, 0.482, 0.318, 0.544, 0.5, 0.733, 0.485, 0.503, 0.487, 0.338,
+      0.231, 0.338, 0.622, 0.653, 0.653, 0.653, 0.653, 0.653, 0.653, 0.963,
+      0.704, 0.569, 0.569, 0.569, 0.569, 0.24, 0.24, 0.24, 0.24, 0.719, 0.717,
+      0.749, 0.749, 0.749, 0.749, 0.749, 0.747, 0.714, 0.714, 0.714, 0.714,
+      0.63, 0.619, 0.56, 0.519, 0.519, 0.519, 0.519, 0.519, 0.519, 0.856, 0.518,
+      0.529, 0.529, 0.529, 0.529, 0.221, 0.221, 0.221, 0.221, 0.558, 0.544,
+      0.548, 0.548, 0.548, 0.548, 0.548, 0.548, 0.544, 0.544, 0.544, 0.544,
+      0.503, 0.567, 0.503, 0.234, 1.035, 0.622, 0.622, 0.622, 0.544, 0.849,
+      0.637, 0.234, 0.234, 0.386, 0.386, 0.445,
+    ],
+    semibold: [
+      0.217, 0.314, 0.46, 0.643, 0.649, 0.892, 0.707, 0.281, 0.376, 0.376,
+      0.448, 0.649, 0.254, 0.453, 0.254, 0.31, 0.649, 0.649, 0.649, 0.649,
+      0.649, 0.649, 0.649, 0.649, 0.649, 0.649, 0.254, 0.254, 0.649, 0.649,
+      0.649, 0.534, 0.901, 0.689, 0.644, 0.72, 0.71, 0.582, 0.558, 0.737, 0.736,
+      0.265, 0.552, 0.651, 0.553, 0.869, 0.727, 0.763, 0.62, 0.763, 0.642,
+      0.635, 0.611, 0.721, 0.678, 0.969, 0.684, 0.663, 0.643, 0.376, 0.31,
+      0.376, 0.649, 0.575, 0.517, 0.547, 0.598, 0.546, 0.597, 0.556, 0.353,
+      0.594, 0.585, 0.243, 0.243, 0.536, 0.244, 0.861, 0.575, 0.574, 0.594,
+      0.594, 0.362, 0.513, 0.351, 0.575, 0.528, 0.781, 0.523, 0.536, 0.509,
+      0.376, 0.248, 0.376, 0.649, 0.689, 0.689, 0.689, 0.689, 0.689, 0.689,
+      0.986, 0.72, 0.582, 0.582, 0.582, 0.582, 0.265, 0.265, 0.265, 0.265, 0.73,
+      0.727, 0.763, 0.763, 0.763, 0.763, 0.763, 0.759, 0.721, 0.721, 0.721,
+      0.721, 0.663, 0.649, 0.612, 0.547, 0.547, 0.547, 0.547, 0.547, 0.547,
+      0.882, 0.546, 0.556, 0.556, 0.556, 0.556, 0.243, 0.243, 0.243, 0.243,
+      0.582, 0.575, 0.574, 0.574, 0.574, 0.574, 0.574, 0.574, 0.575, 0.575,
+      0.575, 0.575, 0.536, 0.594, 0.536, 0.254, 1.053, 0.649, 0.649, 0.649,
+      0.575, 0.869, 0.701, 0.254, 0.254, 0.43, 0.43, 0.453,
+    ],
+  },
+} as const;
+
+/**
+ * Whose text a measure table counts: a web screen's, netrics TV's, or
+ * (the readability check, for every screen) the wider of the two.
+ */
+export type MeasureFont = "web" | "tv" | "any";
+
+const glyphMap = (ems: readonly number[]) =>
+  new Map(MEASURE_GLYPH_CHARS.map((char, i) => [char, ems[i]!]));
+const MEASURE_GLYPHS = {
+  web: {
+    regular: glyphMap(MEASURE_GLYPH_EMS.web.regular),
+    semibold: glyphMap(MEASURE_GLYPH_EMS.web.semibold),
+  },
+  tv: {
+    regular: glyphMap(MEASURE_GLYPH_EMS.tv.regular),
+    semibold: glyphMap(MEASURE_GLYPH_EMS.tv.semibold),
+  },
+};
+
+/** A measure table's text width in units (see `MEASURE_GLYPH_EMS`). */
+export function measureTextWidth(
+  text: string,
+  fontSize: number,
+  weight: StudioFontWeight = "regular",
+  font: MeasureFont = "any",
+): number {
+  let width = 0;
+  for (const char of text) {
+    const web =
+      weight === "bold" ? undefined : MEASURE_GLYPHS.web[weight].get(char);
+    const tv =
+      weight === "bold" ? undefined : MEASURE_GLYPHS.tv[weight].get(char);
+    const em =
+      web === undefined || tv === undefined
+        ? undefined
+        : font === "web"
+          ? web
+          : font === "tv"
+            ? tv
+            : Math.max(web, tv);
+    width +=
+      em === undefined
+        ? estimateTextWidth(char, fontSize, weight)
+        : em * fontSize;
+  }
+  return width;
+}
+
+interface MeasureTableBox {
+  label: string;
+  /** The content box in units: the widget's rect less its padding. */
+  width: number;
+  height: number;
+  fontScale?: number;
+  /** The column heads as shown: grouped dimensions', then measures' names. */
+  columns?: readonly string[] | null;
+  /**
+   * Units per screen pixel (default 1, a 1080p canvas): every line of a row
+   * may round up to a whole pixel when drawn (small screens, whose units
+   * are fractions of a pixel), so each keeps that much room.
+   */
+  pixel?: number;
+  /** Whose text widths to count (default: the wider of web and TV). */
+  font?: MeasureFont;
+}
+
+/** The parts of a measure table's height (see `measureTableLayout`). */
+function measureTableParts(input: MeasureTableBox) {
+  const scale = effectiveFontScale(input.fontScale);
+  const m = MEASURE_TABLE_METRICS;
+  const width = Math.max(0, input.width);
+  const title = m.title * scale,
+    cell = m.cell * scale,
+    footerSize = m.footer * scale;
+  // Text measured with the calibrated widths (`measureTextWidth`).
+  const wrap = (
+    text: string,
+    room: number,
+    size: number,
+    weight: StudioFontWeight = "regular",
+  ) =>
+    wrappedLineCount(text, Math.max(0, room), size, weight, (part, at, w) =>
+      measureTextWidth(part, at, w, input.font),
+    );
+  const titleLines = Math.min(
+    STUDIO_LABEL_MAX_LINES,
+    Math.max(1, wrap(input.label, width, title, "semibold")),
+  );
+  const columns = input.columns?.length ? input.columns : null;
+  // Both renderers give every column an even share (a fixed table layout).
+  const pixel =
+    input.pixel !== undefined && Number.isFinite(input.pixel) && input.pixel > 0
+      ? input.pixel
+      : 1;
+  // A pixel less than the column: glyphs at a screen's small sizes may
+  // round wider than their share (#768).
+  const columnWidth = width / (columns?.length ?? 1) - m.cellPadding - pixel;
+  const lines = (texts: readonly string[], weight: StudioFontWeight) =>
+    Math.max(1, ...texts.map((text) => wrap(text, columnWidth, cell, weight)));
+  const row = (count: number) =>
+    count * (cell * m.lineHeight + pixel) + m.cellPadding + m.border;
+  const footerLine = (text: string | null) =>
+    m.gap +
+    (text === null
+      ? footerSize * m.freshnessLineHeight
+      : Math.max(1, wrap(text, width, footerSize)) * footerSize * m.lineHeight);
+  const headLines = columns ? lines(columns, "semibold") : 1;
+  return {
+    titleLines,
+    headLines,
+    lines,
+    row,
+    footerLine,
+    /** Title, gap and column heads. */
+    head: titleLines * title * m.lineHeight + m.gap + row(headLines),
+  };
+}
+
+/**
+ * A measure widget's table view in a content box (units), as the
+ * readability check estimates it: the title (at most two lines), the
+ * column heads wrapped at an even share of the width, rows that wrap as
+ * `MEASURE_TABLE_CELL_SAMPLE` would in a column, and the footer lines
+ * (`footer`, null for the one-line freshness line; by default
+ * `MEASURE_TABLE_FOOTER_SAMPLES`). 0 rows when not even the heads and the
+ * footer fit.
+ */
+export function measureTableLayout(
+  input: MeasureTableBox & { footer?: readonly (string | null)[] },
+): MeasureTableLayout {
+  const parts = measureTableParts(input);
+  const rowLines = input.columns?.length
+    ? parts.lines([MEASURE_TABLE_CELL_SAMPLE], "regular")
+    : 1;
+  const rowPitch = parts.row(rowLines);
+  const fixedHeight =
+    parts.head +
+    (input.footer ?? MEASURE_TABLE_FOOTER_SAMPLES).reduce<number>(
+      (sum, line) => sum + parts.footerLine(line),
+      0,
+    );
+  return {
+    titleLines: parts.titleLines,
+    headLines: parts.headLines,
+    rowLines,
+    fixedHeight,
+    rowPitch,
+    rowCapacity: Math.max(
+      0,
+      Math.floor((input.height - fixedHeight) / rowPitch + 1e-9),
+    ),
+  };
+}
+
+/**
+ * The rows a measure table shows on a screen (#768), as both renderers fit
+ * them: the first rows, each as tall as its cells wrap, while they fit
+ * above the footer lines the widget shows (`footer`, null for the
+ * freshness line). Rows give way first: the footer always fits when
+ * anything does. When rows are left out (of those received, or of
+ * `total`), the "N of M" line (`rowsLine`) joins the footer and is
+ * counted. Pure and deterministic: the same input, the same rows.
+ */
+export function measureTableRowsShown(
+  input: MeasureTableBox & {
+    /** The rows' cells as shown, in column order. */
+    rows: readonly (readonly string[])[];
+    /** Every group the query has (`totalRows`); at least `rows.length`. */
+    total: number;
+    footer: readonly (string | null)[];
+    rowsLine: (shown: number, total: number) => string;
+  },
+): { shown: number; rowsLine: string | null } {
+  const parts = measureTableParts(input);
+  const total = Math.max(input.total, input.rows.length);
+  const fit = (footer: readonly (string | null)[]) => {
+    let room =
+      input.height -
+      parts.head -
+      footer.reduce<number>((sum, line) => sum + parts.footerLine(line), 0);
+    let shown = 0;
+    for (const row of input.rows) {
+      room -= parts.row(parts.lines(row, "regular"));
+      if (room < -1e-9) break;
+      shown += 1;
+    }
+    return shown;
+  };
+  const all = fit(input.footer);
+  if (all >= total) return { shown: total, rowsLine: null };
+  // The line's own room comes from the rows; its wording barely changes
+  // with the count, so measure it once at the count without it.
+  const line = input.rowsLine(all, total);
+  const shown = fit([...input.footer, line]);
+  return { shown, rowsLine: input.rowsLine(shown, total) };
 }
 
 /** Rows a table shows: its limit, its rows and the room, whichever is least. */

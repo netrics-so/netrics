@@ -441,6 +441,22 @@ export function StudioEditor({
               ? (entry.title ?? sourcesLabel(locale))
               : null,
       sourceCount: Object.keys(connections).length,
+      columnsOf: (entry: DashboardWidget) => {
+        if (entry.type !== "measure") return null;
+        const model = catalog.models.find(
+          (candidate) => candidate.modelId === entry.binding.modelId,
+        );
+        if (!model) return null;
+        const names = new Map(
+          [...model.dimensions, ...model.measures].map((field) => [
+            field.id,
+            field.name,
+          ]),
+        );
+        return [...entry.binding.groupBy, ...entry.binding.measureIds].map(
+          (id) => entry.options.labels?.[id] ?? names.get(id) ?? id,
+        );
+      },
     };
     return new Map(
       draft.slides.map((entry) => [
@@ -461,6 +477,7 @@ export function StudioEditor({
     timeZone,
     connections,
     locale,
+    catalog.models,
   ]);
   const previewContext: PreviewContext = useMemo(
     () => ({

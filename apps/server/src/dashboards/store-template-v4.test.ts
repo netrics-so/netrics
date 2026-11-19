@@ -12,8 +12,11 @@ import {
   type Database,
   type Sql,
 } from "@netrics/database";
-import type { StoreTemplatePlan } from "@netrics/contracts";
-import type { DataRow } from "@netrics/domain";
+import {
+  replaceDashboardRequestSchema,
+  type StoreTemplatePlan,
+} from "@netrics/contracts";
+import { measureOptionsForBinding, type DataRow } from "@netrics/domain";
 import { createDefaultRegistry } from "../connectors.js";
 import { syncCatalog } from "../sync/catalog.js";
 import { createDataService } from "../data/service.js";
@@ -28,7 +31,12 @@ import {
 } from "./store-template-service.js";
 import { createStoreTemplateUpdateService } from "./store-template-updates.js";
 import { createStoreProductService } from "./store-template-products.js";
-import { storeTemplate, storeTemplateV3 } from "./store-template.js";
+import {
+  STORE_TEMPLATE_VERSION,
+  storeTemplate,
+  storeTemplateV3,
+  storeTemplateV4,
+} from "./store-template.js";
 import { appSlideKey } from "./store-portfolio.js";
 import { apple, google, now } from "./test-helpers.js";
 
@@ -323,7 +331,7 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
         "measure:downloads",
         "measure:proceeds",
         "table:app_store_connect.proceeds",
-        "measure:rating+rating_count+checked+availability",
+        "measure:rating+rating_count",
       ],
       // Paid, no website linked: no visitors widget.
       [
@@ -402,7 +410,10 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
       where workspace_id = ${workspaceId} and id = ${downloads.id}`;
     expect(await updateAvailable(requestId)).toBe(true);
     const { plan, copy } = await applyUpdate(requestId);
-    expect(plan).toMatchObject({ fromVersion: 3, toVersion: 4 });
+    expect(plan).toMatchObject({
+      fromVersion: 3,
+      toVersion: STORE_TEMPLATE_VERSION,
+    });
     expect(plan.summary.widgets.added).toBeGreaterThan(0);
     expect(copy.settings.autoAdvance).toBe(true);
     expect(copy.slides.map((slide) => slide.name)).toEqual([
@@ -431,6 +442,149 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     expect(await updateAvailable(requestId)).toBe(false);
   });
 
+  it("offers version 5's fitted tables to a version 4 install as a reviewed update (#768)", async () => {
+    const requestId = randomUUID();
+    const result = await install(storeTemplateV4, requestId);
+    const v4 = await readDashboard(result.dashboardId);
+    const tables = (slide: (typeof v4.slides)[number]) =>
+      slide.widgets.flatMap((widget) =>
+        widget.type === "measure" && widget.options.view === "table"
+          ? [[widget.binding.measureIds[0], widget.options.limit]]
+          : [],
+      );
+    // Version 4 asks for twenty rows in a four-row tile: flagged.
+    expect(tables(v4.slides[0]!)).toEqual([
+      ["downloads", 20],
+      ["proceeds", 20],
+      ["rating", 20],
+    ]);
+    expect(
+      v4.slides[0]!.formatWarnings.filter((w) => w.code === "rows_cut").length,
+    ).toBeGreaterThan(0);
+    expect(await updateAvailable(requestId)).toBe(true);
+    const { plan, copy } = await applyUpdate(requestId);
+    expect(plan).toMatchObject({ fromVersion: 4, toVersion: 5 });
+    // The model tables change (the overview's and each app's ratings),
+    // and the App Store's store name: offered for review like any
+    // template change.
+    const apps = copy.slides.slice(1);
+    expect(
+      plan.records
+        .flatMap((record) => record.items)
+        .map((item) =>
+          [
+            item.ref.replace(/app-[0-9a-f]{16}/, "app"),
+            item.change,
+            item.outcome,
+          ].join(" "),
+        )
+        .sort(),
+    ).toEqual(
+      [
+        ...apps.map(
+          () => "dashboard:portfolio#widget:app:ratings changed template",
+        ),
+        "dashboard:portfolio#widget:downloads changed template",
+        "dashboard:portfolio#widget:proceeds changed template",
+        "dashboard:portfolio#widget:ratings changed template",
+        // "App Store" instead of "Apple App Store" (short in tables): the
+        // App Store sources' store name, a data draft to publish.
+        ...["downloads", "proceeds", "ratings"].map(
+          (metric) =>
+            `preparation:source:${apple.id}:${metric}#step:calculate_store_name changed template`,
+        ),
+      ].sort(),
+    );
+    expect(copy.slides).toHaveLength(v4.slides.length);
+    // Nothing changes on screens until the copy is swapped in.
+    expect(
+      tables((await readDashboard(result.dashboardId)).slides[0]!),
+    ).toEqual(tables(v4.slides[0]!));
+    const overview = copy.slides[0]!;
+    expect(
+      overview.widgets.flatMap((widget) =>
+        widget.type === "measure" ? [widget.options.order ?? null] : [],
+      ),
+    ).toEqual([
+      { measureId: "downloads", direction: "desc" },
+      null,
+      { measureId: "rating_count", direction: "desc" },
+    ]);
+    for (const s of copy.slides)
+      expect(
+        s.formatWarnings
+          .filter((w) => w.severity === "attention")
+          .map((w) => `${s.name} ${w.format} ${w.code}`),
+      ).toEqual([]);
+  });
+
+  it("saves a version 5 table edited in the Studio (#768)", async () => {
+    const result = await install(storeTemplate, randomUUID());
+    const dashboard = await readDashboard(result.dashboardId);
+    const service = createDashboardService({ db });
+    const save = (slides: typeof dashboard.slides, version: number) =>
+      service.replace(
+        actor(),
+        result.dashboardId,
+        replaceDashboardRequestSchema.parse({
+          version,
+          name: dashboard.name,
+          projectId: dashboard.projectId,
+          slides: slides.map(
+            ({ formatWarnings: _warnings, ...slide }) => slide,
+          ),
+        }),
+      );
+    // The ratings table ranks by its rating count; unticking that measure
+    // left the order behind before the Studio dropped it: it is ignored.
+    const untick = (keep: (options: object, binding: object) => object) =>
+      dashboard.slides.map((slide, index) =>
+        index !== 0
+          ? slide
+          : {
+              ...slide,
+              widgets: slide.widgets.map((widget) => {
+                if (
+                  widget.type !== "measure" ||
+                  !widget.binding.measureIds.includes("rating_count")
+                )
+                  return widget;
+                const binding = { ...widget.binding, measureIds: ["rating"] };
+                return {
+                  ...widget,
+                  binding,
+                  options: keep(widget.options, binding),
+                };
+              }),
+            },
+      ) as typeof dashboard.slides;
+    const kept = await save(
+      untick((options) => options),
+      dashboard.version,
+    );
+    expect(kept.ok, JSON.stringify(kept)).toBe(true);
+    // What the Studio saves now: no order or label for the removed measure.
+    const studio = untick((options, binding) =>
+      measureOptionsForBinding(
+        binding as { measureIds: string[]; groupBy: string[] },
+        options as { view: "table" },
+      ),
+    );
+    const ratings = studio[0]!.widgets.find(
+      (widget) =>
+        widget.type === "measure" && widget.binding.groupBy.includes("listing"),
+    )!;
+    expect(ratings.type === "measure" && ratings.options).toMatchObject({
+      view: "table",
+      labels: { listing: expect.any(String), storefront: expect.any(String) },
+    });
+    expect(ratings.type === "measure" && "order" in ratings.options).toBe(
+      false,
+    );
+    const saved = await save(studio, dashboard.version + 1);
+    expect(saved.ok, JSON.stringify(saved)).toBe(true);
+  });
+
   it("offers an app that turned free, or got a website, as an update", async () => {
     const requestId = randomUUID();
     const result = await install(storeTemplate, requestId);
@@ -446,10 +600,15 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     });
     // Nothing changes on the dashboard by itself.
     const before = await readDashboard(result.dashboardId);
-    expect(before.slides[1]!.widgets).toHaveLength(4);
+    expect(
+      before.slides.find((s) => s.name?.startsWith("Focus"))!.widgets,
+    ).toHaveLength(4);
     expect(await updateAvailable(requestId)).toBe(true);
     const { plan, copy } = await applyUpdate(requestId);
-    expect(plan).toMatchObject({ fromVersion: 4, toVersion: 4 });
+    expect(plan).toMatchObject({
+      fromVersion: STORE_TEMPLATE_VERSION,
+      toVersion: STORE_TEMPLATE_VERSION,
+    });
     const slide = `dashboard:portfolio#widget:${appSlideKey(focus)}`;
     const items = plan.records.flatMap((record) => record.items);
     expect(
@@ -486,11 +645,11 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     const listed = (await updates().list(actor())).installs.find(
       (entry) => entry.requestId === requestId,
     )!;
-    // The install is at version 4, its dashboard record still at 3: the
-    // apps page asks for the update first, as scopePlan does.
+    // The install is at the current version, its dashboard record still
+    // at 3: the apps page asks for the update first, as scopePlan does.
     expect(listed).toMatchObject({
-      templateVersion: 4,
-      latestVersion: 4,
+      templateVersion: STORE_TEMPLATE_VERSION,
+      latestVersion: STORE_TEMPLATE_VERSION,
       updateAvailable: true,
       newerVersion: true,
     });
@@ -652,7 +811,9 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
       "dashboard:portfolio",
     );
     expect(await updateAvailable(requestId)).toBe(true);
-    expect(copy.slides[1]!.widgets).toHaveLength(3);
+    expect(
+      copy.slides.find((s) => s.name?.startsWith("Focus"))!.widgets,
+    ).toHaveLength(3);
   });
 
   it("makes the copy with an app's current icon after the daily refresh replaced it", async () => {
@@ -689,7 +850,9 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
       "dashboard:portfolio",
     );
     const copy = await readDashboard(copied.dashboards[0]!.copyId!);
-    expect(copy.slides[1]!.logoImageId).toBe(focusIcon);
+    expect(
+      copy.slides.find((s) => s.name?.startsWith("Focus"))!.logoImageId,
+    ).toBe(focusIcon);
   });
 
   it("refuses the same app update applied twice as stale", async () => {

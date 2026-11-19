@@ -15,6 +15,7 @@ import { ApiError } from "@/lib/api";
 import { formatPercentChange } from "@/lib/format-metric";
 import { freshnessParts, type FreshnessClock } from "@/lib/freshness";
 import { useViewerTimeZone } from "@/lib/viewer-time-zone";
+import { contentBox, type ScreenPlacement } from "@/lib/studio-render";
 import { useNow } from "./clock-widget";
 import {
   currencyExponent,
@@ -25,6 +26,7 @@ import {
   measureInteractionDimension,
   measureInteractionSelected,
   measureInteractionValue,
+  measureTableRowsShown,
   type DataField,
 } from "@netrics/domain";
 
@@ -146,6 +148,8 @@ export function MeasureWidgetView({
   fontScale = 1,
   workspaceId,
   audience = "editor",
+  placement,
+  showHeader = true,
 }: {
   widget: Pick<MeasureWidget, "title" | "options"> & {
     binding: Pick<MeasureWidget["binding"], "measureIds" | "groupBy">;
@@ -161,6 +165,13 @@ export function MeasureWidgetView({
    * on tvOS instead (#649). Defaults to the signed-in dashboard and Studio.
    */
   audience?: "editor" | "viewer";
+  /**
+   * Where the widget sits on a slide (#768): a table then shows the rows
+   * that fit its tile above its footer lines, and says "N of M". Absent
+   * (scroll views, whose cards grow with their content): every row.
+   */
+  placement?: ScreenPlacement;
+  showHeader?: boolean;
 }) {
   const t = useT("data"),
     common = useT("common"),
@@ -289,7 +300,8 @@ export function MeasureWidgetView({
       );
       return {
         id,
-        name: dimension?.name ?? id,
+        // A table's shorter head (#768), else the model's name.
+        name: widget.options.labels?.[id] ?? dimension?.name ?? id,
         type: dimension?.type ?? "string",
         nullable: true,
       } as DataField;
@@ -299,8 +311,10 @@ export function MeasureWidgetView({
         ({
           id: `measure.${id}`,
           name:
+            widget.options.labels?.[id] ??
             data?.metadata?.measures.find((measure) => measure.id === id)
-              ?.name ?? id,
+              ?.name ??
+            id,
           type: rows[0]?.measures[id]?.type ?? "decimal",
           nullable: true,
         }) as DataField,
@@ -347,6 +361,103 @@ export function MeasureWidgetView({
       ? null
       : `${maxTime > minTime && Number.isFinite(times[index]) ? ((times[index]! - minTime) / (maxTime - minTime)) * 580 + 10 : 300},${190 - ((value / extent + 1) / 2) * 180}`,
   );
+  // The lines the widget shows besides its rows (#768), in the order it
+  // renders them; null is the one-line freshness line. They decide how
+  // many rows fit: rows give way first, so the footer is never cut.
+  const receivedAt =
+    data?.result?.receivedAt && !freshness
+      ? t("dashboard.receivedAt", {
+          at: new Intl.DateTimeFormat(locale, {
+            dateStyle: "medium",
+            timeStyle: "short",
+            timeZone,
+          }).format(new Date(data.result.receivedAt)),
+        })
+      : null;
+  const notices = [
+    data?.result?.stale
+      ? t(viewer ? "dashboard.viewer.stale" : "dashboard.staleModel")
+      : null,
+    data?.result?.pendingSources?.length ? t("dashboard.pendingResult") : null,
+    rows.some((row) =>
+      Object.values(row.measures).some((cell) => cell.status === "partial"),
+    )
+      ? t(viewer ? "dashboard.viewer.partial" : "dashboard.partialResult")
+      : null,
+    historyIncomplete
+      ? t(
+          viewer
+            ? "dashboard.viewer.historyIncomplete"
+            : "dashboard.historyIncomplete",
+        )
+      : null,
+    otherWarnings.length
+      ? t(viewer ? "dashboard.viewer.warnings" : "dashboard.resultWarnings", {
+          count: otherWarnings.length,
+        })
+      : null,
+  ].filter((notice): notice is string => notice !== null);
+  const sourceNotices = (data?.sourceHealth ?? [])
+    .filter((source) => source.status !== "ok")
+    .map((source) => ({
+      connectionId: source.connectionId,
+      message: t(
+        viewer
+          ? `dashboard.${source.status === "needs_reauthorization" || source.status === "auth_failed" ? "viewer.sourcePaused" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "viewer.sourceOutage"}`
+          : `dashboard.${source.status === "needs_reauthorization" ? "sourceReconnect" : source.status === "auth_failed" ? "sourceAccess" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "sourceOutage"}`,
+        { name: source.name },
+      ),
+    }));
+  const interactionHint =
+    interaction && rows.length > 0 && widget.options.view !== "value"
+      ? t("dashboard.interactionHint", { filter: interaction.filterName })
+      : null;
+  const showsTable =
+    !error &&
+    data !== null &&
+    widget.options.view !== "value" &&
+    rows.length > 0 &&
+    (widget.options.view === "table" || unsafe);
+  const total = Math.max(data?.result?.totalRows ?? 0, rows.length);
+  const rowsLine = (shown: number, all: number) =>
+    t("dashboard.shownRows", { shown, total: all });
+  const cellTexts = tableRows.map((row) =>
+    fields.map((field, column) =>
+      column >= widget.binding.groupBy.length
+        ? String(row[field.id])
+        : format(row[field.id], field.type),
+    ),
+  );
+  const fit =
+    showsTable && placement
+      ? measureTableRowsShown({
+          label,
+          ...contentBox(placement, showHeader),
+          ...(placement.unitPx ? { pixel: 1 / placement.unitPx } : {}),
+          // Web screens draw in IBM Plex Sans.
+          font: "web",
+          fontScale,
+          columns: fields.map((field) => field.name),
+          rows: cellTexts,
+          total,
+          footer: [
+            ...(interactionHint ? [interactionHint] : []),
+            ...(data?.scope ?? []),
+            ...(receivedAt ? [receivedAt] : []),
+            ...notices,
+            ...sourceNotices.map((notice) => notice.message),
+            ...(freshness ? [null] : []),
+            ...(data?.exclusions ?? []).map((exclusion) => exclusion.reason),
+          ],
+          rowsLine,
+        })
+      : {
+          shown: rows.length,
+          rowsLine: total > rows.length ? rowsLine(rows.length, total) : null,
+        };
+  // Not even a row fits the tile (#768): the footer says "0 of N", and no
+  // column heads are drawn to be cut off.
+  const tableWithoutRoom = showsTable && fit.shown === 0;
   let continuing = false;
   const path = points
     .map((point) => {
@@ -366,12 +477,8 @@ export function MeasureWidgetView({
       aria-busy={loading}
     >
       <h3 className="sw-measure-title">{label}</h3>
-      {interaction && rows.length > 0 && widget.options.view !== "value" ? (
-        <p className="sw-measure-scope">
-          {t("dashboard.interactionHint", {
-            filter: interaction.filterName,
-          })}
-        </p>
+      {interactionHint ? (
+        <p className="sw-measure-scope">{interactionHint}</p>
       ) : null}
       {error ? (
         <p className="sw-notice" role="status">
@@ -386,7 +493,8 @@ export function MeasureWidgetView({
         </p>
       ) : rows.length === 0 ? (
         <p>{viewer ? t("dashboard.viewer.noData") : t("noRows")}</p>
-      ) : widget.options.view === "table" || unsafe ? (
+      ) : tableWithoutRoom ? null : widget.options.view === "table" ||
+        unsafe ? (
         <div className="sw-measure-table-scroll">
           <table className="sw-measure-table">
             <thead>
@@ -397,17 +505,16 @@ export function MeasureWidgetView({
               </tr>
             </thead>
             <tbody>
-              {tableRows.map((row, index) => (
+              {/* The rows that fit (#768); measure cells are already shown
+                  text (units, rounding). */}
+              {cellTexts.slice(0, fit.shown).map((texts, index) => (
                 <tr key={index}>
                   {fields.map((field, column) => (
                     <td key={field.id}>
                       {choice(
                         field.id,
                         rows[index]!.dimensions[field.id] ?? null,
-                        // Measure cells are already shown text (units, rounding).
-                        column >= widget.binding.groupBy.length
-                          ? String(row[field.id])
-                          : format(row[field.id], field.type),
+                        texts[column]!,
                       )}
                     </td>
                   ))}
@@ -481,83 +588,26 @@ export function MeasureWidgetView({
           contradiction side by side (#769). Where no line renders (no
           freshness, a continuous stream under a warning, an expired
           result), the refresh age is the widget's only time. */}
-      {data?.result?.receivedAt && !freshness ? (
-        <p className="sw-measure-scope">
-          {t("dashboard.receivedAt", {
-            at: new Intl.DateTimeFormat(locale, {
-              dateStyle: "medium",
-              timeStyle: "short",
-              timeZone,
-            }).format(new Date(data.result.receivedAt)),
-          })}
+      {receivedAt ? <p className="sw-measure-scope">{receivedAt}</p> : null}
+      {fit.rowsLine ? <p className="sw-measure-scope">{fit.rowsLine}</p> : null}
+      {notices.map((notice) => (
+        <p className="sw-notice" key={notice}>
+          {notice}
         </p>
-      ) : null}
-      {data?.result?.totalRows !== undefined &&
-      data.result.totalRows > rows.length ? (
-        <p className="sw-measure-scope">
-          {t("dashboard.shownRows", {
-            shown: rows.length,
-            total: data.result.totalRows,
-          })}
-        </p>
-      ) : null}
-      {data?.result?.stale ? (
-        <p className="sw-notice">
-          {t(viewer ? "dashboard.viewer.stale" : "dashboard.staleModel")}
-        </p>
-      ) : null}
-      {data?.result?.pendingSources?.length ? (
-        <p className="sw-notice">{t("dashboard.pendingResult")}</p>
-      ) : null}
-      {rows.some((row) =>
-        Object.values(row.measures).some((cell) => cell.status === "partial"),
-      ) ? (
-        <p className="sw-notice">
-          {t(viewer ? "dashboard.viewer.partial" : "dashboard.partialResult")}
-        </p>
-      ) : null}
-      {historyIncomplete ? (
-        <p className="sw-notice">
-          {t(
-            viewer
-              ? "dashboard.viewer.historyIncomplete"
-              : "dashboard.historyIncomplete",
+      ))}
+      {sourceNotices.map(({ connectionId, message }) => (
+        <p className="sw-notice" key={connectionId}>
+          {workspaceId ? (
+            <Link
+              href={`/workspaces/${workspaceId}/connections/${connectionId}`}
+            >
+              {message}
+            </Link>
+          ) : (
+            message
           )}
         </p>
-      ) : null}
-      {otherWarnings.length ? (
-        <p className="sw-notice">
-          {t(
-            viewer ? "dashboard.viewer.warnings" : "dashboard.resultWarnings",
-            {
-              count: otherWarnings.length,
-            },
-          )}
-        </p>
-      ) : null}
-      {data?.sourceHealth
-        ?.filter((source) => source.status !== "ok")
-        .map((source) => {
-          const message = t(
-            viewer
-              ? `dashboard.${source.status === "needs_reauthorization" || source.status === "auth_failed" ? "viewer.sourcePaused" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "viewer.sourceOutage"}`
-              : `dashboard.${source.status === "needs_reauthorization" ? "sourceReconnect" : source.status === "auth_failed" ? "sourceAccess" : source.status === "paused" ? "sourcePaused" : source.status === "pending" ? "sourcePending" : "sourceOutage"}`,
-            { name: source.name },
-          );
-          return (
-            <p className="sw-notice" key={source.connectionId}>
-              {workspaceId ? (
-                <Link
-                  href={`/workspaces/${workspaceId}/connections/${source.connectionId}`}
-                >
-                  {message}
-                </Link>
-              ) : (
-                message
-              )}
-            </p>
-          );
-        })}
+      ))}
       {freshness ? (
         <p
           className={
@@ -586,15 +636,26 @@ export function MeasureWidgetView({
 export function LiveMeasureWidget({
   widget,
   env,
+  fit = false,
 }: {
-  widget: MeasureWidget;
+  widget: MeasureWidget &
+    Partial<Pick<ScreenPlacement, "unitBox" | "unitPx" | "format">>;
   env: StudioEnv;
+  /** On a slide: a table shows the rows that fit its tile (#768). */
+  fit?: boolean;
 }) {
   const batch = useDashboardData();
   const [data, setData] = useState<DashboardWidgetData | null>(null),
     [loading, setLoading] = useState(true);
+  // The query: the widget without where it sits on a screen.
+  const {
+    unitBox: _unitBox,
+    unitPx: _unitPx,
+    format: _format,
+    ...query
+  } = widget;
   const key = JSON.stringify({
-    widget,
+    widget: query,
     filters: env.dataFilters ?? [],
     values: env.filterValues ?? {},
   });
@@ -645,6 +706,7 @@ export function LiveMeasureWidget({
       workspaceId={env.workspaceId}
       fontScale={env.fontScale}
       audience={env.audience}
+      {...(fit ? { placement: widget, showHeader: env.showHeader } : {})}
       data={batch ? (batch.widgets.get(widget.id) ?? null) : data}
       loading={batch ? batch.loading : loading}
     />

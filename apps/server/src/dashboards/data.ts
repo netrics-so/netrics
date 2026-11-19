@@ -11,6 +11,7 @@ import {
 } from "@netrics/contracts";
 import {
   dashboardModelQuery,
+  measureQueryOrder,
   measureViewWindow,
   compareDataValues,
   dimensionValueLabels,
@@ -212,12 +213,14 @@ async function modelSourceHealth(
     };
   });
 }
+/** A measure widget's options, as stored (view, limit, a table's order). */
+type MeasureWidgetOptions = z.output<typeof measureWidgetOptionsSchema>;
 export async function validateDashboardMeasure(
   tx: Transaction,
   workspaceId: string,
   filters: DashboardDataFilter[],
   binding: MeasureWidgetBinding,
-  options: { view: "value" | "table" | "bar" | "line"; limit: number },
+  options: MeasureWidgetOptions,
   /** The scope of the widget's slide (#707): a range there can give a
    * window its period. */
   slideScope: SlideFilterScope = {},
@@ -271,6 +274,8 @@ export async function validateDashboardMeasure(
     "first",
     {},
     slideScope,
+    // An order the binding or view no longer fits is ignored (#768).
+    measureQueryOrder(binding, options),
   );
   // Validate the shape and filter paths using the published schema, even with no current rows.
   const tables = new Map(
@@ -351,7 +356,7 @@ export async function queryDashboardMeasure(
   input: {
     id: string;
     binding: MeasureWidgetBinding;
-    options: { view: "value" | "table" | "bar" | "line"; limit: number };
+    options: MeasureWidgetOptions;
   },
   filters: DashboardDataFilter[],
   values: Record<string, DashboardFilterValue>,
@@ -436,6 +441,7 @@ export async function queryDashboardMeasure(
         ),
         deviceScope,
         slideScope,
+        measureQueryOrder(input.binding, input.options),
       );
       const result = await queryDataModel(
         savepoint,

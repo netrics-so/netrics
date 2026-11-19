@@ -29,6 +29,7 @@ import {
   hasWidgetLabel,
   isInsideFormatGrid,
   labelFit,
+  measureTableLayout,
   parseTextWidget,
   placementRect,
   screenFrame,
@@ -287,7 +288,11 @@ export type FormatWarningCode =
   | "header_name_cut"
   /** A clock's date or zone line does not fit, so the screen leaves it out. */
   | "clock_parts_hidden"
-  /** A table's `limit` exceeds the rows that fit (see `rows`). */
+  /**
+   * A table's `limit` exceeds the rows that fit (see `rows`); a measure
+   * table's rows are counted above its footer lines, and it is info while
+   * at least one row fits (screens fit the rows).
+   */
   | "rows_cut"
   /** A countdown's target has passed: it shows its text when reached. */
   | "countdown_passed"
@@ -339,6 +344,14 @@ export const FORMAT_WARNING_SEVERITY: Readonly<
 /** A status board's `rows_cut`: "+N more" is expected, so info. */
 export const STATUS_ROWS_CUT_SEVERITY: FormatWarningSeverity = "info";
 
+/**
+ * A measure table shows the rows that fit and says "N of M" (#768): fewer
+ * rows than its `limit` is info while at least `MEASURE_TABLE_MIN_ROWS`
+ * fit; fewer than that (or no room for the footer) is attention.
+ */
+export const MEASURE_ROWS_FITTED_SEVERITY: FormatWarningSeverity = "info";
+export const MEASURE_TABLE_MIN_ROWS = 1;
+
 export interface FormatWarningItem {
   format: ScreenFormat;
   code: FormatWarningCode;
@@ -368,10 +381,16 @@ export interface ReadabilityWidget extends LayoutWidget {
     zone: string | null;
   } | null;
   /**
-   * Tables: the rows asked for (`limit`); status boards: the sources they
-   * list (the chosen ones, or every connection of the workspace).
+   * Tables and measure tables (a measure widget in its table view): the
+   * rows asked for (`limit`); status boards: the sources they list (the
+   * chosen ones, or every connection of the workspace).
    */
   rows?: number | null;
+  /**
+   * Measure tables: the column heads as screens show them (the grouped
+   * dimensions' names, then the measures'); unknown: one line each.
+   */
+  columns?: readonly string[] | null;
   /**
    * Countdowns: the target as an instant (ISO 8601, resolved in the
    * widget's zone, else the workspace's); null when it does not resolve.
@@ -509,6 +528,29 @@ export function formatWarnings(
           shown: rowCapacity,
           limit: widget.rows,
         });
+      }
+    } else if (widget.type === "measure" && widget.rows) {
+      // A measure table (#768) shows the rows that fit above its footer
+      // lines: fewer than asked for is said (info); not even one row, or
+      // not even the footer, is cut (attention).
+      const box = contentBoxIn(placement, format, context.showHeader);
+      const { rowCapacity } = measureTableLayout({
+        label: widget.label ?? "",
+        width: box.width,
+        height: box.height,
+        fontScale: context.fontScale,
+        columns: widget.columns ?? null,
+      });
+      if (widget.rows > rowCapacity) {
+        warn(
+          "rows_cut",
+          widget.id,
+          null,
+          { shown: rowCapacity, limit: widget.rows },
+          rowCapacity >= MEASURE_TABLE_MIN_ROWS
+            ? MEASURE_ROWS_FITTED_SEVERITY
+            : "attention",
+        );
       }
     } else if (widget.type === "status" && widget.rows) {
       // More sources than rows: the last row says "+N more" (info; the

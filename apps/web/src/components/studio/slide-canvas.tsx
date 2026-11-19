@@ -111,7 +111,7 @@ export function LiveWidget({
 }) {
   switch (widget.type) {
     case "measure":
-      return <LiveMeasureWidget widget={widget} env={env} />;
+      return <LiveMeasureWidget widget={widget} env={env} fit />;
     case "metric":
       return <LiveMetricWidget widget={widget} env={env} />;
     case "line":
@@ -611,7 +611,7 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
       {slide.widgets.map((widget) => {
         const placement = byId.get(widget.id);
         if (!placement) return null;
-        const { box, unitBox } = geometry.widget(placement);
+        const { box, unitBox, unitPx } = geometry.widget(placement);
         // The classic canvas in the primary format passes the widget
         // itself, so it renders exactly as before.
         const placed: PlacedWidget<W> =
@@ -624,6 +624,7 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
                 w: placement.w,
                 h: placement.h,
                 unitBox,
+                unitPx,
                 format,
               };
         return (
