@@ -81,13 +81,14 @@
                         }
                         // Drawn as fitted, the tile holds its rows and footer.
                         #expect(Double(height(nil)) <= box.height + 0.5, "\(context): \(height(nil)) > \(box.height)")
-                        // One more row would not fit, but for the rounding room;
+                        // One more row would not fit, but for the rounding room (a pixel per line);
                         // or the fit counted that row a line taller than drawn
                         // because a label's width is within 1 % of its column
                         // (the system font tracks a little wider at the
                         // smallest drawn size, which the widths cover).
                         let more = Double(height(fit.shown + 1))
-                        let room = Double(fit.shown + 2) / displayScale
+                        // A pixel per drawn line at most (the fit's rounding room).
+                        let room = more / (28 * fontScale * 1.15) / displayScale
                         if more <= box.height - room {
                             let cell = 28 * fontScale
                             let column = box.width / 3 - 20

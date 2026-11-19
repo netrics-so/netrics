@@ -1264,8 +1264,9 @@ interface MeasureTableBox {
   /** The column heads as shown: grouped dimensions', then measures' names. */
   columns?: readonly string[] | null;
   /**
-   * Units per screen pixel (default 1, a 1080p canvas): every row may round
-   * up to a whole pixel when drawn, so each keeps that much room.
+   * Units per screen pixel (default 1, a 1080p canvas): every line of a row
+   * may round up to a whole pixel when drawn (small screens, whose units
+   * are fractions of a pixel), so each keeps that much room.
    */
   pixel?: number;
   /** Whose text widths to count (default: the wider of web and TV). */
@@ -1304,7 +1305,7 @@ function measureTableParts(input: MeasureTableBox) {
       ? input.pixel
       : 1;
   const row = (count: number) =>
-    count * cell * m.lineHeight + m.cellPadding + m.border + pixel;
+    count * (cell * m.lineHeight + pixel) + m.cellPadding + m.border;
   const footerLine = (text: string | null) =>
     m.gap +
     (text === null

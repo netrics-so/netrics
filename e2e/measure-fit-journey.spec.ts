@@ -170,8 +170,8 @@ test("measure tables show the rows that fit their tiles, and no fewer", async ({
         new RegExp(`\\b${table.rows} (of|von) 40\\b`),
       );
       // Not wasteful: one more row would not have fit. The fit keeps one
-      // pixel of rounding room per row and for the heads (a 1080-line
-      // screen has one pixel per unit): the explicit tolerance.
+      // pixel of rounding room per line of a row and of the heads (a
+      // 1080-line screen has one pixel per unit): the explicit tolerance.
       expect(table.leftover, where).toBeLessThan(
         table.rowHeight + table.rows + 2,
       );

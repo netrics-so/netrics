@@ -876,8 +876,8 @@ public enum StudioLayout {
             Swift.max(1, texts.map { wrap($0, columnWidth, cell, weight) }.max() ?? 1)
         }
         func row(_ count: Int) -> Double {
-            Double(count) * cell * MeasureTableMetrics.lineHeight + MeasureTableMetrics.cellPadding
-                + MeasureTableMetrics.border + pixel
+            Double(count) * (cell * MeasureTableMetrics.lineHeight + pixel) + MeasureTableMetrics.cellPadding
+                + MeasureTableMetrics.border
         }
         func footerLine(_ text: String?) -> Double {
             guard let text else { return MeasureTableMetrics.gap + footerSize * MeasureTableMetrics.freshnessLineHeight }
