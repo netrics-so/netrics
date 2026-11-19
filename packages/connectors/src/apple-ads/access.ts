@@ -1,3 +1,4 @@
+import { RateLimitedError } from "@netrics/connector-sdk";
 import { z } from "zod";
 
 import {
@@ -375,6 +376,7 @@ export async function checkAccess(
 /** Whether an error means "the request limit is used up, try later". */
 export function isRateLimited(error: unknown): boolean {
   return (
+    error instanceof RateLimitedError ||
     error instanceof AppleAdsRateBudgetError ||
     (error instanceof AppleAdsApiError && error.status === 429)
   );

@@ -575,6 +575,13 @@
       "when": 1795018269377,
       "tag": "0081_opaque_cursor",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795076284435,
+      "tag": "0082_rate_limited_until",
+      "breakpoints": true
     }
   ]
 }

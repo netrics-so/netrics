@@ -13,6 +13,7 @@ import {
   freshnessEntry,
   runConnectorContractTests,
 } from "@netrics/connector-sdk/testing";
+import { RateLimitedError } from "@netrics/connector-sdk";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -346,13 +347,105 @@ describe("vercel connector", () => {
     expect(waits).toEqual([2000, 1000, 2000]);
   });
 
-  it("gives up on a far rate-limit reset and on persistent outages", async () => {
+  it("hands a far rate-limit reset to the host as RateLimitedError (#781)", async () => {
     const far = fake({
       failures: [{ status: 429, headers: { "retry-after": "3600" } }],
     });
-    await expect(connector().discover(context(), far.runtime)).rejects.toThrow(
-      /429/,
+    const error = await connector()
+      .discover(context(), far.runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(clock() + 3600 * 1000).toISOString(),
     );
+    expect((error as Error).message).toMatch(/429/);
+    expect(far.requests).toHaveLength(1);
+
+    // x-ratelimit-reset (UTC epoch seconds) when Vercel sends no retry-after.
+    const resetAt = clock() + 40 * 60 * 1000;
+    const byReset = fake({
+      failures: [
+        {
+          status: 429,
+          headers: {
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": String(resetAt / 1000),
+          },
+        },
+      ],
+    });
+    const sync = await connector()
+      .sync(
+        context(),
+        {
+          mode: "backfill",
+          from: "2024-11-01T00:00:00.000Z",
+          to: "2024-12-31T00:00:00.000Z",
+        },
+        byReset.runtime,
+      )
+      .catch((caught: unknown) => caught);
+    expect(sync).toBeInstanceOf(RateLimitedError);
+    expect((sync as RateLimitedError).retryAt).toBe(
+      new Date(resetAt).toISOString(),
+    );
+  });
+
+  it("stops before the window runs out: waits for a near reset, defers a far one (#781)", async () => {
+    const waits: number[] = [];
+    // Two requests left, the window resets in 20 s: the client waits.
+    const near = fake({
+      window: { remaining: 2, resetInMs: 20_000, now: clock },
+    });
+    await createVercelConnector({
+      now: clock,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    }).discover(context(), near.runtime);
+    expect(waits).toEqual([]);
+    const projects = await createVercelConnector({
+      now: clock,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    }).sync(
+      context(),
+      {
+        mode: "incremental",
+        from: "2024-12-30T00:00:00.000Z",
+        to: "2024-12-31T00:00:00.000Z",
+      },
+      near.runtime,
+    );
+    expect(projects.done).toBe(true);
+    expect(waits[0]).toBe(20_000);
+    expect(waits.length).toBeGreaterThan(0);
+
+    // An hour to the reset: no request is spent on a 429.
+    const far = fake({
+      window: { remaining: 2, resetInMs: 60 * 60 * 1000, now: clock },
+    });
+    const error = await connector()
+      .sync(
+        context(),
+        {
+          mode: "backfill",
+          from: "2024-11-01T00:00:00.000Z",
+          to: "2024-12-31T00:00:00.000Z",
+        },
+        far.runtime,
+      )
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(clock() + 60 * 60 * 1000).toISOString(),
+    );
+    // Only the project list was asked; the analytics queries were not.
+    expect(far.requests).toHaveLength(1);
+  });
+
+  it("gives up on persistent outages", async () => {
     const down = fake({
       failures: Array.from({ length: 4 }, () => ({ status: 500 })),
     });

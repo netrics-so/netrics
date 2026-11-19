@@ -1,4 +1,4 @@
-import { sourceDatasetSchema } from "@netrics/connector-sdk";
+import { RateLimitedError, sourceDatasetSchema } from "@netrics/connector-sdk";
 import type {
   CheckResult,
   ConnectionContext,
@@ -239,6 +239,39 @@ describe("executeSync", () => {
     // A plain thrown error is NOT a contract violation: it is the retryable
     // provider-failure convention.
     expect(failure).not.toBeInstanceOf(ContractViolationError);
+  });
+
+  it("keeps a RateLimitedError and its retryAt, with the message redacted (#781)", async () => {
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { token: "sk-live-9f8e7d6c" },
+    };
+    const connector = connectorWith(demoManifest, () => {
+      throw new RateLimitedError(
+        "limit used up for sk-live-9f8e7d6c",
+        "2024-01-01T10:40:00.000Z",
+      );
+    });
+    for (const call of [
+      () => executeSync(connector, context, request),
+      () =>
+        executeCheck(
+          connectorWith(demoManifest, undefined, () => {
+            throw new RateLimitedError(
+              "limit used up for sk-live-9f8e7d6c",
+              "2024-01-01T10:40:00.000Z",
+            );
+          }),
+          context,
+        ),
+    ]) {
+      const failure = await call().catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(RateLimitedError);
+      expect((failure as RateLimitedError).retryAt).toBe(
+        "2024-01-01T10:40:00.000Z",
+      );
+      expect((failure as Error).message).not.toContain("sk-live-9f8e7d6c");
+    }
   });
 
   it("refuses contexts carrying function-typed values (capability leak)", async () => {

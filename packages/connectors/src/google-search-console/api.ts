@@ -1,4 +1,7 @@
-import type { ConnectorRuntime } from "@netrics/connector-sdk";
+import {
+  RateLimitedError,
+  type ConnectorRuntime,
+} from "@netrics/connector-sdk";
 
 import { abortableSleep } from "../sleep.js";
 
@@ -19,7 +22,7 @@ const RATE_LIMIT_REASONS = new Set([
   "rateLimitExceeded",
   "userRateLimitExceeded",
 ]);
-/** Quotas that do not recover within a call: give up, retry the job later. */
+/** Daily quotas: they reset at midnight Pacific Time, handed to the host. */
 const DAILY_QUOTA_REASONS = new Set(["dailyLimitExceeded", "quotaExceeded"]);
 
 export interface GoogleErrorBody {
@@ -120,17 +123,45 @@ export interface ClientOptions {
   now?: () => number;
 }
 
-/** How long to wait before retrying a rate limit, or null to give up. */
+/**
+ * The next midnight in America/Los_Angeles after `now`: when Google resets
+ * a daily API quota ("Queries per day" reset at midnight Pacific Time).
+ */
+export function nextPacificMidnight(now: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hourCycle: "h23",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  }).formatToParts(new Date(now));
+  const part = (type: string) =>
+    Number(parts.find((entry) => entry.type === type)?.value ?? 0);
+  const elapsed =
+    ((part("hour") * 60 + part("minute")) * 60 + part("second")) * 1000 +
+    (now % 1000);
+  // A day of 23 or 25 hours (daylight saving) is off by an hour at most;
+  // the host's jitter and the next attempt cover it.
+  return now - elapsed + 24 * 60 * 60 * 1000;
+}
+
+/**
+ * How long to wait before retrying a rate limit, or the reset to hand to
+ * the host (a daily quota, a far Retry-After).
+ */
 function rateLimitWait(
   headers: Record<string, string>,
   body: GoogleErrorBody,
   attempt: number,
-): number | null {
-  if (body.reason && DAILY_QUOTA_REASONS.has(body.reason)) return null;
+  now: number,
+): number | { resetAt: number } {
+  if (body.reason && DAILY_QUOTA_REASONS.has(body.reason)) {
+    return { resetAt: nextPacificMidnight(now) };
+  }
   const retryAfter = Number(headers["retry-after"]);
   if (headers["retry-after"] !== undefined && Number.isFinite(retryAfter)) {
     const ms = Math.max(0, retryAfter) * 1000;
-    return ms <= MAX_RATE_LIMIT_WAIT_MS ? ms : null;
+    return ms <= MAX_RATE_LIMIT_WAIT_MS ? ms : { resetAt: now + ms };
   }
   return BASE_BACKOFF_MS * 2 ** (attempt - 1);
 }
@@ -143,8 +174,9 @@ export interface SearchConsoleClient {
 /**
  * Calls the Search Console API through the runtime's allowlisted fetch.
  * Retries rate limits (429, or 403 with a per-minute quota reason) and
- * server errors with exponential backoff; everything else surfaces as
- * SearchConsoleApiError.
+ * server errors with exponential backoff. A daily quota or a Retry-After
+ * too long to wait for surfaces as RateLimitedError (#781), so the host
+ * waits for the reset; everything else as SearchConsoleApiError.
  */
 export function createSearchConsoleClient(
   runtime: ConnectorRuntime,
@@ -152,6 +184,7 @@ export function createSearchConsoleClient(
   options: ClientOptions = {},
 ): SearchConsoleClient {
   const sleep = options.sleep ?? abortableSleep;
+  const now = options.now ?? Date.now;
 
   async function call(
     method: "GET" | "POST",
@@ -179,13 +212,16 @@ export function createSearchConsoleClient(
         // Non-JSON error page (proxy, outage): status alone classifies it.
       }
       const error = new SearchConsoleApiError(response.status, errorBody);
-      if (attempt >= MAX_ATTEMPTS) throw error;
       if (error.isQuota) {
-        const wait = rateLimitWait(response.headers, errorBody, attempt);
-        if (wait === null) throw error;
+        const wait = rateLimitWait(response.headers, errorBody, attempt, now());
+        if (typeof wait === "object") {
+          throw new RateLimitedError(error.message, new Date(wait.resetAt));
+        }
+        if (attempt >= MAX_ATTEMPTS) throw error;
         await sleep(wait, runtime.signal);
         continue;
       }
+      if (attempt >= MAX_ATTEMPTS) throw error;
       if (response.status >= 500) {
         await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1), runtime.signal);
         continue;

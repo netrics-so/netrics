@@ -168,6 +168,40 @@ export async function deferJob(
 }
 
 /**
+ * Puts a running job back to wait until `runAt` without consuming a retry
+ * (#781: a provider rate limit with a known reset). With a continuation the
+ * job continues (status continuing, which also keeps the connection's other
+ * jobs waiting behind it, see claim_jobs); otherwise it keeps the status a
+ * retry would give it. `note` lands in last_error: callers pass an already
+ * redacted message. Fenced on the lease like completeJob.
+ */
+export async function deferJobUntil(
+  schedulerDb: Db | Transaction,
+  jobId: string,
+  workerId: string,
+  runAt: Date,
+  options: { continuation?: Record<string, unknown>; note?: string } = {},
+): Promise<boolean> {
+  const { continuation, note } = options;
+  const rows = await schedulerDb.execute(sql`update jobs
+    set status = ${
+      continuation === undefined
+        ? sql`case when payload ? 'continuation' then 'continuing' else 'pending' end`
+        : sql`'continuing'`
+    },
+        run_at = ${runAt.toISOString()}::timestamptz,
+        locked_by = null, locked_at = null, last_error = ${note ?? null},
+        payload = ${
+          continuation === undefined
+            ? sql`payload`
+            : sql`jsonb_set(payload, '{continuation}', ${JSON.stringify(continuation)}::jsonb)`
+        }
+    where id = ${jobId}::uuid and status = 'running' and locked_by = ${workerId}
+    returning id`);
+  return rows.length === 1;
+}
+
+/**
  * Extends the lease of a running job held by `workerId`. Workers call this
  * periodically while a handler runs so long jobs are not reclaimed as stale.
  * Returns false when the lease is no longer held (the job was reclaimed).

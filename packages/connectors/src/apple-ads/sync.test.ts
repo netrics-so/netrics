@@ -1,5 +1,6 @@
 import {
   observationKey,
+  RateLimitedError,
   syncResultSchema,
   type ConnectionContext,
   type Observation,
@@ -23,6 +24,7 @@ import {
   APPLE_ADS_METRIC_KEYS,
   appleAdsDaysLabel,
   AppleAdsApiError,
+  type AppleAdsRateLimitedError,
   AppleAdsReportError,
   chunkRange,
   createAppleAdsClient,
@@ -794,9 +796,9 @@ describe("rate limits", () => {
     const failure = await connector()
       .sync(context(), { ...request(), cursor }, limited.runtime)
       .catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(AppleAdsApiError);
-    expect((failure as AppleAdsApiError).isRetryable).toBe(true);
-    expect((failure as AppleAdsApiError).retryAfterSeconds).toBe(120);
+    // The host waits for the reset (#781).
+    expect(failure).toBeInstanceOf(RateLimitedError);
+    expect((failure as AppleAdsRateLimitedError).retryAfterSeconds).toBe(120);
 
     // The retry starts at the cursor: the newest months are not read again.
     const retry = fake({ [US]: report });
@@ -1133,7 +1135,7 @@ describe("ad groups", () => {
         limited.runtime,
       )
       .catch((error: unknown) => error);
-    expect((failure as AppleAdsApiError).isRetryable).toBe(true);
+    expect(failure).toBeInstanceOf(RateLimitedError);
     // The retry asks only for the campaigns after the cursor's.
     const retry = fake({ [US]: report });
     const rest = await syncAll(retry, { ...window, cursor: first.nextCursor! });

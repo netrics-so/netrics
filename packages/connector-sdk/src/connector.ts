@@ -17,6 +17,8 @@ import type {
  * Failure convention: throwing signals a retryable provider failure (outage,
  * rate limit, network); returning `{ ok: false }` from `check` signals a
  * terminal condition such as invalid credentials that needs user action.
+ * A rate limit whose reset the provider names is thrown as RateLimitedError
+ * (SDK 0.2.16): the host then waits for the reset instead of retrying.
  */
 export interface Connector {
   manifest: ConnectorManifest;

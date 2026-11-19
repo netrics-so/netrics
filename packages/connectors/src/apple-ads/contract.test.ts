@@ -6,6 +6,7 @@ import {
   assertManifestCompatible,
   checkResultSchema,
   connectorManifestSchema,
+  RateLimitedError,
   resourceSchema,
 } from "@netrics/connector-sdk";
 import { describe, expect, it } from "vitest";
@@ -14,6 +15,7 @@ import {
   APPLE_MAPS_MESSAGE,
   AppleAdsApiError,
   AppleAdsRateBudgetError,
+  type AppleAdsRateLimitedError,
   CHOOSE_AD_ACCOUNT_MESSAGE,
   KEYWORD_DISCOVERY_BUDGET_MS,
   MAX_AD_GROUP_PAGES,
@@ -222,7 +224,7 @@ describe("errors and rate limits", () => {
     expect(waits).toEqual([7000]);
   });
 
-  it("throws a retryable 429 when Retry-After is too long to wait in a call", async () => {
+  it("hands a 429 whose Retry-After is too long to wait in a call to the host (#781)", async () => {
     const api = fake({
       failures: [
         {
@@ -232,13 +234,15 @@ describe("errors and rate limits", () => {
         },
       ],
     });
+    const before = Date.now();
     const error = (await connector()
       .check(context(), api.runtime)
-      .catch((e: unknown) => e)) as AppleAdsApiError;
-    expect(error).toBeInstanceOf(AppleAdsApiError);
+      .catch((e: unknown) => e)) as AppleAdsRateLimitedError;
+    expect(error).toBeInstanceOf(RateLimitedError);
     expect(error.status).toBe(429);
-    expect(error.isRetryable).toBe(true);
     expect(error.retryAfterSeconds).toBe(600);
+    expect(Date.parse(error.retryAt)).toBeGreaterThanOrEqual(before + 600_000);
+    expect(error.message).toContain("429");
     expect(api.requests).toHaveLength(1);
   });
 
@@ -282,6 +286,8 @@ describe("errors and rate limits", () => {
     const error = await client.json("/v1/acls").catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AppleAdsRateBudgetError);
     expect((error as AppleAdsRateBudgetError).resetSeconds).toBe(30);
+    // The host waits for the window's reset (#781).
+    expect(error).toBeInstanceOf(RateLimitedError);
     expect(api.requests).toHaveLength(1);
   });
 

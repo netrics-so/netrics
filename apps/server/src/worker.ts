@@ -9,6 +9,7 @@ import {
   claimJobs,
   completeJob,
   deferJob,
+  deferJobUntil,
   createDatabase,
   DEFAULT_BACKFILLS_PER_APP,
   failJob,
@@ -25,6 +26,7 @@ import { createOAuthTokenService } from "./oauth/tokens.js";
 import {
   createJobHandlers,
   ContinueJobError,
+  DeferJobError,
   NonRetryableJobError,
   TerminalJobError,
   type JobHandler,
@@ -201,6 +203,36 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
           jobLogger.error(
             { err: safeErrorMessage(deferError) },
             "failed to schedule continuation",
+          );
+        }
+        return;
+      }
+      if (error instanceof DeferJobError) {
+        stopRenewing();
+        try {
+          const deferred = await deferJobUntil(
+            schedulerDb,
+            job.id,
+            workerId,
+            error.runAt,
+            {
+              ...(error.continuation
+                ? { continuation: error.continuation }
+                : {}),
+              note: safeErrorMessage(error),
+            },
+          );
+          if (deferred)
+            jobLogger.info(
+              { runAt: error.runAt.toISOString() },
+              "job waits until its run time",
+            );
+          else jobLogger.warn("job lease lost before deferral; not deferred");
+        } catch (deferError) {
+          // As for a continuation: crash recovery requeues the lease.
+          jobLogger.error(
+            { err: safeErrorMessage(deferError) },
+            "failed to defer job",
           );
         }
         return;

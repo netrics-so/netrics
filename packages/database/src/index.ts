@@ -41,6 +41,7 @@ export {
   DEFAULT_BACKFILLS_PER_APP,
   completeJob,
   deferJob,
+  deferJobUntil,
   enqueueJob,
   enqueueSyncJob,
   failJob,

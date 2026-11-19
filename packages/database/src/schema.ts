@@ -458,6 +458,11 @@ export const connectionState = pgTable(
     // auth_state needs_reauthorization.
     authReason: text("auth_reason"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    // The provider's request limit is used up until then (#781): the sync
+    // engine runs no job of the connection before it. Not a failure: the
+    // auth state and consecutive failures stay as they were. Cleared by the
+    // next successful run; a past value means nothing.
+    rateLimitedUntil: timestamp("rate_limited_until", { withTimezone: true }),
     // The connector's datasets ({key: schema version}) that the last
     // succeeded backfill read over the whole window (#617). A dataset the
     // connector declares but this map lacks, or has at another version, was
@@ -726,7 +731,7 @@ export const syncRuns = pgTable(
     ),
     check(
       "sync_runs_error_class_valid",
-      sql`${table.errorClass} in ('auth', 'transient', 'contract', 'budget')`,
+      sql`${table.errorClass} in ('auth', 'transient', 'contract', 'budget', 'rate_limited')`,
     ),
     index("sync_runs_connection_started_idx").on(
       table.connectionId,

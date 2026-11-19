@@ -13,6 +13,7 @@ import {
   freshnessEntry,
   runConnectorContractTests,
 } from "@netrics/connector-sdk/testing";
+import { RateLimitedError } from "@netrics/connector-sdk";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -405,15 +406,25 @@ describe("search console connector against recorded responses", () => {
     expect(waits).toEqual([1000, 2000]);
 
     let daily = 0;
-    await expect(
-      connector().discover(
+    // 10:30 in Los Angeles (PST): the daily quota resets at midnight there.
+    const error = await createSearchConsoleConnector({
+      now: () => Date.parse("2024-12-30T18:30:00.000Z"),
+    })
+      .discover(
         context(),
         recordedRuntime(() => {
           daily += 1;
           return reply(403, fixture("error-daily-quota"));
         }),
-      ),
-    ).rejects.toThrow(/quota is used up.*dailyLimitExceeded/);
+      )
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as Error).message).toMatch(
+      /quota is used up.*dailyLimitExceeded/,
+    );
+    expect((error as RateLimitedError).retryAt).toBe(
+      "2024-12-31T08:00:00.000Z",
+    );
     expect(daily).toBe(1);
   });
 
@@ -871,12 +882,17 @@ describe("search console connector", () => {
     expect(waits).toEqual([2000, 2000, 4000]);
   });
 
-  it("gives up on a far rate-limit reset and on persistent outages", async () => {
+  it("hands a far rate-limit reset to the host, and gives up on persistent outages", async () => {
     const far = fake({
       failures: [{ status: 429, headers: { "retry-after": "3600" } }],
     });
-    await expect(connector().discover(context(), far.runtime)).rejects.toThrow(
-      /quota is used up/,
+    const error = await connector()
+      .discover(context(), far.runtime)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect((error as Error).message).toMatch(/quota is used up/);
+    expect((error as RateLimitedError).retryAt).toBe(
+      new Date(clock() + 3_600_000).toISOString(),
     );
     const down = fake({
       failures: Array.from({ length: 4 }, () => ({ status: 500 })),

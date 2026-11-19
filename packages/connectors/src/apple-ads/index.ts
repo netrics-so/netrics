@@ -114,6 +114,7 @@ export {
   APPLE_ADS_HOST,
   AppleAdsApiError,
   AppleAdsRateBudgetError,
+  AppleAdsRateLimitedError,
   appleAdsErrorBody,
   createAppleAdsClient,
   MAX_RETRY_AFTER_SECONDS,

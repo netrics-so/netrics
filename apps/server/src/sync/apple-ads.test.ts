@@ -368,7 +368,7 @@ function total(
 describe("Apple Ads campaign report sync", () => {
   const backfillJob = randomUUID();
 
-  it("backfills newest first; a 429 in the middle fails the run with a checkpoint", async () => {
+  it("backfills newest first; a 429 in the middle stops the run at a checkpoint until the reset", async () => {
     apple.calls.length = 0;
     // The second range (May to July) meets a long 429.
     apple.failures.push({
@@ -384,12 +384,24 @@ describe("Apple Ads campaign report sync", () => {
     const ranges = reportCalls().map((call) => call.timeRange);
     // Days of the ad account: the 28th in Los Angeles at 03:00 UTC.
     expect(ranges[0]).toEqual({ start: "2026-08-01", end: "2026-10-28" });
-    const [state] = await admin<Array<{ cursor: string; auth_state: string }>>`
-      select cursor, auth_state from connection_state
+    const [state] = await admin<
+      Array<{
+        cursor: string;
+        auth_state: string;
+        rate_limited_until: Date | null;
+      }>
+    >`
+      select cursor, auth_state, rate_limited_until from connection_state
       where connection_id = ${connections[US.id]!}
     `;
     expect(state!.cursor).toBe("apple-ads:1:2025-10-29:2026-10-28:2026-07-31");
-    expect(state!.auth_state).toBe("outage");
+    // A rate limit with a known reset is no outage (#781): the connection
+    // waits for the reset.
+    expect(state!.auth_state).toBe("ok");
+    expect(state!.rate_limited_until!.getTime()).toBeGreaterThan(Date.now());
+    // As if the reset had passed, for the retry below.
+    await admin`update connection_state set rate_limited_until = null
+      where connection_id = ${connections[US.id]!}`;
     // The first range is committed: October's spend is there.
     expect(
       total(await stored(connections[US.id]!), APPLE_ADS_METRIC_KEYS.spend),

@@ -56,6 +56,22 @@ export class ContinueJobError extends Error {
 }
 
 /**
+ * Expected wait, not a failed attempt (#781): the job runs again at `runAt`
+ * without consuming a retry, e.g. when the provider's request limit is used
+ * up until then. A continuation is stored like ContinueJobError's.
+ */
+export class DeferJobError extends Error {
+  constructor(
+    readonly runAt: Date,
+    message: string,
+    readonly continuation?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "DeferJobError";
+  }
+}
+
+/**
  * Throw from a handler for terminal domain failures that must neither retry
  * nor pollute the dead-letter queue (e.g. rejected credentials: only a user
  * action can repair them, and sync_runs/connection_state already carry the

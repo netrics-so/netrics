@@ -29,6 +29,12 @@ export interface FakeVercelOptions {
     headers?: Record<string, string>;
   }>;
   projectsPageSize?: number;
+  /**
+   * The rate-limit window every answer reports (`x-ratelimit-remaining`,
+   * `x-ratelimit-reset`): `remaining` requests left, counted down per
+   * request, until `resetInMs` after `now()`.
+   */
+  window?: { remaining: number; resetInMs: number; now: () => number };
 }
 
 export const FAKE_TOKEN = "vercel-fake-token-0123456789";
@@ -110,6 +116,26 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
   const failures = [...(options.failures ?? [])];
   const pageSize = options.projectsPageSize ?? 100;
   const requests: FakeVercel["requests"] = [];
+
+  let remaining = options.window?.remaining ?? 0;
+  const windowHeaders = (): Record<string, string> => {
+    const window = options.window;
+    if (!window) return {};
+    remaining = Math.max(0, remaining - 1);
+    return {
+      "x-ratelimit-limit": "100",
+      "x-ratelimit-remaining": String(remaining),
+      "x-ratelimit-reset": String(
+        Math.ceil((window.now() + window.resetInMs) / 1000),
+      ),
+    };
+  };
+
+  const answer = (url: URL, init?: ConnectorFetchInit): ConnectorResponse => {
+    const result = handle(url, init);
+    const extra = windowHeaders();
+    return { ...result, headers: { ...extra, ...result.headers } };
+  };
 
   const handle = (url: URL, init?: ConnectorFetchInit): ConnectorResponse => {
     if (init?.headers?.authorization !== `Bearer ${token}`) {
@@ -241,7 +267,7 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
         if (url.protocol !== "https:" || url.hostname !== "api.vercel.com") {
           throw new Error(`fake Vercel refuses ${raw}`);
         }
-        return handle(url, init);
+        return answer(url, init);
       },
     },
   };
