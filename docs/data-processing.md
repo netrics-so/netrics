@@ -926,6 +926,52 @@ swapped in.
 
 Version 4 installs get version 5 through the reviewed template update.
 
+### Both stores on a linked product's slide (template version 6)
+
+[#784](https://github.com/netrics-so/netrics/issues/784): a product in both
+stores showed only its App Store app's numbers on its slide. From version
+6 its slide shows both stores:
+
+- **Downloads**: a total with a line per store ("635", "App Store 412",
+  "Google Play 223"): the downloads model in a value view grouped by store.
+  A measure value view with a grouping shows its total and its groups; the
+  server adds the total (`totals`) for a sum or count over a complete
+  result, one per currency, and screens show the groups alone where a
+  total makes no sense. The total shrinks (84 down to 36 units) before a
+  group's line gives way (`measureSplitLayout`, on the web and netrics TV,
+  with shared test vectors); the readability check counts its lines.
+  It reads the last 30 days of the workspace, like the App Store widgets
+  (a measure widget's own `period`, on the model's reporting-date
+  dimension; the date filter does not change it and says so), titled
+  "Downloads, last 30 days". Paired screens that do not draw the split
+  (netrics TV up to 0.3.2) get the total alone: a client that draws it
+  asks with `GET /v1/device/dashboard?features=measure_split`; for every
+  other one the payload makes such a widget an ungrouped value of its
+  total, under another version (ETag).
+- **Revenue** (paid): the App Store's revenue in the display currency over
+  the last 30 days, as before, and beside the ratings Google Play's
+  proceeds per currency (a measure table of the proceeds model for the
+  Google Play store). Models do not convert currencies, so the two are not
+  added up.
+- **Ratings** per store listing and the App Store's latest review, as
+  before.
+
+A paid product's slide has the ratings (listing, country and star, without
+the count) five columns wide over Google Play's proceeds, the total with
+its split over the latest review in the middle, and the App Store's
+revenue and the website's visitors on the right; a free product's has the
+total over the latest review and its visitors over ratings eight columns
+wide. Both stores' listings fit at every theme font scale, and every
+metric tile keeps its freshness line: metric widgets give the freshness
+line room before the trend, the period line or the sparkline. A total in several
+currencies wraps between its amounts instead of letting group lines go.
+The Google Play proceeds' freshness names Google Play only: a widget's own
+fixed store or app counts as its scope. A single-store app keeps version 5's slide; a free product has
+no revenue widgets. The freshness line of a tile that combines both stores lists
+each store's day and next time (ADR 0025 sections 7 and 8). Version 5
+installs get version 6 through the reviewed template update; only the
+linked products' slides change.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

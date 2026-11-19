@@ -12,6 +12,9 @@ import {
 import {
   dashboardModelQuery,
   measureQueryOrder,
+  measureSplitTotals,
+  measurePeriodBinding,
+  compareMeasureWindows,
   measureViewWindow,
   compareDataValues,
   dimensionValueLabels,
@@ -40,6 +43,7 @@ import {
 } from "@netrics/domain";
 import {
   schema,
+  findWorkspace,
   resolveDataPolicy,
   type Transaction,
   type DashboardWidgetRow,
@@ -231,6 +235,14 @@ export async function validateDashboardMeasure(
   if (binding.interaction)
     measureInteractionDimension(filters, binding, options.view);
   const model = await publishedModel(tx, workspaceId, binding.modelId);
+  // A widget's own period (#784) reads the model's reporting-date dimension.
+  if (
+    options.period &&
+    !model.definition.dimensions.some(
+      (dimension) => dimension.timeAlignment === "reporting_date",
+    )
+  )
+    throw new DataServiceError("dashboard_measure_period_unsupported");
   for (const filter of filters) {
     const mapping = filter.mappings.find(
       (mapping) => mapping.modelId === binding.modelId,
@@ -401,10 +413,15 @@ export async function queryDashboardMeasure(
       );
       // One resolution of the model's sources for its warnings and its
       // freshness, so both name the same connections (#721).
+      const release = await publishedModel(
+        savepoint,
+        workspaceId,
+        input.binding.modelId,
+      );
       const sources = await modelSourceDatasets(
         savepoint,
         workspaceId,
-        await publishedModel(savepoint, workspaceId, input.binding.modelId),
+        release,
       );
       sourceHealth = await modelSourceHealth(savepoint, workspaceId, sources);
       if (freshnessReader)
@@ -418,6 +435,7 @@ export async function queryDashboardMeasure(
             input.binding.exclusions,
             deviceScope,
             { now, defaults, cache: freshnessReader.scopeMappings },
+            input.binding.filter,
           ),
         );
       const { policy } = await resolveDataPolicy(
@@ -428,10 +446,23 @@ export async function queryDashboardMeasure(
       await savepoint.execute(
         sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
       );
+      // The widget's own period (#784): the workspace's days, as
+      // connection widgets read theirs.
+      const binding = input.options.period
+        ? measurePeriodBinding(
+            input.binding,
+            release.definition.dimensions,
+            compareMeasureWindows(
+              input.options.period,
+              now,
+              (await findWorkspace(savepoint, workspaceId))?.timeZone ?? "UTC",
+            ).current,
+          )
+        : input.binding;
       const query = dashboardModelQuery(
         filters,
         values,
-        input.binding,
+        binding,
         input.options.limit,
         measureViewWindow(
           input.options.view,
@@ -542,6 +573,17 @@ export async function queryDashboardMeasure(
             .join(" ∩ ");
           return text ? [`${filter.name}: ${text}`] : [];
         });
+      // A value view with a grouping: its total with the split (#784).
+      const totals =
+        input.options.view === "value" && input.binding.groupBy.length
+          ? measureSplitTotals(
+              release.definition.measures.find(
+                (measure) => measure.id === input.binding.measureIds[0],
+              ),
+              input.binding.measureIds[0]!,
+              result,
+            )
+          : undefined;
       const status = result.stale
         ? ("stale" as const)
         : result.rows.some((row) =>
@@ -560,6 +602,7 @@ export async function queryDashboardMeasure(
         error: null,
         exclusions,
         ...(fresh.freshness ? { freshness: fresh.freshness } : {}),
+        ...(totals ? { totals } : {}),
       };
     });
   } catch (error) {

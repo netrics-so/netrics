@@ -269,6 +269,11 @@ function readabilityWidget(
       ...base!,
       label: widget.title,
       rows: widget.options.view === "table" ? widget.options.limit : null,
+      // A value view with a grouping: a total with its split (#784).
+      splitLines:
+        widget.options.view === "value" && widget.binding.groupBy.length
+          ? widget.options.limit
+          : null,
       columns: context.columnsOf?.(widget) ?? null,
     };
   }

@@ -230,6 +230,34 @@ describe("formatWarnings", () => {
     ).toEqual([]);
   });
 
+  it("rows_cut: a total with its split shows every group line (#784)", () => {
+    const split = (lines: number, h = 4, w = 4): ReadabilityWidget => ({
+      id: "s",
+      type: "measure",
+      x: 0,
+      y: 0,
+      w,
+      h,
+      label: "Downloads and user installs",
+      rows: null,
+      splitLines: lines,
+    });
+    // Two stores' lines under the total, in a third of a 16:9 slide's
+    // upper half; a three-row band leaves no room for the smallest total.
+    expect(formatWarnings(slide([split(2)]), "16x9", context)).toEqual([]);
+    expect(
+      codes(formatWarnings(slide([split(2, 3)]), "16x9", context)),
+    ).toEqual(["16x9 rows_cut s"]);
+    // Without data the check counts at most two lines, whatever the
+    // limit: screens let lines past the room give way with "N of M".
+    expect(formatWarnings(slide([split(20)]), "16x9", context)).toEqual([]);
+    const warnings = formatWarnings(slide([split(20, 3)]), "16x9", context);
+    expect(warnings[0]).toMatchObject({
+      severity: "attention",
+      rows: { limit: 2 },
+    });
+  });
+
   it("rows_cut: a measure table's narrow columns wrap their heads and rows (#768)", () => {
     const measure = (columns: string[] | null): ReadabilityWidget => ({
       id: "m",

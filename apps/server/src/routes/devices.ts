@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
+import { deviceFeatures } from "../devices/measure-compat.js";
+
 import {
   DEVICE_API_VERSION,
   DEVICE_DASHBOARD_SCHEMAS,
@@ -271,7 +273,12 @@ export function registerDeviceRoutes(
           const schema =
             query.schema === "3" ? 3 : query.schema === "2" ? 2 : 1;
           const dashboard = unwrap(
-            await devices.dashboard(request.device!, request.log, schema),
+            await devices.dashboard(
+              request.device!,
+              request.log,
+              schema,
+              deviceFeatures(query.features),
+            ),
             reply,
           );
           if (!dashboard) {

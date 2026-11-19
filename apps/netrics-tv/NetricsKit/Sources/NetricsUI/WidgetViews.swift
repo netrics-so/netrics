@@ -322,7 +322,9 @@ struct MetricWidgetView: View {
         let layout = StudioRender.metricLayout(
             label: label, value: (full, compact), periodText: MetricFormat.subtitle(tile, language: env.language), change: changeLine,
             notice: notice, note: slot, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
-            showSparkline: options.showSparkline && Sparkline.isDrawable(data.spark), unitBox: placement.unitBox)
+            showSparkline: options.showSparkline && Sparkline.isDrawable(data.spark), unitBox: placement.unitBox,
+            // The freshness line before the trend (#784).
+            freshnessNote: footer != nil && data.freshness != nil)
         let tone = change.map { MetricFormat.tone($0.direction, better: data.better) } ?? .flat
 
         if let surface = DataSurface(data.status) {

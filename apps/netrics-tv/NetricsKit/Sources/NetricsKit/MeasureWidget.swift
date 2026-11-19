@@ -234,10 +234,13 @@ public struct MeasureWidgetData: Codable, Sendable, Equatable {
     /// The widget's own state ("stale" also when a provider is a day
     /// overdue, ADR 0025 §7); nil from servers before it or when unknown.
     public var status: DeviceTileStatus? = nil
+    /// A value view with a grouping (#784): its total, one cell per
+    /// currency; nil where a total makes no sense (the groups alone).
+    public var totals: [MeasureCell]? = nil
 }
 extension MeasureWidgetData {
     private enum CodingKeys: String, CodingKey {
-        case sourceHealth, scope, metadata, result, error, exclusions, freshness, status
+        case sourceHealth, scope, metadata, result, error, exclusions, freshness, status, totals
     }
     /// As the synthesized decoding, except that `freshness` is read
     /// leniently: a newer or damaged one never fails the widget.
@@ -251,6 +254,8 @@ extension MeasureWidgetData {
         exclusions = try c.decode([MeasureExclusion].self, forKey: .exclusions)
         freshness = c.lenient(WidgetFreshness.self, .freshness)
         status = c.lenient(String.self, .status).flatMap(DeviceTileStatus.init(rawValue:))
+        let totals = c.lossyArray(MeasureCell.self, .totals)
+        self.totals = totals.isEmpty ? nil : totals
     }
 }
 /**
@@ -331,6 +336,57 @@ extension MeasureWidgetData {
         let status = freshnessStatus
         if let warning = text.overdueWarning(freshness, status: status, now: now) { return (warning, []) }
         return (nil, text.footer(freshness, status: status, now: now))
+    }
+
+    /// The forms of a freshness line over several sources (#784), longest
+    /// first, each its lines; empty for one source, or under the overdue
+    /// warning, which keeps its own line.
+    public func freshnessSourceLevels(
+        now: Date = Date(), language: ScreenLanguage = .en, timeZone: TimeZone = .current,
+        region: Locale = .autoupdatingCurrent
+    ) -> [[String]] {
+        guard let freshness else { return [] }
+        let lines = freshnessLines(now: now, language: language, timeZone: timeZone, region: region)
+        guard lines.warning == nil, !lines.footer.isEmpty else { return [] }
+        return FreshnessText(language: language, timeZone: timeZone, region: region)
+            .sourceLevels(freshness, status: freshnessStatus, now: now)
+    }
+
+    /// The lines of a freshness line over several sources that fit `width`
+    /// units (StudioLayout.freshnessLevelFit, as the web); nil for one
+    /// source. Without a width (scroll cards) the form without "fetched",
+    /// which wraps.
+    /// How a tile draws a freshness line over several sources (#784): a
+    /// fitted tile (known width) or a scroll card the form's lines as they
+    /// are; an unfitted tile every form, longest first, for the view to
+    /// pick the first that fits its actual width (the last a line per
+    /// source), so the line is never cut.
+    public enum FreshnessSourceLayout: Equatable, Sendable {
+        case lines([String])
+        case firstThatFits([[String]])
+    }
+
+    public func freshnessSourceLayout(
+        width: Double?, scroll: Bool, fontScale: Double, now: Date = Date(), language: ScreenLanguage = .en,
+        timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+    ) -> FreshnessSourceLayout? {
+        if width == nil && !scroll {
+            let levels = freshnessSourceLevels(now: now, language: language, timeZone: timeZone, region: region)
+            return levels.isEmpty ? nil : .firstThatFits(levels)
+        }
+        return freshnessSourceLines(
+            width: width, fontScale: fontScale, now: now, language: language, timeZone: timeZone, region: region
+        ).map { .lines($0) }
+    }
+
+    public func freshnessSourceLines(
+        width: Double?, fontScale: Double, now: Date = Date(), language: ScreenLanguage = .en,
+        timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+    ) -> [String]? {
+        let levels = freshnessSourceLevels(now: now, language: language, timeZone: timeZone, region: region)
+        guard !levels.isEmpty else { return nil }
+        guard let width else { return levels[Swift.min(1, levels.count - 1)] }
+        return levels[StudioLayout.freshnessLevelFit(levels: levels, width: width, fontScale: fontScale, font: .tv)]
     }
 
     /// Whether a freshness line shows under the tile. Without one the oldest
@@ -499,13 +555,21 @@ extension MeasureWidgetData {
     /// The lines a measure tile shows besides its rows and the "N of M"
     /// line, in the order MeasureWidgetView draws them; nil is the one-line
     /// freshness line (#768). They decide how many rows fit.
-    public func footerLines(rows: [MeasureResultRow], now: Date = Date(), language: ScreenLanguage = .en) -> [String?] {
+    public func footerLines(
+        rows: [MeasureResultRow], now: Date = Date(), language: ScreenLanguage = .en,
+        /// Lines of a freshness line over several sources (#784): one each.
+        freshnessLineCount: Int = 1
+    ) -> [String?] {
         var lines: [String?] = []
         if result?.stale == true { lines.append(KitStrings.text(.measureStale, language)) }
         lines += (scope ?? []).map { $0 }
         if showsFreshnessLine(now: now, language: language) {
             let freshness = freshnessLines(now: now, language: language)
-            lines.append(freshness.warning.map { "⚠ \($0)" })
+            if let warning = freshness.warning {
+                lines.append("⚠ \(warning)")
+            } else {
+                lines += Array(repeating: nil, count: Swift.max(1, freshnessLineCount))
+            }
         } else if let received = result?.receivedAt {
             lines.append(
                 KitStrings.text(.measureOldestRefresh, language, RelativeTime.describe(received, now: now, language: language)))
@@ -540,8 +604,65 @@ extension MeasureWidgetData {
         }
         return StudioLayout.measureTableRowsShown(
             label: label, width: box.width, height: box.height, fontScale: fontScale, columns: names, rows: cells,
-            total: total, footer: footerLines(rows: rows, now: now, language: language), pixel: pixel,
+            total: total, footer: footer(rows: rows, width: box.width, fontScale: fontScale, now: now, language: language),
+            pixel: pixel,
             // netrics TV draws in the system font.
             font: .tv, rowsLine: line)
+    }
+
+    /// The footer lines of a fitted tile, with as many freshness lines as
+    /// the form over several sources that fits `width` takes (#784).
+    func footer(rows: [MeasureResultRow], width: Double, fontScale: Double, now: Date, language: ScreenLanguage)
+        -> [String?]
+    {
+        let count =
+            freshnessSourceLines(width: width, fontScale: fontScale, now: now, language: language)?.count ?? 1
+        return footerLines(rows: rows, now: now, language: language, freshnessLineCount: count)
+    }
+
+    /// The group lines of a total with its split (#784): each row's
+    /// dimension texts but its currency (the amount names it), and its
+    /// first measure's text.
+    public func splitLines(
+        measureIds: [String], groupBy: [String], rows: [MeasureResultRow], language: ScreenLanguage = .en
+    ) -> [(String, String)] {
+        rows.map { row in
+            (
+                groupBy.filter { $0 != "currency" }.map { dimensionText(row, dimension: $0, language: language) }
+                    .joined(separator: " · "),
+                measureIds.first.map { text(row.measures[$0], measure: $0, language: language) } ?? "—"
+            )
+        }
+    }
+
+    /// The total of a total with its split (#784): each currency's, joined;
+    /// nil without one.
+    public func splitTotal(measureIds: [String], language: ScreenLanguage = .en) -> String? {
+        guard let totals, !totals.isEmpty, let id = measureIds.first else { return nil }
+        return StudioLayout.measureSplitTotalText(totals.map { text($0, measure: id, language: language) })
+    }
+
+    /// How a total with its split fits its tile (StudioLayout.measureSplitLayout,
+    /// as the web): the total's size and the lines shown. Without a box (scroll
+    /// cards), every line at the full size.
+    public func splitFit(
+        label: String, measureIds: [String], groupBy: [String], rows: [MeasureResultRow],
+        box: (width: Double, height: Double)?, fontScale: Double, pixel: Double? = nil, now: Date = Date(),
+        language: ScreenLanguage = .en
+    ) -> (valueSize: Double, valueLines: Int?, shown: Int, rowsLine: String?) {
+        let lines = splitLines(measureIds: measureIds, groupBy: groupBy, rows: rows, language: language)
+        guard let box else {
+            return (
+                StudioLayout.MeasureSplitMetrics.value * StudioLayout.effectiveFontScale(fontScale), nil, lines.count,
+                nil
+            )
+        }
+        let fit = StudioLayout.measureSplitLayout(
+            label: label, width: box.width, height: box.height, fontScale: fontScale,
+            total: splitTotal(measureIds: measureIds, language: language), lines: lines,
+            footer: footer(rows: rows, width: box.width, fontScale: fontScale, now: now, language: language),
+            pixel: pixel, font: .tv,
+            rowsLine: { KitStrings.text(.measureGroupsShown, language, $0, $1) })
+        return (fit.valueSize, fit.valueLines, fit.shown, fit.rowsLine)
     }
 }

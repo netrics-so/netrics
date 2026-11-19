@@ -839,9 +839,16 @@ public actor DeviceClient {
         if conditional, let etag, let payload = state.payload, payload.schema == schema {
             headers["if-none-match"] = etag
         }
-        let path = schema == 1 ? "/v1/device/dashboard" : "/v1/device/dashboard?schema=\(schema)"
+        // `features`: what this build draws beyond its schema (#784); older
+        // servers ignore it, and builds without it get those widgets simplified.
+        let path =
+            schema == 1
+            ? "/v1/device/dashboard" : "/v1/device/dashboard?schema=\(schema)&features=\(Self.dashboardFeatures)"
         return try await send("GET", path, headers: headers)
     }
+
+    /** Payload features this build draws (#784): a measure value view's total with its split. */
+    static let dashboardFeatures = "measure_split"
 
     private func refreshAfter(_ payload: DashboardPayload) -> Duration {
         .seconds(payload.refreshAfterSec > 0 ? payload.refreshAfterSec : Self.defaultRefreshAfterSeconds)

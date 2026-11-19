@@ -281,6 +281,36 @@ private func weight(_ any: Any?) -> StudioFontWeight {
         }
     }
 
+    @Test func freshnessLevelFits() {
+        let cases = StudioVectors.cases("freshnessLevelFits")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let level = StudioLayout.freshnessLevelFit(
+                levels: c["levels"] as! [[String]], width: double(c["width"]), fontScale: double(c["fontScale"]),
+                font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!)
+            #expect(level == int(c["level"]), "\(c)")
+        }
+    }
+
+    @Test func measureSplitLayouts() {
+        let cases = StudioVectors.cases("measureSplitLayouts")
+        #expect(!cases.isEmpty)
+        for c in cases {
+            let fit = StudioLayout.measureSplitLayout(
+                label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                fontScale: double(c["fontScale"]), total: c["total"] as? String,
+                lines: (c["lines"] as! [[String]]).map { ($0[0], $0[1]) },
+                footer: (c["footer"] as! [Any]).map { $0 as? String }, pixel: double(c["pixel"]),
+                font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!,
+                rowsLine: { "Showing \($0) of \($1) groups." })
+            #expect(close(fit.valueSize, double(c["valueSize"])), "\(c)")
+            #expect(fit.valueLines == int(c["valueLines"]), "\(c)")
+            #expect(fit.shown == int(c["shown"]), "\(c)")
+            #expect(fit.rowsLine == c["rowsLine"] as? String, "\(c)")
+            #expect(fit.fits == bool(c["fits"]), "\(c)")
+        }
+    }
+
     @Test func tableRowsShown() {
         for c in StudioVectors.cases("tableRowsShown") {
             #expect(

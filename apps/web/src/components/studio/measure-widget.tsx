@@ -13,7 +13,11 @@ import { useLocale, useT } from "@/lib/i18n/client";
 import { dataErrorKey } from "@/lib/data-editing";
 import { ApiError } from "@/lib/api";
 import { formatPercentChange } from "@/lib/format-metric";
-import { freshnessParts, type FreshnessClock } from "@/lib/freshness";
+import {
+  freshnessParts,
+  freshnessSourceLevels,
+  type FreshnessClock,
+} from "@/lib/freshness";
 import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 import { contentBox, type ScreenPlacement } from "@/lib/studio-render";
 import { useNow } from "./clock-widget";
@@ -27,6 +31,9 @@ import {
   measureInteractionSelected,
   measureInteractionValue,
   measureTableRowsShown,
+  freshnessLevelFit,
+  measureSplitLayout,
+  measureSplitTotalText,
   type DataField,
 } from "@netrics/domain";
 
@@ -121,7 +128,7 @@ const FAILING_SOURCES = new Set([
 export function measureFreshnessLine(
   data: DashboardWidgetData | null,
   clock: FreshnessClock,
-): { parts: string[]; warning: boolean } | null {
+): { parts: string[]; warning: boolean; levels: string[][] } | null {
   const freshness = data?.freshness;
   if (!data || !freshness || data.error || data.status === "no_data") {
     return null;
@@ -133,10 +140,14 @@ export function measureFreshnessLine(
       FAILING_SOURCES.has(source.status),
     );
   const parts = freshnessParts(freshness, clock, { warning: failing });
-  if (parts.length === 0) return null;
+  // Several sources (#784): each one's day and next time, in the forms
+  // the tile picks from (freshnessLevelFit).
+  const levels = freshnessSourceLevels(freshness, clock, { warning: failing });
+  if (parts.length === 0 && levels.length === 0) return null;
   return {
     parts,
     warning: data.status === "stale" && freshness.late === true,
+    levels,
   };
 }
 
@@ -276,6 +287,26 @@ export function MeasureWidgetView({
   const freshness = expired
     ? null
     : measureFreshnessLine(data, { locale, now: clock.getTime(), timeZone });
+  // The form of a several-source line that fits the tile (#784): one line
+  // each, counted by the fit; off a slide (scroll cards) the longest.
+  // A provider overdue by a day keeps its one warning line, as on tvOS.
+  const sourceLines =
+    freshness?.levels.length && !freshness.warning
+      ? freshness.levels[
+          placement
+            ? freshnessLevelFit(
+                freshness.levels,
+                contentBox(placement, showHeader).width,
+                fontScale,
+                "web",
+              )
+            : // Cards grow: every source's day and next time, wrapping.
+              Math.max(0, freshness.levels.length - 4)
+        ]!
+      : null;
+  const freshnessFooter: null[] = freshness
+    ? (sourceLines ?? [null]).map(() => null)
+    : [];
   const errorKey = expired
     ? "expired"
     : data?.error
@@ -428,6 +459,75 @@ export function MeasureWidgetView({
         : format(row[field.id], field.type),
     ),
   );
+  // The footer lines the widget shows, in the order it renders them.
+  const footerLines = [
+    ...(interactionHint ? [interactionHint] : []),
+    ...(data?.scope ?? []),
+    ...(receivedAt ? [receivedAt] : []),
+    ...notices,
+    ...sourceNotices.map((notice) => notice.message),
+    ...freshnessFooter,
+    ...(data?.exclusions ?? []).map((exclusion) => exclusion.reason),
+  ];
+  // A value view with a grouping (#784): the total and a line per group
+  // ("635", "App Store 412", "Google Play 223"), fitted to the tile.
+  const splits =
+    !error &&
+    data !== null &&
+    widget.options.view === "value" &&
+    widget.binding.groupBy.length > 0;
+  // Amounts kept whole; a total in several currencies wraps between them.
+  const splitTotal = data?.totals?.length
+    ? measureSplitTotalText(
+        data.totals.map((cell) =>
+          format(cell.value, cell.type, cell.currency, cell.unit),
+        ),
+      )
+    : null;
+  const splitLines = splits
+    ? rows.map(
+        (row) =>
+          [
+            widget.binding.groupBy
+              // The amount names its currency already (as on tvOS).
+              .filter((id) => id !== "currency")
+              .map(
+                (id) =>
+                  row.dimensionLabels?.[id] ??
+                  format(
+                    row.dimensions[id],
+                    fields.find((field) => field.id === id)?.type ?? "string",
+                  ),
+              )
+              .join(" · "),
+            cellText(
+              widget.binding.measureIds[0]!,
+              row.measures[widget.binding.measureIds[0]!],
+            ),
+          ] as [string, string],
+      )
+    : [];
+  const split = !splits
+    ? null
+    : placement
+      ? measureSplitLayout({
+          label,
+          ...contentBox(placement, showHeader),
+          ...(placement.unitPx ? { pixel: 1 / placement.unitPx } : {}),
+          font: "web",
+          fontScale,
+          total: splitTotal,
+          lines: splitLines,
+          footer: footerLines,
+          rowsLine,
+        })
+      : {
+          valueSize: 84 * fontScale,
+          valueLines: 1,
+          shown: splitLines.length,
+          rowsLine: null,
+          fits: true,
+        };
   const fit =
     showsTable && placement
       ? measureTableRowsShown({
@@ -440,21 +540,15 @@ export function MeasureWidgetView({
           columns: fields.map((field) => field.name),
           rows: cellTexts,
           total,
-          footer: [
-            ...(interactionHint ? [interactionHint] : []),
-            ...(data?.scope ?? []),
-            ...(receivedAt ? [receivedAt] : []),
-            ...notices,
-            ...sourceNotices.map((notice) => notice.message),
-            ...(freshness ? [null] : []),
-            ...(data?.exclusions ?? []).map((exclusion) => exclusion.reason),
-          ],
+          footer: footerLines,
           rowsLine,
         })
-      : {
-          shown: rows.length,
-          rowsLine: total > rows.length ? rowsLine(rows.length, total) : null,
-        };
+      : split
+        ? { shown: split.shown, rowsLine: split.rowsLine }
+        : {
+            shown: rows.length,
+            rowsLine: total > rows.length ? rowsLine(rows.length, total) : null,
+          };
   // Not even a row fits the tile (#768): the footer says "0 of N", and no
   // column heads are drawn to be cut off.
   const tableWithoutRoom = showsTable && fit.shown === 0;
@@ -487,6 +581,28 @@ export function MeasureWidgetView({
       ) : !data ? (
         // A screen's wording, not the data editor's "Loading preview…" (#768).
         <p>{loading ? common("loading") : "—"}</p>
+      ) : split && rows.length > 0 ? (
+        <>
+          {splitTotal !== null ? (
+            <p
+              className="sw-measure-value sw-measure-total"
+              style={{
+                fontSize: `calc(var(--u, 1px) * ${split.valueSize.toFixed(3)})`,
+              }}
+            >
+              {splitTotal}
+            </p>
+          ) : null}
+          {split.shown > 0 ? (
+            <ul className="sw-measure-split">
+              {splitLines.slice(0, split.shown).map(([name, value], index) => (
+                <li key={index}>
+                  <span>{name}</span> <span>{value}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
       ) : widget.options.view === "value" ? (
         <p className="sw-measure-value">
           {cellText(widget.binding.measureIds[0]!, cell)}
@@ -608,7 +724,23 @@ export function MeasureWidgetView({
           )}
         </p>
       ))}
-      {freshness ? (
+      {freshness && sourceLines ? (
+        sourceLines.map((line, index) => (
+          <p
+            key={`freshness-${index}`}
+            className={[
+              "sw-measure-freshness",
+              placement ? "" : "sw-measure-freshness--wrap",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            title={freshness.levels[0]!.join(" · ")}
+            suppressHydrationWarning
+          >
+            {line}
+          </p>
+        ))
+      ) : freshness ? (
         <p
           className={
             freshness.warning

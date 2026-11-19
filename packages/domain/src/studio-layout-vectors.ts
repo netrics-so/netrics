@@ -27,6 +27,9 @@ import {
   legacyGrid,
   measureTableLayout,
   measureTableRowsShown,
+  freshnessLevelFit,
+  measureSplitLayout,
+  measureSplitTotalText,
   measureTextWidth,
   MEASURE_GLYPH_CHARS,
   MEASURE_GLYPH_EMS,
@@ -458,6 +461,8 @@ export function buildStudioLayoutVectors() {
   // fit, with wrapping heads, cells and footer lines.
   const measureBoxes = [
     { width: 560, height: 414.2 },
+    // The review's probe: a two-currency total in a narrow, tall tile.
+    { width: 420, height: 600 },
     { width: 404, height: 414.2 },
     { width: 1808, height: 892.4 },
     { width: 200, height: 100 },
@@ -541,6 +546,93 @@ export function buildStudioLayoutVectors() {
               };
             }),
           ),
+        ),
+      ),
+    ),
+  );
+  // A freshness line over several sources (#784): its forms, longest
+  // first, the last one a line per source.
+  const freshnessLevels = [
+    [
+      "App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov. · abgerufen vor 10 Min.",
+    ],
+    ["App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov."],
+    ["App Store bis 17. Nov. · Google Play bis 11. Nov."],
+    ["App Store bis 17.11. · Google Play bis 11.11."],
+    ["App Store bis 17.11.", "Google Play bis 11.11."],
+  ];
+  const freshnessLevelFits = [120, 300, 404, 560, 760, 1100, 1808].flatMap(
+    (width) =>
+      FONT_SCALES.flatMap((fontScale) =>
+        (["any", "tv", "web"] as const).map((font) => ({
+          width,
+          fontScale,
+          font,
+          levels: freshnessLevels,
+          level: freshnessLevelFit(freshnessLevels, width, fontScale, font),
+        })),
+      ),
+  );
+  const splitInputs = [
+    {
+      total: "635",
+      lines: [
+        ["App Store", "412"],
+        ["Google Play", "223"],
+      ],
+    },
+    {
+      total: "1.234.567",
+      lines: [
+        ["App Store", "1.000.000"],
+        ["Google Play", "234.567"],
+      ],
+    },
+    {
+      total: null,
+      lines: [
+        ["App Store", "12,00 EUR"],
+        ["Google Play", "3,40 USD"],
+      ],
+    },
+    // A total in two currencies: wraps between its amounts (#784 review).
+    {
+      total: measureSplitTotalText(["1.234,56 EUR", "789,00 USD"]),
+      lines: [
+        ["App Store", "1.000,00 EUR · 789,00 USD"],
+        ["Google Play", "234,56 EUR"],
+      ],
+    },
+  ] as const;
+  const measureSplitLayouts = measureBoxes.flatMap((box) =>
+    FONT_SCALES.flatMap((fontScale) =>
+      splitInputs.flatMap((split) =>
+        measureFooters.slice(1).flatMap((footer) =>
+          (
+            [
+              [1, "any"],
+              [2.8, "tv"],
+              [1, "web"],
+            ] as const
+          ).map(([pixel, font]) => {
+            const input = {
+              label: "Downloads and user installs",
+              ...box,
+              fontScale,
+              total: split.total,
+              lines: split.lines.map(([a, b]) => [a, b] as [string, string]),
+              footer: footer!,
+              pixel,
+              font,
+            };
+            return {
+              ...input,
+              ...measureSplitLayout({
+                ...input,
+                rowsLine: (shown, all) => `Showing ${shown} of ${all} groups.`,
+              }),
+            };
+          }),
         ),
       ),
     ),
@@ -1071,6 +1163,8 @@ export function buildStudioLayoutVectors() {
     tableChanges,
     measureLayouts,
     measureRowsShown,
+    freshnessLevelFits,
+    measureSplitLayouts,
     measureGlyphs: {
       chars: MEASURE_GLYPH_CHARS.join(""),
       web: MEASURE_GLYPH_EMS.web,

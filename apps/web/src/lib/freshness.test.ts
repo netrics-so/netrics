@@ -8,6 +8,7 @@ import {
   freshnessCandidates,
   freshnessNotice,
   freshnessParts,
+  freshnessSourceLevels,
   type FreshnessClock,
 } from "./freshness";
 
@@ -323,5 +324,95 @@ describe("warnings first (precedence 1)", () => {
     expect(
       freshnessNotice("Source unreachable", "outage", undefined, clock("en")),
     ).toBe("Source unreachable");
+  });
+});
+
+describe("freshness per source (#784)", () => {
+  const twoStores = (extra: Partial<WidgetFreshness> = {}): WidgetFreshness =>
+    periodic({
+      dataThrough: "2026-11-11",
+      sources: [
+        {
+          source: "App Store",
+          kind: "periodic",
+          stream: "Sales",
+          fetchedAt: TEN_MIN_AGO,
+          dataThrough: "2026-11-15",
+          // 21:00 in Berlin.
+          nextExpectedAt: "2026-11-16T20:00:00Z",
+        },
+        {
+          source: "Google Play",
+          kind: "periodic",
+          stream: "Installs",
+          fetchedAt: TEN_MIN_AGO,
+          dataThrough: "2026-11-11",
+        },
+      ],
+      ...extra,
+    });
+
+  it("lists every source, longest form first, then degrades", () => {
+    expect(
+      freshnessSourceLevels(twoStores(), clock("de")).map((lines) =>
+        lines.map(plain),
+      ),
+    ).toEqual([
+      [
+        "App Store bis 15. Nov. · nächste ~21:00 · Google Play bis 11. Nov. · abgerufen vor 10 Min.",
+      ],
+      ["App Store bis 15. Nov. · nächste ~21:00 · Google Play bis 11. Nov."],
+      ["App Store bis 15. Nov. · Google Play bis 11. Nov."],
+      ["App Store bis 15.11. · Google Play bis 11.11."],
+      ["App Store 15.11. · Google Play 11.11."],
+      ["App Store bis 15.11.", "Google Play bis 11.11."],
+    ]);
+    expect(
+      freshnessSourceLevels(twoStores(), clock("en")).map((lines) =>
+        lines.map(plain),
+      ),
+    ).toEqual([
+      [
+        "App Store up to Nov 15 · next ~9:00 PM · Google Play up to Nov 11 · fetched 10 min. ago",
+      ],
+      ["App Store up to Nov 15 · next ~9:00 PM · Google Play up to Nov 11"],
+      ["App Store up to Nov 15 · Google Play up to Nov 11"],
+      ["App Store up to 11/15 · Google Play up to 11/11"],
+      ["App Store 11/15 · Google Play 11/11"],
+      ["App Store up to 11/15", "Google Play up to 11/11"],
+    ]);
+  });
+
+  it("keeps only the days under a warning, and a late source's note", () => {
+    const late = twoStores();
+    late.sources![1] = {
+      ...late.sources![1]!,
+      late: true,
+      nextExpectedAt: "2026-11-16T08:00:00Z",
+    };
+    expect(
+      freshnessSourceLevels(late, clock("en"), { warning: true })[0]!.map(
+        plain,
+      ),
+    ).toEqual([
+      "App Store up to Nov 15 · Google Play up to Nov 11 · Nov 12 not published yet",
+    ]);
+  });
+
+  it("names a continuous source by its check", () => {
+    const mixed = twoStores();
+    mixed.sources![1] = {
+      source: "Vercel",
+      kind: "continuous",
+      stream: "Traffic",
+      fetchedAt: TEN_MIN_AGO,
+    };
+    expect(plain(freshnessSourceLevels(mixed, clock("en"))[2]![0]!)).toBe(
+      "App Store up to Nov 15 · Vercel checked 10 min. ago",
+    );
+  });
+
+  it("has no forms for one source", () => {
+    expect(freshnessSourceLevels(periodic(), clock("en"))).toEqual([]);
   });
 });

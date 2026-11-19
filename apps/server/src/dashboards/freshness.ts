@@ -15,10 +15,12 @@ import {
   DEFAULT_LOCALE,
   isFreshnessLate,
   isFreshnessOverdue,
+  localizedFreshnessSourceName,
   localizedFreshnessStreamName,
   RESOURCE_DIMENSION,
   scopedFreshnessResources,
   type DashboardFilterExclusion,
+  type DataExpression,
   type DataPolicy,
   type Locale,
   type SlideFilterScope,
@@ -75,7 +77,7 @@ interface LoadedConnection {
   rows: { row: ConnectionFreshnessRow; stream: FreshnessStream }[];
 }
 
-interface UsedRow {
+export interface UsedRow {
   connectionId: string;
   row: ConnectionFreshnessRow;
   stream: FreshnessStream;
@@ -338,7 +340,8 @@ export function applyFreshness<T extends { status: string }>(
 }
 
 /**
- * The least fresh of the rows used (ADR 0025 section 7): among periodic
+ * The least fresh of the rows used (ADR 0025 section 7), and with rows of
+ * several connectors each connector's own (`sources`, #784): among periodic
  * rows the earliest `dataThrough` (a row without one first), ties broken
  * by the earliest `nextExpectedAt`; continuous rows only without periodic
  * ones, the least recently checked. `fetchedAt` is the oldest check of all
@@ -348,6 +351,50 @@ export function summarizeFreshness(
   rows: readonly UsedRow[],
   nextDue: ReadonlyMap<string, Date | null>,
   locale: Locale = DEFAULT_LOCALE,
+): WidgetFreshnessResult {
+  const summary = leastFresh(rows, nextDue, locale);
+  if (!summary.freshness) return summary;
+  // Rows of several connectors (#784): each one's own summary as well,
+  // so screens list every source instead of the least fresh one only.
+  const byConnector = new Map<string, UsedRow[]>();
+  for (const entry of rows)
+    byConnector.set(entry.manifest.id, [
+      ...(byConnector.get(entry.manifest.id) ?? []),
+      entry,
+    ]);
+  if (byConnector.size < 2) return summary;
+  const sources = [...byConnector.values()]
+    .flatMap((group) => {
+      const freshness = leastFresh(group, nextDue, locale).freshness;
+      return freshness
+        ? [
+            {
+              source: localizedFreshnessSourceName(
+                group[0]!.manifest,
+                locale,
+              ).slice(0, 60),
+              ...freshness,
+            },
+          ]
+        : [];
+    })
+    .sort(
+      (a, b) =>
+        compareText(a.source, b.source) || compareText(a.stream, b.stream),
+    )
+    // One per connector, never one left out (the schema bounds it at 50,
+    // far above any workspace's connectors of one model).
+    .slice(0, 50);
+  return sources.length < 2
+    ? summary
+    : { ...summary, freshness: { ...summary.freshness, sources } };
+}
+
+/** The least fresh of the rows used, as `summarizeFreshness` describes. */
+function leastFresh(
+  rows: readonly UsedRow[],
+  nextDue: ReadonlyMap<string, Date | null>,
+  locale: Locale,
 ): WidgetFreshnessResult {
   if (!rows.length) return { overdue: false };
   // A stable order, so equal rows always give the same summary.
@@ -488,7 +535,22 @@ export async function sourceFreshnessDependencies(
   deviceScope: SlideFilterScope = {},
   /** How to read the mapping a product scope resolves through (#767). */
   read?: ScopeRead,
+  /**
+   * The widget's own binding filter (#784 review): a fixed app counts as a
+   * scope, and on a store template's model a fixed store keeps only that
+   * store's connections ("Google Play's proceeds" lists Google Play only).
+   */
+  bindingFilter?: DataExpression,
 ): Promise<FreshnessDependency[]> {
+  const fixed = fixedFilterValues(bindingFilter);
+  // A fixed value of any field is a scope: values naming apps or products
+  // pick their apps; any other value picks nothing and is ignored there.
+  const bindingScope: SlideFilterScope = Object.fromEntries(
+    [...fixed].map(([fieldId, values]) => [
+      `binding:${fieldId}`,
+      { kind: "values" as const, values: values as never },
+    ]),
+  );
   const datasetIds: string[] = [];
   const observations: { connectionId: string; metricId: string }[] = [];
   for (const id of ids) {
@@ -546,12 +608,47 @@ export async function sourceFreshnessDependencies(
     tx,
     workspaceId,
     ids,
-    [slideScope, deviceScope],
+    [slideScope, deviceScope, bindingScope],
     read,
   );
+  // A fixed store on a store template's model: only its connector's
+  // connections (STORE_CONNECTORS, the template's `store` values).
+  const stores = fixed.get("store");
+  let connectors: Map<string, string> | null = null;
+  if (
+    stores?.length &&
+    stores.every(
+      (value) => typeof value === "string" && value in STORE_CONNECTORS,
+    ) &&
+    found.length &&
+    (await isStoreTemplateModel(tx, workspaceId, ids, read))
+  )
+    connectors = new Map(
+      (
+        await tx
+          .select({
+            id: schema.connections.id,
+            connectorId: schema.connections.connectorId,
+          })
+          .from(schema.connections)
+          .where(
+            and(
+              eq(schema.connections.workspaceId, workspaceId),
+              inArray(schema.connections.id, [
+                ...new Set(found.map((entry) => entry.connectionId)),
+              ]),
+            ),
+          )
+      ).map((row) => [row.id, row.connectorId]),
+    );
+  const storeConnectors = new Set(
+    (stores ?? []).map((value) => STORE_CONNECTORS[value as string]),
+  );
   return found.flatMap(({ connectionId, key, metric }) => {
+    if (connectors && !storeConnectors.has(connectors.get(connectionId) ?? ""))
+      return [];
     const slide = scopedFreshnessResources(
-        slideScope,
+        { ...slideScope, ...bindingScope },
         connectionId,
         exclusions,
         apps,
@@ -567,6 +664,84 @@ export async function sourceFreshnessDependencies(
         : { connectionId, datasetKey: key, resource },
     );
   });
+}
+
+/**
+ * The store-template model's `store` values and their connectors
+ * (store-portfolio: "apple" for App Store Connect, "google" for Google
+ * Play), for a widget whose binding fixes the store.
+ */
+const STORE_CONNECTORS: Readonly<Record<string, string>> = {
+  apple: "app-store-connect",
+  google: "google-play",
+};
+
+/**
+ * The values a filter fixes per field: `eq(field, literal)` and
+ * `in(field, literals…)`, alone or joined by `and` (others are ignored,
+ * which leaves every source as before).
+ */
+export function fixedFilterValues(
+  filter: DataExpression | undefined,
+): Map<string, unknown[]> {
+  const fixed = new Map<string, unknown[]>();
+  const visit = (node: DataExpression) => {
+    if (node.kind !== "call") return;
+    if (node.fn === "and") {
+      for (const arg of node.args) visit(arg);
+      return;
+    }
+    const [first, ...rest] = node.args;
+    if (
+      (node.fn === "eq" || node.fn === "in") &&
+      first?.kind === "field" &&
+      rest.length > 0 &&
+      (node.fn === "in" || rest.length === 1) &&
+      rest.every((arg) => arg.kind === "literal")
+    ) {
+      const values = rest.map((arg) => (arg as { value: unknown }).value);
+      const known = fixed.get(first.fieldId);
+      fixed.set(
+        first.fieldId,
+        known ? known.filter((value) => values.includes(value)) : values,
+      );
+    }
+  };
+  if (filter) visit(filter);
+  return fixed;
+}
+
+/** Whether a model reads a store-template install's mapping table. */
+async function isStoreTemplateModel(
+  tx: Transaction,
+  workspaceId: string,
+  ids: ReadonlySet<string>,
+  read: ScopeRead | undefined,
+): Promise<boolean> {
+  const datasets = [...ids].filter((id) => UUID.test(id));
+  if (!datasets.length) return false;
+  const cache = read?.cache;
+  const unknown = datasets.filter((id) => !cache?.isMapping.has(id));
+  if (unknown.length) {
+    const installs = await tx
+      .select({
+        mapping: sql<string>`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+      })
+      .from(schema.dataTemplateInstalls)
+      .where(
+        and(
+          eq(schema.dataTemplateInstalls.workspaceId, workspaceId),
+          inArray(
+            sql`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
+            unknown,
+          ),
+        ),
+      );
+    const mappings = new Set(installs.map((install) => install.mapping));
+    if (!cache) return mappings.size > 0;
+    for (const id of unknown) cache.isMapping.set(id, mappings.has(id));
+  }
+  return datasets.some((id) => cache?.isMapping.get(id));
 }
 
 /** When and under which data policy a scope's mapping table is read. */

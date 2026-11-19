@@ -20,7 +20,7 @@ import {
 export type StoreConnectorId = "app-store-connect" | "google-play";
 export type StoreMetric = "downloads" | "proceeds" | "ratings";
 /** The store template versions this module builds (see store-template.ts). */
-export type StoreTemplateVersion = 1 | 2 | 3 | 4 | 5;
+export type StoreTemplateVersion = 1 | 2 | 3 | 4 | 5 | 6;
 export interface StoreTemplateSource {
   id: string;
   name: string;
@@ -90,6 +90,8 @@ export const storeTemplateCopy = (locale: Locale) =>
         countryShort: "Land",
         ratingCountShort: "Anzahl",
         downloadsRecent: "Downloads, letzte 30 Tage",
+        downloads30: "Downloads, 30 Tage",
+        ownPeriod: "Zeigt die letzten 30 Tage, nicht den Zeitraum des Filters.",
         visitors: "Website-Besucher, letzte 30 Tage",
         appStore: "App Store",
         connectionOwn:
@@ -145,6 +147,8 @@ export const storeTemplateCopy = (locale: Locale) =>
         countryShort: "Country",
         ratingCountShort: "Ratings",
         downloadsRecent: "Downloads, last 30 days",
+        downloads30: "Downloads, 30 days",
+        ownPeriod: "Shows the last 30 days, not the filter's range.",
         visitors: "Website visitors, last 30 days",
         appStore: "App Store",
         connectionOwn:
@@ -1122,7 +1126,7 @@ export function buildStoreDashboardTemplate(
   productId?: string,
   /** Version 4: the overview plus one slide per app (not for one app). */
   portfolio?: StorePortfolio,
-  /** The template version the portfolio's slides are built for (4 or 5). */
+  /** The template version the portfolio's slides are built for (4 to 6). */
   version: StoreTemplateVersion = 4,
 ): {
   request: CreateDashboardRequest;
@@ -1307,6 +1311,34 @@ const PROCEEDS_TABLE: OverviewMeasureTable = {
   rows: 20,
   order: null,
 };
+/**
+ * A linked product's ratings (version 6, #784): the rating's head is its
+ * star, so no head breaks inside a word in a third of the width.
+ */
+const LINKED_RATINGS_TABLE: OverviewMeasureTable = {
+  ...RATINGS_TABLE,
+  labels: (t) => ({ ...RATINGS_TABLE.labels(t), rating: "★" }),
+};
+/**
+ * A paid linked product's ratings (version 6, #784): the listing, its
+ * country and its rating, no count, so both stores' rows fit a third of
+ * the width at every theme font scale (the model needs the country).
+ */
+const LINKED_PAID_RATINGS_TABLE: OverviewMeasureTable = {
+  ...LINKED_RATINGS_TABLE,
+  labels: (t) => ({ listing: t.app, storefront: t.countryShort, rating: "★" }),
+  order: null,
+};
+/** A linked product's Google Play proceeds (version 6, #784). */
+const PLAY_PROCEEDS_TABLE: OverviewMeasureTable = {
+  titles: (t) =>
+    [`${t.proceeds} · Google Play`, `${t.proceedsShort} · Google Play`].map(
+      (title) => title.slice(0, 100),
+    ),
+  labels: (t) => ({ proceeds: t.proceedsShort }),
+  rows: 5,
+  order: null,
+};
 /** The overview's model tables (version 5). */
 const OVERVIEW_MEASURE_TABLES: Record<string, OverviewMeasureTable> = {
   "widget:downloads": {
@@ -1328,13 +1360,31 @@ const ASC_PROCEEDS = "app_store_connect.proceeds",
 export const appSlideKey = (productId: string) =>
   "app-" + createHash("sha256").update(productId).digest("hex").slice(0, 16);
 
+/**
+ * A product in both stores (#784): from version 6 its slide shows both
+ * stores' numbers, not only its App Store app's.
+ */
+export function linksBothStores(
+  app: StoreAppIdentity,
+  version: StoreTemplateVersion,
+): boolean {
+  return (
+    version >= 6 && app.appStore !== null && app.stores.includes("google-play")
+  );
+}
+
 /** The widgets an app's slide shows, in reading order. */
-export function appSlideWidgets(app: StoreAppIdentity): string[] {
+export function appSlideWidgets(
+  app: StoreAppIdentity,
+  version: StoreTemplateVersion,
+): string[] {
   return [
     ...(app.paid ? ["revenue"] : []),
     "downloads",
     ...(app.website ? ["visitors"] : []),
     "ratings",
+    // Version 6: a linked product's Google Play proceeds beside its ratings.
+    ...(app.paid && linksBothStores(app, version) ? ["play-proceeds"] : []),
     ...(app.appStore ? ["review"] : []),
   ];
 }
@@ -1367,7 +1417,10 @@ function overviewTables(portfolio: StorePortfolio) {
  * stays within the Studio's limits (12 slides, 48 data widgets, the
  * overview included); the rest are `omitted` and show in the overview only.
  */
-export function storeAppSlides(portfolio: StorePortfolio): {
+export function storeAppSlides(
+  portfolio: StorePortfolio,
+  version: StoreTemplateVersion,
+): {
   shown: StoreAppIdentity[];
   omitted: StoreAppIdentity[];
 } {
@@ -1376,7 +1429,7 @@ export function storeAppSlides(portfolio: StorePortfolio): {
   const shown: StoreAppIdentity[] = [],
     omitted: StoreAppIdentity[] = [];
   for (const app of portfolio.apps) {
-    const widgets = appSlideWidgets(app).length;
+    const widgets = appSlideWidgets(app, version).length;
     if (
       omitted.length === 0 &&
       shown.length < STUDIO_LIMITS.slides - 1 &&
@@ -1593,6 +1646,13 @@ function buildPortfolioSlides(
           (widget.type === "measure" && widget.options.view === "table")
             ? widget.options.limit
             : null,
+        // A total with its split (#784).
+        splitLines:
+          widget.type === "measure" &&
+          widget.options.view === "value" &&
+          widget.binding.groupBy.length
+            ? widget.options.limit
+            : null,
         columns:
           widget.type === "measure"
             ? columnsOf(widget.binding, widget.options.labels)
@@ -1688,8 +1748,10 @@ function buildPortfolioSlides(
     const slideKey = appSlideKey(app.productId);
     const key = (kind: string) => `widget:${slideKey}:${kind}`;
     const store = app.appStore;
-    // A product in both stores shows its App Store app's numbers here and
-    // every store's in the overview.
+    // Version 6 (#784): a product in both stores shows both stores'
+    // downloads (a total with its split) and Google Play's proceeds beside
+    // the App Store's revenue. Before, its App Store app's numbers only.
+    const linked = linksBothStores(app, version);
     const titled = (title: string) =>
       app.stores.length > 1 ? `${title} · ${t.appStore}` : title;
     const metric = (
@@ -1730,7 +1792,36 @@ function buildPortfolioSlides(
               5,
             ),
       });
-    if (store)
+    if (linked) {
+      // Both stores' downloads and user installs over the last 30 days, as
+      // the App Store widgets read theirs: the total and a line per store
+      // (a value view by store with its own period, which the date filter
+      // does not change).
+      const downloads = measure(
+        "downloads",
+        0,
+        0,
+        0,
+        3,
+        ["store"],
+        ["downloads"],
+      );
+      const { x: _x, w: _w, ...unplaced } = downloads;
+      band.push({
+        key: key("downloads"),
+        widget: {
+          ...unplaced,
+          binding: {
+            ...downloads.binding,
+            exclusions: [
+              ...downloads.binding.exclusions,
+              { filterId: "day", reason: t.ownPeriod },
+            ],
+          },
+          options: { view: "value", limit: 2, period: RECENT },
+        },
+      });
+    } else if (store)
       band.push({
         key: key("downloads"),
         widget: metric(
@@ -1795,6 +1886,33 @@ function buildPortfolioSlides(
           5,
         ),
       });
+    if (linked && app.paid) {
+      // Google Play's proceeds per currency: models do not convert, so
+      // they stand beside the App Store's revenue, not in one total.
+      const proceeds = measure(
+        "proceeds",
+        0,
+        3,
+        0,
+        5,
+        ["currency"],
+        ["proceeds"],
+      );
+      lower.push({
+        key: key("play-proceeds"),
+        widget: sized(
+          {
+            ...proceeds,
+            binding: {
+              ...proceeds.binding,
+              filter: call("eq", field("store"), text("google")),
+            },
+          },
+          "table",
+          5,
+        ),
+      });
+    }
     if (store)
       lower.push({
         key: key("review"),
@@ -1812,13 +1930,108 @@ function buildPortfolioSlides(
       });
     // An app's model tables (version 5): its ratings, and a Google Play
     // app's proceeds by currency.
-    const widgets = fitTables([...row(band), ...row(lower)], (entry) =>
+    // Version 6: a linked product's total with its split takes the left
+    // third's upper half (four rows: both stores' lines and their
+    // freshness at every theme font scale), its latest review the lower
+    // half; the band (h 3) and the tables (h 5) share the other two thirds.
+    const linkedRows = (): Placed[] => {
+      const at = (
+        entry: { key: string; widget: Unplaced } | undefined,
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+      ): Placed[] =>
+        entry
+          ? [
+              {
+                key: entry.key,
+                widget: { ...entry.widget, x, y, w, h } as Widget,
+              },
+            ]
+          : [];
+      const find = (kind: string) =>
+        [...band, ...lower].find((entry) => entry.key === key(kind));
+      const visitors = find("visitors"),
+        revenue = find("revenue");
+      const ratingOnly = (
+        entry: { key: string; widget: Unplaced } | undefined,
+      ) =>
+        entry && entry.widget.type === "measure"
+          ? {
+              key: entry.key,
+              widget: {
+                ...entry.widget,
+                binding: { ...entry.widget.binding, measureIds: ["rating"] },
+              },
+            }
+          : entry;
+      return [
+        ...(revenue
+          ? [
+              // Paid: the ratings (listing, country, star) five columns
+              // wide over Google Play's proceeds, so both stores' listings
+              // fit at every theme font scale (and keep the wider column in
+              // 4:3); the total with its split over the latest review; the
+              // App Store's revenue and the website's visitors on the
+              // right, each with room for its freshness line.
+              ...at(ratingOnly(find("ratings")), 0, 0, 5, 5),
+              ...at(find("play-proceeds"), 0, 5, 5, 3),
+              ...at(find("downloads"), 5, 0, 4, 4),
+              ...at(find("review"), 5, 4, 4, 4),
+              ...at(revenue, 9, 0, 3, visitors ? 4 : 8),
+              ...at(visitors, 9, 4, 3, 4),
+            ]
+          : [
+              // Free: the total with its split over the latest review;
+              // visitors over the ratings, eight columns wide.
+              ...at(find("downloads"), 0, 0, 4, 4),
+              ...at(find("review"), 0, 4, 4, 4),
+              ...at(visitors, 4, 0, 8, 3),
+              ...at(find("ratings"), 4, visitors ? 3 : 0, 8, visitors ? 5 : 8),
+            ]),
+      ];
+    };
+    const rows = linked ? linkedRows() : [...row(band), ...row(lower)];
+    const fittedTables = fitTables(rows, (entry) =>
       entry === key("ratings")
-        ? RATINGS_TABLE
+        ? linked
+          ? app.paid
+            ? LINKED_PAID_RATINGS_TABLE
+            : LINKED_RATINGS_TABLE
+          : RATINGS_TABLE
         : entry === key("revenue")
           ? PROCEEDS_TABLE
-          : undefined,
+          : entry === key("play-proceeds")
+            ? PLAY_PROCEEDS_TABLE
+            : undefined,
     );
+    // A total with its split (version 6): the longest title that leaves
+    // every line readable at the most theme font scales.
+    const widgets = linked
+      ? fittedTables.map((entry) => {
+          if (entry.key !== key("downloads")) return entry;
+          const titled = (title: string): Placed => ({
+            key: entry.key,
+            widget: { ...entry.widget, title } as Widget,
+          });
+          const reach = (candidate: Placed) =>
+            STUDIO_FONT_SCALES.filter((_, index) =>
+              readable(
+                fittedTables.map((other) =>
+                  other.key === entry.key ? candidate : other,
+                ),
+                entry.key,
+                STUDIO_FONT_SCALES.slice(0, index + 1),
+              ),
+            ).length;
+          return [t.downloadsRecent, t.downloads30]
+            .map(titled)
+            .reduce((best, candidate) =>
+              reach(candidate) > reach(best) ? candidate : best,
+            );
+        })
+      : fittedTables;
     return {
       key: `slide:${slideKey}`,
       widgets,
@@ -1848,7 +2061,7 @@ function buildPortfolioSlides(
   });
   const slides = [
     overviewSlide("slide:0", t.name, overview),
-    ...storeAppSlides(portfolio).shown.map(appSlide),
+    ...storeAppSlides(portfolio, version).shown.map(appSlide),
   ];
   return {
     request: {

@@ -239,6 +239,92 @@ export function freshnessParts(
   return parts;
 }
 
+/** A provider's day in short numbers ("11/17", "17.11."), never converted. */
+function numericDay(date: string, clock: FreshnessClock): string {
+  return new Intl.DateTimeFormat(clock.locale, {
+    month: "numeric",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(providerDay(date));
+}
+
+/**
+ * The forms of a freshness line that lists several sources (#784, ADR 0025
+ * sections 7 and 8), longest first, each one or more lines; empty without
+ * `sources`. Screens show the first form that fits one line
+ * (`freshnessLevelFit`): every source's day and next time and the fetch
+ * ("App Store up to Nov 17 · next ~9:00 PM · Google Play up to Nov 11 ·
+ * fetched 10 min. ago"); without the fetch; the days only; the days in
+ * short numbers ("App Store up to 11/17 · Google Play up to 11/11"); the
+ * stores and their days alone ("App Store 11/17 · Google Play 11/11");
+ * and last the short days on a line each. A source is never left out. Under a warning
+ * every form has the days (and "not published yet") only.
+ */
+export function freshnessSourceLevels(
+  freshness: WidgetFreshness,
+  clock: FreshnessClock,
+  options: Pick<FreshnessPartsOptions, "warning" | "paused"> = {},
+): string[][] {
+  const sources = freshness.sources ?? [];
+  if (sources.length < 2) return [];
+  const t = webTranslator(clock.locale, "screen.freshness");
+  const named = sources.map((source) => {
+    const parts = freshnessParts({ ...source, stream: source.source }, clock, {
+      stream: true,
+      fetched: false,
+      ...options,
+    });
+    // Under a warning a continuous source still names its check.
+    const all = parts.length
+      ? parts
+      : freshnessParts({ ...source, stream: source.source }, clock, {
+          stream: true,
+        }).slice(0, 1);
+    const first = all.slice(0, 1);
+    const short =
+      source.kind === "periodic" &&
+      source.dataThrough &&
+      source.period !== "month"
+        ? [
+            t("streamUpTo", {
+              stream: source.source,
+              date: numericDay(source.dataThrough, clock),
+            }),
+          ]
+        : first;
+    // Shortest: the store and its day alone ("App Store 11/17").
+    const shortest =
+      source.kind === "periodic" &&
+      source.dataThrough &&
+      source.period !== "month"
+        ? [`${source.source} ${numericDay(source.dataThrough, clock)}`]
+        : short;
+    return {
+      all: options.warning ? all.slice(0, source.late ? 2 : 1) : all,
+      first,
+      short,
+      shortest,
+    };
+  });
+  const join = (parts: string[]) => parts.join(SEPARATOR);
+  const fetched = fetchedTime(freshness.fetchedAt, clock);
+  const fetchedPart =
+    options.warning || !fetched
+      ? null
+      : "time" in fetched
+        ? t("fetched", { time: fetched.time })
+        : t("fetchedOn", { date: fetched.date });
+  const full = named.flatMap((source) => source.all);
+  return [
+    ...(fetchedPart ? [[join([...full, fetchedPart])]] : []),
+    [join(full)],
+    [join(named.flatMap((source) => source.first))],
+    [join(named.flatMap((source) => source.short))],
+    [join(named.flatMap((source) => source.shortest))],
+    named.map((source) => join(source.short)),
+  ];
+}
+
 /** Every prefix of the parts, longest first: footer candidates. */
 export function partsCandidates(parts: readonly string[]): string[] {
   return parts.map((_, index) =>

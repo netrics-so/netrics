@@ -297,10 +297,16 @@ export function dashboardFormatWarnings(
         const options = measureWidgetOptionsSchema.safeParse(
           widget.options,
         ).data;
+        const groups =
+          measureWidgetBindingSchema.safeParse(widget.modelBinding).data
+            ?.groupBy.length ?? 0;
         return {
           ...base,
           label: widget.title,
           rows: options?.view === "table" ? options.limit : null,
+          // A value view with a grouping: a total with its split (#784).
+          splitLines:
+            options?.view === "value" && groups > 0 ? options.limit : null,
           columns: inputs.columnsOf?.(widget) ?? null,
         };
       }

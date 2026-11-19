@@ -14,6 +14,11 @@ import {
   formatUtcOffset,
   findOverlaps,
   fitTextSize,
+  freshnessLevelFit,
+  measureSplitLayout,
+  measureSplitTotalText,
+  measureTextWidth,
+  wrappedLineCount,
   isInsideGrid,
   labelFit,
   labelFits,
@@ -37,7 +42,6 @@ import {
   textWidgetSizes,
   widgetRect,
   widgetTypeScale,
-  wrappedLineCount,
   zoneCity,
   zoneLabel,
   zoneLabelSample,
@@ -986,5 +990,103 @@ describe("measureTableRowsShown (#768)", () => {
         rowsLine,
       }).shown,
     ).toBe(0);
+  });
+});
+
+describe("freshnessLevelFit (#784)", () => {
+  const levels = [
+    ["App Store up to Nov 17 · next ~9:00 PM · Google Play up to Nov 11"],
+    ["App Store up to Nov 17 · Google Play up to Nov 11"],
+    ["App Store to 11/17 · Google Play to 11/11"],
+    ["App Store to 11/17", "Google Play to 11/11"],
+  ];
+  it("keeps the longest form that fits one line", () => {
+    expect(freshnessLevelFit(levels, 2000)).toBe(0);
+  });
+  it("drops the next times first, then abbreviates, then a line per source", () => {
+    const width = (text: string) => measureTextWidth(text, 24, "regular");
+    expect(freshnessLevelFit(levels, width(levels[1]![0]!))).toBe(1);
+    expect(freshnessLevelFit(levels, width(levels[2]![0]!))).toBe(2);
+    expect(freshnessLevelFit(levels, width(levels[2]![0]!) - 1)).toBe(3);
+  });
+  it("falls back to the last form, never cutting, when nothing fits", () => {
+    expect(freshnessLevelFit(levels, 10)).toBe(3);
+  });
+  it("counts the theme's font scale", () => {
+    const width = measureTextWidth(levels[0]![0]!, 24, "regular");
+    expect(freshnessLevelFit(levels, width, 1)).toBe(0);
+    expect(freshnessLevelFit(levels, width, 1.3)).toBeGreaterThan(0);
+  });
+});
+
+describe("measureSplitLayout (#784)", () => {
+  const split = {
+    label: "Downloads and user installs",
+    width: 560,
+    height: 414,
+    total: "635",
+    lines: [
+      ["App Store", "412"],
+      ["Google Play", "223"],
+    ] as [string, string][],
+    footer: ["App: Focus", null],
+    rowsLine: (shown: number, all: number) => `${shown} of ${all}`,
+  };
+  it("shows the total at full size and every line where they fit", () => {
+    expect(measureSplitLayout(split)).toEqual({
+      valueSize: 84,
+      valueLines: 1,
+      shown: 2,
+      rowsLine: null,
+      fits: true,
+    });
+  });
+  it("shrinks the total before a line gives way", () => {
+    const fit = measureSplitLayout({ ...split, height: 300 });
+    expect(fit.shown).toBe(2);
+    expect(fit.valueSize).toBeLessThan(84);
+    expect(fit.valueSize).toBeGreaterThanOrEqual(36);
+    expect(fit.fits).toBe(true);
+  });
+  it("lets lines give way, from the end, with N of M, when even the smallest total does not fit", () => {
+    const fit = measureSplitLayout({ ...split, height: 250 });
+    expect(fit.fits).toBe(false);
+    expect(fit.shown).toBeLessThan(2);
+    expect(fit.rowsLine).toBe(`${fit.shown} of 2`);
+  });
+  it("wraps a wide total between its amounts instead of dropping lines", () => {
+    const fit = measureSplitLayout({
+      ...split,
+      width: 420,
+      height: 600,
+      total: measureSplitTotalText(["1.234,56 EUR", "789,00 USD"]),
+      lines: [
+        ["App Store", "1.000,00 EUR · 789,00 USD"],
+        ["Google Play", "234,56 EUR"],
+      ],
+    });
+    expect(fit.shown).toBe(2);
+    expect(fit.fits).toBe(true);
+    expect(fit.valueSize).toBeGreaterThanOrEqual(36);
+    // At that size each line of the total fits the width.
+    const total = measureSplitTotalText(["1.234,56 EUR", "789,00 USD"]);
+    expect(
+      wrappedLineCount(total, 420 - 1, fit.valueSize, "semibold", (t, at, w) =>
+        measureTextWidth(t, at, w),
+      ),
+    ).toBeLessThanOrEqual(fit.valueLines);
+    // A single amount too wide for one line at 84 units shrinks first.
+    const narrow = measureSplitLayout({
+      ...split,
+      width: 200,
+      total: measureSplitTotalText(["1.234.567"]),
+    });
+    expect(narrow.shown).toBe(2);
+    expect(narrow.valueLines).toBe(1);
+    expect(narrow.valueSize).toBeLessThan(84);
+  });
+
+  it("fits the groups alone without a total", () => {
+    expect(measureSplitLayout({ ...split, total: null }).fits).toBe(true);
   });
 });

@@ -8,6 +8,7 @@ import {
   storeTemplateV2,
   storeTemplateV3,
   storeTemplateV4,
+  storeTemplateV5,
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
@@ -24,7 +25,15 @@ import {
   type StoreMetric,
 } from "./store-portfolio.js";
 import { storeAppIdentities } from "./store-template-products.js";
-import { slideFormatWarnings, slideLayoutProblem } from "@netrics/domain";
+import {
+  contentBoxIn,
+  freshnessLevelFit,
+  measureTableRowsShown,
+  SCREEN_FORMAT_KEYS,
+  slideFormatWarnings,
+  slideLayoutFor,
+  slideLayoutProblem,
+} from "@netrics/domain";
 import { apple, google } from "./test-helpers.js";
 import {
   createDashboardRequestSchema,
@@ -88,6 +97,9 @@ const VERSION_HASHES: Record<number, string> = {
   3: "803b151fd59622b368644799eed102cfe37f3632fbc2266f2f32a3ea221c6923",
   4: "a0b7378f8af8f7c9b07da278d4187d3af3b88198cb075d9c66ee14dd5affc014",
   5: "62b47283b5c76be5eb2de73a7c8166d5a4e98ed2d4b7a5f7011547ccdf6a7c22",
+  // Version 6 changes only app slides, which `fixtureInputs` has none of:
+  // `APP_SLIDE_HASHES` guards them.
+  6: "62b47283b5c76be5eb2de73a7c8166d5a4e98ed2d4b7a5f7011547ccdf6a7c22",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -452,6 +464,206 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       website: null,
     },
   ];
+  /**
+   * The content hash of the versions with app slides, built from
+   * `fixtureInputs` with `apps` (#784): a change to what app slides build
+   * needs a new version too.
+   */
+  const APP_SLIDE_HASHES: Record<number, string> = {
+    4: "034364f9fb26ab383278ff8a92015b88fdb1c4d10bc165055f877cb2ec827622",
+    5: "71bd572ac6b0d3e39dae1b4f718cf6fdf3ca2b5e261f1c11ee82617d73b4df3d",
+    6: "76f0760d5c8493c5fef4479bd42c532a3a03a243f62a5456e2808609d5e8994f",
+  };
+  it("needs a version bump for any app slide change; 4 and 5 stay frozen", () => {
+    const hash = (template: typeof storeTemplate) =>
+      sha256(JSON.stringify(buildAll({ ...fixtureInputs, apps }, template)));
+    expect({
+      4: hash(storeTemplateV4),
+      5: hash(storeTemplateV5),
+      [STORE_TEMPLATE_VERSION]: hash(storeTemplate),
+    }).toEqual(APP_SLIDE_HASHES);
+    expect(APP_SLIDE_HASHES[6]).not.toBe(APP_SLIDE_HASHES[5]);
+  });
+  it("shows both stores on a linked product's slide from version 6 (#784)", () => {
+    const linked = (paid: boolean, website: boolean) => ({
+      ...apps[2]!,
+      paid,
+      website: website
+        ? { connectionId: apple.id, projectId: "prj_example" }
+        : null,
+    });
+    const slideOf = (app: StoreAppIdentity, locale: "en" | "de" = "en") => {
+      const dashboard = dashboardOf(
+        { ...fixtureInputs, locale, apps: [app] },
+        storeTemplate,
+      );
+      return createDashboardRequestSchema.parse(dashboard.request).slides![1]!;
+    };
+    const paid = slideOf(linked(true, true));
+    expect(
+      paid.widgets.map((widget) => [
+        widget.type === "measure"
+          ? `measure:${widget.binding.measureIds[0]}:${widget.options.view}`
+          : widget.type === "review"
+            ? "review"
+            : `${widget.type}:${(widget as { metricKey: string }).metricKey}`,
+        widget.title,
+        widget.x,
+        widget.y,
+        widget.w,
+        widget.h,
+      ]),
+    ).toEqual([
+      // The ratings (listing, country, star) five columns wide over Google
+      // Play's proceeds per currency.
+      ["measure:rating:table", "Store ratings", 0, 0, 5, 5],
+      ["measure:proceeds:table", "Proceeds · Google Play", 0, 5, 5, 3],
+      // Both stores' downloads over the last 30 days: the total and a line
+      // per store, over the latest review.
+      ["measure:downloads:value", "Downloads, last 30 days", 5, 0, 4, 4],
+      ["review", null, 5, 4, 4, 4],
+      // The App Store's revenue in the display currency, as before, and
+      // the website's visitors, each with room for its freshness line.
+      [
+        "metric:app_store_connect.proceeds",
+        "Revenue, last 30 days · App Store",
+        9,
+        0,
+        3,
+        4,
+      ],
+      ["metric:vercel.visitors", "Website visitors, last 30 days", 9, 4, 3, 4],
+    ]);
+    const split = paid.widgets[2]!;
+    if (split.type !== "measure") throw new Error("not a measure");
+    expect(split.binding.groupBy).toEqual(["store"]);
+    // Its own period, like the App Store widgets'; the date filter does
+    // not change it (and says so).
+    expect(split.options).toMatchObject({
+      view: "value",
+      limit: 2,
+      period: "last_30_days",
+    });
+    expect(split.binding.exclusions.map((e) => e.filterId)).toContain("day");
+    // The ratings' heads fit five columns: the rating's is its star.
+    const ratings = paid.widgets[0]!;
+    if (ratings.type !== "measure") throw new Error("not a measure");
+    expect(ratings.options.labels).toMatchObject({ rating: "★" });
+    expect(ratings.binding.measureIds).toEqual(["rating"]);
+    const play = paid.widgets[1]!;
+    if (play.type !== "measure") throw new Error("not a measure");
+    expect(play.binding.filter).toEqual({
+      kind: "call",
+      fn: "eq",
+      args: [
+        { kind: "field", fieldId: "store" },
+        { kind: "literal", type: "string", value: "google" },
+      ],
+    });
+    // Free: no revenue on either store; the review stays the App Store's.
+    expect(
+      slideOf(linked(false, false)).widgets.map((widget) => widget.type),
+    ).toEqual(["measure", "review", "measure"]);
+    // Both stores' listings show in the ratings table in every format, at
+    // the default size and at 1.3, in English and German: rows with
+    // realistic cells above the footer the slide shows (its app, both
+    // stores' days as the freshness line takes them).
+    const hidden: string[] = [];
+    for (const locale of ["en", "de"] as const)
+      for (const app of [
+        linked(true, true),
+        linked(false, true),
+        linked(true, false),
+      ]) {
+        const shown = slideOf({ ...app, name: "Focus Timer" }, locale);
+        const ratings = shown.widgets.find(
+          (widget) =>
+            widget.type === "measure" &&
+            widget.binding.measureIds[0] === "rating",
+        )!;
+        if (ratings.type !== "measure") throw new Error("not a measure");
+        const columns = storeTableColumns(
+          ratings.binding,
+          locale,
+          ratings.options.labels,
+        );
+        const de = locale === "de";
+        const cells = (listing: string, country: string, rating: string) =>
+          [listing, country, rating, de ? "1.280" : "1,280"].slice(
+            0,
+            columns.length,
+          );
+        const rows = [
+          cells(
+            "Focus Timer · App Store",
+            de ? "Deutschland" : "Germany",
+            de ? "4,6 ★" : "4.6 ★",
+          ),
+          cells(
+            "Focus Timer · Google Play",
+            de ? "Alle Länder" : "All countries",
+            de ? "4,3 ★" : "4.3 ★",
+          ),
+        ];
+        const levels = de
+          ? [
+              ["App Store bis 17. Nov. · Google Play bis 11. Nov."],
+              ["App Store bis 17.11. · Google Play bis 11.11."],
+              ["App Store 17.11. · Google Play 11.11."],
+              ["App Store bis 17.11.", "Google Play bis 11.11."],
+            ]
+          : [
+              ["App Store up to Nov 17 · Google Play up to Nov 11"],
+              ["App Store up to 11/17 · Google Play up to 11/11"],
+              ["App Store 11/17 · Google Play 11/11"],
+              ["App Store up to 11/17", "Google Play up to 11/11"],
+            ];
+        const widgets = shown.widgets.map((widget, index) => ({
+          ...widget,
+          id: widget === ratings ? "ratings" : `w${index}`,
+        }));
+        for (const format of SCREEN_FORMAT_KEYS)
+          for (const fontScale of [1, 1.3]) {
+            const placement = slideLayoutFor({
+              widgets,
+              primaryFormat: "16x9",
+              format,
+              custom: null,
+            })
+              .flat()
+              .find((entry) => entry.id === "ratings")!;
+            const box = contentBoxIn(placement, format, true);
+            const freshness = levels[
+              freshnessLevelFit(levels, box.width, fontScale)
+            ]!.map(() => null);
+            const fit = measureTableRowsShown({
+              label: ratings.title ?? "",
+              ...box,
+              fontScale,
+              columns,
+              rows,
+              total: rows.length,
+              footer: [`${de ? "App" : "App"}: Focus Timer`, ...freshness],
+              rowsLine: (a, b) => `${a} / ${b}`,
+            });
+            if (fit.shown !== 2)
+              hidden.push(
+                `${locale} ${app.paid ? "paid" : "free"}${app.website ? " site" : ""} ${format} ${fontScale}: ${fit.shown}`,
+              );
+          }
+      }
+    expect(hidden).toEqual([]);
+    // A single-store app keeps version 5's slide.
+    for (const single of [apps[0]!, apps[1]!])
+      expect(
+        dashboardOf({ ...fixtureInputs, apps: [single] }, storeTemplate).request
+          .slides![1],
+      ).toEqual(
+        dashboardOf({ ...fixtureInputs, apps: [single] }, storeTemplateV5)
+          .request.slides![1],
+      );
+  });
+
   // Version 4 as it shipped (frozen); version 5 changes only the
   // overview's tables and slides (see "fits the overview" and below).
   const dashboardOf = (
@@ -579,7 +791,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       website: null,
     });
     const many = Array.from({ length: 14 }, (_, n) => free(n));
-    const slides = storeAppSlides({ apps: many, appStore: [] });
+    const slides = storeAppSlides({ apps: many, appStore: [] }, 4);
     expect(slides.shown.map((app) => app.name)).toEqual(
       many.slice(0, 11).map((app) => app.name),
     );
@@ -600,10 +812,13 @@ describe("version 4: an overview and one slide per app (#709)", () => {
       productId: `${apple.id}:${n}`,
       name: `Paid ${String(n).padStart(2, "0")}`,
     }));
-    const budget = storeAppSlides({
-      apps: paid,
-      appStore: [{ id: apple.id, name: apple.name }],
-    });
+    const budget = storeAppSlides(
+      {
+        apps: paid,
+        appStore: [{ id: apple.id, name: apple.name }],
+      },
+      4,
+    );
     expect(budget.shown).toHaveLength(8);
     expect(budget.omitted).toHaveLength(3);
     const request = createDashboardRequestSchema.parse(
@@ -856,6 +1071,16 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
       stores: ["google-play"],
       website: null,
     },
+    // Version 6 (#784): the widest linked product, paid, with a website.
+    {
+      productId: "product:both",
+      name: "Both Stores",
+      paid: true,
+      icon: null,
+      appStore: { connectionId: apple.id, appId: "1002" },
+      stores: ["app-store-connect", "google-play"],
+      website: { connectionId: apple.id, projectId: "prj_both" },
+    },
   ];
   const requestOf = (template: typeof storeTemplate, locale: "en" | "de") => {
     const record = buildAll({ ...fixtureInputs, locale, apps }, template).at(
@@ -893,6 +1118,12 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
               rows:
                 widget.type === "table" ||
                 (widget.type === "measure" && widget.options.view === "table")
+                  ? widget.options.limit
+                  : null,
+              splitLines:
+                widget.type === "measure" &&
+                widget.options.view === "value" &&
+                widget.binding.groupBy.length
                   ? widget.options.limit
                   : null,
               columns:
@@ -956,7 +1187,9 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
   it("ranks the downloads and ratings by their measure; proceeds stay by app", () => {
     const [overview, focus, timer] = requestOf(storeTemplate, "en").slides!;
     // Version 4's overview: one slide, two rows of h 4.
-    expect(overview!.widgets.map((widget) => widget.h)).toEqual([4, 4, 4, 4]);
+    expect(overview!.widgets.map((widget) => widget.h)).toEqual([
+      4, 4, 4, 4, 4,
+    ]);
     const tables = overview!.widgets.flatMap((widget) =>
       widget.type === "measure" ? [widget] : [],
     );

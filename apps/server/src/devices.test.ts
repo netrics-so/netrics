@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createPairingResponseSchema,
   dashboardResponseSchema,
+  type DeviceWidget,
   deviceDashboardResponseSchema,
   deviceDashboardV2ResponseSchema,
   deviceDashboardV3ResponseSchema,
@@ -35,6 +36,7 @@ import {
 import { STUDIO_MIN_WIDGET_SIZE, addDays, civilDate } from "@netrics/domain";
 
 import { buildApp } from "./app.js";
+import { createDataService } from "./data/service.js";
 import { createAuthService } from "./auth/index.js";
 import {
   approveUrlFor,
@@ -1497,6 +1499,139 @@ describe("device dashboard", () => {
     expect((await conditional("", v1Etag)).statusCode).toBe(304);
     expect((await conditional("?schema=2", v1Etag)).statusCode).toBe(200);
     expect((await conditional("", v2Etag)).statusCode).toBe(200);
+  });
+
+  it("gives ?features=measure_split the split and other clients the total, each with its own ETag (#784)", async () => {
+    const [user] = await admin`select id from users
+      where email = 'tv-owner@example.com'`;
+    const actor = { workspaceId, callerId: user!.id as string };
+    const service = createDataService(db, () => new Date());
+    const table = await service.saveManual(actor, {
+      definition: {
+        key: "split_installs",
+        name: "Installs by store",
+        version: 1,
+        mode: "snapshot",
+        grain: "One row per store",
+        keyFields: ["store"],
+        retentionDays: null,
+        fields: [
+          { id: "store", type: "string" as const },
+          { id: "installs", type: "integer" as const },
+        ].map((field) => ({
+          ...field,
+          name: field.id,
+          nullable: false,
+          classification: "internal" as const,
+        })),
+      },
+      records: [
+        { values: { store: "App Store", installs: 412 } },
+        { values: { store: "Google Play", installs: 223 } },
+      ],
+    });
+    const saved = await service.saveModel(actor, {
+      name: "Installs by store",
+      definition: {
+        version: 1,
+        datasets: [table.datasetId],
+        relationships: [],
+        dimensions: [
+          {
+            id: "store",
+            name: "Store",
+            datasetId: table.datasetId,
+            fieldId: "store",
+          },
+        ],
+        measures: [
+          {
+            id: "installs",
+            name: "Installs",
+            kind: "aggregate",
+            datasetId: table.datasetId,
+            aggregate: {
+              id: "installs",
+              name: "Installs",
+              op: "sum",
+              fieldId: "installs",
+            },
+          },
+        ],
+      },
+    } as never);
+    await service.publishModel(actor, saved.model.id, 1);
+    const created = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/dashboards`,
+      {
+        cookie: owner,
+        payload: {
+          name: "Split wall",
+          slides: [
+            {
+              name: "Installs",
+              widgets: [
+                {
+                  type: "measure",
+                  x: 0,
+                  y: 0,
+                  w: 4,
+                  h: 4,
+                  title: "Installs",
+                  binding: {
+                    modelId: saved.model.id,
+                    measureIds: ["installs"],
+                    groupBy: ["store"],
+                    exclusions: [],
+                  },
+                  options: { view: "value", limit: 2 },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    );
+    expect(created.statusCode, created.body).toBe(200);
+    const splitId = dashboardResponseSchema.parse(created.json()).dashboard.id;
+    const { accessToken } = await pair("Split TV", splitId);
+    const read = async (query: string, etag?: string) =>
+      getDashboard(accessToken, { query, ...(etag ? { etag } : {}) });
+    const measure = (response: InjectResponse) =>
+      deviceDashboardV2ResponseSchema.parse(response.json()).slides[0]!
+        .widgets[0] as Extract<DeviceWidget, { type: "measure" }>;
+    const split = await read("?schema=2&features=measure_split");
+    const old = await read("?schema=2");
+    expect(measure(split).groupBy).toEqual(["store"]);
+    expect(measure(split).data.result?.rows).toHaveLength(2);
+    expect(Number(measure(split).data.totals?.[0]?.value)).toBe(635);
+    expect(measure(old).groupBy).toEqual([]);
+    expect(measure(old).data.result?.rows).toEqual([
+      {
+        dimensions: {},
+        measures: { installs: measure(split).data.totals![0] },
+      },
+    ]);
+    // Unknown names are ignored: the same forms, the same ETags.
+    expect(
+      (await read("?schema=2&features=hologram,measure_split")).headers.etag,
+    ).toBe(split.headers.etag);
+    expect((await read("?schema=2&features=hologram")).headers.etag).toBe(
+      old.headers.etag,
+    );
+    // One 304 per form: each answers 304 on its own ETag only.
+    const splitEtag = split.headers.etag as string,
+      oldEtag = old.headers.etag as string;
+    expect(splitEtag).not.toBe(oldEtag);
+    expect(
+      (await read("?schema=2&features=measure_split", splitEtag)).statusCode,
+    ).toBe(304);
+    expect((await read("?schema=2", oldEtag)).statusCode).toBe(304);
+    expect((await read("?schema=2", splitEtag)).statusCode).toBe(200);
+    expect(
+      (await read("?schema=2&features=measure_split", oldEtag)).statusCode,
+    ).toBe(200);
   });
 
   it("answers schema 3 with ?schema=3, with ETags per schema and device settings (#277)", async () => {

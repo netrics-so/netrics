@@ -28,11 +28,19 @@ public struct WidgetFreshness: Codable, Sendable, Equatable {
     public var late: Bool
     /** The connection's next scheduled sync. */
     public var nextCheckAt: String?
+    /**
+     * A widget whose rows come from several connectors (#784): each one's
+     * summary, in name order; empty otherwise. The fields above stay the
+     * least fresh source's.
+     */
+    public var sources: [WidgetFreshnessSource]
 
     public init(
         kind: Kind, stream: String, fetchedAt: String, dataThrough: String? = nil, monthly: Bool = false,
-        nextExpectedAt: String? = nil, late: Bool = false, nextCheckAt: String? = nil
+        nextExpectedAt: String? = nil, late: Bool = false, nextCheckAt: String? = nil,
+        sources: [WidgetFreshnessSource] = []
     ) {
+        self.sources = sources
         self.kind = kind
         self.stream = stream
         self.fetchedAt = fetchedAt
@@ -44,7 +52,7 @@ public struct WidgetFreshness: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case kind, stream, fetchedAt, dataThrough, period, nextExpectedAt, late, nextCheckAt
+        case kind, stream, fetchedAt, dataThrough, period, nextExpectedAt, late, nextCheckAt, sources
     }
 
     /**
@@ -66,6 +74,9 @@ public struct WidgetFreshness: Codable, Sendable, Equatable {
         nextExpectedAt = c.lenient(String.self, .nextExpectedAt).flatMap { ISODate.parse($0) != nil ? $0 : nil }
         late = c.lenient(Bool.self, .late) ?? false
         nextCheckAt = c.lenient(String.self, .nextCheckAt).flatMap { ISODate.parse($0) != nil ? $0 : nil }
+        // Entries that do not read are left out; fewer than two is none.
+        let sources = (c.lenient([LenientSource].self, .sources) ?? []).compactMap(\.source)
+        self.sources = sources.count >= 2 ? sources : []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -78,7 +89,47 @@ public struct WidgetFreshness: Codable, Sendable, Equatable {
         try c.encodeIfPresent(nextExpectedAt, forKey: .nextExpectedAt)
         if late { try c.encode(true, forKey: .late) }
         try c.encodeIfPresent(nextCheckAt, forKey: .nextCheckAt)
+        if !sources.isEmpty { try c.encode(sources, forKey: .sources) }
     }
+}
+
+/**
+ * One source of a widget that combines sources (widgetFreshnessSourceSchema,
+ * #784): its short name ("App Store") and its own summary.
+ */
+public struct WidgetFreshnessSource: Codable, Sendable, Equatable {
+    /** The source's name in the payload's language ("App Store"). */
+    public var source: String
+    public var freshness: WidgetFreshness
+
+    public init(source: String, freshness: WidgetFreshness) {
+        self.source = source
+        self.freshness = freshness
+    }
+
+    private enum CodingKeys: String, CodingKey { case source }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        source = try c.decode(String.self, forKey: .source).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .source, in: c, debugDescription: "No name")
+        }
+        freshness = try WidgetFreshness(from: decoder)
+        freshness.sources = []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try freshness.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(source, forKey: .source)
+    }
+}
+
+/** A source entry that never fails its list: nil when it does not read. */
+private struct LenientSource: Decodable {
+    var source: WidgetFreshnessSource?
+    init(from decoder: Decoder) throws { source = try? WidgetFreshnessSource(from: decoder) }
 }
 
 /** A calendar date as the provider names it ("2026-11-15"): no time, no zone. */
@@ -321,6 +372,73 @@ public struct FreshnessText: Sendable {
     public func footer(_ f: WidgetFreshness, status: DeviceTileStatus = .ok, now: Date = Date()) -> [String] {
         let parts = parts(f, status: status, now: now)
         return (0..<parts.count).reversed().map { parts[0...$0].joined(separator: " · ") }
+    }
+
+    /** A provider's day in numbers ("11/17", "17.11."); a month keeps its name. */
+    public func shortDay(_ day: CalendarDay, monthly: Bool, now: Date) -> String {
+        guard !monthly else { return self.day(day, monthly: true, now: now) }
+        let utc = TimeZone(identifier: "UTC")!
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = utc
+        let date = utcCalendar.date(from: DateComponents(year: day.year, month: day.month, day: day.day, hour: 12))!
+        return format(date, template: "Md", zone: utc)
+    }
+
+    /**
+     * The forms of a freshness line that lists several sources (#784, ADR
+     * 0025 section 8), longest first, each form its lines: every source's
+     * day and next time with "fetched" at the end; without "fetched"; each
+     * source's day only; with numeric days; a line per source. Screens show
+     * the first form that fits (StudioLayout.freshnessLevelFit). Under a
+     * failing or stale connection a source keeps its day (and "not
+     * published yet" when late), never "next". Empty without `sources`.
+     */
+    public func sourceLevels(
+        _ f: WidgetFreshness, status: DeviceTileStatus = .ok, now: Date = Date(), paused: Bool = false
+    ) -> [[String]] {
+        guard f.sources.count >= 2 else { return [] }
+        let warning = Self.mode(f, status: status) == .failing
+        let sources = f.sources.map { entry -> (parts: [String], short: String?, shortest: String?) in
+            let s = entry.freshness, name = entry.source
+            if s.kind == .continuous {
+                let parts =
+                    warning
+                    ? [checked(s, stream: name, now: now)].compactMap { $0 }
+                    : self.parts(s, status: .ok, stream: name, now: now, paused: paused)
+                return (parts, parts.first, parts.first)
+            }
+            let short = s.dataThrough.flatMap(CalendarDay.init).map {
+                text(.freshStreamUpTo, name, shortDay($0, monthly: s.monthly, now: now))
+            }
+            // Shortest: the store and its day alone ("App Store 11/17").
+            let shortest =
+                s.monthly
+                ? short
+                : s.dataThrough.flatMap(CalendarDay.init).map { "\(name) \(shortDay($0, monthly: false, now: now))" }
+                    ?? short
+            if warning {
+                let parts = [
+                    upTo(s, stream: name, now: now), s.late ? notPublished(s, now: now) : nil,
+                ].compactMap { $0 }
+                return (parts, short ?? parts.first, shortest ?? parts.first)
+            }
+            let parts = self.parts(s, status: .ok, stream: name, now: now, paused: paused)
+            return (parts, short ?? parts.first, shortest ?? parts.first)
+        }.filter { !$0.parts.isEmpty }
+        guard !sources.isEmpty else { return [] }
+        let all = sources.flatMap(\.parts)
+        let firsts = sources.map { $0.parts[0] }
+        let shorts = sources.map { $0.short ?? $0.parts[0] }
+        let shortests = sources.map { $0.shortest ?? $0.parts[0] }
+        let fetched = warning ? nil : fetched(f, now: now)
+        return [
+            [(all + (fetched.map { [$0] } ?? [])).joined(separator: " · ")],
+            [all.joined(separator: " · ")],
+            [firsts.joined(separator: " · ")],
+            [shorts.joined(separator: " · ")],
+            [shortests.joined(separator: " · ")],
+            shorts,
+        ]
     }
 
     /**

@@ -662,6 +662,8 @@ export const dataDe: Catalog<typeof dataEn> = {
         "Dieser Vergleich braucht einen vollständigen Zeitraum. Wähle ein Start- und ein Enddatum.",
       windowRangeDefault:
         "Dieser Vergleich braucht einen Zeitraum. Füge einen gemeinsamen Datumsfilter mit der Steuerung „Bereich“ auf seinem Datum hinzu, mit einem Standard-Start- und Enddatum, oder gruppiere die Kennzahl nach diesem Datum.",
+      periodUnsupported:
+        "Dieses Widget liest einen eigenen Zeitraum, aber sein Modell hat keine Berichtsdatum-Dimension. Wähle ein Modell mit Berichtsdatum oder entferne den Zeitraum.",
       windowFilterMode:
         "Gleitende und vergleichende Kennzahlen können nur einem Datumsfilter folgen, der einen Zeitraum auswählt. Stelle sein Bedienelement auf „Bereich“ um oder nimm dieses Widget davon aus.",
       windowFilter:

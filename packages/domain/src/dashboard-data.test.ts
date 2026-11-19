@@ -510,9 +510,21 @@ describe("shared dashboard filters", () => {
       matches({ day: { kind: "range", from: "bad", to: null } }, {}),
     ).toThrow();
   });
-  it("keeps values scalar and charts at a declared grain", () => {
+  it("keeps values to one measure and charts at a declared grain", () => {
+    // A grouped value is a total with its split (#784).
     expect(() =>
-      validateMeasureView("value", { ...binding, groupBy: ["day"] }),
+      validateMeasureView("value", {
+        ...binding,
+        measureIds: ["revenue"],
+        groupBy: ["day"],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateMeasureView("value", {
+        ...binding,
+        measureIds: ["revenue", "orders"],
+        groupBy: [],
+      }),
     ).toThrow("dashboard_measure_value_grain_invalid");
     expect(() => validateMeasureView("line", binding)).toThrow(
       "dashboard_measure_chart_grain_invalid",

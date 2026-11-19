@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createDatabase,
   createRawSqlClient,
+  findDashboard,
   createWorkspace,
   ingestDatasetPage,
   replaceImageReferences,
@@ -16,7 +17,13 @@ import {
   replaceDashboardRequestSchema,
   type StoreTemplatePlan,
 } from "@netrics/contracts";
-import { measureOptionsForBinding, type DataRow } from "@netrics/domain";
+import {
+  DEFAULT_DATA_POLICY,
+  measureOptionsForBinding,
+  type DataRow,
+} from "@netrics/domain";
+import { queryDashboardData } from "./data.js";
+import { createFreshnessReader } from "./freshness.js";
 import { createDefaultRegistry } from "../connectors.js";
 import { syncCatalog } from "../sync/catalog.js";
 import { createDataService } from "../data/service.js";
@@ -36,6 +43,7 @@ import {
   storeTemplate,
   storeTemplateV3,
   storeTemplateV4,
+  storeTemplateV5,
 } from "./store-template.js";
 import { appSlideKey } from "./store-portfolio.js";
 import { apple, google, now } from "./test-helpers.js";
@@ -340,13 +348,10 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
         "measure:rating+rating_count",
         "review:1001",
       ],
-      // Free; its latest review is its App Store app's, though the Play
-      // app comes first in the product.
-      [
-        "metric:app_store_connect.downloads",
-        "measure:rating+rating_count",
-        "review:1002",
-      ],
+      // Free, in both stores (version 6, #784): both stores' downloads (a
+      // total with a line per store); its latest review is its App Store
+      // app's, though the Play app comes first in the product.
+      ["measure:downloads", "measure:rating+rating_count", "review:1002"],
       // Free, Google Play only: no revenue, no review.
       ["measure:downloads", "measure:rating+rating_count"],
     ]);
@@ -462,7 +467,7 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
       v4.slides[0]!.formatWarnings.filter((w) => w.code === "rows_cut").length,
     ).toBeGreaterThan(0);
     expect(await updateAvailable(requestId)).toBe(true);
-    const { plan, copy } = await applyUpdate(requestId);
+    const { plan, copy } = await applyUpdate(requestId, storeTemplateV5);
     expect(plan).toMatchObject({ fromVersion: 4, toVersion: 5 });
     // The model tables change (the overview's and each app's ratings),
     // and the App Store's store name: offered for review like any
@@ -516,6 +521,68 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
           .filter((w) => w.severity === "attention")
           .map((w) => `${s.name} ${w.format} ${w.code}`),
       ).toEqual([]);
+  });
+
+  it("offers both stores on a linked product's slide to a version 5 install as a reviewed update (#784)", async () => {
+    const requestId = randomUUID();
+    const result = await install(storeTemplateV5, requestId);
+    const v5 = await readDashboard(result.dashboardId);
+    // Version 5: the linked product (Notes) shows its App Store app only.
+    expect(shape(v5.slides[2]!)).toEqual([
+      "metric:app_store_connect.downloads",
+      "measure:rating+rating_count",
+      "review:1002",
+    ]);
+    expect(await updateAvailable(requestId)).toBe(true);
+    const { plan, copy } = await applyUpdate(requestId);
+    expect(plan).toMatchObject({ fromVersion: 5, toVersion: 6 });
+    // Only the linked product's slide changes (its downloads, and where
+    // its ratings and review sit); single-store apps and the overview stay
+    // as they were.
+    expect(
+      plan.records
+        .flatMap((record) => record.items)
+        .map((item) =>
+          [
+            item.ref.replace(/app-[0-9a-f]{16}/, "app"),
+            item.change,
+            item.outcome,
+          ].join(" "),
+        ),
+    ).toEqual([
+      "dashboard:portfolio#widget:app:downloads changed template",
+      "dashboard:portfolio#widget:app:ratings changed template",
+      "dashboard:portfolio#widget:app:review changed template",
+    ]);
+    // Nothing changes on screens until the copy is swapped in.
+    expect(shape((await readDashboard(result.dashboardId)).slides[2]!)).toEqual(
+      shape(v5.slides[2]!),
+    );
+    const notes = copy.slides[2]!;
+    expect(shape(notes)).toEqual([
+      "measure:downloads",
+      "measure:rating+rating_count",
+      "review:1002",
+    ]);
+    const split = notes.widgets[0]!;
+    if (split.type !== "measure") throw new Error("not a measure");
+    expect(split.binding.groupBy).toEqual(["store"]);
+    expect(split.options).toMatchObject({ view: "value", limit: 2 });
+    for (const slide of [...copy.slides, ...v5.slides])
+      expect(
+        slide.formatWarnings
+          .filter((w) => w.severity === "attention")
+          .map((w) => `${slide.name} ${w.format} ${w.code}`),
+      ).toEqual([]);
+    const swapped = await updates().swap(
+      actor(),
+      (await updates().list(actor())).installs.find(
+        (entry) => entry.requestId === requestId,
+      )!.openUpdate!.id,
+      "dashboard:portfolio",
+    );
+    expect(swapped.dashboards[0]!.swappedAt).not.toBeNull();
+    expect(await updateAvailable(requestId)).toBe(false);
   });
 
   it("saves a version 5 table edited in the Studio (#768)", async () => {
@@ -583,6 +650,93 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     );
     const saved = await save(studio, dashboard.version + 1);
     expect(saved.ok, JSON.stringify(saved)).toBe(true);
+  });
+
+  it("adds Google Play's proceeds when a linked product turns paid, its freshness Google Play's only (#784)", async () => {
+    const requestId = randomUUID();
+    await install(storeTemplateV5, requestId);
+    // Notes (both stores) turns paid with a website.
+    const notes = "product:8b0f8a8e-2f7a-4d55-9f43-3c3f1d1b0e01";
+    await products().update(actor(), requestId, {
+      products: [
+        {
+          productId: notes,
+          pricing: "paid",
+          website: { connectionId: vercelId, projectId: "prj_focus" },
+        },
+      ],
+    });
+    const { plan, copy } = await applyUpdate(requestId);
+    expect(plan).toMatchObject({ fromVersion: 5, toVersion: 6 });
+    const items = plan.records
+      .flatMap((record) => record.items)
+      .filter((item) => item.ref.includes(appSlideKey(notes)))
+      .map((item) =>
+        [item.ref.replace(/app-[0-9a-f]{16}/, "app"), item.change].join(" "),
+      )
+      .sort();
+    // Revenue, Google Play's proceeds and visitors arrive; downloads,
+    // ratings and the review move to the linked layout.
+    expect(items).toEqual(
+      [
+        "dashboard:portfolio#widget:app:downloads changed",
+        "dashboard:portfolio#widget:app:play-proceeds added",
+        "dashboard:portfolio#widget:app:ratings changed",
+        "dashboard:portfolio#widget:app:review changed",
+        "dashboard:portfolio#widget:app:revenue added",
+        "dashboard:portfolio#widget:app:visitors added",
+      ].sort(),
+    );
+    const slide = copy.slides.find((s) => s.name?.startsWith("Notes"))!;
+    // In reading order: the top row, then down.
+    expect(shape(slide)).toEqual([
+      "measure:rating",
+      "measure:downloads",
+      "metric:app_store_connect.proceeds",
+      "review:1002",
+      "metric:vercel.visitors",
+      "measure:proceeds",
+    ]);
+    expect(
+      slide.formatWarnings.filter((w) => w.severity === "attention"),
+    ).toEqual([]);
+    // Freshness: App Store sales and Google Play earnings both stored; the
+    // Google Play proceeds tile (its binding fixes the store) lists Google
+    // Play's only, the downloads total both.
+    await owner`delete from connection_freshness where workspace_id = ${workspaceId}`;
+    for (const [connectionId, stream, resource, through] of [
+      [apple.id, "sales", "", "2026-11-03"],
+      [google.id, "earnings", "com.notes", "2026-10-31"],
+      [google.id, "installs", "com.notes", "2026-11-01"],
+    ] as const)
+      await owner`
+        insert into connection_freshness (workspace_id, connection_id, stream,
+          resource, data_through, time_zone, checked_at, advanced_at)
+        values (${workspaceId}, ${connectionId}, ${stream}, ${resource},
+          ${through}, 'America/Los_Angeles', ${now}, ${now})`;
+    const data = await withWorkspace(db, { workspaceId }, async (tx) => {
+      const dashboard = await findDashboard(tx, workspaceId, copy.id);
+      return queryDashboardData(
+        tx,
+        workspaceId,
+        dashboard!.slides,
+        dashboard!.dataFilters,
+        {},
+        at(),
+        DEFAULT_DATA_POLICY,
+        "en",
+        createFreshnessReader(workspaceId, registry, "en"),
+      );
+    });
+    const of = (index: number) =>
+      data.widgets.find((entry) => entry.widgetId === slide.widgets[index]!.id)!
+        .freshness;
+    expect(of(5)).toMatchObject({ stream: "Earnings", period: "month" });
+    expect(of(5)).not.toHaveProperty("sources");
+    expect(of(1)?.sources?.map((source) => source.source)).toEqual([
+      "App Store",
+      "Google Play",
+    ]);
   });
 
   it("offers an app that turned free, or got a website, as an update", async () => {
