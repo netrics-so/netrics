@@ -5354,6 +5354,11 @@ a.button.primary:hover {
      measureTableRowsShown counts (#768). */
   box-shadow: inset 0 -1px 0 var(--t-border);
 }
+/* Semibold heads, as the fit measures them and tvOS draws them (#768);
+   the browser's default for th is bold. */
+.sw-measure-table th {
+  font-weight: 600;
+}
 .sw-measure-bars,
 .sw-measure-line {
   overflow: auto;
