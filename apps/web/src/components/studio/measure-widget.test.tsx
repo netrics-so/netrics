@@ -736,3 +736,134 @@ describe("a measure table fits its tile (#768)", () => {
     expect(shownRows(view(20))).toBe(20);
   });
 });
+
+describe("a total with its split, and freshness per source (#784)", () => {
+  const sources: NonNullable<DashboardWidgetData["freshness"]>["sources"] = [
+    {
+      source: "App Store",
+      kind: "periodic",
+      stream: "Sales",
+      fetchedAt: new Date(Date.now() - 600_000).toISOString(),
+      dataThrough: "2026-11-17",
+      nextExpectedAt: new Date(Date.now() + 3_600_000).toISOString(),
+    },
+    {
+      source: "Google Play",
+      kind: "periodic",
+      stream: "Installs",
+      fetchedAt: new Date(Date.now() - 600_000).toISOString(),
+      dataThrough: "2026-11-11",
+    },
+  ];
+  const data = (extra: Partial<DashboardWidgetData> = {}) =>
+    ({
+      widgetId: "00000000-0000-4000-8000-000000000001",
+      status: "ok",
+      error: null,
+      exclusions: [],
+      scope: ["App: Focus"],
+      metadata: {
+        modelId: "00000000-0000-4000-8000-000000000002",
+        modelName: "Downloads",
+        measures: [{ id: "downloads", name: "Downloads" }],
+        dimensions: [{ id: "store", name: "Store", type: "string" }],
+      },
+      result: {
+        releaseId: null,
+        rows: [
+          ["apple", "App Store", 412],
+          ["google", "Google Play", 223],
+        ].map(([store, label, value]) => ({
+          dimensions: { store },
+          dimensionLabels: { store: label },
+          measures: { downloads: { value, type: "integer", status: "ok" } },
+        })),
+        totalRows: 2,
+        warnings: [],
+        operations: 1,
+        provenance: [],
+        appliedFilter: null,
+        groupBy: ["store"],
+      },
+      totals: [{ value: 635, type: "integer", status: "ok" }],
+      freshness: {
+        kind: "periodic",
+        stream: "Installs",
+        fetchedAt: sources[1]!.fetchedAt,
+        dataThrough: "2026-11-11",
+        sources,
+      },
+      ...extra,
+    }) as unknown as DashboardWidgetData;
+  const view = (
+    value: DashboardWidgetData,
+    placement?: { w: number; h: number },
+    locale: "en" | "de" = "en",
+  ) =>
+    renderI18n(
+      <MeasureWidgetView
+        widget={{
+          title: "Downloads and user installs",
+          options: { view: "value", limit: 2 },
+          binding: { measureIds: ["downloads"], groupBy: ["store"] },
+        }}
+        data={value}
+        {...(placement
+          ? { placement: { x: 0, y: 0, ...placement }, showHeader: true }
+          : {})}
+      />,
+      locale,
+    );
+  const text = (html: string) =>
+    html
+      .replace(/<[^>]+>/g, "|")
+      .replace(/\|+/g, "|")
+      .replace(/ /g, " ");
+
+  it("shows the total and a line per store", () => {
+    const html = text(view(data(), { w: 4, h: 3 }));
+    expect(html).toContain("|635|");
+    expect(html).toContain("|App Store| |412|");
+    expect(html).toContain("|Google Play| |223|");
+    expect(html).not.toContain("Showing");
+  });
+
+  it("shows the stores alone where a total makes no sense", () => {
+    const html = text(view(data({ totals: undefined }), { w: 4, h: 3 }));
+    expect(html).not.toContain("sw-measure-total");
+    expect(html).toContain("|App Store| |412|");
+  });
+
+  it("lists every store's day in the freshness line, in the form that fits", () => {
+    // A wide tile: each store's day and next time.
+    const wide = text(view(data(), { w: 12, h: 3 }));
+    expect(wide).toMatch(
+      /App Store up to Nov 17 · next ~[^|]+ · Google Play up to Nov 11/,
+    );
+    // A third of the width: the days only, or shorter, never a store less.
+    const narrow = text(view(data(), { w: 4, h: 3 }, "de"));
+    expect(narrow).toContain("App Store bis");
+    expect(narrow).toContain("Google Play bis");
+    expect(narrow).not.toContain("nächste");
+  });
+
+  it("counts every freshness line when a table fits its rows", () => {
+    const table = (value: DashboardWidgetData, w: number) =>
+      renderI18n(
+        <MeasureWidgetView
+          widget={{
+            title: "Downloads",
+            options: { view: "table", limit: 20 },
+            binding: { measureIds: ["downloads"], groupBy: ["store"] },
+          }}
+          data={value}
+          placement={{ x: 0, y: 0, w, h: 3 }}
+          showHeader
+        />,
+        "de",
+      );
+    // A narrow tile puts each store on its own line: two freshness lines.
+    const narrow = table(data(), 3);
+    expect(narrow.match(/sw-measure-freshness/g)?.length).toBe(2);
+  });
+});

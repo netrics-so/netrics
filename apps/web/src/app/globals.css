@@ -5338,6 +5338,34 @@ a.button.primary:hover {
 .sw-measure .sw-measure-freshness--overdue {
   color: var(--t-warning);
 }
+/* A total with its split (#784): the total at the size measureSplitLayout
+   gives (semibold, one line), then a line per group, label and value. */
+.sw-measure .sw-measure-total {
+  margin: auto 0 0;
+  flex-shrink: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.sw-measure-split {
+  flex-shrink: 0;
+  margin: 0 0 auto;
+  padding: 0;
+  list-style: none;
+  font-size: calc(var(--u, 1px) * 28 * var(--measure-scale, 1));
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.sw-measure-split li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.3em;
+  overflow-wrap: anywhere;
+}
+/* Off a slide (scroll cards) a several-source freshness line wraps. */
+.sw-measure .sw-measure-freshness--wrap {
+  max-height: none;
+}
 .sw-measure-table-scroll {
   overflow: auto;
   min-height: 0;
