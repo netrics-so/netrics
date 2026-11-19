@@ -414,17 +414,21 @@ the first of these forms that fits one line of the tile's content width
 | 2. Without the fetch                    | App Store up to Nov 17 · next ~9:00 PM · Google Play up to Nov 11                       | App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov.                         |
 | 3. Days only (the "next" parts dropped) | App Store up to Nov 17 · Google Play up to Nov 11                                       | App Store bis 17. Nov. · Google Play bis 11. Nov.                                          |
 | 4. Short days                           | App Store up to 11/17 · Google Play up to 11/11                                         | App Store bis 17.11. · Google Play bis 11.11.                                              |
-| 5. A line per source                    | App Store up to 11/17 ⏎ Google Play up to 11/11                                         | App Store bis 17.11. ⏎ Google Play bis 11.11.                                              |
+| 5. Stores and days                      | App Store 11/17 · Google Play 11/11                                                     | App Store 17.11. · Google Play 11.11.                                                      |
+| 6. A line per source                    | App Store up to 11/17 ⏎ Google Play up to 11/11                                         | App Store bis 17.11. ⏎ Google Play bis 11.11.                                              |
 
-A source is never left out and no form is cut: where even form 4 does
-not fit, each source takes its own line (form 5). A measure table's fit
+A source is never left out and no form is cut: where even form 5 does
+not fit, each source takes its own line (form 6). A measure table's fit
 (#768) counts the chosen form's lines as freshness lines, so rows give
 way, not the footer. A late source reads "Nov 12 not published yet" in
 forms 1 and 2; a continuous one "Vercel checked 10 min ago". Under a
 warning every form keeps only the days (and "not published yet"); a
 provider overdue by a day keeps its one warning line. Scroll cards, which
 grow with their content, show form 2 and let it wrap. A monthly source
-keeps its month's name in form 4. One source keeps the single line above.
+keeps its month's name in forms 4 and 5. A metric widget gives its
+freshness line room right after its label, value and notice, before the
+change, the period line and the sparkline (#784), so every number says
+how far it reaches. One source keeps the single line above.
 
 Precedence, highest first:
 

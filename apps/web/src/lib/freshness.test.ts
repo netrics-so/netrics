@@ -364,6 +364,7 @@ describe("freshness per source (#784)", () => {
       ["App Store bis 15. Nov. · nächste ~21:00 · Google Play bis 11. Nov."],
       ["App Store bis 15. Nov. · Google Play bis 11. Nov."],
       ["App Store bis 15.11. · Google Play bis 11.11."],
+      ["App Store 15.11. · Google Play 11.11."],
       ["App Store bis 15.11.", "Google Play bis 11.11."],
     ]);
     expect(
@@ -377,6 +378,7 @@ describe("freshness per source (#784)", () => {
       ["App Store up to Nov 15 · next ~9:00 PM · Google Play up to Nov 11"],
       ["App Store up to Nov 15 · Google Play up to Nov 11"],
       ["App Store up to 11/15 · Google Play up to 11/11"],
+      ["App Store 11/15 · Google Play 11/11"],
       ["App Store up to 11/15", "Google Play up to 11/11"],
     ]);
   });

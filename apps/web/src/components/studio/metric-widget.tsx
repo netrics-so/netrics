@@ -215,6 +215,8 @@ export function MetricWidgetView(input: MetricWidgetViewProps) {
     change: changeLine,
     noticeText: props.notice,
     sourceText: footer,
+    // The freshness line before the trend (#784).
+    freshnessFooter: footer !== null && Boolean(props.freshness),
     placement: props.placement,
     showHeader: props.showHeader,
     fontScale: props.fontScale,

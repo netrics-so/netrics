@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  SCREEN_FORMATS,
+  SCREEN_FORMAT_KEYS,
   STUDIO_TEXT_MINIMUMS,
   estimateTextWidth,
+  placementRect,
+  screenFrame,
+  slideLayoutFor,
   wrappedLineCount,
 } from "@netrics/domain";
 
@@ -557,5 +562,130 @@ describe("chartWidgetLayout", () => {
     });
     expect(layout.value).toBeNull();
     expect(layout.sizes.resource).toBe(30);
+  });
+});
+
+describe("app slide metric tiles keep their freshness line (#784)", () => {
+  // The metric tiles of a linked product's slide (store-portfolio.ts,
+  // linkedRows, version 6) among the slide's other tiles: paid with and
+  // without a website, and free with one. Screens use each format's own
+  // placements.
+  const slides = {
+    paid: [
+      { id: "ratings", type: "measure" as const, x: 0, y: 0, w: 5, h: 5 },
+      { id: "proceeds", type: "measure" as const, x: 0, y: 5, w: 5, h: 3 },
+      { id: "downloads", type: "measure" as const, x: 5, y: 0, w: 4, h: 4 },
+      { id: "review", type: "review" as const, x: 5, y: 4, w: 4, h: 4 },
+      { id: "revenue", type: "metric" as const, x: 9, y: 0, w: 3, h: 4 },
+      { id: "visitors", type: "metric" as const, x: 9, y: 4, w: 3, h: 4 },
+    ],
+    paidNoSite: [
+      { id: "ratings", type: "measure" as const, x: 0, y: 0, w: 5, h: 5 },
+      { id: "proceeds", type: "measure" as const, x: 0, y: 5, w: 5, h: 3 },
+      { id: "downloads", type: "measure" as const, x: 5, y: 0, w: 4, h: 4 },
+      { id: "review", type: "review" as const, x: 5, y: 4, w: 4, h: 4 },
+      { id: "revenue", type: "metric" as const, x: 9, y: 0, w: 3, h: 8 },
+    ],
+    free: [
+      { id: "downloads", type: "measure" as const, x: 0, y: 0, w: 4, h: 4 },
+      { id: "review", type: "review" as const, x: 0, y: 4, w: 4, h: 4 },
+      { id: "visitors", type: "metric" as const, x: 4, y: 0, w: 8, h: 3 },
+      { id: "ratings", type: "measure" as const, x: 4, y: 3, w: 8, h: 5 },
+    ],
+  };
+  const texts = {
+    revenue: {
+      en: ["Revenue, last 30 days · App Store", "€1,234.56"],
+      de: ["Erlöse, letzte 30 Tage · App Store", "1.234,56 €"],
+    },
+    visitors: {
+      en: ["Website visitors, last 30 days", "1,508"],
+      de: ["Website-Besucher, letzte 30 Tage", "1.508"],
+    },
+  } as const;
+  const freshness = {
+    en: "Up to Nov 17 · fetched 10 min. ago · next ~9:00 PM",
+    de: "Bis 17. Nov. · abgerufen vor 10 Min. · nächste ~21:00",
+  };
+  it("shows it at the default size, and keeps title, value and it at 1.3", () => {
+    const missing: string[] = [];
+    for (const [name, widgets] of Object.entries(slides))
+      for (const format of SCREEN_FORMAT_KEYS)
+        for (const locale of ["en", "de"] as const)
+          for (const fontScale of [1, 1.3]) {
+            const placed = slideLayoutFor({
+              widgets,
+              primaryFormat: "16x9",
+              format,
+              custom: null,
+            }).flat();
+            for (const id of ["revenue", "visitors"] as const) {
+              const cells = placed.find((entry) => entry.id === id);
+              if (!cells) continue;
+              const rect = placementRect(
+                cells,
+                screenFrame(SCREEN_FORMATS[format].reference, format, true),
+              );
+              const [label, value] = texts[id][locale];
+              const layout = metricWidgetLayout({
+                label,
+                value: { full: value, compact: value },
+                periodText:
+                  locale === "de"
+                    ? "Letzte 30 Tage · Summe"
+                    : "Last 30 days · Total",
+                change: {
+                  full:
+                    locale === "de"
+                      ? "▲ +12 % vs. vorherige 30 Tage"
+                      : "▲ +12% vs previous 30 days",
+                  short: locale === "de" ? "▲ +12 %" : "▲ +12%",
+                  comparison:
+                    locale === "de"
+                      ? "vs. vorherige 30 Tage"
+                      : "vs previous 30 days",
+                },
+                noticeText: null,
+                sourceText: freshness[locale],
+                freshnessFooter: true,
+                placement: {
+                  ...cells,
+                  unitBox: { width: rect.width, height: rect.height },
+                },
+                showHeader: true,
+                fontScale,
+                showSparkline: true,
+              });
+              if (!layout.showSource || layout.label.title.truncated)
+                missing.push(`${name} ${id} ${format} ${locale} ${fontScale}`);
+            }
+          }
+    expect(missing).toEqual([]);
+  });
+
+  it("puts a freshness line before the trend, a source's name after it", () => {
+    const tight = {
+      label: "Revenue, last 30 days · App Store",
+      value: { full: "€1,234.56", compact: "€1.2K" },
+      periodText: "Last 30 days · Total",
+      change: {
+        full: "▲ +12% vs previous 30 days",
+        short: "▲ +12%",
+        comparison: "vs previous 30 days",
+      },
+      noticeText: null,
+      sourceText: "Up to Nov 17 · fetched 10 min. ago",
+      placement: { x: 0, y: 0, w: 4, h: 3 },
+      showHeader: true,
+      fontScale: 1.3,
+      showSparkline: true,
+    };
+    // Too short for everything: the freshness line stays, the trend goes.
+    const fresh = metricWidgetLayout({ ...tight, freshnessFooter: true });
+    expect(fresh.showSource).toBe(true);
+    // A source's name gives way to the change line, as before.
+    const named = metricWidgetLayout(tight);
+    expect(named.showSource).toBe(false);
+    expect(named.changeText).not.toBeNull();
   });
 });

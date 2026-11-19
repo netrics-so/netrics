@@ -1967,25 +1967,26 @@ function buildPortfolioSlides(
             }
           : entry;
       return [
-        // The left third: the total with its split; below it Google
-        // Play's proceeds (paid) or the latest review (free).
-        ...at(find("downloads"), 0, 0, 4, 4),
         ...(revenue
           ? [
-              ...at(find("play-proceeds"), 0, 4, 4, 4),
-              // The ratings (their rating's head is its star) over the App
-              // Store's revenue; visitors over the latest review, which
-              // keeps four rows for its text.
-              // The ratings without their count, six rows high: both
-              // stores' listings fit at every theme font scale.
-              ...at(ratingOnly(find("ratings")), 4, 0, 4, 6),
-              ...at(revenue, 4, 6, 4, 2),
-              ...at(visitors, 8, 0, 4, 4),
-              ...at(find("review"), 8, visitors ? 4 : 0, 4, visitors ? 4 : 8),
+              // Paid: the ratings (listing, country, star) five columns
+              // wide over Google Play's proceeds, so both stores' listings
+              // fit at every theme font scale (and keep the wider column in
+              // 4:3); the total with its split over the latest review; the
+              // App Store's revenue and the website's visitors on the
+              // right, each with room for its freshness line.
+              ...at(ratingOnly(find("ratings")), 0, 0, 5, 5),
+              ...at(find("play-proceeds"), 0, 5, 5, 3),
+              ...at(find("downloads"), 5, 0, 4, 4),
+              ...at(find("review"), 5, 4, 4, 4),
+              ...at(revenue, 9, 0, 3, visitors ? 4 : 8),
+              ...at(visitors, 9, 4, 3, 4),
             ]
           : [
+              // Free: the total with its split over the latest review;
+              // visitors over the ratings, eight columns wide.
+              ...at(find("downloads"), 0, 0, 4, 4),
               ...at(find("review"), 0, 4, 4, 4),
-              // Free: visitors over the ratings, eight columns wide.
               ...at(visitors, 4, 0, 8, 3),
               ...at(find("ratings"), 4, visitors ? 3 : 0, 8, visitors ? 5 : 8),
             ]),

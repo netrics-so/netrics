@@ -255,8 +255,9 @@ function numericDay(date: string, clock: FreshnessClock): string {
  * (`freshnessLevelFit`): every source's day and next time and the fetch
  * ("App Store up to Nov 17 · next ~9:00 PM · Google Play up to Nov 11 ·
  * fetched 10 min. ago"); without the fetch; the days only; the days in
- * short numbers ("App Store up to 11/17 · Google Play up to 11/11"); and
- * last those on a line each. A source is never left out. Under a warning
+ * short numbers ("App Store up to 11/17 · Google Play up to 11/11"); the
+ * stores and their days alone ("App Store 11/17 · Google Play 11/11");
+ * and last the short days on a line each. A source is never left out. Under a warning
  * every form has the days (and "not published yet") only.
  */
 export function freshnessSourceLevels(
@@ -291,10 +292,18 @@ export function freshnessSourceLevels(
             }),
           ]
         : first;
+    // Shortest: the store and its day alone ("App Store 11/17").
+    const shortest =
+      source.kind === "periodic" &&
+      source.dataThrough &&
+      source.period !== "month"
+        ? [`${source.source} ${numericDay(source.dataThrough, clock)}`]
+        : short;
     return {
       all: options.warning ? all.slice(0, source.late ? 2 : 1) : all,
       first,
       short,
+      shortest,
     };
   });
   const join = (parts: string[]) => parts.join(SEPARATOR);
@@ -311,6 +320,7 @@ export function freshnessSourceLevels(
     [join(full)],
     [join(named.flatMap((source) => source.first))],
     [join(named.flatMap((source) => source.short))],
+    [join(named.flatMap((source) => source.shortest))],
     named.map((source) => join(source.short)),
   ];
 }

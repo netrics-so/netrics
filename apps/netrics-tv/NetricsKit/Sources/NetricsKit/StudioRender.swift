@@ -172,7 +172,10 @@ public enum StudioRender {
     public static func metricLayout(
         label: String, value: (full: String, compact: String), periodText: String,
         change: (full: String, short: String, comparison: String?)?, notice: String?, note: String?, placement: StudioPlacement,
-        showHeader: Bool, fontScale: Double, showSparkline: Bool, unitBox: StudioCanvas? = nil
+        showHeader: Bool, fontScale: Double, showSparkline: Bool, unitBox: StudioCanvas? = nil,
+        /// The slot is the freshness line (ADR 0025): first after the label,
+        /// value and notice (#784), as the web's metricWidgetLayout.
+        freshnessNote: Bool = false
     ) -> MetricLayout {
         let box = contentBox(placement, showHeader: showHeader, unitBox: unitBox)
         let sizes = StudioLayout.typeScale(.metric, placement: placement, fontScale: fontScale, showHeader: showHeader)
@@ -187,6 +190,14 @@ public enum StudioRender {
 
         var used = labelLayout.height + stackGap + height(notice, small) + valueMin * valueLineHeight
         func fits(_ extra: Double) -> Bool { used + extra <= box.height }
+
+        let noteHeight = height(note, small)
+        var showNote = false
+        if freshnessNote && noteHeight > 0 && fits(noteHeight) {
+            showNote = true
+            used += noteHeight
+        }
+        let noteLeft = showNote || freshnessNote ? 0 : noteHeight
 
         // One line: when the whole change would wrap, the comparison moves
         // to a line of its own below.
@@ -212,20 +223,18 @@ public enum StudioRender {
             used += comparisonSize * lineHeight
         }
 
-        let noteHeight = height(note, small)
         let sparkMin = stackGap + minSparklineHeight
         var spark = false
-        var showNote = false
-        if showSparkline && fits(sparkMin + noteHeight) {
+        if showSparkline && fits(sparkMin + noteLeft) {
             spark = true
-            showNote = noteHeight > 0
-            used += sparkMin + noteHeight
+            showNote = showNote || noteLeft > 0
+            used += sparkMin + noteLeft
         } else if showSparkline && fits(sparkMin) {
             spark = true
             used += sparkMin
-        } else if noteHeight > 0 && fits(noteHeight) {
+        } else if noteLeft > 0 && fits(noteLeft) {
             showNote = true
-            used += noteHeight
+            used += noteLeft
         }
 
         let extra = Swift.max(0, box.height - used)

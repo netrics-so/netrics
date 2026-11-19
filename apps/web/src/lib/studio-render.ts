@@ -269,7 +269,14 @@ export function metricWidgetLayout(input: {
   /** A stale or failure notice, always shown. */
   noticeText: string | null;
   sourceText: string | null;
-  placement: StudioPlacement;
+  /**
+   * The footer is the freshness line (ADR 0025): it comes first after the
+   * label, value and notice (#784), so every number says how far it
+   * reaches before the change, the period or the sparkline get room.
+   * Otherwise (a source's name) it comes last.
+   */
+  freshnessFooter?: boolean;
+  placement: ScreenPlacement;
   showHeader: boolean;
   fontScale: number;
   showSparkline: boolean;
@@ -296,6 +303,15 @@ export function metricWidgetLayout(input: {
     height(input.noticeText, small) +
     valueMin * VALUE_LINE_HEIGHT;
   const fits = (extra: number) => used + extra <= box.height;
+
+  const source = input.noticeText ? 0 : height(input.sourceText, small);
+  // A freshness line first (#784).
+  let showSource = false;
+  if (input.freshnessFooter && source > 0 && fits(source)) {
+    showSource = true;
+    used += source;
+  }
+  const sourceLeft = showSource ? 0 : input.freshnessFooter ? 0 : source;
 
   // One line: when the whole change would wrap, the comparison moves to a
   // line of its own below.
@@ -328,20 +344,18 @@ export function metricWidgetLayout(input: {
   }
 
   // A sparkline of at least the minimum height, with the name under it.
-  const source = input.noticeText ? 0 : height(input.sourceText, small);
   const sparkMin = STACK_GAP + MIN_SPARKLINE_HEIGHT;
   let showSparkline = false;
-  let showSource = false;
-  if (input.showSparkline && fits(sparkMin + source)) {
+  if (input.showSparkline && fits(sparkMin + sourceLeft)) {
     showSparkline = true;
-    showSource = source > 0;
-    used += sparkMin + source;
+    showSource = showSource || sourceLeft > 0;
+    used += sparkMin + sourceLeft;
   } else if (input.showSparkline && fits(sparkMin)) {
     showSparkline = true;
     used += sparkMin;
-  } else if (source > 0 && fits(source)) {
+  } else if (sourceLeft > 0 && fits(sourceLeft)) {
     showSource = true;
-    used += source;
+    used += sourceLeft;
   }
 
   // The value grows into what is left, up to its maximum; the sparkline

@@ -956,13 +956,14 @@ stores showed only its App Store app's numbers on its slide. From version
 - **Ratings** per store listing and the App Store's latest review, as
   before.
 
-The total takes the left third's upper half (four rows, so both stores'
-lines and their freshness fit at every theme font scale); below it a paid
-product's Google Play proceeds, else its latest review. A paid product's
-ratings (the rating's head is its star) sit over the App Store's revenue
-in the middle third, its visitors over the latest review (four rows for
-its text) on the right; a free product's ratings take the other two
-thirds under its visitors. A total in several
+A paid product's slide has the ratings (listing, country and star, without
+the count) five columns wide over Google Play's proceeds, the total with
+its split over the latest review in the middle, and the App Store's
+revenue and the website's visitors on the right; a free product's has the
+total over the latest review and its visitors over ratings eight columns
+wide. Both stores' listings fit at every theme font scale, and every
+metric tile keeps its freshness line: metric widgets give the freshness
+line room before the trend, the period line or the sparkline. A total in several
 currencies wraps between its amounts instead of letting group lines go.
 The Google Play proceeds' freshness names Google Play only: a widget's own
 fixed store or app counts as its scope. A single-store app keeps version 5's slide; a free product has

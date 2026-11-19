@@ -71,19 +71,21 @@ private var both: WidgetFreshness {
                 ["App Store up to Nov 17 · next ~21:00 · Google Play up to Nov 11"],
                 ["App Store up to Nov 17 · Google Play up to Nov 11"],
                 ["App Store up to 11/17 · Google Play up to 11/11"],
+                ["App Store 11/17 · Google Play 11/11"],
                 ["App Store up to 11/17", "Google Play up to 11/11"],
             ])
         let de = FreshnessText(language: .de, timeZone: berlin, region: germany).sourceLevels(both, now: now)
         #expect(de[1] == ["App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov."])
         #expect(de[3] == ["App Store bis 17.11. · Google Play bis 11.11."])
-        #expect(de[4] == ["App Store bis 17.11.", "Google Play bis 11.11."])
+        #expect(de[4] == ["App Store 17.11. · Google Play 11.11."])
+        #expect(de[5] == ["App Store bis 17.11.", "Google Play bis 11.11."])
     }
 
     @Test func underAWarningOnlyEachDay() {
         let levels = FreshnessText(language: .en, timeZone: berlin, region: us24)
             .sourceLevels(both, status: .outage, now: now)
         #expect(levels[0] == ["App Store up to Nov 17 · Google Play up to Nov 11"])
-        #expect(levels[4] == ["App Store up to 11/17", "Google Play up to 11/11"])
+        #expect(levels[5] == ["App Store up to 11/17", "Google Play up to 11/11"])
     }
 
     @Test func oneSourceKeepsTheSingleLine() {
@@ -115,6 +117,22 @@ private var both: WidgetFreshness {
                 == .lines(data.freshnessSourceLines(width: 300, fontScale: 1, now: now, language: .en)!))
         guard case .lines = data.freshnessSourceLayout(width: nil, scroll: true, fontScale: 1, now: now, language: .en)
         else { Issue.record("expected one form"); return }
+    }
+
+    @Test func aMetricKeepsItsFreshnessLineBeforeTheTrend() {
+        let layout = { (freshnessNote: Bool) in
+            StudioRender.metricLayout(
+                label: "Revenue, last 30 days · App Store", value: ("€1,234.56", "€1.2K"),
+                periodText: "Last 30 days · Total",
+                change: ("▲ +12% vs previous 30 days", "▲ +12%", "vs previous 30 days"), notice: nil,
+                note: "Up to Nov 17 · fetched 10 min. ago", placement: StudioPlacement(x: 0, y: 0, w: 4, h: 3),
+                showHeader: true, fontScale: 1.3, showSparkline: true, freshnessNote: freshnessNote)
+        }
+        // Too short for everything: the freshness line stays (#784).
+        #expect(layout(true).showNote)
+        // A conversion note gives way to the change line, as before.
+        #expect(!layout(false).showNote)
+        #expect(layout(false).changeText != nil)
     }
 
     @Test func aTotalWithItsSplit() {

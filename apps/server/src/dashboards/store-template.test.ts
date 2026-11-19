@@ -472,7 +472,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
   const APP_SLIDE_HASHES: Record<number, string> = {
     4: "034364f9fb26ab383278ff8a92015b88fdb1c4d10bc165055f877cb2ec827622",
     5: "71bd572ac6b0d3e39dae1b4f718cf6fdf3ca2b5e261f1c11ee82617d73b4df3d",
-    6: "f82668316c1a0539003330cceea75e453f0e7a01239acb2bdfb71e3d6fa9f3f8",
+    6: "76f0760d5c8493c5fef4479bd42c532a3a03a243f62a5456e2808609d5e8994f",
   };
   it("needs a version bump for any app slide change; 4 and 5 stay frozen", () => {
     const hash = (template: typeof storeTemplate) =>
@@ -514,34 +514,27 @@ describe("version 4: an overview and one slide per app (#709)", () => {
         widget.h,
       ]),
     ).toEqual([
+      // The ratings (listing, country, star) five columns wide over Google
+      // Play's proceeds per currency.
+      ["measure:rating:table", "Store ratings", 0, 0, 5, 5],
+      ["measure:proceeds:table", "Proceeds · Google Play", 0, 5, 5, 3],
       // Both stores' downloads over the last 30 days: the total and a line
-      // per store, in the left third's upper half; Google Play's proceeds
-      // per currency below it.
-      ["measure:downloads:value", "Downloads, last 30 days", 0, 0, 4, 4],
-      [
-        "measure:proceeds:table",
-        "Proceeds after fees · Google Play",
-        0,
-        4,
-        4,
-        4,
-      ],
-      // The ratings (listing, country, star; six rows) over the App
-      // Store's revenue in the display currency, as before; the website's
-      // visitors over the latest review.
-      ["measure:rating:table", "Store ratings", 4, 0, 4, 6],
+      // per store, over the latest review.
+      ["measure:downloads:value", "Downloads, last 30 days", 5, 0, 4, 4],
+      ["review", null, 5, 4, 4, 4],
+      // The App Store's revenue in the display currency, as before, and
+      // the website's visitors, each with room for its freshness line.
       [
         "metric:app_store_connect.proceeds",
         "Revenue, last 30 days · App Store",
+        9,
+        0,
+        3,
         4,
-        6,
-        4,
-        2,
       ],
-      ["metric:vercel.visitors", "Website visitors, last 30 days", 8, 0, 4, 4],
-      ["review", null, 8, 4, 4, 4],
+      ["metric:vercel.visitors", "Website visitors, last 30 days", 9, 4, 3, 4],
     ]);
-    const split = paid.widgets[0]!;
+    const split = paid.widgets[2]!;
     if (split.type !== "measure") throw new Error("not a measure");
     expect(split.binding.groupBy).toEqual(["store"]);
     // Its own period, like the App Store widgets'; the date filter does
@@ -553,7 +546,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
     });
     expect(split.binding.exclusions.map((e) => e.filterId)).toContain("day");
     // The ratings' heads fit five columns: the rating's is its star.
-    const ratings = paid.widgets[2]!;
+    const ratings = paid.widgets[0]!;
     if (ratings.type !== "measure") throw new Error("not a measure");
     expect(ratings.options.labels).toMatchObject({ rating: "★" });
     expect(ratings.binding.measureIds).toEqual(["rating"]);
@@ -575,6 +568,7 @@ describe("version 4: an overview and one slide per app (#709)", () => {
     // the default size and at 1.3, in English and German: rows with
     // realistic cells above the footer the slide shows (its app, both
     // stores' days as the freshness line takes them).
+    const hidden: string[] = [];
     for (const locale of ["en", "de"] as const)
       for (const app of [
         linked(true, true),
@@ -615,11 +609,13 @@ describe("version 4: an overview and one slide per app (#709)", () => {
           ? [
               ["App Store bis 17. Nov. · Google Play bis 11. Nov."],
               ["App Store bis 17.11. · Google Play bis 11.11."],
+              ["App Store 17.11. · Google Play 11.11."],
               ["App Store bis 17.11.", "Google Play bis 11.11."],
             ]
           : [
               ["App Store up to Nov 17 · Google Play up to Nov 11"],
               ["App Store up to 11/17 · Google Play up to 11/11"],
+              ["App Store 11/17 · Google Play 11/11"],
               ["App Store up to 11/17", "Google Play up to 11/11"],
             ];
         const widgets = shown.widgets.map((widget, index) => ({
@@ -650,12 +646,13 @@ describe("version 4: an overview and one slide per app (#709)", () => {
               footer: [`${de ? "App" : "App"}: Focus Timer`, ...freshness],
               rowsLine: (a, b) => `${a} / ${b}`,
             });
-            expect(
-              fit.shown,
-              `${locale} ${app.paid ? "paid" : "free"} ${app.website ? "site" : ""} ${format} ${fontScale}`,
-            ).toBe(2);
+            if (fit.shown !== 2)
+              hidden.push(
+                `${locale} ${app.paid ? "paid" : "free"}${app.website ? " site" : ""} ${format} ${fontScale}: ${fit.shown}`,
+              );
           }
       }
+    expect(hidden).toEqual([]);
     // A single-store app keeps version 5's slide.
     for (const single of [apps[0]!, apps[1]!])
       expect(

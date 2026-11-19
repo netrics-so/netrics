@@ -398,37 +398,45 @@ public struct FreshnessText: Sendable {
     ) -> [[String]] {
         guard f.sources.count >= 2 else { return [] }
         let warning = Self.mode(f, status: status) == .failing
-        let sources = f.sources.map { entry -> (parts: [String], short: String?) in
+        let sources = f.sources.map { entry -> (parts: [String], short: String?, shortest: String?) in
             let s = entry.freshness, name = entry.source
             if s.kind == .continuous {
                 let parts =
                     warning
                     ? [checked(s, stream: name, now: now)].compactMap { $0 }
                     : self.parts(s, status: .ok, stream: name, now: now, paused: paused)
-                return (parts, parts.first)
+                return (parts, parts.first, parts.first)
             }
             let short = s.dataThrough.flatMap(CalendarDay.init).map {
                 text(.freshStreamUpTo, name, shortDay($0, monthly: s.monthly, now: now))
             }
+            // Shortest: the store and its day alone ("App Store 11/17").
+            let shortest =
+                s.monthly
+                ? short
+                : s.dataThrough.flatMap(CalendarDay.init).map { "\(name) \(shortDay($0, monthly: false, now: now))" }
+                    ?? short
             if warning {
                 let parts = [
                     upTo(s, stream: name, now: now), s.late ? notPublished(s, now: now) : nil,
                 ].compactMap { $0 }
-                return (parts, short ?? parts.first)
+                return (parts, short ?? parts.first, shortest ?? parts.first)
             }
             let parts = self.parts(s, status: .ok, stream: name, now: now, paused: paused)
-            return (parts, short ?? parts.first)
+            return (parts, short ?? parts.first, shortest ?? parts.first)
         }.filter { !$0.parts.isEmpty }
         guard !sources.isEmpty else { return [] }
         let all = sources.flatMap(\.parts)
         let firsts = sources.map { $0.parts[0] }
         let shorts = sources.map { $0.short ?? $0.parts[0] }
+        let shortests = sources.map { $0.shortest ?? $0.parts[0] }
         let fetched = warning ? nil : fetched(f, now: now)
         return [
             [(all + (fetched.map { [$0] } ?? [])).joined(separator: " · ")],
             [all.joined(separator: " · ")],
             [firsts.joined(separator: " · ")],
             [shorts.joined(separator: " · ")],
+            [shortests.joined(separator: " · ")],
             shorts,
         ]
     }

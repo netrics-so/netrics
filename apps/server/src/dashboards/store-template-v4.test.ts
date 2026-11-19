@@ -690,12 +690,12 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     const slide = copy.slides.find((s) => s.name?.startsWith("Notes"))!;
     // In reading order: the top row, then down.
     expect(shape(slide)).toEqual([
-      "measure:downloads",
       "measure:rating",
+      "measure:downloads",
+      "metric:app_store_connect.proceeds",
+      "review:1002",
       "metric:vercel.visitors",
       "measure:proceeds",
-      "review:1002",
-      "metric:app_store_connect.proceeds",
     ]);
     expect(
       slide.formatWarnings.filter((w) => w.severity === "attention"),
@@ -731,9 +731,9 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     const of = (index: number) =>
       data.widgets.find((entry) => entry.widgetId === slide.widgets[index]!.id)!
         .freshness;
-    expect(of(3)).toMatchObject({ stream: "Earnings", period: "month" });
-    expect(of(3)).not.toHaveProperty("sources");
-    expect(of(0)?.sources?.map((source) => source.source)).toEqual([
+    expect(of(5)).toMatchObject({ stream: "Earnings", period: "month" });
+    expect(of(5)).not.toHaveProperty("sources");
+    expect(of(1)?.sources?.map((source) => source.source)).toEqual([
       "App Store",
       "Google Play",
     ]);
