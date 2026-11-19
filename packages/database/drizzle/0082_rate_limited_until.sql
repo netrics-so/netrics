@@ -10,5 +10,9 @@
 SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 ALTER TABLE "connection_state" ADD COLUMN "rate_limited_until" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "sync_runs" DROP CONSTRAINT "sync_runs_error_class_valid";--> statement-breakpoint
--- sync_runs is pruned by the history retention, so checking its rows is short.
-ALTER TABLE "sync_runs" ADD CONSTRAINT "sync_runs_error_class_valid" CHECK ("sync_runs"."error_class" in ('auth', 'transient', 'contract', 'budget', 'rate_limited'));
+-- Added without checking the existing rows, then validated: the rows met the
+-- narrower check already. (Dropping the old check takes the table lock for
+-- the rest of the migration's transaction either way; sync_runs is pruned by
+-- the history retention, so the check is short.)
+ALTER TABLE "sync_runs" ADD CONSTRAINT "sync_runs_error_class_valid" CHECK ("sync_runs"."error_class" in ('auth', 'transient', 'contract', 'budget', 'rate_limited')) NOT VALID;--> statement-breakpoint
+ALTER TABLE "sync_runs" VALIDATE CONSTRAINT "sync_runs_error_class_valid";
