@@ -582,6 +582,13 @@
       "when": 1795076284435,
       "tag": "0082_rate_limited_until",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1795077784899,
+      "tag": "0083_claim_jobs_requeue",
+      "breakpoints": true
     }
   ]
 }
