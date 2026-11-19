@@ -1,4 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
+import { withoutMeasureSplits, type DeviceFeature } from "./measure-compat.js";
 
 import type {
   ApproveDeviceRequest,
@@ -699,6 +700,8 @@ export function createDeviceService(deps: DeviceServiceDeps) {
       principal: { workspaceId: string; deviceId: string },
       log?: TileErrorLogger,
       schema: DeviceDashboardSchema = 1,
+      /** What the client draws beyond its schema (`?features=`, #784). */
+      features: ReadonlySet<DeviceFeature> = new Set(),
     ): Promise<Result<DeviceDashboardPayload>> {
       const { workspaceId } = principal;
       return withWorkspace(
@@ -777,10 +780,15 @@ export function createDeviceService(deps: DeviceServiceDeps) {
                 device.dashboardId,
               )
             : false;
-          const payload =
+          const built =
             version === null || semantic
               ? await build()
               : await payloads.get(key, build);
+          // Older screens draw a grouped value view as its first row: they
+          // get the total alone (#784).
+          const payload = features.has("measure_split")
+            ? built
+            : withoutMeasureSplits(built);
           return ok<DeviceDashboardPayload>(
             "schema" in payload && payload.schema === 3
               ? withDevice(payload, deviceSettings(device))

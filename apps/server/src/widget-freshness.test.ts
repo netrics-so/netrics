@@ -1022,6 +1022,80 @@ describe("app slide freshness (#767)", () => {
   const shown = (data: Awaited<ReturnType<typeof measure>>) =>
     (data.result?.rows ?? []).map((row) => row.dimensions.app).sort();
 
+  interface SplitWidget {
+    groupBy: string[];
+    data: {
+      result: { rows: unknown[] };
+      totals?: unknown[];
+      freshness?: object;
+    };
+  }
+  it("gives older screens a grouped value view as its total alone (#784)", async () => {
+    const dashboard = await dashboardWith("Split");
+    const slide = await slideOf(dashboard, 0);
+    const widgetId = await widget(dashboard, slide, {
+      type: "measure",
+      y: 0,
+      w: 4,
+      h: 4,
+      title: "Views",
+      model_id: storeModelId,
+      model_binding: {
+        modelId: storeModelId,
+        measureIds: ["views"],
+        groupBy: ["app"],
+        exclusions: [],
+      },
+      options: { view: "value", limit: 20 },
+    });
+    const [device] = await owner`
+      insert into devices (workspace_id, name, dashboard_id)
+      values (${workspaceId}, 'Split TV', ${dashboard}) returning id`;
+    const service = createDeviceService({
+      db,
+      pairingUrl: "https://pair.example.test",
+      now: () => NOW,
+      payloadCacheMs: 0,
+      registry: manifests,
+    });
+    const read = async (schema: 2 | 3, split: boolean) => {
+      const result = await service.dashboard(
+        { workspaceId, deviceId: device!.id as string },
+        undefined,
+        schema,
+        new Set(split ? (["measure_split"] as const) : []),
+      );
+      if (!result.ok) throw new Error(result.error);
+      const payload = result.value as unknown as {
+        version: string;
+        slides: { widgets: (DeviceWidget & Record<string, never>)[] }[];
+      };
+      const found = payload.slides[0]!.widgets.find((w) => w.id === widgetId)!;
+      return {
+        version: payload.version,
+        widget: found as unknown as SplitWidget,
+      };
+    };
+    for (const schema of [2, 3] as const) {
+      const split = await read(schema, true);
+      const old = await read(schema, false);
+      // A client that draws the split gets the groups and their total.
+      expect(split.widget.groupBy).toEqual(["app"]);
+      const groups = split.widget.data.result.rows.length;
+      expect(groups).toBeGreaterThan(1);
+      const total = split.widget.data.totals![0];
+      // An older one the total as its only row, ungrouped: what it draws.
+      expect(old.widget.groupBy).toEqual([]);
+      expect(old.widget.data.result.rows).toEqual([
+        { dimensions: {}, measures: { views: total } },
+      ]);
+      expect(old.widget.data).not.toHaveProperty("totals");
+      expect(old.widget.data.freshness).not.toHaveProperty("sources");
+      // The two forms never share an ETag.
+      expect(old.version).not.toBe(split.version);
+    }
+  });
+
   it("counts a widget's own fixed app as a scope (#784)", async () => {
     const data = await withWorkspace(db, { workspaceId }, (tx) =>
       queryDashboardMeasure(

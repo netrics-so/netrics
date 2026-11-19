@@ -68980,6 +68980,15 @@
             "in": "query",
             "name": "schema",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "features",
+            "required": false
           }
         ],
         "security": [

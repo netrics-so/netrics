@@ -940,8 +940,14 @@ stores showed only its App Store app's numbers on its slide. From version
   total makes no sense. The total shrinks (84 down to 36 units) before a
   group's line gives way (`measureSplitLayout`, on the web and netrics TV,
   with shared test vectors); the readability check counts its lines.
-  Like the overview's tables it covers the date filter's range, not the
-  last 30 days.
+  It reads the last 30 days of the workspace, like the App Store widgets
+  (a measure widget's own `period`, on the model's reporting-date
+  dimension; the date filter does not change it and says so), titled
+  "Downloads, last 30 days". Paired screens that do not draw the split
+  (netrics TV up to 0.3.2) get the total alone: a client that draws it
+  asks with `GET /v1/device/dashboard?features=measure_split`; for every
+  other one the payload makes such a widget an ungrouped value of its
+  total, under another version (ETag).
 - **Revenue** (paid): the App Store's revenue in the display currency over
   the last 30 days, as before, and beside the ratings Google Play's
   proceeds per currency (a measure table of the proceeds model for the
@@ -951,10 +957,14 @@ stores showed only its App Store app's numbers on its slide. From version
   before.
 
 The total takes the left third's upper half (four rows, so both stores'
-lines and their freshness fit at every theme font scale) and the latest
-review the lower half; the App Store revenue and website visitors (three
-rows) and the ratings and Google Play proceeds (five rows) share the other
-two thirds. A single-store app keeps version 5's slide; a free product has
+lines and their freshness fit at every theme font scale); below it a paid
+product's Google Play proceeds, else its latest review. A paid product's
+ratings are five columns wide (the rating's head is its star) over the
+latest review, with revenue and visitors on the right; a free product's
+ratings take the other two thirds under its visitors. A total in several
+currencies wraps between its amounts instead of letting group lines go.
+The Google Play proceeds' freshness names Google Play only: a widget's own
+fixed store or app counts as its scope. A single-store app keeps version 5's slide; a free product has
 no revenue widgets. The freshness line of a tile that combines both stores lists
 each store's day and next time (ADR 0025 sections 7 and 8). Version 5
 installs get version 6 through the reviewed template update; only the

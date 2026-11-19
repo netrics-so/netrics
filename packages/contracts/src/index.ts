@@ -3217,6 +3217,13 @@ export const DEVICE_DASHBOARD_SCHEMAS = [1, 2, 3] as const;
 export const deviceDashboardQuerySchema = z.object({
   /** "3" for schema 3, "2" for schema 2; missing or "1" for schema 1. */
   schema: z.enum(["1", "2", "3"]).optional(),
+  /**
+   * What the client draws beyond its schema, comma separated (#784):
+   * "measure_split", a measure value view's total with its split. Without
+   * it, such widgets arrive as their total alone. Unknown names are
+   * ignored.
+   */
+  features: z.string().max(200).optional(),
 });
 export type DeviceDashboardQuery = z.infer<typeof deviceDashboardQuerySchema>;
 

@@ -352,7 +352,10 @@ summary, so clients that do not know `sources` show what they showed
 before. Under the old rule a model over App Store sales and Google Play
 installs showed Play's older day and dropped App Store's next time; now
 screens list both. `overdue` and `status: "stale"` are unchanged: any row
-overdue makes the widget stale.
+overdue makes the widget stale. A measure widget's own fixed filter counts
+like a scope (section 6): a fixed app picks its apps, and on a store
+template's model a fixed store (`store = "google"`) keeps only that
+store's connections.
 
 **Late** is decided from stored values, not the clock:
 `next_expected_at + grace < checked_at`, i.e. a sync after the expected

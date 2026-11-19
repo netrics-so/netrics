@@ -921,7 +921,7 @@ describe("kiosk payload schema", () => {
     const url = (api.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
       .map(([input]) => String(input))
       .find((input) => input.startsWith("/v1/device/dashboard"));
-    expect(url).toBe("/v1/device/dashboard?schema=2");
+    expect(url).toBe("/v1/device/dashboard?schema=2&features=measure_split");
     expect(request!.headers.get("authorization")).toBe("Bearer access-a");
     const state = kiosk.getState().dashboard!;
     expect(isSlidesDashboard(state)).toBe(true);
@@ -982,7 +982,7 @@ describe("kiosk payload schema", () => {
 
     expect(
       urls.filter((url) => url.startsWith("/v1/device/dashboard")),
-    ).toEqual(["/v1/device/dashboard?schema=2"]);
+    ).toEqual(["/v1/device/dashboard?schema=2&features=measure_split"]);
     // Same schema: the ETag is offered and the screen keeps its slides.
     expect(
       api.callsTo("GET /v1/device/dashboard")[0]!.headers.get("if-none-match"),
@@ -1035,7 +1035,7 @@ describe("kiosk payload schema 3 (#277)", () => {
     return fakeApi({
       "GET /v1/server": () => serverInfo(listed),
       "GET /v1/device/dashboard": (call) => {
-        const v3 = call.search === "?schema=3";
+        const v3 = call.search.startsWith("?schema=3");
         const etag = v3 ? '"s3"' : '"s2"';
         if (call.headers.get("if-none-match") === etag) {
           return reply(304, null, { etag });
@@ -1056,7 +1056,9 @@ describe("kiosk payload schema 3 (#277)", () => {
     const api = formatsApi([1, 2, 3]);
     const kiosk = startWith({ fetch: api.fetch, storage });
     await vi.advanceTimersByTimeAsync(0);
-    expect(dashboardUrls(api)).toEqual(["/v1/device/dashboard?schema=2"]);
+    expect(dashboardUrls(api)).toEqual([
+      "/v1/device/dashboard?schema=2&features=measure_split",
+    ]);
     expect(isSlidesDashboard(kiosk.getState().dashboard!)).toBe(true);
   });
 
@@ -1069,7 +1071,9 @@ describe("kiosk payload schema 3 (#277)", () => {
       schemas: [1, 2, 3],
     });
     await vi.advanceTimersByTimeAsync(0);
-    expect(dashboardUrls(api)).toEqual(["/v1/device/dashboard?schema=3"]);
+    expect(dashboardUrls(api)).toEqual([
+      "/v1/device/dashboard?schema=3&features=measure_split",
+    ]);
     const payload = kiosk.getState().dashboard!;
     expect(isFormatsDashboard(payload)).toBe(true);
     expect(dashboardSchemaOf(payload)).toBe(3);
@@ -1096,7 +1100,9 @@ describe("kiosk payload schema 3 (#277)", () => {
       schemas: [1, 2, 3],
     });
     await vi.advanceTimersByTimeAsync(0);
-    expect(dashboardUrls(api)).toEqual(["/v1/device/dashboard?schema=2"]);
+    expect(dashboardUrls(api)).toEqual([
+      "/v1/device/dashboard?schema=2&features=measure_split",
+    ]);
     expect(isSlidesDashboard(kiosk.getState().dashboard!)).toBe(true);
   });
 
