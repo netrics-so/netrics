@@ -230,6 +230,27 @@ describe("formatWarnings", () => {
     ).toEqual([]);
   });
 
+  it("rows_cut: a total with its split shows every group line (#784)", () => {
+    const split = (lines: number, h = 3, w = 4): ReadabilityWidget => ({
+      id: "s",
+      type: "measure",
+      x: 0,
+      y: 0,
+      w,
+      h,
+      label: "Downloads and user installs",
+      rows: null,
+      splitLines: lines,
+    });
+    // Two stores' lines under the total, in a third of a 16:9 band.
+    expect(formatWarnings(slide([split(2)]), "16x9", context)).toEqual([]);
+    // Twenty groups do not fit under a total of the smallest size: cut.
+    const warnings = formatWarnings(slide([split(20)]), "16x9", context);
+    expect(codes(warnings)).toEqual(["16x9 rows_cut s"]);
+    expect(warnings[0]).toMatchObject({ severity: "attention" });
+    expect(warnings[0]!.rows!.shown).toBeLessThan(20);
+  });
+
   it("rows_cut: a measure table's narrow columns wrap their heads and rows (#768)", () => {
     const measure = (columns: string[] | null): ReadabilityWidget => ({
       id: "m",

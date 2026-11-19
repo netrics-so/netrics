@@ -125,6 +125,33 @@ export function localizedFreshnessStreamName(
 }
 
 /**
+ * Store names screens use for first-party store connectors (#784): the
+ * store a viewer knows ("App Store"), not the provider's console ("App
+ * Store Connect"). The same in every language.
+ */
+const FRESHNESS_SOURCE_NAMES: Readonly<Record<string, string>> = {
+  "app-store-connect": "App Store",
+  "google-play": "Google Play",
+};
+
+/**
+ * How a freshness line that lists several sources names one connector's
+ * data (ADR 0025 section 7, #784): its store's name for the store
+ * connectors, else the connector's name in the locale.
+ */
+export function localizedFreshnessSourceName(
+  manifest: Pick<TranslatableManifest, "name" | "translations"> & {
+    id: string;
+  },
+  locale: string,
+): string {
+  const known = FRESHNESS_SOURCE_NAMES[manifest.id];
+  if (known) return known;
+  const translated = connectorTranslation(manifest.translations, locale)?.name;
+  return nonEmpty(translated) ? translated : manifest.name;
+}
+
+/**
  * What the connector calls its resources in the locale: the translated
  * noun when it has both forms, else the English one, else null (callers
  * then use DEFAULT_RESOURCE_NOUN).

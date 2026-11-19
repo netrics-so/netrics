@@ -12,6 +12,7 @@ import {
 import {
   dashboardModelQuery,
   measureQueryOrder,
+  measureSplitTotals,
   measureViewWindow,
   compareDataValues,
   dimensionValueLabels,
@@ -401,10 +402,15 @@ export async function queryDashboardMeasure(
       );
       // One resolution of the model's sources for its warnings and its
       // freshness, so both name the same connections (#721).
+      const release = await publishedModel(
+        savepoint,
+        workspaceId,
+        input.binding.modelId,
+      );
       const sources = await modelSourceDatasets(
         savepoint,
         workspaceId,
-        await publishedModel(savepoint, workspaceId, input.binding.modelId),
+        release,
       );
       sourceHealth = await modelSourceHealth(savepoint, workspaceId, sources);
       if (freshnessReader)
@@ -542,6 +548,17 @@ export async function queryDashboardMeasure(
             .join(" ∩ ");
           return text ? [`${filter.name}: ${text}`] : [];
         });
+      // A value view with a grouping: its total with the split (#784).
+      const totals =
+        input.options.view === "value" && input.binding.groupBy.length
+          ? measureSplitTotals(
+              release.definition.measures.find(
+                (measure) => measure.id === input.binding.measureIds[0],
+              ),
+              input.binding.measureIds[0]!,
+              result,
+            )
+          : undefined;
       const status = result.stale
         ? ("stale" as const)
         : result.rows.some((row) =>
@@ -560,6 +577,7 @@ export async function queryDashboardMeasure(
         error: null,
         exclusions,
         ...(fresh.freshness ? { freshness: fresh.freshness } : {}),
+        ...(totals ? { totals } : {}),
       };
     });
   } catch (error) {

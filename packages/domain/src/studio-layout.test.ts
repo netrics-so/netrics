@@ -14,6 +14,9 @@ import {
   formatUtcOffset,
   findOverlaps,
   fitTextSize,
+  freshnessLevelFit,
+  measureSplitLayout,
+  measureTextWidth,
   isInsideGrid,
   labelFit,
   labelFits,
@@ -986,5 +989,70 @@ describe("measureTableRowsShown (#768)", () => {
         rowsLine,
       }).shown,
     ).toBe(0);
+  });
+});
+
+describe("freshnessLevelFit (#784)", () => {
+  const levels = [
+    ["App Store up to Nov 17 · next ~9:00 PM · Google Play up to Nov 11"],
+    ["App Store up to Nov 17 · Google Play up to Nov 11"],
+    ["App Store to 11/17 · Google Play to 11/11"],
+    ["App Store to 11/17", "Google Play to 11/11"],
+  ];
+  it("keeps the longest form that fits one line", () => {
+    expect(freshnessLevelFit(levels, 2000)).toBe(0);
+  });
+  it("drops the next times first, then abbreviates, then a line per source", () => {
+    const width = (text: string) => measureTextWidth(text, 24, "regular");
+    expect(freshnessLevelFit(levels, width(levels[1]![0]!))).toBe(1);
+    expect(freshnessLevelFit(levels, width(levels[2]![0]!))).toBe(2);
+    expect(freshnessLevelFit(levels, width(levels[2]![0]!) - 1)).toBe(3);
+  });
+  it("falls back to the last form, never cutting, when nothing fits", () => {
+    expect(freshnessLevelFit(levels, 10)).toBe(3);
+  });
+  it("counts the theme's font scale", () => {
+    const width = measureTextWidth(levels[0]![0]!, 24, "regular");
+    expect(freshnessLevelFit(levels, width, 1)).toBe(0);
+    expect(freshnessLevelFit(levels, width, 1.3)).toBeGreaterThan(0);
+  });
+});
+
+describe("measureSplitLayout (#784)", () => {
+  const split = {
+    label: "Downloads and user installs",
+    width: 560,
+    height: 414,
+    total: "635",
+    lines: [
+      ["App Store", "412"],
+      ["Google Play", "223"],
+    ] as [string, string][],
+    footer: ["App: Focus", null],
+    rowsLine: (shown: number, all: number) => `${shown} of ${all}`,
+  };
+  it("shows the total at full size and every line where they fit", () => {
+    expect(measureSplitLayout(split)).toEqual({
+      valueSize: 84,
+      shown: 2,
+      rowsLine: null,
+      fits: true,
+    });
+  });
+  it("shrinks the total before a line gives way", () => {
+    const fit = measureSplitLayout({ ...split, height: 300 });
+    expect(fit.shown).toBe(2);
+    expect(fit.valueSize).toBeLessThan(84);
+    expect(fit.valueSize).toBeGreaterThanOrEqual(36);
+    expect(fit.fits).toBe(true);
+  });
+  it("lets lines give way, from the end, with N of M, when even the smallest total does not fit", () => {
+    const fit = measureSplitLayout({ ...split, height: 250 });
+    expect(fit.fits).toBe(false);
+    expect(fit.shown).toBeLessThan(2);
+    expect(fit.rowsLine).toBe(`${fit.shown} of 2`);
+  });
+  it("fits the groups alone without a total", () => {
+    expect(measureSplitLayout({ ...split, total: null }).fits).toBe(true);
   });
 });

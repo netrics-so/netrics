@@ -30,6 +30,9 @@ import {
   isInsideFormatGrid,
   labelFit,
   measureTableLayout,
+  measureSplitLayout,
+  MEASURE_SPLIT_SAMPLES,
+  MEASURE_TABLE_FOOTER_SAMPLES,
   parseTextWidget,
   placementRect,
   screenFrame,
@@ -387,6 +390,11 @@ export interface ReadabilityWidget extends LayoutWidget {
    */
   rows?: number | null;
   /**
+   * Measure value views with a grouping (a total with its split, #784):
+   * the group lines asked for (`limit`); null otherwise.
+   */
+  splitLines?: number | null;
+  /**
    * Measure tables: the column heads as screens show them (the grouped
    * dimensions' names, then the measures'); unknown: one line each.
    */
@@ -552,6 +560,27 @@ export function formatWarnings(
             : "attention",
         );
       }
+    } else if (widget.type === "measure" && widget.splitLines) {
+      // A total with its split (#784): every group line and a total of at
+      // least the smallest size above the footer lines, else cut.
+      const box = contentBoxIn(placement, format, context.showHeader);
+      const fit = measureSplitLayout({
+        label: widget.label ?? "",
+        width: box.width,
+        height: box.height,
+        fontScale: context.fontScale,
+        total: MEASURE_SPLIT_SAMPLES.total,
+        lines: Array.from(
+          { length: widget.splitLines },
+          () => MEASURE_SPLIT_SAMPLES.line,
+        ),
+        footer: MEASURE_TABLE_FOOTER_SAMPLES,
+      });
+      if (!fit.fits)
+        warn("rows_cut", widget.id, null, {
+          shown: fit.shown,
+          limit: widget.splitLines,
+        });
     } else if (widget.type === "status" && widget.rows) {
       // More sources than rows: the last row says "+N more" (info; the
       // problems sort first, ADR 0019 section 7).

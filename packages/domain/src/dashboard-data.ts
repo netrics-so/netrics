@@ -659,3 +659,83 @@ export function formatDataDate(
   }
   return null;
 }
+
+/** A measure cell as model queries return it (modelMeasureCellSchema). */
+export interface MeasureSplitCell {
+  value: unknown;
+  type: DataType;
+  unit?: string;
+  currency?: string;
+  status: "ok" | "missing" | "partial";
+}
+
+/**
+ * The total of a value view with a grouping (a total with its split,
+ * #784): the measure summed over every group, one cell per currency and
+ * unit, in the order they first appear. Only an aggregate that adds up
+ * (sum or count) over a complete result has one; otherwise undefined, and
+ * screens show the groups alone. Groups without a value add nothing; a
+ * partial group makes its total partial. Exact: decimals add as text.
+ */
+export function measureSplitTotals(
+  measure:
+    | {
+        kind: string;
+        aggregate?: { op: string };
+      }
+    | undefined,
+  measureId: string,
+  result: {
+    rows: readonly { measures: Readonly<Record<string, MeasureSplitCell>> }[];
+    totalRows?: number | undefined;
+  },
+): MeasureSplitCell[] | undefined {
+  if (
+    !measure ||
+    measure.kind !== "aggregate" ||
+    !["sum", "count"].includes(measure.aggregate?.op ?? "")
+  )
+    return undefined;
+  if ((result.totalRows ?? result.rows.length) > result.rows.length)
+    return undefined;
+  const totals = new Map<string, MeasureSplitCell>();
+  for (const row of result.rows) {
+    const cell = row.measures[measureId];
+    if (!cell || cell.value === null || cell.value === undefined) continue;
+    // Plain decimal text only (no exponents), as exactDecimal reads it.
+    if (
+      (typeof cell.value !== "number" && typeof cell.value !== "string") ||
+      !/^-?\d+(?:\.\d+)?$/.test(String(cell.value))
+    )
+      return undefined;
+    const key = `${cell.currency ?? ""}\u0000${cell.unit ?? ""}`;
+    const current = totals.get(key);
+    if (!current) {
+      totals.set(key, {
+        value: cell.value,
+        type: cell.type,
+        ...(cell.unit !== undefined ? { unit: cell.unit } : {}),
+        ...(cell.currency !== undefined ? { currency: cell.currency } : {}),
+        status: cell.status === "partial" ? "partial" : "ok",
+      });
+      continue;
+    }
+    const sum = exactDecimal("add", String(current.value), String(cell.value));
+    if (sum === null) return undefined;
+    // Numbers stay numbers (integers within the safe range), text stays text.
+    const numbers =
+      typeof current.value === "number" && typeof cell.value === "number";
+    const value = numbers ? Number(sum) : sum;
+    if (numbers && !Number.isSafeInteger(Math.trunc(value as number)))
+      return undefined;
+    totals.set(key, {
+      ...current,
+      value,
+      status:
+        current.status === "partial" || cell.status === "partial"
+          ? "partial"
+          : "ok",
+    });
+  }
+  return totals.size ? [...totals.values()] : undefined;
+}

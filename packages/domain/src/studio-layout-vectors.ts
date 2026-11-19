@@ -27,6 +27,8 @@ import {
   legacyGrid,
   measureTableLayout,
   measureTableRowsShown,
+  freshnessLevelFit,
+  measureSplitLayout,
   measureTextWidth,
   MEASURE_GLYPH_CHARS,
   MEASURE_GLYPH_EMS,
@@ -541,6 +543,85 @@ export function buildStudioLayoutVectors() {
               };
             }),
           ),
+        ),
+      ),
+    ),
+  );
+  // A freshness line over several sources (#784): its forms, longest
+  // first, the last one a line per source.
+  const freshnessLevels = [
+    [
+      "App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov. · abgerufen vor 10 Min.",
+    ],
+    ["App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov."],
+    ["App Store bis 17. Nov. · Google Play bis 11. Nov."],
+    ["App Store bis 17.11. · Google Play bis 11.11."],
+    ["App Store bis 17.11.", "Google Play bis 11.11."],
+  ];
+  const freshnessLevelFits = [120, 300, 404, 560, 760, 1100, 1808].flatMap(
+    (width) =>
+      FONT_SCALES.flatMap((fontScale) =>
+        (["any", "tv", "web"] as const).map((font) => ({
+          width,
+          fontScale,
+          font,
+          levels: freshnessLevels,
+          level: freshnessLevelFit(freshnessLevels, width, fontScale, font),
+        })),
+      ),
+  );
+  const splitInputs = [
+    {
+      total: "635",
+      lines: [
+        ["App Store", "412"],
+        ["Google Play", "223"],
+      ],
+    },
+    {
+      total: "1.234.567",
+      lines: [
+        ["App Store", "1.000.000"],
+        ["Google Play", "234.567"],
+      ],
+    },
+    {
+      total: null,
+      lines: [
+        ["App Store", "12,00 EUR"],
+        ["Google Play", "3,40 USD"],
+      ],
+    },
+  ] as const;
+  const measureSplitLayouts = measureBoxes.flatMap((box) =>
+    FONT_SCALES.flatMap((fontScale) =>
+      splitInputs.flatMap((split) =>
+        measureFooters.slice(1).flatMap((footer) =>
+          (
+            [
+              [1, "any"],
+              [2.8, "tv"],
+              [1, "web"],
+            ] as const
+          ).map(([pixel, font]) => {
+            const input = {
+              label: "Downloads and user installs",
+              ...box,
+              fontScale,
+              total: split.total,
+              lines: split.lines.map(([a, b]) => [a, b] as [string, string]),
+              footer: footer!,
+              pixel,
+              font,
+            };
+            return {
+              ...input,
+              ...measureSplitLayout({
+                ...input,
+                rowsLine: (shown, all) => `Showing ${shown} of ${all} groups.`,
+              }),
+            };
+          }),
         ),
       ),
     ),
@@ -1071,6 +1152,8 @@ export function buildStudioLayoutVectors() {
     tableChanges,
     measureLayouts,
     measureRowsShown,
+    freshnessLevelFits,
+    measureSplitLayouts,
     measureGlyphs: {
       chars: MEASURE_GLYPH_CHARS.join(""),
       web: MEASURE_GLYPH_EMS.web,

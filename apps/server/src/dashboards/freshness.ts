@@ -15,6 +15,7 @@ import {
   DEFAULT_LOCALE,
   isFreshnessLate,
   isFreshnessOverdue,
+  localizedFreshnessSourceName,
   localizedFreshnessStreamName,
   RESOURCE_DIMENSION,
   scopedFreshnessResources,
@@ -75,7 +76,7 @@ interface LoadedConnection {
   rows: { row: ConnectionFreshnessRow; stream: FreshnessStream }[];
 }
 
-interface UsedRow {
+export interface UsedRow {
   connectionId: string;
   row: ConnectionFreshnessRow;
   stream: FreshnessStream;
@@ -338,7 +339,8 @@ export function applyFreshness<T extends { status: string }>(
 }
 
 /**
- * The least fresh of the rows used (ADR 0025 section 7): among periodic
+ * The least fresh of the rows used (ADR 0025 section 7), and with rows of
+ * several connectors each connector's own (`sources`, #784): among periodic
  * rows the earliest `dataThrough` (a row without one first), ties broken
  * by the earliest `nextExpectedAt`; continuous rows only without periodic
  * ones, the least recently checked. `fetchedAt` is the oldest check of all
@@ -348,6 +350,48 @@ export function summarizeFreshness(
   rows: readonly UsedRow[],
   nextDue: ReadonlyMap<string, Date | null>,
   locale: Locale = DEFAULT_LOCALE,
+): WidgetFreshnessResult {
+  const summary = leastFresh(rows, nextDue, locale);
+  if (!summary.freshness) return summary;
+  // Rows of several connectors (#784): each one's own summary as well,
+  // so screens list every source instead of the least fresh one only.
+  const byConnector = new Map<string, UsedRow[]>();
+  for (const entry of rows)
+    byConnector.set(entry.manifest.id, [
+      ...(byConnector.get(entry.manifest.id) ?? []),
+      entry,
+    ]);
+  if (byConnector.size < 2) return summary;
+  const sources = [...byConnector.values()]
+    .flatMap((group) => {
+      const freshness = leastFresh(group, nextDue, locale).freshness;
+      return freshness
+        ? [
+            {
+              source: localizedFreshnessSourceName(
+                group[0]!.manifest,
+                locale,
+              ).slice(0, 60),
+              ...freshness,
+            },
+          ]
+        : [];
+    })
+    .sort(
+      (a, b) =>
+        compareText(a.source, b.source) || compareText(a.stream, b.stream),
+    )
+    .slice(0, 10);
+  return sources.length < 2
+    ? summary
+    : { ...summary, freshness: { ...summary.freshness, sources } };
+}
+
+/** The least fresh of the rows used, as `summarizeFreshness` describes. */
+function leastFresh(
+  rows: readonly UsedRow[],
+  nextDue: ReadonlyMap<string, Date | null>,
+  locale: Locale,
 ): WidgetFreshnessResult {
   if (!rows.length) return { overdue: false };
   // A stable order, so equal rows always give the same summary.

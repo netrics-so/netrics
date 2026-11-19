@@ -8,6 +8,7 @@ import {
 } from "@netrics/domain";
 import {
   dataExpressionSchema,
+  modelMeasureCellSchema,
   modelQueryResponseSchema,
 } from "./data-processing.js";
 const id = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$/);
@@ -136,14 +137,8 @@ export const dashboardMeasureMetadataSchema = z.object({
     z.object({ id, name: z.string(), type: z.enum(DATA_TYPES) }),
   ),
 });
-/**
- * How far a widget's numbers reach (ADR 0025 section 7): the least fresh
- * of the freshness streams its data depends on. Absent for widgets whose
- * connectors report no freshness, which show `updatedAt` as before. Every
- * value comes from stored rows, never the clock; clients word the times
- * themselves, in the viewer's time zone.
- */
-export const widgetFreshnessSchema = z.object({
+/** The fields of a freshness summary (ADR 0025 section 7). */
+const freshnessSummaryShape = {
   kind: z.enum(["periodic", "continuous"]),
   /** The stream's name in the payload's language ("Sales"). */
   stream: z.string().min(1),
@@ -159,6 +154,35 @@ export const widgetFreshnessSchema = z.object({
   late: z.literal(true).optional(),
   /** The earliest next scheduled sync of the connections used. */
   nextCheckAt: z.iso.datetime().optional(),
+};
+/**
+ * One source of a widget that combines sources (ADR 0025 section 7, #784):
+ * the summary of the rows of one connector ("App Store", "Google Play"),
+ * the least fresh of them, named as screens list it.
+ */
+export const widgetFreshnessSourceSchema = z.object({
+  /** The source's short name in the payload's language ("App Store"). */
+  source: z.string().min(1).max(60),
+  ...freshnessSummaryShape,
+});
+export type WidgetFreshnessSource = z.infer<typeof widgetFreshnessSourceSchema>;
+/**
+ * How far a widget's numbers reach (ADR 0025 section 7): the least fresh
+ * of the freshness streams its data depends on. Absent for widgets whose
+ * connectors report no freshness, which show `updatedAt` as before. Every
+ * value comes from stored rows, never the clock; clients word the times
+ * themselves, in the viewer's time zone.
+ */
+export const widgetFreshnessSchema = z.object({
+  ...freshnessSummaryShape,
+  /**
+   * A widget whose rows come from more than one connector (#784): each
+   * one's summary, in name order, so screens list every source's day and
+   * next time ("App Store up to Nov 17 · next ~9 PM · Google Play up to
+   * Nov 11") instead of the least fresh one's only. The fields above stay
+   * the least fresh, for clients that do not know `sources`.
+   */
+  sources: z.array(widgetFreshnessSourceSchema).min(2).max(10).optional(),
 });
 export type WidgetFreshness = z.infer<typeof widgetFreshnessSchema>;
 export const dashboardWidgetDataSchema = z.object({
@@ -188,6 +212,13 @@ export const dashboardWidgetDataSchema = z.object({
   exclusions: z.array(dashboardFilterExclusionSchema),
   /** ADR 0025: through the model's sources; absent without freshness. */
   freshness: widgetFreshnessSchema.optional(),
+  /**
+   * A value view with a grouping (a total with its split, #784): the first
+   * measure summed over every group, one cell per currency (and unit).
+   * Only for a sum or count over a complete result; absent where a total
+   * makes no sense, and screens then show the groups alone.
+   */
+  totals: z.array(modelMeasureCellSchema).max(20).optional(),
 });
 export const dashboardDataResponseSchema = z.object({
   widgets: z.array(dashboardWidgetDataSchema),
