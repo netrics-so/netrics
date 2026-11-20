@@ -370,6 +370,7 @@ export async function startCustomApiFixtureServer(
               id: id + 1,
               name: `Endless ${id + 1}`,
               created_at: items[0]!.created_at,
+              price: "1.00",
             },
           ],
           meta: { next: String(id + 1) },

@@ -1165,3 +1165,51 @@ describe("host egress policy (#801)", () => {
     });
   });
 });
+
+describe("redactValues (custom API)", () => {
+  it("redacts extra values from errors, check messages and logs", async () => {
+    const derived = "Basic ZngtdXNlcjpmeC1wYXNzLTAwMDE=";
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { username: "fx-user", password: "fx-pass-0001" },
+    };
+    const lines: string[] = [];
+    const failing: Connector = {
+      ...connectorWith(demoManifest),
+      async sync(_context, _request, runtime) {
+        runtime.log?.warn(`sent ${derived}`, { header: derived });
+        throw new Error(`refused ${derived}`);
+      },
+    };
+    const options = {
+      redactValues: [derived],
+      log: (entry: { message: string; fields: Record<string, unknown> }) =>
+        lines.push(JSON.stringify(entry)),
+    };
+    const error = (await executeSync(failing, context, request, options).catch(
+      (e: unknown) => e,
+    )) as Error;
+    expect(error.message).toBe("refused [redacted]");
+    expect(lines.join()).not.toContain("ZngtdXNlcjpmeC1wYXNzLTAwMDE=");
+    expect(lines.join()).toContain("[redacted]");
+
+    const checked = await executeCheck(
+      connectorWith(demoManifest, undefined, () => ({
+        ok: false,
+        message: `the API echoed ${derived}`,
+      })),
+      context,
+      options,
+    );
+    expect(checked.message).toBe("the API echoed [redacted]");
+    // Without the option, the derived value is not known to the runtime.
+    const plain = await executeCheck(
+      connectorWith(demoManifest, undefined, () => ({
+        ok: false,
+        message: `the API echoed ${derived}`,
+      })),
+      context,
+    );
+    expect(plain.message).toContain(derived);
+  });
+});

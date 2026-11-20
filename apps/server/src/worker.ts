@@ -375,6 +375,7 @@ export async function startWorker(config: Config): Promise<void> {
       credentialKeyring,
       imageQuota: config.imageQuota,
       dataPolicy: config.dataPolicy,
+      customApiPrivateHosts: config.customApiPrivateHosts,
       oauthTokens: createOAuthTokenService({
         db: appDb,
         credentialKeyring,

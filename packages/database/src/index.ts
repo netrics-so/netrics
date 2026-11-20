@@ -289,6 +289,9 @@ export {
   findBackfillingConnectionIds,
   findConnectionCurrency,
   findConnectionHistory,
+  connectionCustomApi,
+  customApiPinColumns,
+  customApiPinJoin,
   findConnection,
   finishConnectionSetup,
   insertConnection,
@@ -385,6 +388,7 @@ export type {
 } from "./signed-key-pending-keys.js";
 export type {
   ConnectionChanges,
+  ConnectionCustomApi,
   ConnectionOAuthAccount,
   ConnectionRow,
   ConnectionStateRow,

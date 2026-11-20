@@ -43,6 +43,7 @@ import type {
   ConnectorManifest,
 } from "@netrics/connector-sdk";
 import { ANALYTICS_METRIC_KEYS, ANALYTICS_STREAM } from "@netrics/connectors";
+import { CUSTOM_API_CONNECTOR_ID } from "@netrics/connectors/custom-api";
 import {
   DEFAULT_LOCALE,
   connectorHasReviews,
@@ -137,6 +138,11 @@ import {
   type PendingKeyStore,
 } from "../signed-keys/pending-keys.js";
 import { PREVIEW_CONNECTORS } from "../preview-connectors.js";
+import {
+  callOptionsFor,
+  connectorFor,
+  type ResolvedConnector,
+} from "../custom-api/connectors.js";
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   applyFreshness,
@@ -174,6 +180,13 @@ export interface ConnectionServiceDeps {
    * tests pass their own.
    */
   previews?: ReadonlySet<string>;
+  /** Tests only: options for every connector call (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
+  /**
+   * Self-host only (NETRICS_CUSTOM_API_PRIVATE_HOSTS): private hosts the
+   * custom-api connector may reach. Never given to bundled connectors.
+   */
+  customApiPrivateHosts?: readonly string[];
 }
 
 /** Who acts on which workspace (see routes/access.ts). */
@@ -201,6 +214,8 @@ export type HistoryReloadResult =
   | { ok: false; status: 409 | 429; error: string };
 
 const NOT_FOUND = "connection_not_found";
+/** Custom API connections come from a definition (milestone 13). */
+export const CUSTOM_API_REQUIRES_DEFINITION = "custom_api_requires_definition";
 
 type ConnectionDetail = ReturnType<typeof presentConnectionDetail>;
 
@@ -272,23 +287,29 @@ function resourceSelectionOf(config: Record<string, unknown>): string[] | null {
  * or thrown check is a 400 with the connector's actionable, already-redacted
  * message; callers persist nothing in that case.
  */
-async function checkCredentials(
-  registry: ConnectorRegistry,
-  connectorId: string,
+export async function checkCredentials(
+  registered: ResolvedConnector | undefined,
   connectionId: string,
   config: Record<string, unknown>,
   credentials: Record<string, unknown>,
+  options: {
+    executeOptions?: ExecuteOptions;
+    privateHosts?: readonly string[];
+  } = {},
 ): Promise<Result<true>> {
-  const registered = registry.get(connectorId);
   if (!registered) {
     return fail(400, "invalid_request");
   }
   try {
-    const check = await executeCheck(registered.connector, {
-      connectionId,
-      config,
-      credentials,
-    });
+    const check = await executeCheck(
+      registered.connector,
+      { connectionId, config, credentials },
+      callOptionsFor(registered, options.executeOptions ?? {}, {
+        credentials,
+        config,
+        privateHosts: options.privateHosts ?? [],
+      }),
+    );
     return check.ok
       ? ok(true)
       : fail(400, check.message ?? "credential check failed");
@@ -539,10 +560,11 @@ function reloadAvailableAt(at: Date | null): Date | null {
  */
 async function incompleteHistory(
   tx: Transaction,
-  { row, state }: ConnectionWithState,
+  loaded: ConnectionWithState,
   registry: ConnectorRegistry,
 ): Promise<string[]> {
-  const manifest = registry.get(row.connectorId)?.manifest;
+  const { row, state } = loaded;
+  const manifest = connectorFor(registry, loaded)?.manifest;
   const recorded = state?.backfilledDatasets ?? null;
   if (!recorded || row.setupPending || !manifest?.supportsBackfill) return [];
   return storedDatasetsMissingBackfill(tx, {
@@ -558,13 +580,14 @@ async function incompleteHistory(
  * runs, which datasets no backfill has read yet, and the reload slot.
  */
 function historyView(
-  { row, state }: ConnectionWithState,
+  loaded: ConnectionWithState,
   backfill: "idle" | "queued" | "running",
   missing: string[],
   registry: ConnectorRegistry,
   now: Date = new Date(),
 ): ConnectionHistory {
-  const manifest = registry.get(row.connectorId)?.manifest;
+  const { state } = loaded;
+  const manifest = connectorFor(registry, loaded)?.manifest;
   const availableAt = reloadAvailableAt(
     state?.historyReloadRequestedAt ?? null,
   );
@@ -583,6 +606,11 @@ function historyView(
 
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db, registry, credentialKeyring, oauthProviders } = deps;
+  /** Execute options of connector checks: test egress, custom API private hosts. */
+  const callOptions = {
+    ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
+    privateHosts: deps.customApiPrivateHosts ?? [],
+  };
   const signedKeys = deps.signedKeys ?? createSignedKeyProviders();
   const previews = deps.previews ?? PREVIEW_CONNECTORS;
   // Cached exchanged tokens of stored signed keys (ADR 0020 §2); candidate
@@ -664,7 +692,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     if (!existing) {
       return fail(404, NOT_FOUND);
     }
-    const registered = registry.get(existing.row.connectorId);
+    const registered = connectorFor(registry, existing);
     if (!registered) {
       return fail(400, "connector_unavailable");
     }
@@ -736,7 +764,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       findConnection(tx, actor.workspaceId, connectionId),
     );
     if (!existing) return fail(404, NOT_FOUND);
-    const registered = registry.get(existing.row.connectorId);
+    const registered = connectorFor(registry, existing);
     if (!registered) return fail(400, "connector_unavailable");
     const validated = validateConfig(registered.manifest, input.config);
     if (!validated.ok) return validated;
@@ -880,12 +908,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
    * passed. Otherwise the credentials go to the connector check as given.
    */
   async function checkCandidate(
-    manifest: ConnectorManifest,
+    registered: ResolvedConnector,
     connectionId: string,
     config: Record<string, unknown>,
     credentials: Record<string, unknown>,
     options: { probeAdditional?: boolean } = {},
   ): Promise<Result<Record<string, unknown>>> {
+    const manifest = registered.manifest;
     const provider = signedKeys.providerFor(manifest, credentials);
     if (provider) {
       const key = await signedKeys.validate(
@@ -907,11 +936,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       return check.ok ? ok(key.value.stored()) : check;
     }
     const check = await checkCredentials(
-      registry,
-      manifest.id,
+      registered,
       connectionId,
       config,
       credentials,
+      callOptions,
     );
     return check.ok ? ok(credentials) : check;
   }
@@ -1202,7 +1231,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     connectionId: string,
     existing: ConnectionWithState,
   ): Promise<Result<ConnectionResourcesResponse>> {
-    const registered = registry.get(existing.row.connectorId);
+    const registered = connectorFor(registry, existing);
     if (!registered || !existing.row.credentialsEncrypted) {
       return fail(400, "oauth_connection_required");
     }
@@ -1465,7 +1494,14 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     body: CreateConnectionsRequest & { retention?: ConnectionRetentionChoice },
     lent?: LentKey,
   ): Promise<Result<ConnectionDetail[]>> {
-    const registered = registry.get(body.connectorId);
+    // A custom API connection needs a definition, environment and pin.
+    if (body.connectorId === CUSTOM_API_CONNECTOR_ID) {
+      return fail(400, CUSTOM_API_REQUIRES_DEFINITION);
+    }
+    const registered = connectorFor(registry, {
+      row: { connectorId: body.connectorId },
+      customApi: null,
+    });
     if (!registered) {
       return fail(400, "invalid_request");
     }
@@ -1533,7 +1569,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     const stored: Array<Record<string, unknown> | null> = [];
     for (const entry of entries) {
       const check = await checkCandidate(
-        registered.manifest,
+        registered,
         entry.id,
         entry.config,
         resolved.value.credentials ?? {},
@@ -2050,6 +2086,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
     /** Checks credentials and discovers resources; persists nothing. */
     async preview(actor: Actor, body: PreviewConnectionRequest) {
+      if (body.connectorId === CUSTOM_API_CONNECTOR_ID) {
+        return fail(400, CUSTOM_API_REQUIRES_DEFINITION);
+      }
       const registered = registry.get(body.connectorId);
       if (!registered) {
         return fail(400, "invalid_request");
@@ -2137,7 +2176,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             })
           : discovered;
       }
-      const registered = registry.get(existing.row.connectorId);
+      const registered = connectorFor(registry, existing);
       const strategy = registered
         ? oauthStrategyFor(registered.manifest, existing.oauth.provider)
         : undefined;
@@ -2283,7 +2322,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (loaded.row.setupPending) {
           return fail<Reload>(400, "connection_setup_pending");
         }
-        const manifest = registry.get(loaded.row.connectorId)?.manifest;
+        const manifest = connectorFor(registry, loaded)?.manifest;
         if (!manifest?.supportsBackfill) {
           return fail<Reload>(400, "backfill_not_supported");
         }
@@ -2362,7 +2401,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!existing) {
         return fail(404, NOT_FOUND);
       }
-      const registered = registry.get(existing.row.connectorId);
+      const registered = connectorFor(registry, existing);
       if (!registered) {
         return fail(400, "invalid_request");
       }
@@ -2539,7 +2578,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         // config change re-checks the stored main key only, so a paused
         // reviews key (#190) never blocks it.
         const check = await checkCandidate(
-          registered.manifest,
+          registered,
           connectionId,
           nextConfig ?? existingConfig,
           credentials,
@@ -2575,7 +2614,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           );
           for (const sibling of siblings) {
             const siblingCheck = await checkCandidate(
-              registered.manifest,
+              registered,
               sibling.row.id,
               sibling.row.config as Record<string, unknown>,
               body.credentials,
@@ -2855,6 +2894,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               row: { ...row, setupPending },
               state,
               oauth: existing.oauth,
+              customApi: existing.customApi,
             },
             await withSharedKey(tx, actor.workspaceId, row),
             actor.locale,

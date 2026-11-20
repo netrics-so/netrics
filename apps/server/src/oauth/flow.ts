@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { CUSTOM_API_CONNECTOR_ID } from "@netrics/connectors/custom-api";
 import type { FastifyBaseLogger } from "fastify";
 
 import type {
@@ -184,6 +185,15 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       const purpose = body.connectionId ? "reauthorize" : "connect";
       if (!can(actor.role, requiredAction(purpose))) {
         return { ok: false, status: 403, error: "forbidden" };
+      }
+      // Custom API connections come from a definition (milestone 13);
+      // their OAuth runs through the connection, never the generic start.
+      if (body.connectorId === CUSTOM_API_CONNECTOR_ID && !body.connectionId) {
+        return {
+          ok: false,
+          status: 400,
+          error: "custom_api_requires_definition",
+        };
       }
       const registered = registry.get(body.connectorId);
       if (!registered) {

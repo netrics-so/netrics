@@ -55,6 +55,13 @@ export interface ExecuteOptions {
    * connectors; lookup, allowPrivateAddresses, allowInsecureHttp and tlsCa
    * are for tests only.
    */
+  /**
+   * Values redacted like the connection's credentials, besides them:
+   * values derived from them that connector code sends (a basic-auth
+   * base64, "Bearer <token>", rendered auth headers). Applied to errors,
+   * check messages and connector logs.
+   */
+  redactValues?: readonly string[];
   egress?: Pick<
     EgressOptions,
     | "lookup"
@@ -71,6 +78,16 @@ export interface ExecuteOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
+
+/** Everything a call's errors, messages and logs are redacted against. */
+function redactionSet(
+  context: ConnectionContext,
+  options: ExecuteOptions,
+): Record<string, unknown> {
+  return options.redactValues?.length
+    ? { credentials: context.credentials, derived: [...options.redactValues] }
+    : context.credentials;
+}
 
 /** The connector call exceeded its time budget (a retryable failure). */
 export class ConnectorTimeoutError extends Error {
@@ -89,13 +106,13 @@ export class ConnectorTimeoutError extends Error {
 function classifyConnectorError(
   connector: Connector,
   error: unknown,
-  context: ConnectionContext,
+  secrets: Record<string, unknown>,
 ): Error {
   // Host capability validation errors remain permanent across the credential
   // boundary. Only the trusted class qualifies; names/messages are not tags.
   if (error instanceof ContractViolationError)
     return new ContractViolationError(
-      redactCredentialValues(error.message, context.credentials),
+      redactCredentialValues(error.message, secrets),
     );
   if (error instanceof EgressDeniedError) {
     return new ContractViolationError(
@@ -107,11 +124,11 @@ function classifyConnectorError(
   // validated; only the message can carry credential material.
   if (error instanceof RateLimitedError) {
     return new RateLimitedError(
-      redactCredentialValues(error.message, context.credentials),
+      redactCredentialValues(error.message, secrets),
       error.retryAt,
     );
   }
-  return redactConnectorError(error, context.credentials);
+  return redactConnectorError(error, secrets);
 }
 
 /**
@@ -144,7 +161,7 @@ async function withRuntime<T>(
     signal: controller.signal,
     log: createConnectorLogger({
       connectorId: connector.manifest.id,
-      credentials: context.credentials,
+      credentials: redactionSet(context, options),
       sink: options.log,
       active: () => !controller.signal.aborted,
     }),
@@ -353,7 +370,11 @@ export async function executeSync(
       connector.sync(context, parsedRequest.data, runtime),
     );
   } catch (error) {
-    throw classifyConnectorError(connector, error, context);
+    throw classifyConnectorError(
+      connector,
+      error,
+      redactionSet(context, options),
+    );
   }
   return validateSyncResult(connector.manifest, parsedRequest.data, raw);
 }
@@ -379,7 +400,11 @@ export async function executeCheck(
       (runtime) => connector.check(context, runtime),
     );
   } catch (error) {
-    throw classifyConnectorError(connector, error, context);
+    throw classifyConnectorError(
+      connector,
+      error,
+      redactionSet(context, options),
+    );
   }
   const parsed = checkResultSchema.safeParse(raw);
   if (!parsed.success) {
@@ -391,7 +416,10 @@ export async function executeCheck(
   if (result.message) {
     return {
       ...result,
-      message: redactCredentialValues(result.message, context.credentials),
+      message: redactCredentialValues(
+        result.message,
+        redactionSet(context, options),
+      ),
     };
   }
   return result;
@@ -417,7 +445,11 @@ export async function executeDiscover(
       (runtime) => connector.discover(context, runtime),
     );
   } catch (error) {
-    throw classifyConnectorError(connector, error, context);
+    throw classifyConnectorError(
+      connector,
+      error,
+      redactionSet(context, options),
+    );
   }
   const parsed = z.array(resourceSchema).safeParse(raw);
   if (!parsed.success) {
@@ -473,7 +505,11 @@ export async function executeResourceIcons(
       (runtime) => resourceIcons(context, parsedRequest.data, runtime),
     );
   } catch (error) {
-    throw classifyConnectorError(connector, error, context);
+    throw classifyConnectorError(
+      connector,
+      error,
+      redactionSet(context, options),
+    );
   }
   const parsed = resourceIconsResultSchema.safeParse(raw);
   if (!parsed.success) {

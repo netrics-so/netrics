@@ -263,7 +263,6 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
     case "endless":
       stream = {
         ...itemStream("items", "/edge/endless", cursor),
-        fields: itemFields.filter((field) => field.id !== "price"),
         mode: "snapshot",
       };
       break;

@@ -101,6 +101,8 @@ export interface JobHandlerDeps {
   signedKeys?: SignedKeyProviders;
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
+  /** Self-host private hosts of the custom-api connector only. */
+  customApiPrivateHosts?: readonly string[];
   /** The workspace image quota icons count against (#226). */
   imageQuota?: ImageQuota;
 }

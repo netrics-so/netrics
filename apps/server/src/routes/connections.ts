@@ -33,7 +33,10 @@ import {
   updateConnectionRetentionRequestSchema,
   projectFilterQuerySchema,
 } from "@netrics/contracts";
-import type { ConnectorRegistry } from "@netrics/connector-runtime";
+import type {
+  ConnectorRegistry,
+  ExecuteOptions,
+} from "@netrics/connector-runtime";
 import type { Database } from "@netrics/database";
 import { can, type DataPolicy } from "@netrics/domain";
 
@@ -66,6 +69,10 @@ export interface ConnectionRouteDeps {
   dataPolicy?: DataPolicy;
   /** Default: PREVIEW_CONNECTORS (see connections/service.ts). */
   previews?: ReadonlySet<string>;
+  /** Tests only: options for every connector call (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
+  /** Self-host private hosts of the custom-api connector only. */
+  customApiPrivateHosts?: readonly string[];
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });
