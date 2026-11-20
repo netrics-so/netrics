@@ -12,6 +12,8 @@ import {
   workspaceMetricListResponseSchema,
 } from "@netrics/contracts";
 import { demoManifest, vercelManifest } from "@netrics/connectors";
+import { CUSTOM_API_MESSAGES } from "@netrics/connectors/custom-api";
+import { localizedProviderMessage, sharedEn } from "@netrics/domain";
 import {
   createDatabase,
   createRawSqlClient,
@@ -330,5 +332,20 @@ describe("the instance default language", () => {
     expect(await demoName()).toBe("Demo-Connector");
     await call(world, cookie, "PATCH", "/v1/me", { locale: "en" });
     expect(await demoName()).toBe("Demo Connector");
+  });
+});
+
+describe("custom API connector messages", () => {
+  it("are the catalog's English entries and translate to German", () => {
+    for (const [code, english] of Object.entries(CUSTOM_API_MESSAGES)) {
+      expect(
+        sharedEn.providerMessages.customApi[
+          code as keyof typeof CUSTOM_API_MESSAGES
+        ],
+      ).toBe(english);
+      const german = localizedProviderMessage(english, "de");
+      expect(german).not.toBeNull();
+      expect(german).not.toBe(english);
+    }
   });
 });
