@@ -374,6 +374,7 @@ export async function startWorker(config: Config): Promise<void> {
       registry,
       credentialKeyring,
       imageQuota: config.imageQuota,
+      customApiImageQuota: config.customApiImageQuota,
       dataPolicy: config.dataPolicy,
       customApiPrivateHosts: config.customApiPrivateHosts,
       oauthTokens: createOAuthTokenService({

@@ -601,6 +601,38 @@ describe("custom API limits (#803)", () => {
   });
 });
 
+describe("custom API image quota (#809)", () => {
+  it("defaults to 500 images and 200 MiB per workspace", () => {
+    expect(loadConfig({}).customApiImageQuota).toEqual({
+      maxCount: 500,
+      maxBytes: 200 * 1_048_576,
+    });
+  });
+
+  it("reads the quota from the environment, apart from uploads", () => {
+    const config = loadConfig({
+      NETRICS_CUSTOM_API_IMAGE_QUOTA_COUNT: "20",
+      NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB: "8",
+    });
+    expect(config.customApiImageQuota).toEqual({
+      maxCount: 20,
+      maxBytes: 8 * 1_048_576,
+    });
+    expect(config.imageQuota).toEqual({
+      maxCount: 100,
+      maxBytes: 50 * 1_048_576,
+    });
+  });
+
+  it("refuses a quota that is not a whole, non-negative number", () => {
+    for (const value of ["-1", "1.5", "lots"]) {
+      expect(() =>
+        loadConfig({ NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB: value }),
+      ).toThrow(ConfigError);
+    }
+  });
+});
+
 describe("image quota (#217)", () => {
   it("defaults to 100 images and 50 MiB per workspace", () => {
     expect(loadConfig({}).imageQuota).toEqual({

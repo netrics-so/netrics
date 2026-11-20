@@ -185,6 +185,15 @@ set `NETRICS_IMAGE_QUOTA_COUNT` and `NETRICS_IMAGE_QUOTA_MIB` in `.env` and
 restart the `api`. Images above a lowered quota stay; only new uploads are
 refused.
 
+After each sync of a custom API with an image field, the worker copies the
+images of the newest items (PNG, JPEG or WebP, at most 2 MiB each, metadata
+removed) into PostgreSQL too. They have their own quota, 500 images and
+200 MiB per workspace by default, and do not count against uploads. To
+change it, set `NETRICS_CUSTOM_API_IMAGE_QUOTA_COUNT` and
+`NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB` in `.env` and restart the `worker`.
+Images beyond the quota are skipped and counted on the connection. Images
+no longer among a stream's newest items are deleted after seven days.
+
 ### Custom API limits
 
 Each workspace may keep 50 custom API definitions (archived ones don't
