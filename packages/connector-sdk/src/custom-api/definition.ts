@@ -220,7 +220,12 @@ const baseUrl = z
   .refine(
     (value) => {
       const url = canonicalHttpsUrl(value);
-      return url !== undefined && url.search === "" && !value.endsWith("/");
+      return (
+        url !== undefined &&
+        !value.includes("?") &&
+        !value.includes("#") &&
+        !value.endsWith("/")
+      );
     },
     issue(
       "environment_url",
@@ -482,7 +487,7 @@ export const customApiWindowSchema = z.discriminatedUnion("type", [
 
 const DOT_SEGMENTS = new Set([".", "..", "%2e", "%2e%2e", ".%2e", "%2e."]);
 
-/** A request path stays below the base URL: no "//", backslash or dot segments. */
+/** A request path stays below the base URL: no "//", backslash (literal or %5c), encoded "/" (%2f) or dot segments. */
 function requestPathOk(value: string): boolean {
   return (
     value.startsWith("/") &&
@@ -490,6 +495,7 @@ function requestPathOk(value: string): boolean {
     !value.includes("#") &&
     !value.includes("\\") &&
     !value.includes("//") &&
+    !/%(?:2f|5c)/i.test(value) &&
     !value.split("/").some((segment) => DOT_SEGMENTS.has(segment.toLowerCase()))
   );
 }

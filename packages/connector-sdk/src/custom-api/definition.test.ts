@@ -907,7 +907,19 @@ describe("hardening (review round 1)", () => {
     "https://api.example.com/v1/../v2",
     "https://@api.example.com",
     "https://user@api.example.com",
+    "https://api.example.com/v1#",
   ];
+
+  it.each(["https://api.example.com/v1?", "https://api.example.com/v1#"])(
+    "refuses the base URL %j with an empty query or fragment",
+    (url) =>
+      expect(issuesOf(withBase(url))).toContainEqual(
+        expect.objectContaining({
+          code: "environment_url",
+          path: "environments.0.baseUrl",
+        }),
+      ),
+  );
 
   it.each(confusing)("refuses the base URL %j", (url) =>
     expect(issuesOf(withBase(url))).toContainEqual(
@@ -986,6 +998,10 @@ describe("hardening (review round 1)", () => {
     "/a/%2e%2e/b",
     "/a/%2E/b",
     "/a/.%2e/b",
+    "/a/%2f/b",
+    "/a/..%2F..%2Fadmin",
+    "/a/%5c/b",
+    "/a/x%5Cy",
   ])("refuses the request path %j", (path) =>
     expect(
       issuesOf(doc((d) => (d.streams[0].request.path = path))),
