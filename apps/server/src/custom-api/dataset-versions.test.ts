@@ -136,6 +136,54 @@ describe("customApiDatasetVersions", () => {
     ).toEqual({ weekly_stats: 2 });
   });
 
+  it("continues a removed and re-added stream after its highest past version", () => {
+    // v1: shop + s; v2: s's fields change; v3: s removed; v4: s re-added.
+    const withS = shopDoc();
+    withS.streams.push(secondStream("s"));
+    const first = parse(withS);
+    const v1Versions = customApiDatasetVersions(null, first);
+    expect(v1Versions).toEqual({ daily_stats: 1, s: 1 });
+    const changedS = structuredClone(withS);
+    changedS.streams[1]!.fields[1]!.type = "decimal";
+    const second = parse(changedS);
+    const v2Versions = customApiDatasetVersions(
+      { document: first, datasetVersions: v1Versions },
+      second,
+      v1Versions,
+    );
+    expect(v2Versions).toEqual({ daily_stats: 1, s: 2 });
+    const third = parse(shopDoc());
+    const v3Versions = customApiDatasetVersions(
+      { document: second, datasetVersions: v2Versions },
+      third,
+      { daily_stats: 1, s: 2 },
+    );
+    expect(v3Versions).toEqual({ daily_stats: 1 });
+    // Re-added with the same fields as in v2: still a new version.
+    const v4Versions = customApiDatasetVersions(
+      { document: third, datasetVersions: v3Versions },
+      second,
+      { daily_stats: 1, s: 2 },
+    );
+    expect(v4Versions).toEqual({ daily_stats: 1, s: 3 });
+  });
+
+  it("bumps a changed stream past its highest version, not only the previous one", () => {
+    expect(
+      customApiDatasetVersions(
+        v1,
+        parse(
+          (() => {
+            const doc = shopDoc();
+            doc.streams[0]!.fields[1]!.type = "decimal";
+            return doc;
+          })(),
+        ),
+        { daily_stats: 5 },
+      ),
+    ).toEqual({ daily_stats: 6 });
+  });
+
   it("bumps when the time zone of a date reporting field changes", () => {
     expect(
       changed((doc) => {

@@ -15,6 +15,7 @@ import {
 } from "@netrics/contracts";
 import {
   countCustomApiDefinitions,
+  customApiDatasetVersionHighWater,
   findCustomApiDefinition,
   findProject,
   insertAuditEvent,
@@ -276,6 +277,13 @@ export function createCustomApiService(deps: {
               >,
             },
             document,
+            // Monotonic per stream key: a removed stream that comes back
+            // continues after its highest past version.
+            await customApiDatasetVersionHighWater(
+              tx,
+              actor.workspaceId,
+              definitionId,
+            ),
           );
           // The insert locks the definition and checks the base again: of two
           // concurrent saves from the same base, the second answers stale.

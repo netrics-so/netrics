@@ -10,6 +10,7 @@ import { withWorkspace } from "./context.js";
 import {
   countCustomApiConnections,
   countCustomApiDefinitions,
+  customApiDatasetVersionHighWater,
   findCustomApiDefinition,
   findCustomApiDefinitionVersion,
   insertCustomApiDefinition,
@@ -178,6 +179,33 @@ describe("custom API definitions", () => {
       findCustomApiDefinition(tx, workspaceA, input.id),
     );
     expect(found?.version.version).toBe(2);
+  });
+
+  it("remembers the highest dataset version of every stream ever stored", async () => {
+    const input = definitionInput("High water");
+    await inA((tx) => insertCustomApiDefinition(tx, workspaceA, input));
+    await inA((tx) =>
+      insertCustomApiDefinitionVersion(tx, workspaceA, input.id, {
+        ...versionInput(1),
+        datasetVersions: { daily_stats: 2, removed: 4 },
+      }),
+    );
+    await inA((tx) =>
+      insertCustomApiDefinitionVersion(tx, workspaceA, input.id, {
+        ...versionInput(2),
+        datasetVersions: { daily_stats: 3 },
+      }),
+    );
+    expect(
+      await inA((tx) =>
+        customApiDatasetVersionHighWater(tx, workspaceA, input.id),
+      ),
+    ).toEqual({ daily_stats: 3, removed: 4 });
+    expect(
+      await inB((tx) =>
+        customApiDatasetVersionHighWater(tx, workspaceA, input.id),
+      ),
+    ).toEqual({});
   });
 
   it("concurrent new versions: exactly one wins", async () => {

@@ -295,6 +295,31 @@ describe("custom API definitions API", () => {
     ).toEqual({ daily_stats: 1, weekly_stats: 2 });
   });
 
+  it("continues a removed and re-added stream after its highest version", async () => {
+    const withS = shop();
+    const s1 = structuredClone(withS.streams[0]!);
+    s1.key = "s";
+    s1.name = "S";
+    withS.streams.push(s1);
+    const created = await createDefinition(withS);
+    const save = async (baseVersion: number, document: Doc) => {
+      const res = await call(
+        "POST",
+        `${defs()}/${created.id}/versions`,
+        editor,
+        { baseVersion, document },
+      );
+      expect(res.statusCode).toBe(201);
+      return customApiDefinitionResponseSchema.parse(res.json()).definition
+        .datasetVersions;
+    };
+    const changed = structuredClone(withS);
+    changed.streams[1]!.fields[1]!.type = "decimal";
+    expect(await save(1, changed)).toEqual({ daily_stats: 1, s: 2 });
+    expect(await save(2, shop())).toEqual({ daily_stats: 1 });
+    expect(await save(3, withS)).toEqual({ daily_stats: 1, s: 3 });
+  });
+
   it("refuses changes to an archived definition and hides it from the default list", async () => {
     const created = await createDefinition();
     const archived = await call(

@@ -153,7 +153,6 @@ const previewConnectors = z
     }),
   );
 
-/** An instance's OAuth app at one provider (ADR 0012). */
 /** Instance limits for custom API definitions (milestone 13). */
 export interface CustomApiInstanceConfig {
   maxDefinitions: number;
@@ -162,6 +161,7 @@ export interface CustomApiInstanceConfig {
   minRefreshMinutes: number;
 }
 
+/** An instance's OAuth app at one provider (ADR 0012). */
 export interface OAuthClientConfig {
   clientId: string;
   clientSecret: Secret;

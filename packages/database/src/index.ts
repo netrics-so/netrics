@@ -435,6 +435,7 @@ export type {
 export {
   countCustomApiConnections,
   countCustomApiDefinitions,
+  customApiDatasetVersionHighWater,
   findCustomApiDefinition,
   findCustomApiDefinitionVersion,
   insertCustomApiDefinition,

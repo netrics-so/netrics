@@ -40,8 +40,13 @@ function streamSignature(
 }
 
 /**
- * Stream key → dataset version. New stream → 1; unchanged signature →
- * previous; changed signature → previous + 1; removed streams dropped.
+ * Stream key → dataset version, monotonic per key for the life of a
+ * definition: unchanged signature → previous; changed signature → highest
+ * past version + 1; a key never used before → 1; a key that was removed and
+ * comes back → highest past version + 1, even with identical fields
+ * (connections may have pinned the old version in between). Removed streams
+ * are dropped from the result; `highWater` (stream key → highest version in
+ * any earlier version of the definition) remembers them.
  */
 export function customApiDatasetVersions(
   previous: {
@@ -49,6 +54,7 @@ export function customApiDatasetVersions(
     datasetVersions: Readonly<Record<string, number>>;
   } | null,
   next: CustomApiDefinition,
+  highWater: Readonly<Record<string, number>> = {},
 ): Record<string, number> {
   const before = new Map(
     (previous?.document.streams ?? []).map((stream) => [
@@ -60,12 +66,19 @@ export function customApiDatasetVersions(
   for (const stream of next.streams) {
     const signature = before.get(stream.key);
     const version = previous?.datasetVersions[stream.key];
-    if (signature === undefined || version === undefined) {
-      versions[stream.key] = 1;
-    } else {
-      versions[stream.key] =
-        signature === streamSignature(stream, next) ? version : version + 1;
+    if (
+      signature !== undefined &&
+      version !== undefined &&
+      signature === streamSignature(stream, next)
+    ) {
+      versions[stream.key] = version;
+      continue;
     }
+    const highest = Math.max(
+      Object.hasOwn(highWater, stream.key) ? highWater[stream.key]! : 0,
+      version ?? 0,
+    );
+    versions[stream.key] = highest + 1;
   }
   return versions;
 }

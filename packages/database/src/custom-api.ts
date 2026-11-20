@@ -261,6 +261,28 @@ export async function findCustomApiDefinitionVersion(
   return row ?? null;
 }
 
+/**
+ * Stream key → the highest dataset version any version of the definition
+ * gave it, removed streams included (dataset versions are monotonic per key
+ * for the life of a definition).
+ */
+export async function customApiDatasetVersionHighWater(
+  tx: Transaction,
+  workspaceId: string,
+  definitionId: string,
+): Promise<Record<string, number>> {
+  const rows = await tx.execute<{ key: string; version: number }>(sql`
+    select entry.key as key, max((entry.value)::integer) as version
+    from ${versions},
+      jsonb_each_text(${versions.datasetVersions}) as entry
+    where ${versions.workspaceId} = ${workspaceId}
+      and ${versions.definitionId} = ${definitionId}
+    group by entry.key`);
+  return Object.fromEntries(
+    [...rows].map((row) => [row.key, Number(row.version)]),
+  );
+}
+
 /** Moves the definition to another project or archives it. */
 export async function updateCustomApiDefinition(
   tx: Transaction,
