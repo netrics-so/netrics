@@ -60,6 +60,7 @@ import { registerSessionRoutes } from "./routes/session.js";
 import { registerGoalRoutes } from "./routes/goals.js";
 import { registerThemeRoutes } from "./routes/themes.js";
 import { registerCustomApiRoutes } from "./routes/custom-api.js";
+import { registerCustomApiBuilderRoutes } from "./routes/custom-api-builder.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 
 export interface AppDeps {
@@ -283,6 +284,15 @@ export async function buildApp(
     credentialKeyring,
     privateHosts: config.customApiPrivateHosts,
     ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
+  });
+  registerCustomApiBuilderRoutes(app, {
+    authService,
+    db,
+    limits: config.customApi,
+    credentialKeyring,
+    privateHosts: config.customApiPrivateHosts,
+    ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
+    ...(deps.now ? { now: deps.now } : {}),
   });
   registerGoalRoutes(app, {
     authService,

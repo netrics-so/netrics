@@ -24,6 +24,7 @@ import {
   withWorkspace,
   type Database,
   type Transaction,
+  notDraftConnection,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -626,6 +627,7 @@ export function createStoreTemplateUpdateService(deps: {
           .where(
             and(
               eq(schema.connections.workspaceId, workspaceId),
+              notDraftConnection(),
               inArray(
                 schema.connections.id,
                 lacking.map((connection) => connection.id),

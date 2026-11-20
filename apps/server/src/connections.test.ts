@@ -1085,3 +1085,49 @@ describe("delete", () => {
     ).toBe(true);
   });
 });
+
+describe("custom API builder drafts (#806)", () => {
+  it("keeps drafts out of the connection list, detail, sync, delete and data sources", async () => {
+    const draftId = randomUUID();
+    await world.admin`
+      insert into connections (id, workspace_id, connector_id, name, status)
+      values (${draftId}, ${w1Id}, 'custom-api', 'Builder draft', 'draft')`;
+    await world.admin`
+      insert into connection_state (connection_id, workspace_id)
+      values (${draftId}, ${w1Id})`;
+    const list = connectionListResponseSchema.parse(
+      (
+        await call(world.app, {
+          method: "GET",
+          url: `/v1/workspaces/${w1Id}/connections`,
+          cookie: cookies.owner,
+        })
+      ).json(),
+    );
+    expect(list.connections.map((c) => c.id)).not.toContain(draftId);
+    for (const [method, suffix] of [
+      ["GET", ""],
+      ["POST", "/sync"],
+      ["PATCH", ""],
+      ["DELETE", ""],
+    ] as const) {
+      const response = await call(world.app, {
+        method,
+        url: `/v1/workspaces/${w1Id}/connections/${draftId}${suffix}`,
+        cookie: cookies.owner,
+        ...(method === "PATCH" ? { payload: { name: "Renamed" } } : {}),
+      });
+      expect(response.statusCode, `${method} ${suffix}`).toBe(404);
+    }
+    const sources = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${w1Id}/data/sources`,
+      cookie: cookies.owner,
+    });
+    expect(sources.statusCode).toBe(200);
+    expect(JSON.stringify(sources.json())).not.toContain(draftId);
+    const [row] = await world.admin`
+      select name, status from connections where id = ${draftId}`;
+    expect(row).toEqual({ name: "Builder draft", status: "draft" });
+  });
+});

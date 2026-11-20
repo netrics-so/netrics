@@ -107,6 +107,20 @@ const oauthAccountColumns = {
   grantedScopes: schema.connectionOAuth.grantedScopes,
 };
 
+/**
+ * Every connection that is not a custom API builder's draft (#806). Drafts
+ * are invisible to every connection path; only the draft service and the
+ * places that must see every envelope (re-encryption) read them.
+ */
+export function notDraftConnection() {
+  return ne(schema.connections.status, "draft");
+}
+
+export interface FindConnectionOptions {
+  /** Also find a draft connection (the custom API draft service). */
+  includeDrafts?: boolean;
+}
+
 function connectionScope(workspaceId: string, connectionId: string) {
   return and(
     eq(schema.connections.workspaceId, workspaceId),
@@ -125,12 +139,18 @@ export async function findConnection(
   tx: Transaction,
   workspaceId: string,
   connectionId: string,
+  options: FindConnectionOptions = {},
 ): Promise<ConnectionWithState | null> {
   const [found] = await tx
     .select({ row: schema.connections, pin: customApiPinColumns })
     .from(schema.connections)
     .leftJoin(schema.customApiDefinitionVersions, customApiPinJoin(workspaceId))
-    .where(connectionScope(workspaceId, connectionId))
+    .where(
+      and(
+        connectionScope(workspaceId, connectionId),
+        options.includeDrafts ? undefined : notDraftConnection(),
+      ),
+    )
     .limit(1);
   if (!found) {
     return null;
@@ -191,6 +211,7 @@ export async function listConnections(
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
         projectFilterSql(schema.connections.projectId, workspaceId, filter),
       ),
     )
@@ -209,7 +230,12 @@ export async function listConnectionIds(
   const rows = await tx
     .select({ id: schema.connections.id })
     .from(schema.connections)
-    .where(eq(schema.connections.workspaceId, workspaceId));
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
+      ),
+    );
   return rows.map((row) => row.id);
 }
 
@@ -241,6 +267,11 @@ export interface NewConnection {
    * (milestone 13); absent for bundled connectors.
    */
   customApi?: { definitionVersionId: string; environmentId: string };
+  /**
+   * A custom API builder's draft (#806): custom-api, no pin, never
+   * scheduled (next_due_at stays null).
+   */
+  status?: "active" | "draft";
 }
 
 /**
@@ -262,6 +293,7 @@ export async function insertConnection(
       credentialsEncrypted: input.credentialsEncrypted,
       projectId: input.projectId,
       setupPending: input.setupPending ?? false,
+      status: input.status ?? "active",
       ...(input.customApi
         ? {
             customApiDefinitionVersionId: input.customApi.definitionVersionId,
@@ -286,7 +318,8 @@ export async function insertConnection(
     .values({
       connectionId: input.id,
       workspaceId: input.workspaceId,
-      nextDueAt: input.setupPending ? null : new Date(),
+      nextDueAt:
+        input.setupPending || input.status === "draft" ? null : new Date(),
       pollIntervalSeconds: input.pollIntervalSeconds,
     })
     .returning();

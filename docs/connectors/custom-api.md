@@ -41,6 +41,43 @@ before it stores anything, then queues the connection's backfill. The
 generic connection routes refuse `custom-api` with
 `custom_api_requires_definition`.
 
+## Drafts and test requests (builder)
+
+The builder keeps the secrets it needs before a definition is saved on a
+**draft connection** (`POST /v1/workspaces/:workspaceId/custom-api/drafts`,
+`connections:create`): a custom-api connection with status `draft` that is
+never synced, never listed and deleted 24 hours after it was last used. At
+most 10 drafts are open per workspace.
+
+- `PUT …/drafts/:draftId` stores the unsaved definition (one stream), the
+  environment, the connection values and, optionally, the secrets. Answers
+  name the stored secrets, never their values. Secrets are bound to the hosts
+  they were entered for (the environment host with its port, and the token
+  endpoints of OAuth): when the definition moves to another host or another
+  login method, stored secrets are deleted and have to be entered again.
+  Otherwise secrets sent later are merged into the stored ones (only the
+  names sent change, `null` removes one), and secrets the definition no
+  longer declares are forgotten. The set is checked when the draft is
+  tested or promoted.
+- `POST …/drafts/:draftId/test` runs the stream against the draft's secrets:
+  at most 5 pages, 1,000 records and 60 seconds. The answer holds the first
+  response as a tree (at most 256 KiB, 50 items per list, 200 keys per
+  object, 2,000 characters per text, 32 levels), the lists that may hold the
+  records, suggested fields from the first 100 records, up to 100 mapped
+  rows (512 KiB together) and a log per page. The whole answer stays within
+  1 MiB; `truncated` says when anything was cut. Only the first page's body
+  is kept while the test runs. Every secret value (raw, URL-encoded in
+  either case, form-encoded or JSON-escaped) reads `[redacted]` in all of
+  it, and values are redacted before they are shortened.
+  Nothing from the test is stored. At most 30 test requests run per
+  workspace and minute (`429 custom_api_test_rate_limited` with
+  `Retry-After`); a definition whose host changed after the secrets were
+  entered answers `409 custom_api_credentials_host_changed` without any
+  request.
+- `POST …/drafts/:draftId/promote` turns the draft into a connection of a
+  saved definition version, keeping its secrets when that version sends them
+  to the same hosts.
+
 ## What is supported
 
 - **Login**: none; API key in a header or query parameter; bearer token

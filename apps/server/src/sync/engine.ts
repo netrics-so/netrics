@@ -42,6 +42,7 @@ import {
   type ImageQuota,
   type OAuthAuthReason,
   type Transaction,
+  notDraftConnection,
 } from "@netrics/database";
 import {
   CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES,
@@ -383,6 +384,7 @@ async function runSync(
         and(
           eq(schema.connections.id, connectionId),
           eq(schema.connections.workspaceId, workspaceId),
+          notDraftConnection(),
         ),
       )
       .limit(1);
@@ -968,6 +970,7 @@ async function runSync(
           and(
             eq(schema.connections.id, connectionId),
             eq(schema.connections.workspaceId, workspaceId),
+            notDraftConnection(),
           ),
         )
         .for("share");

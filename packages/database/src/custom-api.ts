@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import { projectFilterSql, type ProjectFilter } from "./project-filter.js";
@@ -323,7 +323,7 @@ export async function countCustomApiDefinitions(
   return Number(row?.count ?? 0);
 }
 
-/** The workspace's custom-api connections. */
+/** The workspace's custom-api connections, drafts not counted. */
 export async function countCustomApiConnections(
   tx: Transaction,
   workspaceId: string,
@@ -335,6 +335,8 @@ export async function countCustomApiConnections(
       and(
         eq(connections.workspaceId, workspaceId),
         eq(connections.connectorId, "custom-api"),
+        // Drafts of the builder are not connections yet (#806).
+        ne(connections.status, "draft"),
       ),
     );
   return Number(row?.count ?? 0);

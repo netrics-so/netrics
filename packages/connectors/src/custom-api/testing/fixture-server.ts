@@ -471,6 +471,61 @@ export async function startCustomApiFixtureServer(
       }
       case "/edge/429":
         return send(429, { error: "slow down" }, { "retry-after": "120" });
+      // Builder routes (B-G1, #806): a two-page stats feed, an endpoint that
+      // echoes the request (token included), a huge page, and a health
+      // check for the e2e web server.
+      case "/builder/stats": {
+        const bearer =
+          headers.authorization === `Bearer ${FIXTURE_SECRETS.token}`;
+        if (!bearer) return send(401, { error: "unauthorized" });
+        const page = query.cursor === "p2" ? 2 : 1;
+        const start = Date.parse(
+          `${/^\d{4}-\d{2}-\d{2}$/.test(query.from ?? "") ? query.from : "2024-01-01"}T00:00:00Z`,
+        );
+        const first = Number.isFinite(start) ? start : Date.UTC(2024, 0, 1);
+        const data = Array.from({ length: 3 }, (_, index) => {
+          const day = (page - 1) * 3 + index;
+          return {
+            date: new Date(first + day * DAY_MS).toISOString().slice(0, 10),
+            orders: day + 1,
+            revenue: { amount: "12.50", currency: "EUR" },
+          };
+        });
+        return send(200, { data, meta: { next: page === 1 ? "p2" : null } });
+      }
+      case "/builder/echo": {
+        const bearer =
+          headers.authorization === `Bearer ${FIXTURE_SECRETS.token}`;
+        if (!bearer) return send(401, { error: "unauthorized" });
+        return send(200, {
+          data: [{ url: `${origin}${request.url ?? "/"}`, headers }],
+          whoami: headers.authorization,
+        });
+      }
+      case "/builder/echo-query":
+        // Echoes its own URL, query (and so a query API key) included.
+        return send(200, { data: [{ url: `${origin}${request.url ?? "/"}` }] });
+      case "/builder/wide":
+        // 100 records of 10 texts of 2,000 characters (about 2 MB).
+        return send(200, {
+          data: Array.from({ length: 100 }, (_, index) =>
+            Object.fromEntries(
+              Array.from({ length: 10 }, (_, field) => [
+                `f${field}`,
+                `${index}:`.padEnd(2_000, "w"),
+              ]),
+            ),
+          ),
+        });
+      case "/builder/huge":
+        return send(200, {
+          data: Array.from({ length: 100_000 }, (_, index) => ({
+            id: index + 1,
+            name: `Row ${index + 1}`,
+          })),
+        });
+      case "/health":
+        return send(200, { ok: true });
       case "/photos": {
         // Newest first by taken_at; photo paths per setImages/signUrls.
         const photos = Array.from({ length: FIXTURE_PHOTO_COUNT }, (_, i) => {

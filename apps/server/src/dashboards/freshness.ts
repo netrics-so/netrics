@@ -9,6 +9,7 @@ import {
   schema,
   type ConnectionFreshnessRow,
   type Transaction,
+  notDraftConnection,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -136,6 +137,7 @@ export function createFreshnessReader(
       .where(
         and(
           eq(schema.connections.workspaceId, workspaceId),
+          notDraftConnection(),
           inArray(schema.connections.id, missing),
         ),
       );
@@ -655,6 +657,7 @@ export async function sourceFreshnessDependencies(
           .where(
             and(
               eq(schema.connections.workspaceId, workspaceId),
+              notDraftConnection(),
               inArray(schema.connections.id, [
                 ...new Set(found.map((entry) => entry.connectionId)),
               ]),

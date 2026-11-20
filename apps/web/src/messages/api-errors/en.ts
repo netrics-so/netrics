@@ -118,6 +118,35 @@ export const apiErrorsEn = {
       "This workspace has reached its limit of custom API connections.",
     custom_api_oauth_unavailable:
       "OAuth login for custom APIs is not available yet.",
+    custom_api_draft_not_found:
+      "This test connection has expired. Start the login again.",
+    custom_api_draft_limit:
+      "This workspace has too many unsaved custom APIs in progress. Finish or close one, or try again tomorrow.",
+    custom_api_secret_unknown:
+      "This login method does not use one of the entered secrets.",
+    custom_api_credentials_host_changed:
+      "The secrets were entered for another host. Enter them again for this address.",
+    custom_api_test_rate_limited:
+      "Too many test requests in this workspace. Wait a minute and try again.",
+    custom_api_test_busy:
+      "A test request for this API is still running. Wait for it to finish.",
+    custom_api_secret_missing:
+      "Enter the login details this API needs before testing.",
+    custom_api_auth_rejected:
+      "The API refused the login details. Check the key, token or password.",
+    custom_api_destination_blocked:
+      "netrics may not reach this address. Custom APIs must be public https hosts.",
+    custom_api_timeout: "The API did not answer in time.",
+    custom_api_records_not_array:
+      "The record path does not point to a list. Pick the list that holds the records.",
+    custom_api_http_error:
+      "The API answered with an error. Check the request path and the values.",
+    custom_api_response_invalid:
+      "The API answer could not be read. Check the base URL and the request path.",
+    custom_api_request_invalid:
+      "The request could not be built. Check the path, the values and the headers.",
+    custom_api_test_failed:
+      "The test request failed. Check the base URL and try again.",
     retention_dataset_unknown:
       "This connection has no such data table. Reload the page and choose again.",
     reviews_not_supported:

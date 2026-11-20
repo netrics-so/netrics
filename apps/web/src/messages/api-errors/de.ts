@@ -122,6 +122,35 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Dieser Workspace hat die Höchstzahl an Verbindungen zu eigenen APIs erreicht.",
     custom_api_oauth_unavailable:
       "OAuth-Anmeldung für eigene APIs ist noch nicht verfügbar.",
+    custom_api_draft_not_found:
+      "Diese Testverbindung ist abgelaufen. Melde dich erneut an.",
+    custom_api_draft_limit:
+      "In diesem Workspace sind zu viele ungespeicherte eigene APIs in Arbeit. Schließ eine ab oder versuch es morgen erneut.",
+    custom_api_secret_unknown:
+      "Diese Anmeldemethode verwendet eines der eingegebenen Geheimnisse nicht.",
+    custom_api_credentials_host_changed:
+      "Die Geheimnisse wurden für einen anderen Host eingegeben. Gib sie für diese Adresse erneut ein.",
+    custom_api_test_rate_limited:
+      "Zu viele Testanfragen in diesem Workspace. Warte eine Minute und versuch es erneut.",
+    custom_api_test_busy:
+      "Für diese API läuft noch eine Testanfrage. Warte, bis sie fertig ist.",
+    custom_api_secret_missing:
+      "Gib vor dem Test die Anmeldedaten ein, die diese API braucht.",
+    custom_api_auth_rejected:
+      "Die API hat die Anmeldedaten abgelehnt. Prüf den Schlüssel, das Token oder das Passwort.",
+    custom_api_destination_blocked:
+      "netrics darf diese Adresse nicht erreichen. Eigene APIs müssen öffentliche https-Hosts sein.",
+    custom_api_timeout: "Die API hat nicht rechtzeitig geantwortet.",
+    custom_api_records_not_array:
+      "Der Datensatzpfad zeigt auf keine Liste. Wähl die Liste, die die Datensätze enthält.",
+    custom_api_http_error:
+      "Die API hat mit einem Fehler geantwortet. Prüf den Anfragepfad und die Werte.",
+    custom_api_response_invalid:
+      "Die Antwort der API ließ sich nicht lesen. Prüf die Basis-URL und den Anfragepfad.",
+    custom_api_request_invalid:
+      "Die Anfrage ließ sich nicht erstellen. Prüf den Pfad, die Werte und die Header.",
+    custom_api_test_failed:
+      "Die Testanfrage ist fehlgeschlagen. Prüf die Basis-URL und versuch es erneut.",
     retention_dataset_unknown:
       "Diese Verbindung hat keine solche Datentabelle. Lade die Seite neu und wähle erneut.",
     reviews_not_supported:

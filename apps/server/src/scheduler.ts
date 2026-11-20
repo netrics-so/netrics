@@ -18,6 +18,7 @@ import {
   pruneDatasetHistoryBatch,
   pruneOAuthAuthorizations,
   prunePendingKeys,
+  pruneDraftConnections,
   pruneRevokedDevices,
   pruneCustomApiItemImages,
   CUSTOM_API_IMAGE_GRACE_DAYS,
@@ -297,6 +298,14 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
       const devicesDeleted = await pruneRevokedDevices(schedulerDb, now());
       if (devicesDeleted > 0) {
         logger.info({ devicesDeleted }, "pruned revoked devices");
+      }
+    });
+    // Custom API builder drafts 24 hours after they were last touched,
+    // with their credentials (#806; DRAFT_CONNECTION_TTL_HOURS).
+    await runTask("draft_connections", async () => {
+      const draftsDeleted = await pruneDraftConnections(schedulerDb, now());
+      if (draftsDeleted > 0) {
+        logger.info({ draftsDeleted }, "pruned draft connections");
       }
     });
     // Review text (ADR 0019 §11): per app the newest 50, none older than
