@@ -67,8 +67,8 @@ distribution runs the signed images.
 | [10.1 — netrics TV on iPad and iPhone](./10.1-netrics-tv-ipad-iphone.md)                  | Paired iPads and iPhones show the dashboard                      |
 | [11 — Reusable data models and dashboard filtering](./11-projects-and-derived-metrics.md) | Prepare and relate data, define measures, filter full dashboards |
 | [11.2 — App slides on TV](./11.2-app-slides-on-tv.md)                                     | Per-app slides with data freshness on Apple TV                   |
+| [13 — Custom API connector](./13-custom-api-connector.md) (before 12, owner 2026-11-20)   | Safe declarative connection builder                              |
 | [12 — Community connector system](./12-community-connectors.md)                           | Public SDK, template, catalog, and review pipeline               |
-| [13 — Custom API connector](./13-custom-api-connector.md)                                 | Safe declarative connection builder                              |
 | [14 — Alerts and notifications](./14-alerts-and-notifications.md)                         | Stateful rules deliver email and webhooks                        |
 | [15 — Collaboration and access](./15-collaboration-and-access.md)                         | Complete sharing, identity, and administration                   |
 | [16 — SaaS control plane](./16-saas-control-plane.md)                                     | Billing, provisioning, limits, and operations                    |

@@ -5,9 +5,18 @@
 A user can turn a suitable JSON HTTP API into a private, scheduled metric source
 through the UI without executing custom code.
 
+Status: design approved 2026-11-20 and moved ahead of milestone 12. Detailed
+design: [custom API connector design](../superpowers/specs/2026-11-20-custom-api-connector-design.md);
+plans: [overview](../superpowers/plans/2026-11-20-m13-overview.md). Scope
+added with the owner: named environments per definition, OAuth client
+credentials and authorization code, and images with a latest-items widget on
+web and netrics TV.
+
 ## Dependencies
 
-- Milestones 03–04, the shared data engine in 11, and the SDK in 12
+- Milestones 03–04 and the shared data engine in 11
+- Only the dataset contract from milestone 12 (frozen here as v1, ADR 0026);
+  submission into the community review process (slice 8) waits for 12
 
 ## In scope
 
