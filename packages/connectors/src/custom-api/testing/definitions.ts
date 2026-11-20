@@ -34,6 +34,8 @@ export const FIXTURE_DEFINITION_NAMES = [
   "not_json",
   "deep",
   "rate_limited",
+  "photos",
+  "photos_bearer",
 ] as const;
 export type FixtureDefinitionName = (typeof FIXTURE_DEFINITION_NAMES)[number];
 
@@ -154,6 +156,7 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
   const cursor = { type: "cursor", cursorPath: "meta.next", param: "cursor" };
   let auth: Record<string, unknown> = none;
   let stream: Record<string, unknown>;
+  let images: Record<string, unknown> | undefined;
   switch (name) {
     case "pages":
       stream = itemStream("items", "/items/pages", pageNumber);
@@ -290,6 +293,45 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
     case "rate_limited":
       stream = simple("items", "/edge/429");
       break;
+    case "photos":
+    case "photos_bearer":
+      // An image stream: the newest 3 photos' images are copied.
+      if (name === "photos_bearer") auth = { type: "bearer" };
+      images = { hosts: ["127.0.0.1"], newestItems: 3 };
+      stream = {
+        key: "photos",
+        name: "Photos",
+        request: { path: "/photos" },
+        records: "data",
+        fields: [
+          {
+            id: "id",
+            name: "ID",
+            path: "id",
+            type: "integer",
+            nullable: false,
+          },
+          {
+            id: "taken_at",
+            name: "Taken at",
+            path: "taken_at",
+            type: "timestamp",
+            nullable: false,
+          },
+          { id: "title", name: "Title", path: "title", type: "string" },
+          {
+            id: "photo",
+            name: "Photo",
+            path: "photo",
+            type: "string",
+            role: "image",
+          },
+        ],
+        keyFields: ["id"],
+        mode: "upsert",
+        reportingField: "taken_at",
+      };
+      break;
   }
   return {
     schemaVersion: 1,
@@ -301,6 +343,7 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
     auth,
     defaults: { refreshMinutes: 60, timeZone: "UTC" },
     streams: [stream],
+    ...(images ? { images } : {}),
   };
 }
 

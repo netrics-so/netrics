@@ -15,6 +15,7 @@ import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { crc32, deflateSync } from "node:zlib";
 
 export const FIXTURE_SECRETS = {
   apiKey: "fx-api-key-0001",
@@ -44,7 +45,15 @@ export interface CustomApiFixtureServer {
   ca: string | null;
   /** Every request since the start or the last reset(). */
   requests: RecordedRequest[];
+  /** Clears the recorded requests (not the photo settings below). */
   reset(): void;
+  /**
+   * GET /photos: the newest records' `photo` become these /images/ paths
+   * (newest first, e.g. "big.png", "html"); null restores the default.
+   */
+  setImages(paths: readonly string[] | null): void;
+  /** GET /photos: adds `?sig=<value>` to every photo URL; null removes it. */
+  signUrls(value: string | null): void;
   close(): Promise<void>;
 }
 
@@ -115,6 +124,60 @@ export const FIXTURE_BAD_VALUES: readonly Record<string, unknown>[] = [
   { id: "x", orders: 1, day: "2024-01-04", price: "3.00" },
 ];
 
+/**
+ * Records of GET /photos (an image stream): 5 photos, one a day from
+ * 2024-03-01, each pointing at a distinct generated PNG.
+ */
+export const FIXTURE_PHOTO_COUNT = 5;
+
+/** Bytes over 2 MiB, served with a declared length by /images/big.png. */
+export const FIXTURE_BIG_IMAGE_BYTES = 2_097_153;
+
+const IMAGE_FILES: Record<string, string> = {
+  "plain.png": "image/png",
+  "plain.jpg": "image/jpeg",
+  "lossy.webp": "image/webp",
+  "gps.jpg": "image/jpeg",
+};
+
+const imageCache = new Map<string, Buffer>();
+
+/** A test image copied from the server's image fixtures, read on first use. */
+function imageFile(name: string): Buffer {
+  let bytes = imageCache.get(name);
+  if (!bytes) {
+    bytes = readFileSync(new URL(`./images/${name}`, import.meta.url));
+    imageCache.set(name, bytes);
+  }
+  return bytes;
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const header = Buffer.alloc(8);
+  header.writeUInt32BE(data.length, 0);
+  header.write(type, 4, "latin1");
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([header.subarray(4), data])));
+  return Buffer.concat([header, data, crc]);
+}
+
+/** A valid 2 × 2 RGB PNG whose colour (and so whose bytes) depends on `n`. */
+export function fixturePng(n: number): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(2, 0);
+  ihdr.writeUInt32BE(2, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const pixel = [n & 0xff, (n >> 8) & 0xff, 0x80];
+  const row = [0, ...pixel, ...pixel];
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(Buffer.from([...row, ...row]))),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
 const PAGE_SIZE = 10;
 const JSON_TYPE = "application/json; charset=utf-8";
 
@@ -182,6 +245,8 @@ export async function startCustomApiFixtureServer(
   const scheme = tls ? "https" : "http";
   const requests: RecordedRequest[] = [];
   let port = 0;
+  let photoImages: readonly string[] | null = null;
+  let photoSignature: string | null = null;
 
   const handler = (request: IncomingMessage, response: ServerResponse) => {
     const host = single(request.headers.host);
@@ -406,8 +471,60 @@ export async function startCustomApiFixtureServer(
       }
       case "/edge/429":
         return send(429, { error: "slow down" }, { "retry-after": "120" });
-      default:
+      case "/photos": {
+        // Newest first by taken_at; photo paths per setImages/signUrls.
+        const photos = Array.from({ length: FIXTURE_PHOTO_COUNT }, (_, i) => {
+          const n = FIXTURE_PHOTO_COUNT - i;
+          const path = photoImages?.[i] ?? `n/${n}.png`;
+          const sig = photoSignature
+            ? `?sig=${encodeURIComponent(photoSignature)}`
+            : "";
+          return {
+            id: n,
+            taken_at: new Date(Date.UTC(2024, 2, n)).toISOString(),
+            title: `Photo ${n}`,
+            photo: `${origin}/images/${path}${sig}`,
+          };
+        });
+        return send(200, { data: photos });
+      }
+      case "/images/big.png": {
+        response.writeHead(200, {
+          "content-type": "image/png",
+          "content-length": String(FIXTURE_BIG_IMAGE_BYTES),
+        });
+        return response.end(Buffer.alloc(FIXTURE_BIG_IMAGE_BYTES));
+      }
+      case "/images/html":
+        return send(200, "<!doctype html><title>Not an image</title>");
+      case "/images/redirect-other-host":
+        response.writeHead(302, {
+          location: `${otherOrigin}/images/plain.png`,
+        });
+        return response.end();
+      case "/images/slow":
+        // Never answers; close() ends the connection.
+        return;
+      case "/images/auth-required.png":
+        if (headers.authorization !== `Bearer ${FIXTURE_SECRETS.token}`)
+          return send(401, { error: "unauthorized" });
+        response.writeHead(200, { "content-type": "image/png" });
+        return response.end(imageFile("plain.png"));
+      default: {
+        const file = /^\/images\/([a-z]+\.(?:png|jpg|webp))$/.exec(
+          url.pathname,
+        )?.[1];
+        if (file && IMAGE_FILES[file]) {
+          response.writeHead(200, { "content-type": IMAGE_FILES[file] });
+          return response.end(imageFile(file));
+        }
+        const generated = /^\/images\/n\/(\d{1,4})\.png$/.exec(url.pathname);
+        if (generated) {
+          response.writeHead(200, { "content-type": "image/png" });
+          return response.end(fixturePng(Number(generated[1])));
+        }
         return send(404, { error: "not found" });
+      }
     }
   };
 
@@ -427,6 +544,12 @@ export async function startCustomApiFixtureServer(
     requests,
     reset() {
       requests.length = 0;
+    },
+    setImages(paths) {
+      photoImages = paths ? [...paths] : null;
+    },
+    signUrls(value) {
+      photoSignature = value;
     },
     close() {
       return new Promise<void>((resolve) => {

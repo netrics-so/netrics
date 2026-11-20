@@ -481,6 +481,32 @@ export async function executeDiscover(
   return parsed.data;
 }
 
+/**
+ * Runs host-trusted code of a bundled connector (the custom-api connector's
+ * item image downloads, #809) inside the same boundary as sync: the egress
+ * guard from `options.egress` and the manifest's outboundDomains, the time
+ * budget, and errors redacted against the connection's credentials and
+ * `options.redactValues`. `call` gets the runtime, never a database or queue
+ * handle.
+ */
+export async function executeTrustedCall<T>(
+  connector: Connector,
+  context: ConnectionContext,
+  options: ExecuteOptions,
+  call: (runtime: ConnectorRuntime) => Promise<T>,
+): Promise<T> {
+  assertContextIsPlain(context);
+  try {
+    return await withRuntime(connector, context, options, call);
+  } catch (error) {
+    throw classifyConnectorError(
+      connector,
+      error,
+      redactionSet(context, options),
+    );
+  }
+}
+
 /** An icon a connector returned, decoded; the host still validates it. */
 export interface FetchedResourceIcon {
   resourceId: string;

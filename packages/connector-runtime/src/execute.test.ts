@@ -23,6 +23,7 @@ import {
   executeDiscover,
   executeResourceIcons,
   executeSync,
+  executeTrustedCall,
   supportsResourceIcons,
 } from "./execute.js";
 
@@ -1242,5 +1243,72 @@ describe("custom-api call options guard (ADR 0027)", () => {
     expect(
       await executeCheck(connectorWith(demoManifest), baseContext, {}),
     ).toEqual({ ok: true });
+  });
+});
+
+describe("executeTrustedCall (#809)", () => {
+  const secretContext: ConnectionContext = {
+    ...baseContext,
+    credentials: { token: "secret-token-0001" },
+  };
+
+  it("hands the call a runtime and returns its result", async () => {
+    const result = await executeTrustedCall(
+      connectorWith(demoManifest),
+      baseContext,
+      {},
+      async (runtime) => typeof runtime.fetch,
+    );
+    expect(result).toBe("function");
+  });
+
+  it("bounds the call by timeoutMs and aborts its signal", async () => {
+    let signal: AbortSignal | undefined;
+    const error = await executeTrustedCall(
+      connectorWith(demoManifest),
+      baseContext,
+      { timeoutMs: 30 },
+      (runtime) => {
+        signal = runtime.signal;
+        return new Promise<never>(() => undefined);
+      },
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/did not answer within 30 ms/);
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("redacts the connection's credentials and redactValues from a thrown error", async () => {
+    const error = (await executeTrustedCall(
+      connectorWith(demoManifest),
+      secretContext,
+      { redactValues: ["Bearer secret-token-0001", "derived-0001"] },
+      async () => {
+        throw new Error("echoed secret-token-0001 and derived-0001");
+      },
+    ).catch((caught: unknown) => caught)) as Error;
+    expect(error.message).not.toContain("secret-token-0001");
+    expect(error.message).not.toContain("derived-0001");
+  });
+
+  it("allows only the manifest's outboundDomains", async () => {
+    const error = await executeTrustedCall(
+      connectorWith(demoManifest),
+      baseContext,
+      {},
+      (runtime) => runtime.fetch("https://not-declared.example/a.png"),
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ContractViolationError);
+  });
+
+  it("refuses custom-api without its call options", async () => {
+    await expect(
+      executeTrustedCall(
+        connectorWith({ ...demoManifest, id: "custom-api" }),
+        baseContext,
+        {},
+        async () => "ran",
+      ),
+    ).rejects.toBeInstanceOf(ContractViolationError);
   });
 });
