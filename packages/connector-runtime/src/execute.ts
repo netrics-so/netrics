@@ -74,6 +74,7 @@ export interface ExecuteOptions {
     | "maxResponseBytes"
     | "maxDecompressedBytes"
     | "pinDns"
+    | "bodyContentTypes"
   >;
 }
 

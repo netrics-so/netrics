@@ -101,6 +101,9 @@ beforeAll(async () => {
       response.end();
     } else if (request.url === "/big") {
       response.end("x".repeat(2048));
+    } else if (request.url === "/big-html") {
+      response.setHeader("content-type", "text/html; charset=utf-8");
+      response.end("x".repeat(2048));
     } else if (request.url === "/report.gz") {
       response.setHeader("content-type", "application/a-gzip");
       response.end(GZIP_REPORT);
@@ -222,6 +225,25 @@ describe("createEgressFetch", () => {
         `http://api.fixture.test:${port}/big`,
       ),
     ).rejects.toThrow(/exceeds 1024 bytes/);
+  });
+
+  it("leaves a body of another content type unread (item images, #809)", async () => {
+    const images = fixtureFetch({
+      maxResponseBytes: 1024,
+      bodyContentTypes: ["image/*", "application/a-gzip"],
+    });
+    // Over the size cap, but never read: an empty body, status and headers kept.
+    const html = await images(`http://api.fixture.test:${port}/big-html`);
+    expect(html.status).toBe(200);
+    expect(html.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(html.bytes()).toHaveLength(0);
+    // A listed type is read as usual.
+    const gzip = await images(`http://api.fixture.test:${port}/report.gz`);
+    expect(Buffer.from(gzip.bytes()).equals(GZIP_REPORT)).toBe(true);
+    // Without a content type the body is read, and the size cap still holds.
+    await expect(images(`http://api.fixture.test:${port}/big`)).rejects.toThrow(
+      /exceeds 1024 bytes/,
+    );
   });
 
   it("returns the exact bytes of a gzip body (SDK 0.2.2)", async () => {
