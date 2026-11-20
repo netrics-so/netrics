@@ -152,7 +152,9 @@ they can sit side by side in one workspace.
   connection is paused in "Auth failed" with Apple's reason, in the
   viewer's language, and the page offers **Set up a new key**. Syncing
   restarts as soon as a new key passes the check; the data collected so
-  far is kept.
+  far is kept. If the refusal had stopped the first 12-month read before
+  it finished, the new key queues it again, for every connection that
+  shares the key.
 - **A removed key is noticed at the next token exchange.** netrics caches
   the access token for up to 1 hour (ADR 0020), and Apple does not revoke
   tokens it has already issued. Syncs can therefore still succeed for up
@@ -225,7 +227,12 @@ they can sit side by side in one workspace.
   amount rounded down, and the cents left go to the rows with the largest
   remainders. Their sums equal the campaign's to the cent, and "Others" is
   never below zero; a row can be a cent below its own rounding (2.7075 +
-  1.1052 EUR on a 3.8127 EUR campaign day are 2.71 + 1.10). Amounts in
+  1.1052 EUR on a 3.8127 EUR campaign day are 2.71 + 1.10). Should Apple's
+  rows add up to more than its campaign total, "Others" is 0 and the rows
+  with the smallest remainders give the difference back. Before this
+  (#378), such a day could store "Others" as -1 cent; a sync that reads the
+  day again writes 0 over it. For days older than the 3-day lookback, use
+  **Reload history** once. Amounts in
   different currencies are separate series and never add up; the display
   currency of a dashboard converts only for display, at daily ECB
   reference rates, labelled approximate.

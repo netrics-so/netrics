@@ -429,11 +429,12 @@ describe("allocateSpend (#378)", () => {
       allocateSpend(
         381,
         [amountMicros("2.7075"), amountMicros("1.1052")],
+        null,
         "EUR",
       ),
-    ).toEqual([271, 110]);
+    ).toEqual({ named: [271, 110], others: 0 });
     // Three thirds of a cent each round down; the missing cent goes to the
-    // earliest of equal remainders.
+    // largest remainder.
     expect(
       allocateSpend(
         1,
@@ -442,29 +443,56 @@ describe("allocateSpend (#378)", () => {
           amountMicros("0.0033"),
           amountMicros("0.0034"),
         ],
+        null,
         "EUR",
       ),
-    ).toEqual([0, 0, 1]);
-    expect(allocateSpend(5, [amountMicros("5")], "JPY")).toEqual([5]);
+    ).toEqual({ named: [0, 0, 1], others: 0 });
+    expect(allocateSpend(5, [amountMicros("5")], null, "JPY")).toEqual({
+      named: [5],
+      others: 0,
+    });
   });
 
-  it("gives Others its exact share, and never below zero", () => {
+  it("gives Others its exact share", () => {
     // Campaign 20.25: US 15.004 + CA 5.004, the rest (0.242) is Others.
     // Rounded down 1500 + 500 + 24; the cent left goes to the largest
     // remainder (0.4 of a cent, the earlier of two).
-    const parts = [
-      amountMicros("15.004"),
-      amountMicros("5.004"),
+    const allocated = allocateSpend(
+      2025,
+      [amountMicros("15.004"), amountMicros("5.004")],
       amountMicros("20.25") - amountMicros("15.004") - amountMicros("5.004"),
-    ];
-    const allocated = allocateSpend(2025, parts, "EUR")!;
-    expect(allocated).toEqual([1501, 500, 24]);
-    expect(allocated.reduce((a, b) => a + b, 0)).toBe(2025);
+      "EUR",
+    );
+    expect(allocated).toEqual({ named: [1500 + 1, 500], others: 24 });
   });
 
-  it("leaves rows that do not fit the total to the caller", () => {
-    expect(allocateSpend(100, [amountMicros("2"), -10_000], "EUR")).toBeNull();
-    expect(allocateSpend(100, [amountMicros("2")], "EUR")).toBeNull();
+  it("takes an overshoot back from the smallest remainders when Apple's rows exceed its total", () => {
+    // Rows 2.7075 + 1.1252 EUR against a campaign of 3.8127: Others would
+    // be -0.02. It is 0, and the rows give back what exceeds 381 cents.
+    const rows = [amountMicros("2.7075"), amountMicros("1.1252")];
+    const allocated = allocateSpend(
+      381,
+      rows,
+      amountMicros("3.8127") - rows[0]! - rows[1]!,
+      "EUR",
+    )!;
+    expect(allocated).toEqual({ named: [270, 111], others: 0 });
+    expect(allocated.named[0]! + allocated.named[1]!).toBe(381);
+    // Far more than a cent per row: still the total, none below zero.
+    const far = allocateSpend(
+      100,
+      [amountMicros("5"), amountMicros("0.5")],
+      -amountMicros("4.5"),
+      "EUR",
+    )!;
+    expect(far.named.reduce((a, b) => a + b, 0)).toBe(100);
+    expect(far.named.every((minor) => minor >= 0)).toBe(true);
+    expect(far.others).toBe(0);
+  });
+
+  it("leaves credits to their own rounding", () => {
+    expect(allocateSpend(100, [-10_000], null, "EUR")).toBeNull();
+    expect(allocateSpend(-1, [0], null, "EUR")).toBeNull();
   });
 
   it("reads exact amounts", () => {

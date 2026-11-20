@@ -300,33 +300,59 @@ export function amountMicros(amount: string): number {
 }
 
 /**
- * The spend of a day's parts (named rows and "Others") in minor units by
- * largest remainder (#378): each part gets its exact amount rounded down,
- * and the cents left to reach `total` (the campaign's rounded total) go to
- * the parts with the largest remainders, ties to the earlier part. The
- * parts then add up to the total exactly and none is negative. Null when
- * the exact parts do not fit the total (a negative part, or Apple's rows
- * adding up to more than its total): the caller keeps rounding per row.
+ * The spend of a day's named rows and "Others" in minor units (#378), so
+ * that they add up to `total` (the campaign's rounded spend) exactly and
+ * none is negative. Each part gets its exact amount rounded down; the
+ * cents still missing go to the parts with the largest remainders, ties to
+ * the earlier part. When Apple's exact rows add up to more than its exact
+ * total, "Others" is 0 and the named rows give the overshoot back, a cent
+ * at a time from those with the smallest remainders. Null only for amounts
+ * below zero (credits), which keep their own rounding.
  */
 export function allocateSpend(
   total: number,
-  partsMicros: readonly number[],
+  namedMicros: readonly number[],
+  othersMicros: number | null,
   currency: string,
-): number[] | null {
+): { named: number[]; others: number } | null {
+  if (total < 0 || namedMicros.some((micros) => micros < 0)) return null;
   const unit = 10 ** (MICROS_DIGITS - currencyExponent(currency));
-  if (partsMicros.some((micros) => micros < 0)) return null;
-  const allocated = partsMicros.map((micros) => Math.floor(micros / unit));
+  // "Others" takes part only when it holds something.
+  const parts =
+    othersMicros !== null && othersMicros > 0
+      ? [...namedMicros, othersMicros]
+      : [...namedMicros];
+  if (parts.length === 0) {
+    return total === 0 ? { named: [], others: 0 } : null;
+  }
+  const allocated = parts.map((micros) => Math.floor(micros / unit));
   let left = total - allocated.reduce((sum, minor) => sum + minor, 0);
-  if (left < 0 || left > partsMicros.length) return null;
-  const order = partsMicros
+  const byRemainder = parts
     .map((micros, index) => ({ index, remainder: micros % unit }))
     .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
-  for (const { index } of order) {
-    if (left === 0) break;
-    allocated[index]! += 1;
+  // Missing cents: largest remainders first, round after round.
+  for (let at = 0; left > 0; at = (at + 1) % byRemainder.length) {
+    allocated[byRemainder[at]!.index]! += 1;
     left -= 1;
   }
-  return allocated;
+  // Too many: smallest remainders give back first, never below zero.
+  const smallestFirst = [...byRemainder].reverse();
+  while (left < 0) {
+    let taken = false;
+    for (const { index } of smallestFirst) {
+      if (left === 0) break;
+      if (allocated[index]! > 0) {
+        allocated[index]! -= 1;
+        left += 1;
+        taken = true;
+      }
+    }
+    if (!taken) return null;
+  }
+  return {
+    named: allocated.slice(0, namedMicros.length),
+    others: parts.length > namedMicros.length ? allocated.at(-1)! : 0,
+  };
 }
 
 export function isZeroDayValues(values: DayValues): boolean {

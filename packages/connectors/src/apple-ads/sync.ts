@@ -406,6 +406,9 @@ function rankedMonthObservations(
   const earlierLeaders = new Set<string>();
   let top = new Set<string>();
   let hasGap = false;
+  // A gap of rounding only: before #378 it was stored as "Others" (-1 or
+  // +1 cent), so those rows are overwritten with 0.
+  let hadRounding = false;
   for (const day of days) {
     const values = byDay.get(day) ?? new Map<string, DayValues>();
     for (const [value, numbers] of values) {
@@ -416,10 +419,12 @@ function rankedMonthObservations(
     }
     const gap = addDayValues(totalOf(day), sumOf(values.values()), -1);
     if (!isRoundingOnly(gap)) hasGap = true;
+    else if (!isZeroDayValues(gap)) hadRounding = true;
     top = topValues(monthTotals, limit);
     for (const value of top) earlierLeaders.add(value);
   }
   const hasOthers = hasGap || monthTotals.size > limit;
+  const zeroOthers = !hasOthers && hadRounding;
   const named = [...top].sort(order);
 
   const observations: Observation[] = [];
@@ -437,7 +442,7 @@ function rankedMonthObservations(
     if (!hasData) {
       if (settled) {
         for (const value of named) push(value, day, zeroDayValues());
-        if (hasOthers) push(OTHERS, day, zeroDayValues());
+        if (hasOthers || zeroOthers) push(OTHERS, day, zeroDayValues());
       }
       continue;
     }
@@ -468,17 +473,17 @@ function rankedMonthObservations(
       }
     }
     if (hasOthers) push(OTHERS, day, spend.others(others));
+    else if (zeroOthers) push(OTHERS, day, zeroDayValues());
   }
   return observations;
 }
 
 /**
  * One day's spend split between its named rows and "Others" (#378): by
- * largest remainder from the exact amounts, so the rows add up to the
- * campaign's rounded total and "Others" is never negative. When the exact
- * rows do not fit the total, each row keeps its own rounding and "Others"
- * what is left, as Apple's numbers then disagree anyway. Counts are never
- * changed.
+ * largest remainder from the exact amounts (allocateSpend), so the rows
+ * add up to the campaign's rounded total and "Others" is never negative.
+ * Counts are never changed. Credits (negative amounts) keep their own
+ * rounding, with "Others" what is left.
  */
 function dayAllocation(
   total: DayValues,
@@ -491,18 +496,16 @@ function dayAllocation(
 } {
   const allocated = allocateSpend(
     total.spend,
-    [
-      ...rows.map((row) => row.spendMicros),
-      ...(others ? [others.spendMicros] : []),
-    ],
+    rows.map((row) => row.spendMicros),
+    others ? others.spendMicros : null,
     currency,
   );
   if (!allocated) {
     return { part: (row) => row, others: (values) => values };
   }
   return {
-    part: (row, index) => ({ ...row, spend: allocated[index]! }),
-    others: (values) => ({ ...values, spend: allocated[rows.length]! }),
+    part: (row, index) => ({ ...row, spend: allocated.named[index]! }),
+    others: (values) => ({ ...values, spend: allocated.others }),
   };
 }
 
@@ -659,6 +662,10 @@ function adGroupMonthObservations(
   const totalOn = (day: string) => entry.totals.get(day) ?? sumOn(day);
   const gapOn = (day: string) => addDayValues(totalOn(day), sumOn(day), -1);
   const hasOthers = [...days].some((day) => !isRoundingOnly(gapOn(day)));
+  // Before #378 a gap of rounding only was stored as "Others" (-1 or +1
+  // cent): those rows are overwritten with 0.
+  const zeroOthers =
+    !hasOthers && [...days].some((day) => !isZeroDayValues(gapOn(day)));
 
   const observations: Observation[] = [];
   const push = (adGroup: string, day: string, values: DayValues) =>
@@ -677,7 +684,7 @@ function adGroupMonthObservations(
     if (!days.has(day)) {
       if (settled) {
         for (const adGroup of named) push(adGroup, day, zeroDayValues());
-        if (hasOthers) push(OTHERS, day, zeroDayValues());
+        if (hasOthers || zeroOthers) push(OTHERS, day, zeroDayValues());
       }
       continue;
     }
@@ -696,6 +703,7 @@ function adGroupMonthObservations(
       else if (settled) push(adGroup, day, zeroDayValues());
     }
     if (hasOthers) push(OTHERS, day, spend.others(gap));
+    else if (zeroOthers) push(OTHERS, day, zeroDayValues());
   }
   return observations;
 }

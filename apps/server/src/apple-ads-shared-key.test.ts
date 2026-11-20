@@ -483,6 +483,49 @@ describe("Apple Ads: add another ad account with a connection's key (#395)", () 
     expect(await storedKeyId(ids.jp)).toBe(user.keyId);
   });
 
+  it("queues the backfill again for connections whose history was never read (#378)", async () => {
+    // Their first backfills died on a refused key; JP's history was read.
+    await admin`
+      update jobs set status = 'dead'
+      where kind = 'connection.backfill'
+        and connection_id in (${ids.us}, ${ids.eu}, ${ids.jp})`;
+    await admin`
+      update connection_state set history_from = '2025-10-29T00:00:00Z'
+      where connection_id = ${ids.jp}`;
+    const waiting = async (id: string) =>
+      (
+        await admin`
+          select id from jobs
+          where kind = 'connection.backfill' and connection_id = ${id}
+            and status = 'pending'`
+      ).length;
+    const { pair, user } = await generate();
+    const response = await call(owner, w1, "PATCH", `/connections/${ids.us}`, {
+      credentials: idsOf(user),
+      pendingKeyId: pair.pendingKeyId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(await waiting(ids.us)).toBe(1);
+    expect(await waiting(ids.eu)).toBe(1);
+    expect(await waiting(ids.jp)).toBe(0);
+    const audited = await admin`
+      select target from audit_events
+      where action = 'connection.backfill_requested'
+        and metadata->>'reason' = 'history_incomplete'`;
+    expect(audited.map((row) => row.target).sort()).toEqual(
+      [ids.us, ids.eu].sort(),
+    );
+
+    // Replaced again while those wait: nothing more is queued.
+    const again = await generate();
+    await call(owner, w1, "PATCH", `/connections/${ids.us}`, {
+      credentials: idsOf(again.user),
+      pendingKeyId: again.pair.pendingKeyId,
+    });
+    expect(await waiting(ids.us)).toBe(1);
+    expect(await waiting(ids.eu)).toBe(1);
+  });
+
   it("lends only a signed key of a connector that shares one", async () => {
     const demo = await call(owner, w1, "POST", "/connections", {
       connectorId: "demo",

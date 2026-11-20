@@ -254,8 +254,12 @@ A campaign's breakdown rows (countries, ad groups, keywords and their
 "Others") are rounded together, not one by one (#378): each gets its exact
 amount rounded down, and the cents left to reach the campaign's rounded
 total go to the rows with the largest remainders. The rows then add up to
-the campaign exactly and "Others" is never negative. Counts are exact and
-never adjusted.
+the campaign exactly and "Others" is never negative. When Apple's exact
+rows add up to more than its exact total, "Others" is 0 and the rows with
+the smallest remainders give the overshoot back. Credits (negative
+amounts) keep their own rounding. A day that stored a negative "Others"
+before this gets 0 written over it when it is read again. Counts are exact
+and never adjusted.
 
 ### 8. Days, backfill and lookback
 

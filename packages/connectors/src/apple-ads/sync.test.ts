@@ -620,8 +620,8 @@ describe("captured report shapes (#370)", () => {
     const ofAdGroups = adGroupRows(result.observations);
     // On the 26th 2.7075 + 1.1052 = 3.8127 EUR: the campaign's 381 cents.
     // Rounded per row they would be 271 + 111 = 382, and Others -1 (#378).
-    // By largest remainder they are 271 + 110: exactly the campaign, and
-    // no Others row for a cent of rounding.
+    // By largest remainder they are 271 + 110: exactly the campaign. Others
+    // is 0, written only to overwrite the -1 stored before #378.
     const of26 = on(ofAdGroups, "2026-10-26");
     expect(
       ofAdGroups.filter((o) => o.metricKey === byAdGroup && o.value < 0),
@@ -630,13 +630,43 @@ describe("captured report shapes (#370)", () => {
     expect(
       of26
         .filter(
-          (o) => o.metricKey === byAdGroup && o.dimensions.campaign === C1,
+          (o) =>
+            o.metricKey === byAdGroup &&
+            o.dimensions.campaign === C1 &&
+            o.dimensions.ad_group !== OTHERS,
         )
         .map((o) => o.value)
         .sort((x, y) => y - x),
     ).toEqual([271, 110]);
     expect(sum(of26, byAdGroup, { campaign: C1 })).toBe(381);
     expect(sum(ofAdGroups, byAdGroup, { campaign: C1 })).toBe(600);
+
+    // Before #378 that day stored Others = -1 cent. Observations are only
+    // upserted, so re-reading the day overwrites it with 0, and the stored
+    // ad groups add up to the campaign again.
+    const sample = of26.find((o) => o.metricKey === byAdGroup)!;
+    const stale: Observation = {
+      ...sample,
+      value: -1,
+      dimensions: { ...sample.dimensions, ad_group: OTHERS },
+    };
+    const key = (o: Observation) =>
+      `${o.metricKey}|${String(o.sourceTimestamp)}|${JSON.stringify(
+        Object.entries(o.dimensions).sort(),
+      )}`;
+    const stored = new Map([[key(stale), stale]]);
+    for (const o of result.observations) stored.set(key(o), o);
+    const after = on(adGroupRows([...stored.values()]), "2026-10-26");
+    expect(sum(after, byAdGroup, { campaign: C1, ad_group: OTHERS })).toBe(0);
+    expect(sum(after, byAdGroup, { campaign: C1 })).toBe(381);
+    expect(
+      after.filter(
+        (o) =>
+          o.metricKey === byAdGroup &&
+          o.dimensions.campaign === C1 &&
+          o.dimensions.ad_group === OTHERS,
+      ),
+    ).toHaveLength(1);
     // Search Match spend is in no keyword row: Others has it.
     const byKeyword = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
     expect(sum(result.observations, byKeyword, { campaign: C1 })).toBe(600);
