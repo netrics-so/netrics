@@ -533,13 +533,18 @@ async function runSync(
           errorMessage: message,
           observationsWritten: progress.observationsWritten,
         });
-        const statePatch = authReason
-          ? { authState: "needs_reauthorization", authReason }
-          : errorClass === "auth"
-            ? { authState: "auth_failed", authReason: null }
-            : errorClass === "transient"
-              ? { authState: "outage", authReason: null }
-              : {};
+        const statePatch = {
+          ...(authReason
+            ? { authState: "needs_reauthorization", authReason }
+            : errorClass === "auth"
+              ? { authState: "auth_failed", authReason: null }
+              : errorClass === "transient"
+                ? { authState: "outage", authReason: null }
+                : {}),
+          // A backfill that failed read part of its window at most: no
+          // history start is claimed until one succeeds (#378).
+          ...(mode === "backfill" ? { historyFrom: null } : {}),
+        };
         await tx
           .insert(schema.connectionState)
           .values({
@@ -1167,6 +1172,10 @@ async function runSync(
       }
     }
 
+    // A succeeded backfill read its whole window: the connection's history
+    // starts there (#378), for empty widget windows that read 0.
+    const historyRecord =
+      mode === "backfill" ? { historyFrom: window.from } : {};
     await ingestTransaction(async (tx) => {
       const observationsWritten =
         progress.observationsWritten +
@@ -1201,6 +1210,7 @@ async function runSync(
           nextFrom: finalNextFrom,
           ...backfillMarker,
           ...backfillRecordInsert,
+          ...historyRecord,
           authState: "ok",
           authReason: null,
           consecutiveFailures: 0,
@@ -1215,6 +1225,7 @@ async function runSync(
             nextFrom: finalNextFrom,
             ...backfillMarker,
             ...backfillRecordSet,
+            ...historyRecord,
             authState: "ok",
             authReason: null,
             consecutiveFailures: 0,

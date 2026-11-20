@@ -186,12 +186,23 @@ they can sit side by side in one workspace.
   two captures on consecutive days).
 - A day with no campaign activity counts as zero only once it is older than
   those 3 days. Apple answers such a day with its date alone, and netrics
-  stores nothing for it in a month without any activity; an ad account
-  with no activity in a widget's period still shows 0 (spend, impressions,
-  taps, installs), not "No data yet", once a sync has read the period
-  (#378). Cost per install then has no value ("–"), since nothing was
-  installed. "No data yet" stays for days not read yet, such as today,
-  and while the history is still loading.
+  stores nothing for it in a month without any activity. An ad account
+  with no activity in a widget's period still shows 0 (spend in the ad
+  account's currency, impressions, taps, installs), not "No data yet"
+  (#378), when:
+  - the history was read completely: the last backfill succeeded, and the
+    period starts on or after where it started (12 months back);
+  - the period starts no later than the day the widget's numbers go up
+    to (so not "today");
+  - the widget filters by nothing but the currency. A country, keyword,
+    ad group or app filter (or a slide scoped to an app) keeps "No data
+    yet": countries and keywords are stored as the top ones plus
+    "Others", and an app may not have been read.
+
+  Cost per install then has no value ("–"), since nothing was installed.
+  "No data yet" also stays while the history is loading, and the change
+  against the previous period is left out.
+
 - Ad groups and keywords are read per campaign over the same days, only
   for campaigns with numbers in them, 10 campaigns per sync step (fewer
   when Apple answers slowly, so a step stays within its time limit): an
@@ -208,12 +219,13 @@ they can sit side by side in one workspace.
   decimal string with up to four decimals (`3.8127`); netrics stores whole
   minor units of that currency (cents, yen, fils), rounded half to even per
   day and row, never through floating point. A month's sum can therefore
-  differ from Apple's total by a few cents. The "Others" ad group, keyword
-  or country of a day holds what the named rows leave of the campaign's
-  total, including a cent of rounding, so that their sums equal the
-  campaign's. It is never below zero (#378): when the rounded rows add up
-  to a cent more than the campaign, "Others" is 0 and the ad-group or
-  keyword sum of that day is a cent above the campaign's. Amounts in
+  differ from Apple's total by a few cents. A campaign's countries, ad
+  groups and keywords of a day, with their "Others", share the campaign's
+  rounded total by largest remainder (#378): each row gets its exact
+  amount rounded down, and the cents left go to the rows with the largest
+  remainders. Their sums equal the campaign's to the cent, and "Others" is
+  never below zero; a row can be a cent below its own rounding (2.7075 +
+  1.1052 EUR on a 3.8127 EUR campaign day are 2.71 + 1.10). Amounts in
   different currencies are separate series and never add up; the display
   currency of a dashboard converts only for display, at daily ECB
   reference rates, labelled approximate.

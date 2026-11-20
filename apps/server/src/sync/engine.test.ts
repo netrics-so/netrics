@@ -848,6 +848,50 @@ describe("sync engine", () => {
     expect(state!.consecutiveFailures).toBe(0);
     expect(state!.lastSuccessAt).not.toBeNull();
     expect(state!.nextDueAt!.getTime()).toBeGreaterThan(Date.now());
+    // The history is read from the backfill's window start (#378).
+    expect(state!.historyFrom?.toISOString()).toBe(
+      new Date(run.requested_from as string).toISOString(),
+    );
+  });
+
+  it("claims no read history after a backfill that failed (#378)", async () => {
+    const connectionId = await seedConnection(workspaceA, "demo", {
+      simulate: "bad-credentials",
+    });
+    // An earlier backfill had succeeded.
+    await withWorkspace(appDb, { workspaceId: workspaceA }, (tx) =>
+      tx
+        .update(schema.connectionState)
+        .set({ historyFrom: new Date("2026-01-01T00:00:00Z") })
+        .where(eq(schema.connectionState.connectionId, connectionId)),
+    );
+    const jobId = await enqueue(
+      workspaceA,
+      connectionId,
+      "connection.backfill",
+    );
+    await waitFor(async () => (await jobRow(jobId))?.status === "failed");
+    const state = await stateFor(workspaceA, connectionId);
+    expect(state!.authState).toBe("auth_failed");
+    expect(state!.historyFrom).toBeNull();
+  });
+
+  it("keeps the read history when an incremental sync fails (#378)", async () => {
+    const connectionId = await seedConnection(workspaceA, "demo", {
+      simulate: "bad-credentials",
+    });
+    const from = new Date("2026-01-01T00:00:00Z");
+    await withWorkspace(appDb, { workspaceId: workspaceA }, (tx) =>
+      tx
+        .update(schema.connectionState)
+        .set({ historyFrom: from })
+        .where(eq(schema.connectionState.connectionId, connectionId)),
+    );
+    const jobId = await enqueue(workspaceA, connectionId, "connection.sync");
+    await waitFor(async () => (await jobRow(jobId))?.status === "failed");
+    expect((await stateFor(workspaceA, connectionId))!.historyFrom).toEqual(
+      from,
+    );
   });
 
   it("replaying the same backfill job writes zero new observations", async () => {

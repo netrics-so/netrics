@@ -286,6 +286,8 @@ export type {
 export {
   deleteConnection,
   findBackfillingConnectionIds,
+  findConnectionCurrency,
+  findConnectionHistory,
   findConnection,
   finishConnectionSetup,
   insertConnection,

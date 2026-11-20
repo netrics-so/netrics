@@ -1,7 +1,7 @@
 import type { Observation } from "@netrics/connector-sdk";
 import { z } from "zod";
 
-import { isCurrencyCode } from "../currency.js";
+import { currencyExponent, isCurrencyCode } from "../currency.js";
 import { DecimalAmountError, parseDecimalAmount } from "../decimal-amount.js";
 import {
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
@@ -222,6 +222,11 @@ export interface DayObservationsOptions {
  */
 export interface DayValues {
   spend: number;
+  /**
+   * The exact spend in millionths of the currency's major unit, as Apple
+   * sent it: what rounded rows are allocated from (#378). Not stored.
+   */
+  spendMicros: number;
   impressions: number;
   taps: number;
   tapInstalls: number;
@@ -235,6 +240,7 @@ export interface DayValues {
 /** The fields of DayValues, in a fixed order. */
 export const DAY_VALUE_FIELDS = [
   "spend",
+  "spendMicros",
   "impressions",
   "taps",
   "tapInstalls",
@@ -248,6 +254,7 @@ export const DAY_VALUE_FIELDS = [
 export function zeroDayValues(): DayValues {
   return {
     spend: 0,
+    spendMicros: 0,
     impressions: 0,
     taps: 0,
     tapInstalls: 0,
@@ -267,16 +274,59 @@ export function addDayValues(a: DayValues, b: DayValues, sign = 1): DayValues {
 }
 
 /**
- * A remainder ("Others": a campaign's total minus its named ad groups,
- * keywords or countries), never below zero (#378). Spend is rounded to
- * minor units per row, so the rows' sum can exceed the total by a cent;
- * that cent of rounding is dropped rather than shown as negative spend.
+ * Whether a remainder holds nothing but the rounding of its rows' spend
+ * (#378): no exact spend and no counts. It needs no "Others" row; the
+ * rounding is allocated to the named rows (allocateSpend).
  */
-export function remainderValues(values: DayValues): DayValues {
-  const kept = zeroDayValues();
-  for (const field of DAY_VALUE_FIELDS)
-    kept[field] = Math.max(0, values[field]);
-  return kept;
+export function isRoundingOnly(values: DayValues): boolean {
+  return DAY_VALUE_FIELDS.every(
+    (field) => field === "spend" || values[field] === 0,
+  );
+}
+
+/** Millionths of a major unit: Apple sends at most four decimals. */
+const MICROS_DIGITS = 6;
+
+/** An exact decimal amount ("3.8127") in millionths of its major unit. */
+export function amountMicros(amount: string): number {
+  const negative = amount.startsWith("-");
+  const [whole = "0", fraction = ""] = (
+    negative ? amount.slice(1) : amount
+  ).split(".");
+  const value = Number(
+    BigInt(whole + fraction.slice(0, MICROS_DIGITS).padEnd(MICROS_DIGITS, "0")),
+  );
+  return negative ? -value : value;
+}
+
+/**
+ * The spend of a day's parts (named rows and "Others") in minor units by
+ * largest remainder (#378): each part gets its exact amount rounded down,
+ * and the cents left to reach `total` (the campaign's rounded total) go to
+ * the parts with the largest remainders, ties to the earlier part. The
+ * parts then add up to the total exactly and none is negative. Null when
+ * the exact parts do not fit the total (a negative part, or Apple's rows
+ * adding up to more than its total): the caller keeps rounding per row.
+ */
+export function allocateSpend(
+  total: number,
+  partsMicros: readonly number[],
+  currency: string,
+): number[] | null {
+  const unit = 10 ** (MICROS_DIGITS - currencyExponent(currency));
+  if (partsMicros.some((micros) => micros < 0)) return null;
+  const allocated = partsMicros.map((micros) => Math.floor(micros / unit));
+  let left = total - allocated.reduce((sum, minor) => sum + minor, 0);
+  if (left < 0 || left > partsMicros.length) return null;
+  const order = partsMicros
+    .map((micros, index) => ({ index, remainder: micros % unit }))
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+  for (const { index } of order) {
+    if (left === 0) break;
+    allocated[index]! += 1;
+    left -= 1;
+  }
+  return allocated;
 }
 
 export function isZeroDayValues(values: DayValues): boolean {
@@ -318,9 +368,11 @@ export function parseDayMetrics(
     );
   }
   let spend: number;
+  let spendMicros: number;
   try {
     const amount = parseDecimalAmount(metrics.localSpend.amount, currency);
     spend = amount.minor;
+    spendMicros = amountMicros(metrics.localSpend.amount);
     if (amount.rounded) {
       options.note(
         AMOUNT_ROUNDED_NOTE,
@@ -350,6 +402,7 @@ export function parseDayMetrics(
     date: metrics.date,
     values: {
       spend,
+      spendMicros,
       impressions: metrics.impressions,
       taps: metrics.taps,
       tapInstalls: metrics.tapInstalls,

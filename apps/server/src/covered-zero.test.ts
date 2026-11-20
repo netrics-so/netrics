@@ -61,6 +61,13 @@ let unreported: string;
 let backfilling: string;
 /** Read through yesterday, with installs on one day of the window. */
 let active: string;
+/**
+ * Its backfill failed (a key refused halfway); incrementals moved its
+ * dataThrough on since: only the last few days are read.
+ */
+let unfinished: string;
+/** Its last complete backfill started a week ago. */
+let recent: string;
 
 function call(
   method: "GET" | "POST",
@@ -92,9 +99,14 @@ async function signUp(email: string): Promise<string> {
     .split(";")[0]!;
 }
 
+/** Where a complete 12-month backfill started. */
+const BACKFILLED_FROM = "2025-11-17T09:00:00Z";
+
 async function connection(
   name: string,
   dataThrough: string | null,
+  /** The start of the last complete backfill; null: none succeeded. */
+  historyFrom: string | null = BACKFILLED_FROM,
 ): Promise<string> {
   const [row] = await admin`
     insert into connections (workspace_id, connector_id, name, config)
@@ -104,9 +116,9 @@ async function connection(
   const id = row!.id as string;
   await admin`
     insert into connection_state (connection_id, workspace_id,
-      last_success_at, poll_interval_seconds, next_due_at)
+      last_success_at, poll_interval_seconds, next_due_at, history_from)
     values (${id}, ${workspaceId}, ${at(-5 * MINUTE)}, 21600,
-      ${at(2 * HOUR)})`;
+      ${at(2 * HOUR)}, ${historyFrom})`;
   if (dataThrough !== null) {
     await admin`
       insert into connection_freshness (workspace_id, connection_id, stream,
@@ -163,6 +175,8 @@ beforeAll(async () => {
     insert into jobs (workspace_id, connection_id, kind, status, payload)
     values (${workspaceId}, ${backfilling}, 'connection.backfill', 'pending',
       ${admin.json({ connectionId: backfilling })})`;
+  unfinished = await connection("Unfinished", "2026-11-15", null);
+  recent = await connection("Recent", "2026-11-15", "2026-11-09T09:00:00Z");
   active = await connection("Active", "2026-11-15");
   await admin`
     insert into observations (workspace_id, connection_id,
@@ -198,10 +212,44 @@ describe("an empty window of read days (#378)", () => {
     expect(spend).toMatchObject({ value: 0, currency: "EUR" });
   });
 
-  it("keeps an amount without a currency as no data", async () => {
-    // Nothing tells which currency a zero would be in.
+  it("reads spend without a currency filter as 0 in the account's currency", async () => {
+    // Nothing in the window to rank: the connection's own currency.
     const spend = ok(await query(inactive, { metricKey: SPEND }));
-    expect(spend.value).toBeNull();
+    expect(spend).toMatchObject({ value: 0, currency: "EUR" });
+  });
+
+  it("keeps no data under a filter that could hide activity", async () => {
+    // Countries (and keywords) are stored as the top 10 plus Others: a
+    // country outside them has no rows although it had spend.
+    const country = ok(
+      await query(inactive, {
+        metricKey: SPEND,
+        dimensions: { currency: "EUR", country: "FR" },
+      }),
+    );
+    expect(country.value).toBeNull();
+    // An app may be outside the selection, or selected after the history
+    // was read; a slide scoped to it sends it as this filter.
+    const app = ok(
+      await query(inactive, { dimensions: { resource: "app-9" } }),
+    );
+    expect(app.value).toBeNull();
+  });
+
+  it("keeps no data where the history was never read completely", async () => {
+    // A backfill that ended failed claims no history, however far
+    // incrementals moved dataThrough since.
+    expect(ok(await query(unfinished)).value).toBeNull();
+    expect(
+      ok(await query(unfinished, { period: "last_90_days" })).value,
+    ).toBeNull();
+    // A window that starts before the last complete backfill did.
+    expect(ok(await query(recent, { period: "last_7_days" })).value).toBe(0);
+    expect(
+      ok(await query(recent, { period: "last_30_days" })).value,
+    ).toBeNull();
+    // A year back is within the 12-month backfill.
+    expect(ok(await query(inactive, { period: "last_90_days" })).value).toBe(0);
   });
 
   it("keeps a window of days not read yet as no data", async () => {

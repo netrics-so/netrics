@@ -19,6 +19,7 @@ import {
   OTHERS,
   reportDayTimestamp,
 } from "./index.js";
+import { allocateSpend, amountMicros } from "./observations.js";
 import { fixture } from "./test-helpers.js";
 
 /** One day of `AppsMetrics` as Apple documents it (#370 confirms). */
@@ -418,5 +419,57 @@ describe("dayObservations", () => {
     expect(() => dayObservations(CAMPAIGN, day(overrides), options())).toThrow(
       AppleAdsReportError,
     );
+  });
+});
+
+describe("allocateSpend (#378)", () => {
+  it("rounds rows by largest remainder to the campaign's total", () => {
+    // 2.7075 + 1.1052 EUR: 381 cents in all, never 382 or an Others of -1.
+    expect(
+      allocateSpend(
+        381,
+        [amountMicros("2.7075"), amountMicros("1.1052")],
+        "EUR",
+      ),
+    ).toEqual([271, 110]);
+    // Three thirds of a cent each round down; the missing cent goes to the
+    // earliest of equal remainders.
+    expect(
+      allocateSpend(
+        1,
+        [
+          amountMicros("0.0033"),
+          amountMicros("0.0033"),
+          amountMicros("0.0034"),
+        ],
+        "EUR",
+      ),
+    ).toEqual([0, 0, 1]);
+    expect(allocateSpend(5, [amountMicros("5")], "JPY")).toEqual([5]);
+  });
+
+  it("gives Others its exact share, and never below zero", () => {
+    // Campaign 20.25: US 15.004 + CA 5.004, the rest (0.242) is Others.
+    // Rounded down 1500 + 500 + 24; the cent left goes to the largest
+    // remainder (0.4 of a cent, the earlier of two).
+    const parts = [
+      amountMicros("15.004"),
+      amountMicros("5.004"),
+      amountMicros("20.25") - amountMicros("15.004") - amountMicros("5.004"),
+    ];
+    const allocated = allocateSpend(2025, parts, "EUR")!;
+    expect(allocated).toEqual([1501, 500, 24]);
+    expect(allocated.reduce((a, b) => a + b, 0)).toBe(2025);
+  });
+
+  it("leaves rows that do not fit the total to the caller", () => {
+    expect(allocateSpend(100, [amountMicros("2"), -10_000], "EUR")).toBeNull();
+    expect(allocateSpend(100, [amountMicros("2")], "EUR")).toBeNull();
+  });
+
+  it("reads exact amounts", () => {
+    expect(amountMicros("3.8127")).toBe(3_812_700);
+    expect(amountMicros("12")).toBe(12_000_000);
+    expect(amountMicros("-0.5")).toBe(-500_000);
   });
 });

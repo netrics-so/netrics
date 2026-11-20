@@ -11,6 +11,7 @@ import type {
   WorkspaceMetric,
 } from "@netrics/contracts";
 import {
+  findConnectionCurrency,
   findConnectionMetric,
   findConnectionResourceNoun,
   findDimensionValueNames,
@@ -121,36 +122,56 @@ export interface QueryOptions {
    */
   locale?: Locale;
   /**
-   * The last day the metric's provider has published completely and
-   * netrics has read (a periodic freshness stream's `dataThrough`, ADR
-   * 0025), when the caller knows it. Absent: nothing is assumed.
+   * The days of the metric netrics has read completely (#378), when the
+   * caller knows them: from the start of the connection's last complete
+   * backfill to its freshness stream's `dataThrough` (ADR 0025), as
+   * YYYY-MM-DD. Absent: nothing is assumed.
    */
-  coveredThrough?: string;
+  coverage?: MetricCoverage;
+}
+
+export interface MetricCoverage {
+  from: string;
+  through: string;
 }
 
 /**
+ * Filters an empty window may have and still read 0: the currency only. A
+ * resource may be outside the connection's selection or added after its
+ * history was read, and other dimensions (country, keyword, query) are
+ * stored as top rows, where a value outside them has no observations
+ * although it had activity.
+ */
+const ZERO_SAFE_FILTERS: ReadonlySet<string> = new Set([CURRENCY_DIMENSION]);
+
+/**
  * Whether an empty window reads 0 rather than "no data" (#378): a sum of
- * a delta metric (spend, installs, taps) over a window whose first day the
- * provider has published and netrics has read. A day without activity
- * stores no observation for some providers (Apple Ads answers date-only
- * days), so an inactive account would otherwise show "No data yet" over a
- * synced window. Averages, minimums, maximums, latest readings and amounts
- * without a currency stay null: zero is no answer there.
+ * a delta metric (spend, installs, taps) over a window that starts within
+ * the read days, without filters that could hide activity. A day without
+ * activity stores no observation for some providers (Apple Ads answers
+ * date-only days), so an inactive account would otherwise show "No data
+ * yet" over a synced window. Averages, minimums, maximums, latest
+ * readings and amounts without a currency stay null: zero is no answer
+ * there.
  */
 export function readsZeroWhenEmpty(input: {
   kind: MetricKind;
   aggregation: Aggregation;
   windowStart: string;
-  coveredThrough: string | undefined;
+  coverage: MetricCoverage | undefined;
+  /** The dimensions the request filters by. */
+  filters: readonly string[];
   /** A per-currency amount must know its currency to read 0 in it. */
   currencyKnown: boolean;
 }): boolean {
   return (
-    input.coveredThrough !== undefined &&
+    input.coverage !== undefined &&
     input.kind === "delta" &&
     input.aggregation === "sum" &&
     input.currencyKnown &&
-    input.windowStart <= input.coveredThrough
+    input.filters.every((key) => ZERO_SAFE_FILTERS.has(key)) &&
+    input.coverage.from <= input.windowStart &&
+    input.windowStart <= input.coverage.through
   );
 }
 
@@ -228,8 +249,16 @@ export async function queryMetric(
         timeZone,
         exchangeRates: options.exchangeRates ?? false,
       });
-      dimensions = largest
-        ? { ...request.dimensions, [CURRENCY_DIMENSION]: largest.currency }
+      // Nothing in the window to rank (#378): an empty window of read days
+      // reads 0 in the connection's own currency, when it has one.
+      const own =
+        !largest && options.coverage
+          ? await findConnectionCurrency(tx, workspaceId, metric.connectionId)
+          : null;
+      const currency =
+        largest?.currency ?? (own && isCurrencyCode(own) ? own : null);
+      dimensions = currency
+        ? { ...request.dimensions, [CURRENCY_DIMENSION]: currency }
         : request.dimensions;
     }
   }
@@ -267,7 +296,8 @@ export async function queryMetric(
         kind: metric.kind,
         aggregation,
         windowStart: window.dates.from,
-        coveredThrough: options.coveredThrough,
+        coverage: options.coverage,
+        filters: Object.keys(request.dimensions ?? {}),
         currencyKnown: !perCurrency || currency !== null,
       });
     // Only the current window: the previous one can reach back before the

@@ -614,21 +614,29 @@ describe("captured report shapes (#370)", () => {
     expect(sum(main, spend, { country: OTHERS })).toBe(0);
   });
 
-  it("puts what the rounded ad groups and keywords leave of a campaign into Others, never below zero", async () => {
+  it("allocates the rounded cents so ad groups add up to the campaign, Others never below zero", async () => {
     const { result } = await capturedPage();
     const byAdGroup = APPLE_ADS_AD_GROUP_METRIC_KEYS.spend;
     const ofAdGroups = adGroupRows(result.observations);
-    // On the 26th 2.7075 + 1.1052 = 3.8127 EUR, but rounded per row they
-    // are 271 + 111 cents against the campaign's 381. The remainder would
-    // be -1 cent; Others is never negative (#378), so the ad groups exceed
-    // the campaign by that cent of rounding.
+    // On the 26th 2.7075 + 1.1052 = 3.8127 EUR: the campaign's 381 cents.
+    // Rounded per row they would be 271 + 111 = 382, and Others -1 (#378).
+    // By largest remainder they are 271 + 110: exactly the campaign, and
+    // no Others row for a cent of rounding.
     const of26 = on(ofAdGroups, "2026-10-26");
     expect(
-      ofAdGroups.filter((o) => o.dimensions.ad_group === OTHERS && o.value < 0),
+      ofAdGroups.filter((o) => o.metricKey === byAdGroup && o.value < 0),
     ).toEqual([]);
     expect(sum(of26, byAdGroup, { campaign: C1, ad_group: OTHERS })).toBe(0);
-    expect(sum(of26, byAdGroup, { campaign: C1 })).toBe(382);
-    expect(sum(ofAdGroups, byAdGroup, { campaign: C1 })).toBe(601);
+    expect(
+      of26
+        .filter(
+          (o) => o.metricKey === byAdGroup && o.dimensions.campaign === C1,
+        )
+        .map((o) => o.value)
+        .sort((x, y) => y - x),
+    ).toEqual([271, 110]);
+    expect(sum(of26, byAdGroup, { campaign: C1 })).toBe(381);
+    expect(sum(ofAdGroups, byAdGroup, { campaign: C1 })).toBe(600);
     // Search Match spend is in no keyword row: Others has it.
     const byKeyword = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
     expect(sum(result.observations, byKeyword, { campaign: C1 })).toBe(600);

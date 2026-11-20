@@ -250,6 +250,13 @@ a dimension; amounts in different currencies never sum. The display
 currency of #191 (daily ECB reference rates, labelled approximate) applies
 unchanged. Nothing is converted on ingest.
 
+A campaign's breakdown rows (countries, ad groups, keywords and their
+"Others") are rounded together, not one by one (#378): each gets its exact
+amount rounded down, and the cents left to reach the campaign's rounded
+total go to the rows with the largest remainders. The rows then add up to
+the campaign exactly and "Others" is never negative. Counts are exact and
+never adjusted.
+
 ### 8. Days, backfill and lookback
 
 - Reports use `timeZone ORTZ`, so numbers match the Apple Ads UI. Apple's
@@ -354,7 +361,8 @@ keep their shapes with IDs, names and amounts replaced):
   without activity is `{"date": …}` alone, which netrics reads as zero.
   A day with activity carries every AppsMetrics field, and each total is
   tap plus view. Amounts have up to four decimals and are rounded half to
-  even to minor units per day and row.
+  even to minor units per day and campaign; a campaign's breakdown rows
+  share its rounded total by largest remainder (section 7).
 - Country rows (`groupBy: ["countryOrRegion"]`) name the country in
   `metadata.countryOrRegion`. Ad-group and keyword rows name their
   `campaignId`; keyword rows have `text`, no `name`. Search Match spend is
