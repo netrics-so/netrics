@@ -335,6 +335,11 @@ keep their shapes with IDs, names and amounts replaced):
   ("Generate API Client") appears for a user with an API role; after the
   key is pasted Apple shows clientId, teamId (here equal to the clientId)
   and keyId.
+- Replacing the key (exit gate, #378): pasting a new public key for the
+  same API user replaces the old one under the same keyId; Apple then
+  answers the old key's exchange with `invalid_client`. Removing the key
+  is noticed only at the next exchange: a cached token (up to 1 hour) keeps
+  working, since Apple does not revoke issued tokens.
 - The promoted app: campaign report rows carry `metadata.promotedObjectId`
   (the app's Apple ID as a digit string), `promotedObjectType`
   `APPSTORE_APP` and `promotedObject.name`.

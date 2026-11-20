@@ -5,7 +5,9 @@ Status: accepted design (2026-11-16;
 Implemented by #702 (SDK, storage, scheduler), #703 (connectors), #704
 (widget data and device payload), #705 (web) and #706 (netrics TV). It
 describes no shipped behaviour yet. Amended 2026-11-19 by #784: widgets
-that combine sources list each source's freshness (sections 7 and 8).
+that combine sources list each source's freshness (sections 7 and 8). Amended
+2026-11-20 by #378: an empty window whose days a periodic stream reports
+as read sums to 0 (section 9).
 
 Extends ADR 0015 (widgets), ADR 0018 section 5 (freshness footer) and
 ADR 0022 (models and their sources).
@@ -481,6 +483,19 @@ without activity look the same there. A connector that declares streams
 but reports nothing for one has the same fallback for that stream.
 Connectors require `^0.2.13` only once they use the field; the host
 accepts manifests without it.
+
+**Empty windows of read days (#378).** The reverse holds where a connector
+does report coverage: a periodic stream's `dataThrough` says every day up
+to it was published and read. A sum of a `delta` metric (spend, installs,
+downloads) whose current window starts on or before that day and has no
+observations is 0, not "no data": the provider had nothing to report
+(Apple Ads answers inactive days with their date alone, which are not
+stored). Only the current window: the previous one can reach back before
+the connection's history. Not for averages, minimums, maximums or latest
+readings, not for an amount whose currency is unknown, not for a window
+that starts after `dataThrough` (today), and not while a backfill of the
+connection runs. Ratios over two zeros (cost per install) stay without a
+value. Breakdowns (bars, tables) keep their empty state.
 
 ## Alternatives considered
 

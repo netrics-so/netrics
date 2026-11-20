@@ -249,6 +249,19 @@ export function createFreshnessReader(
 }
 
 /**
+ * The last day a widget's numbers are read through (#378): the least fresh
+ * periodic `dataThrough` of the streams it uses. Absent for continuous
+ * streams and for connectors that report no freshness: their empty windows
+ * stay "no data" (ADR 0025 section 9).
+ */
+export function coveredThrough(found: {
+  freshness?: WidgetFreshness | undefined;
+}): string | undefined {
+  const freshness = found.freshness;
+  return freshness?.kind === "periodic" ? freshness.dataThrough : undefined;
+}
+
+/**
  * A live query's freshness fields (#727): `freshness`, and `status`
  * "stale" when a row used is overdue by 24 h. Nothing without rows, so
  * those responses stay as they were.

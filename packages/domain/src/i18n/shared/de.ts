@@ -72,4 +72,14 @@ export const sharedDe: Catalog<SharedMessages> = {
     change: "{name} · Veränderung",
     changePoints: "{name} · Veränderung (Pp.)",
   },
+  providerMessages: {
+    appleAds: {
+      invalidClient:
+        "Apple Ads hat den Schlüssel abgelehnt: Client-ID, Team-ID und Schlüssel-ID passen nicht zum öffentlichen Schlüssel, den du in Apple Ads gespeichert hast, oder der Schlüssel wurde entfernt. Prüf die drei Werte unter Account Settings → API oder richte einen neuen Schlüssel ein.",
+      unauthorized:
+        "Apple Ads hat das Zugriffstoken abgelehnt: Der Schlüssel wurde entfernt, oder der API-Benutzer hat keinen Zugriff mehr. Richte einen neuen Apple-Ads-Schlüssel ein.",
+      forbidden:
+        "Apple Ads hat den Zugriff verweigert: Der API-Benutzer braucht in diesem Werbekonto eine API-Rolle, etwa API Account Read Only (in Apples Antworten API Read Only). Eine Rolle ohne API entzieht den API-Zugriff. Bitte einen Account Admin, die Rolle zu ändern, oder richte einen neuen Schlüssel ein.",
+    },
+  },
 };

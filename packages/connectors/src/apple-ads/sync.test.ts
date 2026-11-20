@@ -614,17 +614,21 @@ describe("captured report shapes (#370)", () => {
     expect(sum(main, spend, { country: OTHERS })).toBe(0);
   });
 
-  it("puts what the rounded ad groups and keywords leave of a campaign into Others", async () => {
+  it("puts what the rounded ad groups and keywords leave of a campaign into Others, never below zero", async () => {
     const { result } = await capturedPage();
     const byAdGroup = APPLE_ADS_AD_GROUP_METRIC_KEYS.spend;
     const ofAdGroups = adGroupRows(result.observations);
     // On the 26th 2.7075 + 1.1052 = 3.8127 EUR, but rounded per row they
-    // are 271 + 111 cents against the campaign's 381: Others holds -1, so
-    // the ad groups still add up to the campaign.
+    // are 271 + 111 cents against the campaign's 381. The remainder would
+    // be -1 cent; Others is never negative (#378), so the ad groups exceed
+    // the campaign by that cent of rounding.
     const of26 = on(ofAdGroups, "2026-10-26");
-    expect(sum(of26, byAdGroup, { campaign: C1, ad_group: OTHERS })).toBe(-1);
-    expect(sum(of26, byAdGroup, { campaign: C1 })).toBe(381);
-    expect(sum(ofAdGroups, byAdGroup, { campaign: C1 })).toBe(600);
+    expect(
+      ofAdGroups.filter((o) => o.dimensions.ad_group === OTHERS && o.value < 0),
+    ).toEqual([]);
+    expect(sum(of26, byAdGroup, { campaign: C1, ad_group: OTHERS })).toBe(0);
+    expect(sum(of26, byAdGroup, { campaign: C1 })).toBe(382);
+    expect(sum(ofAdGroups, byAdGroup, { campaign: C1 })).toBe(601);
     // Search Match spend is in no keyword row: Others has it.
     const byKeyword = APPLE_ADS_KEYWORD_METRIC_KEYS.spend;
     expect(sum(result.observations, byKeyword, { campaign: C1 })).toBe(600);

@@ -19,6 +19,7 @@ import {
   countryValue,
   isEmptyDay,
   isZeroDayValues,
+  remainderValues,
   parseDayMetrics,
   reportDayTimestamp,
   valueObservations,
@@ -412,7 +413,9 @@ function rankedMonthObservations(
         addDayValues(monthTotals.get(value) ?? zeroDayValues(), numbers),
       );
     }
-    const gap = addDayValues(totalOf(day), sumOf(values.values()), -1);
+    const gap = remainderValues(
+      addDayValues(totalOf(day), sumOf(values.values()), -1),
+    );
     if (!isZeroDayValues(gap)) hasGap = true;
     top = topValues(monthTotals, limit);
     for (const value of top) earlierLeaders.add(value);
@@ -455,7 +458,7 @@ function rankedMonthObservations(
         if (!present.has(value)) push(value, day, zeroDayValues());
       }
     }
-    if (hasOthers) push(OTHERS, day, others);
+    if (hasOthers) push(OTHERS, day, remainderValues(others));
   }
   return observations;
 }
@@ -611,7 +614,9 @@ function adGroupMonthObservations(
     return sum;
   };
   const gapOn = (day: string) =>
-    addDayValues(entry.totals.get(day) ?? sumOn(day), sumOn(day), -1);
+    remainderValues(
+      addDayValues(entry.totals.get(day) ?? sumOn(day), sumOn(day), -1),
+    );
   const hasOthers = [...days].some((day) => !isZeroDayValues(gapOn(day)));
 
   const observations: Observation[] = [];

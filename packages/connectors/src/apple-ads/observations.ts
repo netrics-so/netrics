@@ -266,6 +266,19 @@ export function addDayValues(a: DayValues, b: DayValues, sign = 1): DayValues {
   return sum;
 }
 
+/**
+ * A remainder ("Others": a campaign's total minus its named ad groups,
+ * keywords or countries), never below zero (#378). Spend is rounded to
+ * minor units per row, so the rows' sum can exceed the total by a cent;
+ * that cent of rounding is dropped rather than shown as negative spend.
+ */
+export function remainderValues(values: DayValues): DayValues {
+  const kept = zeroDayValues();
+  for (const field of DAY_VALUE_FIELDS)
+    kept[field] = Math.max(0, values[field]);
+  return kept;
+}
+
 export function isZeroDayValues(values: DayValues): boolean {
   return DAY_VALUE_FIELDS.every((field) => values[field] === 0);
 }

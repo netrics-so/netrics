@@ -12,7 +12,11 @@ import {
   metricResourcesResponseSchema,
   workspaceMetricListResponseSchema,
 } from "@netrics/contracts";
-import { withWorkspace, type Database } from "@netrics/database";
+import {
+  findBackfillingConnectionIds,
+  withWorkspace,
+  type Database,
+} from "@netrics/database";
 import { can, type Locale } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
@@ -25,6 +29,7 @@ import {
   queryMetricBreakdown,
 } from "../metrics/query.js";
 import {
+  coveredThrough,
   createFreshnessReader,
   metricLiveFreshness,
   type FreshnessManifests,
@@ -120,6 +125,19 @@ export function registerMetricRoutes(
             { workspaceId: access.workspaceId, userId: access.callerId },
             async (tx) => {
               const locale = request.sessionIdentity!.locale;
+              const live = await metricLiveFreshness(
+                tx,
+                reader(access.workspaceId, locale),
+                body,
+              );
+              // An empty sum over read days is 0 (#378), as on screens:
+              // not while a backfill is still reading the history.
+              const covered = coveredThrough(live);
+              const backfilling =
+                covered !== undefined &&
+                (
+                  await findBackfillingConnectionIds(tx, access.workspaceId)
+                ).has(body.connectionId);
               const found = await queryMetric(
                 tx,
                 access.workspaceId,
@@ -128,20 +146,13 @@ export function registerMetricRoutes(
                 {
                   exchangeRates: deps.exchangeRates ?? false,
                   locale,
+                  ...(covered !== undefined && !backfilling
+                    ? { coveredThrough: covered }
+                    : {}),
                 },
               );
               return found.ok
-                ? {
-                    ...found,
-                    value: {
-                      ...found.value,
-                      ...(await metricLiveFreshness(
-                        tx,
-                        reader(access.workspaceId, locale),
-                        body,
-                      )),
-                    },
-                  }
+                ? { ...found, value: { ...found.value, ...live } }
                 : found;
             },
           );

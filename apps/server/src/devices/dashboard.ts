@@ -9,6 +9,7 @@ import {
 } from "../dashboards/data.js";
 import {
   applyFreshness,
+  coveredThrough,
   createFreshnessReader,
   REVIEWS_FRESHNESS_STREAM,
   type FreshnessDependency,
@@ -467,18 +468,35 @@ async function guarded<T>(
   return result?.ok ? result.value : null;
 }
 
-function queryWidget(
+async function queryWidget(
   tx: Transaction,
   widget: DataWidget,
   context: DataContext,
 ): Promise<MetricQueryResponse | null> {
+  // How far the provider's days are read (#378): an empty sum over them is
+  // 0. Not while a backfill runs: its history is still being read.
+  const covered =
+    context.freshness && !context.backfilling.has(widget.connectionId)
+      ? coveredThrough(
+          await context.freshness.read(tx, [
+            metricDependency(
+              widget.connectionId,
+              widget.metricKey,
+              widget.dimensions,
+            ),
+          ]),
+        )
+      : undefined;
   return guarded(tx, widget, context, (savepoint) =>
     queryMetric(
       savepoint,
       context.workspaceId,
       metricRequest(widget),
       context.options.now,
-      queryOptions(context.options),
+      {
+        ...queryOptions(context.options),
+        ...(covered ? { coveredThrough: covered } : {}),
+      },
     ),
   );
 }

@@ -120,6 +120,38 @@ export interface QueryOptions {
    * 0016). The caller's, or a screen's; English when absent.
    */
   locale?: Locale;
+  /**
+   * The last day the metric's provider has published completely and
+   * netrics has read (a periodic freshness stream's `dataThrough`, ADR
+   * 0025), when the caller knows it. Absent: nothing is assumed.
+   */
+  coveredThrough?: string;
+}
+
+/**
+ * Whether an empty window reads 0 rather than "no data" (#378): a sum of
+ * a delta metric (spend, installs, taps) over a window whose first day the
+ * provider has published and netrics has read. A day without activity
+ * stores no observation for some providers (Apple Ads answers date-only
+ * days), so an inactive account would otherwise show "No data yet" over a
+ * synced window. Averages, minimums, maximums, latest readings and amounts
+ * without a currency stay null: zero is no answer there.
+ */
+export function readsZeroWhenEmpty(input: {
+  kind: MetricKind;
+  aggregation: Aggregation;
+  windowStart: string;
+  coveredThrough: string | undefined;
+  /** A per-currency amount must know its currency to read 0 in it. */
+  currencyKnown: boolean;
+}): boolean {
+  return (
+    input.coveredThrough !== undefined &&
+    input.kind === "delta" &&
+    input.aggregation === "sum" &&
+    input.currencyKnown &&
+    input.windowStart <= input.coveredThrough
+  );
 }
 
 /**
@@ -229,8 +261,19 @@ export async function queryMetric(
     currency: string | null,
     conversion: MetricQueryResponse["conversion"],
   ): MetricResult<MetricQueryResponse> => {
+    const empty =
+      currentBuckets.length === 0 &&
+      readsZeroWhenEmpty({
+        kind: metric.kind,
+        aggregation,
+        windowStart: window.dates.from,
+        coveredThrough: options.coveredThrough,
+        currencyKnown: !perCurrency || currency !== null,
+      });
+    // Only the current window: the previous one can reach back before the
+    // connection's history, where an empty window is not a zero.
     const change = compare(
-      aggregateBuckets(aggregation, currentBuckets),
+      empty ? 0 : aggregateBuckets(aggregation, currentBuckets),
       aggregateBuckets(aggregation, previousBuckets),
     );
     return {
