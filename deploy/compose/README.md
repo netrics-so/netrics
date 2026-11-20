@@ -185,6 +185,25 @@ set `NETRICS_IMAGE_QUOTA_COUNT` and `NETRICS_IMAGE_QUOTA_MIB` in `.env` and
 restart the `api`. Images above a lowered quota stay; only new uploads are
 refused.
 
+### Custom APIs on your own network
+
+Connectors, custom API definitions included, may only reach public
+addresses: a host name that resolves to a private network, this machine or
+a cloud metadata service is refused. To let custom APIs reach services on
+your own network, list them in `.env` and restart the `api` and `worker`:
+
+```dotenv
+NETRICS_CUSTOM_API_PRIVATE_HOSTS=intranet.example,*.corp.example,10.20.0.0/16
+```
+
+Entries are host names (`*.corp.example` matches its subdomains), IP
+addresses or CIDR ranges (at least `/8` for IPv4 and `/16` for IPv6); `*`,
+`0.0.0.0/0` and `::/0` are refused, and an invalid entry stops startup. A
+listed host may resolve to a private address; a definition still reaches
+only the hosts it declares. Cloud metadata and link-local addresses
+(`169.254.0.0/16`, `fe80::/10` and the like) stay refused even when listed.
+The setting is off by default.
+
 ### Data volume and retention
 
 `NETRICS_DATA_POLICY` in `.env` configures data storage, retention and execution

@@ -49,10 +49,24 @@ export interface ExecuteOptions {
    * Without a sink, connector log lines are dropped.
    */
   log?: ConnectorLogSink;
-  /** Tests only: reach a local fixture provider (see EgressOptions). */
+  /**
+   * Host-set egress policy (see EgressOptions). The server sets the custom
+   * API values only for the custom-api connector, never for bundled
+   * connectors; lookup, allowPrivateAddresses, allowInsecureHttp and tlsCa
+   * are for tests only.
+   */
   egress?: Pick<
     EgressOptions,
-    "lookup" | "allowPrivateAddresses" | "allowInsecureHttp"
+    | "lookup"
+    | "allowPrivateAddresses"
+    | "allowInsecureHttp"
+    | "tlsCa"
+    | "allowPrivateHosts"
+    | "redirects"
+    | "requestTimeoutMs"
+    | "maxResponseBytes"
+    | "maxDecompressedBytes"
+    | "pinDns"
   >;
 }
 
@@ -68,7 +82,8 @@ export class ConnectorTimeoutError extends Error {
 
 /**
  * An egress violation means the connector reached for a host it did not
- * declare (or a private address): a broken connector, never retried.
+ * declare (or a private address): a broken connector, never retried. An
+ * EgressTimeoutError is not a denial: it stays a retryable provider failure.
  * A RateLimitedError keeps its class and retryAt. Everything else is a redacted, retryable provider failure.
  */
 function classifyConnectorError(

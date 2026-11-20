@@ -535,6 +535,36 @@ describe("OAuth client configuration (ADR 0012)", () => {
   });
 });
 
+describe("custom API private hosts (#801)", () => {
+  it("reads private hosts for custom APIs and defaults to none", () => {
+    expect(loadConfig({}).customApiPrivateHosts).toEqual([]);
+    expect(
+      loadConfig({
+        NETRICS_CUSTOM_API_PRIVATE_HOSTS: " intranet.example,10.20.0.0/16 ",
+      }).customApiPrivateHosts,
+    ).toEqual(["intranet.example", "10.20.0.0/16"]);
+    expect(
+      loadConfig({
+        NETRICS_CUSTOM_API_PRIVATE_HOSTS: "Intranet.Example,,*.corp.example",
+      }).customApiPrivateHosts,
+    ).toEqual(["intranet.example", "*.corp.example"]);
+  });
+
+  it.each(["*", "0.0.0.0/0", "::/0", "http://intranet"])(
+    "refuses the private host entry %s",
+    (entry) => {
+      expect(() =>
+        loadConfig({ NETRICS_CUSTOM_API_PRIVATE_HOSTS: entry }),
+      ).toThrow(ConfigError);
+      expect(() =>
+        loadConfig({ NETRICS_CUSTOM_API_PRIVATE_HOSTS: entry }),
+      ).toThrow(
+        `NETRICS_CUSTOM_API_PRIVATE_HOSTS: invalid private host entry: ${entry}`,
+      );
+    },
+  );
+});
+
 describe("image quota (#217)", () => {
   it("defaults to 100 images and 50 MiB per workspace", () => {
     expect(loadConfig({}).imageQuota).toEqual({

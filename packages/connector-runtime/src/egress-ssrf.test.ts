@@ -629,9 +629,7 @@ describe("redirects", () => {
       );
     }
     // The default mode follows allowlisted siblings as before.
-    expect((await fixtureGuard(siblings)(url("/to-sibling"))).status).toBe(
-      200,
-    );
+    expect((await fixtureGuard(siblings)(url("/to-sibling"))).status).toBe(200);
   });
 
   it("refuses redirects to metadata and encoded private addresses in every mode", async () => {

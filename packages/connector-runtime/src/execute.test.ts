@@ -10,7 +10,7 @@ import type {
   SyncResult,
 } from "@netrics/connector-sdk";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import type { AddressInfo, LookupFunction } from "node:net";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
@@ -1079,5 +1079,89 @@ describe("nextFrom (SDK 0.2.15, #758)", () => {
       done: false,
     });
     expect(result.nextFrom).toBeUndefined();
+  });
+});
+
+describe("host egress policy (#801)", () => {
+  const toLocalhost: LookupFunction = (_hostname, options, callback) => {
+    const entry = { address: "127.0.0.1", family: 4 };
+    if (options.all) {
+      (callback as unknown as (e: null, a: (typeof entry)[]) => void)(null, [
+        entry,
+      ]);
+    } else {
+      callback(null, entry.address, entry.family);
+    }
+  };
+
+  async function withProvider(run: (port: number) => Promise<void>) {
+    const server = createServer((req, res) => {
+      res.setHeader("connection", "close");
+      if (req.url === "/hang") return; // never answers
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      await run((server.address() as AddressInfo).port);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  }
+
+  function caller(url: string): Connector {
+    return {
+      ...connectorWith({
+        ...demoManifest,
+        outboundDomains: ["api.fixture.test"],
+      }),
+      check: async (_context, runtime) => {
+        await runtime.fetch(url);
+        return { ok: true };
+      },
+    };
+  }
+
+  it("passes the host's egress policy to runtime.fetch", async () => {
+    await withProvider(async (port) => {
+      const connector = caller(`http://api.fixture.test:${port}/ok`);
+      const egress = { allowInsecureHttp: true, lookup: toLocalhost };
+      await expect(
+        executeCheck(connector, baseContext, {
+          egress: { ...egress, allowPrivateHosts: ["api.fixture.test"] },
+        }),
+      ).resolves.toEqual({ ok: true });
+      const refused = executeCheck(connector, baseContext, { egress });
+      await expect(refused).rejects.toThrow(ContractViolationError);
+      await expect(
+        executeCheck(connector, baseContext, { egress }),
+      ).rejects.toThrow(/non-public address/);
+    });
+  });
+
+  it("treats an egress timeout as a retryable provider failure", async () => {
+    await withProvider(async (port) => {
+      const failure = await executeCheck(
+        caller(`http://api.fixture.test:${port}/hang`),
+        baseContext,
+        {
+          egress: {
+            allowInsecureHttp: true,
+            lookup: toLocalhost,
+            allowPrivateHosts: ["api.fixture.test"],
+            requestTimeoutMs: 100,
+          },
+        },
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(ContractViolationError);
+      expect((failure as Error).message).toMatch(/egress timeout/);
+    });
   });
 });
