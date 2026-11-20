@@ -1,0 +1,429 @@
+// Connections of a custom API definition (milestone 13, ADR 0027). A
+// connection pins one definition version and one environment; its config
+// holds the non-secret connection variables and its credential envelope
+// `{ host, …credentials, variables: secretVariables }`, bound to the
+// environment host. Generic connection routes refuse custom-api: only
+// this path creates such connections.
+
+import { randomUUID } from "node:crypto";
+
+import type {
+  ConnectionRetentionChoice,
+  CreateCustomApiConnectionRequest,
+} from "@netrics/contracts";
+import type {
+  ConnectorRegistry,
+  ExecuteOptions,
+} from "@netrics/connector-runtime";
+import {
+  upgradeCustomApiDefinition,
+  type CustomApiDefinition,
+} from "@netrics/connector-sdk/custom-api";
+import {
+  CUSTOM_API_CONNECTOR_ID,
+  customApiCredentialsSchema,
+  customApiEnvironmentHost,
+} from "@netrics/connectors/custom-api";
+import {
+  countCustomApiConnections,
+  enqueueJob,
+  findCustomApiDefinition,
+  findCustomApiDefinitionVersion,
+  findProject,
+  insertAuditEvent,
+  insertConnection,
+  withWorkspace,
+  type ConnectionWithState,
+  type CustomApiDefinitionVersionRow,
+  type Database,
+} from "@netrics/database";
+import type { Locale } from "@netrics/domain";
+
+import {
+  checkCredentials,
+  type Actor as ConnectionActor,
+} from "../connections/service.js";
+import { presentConnectionDetail } from "../connections/present.js";
+import { retentionNamesDatasets } from "../connections/retention.js";
+import { encryptCredentials, type CredentialKeyring } from "../credentials.js";
+import type { CustomApiInstanceConfig } from "../env.js";
+import { connectorFor, type ResolvedConnector } from "./connectors.js";
+
+export type CustomApiConnectionResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; status: 400 | 404 | 409; error: string };
+
+function fail(
+  status: 400 | 404 | 409,
+  error: string,
+): { ok: false; status: 400 | 404 | 409; error: string } {
+  return { ok: false, status, error };
+}
+
+export interface CustomApiConnectionDeps {
+  db: Database;
+  registry: ConnectorRegistry;
+  credentialKeyring: CredentialKeyring;
+  limits: CustomApiInstanceConfig;
+  /** Self-host only (NETRICS_CUSTOM_API_PRIVATE_HOSTS). */
+  privateHosts: readonly string[];
+  /** Tests only: options for every connector call (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
+}
+
+/** Exactly the ids, as a set comparison. */
+function sameKeys(values: Record<string, string>, ids: string[]): boolean {
+  const keys = Object.keys(values);
+  return (
+    keys.length === ids.length && ids.every((id) => Object.hasOwn(values, id))
+  );
+}
+
+/** Whether the login method needs nothing stored (no credentials, no secret variables). */
+export function customApiNeedsNoSecrets(definition: CustomApiDefinition) {
+  return (
+    definition.auth.type === "none" &&
+    !definition.variables.some((variable) => variable.secret)
+  );
+}
+
+/**
+ * The credential envelope for an environment: `{ host, …credentials,
+ * variables }` (variables only when the definition has secret ones), or
+ * null when auth is none without secret variables. Undefined when the
+ * credentials do not fit the login method.
+ */
+export function customApiEnvelope(
+  definition: CustomApiDefinition,
+  environmentId: string,
+  credentials: Record<string, string>,
+  secretVariables: Record<string, string>,
+): Record<string, unknown> | null | undefined {
+  if (customApiNeedsNoSecrets(definition)) {
+    return Object.keys(credentials).length === 0 ? null : undefined;
+  }
+  const environment = definition.environments.find(
+    (entry) => entry.id === environmentId,
+  );
+  if (!environment) return undefined;
+  if (
+    Object.hasOwn(credentials, "host") ||
+    Object.hasOwn(credentials, "variables")
+  )
+    return undefined;
+  const envelope = {
+    host: customApiEnvironmentHost(environment),
+    ...credentials,
+    ...(definition.variables.some((variable) => variable.secret)
+      ? { variables: secretVariables }
+      : {}),
+  };
+  const parsed = customApiCredentialsSchema(definition).safeParse(envelope);
+  return parsed.success ? (parsed.data as Record<string, unknown>) : undefined;
+}
+
+/**
+ * A custom-api connection's new environment, credentials and/or secret
+ * variables (PATCH): the connector for the target environment and the
+ * envelope to store (undefined: keep the stored one). Secrets are bound to
+ * the environment host, so a new environment needs every secret again:
+ * the login method's credentials (unless it is none) and every secret
+ * variable. Nothing stored is carried to another host. On the same
+ * environment, what the request leaves out is kept.
+ */
+export function prepareCustomApiUpdate(input: {
+  registry: ConnectorRegistry;
+  existing: ConnectionWithState;
+  environmentId: string | undefined;
+  credentials: Record<string, unknown> | undefined;
+  secretVariables: Record<string, string> | undefined;
+  /** The stored envelope, decrypted; null without one. */
+  stored: Record<string, unknown> | null;
+}): CustomApiConnectionResult<{
+  resolved: ResolvedConnector;
+  environmentId: string;
+  envelope: Record<string, unknown> | null | undefined;
+}> {
+  const pinned = input.existing.customApi;
+  const current = connectorFor(input.registry, input.existing);
+  if (!pinned || !current?.customApi) return fail(400, "invalid_request");
+  const definition = current.customApi.definition;
+  const environmentId = input.environmentId ?? pinned.environmentId;
+  if (!definition.environments.some((entry) => entry.id === environmentId))
+    return fail(400, "custom_api_environment_not_found");
+  const changed = environmentId !== pinned.environmentId;
+  const secretIds = definition.variables
+    .filter((variable) => variable.secret)
+    .map((variable) => variable.id);
+  if (
+    changed &&
+    ((definition.auth.type !== "none" && input.credentials === undefined) ||
+      (secretIds.length > 0 && input.secretVariables === undefined))
+  )
+    return fail(400, "custom_api_environment_needs_credentials");
+  if (
+    input.secretVariables !== undefined &&
+    !sameKeys(input.secretVariables, secretIds)
+  )
+    return fail(400, "custom_api_variables_invalid");
+  const resolved = connectorFor(input.registry, {
+    row: input.existing.row,
+    customApi: { ...pinned, environmentId },
+  });
+  if (!resolved) return fail(400, "custom_api_environment_not_found");
+  if (
+    !changed &&
+    input.credentials === undefined &&
+    input.secretVariables === undefined
+  )
+    return {
+      ok: true,
+      value: { resolved, environmentId, envelope: undefined },
+    };
+
+  // Auth credentials: the request's, else (same environment only) the stored ones.
+  let credentials: Record<string, string> = {};
+  if (input.credentials !== undefined) {
+    for (const [key, value] of Object.entries(input.credentials)) {
+      if (typeof value !== "string" || key === "host" || key === "variables")
+        return fail(400, "custom_api_credentials_invalid");
+      credentials[key] = value;
+    }
+  } else if (!changed && input.stored) {
+    const { host: _host, variables: _variables, ...rest } = input.stored;
+    credentials = rest as Record<string, string>;
+  }
+  const storedVariables = input.stored?.variables;
+  const variables =
+    input.secretVariables ??
+    (!changed && storedVariables && typeof storedVariables === "object"
+      ? (storedVariables as Record<string, string>)
+      : {});
+  const envelope = customApiEnvelope(
+    definition,
+    environmentId,
+    credentials,
+    variables,
+  );
+  if (envelope === undefined)
+    return fail(400, "custom_api_credentials_invalid");
+  return { ok: true, value: { resolved, environmentId, envelope } };
+}
+
+type ConnectionDetail = ReturnType<typeof presentConnectionDetail>;
+
+export function createCustomApiConnectionService(
+  deps: CustomApiConnectionDeps,
+) {
+  const inWorkspace = <T>(
+    actor: ConnectionActor,
+    run: Parameters<typeof withWorkspace<T>>[2],
+  ) =>
+    withWorkspace(
+      deps.db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      run,
+    );
+
+  async function loadVersion(
+    actor: ConnectionActor,
+    definitionId: string,
+    version: number | undefined,
+  ): Promise<
+    CustomApiConnectionResult<{
+      name: string;
+      row: CustomApiDefinitionVersionRow;
+    }>
+  > {
+    return inWorkspace(actor, async (tx) => {
+      const found = await findCustomApiDefinition(
+        tx,
+        actor.workspaceId,
+        definitionId,
+      );
+      if (!found) return fail(404, "custom_api_definition_not_found");
+      if (found.definition.archivedAt !== null)
+        return fail(409, "custom_api_definition_archived");
+      const row =
+        version === undefined || version === found.version.version
+          ? found.version
+          : await findCustomApiDefinitionVersion(
+              tx,
+              actor.workspaceId,
+              definitionId,
+              version,
+            );
+      if (!row) return fail(404, "custom_api_definition_not_found");
+      return { ok: true, value: { name: found.definition.name, row } };
+    });
+  }
+
+  return {
+    /** POST …/custom-api/definitions/:definitionId/connections */
+    async create(
+      actor: ConnectionActor & { locale?: Locale },
+      definitionId: string,
+      body: CreateCustomApiConnectionRequest,
+    ): Promise<CustomApiConnectionResult<ConnectionDetail>> {
+      const loaded = await loadVersion(actor, definitionId, body.version);
+      if (!loaded.ok) return loaded;
+      const version = loaded.value.row;
+      let definition: CustomApiDefinition;
+      try {
+        definition = upgradeCustomApiDefinition(version.document);
+      } catch {
+        return fail(400, "custom_api_definition_invalid");
+      }
+      if (!definition.environments.some((e) => e.id === body.environmentId))
+        return fail(400, "custom_api_environment_not_found");
+      const plain = definition.variables.filter((v) => !v.secret);
+      const secret = definition.variables.filter((v) => v.secret);
+      if (
+        !sameKeys(
+          body.variables,
+          plain.map((v) => v.id),
+        ) ||
+        !sameKeys(
+          body.secretVariables,
+          secret.map((v) => v.id),
+        )
+      )
+        return fail(400, "custom_api_variables_invalid");
+      if (
+        definition.auth.type === "oauth_client_credentials" ||
+        definition.auth.type === "oauth_authorization_code"
+      )
+        return fail(400, "custom_api_oauth_unavailable");
+      const envelope = customApiEnvelope(
+        definition,
+        body.environmentId,
+        body.credentials,
+        body.secretVariables,
+      );
+      if (envelope === undefined)
+        return fail(400, "custom_api_credentials_invalid");
+
+      const pinned = {
+        definitionId,
+        versionId: version.id,
+        version: version.version,
+        environmentId: body.environmentId,
+        document: version.document,
+        datasetVersions: version.datasetVersions as Record<string, number>,
+      };
+      const resolved = connectorFor(deps.registry, {
+        row: { connectorId: CUSTOM_API_CONNECTOR_ID },
+        customApi: pinned,
+      });
+      if (!resolved) return fail(400, "custom_api_definition_invalid");
+      if (
+        body.retention &&
+        !retentionNamesDatasets(resolved.manifest, body.retention)
+      )
+        return fail(400, "retention_dataset_unknown");
+
+      const count = await inWorkspace(actor, (tx) =>
+        countCustomApiConnections(tx, actor.workspaceId),
+      );
+      if (count >= deps.limits.maxConnections)
+        return fail(409, "custom_api_connection_limit");
+
+      // The connector check runs before anything is stored; its refusal
+      // is the connector's (redacted) message.
+      const connectionId = randomUUID();
+      const config: Record<string, unknown> = { ...body.variables };
+      const check = await checkCredentials(
+        resolved,
+        connectionId,
+        config,
+        envelope ?? {},
+        {
+          ...(deps.executeOptions
+            ? { executeOptions: deps.executeOptions }
+            : {}),
+          privateHosts: deps.privateHosts,
+        },
+      );
+      if (!check.ok) return fail(400, check.error);
+
+      const refreshMinutes = Math.max(
+        body.refreshMinutes ?? definition.defaults.refreshMinutes,
+        deps.limits.minRefreshMinutes,
+      );
+      const retention: ConnectionRetentionChoice | undefined = body.retention;
+      return inWorkspace(actor, async (tx) => {
+        if (body.projectId) {
+          const project = await findProject(
+            tx,
+            actor.workspaceId,
+            body.projectId,
+          );
+          if (!project || project.archivedAt !== null)
+            return fail(404, "project_not_found");
+        }
+        // Counted again inside the commit's transaction: two concurrent
+        // creates can still pass together (no lock), at most by one each.
+        if (
+          (await countCustomApiConnections(tx, actor.workspaceId)) >=
+          deps.limits.maxConnections
+        )
+          return fail(409, "custom_api_connection_limit");
+        const created = await insertConnection(tx, {
+          id: connectionId,
+          workspaceId: actor.workspaceId,
+          connectorId: CUSTOM_API_CONNECTOR_ID,
+          name: body.name,
+          config,
+          credentialsEncrypted: envelope
+            ? Buffer.from(
+                encryptCredentials(
+                  JSON.stringify(envelope),
+                  deps.credentialKeyring,
+                  { workspaceId: actor.workspaceId, connectionId },
+                ),
+                "utf8",
+              )
+            : null,
+          projectId: body.projectId ?? null,
+          pollIntervalSeconds: refreshMinutes * 60,
+          customApi: {
+            definitionVersionId: version.id,
+            environmentId: body.environmentId,
+          },
+          ...(retention
+            ? { retention: { choice: retention, chosenBy: actor.callerId } }
+            : {}),
+        });
+        await enqueueJob(tx, {
+          kind: "connection.backfill",
+          workspaceId: actor.workspaceId,
+          connectionId,
+          idempotencyKey: `backfill:${connectionId}`,
+        });
+        await insertAuditEvent(tx, {
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.callerId,
+          action: "connection.created",
+          target: connectionId,
+          metadata: {
+            name: body.name,
+            connectorId: CUSTOM_API_CONNECTOR_ID,
+            definitionId,
+            version: version.version,
+            environmentId: body.environmentId,
+            ...(retention ? { retention } : {}),
+          },
+        });
+        return {
+          ok: true,
+          value: presentConnectionDetail(
+            deps.registry,
+            created,
+            null,
+            actor.locale,
+          ),
+        };
+      });
+    },
+  };
+}

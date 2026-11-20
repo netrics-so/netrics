@@ -118,6 +118,30 @@ export const sharedEn = {
       forbidden:
         "Apple Ads refused access: the API user needs an API role, such as API Account Read Only (API Read Only in Apple's answers), in this ad account. A non-API role removes API access. Ask an Account Admin to change the role, or set up a new key.",
     },
+    /**
+     * The custom-api connector's fixed messages (milestone 13), equal to
+     * CUSTOM_API_MESSAGES in @netrics/connectors/custom-api.
+     */
+    customApi: {
+      unauthorized:
+        "The API refused the credentials (HTTP 401). Enter a new key, token or password for this connection, or reconnect it.",
+      forbidden:
+        "The API denied access (HTTP 403). Check that these credentials may read the endpoints of this custom API.",
+      hostChanged:
+        "This connection's credentials were entered for another API host. Enter them again for the connection's environment.",
+      notJson:
+        "The API did not answer with JSON. Check the base URL and the request path.",
+      recordsNotList:
+        "The record path does not point to a list or an object in the response. Choose the records again in the definition.",
+      nextUrlOffHost:
+        "The API's next page link points to another host. netrics only follows next page links on the API host.",
+      pageLimit:
+        "The run stopped after 200 pages, the most one run reads. The data so far is kept; the next run continues.",
+      recordLimit:
+        "The run stopped after 100,000 records, the most one run reads. The data so far is kept; the next run continues.",
+      durationLimit:
+        "The run stopped after 30 minutes, the longest one run takes. The data so far is kept; the next run continues.",
+    },
   },
 } as const;
 

@@ -18,7 +18,10 @@ import {
   createDatabase,
   type Database,
 } from "@netrics/database";
-import type { ConnectorRegistry } from "@netrics/connector-runtime";
+import type {
+  ConnectorRegistry,
+  ExecuteOptions,
+} from "@netrics/connector-runtime";
 
 import { createAuthService, type AuthService } from "./auth/index.js";
 import { registerClientAddress, servesAuthFlow } from "./client-address.js";
@@ -86,6 +89,8 @@ export interface AppDeps {
   devicePayloadCacheMs?: number;
   /** The newest store template; tests pass other versions. */
   storeTemplate?: StoreTemplateDefinition;
+  /** Tests only: options for connector calls of the API (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
 }
 
 export async function buildApp(
@@ -238,6 +243,11 @@ export async function buildApp(
     });
   // App slides fetch the icons their apps lack (#709) the way "Use app
   // icon" does: through the connection, validated and stored.
+  /** Connector calls of the API: custom API private hosts, test egress. */
+  const connectorCallDeps = {
+    customApiPrivateHosts: config.customApiPrivateHosts,
+    ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
+  };
   const iconConnections = createConnectionService({
     db,
     registry,
@@ -245,6 +255,7 @@ export async function buildApp(
     oauthProviders,
     oauthTokens,
     ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
+    ...connectorCallDeps,
   });
   const storeIcons = createResourceIconService({
     db,
@@ -268,6 +279,10 @@ export async function buildApp(
     authService,
     db,
     limits: config.customApi,
+    registry,
+    credentialKeyring,
+    privateHosts: config.customApiPrivateHosts,
+    ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
   });
   registerGoalRoutes(app, {
     authService,
@@ -301,6 +316,7 @@ export async function buildApp(
     dataPolicy: config.dataPolicy,
     ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
     ...previews,
+    ...connectorCallDeps,
   });
   registerTemplateRoutes(app, {
     authService,

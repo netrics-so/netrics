@@ -22,6 +22,7 @@ import type {
   SyncRunRow,
 } from "@netrics/database";
 
+import { connectorFor } from "../custom-api/connectors.js";
 import {
   relevantFreshnessRows,
   selectedResourcesOf,
@@ -63,13 +64,37 @@ export function toStateView(
   };
 }
 
+/**
+ * What a custom-api connection runs (milestone 13): the definition, its
+ * pinned version and the environment, by id and name. Null for bundled
+ * connectors.
+ */
+function presentCustomApi(
+  loaded: ConnectionWithState,
+  resolved: ReturnType<typeof connectorFor>,
+) {
+  const pinned = loaded.customApi;
+  if (!pinned) return null;
+  const environment = resolved?.customApi?.definition.environments.find(
+    (entry) => entry.id === pinned.environmentId,
+  );
+  return {
+    definitionId: pinned.definitionId,
+    version: pinned.version,
+    environmentId: pinned.environmentId,
+    environmentName: environment?.name ?? pinned.environmentId,
+  };
+}
+
 export function presentConnection(
   registry: ConnectorRegistry,
-  { row, state, oauth }: ConnectionWithState,
+  loaded: ConnectionWithState,
   /** The language of the connector's name (#257). */
   locale: Locale = DEFAULT_LOCALE,
 ) {
-  const manifest = registry.get(row.connectorId)?.manifest;
+  const { row, state, oauth } = loaded;
+  const resolved = connectorFor(registry, loaded);
+  const manifest = resolved?.manifest;
   return {
     id: row.id,
     name: row.name,
@@ -89,6 +114,7 @@ export function presentConnection(
         }
       : null,
     setupPending: row.setupPending,
+    customApi: presentCustomApi(loaded, resolved),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     state: toStateView(state),

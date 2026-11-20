@@ -217,6 +217,7 @@ describe("status board helpers", () => {
         name: "Search Console",
         state: state({ health: "pending", lastSuccessAt: null }),
         setupPending: true,
+        customApi: null,
       },
       c: {
         name: "Old",

@@ -39,6 +39,14 @@
     "./vercel": {
       "types": "./dist/vercel/index.d.ts",
       "default": "./dist/vercel/index.js"
+    },
+    "./custom-api": {
+      "types": "./dist/custom-api/index.d.ts",
+      "default": "./dist/custom-api/index.js"
+    },
+    "./custom-api/testing": {
+      "types": "./dist/custom-api/testing/index.d.ts",
+      "default": "./dist/custom-api/testing/index.js"
     }
   },
   "scripts": {

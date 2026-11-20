@@ -1165,3 +1165,82 @@ describe("host egress policy (#801)", () => {
     });
   });
 });
+
+describe("redactValues (custom API)", () => {
+  it("redacts extra values from errors, check messages and logs", async () => {
+    const derived = "Basic ZngtdXNlcjpmeC1wYXNzLTAwMDE=";
+    const context: ConnectionContext = {
+      ...baseContext,
+      credentials: { username: "fx-user", password: "fx-pass-0001" },
+    };
+    const lines: string[] = [];
+    const failing: Connector = {
+      ...connectorWith(demoManifest),
+      async sync(_context, _request, runtime) {
+        runtime.log?.warn(`sent ${derived}`, { header: derived });
+        throw new Error(`refused ${derived}`);
+      },
+    };
+    const options = {
+      redactValues: [derived],
+      log: (entry: { message: string; fields: Record<string, unknown> }) =>
+        lines.push(JSON.stringify(entry)),
+    };
+    const error = (await executeSync(failing, context, request, options).catch(
+      (e: unknown) => e,
+    )) as Error;
+    expect(error.message).toBe("refused [redacted]");
+    expect(lines.join()).not.toContain("ZngtdXNlcjpmeC1wYXNzLTAwMDE=");
+    expect(lines.join()).toContain("[redacted]");
+
+    const checked = await executeCheck(
+      connectorWith(demoManifest, undefined, () => ({
+        ok: false,
+        message: `the API echoed ${derived}`,
+      })),
+      context,
+      options,
+    );
+    expect(checked.message).toBe("the API echoed [redacted]");
+    // Without the option, the derived value is not known to the runtime.
+    const plain = await executeCheck(
+      connectorWith(demoManifest, undefined, () => ({
+        ok: false,
+        message: `the API echoed ${derived}`,
+      })),
+      context,
+    );
+    expect(plain.message).toContain(derived);
+  });
+});
+
+describe("custom-api call options guard (ADR 0027)", () => {
+  it("refuses to run custom-api without its call options", async () => {
+    const custom = connectorWith({ ...demoManifest, id: "custom-api" });
+    for (const options of [
+      {},
+      { egress: { redirects: "allowlist" as const }, redactValues: [] },
+      { egress: { redirects: "same-host" as const } },
+    ]) {
+      await expect(
+        executeCheck(custom, baseContext, options),
+      ).rejects.toBeInstanceOf(ContractViolationError);
+      await expect(
+        executeSync(custom, baseContext, request, options),
+      ).rejects.toBeInstanceOf(ContractViolationError);
+      await expect(
+        executeDiscover(custom, baseContext, options),
+      ).rejects.toBeInstanceOf(ContractViolationError);
+    }
+    expect(
+      await executeCheck(custom, baseContext, {
+        egress: { redirects: "same-host" },
+        redactValues: [],
+      }),
+    ).toEqual({ ok: true });
+    // Bundled connectors need nothing extra.
+    expect(
+      await executeCheck(connectorWith(demoManifest), baseContext, {}),
+    ).toEqual({ ok: true });
+  });
+});

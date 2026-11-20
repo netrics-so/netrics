@@ -104,6 +104,20 @@ export const apiErrorsEn = {
       "This workspace has reached its limit of custom APIs. Archive one you no longer need.",
     custom_api_stream_limit:
       "This custom API has more streams than this server allows.",
+    custom_api_requires_definition:
+      "Custom API connections are created from a custom API definition.",
+    custom_api_environment_not_found:
+      "That environment is not part of this custom API.",
+    custom_api_variables_invalid:
+      "Fill in every connection value this custom API needs.",
+    custom_api_credentials_invalid:
+      "Enter the credentials this custom API's login method needs.",
+    custom_api_environment_needs_credentials:
+      "Changing the environment needs the credentials again.",
+    custom_api_connection_limit:
+      "This workspace has reached its limit of custom API connections.",
+    custom_api_oauth_unavailable:
+      "OAuth login for custom APIs is not available yet.",
     retention_dataset_unknown:
       "This connection has no such data table. Reload the page and choose again.",
     reviews_not_supported:

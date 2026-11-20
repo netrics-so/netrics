@@ -39,6 +39,13 @@ export interface ContractTestOptions {
    * to a provider pass a fixture-backed runtime (still no network).
    */
   runtime?: ConnectorRuntime;
+  /**
+   * How nextCursor must move between pages: "increasing" (default) wants
+   * each one to sort after the previous one; "changing" only wants a new
+   * cursor on every page, for connectors whose cursor is opaque encoded
+   * state (the host only compares cursors for equality).
+   */
+  cursorOrder?: "increasing" | "changing";
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -207,6 +214,9 @@ export function runConnectorContractTests(
   const fromMs = WINDOW_FROM;
   const toMs = WINDOW_FROM + WINDOW_DAYS * DAY_MS;
   const midMs = WINDOW_FROM + (WINDOW_DAYS / 2) * DAY_MS;
+  // A connector with source datasets only (no metrics) answers with
+  // dataset pages; the observation checks then hold trivially.
+  const datasetOnly = connector.manifest.metrics.length === 0;
 
   describe(`connector contract: ${options.name ?? connector.manifest.id}`, () => {
     it("declares a schema-valid, SDK-compatible manifest", () => {
@@ -238,7 +248,9 @@ export function runConnectorContractTests(
           runtime,
         ),
       );
-      expect(result.observations.length).toBeGreaterThan(0);
+      if (datasetOnly)
+        expect(result.datasetPages?.length ?? 0).toBeGreaterThan(0);
+      else expect(result.observations.length).toBeGreaterThan(0);
       const metricsByKey = new Map(
         connector.manifest.metrics.map((metric) => [metric.key, metric]),
       );
@@ -280,7 +292,7 @@ export function runConnectorContractTests(
         runtime,
       );
       const byIdentity = indexByIdentity(full.observations);
-      expect(tail.observations.length).toBeGreaterThan(0);
+      if (!datasetOnly) expect(tail.observations.length).toBeGreaterThan(0);
       for (const observation of tail.observations) {
         const earlier = byIdentity.get(observationKey(observation));
         expect(
@@ -303,15 +315,19 @@ export function runConnectorContractTests(
         ),
       );
       let pages = 1;
+      const seen = new Set<string>();
       while (!result.done) {
         expect(
           result.nextCursor,
           "a non-final page must carry nextCursor",
         ).toBeDefined();
         expect(
-          (result.nextCursor as string) > (cursor ?? ""),
+          options.cursorOrder === "changing"
+            ? result.nextCursor !== cursor && !seen.has(result.nextCursor!)
+            : (result.nextCursor as string) > (cursor ?? ""),
           "nextCursor must advance between pages",
         ).toBe(true);
+        seen.add(result.nextCursor!);
         cursor = result.nextCursor;
         result = syncResultSchema.parse(
           await connector.sync(
@@ -342,7 +358,8 @@ export function runConnectorContractTests(
         runtime,
       );
       const byIdentity = indexByIdentity(backfill.observations);
-      expect(incremental.observations.length).toBeGreaterThan(0);
+      if (!datasetOnly)
+        expect(incremental.observations.length).toBeGreaterThan(0);
       for (const observation of incremental.observations) {
         const earlier = byIdentity.get(observationKey(observation));
         expect(earlier).toBeDefined();

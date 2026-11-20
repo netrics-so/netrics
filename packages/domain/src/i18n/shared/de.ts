@@ -81,5 +81,25 @@ export const sharedDe: Catalog<SharedMessages> = {
       forbidden:
         "Apple Ads hat den Zugriff verweigert: Der API-Benutzer braucht in diesem Werbekonto eine API-Rolle, etwa API Account Read Only (in Apples Antworten API Read Only). Eine Rolle ohne API entzieht den API-Zugriff. Bitte einen Account Admin, die Rolle zu ändern, oder richte einen neuen Schlüssel ein.",
     },
+    customApi: {
+      unauthorized:
+        "Die API hat die Zugangsdaten abgelehnt (HTTP 401). Gib für diese Verbindung einen neuen Schlüssel, ein neues Token oder Passwort ein oder verbinde sie neu.",
+      forbidden:
+        "Die API hat den Zugriff verweigert (HTTP 403). Prüf, ob diese Zugangsdaten die Endpunkte dieser eigenen API lesen dürfen.",
+      hostChanged:
+        "Die Zugangsdaten dieser Verbindung gelten für einen anderen API-Host. Gib sie für die Umgebung der Verbindung erneut ein.",
+      notJson:
+        "Die API hat nicht mit JSON geantwortet. Prüf die Basis-URL und den Anfragepfad.",
+      recordsNotList:
+        "Der Datensatzpfad zeigt in der Antwort nicht auf eine Liste oder ein Objekt. Wähl die Datensätze in der Definition erneut aus.",
+      nextUrlOffHost:
+        "Der Link zur nächsten Seite zeigt auf einen anderen Host. netrics folgt Links zur nächsten Seite nur auf dem API-Host.",
+      pageLimit:
+        "Der Lauf wurde nach 200 Seiten beendet, so viele liest ein Lauf höchstens. Die bisherigen Daten bleiben erhalten; der nächste Lauf macht weiter.",
+      recordLimit:
+        "Der Lauf wurde nach 100.000 Datensätzen beendet, so viele liest ein Lauf höchstens. Die bisherigen Daten bleiben erhalten; der nächste Lauf macht weiter.",
+      durationLimit:
+        "Der Lauf wurde nach 30 Minuten beendet, so lange dauert ein Lauf höchstens. Die bisherigen Daten bleiben erhalten; der nächste Lauf macht weiter.",
+    },
   },
 };

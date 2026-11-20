@@ -21,8 +21,11 @@ import {
   type SyncResult,
 } from "@netrics/connector-sdk";
 import {
+  connectionCustomApi,
   connectionResourcesDiscoveredAt,
   connectorStageProvenance,
+  customApiPinColumns,
+  customApiPinJoin,
   datasetVersions,
   ingestAppReviews,
   ingestDatasetPage,
@@ -45,7 +48,13 @@ import {
   IMAGE_QUOTA_DEFAULT_COUNT,
 } from "@netrics/contracts";
 
+import {
+  CUSTOM_API_AUTH_ERROR,
+  CUSTOM_API_LIMIT_ERROR,
+} from "@netrics/connectors/custom-api";
+
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
+import { callOptionsFor, connectorFor } from "../custom-api/connectors.js";
 import { refreshConnectionIcons } from "../images/resource-icons.js";
 import {
   NonRetryableJobError,
@@ -111,6 +120,11 @@ export interface SyncEngineDeps {
   signedKeyTokens?: SignedKeyTokenStore;
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
+  /**
+   * Self-host only (NETRICS_CUSTOM_API_PRIVATE_HOSTS): private hosts the
+   * custom-api connector may reach. Never given to bundled connectors.
+   */
+  customApiPrivateHosts?: readonly string[];
   /** The workspace image quota icons count against (#226). */
   imageQuota?: ImageQuota;
 }
@@ -340,6 +354,8 @@ async function runSync(
         credentialsEncrypted: schema.connections.credentialsEncrypted,
         setupPending: schema.connections.setupPending,
         oauthProvider: schema.connectionOAuth.provider,
+        customApiEnvironmentId: schema.connections.customApiEnvironmentId,
+        pin: customApiPinColumns,
       })
       .from(schema.connections)
       .leftJoin(
@@ -348,6 +364,10 @@ async function runSync(
           eq(schema.connectionOAuth.connectionId, schema.connections.id),
           eq(schema.connectionOAuth.workspaceId, workspaceId),
         ),
+      )
+      .leftJoin(
+        schema.customApiDefinitionVersions,
+        customApiPinJoin(workspaceId),
       )
       .where(
         and(
@@ -395,10 +415,19 @@ async function runSync(
     log.info("sync skipped: connection setup is pending");
     return;
   }
+  const { pin, customApiEnvironmentId, ...connectionRow } = loaded.connection;
   const connection = {
-    ...loaded.connection,
+    ...connectionRow,
     config: loaded.connection.config as Record<string, unknown>,
   };
+  /**
+   * The connector this connection runs (ADR 0027): the registry's for a
+   * bundled connector, one built from the pinned definition for custom-api.
+   */
+  const resolved = connectorFor(deps.registry, {
+    row: { connectorId: connection.connectorId },
+    customApi: connectionCustomApi(customApiEnvironmentId, pin),
+  });
   const state = loaded.state;
   // The provider's limit is used up (#781): no job of the connection asks
   // it before the reset. This one waits too, without a run or a retry.
@@ -430,9 +459,7 @@ async function runSync(
    * checkpoint; its success records exactly these, never what a later
    * worker declares but earlier pages never read.
    */
-  const declaredNow = datasetVersions(
-    deps.registry.get(connection.connectorId)?.manifest.datasets,
-  );
+  const declaredNow = datasetVersions(resolved?.manifest.datasets);
   const backfillDatasets =
     mode !== "backfill"
       ? null
@@ -451,7 +478,7 @@ async function runSync(
     mode,
     state,
     now,
-    deps.registry.get(connection.connectorId)?.manifest.backfillDays ?? 0,
+    resolved?.manifest.backfillDays ?? 0,
   );
   const continuation = (
     job.payload as { continuation?: { syncWindow?: unknown } } | null
@@ -492,8 +519,7 @@ async function runSync(
       : {};
   const pollIntervalSeconds =
     state?.pollIntervalSeconds ??
-    deps.registry.get(connection.connectorId)?.manifest
-      .minRefreshIntervalSeconds ??
+    resolved?.manifest.minRefreshIntervalSeconds ??
     300;
 
   /**
@@ -662,7 +688,7 @@ async function runSync(
   };
 
   // Registry lookup: an unknown connector id means catalog drift — permanent.
-  const registered = deps.registry.get(connection.connectorId);
+  const registered = resolved;
   if (!registered) {
     const error = new Error(
       `contract: no connector registered for "${connection.connectorId}"`,
@@ -767,11 +793,19 @@ async function runSync(
   // Connector log lines (SDK 0.2.14, #638), already sanitized by the
   // runtime, attributed to this connection, run (jobId) and attempt.
   const connectorLog = log.child({ source: "connector" });
-  const executeOptions: ExecuteOptions = {
-    ...deps.executeOptions,
-    log: ({ level, connector: connectorId, message, fields }) =>
-      connectorLog[level]({ connector: connectorId, fields }, message),
-  };
+  const executeOptions: ExecuteOptions = callOptionsFor(
+    registered,
+    {
+      ...deps.executeOptions,
+      log: ({ level, connector: connectorId, message, fields }) =>
+        connectorLog[level]({ connector: connectorId, fields }, message),
+    },
+    {
+      credentials,
+      config: connection.config,
+      privateHosts: deps.customApiPrivateHosts ?? [],
+    },
+  );
   /**
    * Runs one connector call with this connection's credentials: stored
    * credentials, for OAuth a valid access token (one retry with a refreshed
@@ -1256,6 +1290,18 @@ async function runSync(
     }
     if (error instanceof DatasetBudgetError) {
       await recordFailure("budget", error);
+      throw new TerminalJobError(safeMessage(error));
+    }
+    // The custom-api connector's run limits and refusals (ADR 0027), by
+    // name: the runtime's redaction keeps the name, not the class. A limit
+    // keeps what earlier pages committed; the stored cursor lets the next
+    // run go on.
+    if (error instanceof Error && error.name === CUSTOM_API_LIMIT_ERROR) {
+      await recordFailure("budget", error);
+      throw new TerminalJobError(safeMessage(error));
+    }
+    if (error instanceof Error && error.name === CUSTOM_API_AUTH_ERROR) {
+      await recordFailure("auth", error);
       throw new TerminalJobError(safeMessage(error));
     }
     const errorClass: ErrorClass =

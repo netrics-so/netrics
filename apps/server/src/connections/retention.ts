@@ -21,6 +21,7 @@ import {
 } from "@netrics/database";
 import type { DataPolicy } from "@netrics/domain";
 
+import { connectorFor } from "../custom-api/connectors.js";
 import type { Actor, Result } from "./service.js";
 
 // Per-connection dataset retention (#492): one choice per dataset of the
@@ -74,8 +75,8 @@ type RetentionResult = Result<ConnectionRetention>;
 export function createConnectionRetentionService(
   deps: ConnectionRetentionServiceDeps,
 ) {
-  function datasetsOf(connectorId: string) {
-    return deps.registry.get(connectorId)?.manifest.datasets ?? [];
+  function datasetsOf(connection: Parameters<typeof connectorFor>[1]) {
+    return connectorFor(deps.registry, connection)?.manifest.datasets ?? [];
   }
 
   return {
@@ -105,7 +106,7 @@ export function createConnectionRetentionService(
           return {
             ok: true,
             value: presentConnectionRetention(
-              datasetsOf(connection.row.connectorId),
+              datasetsOf(connection),
               record,
               policy.maxRetentionDays,
             ),
@@ -138,7 +139,7 @@ export function createConnectionRetentionService(
           );
           if (!connection)
             return { ok: false, status: 404, error: "connection_not_found" };
-          const datasets = datasetsOf(connection.row.connectorId);
+          const datasets = datasetsOf(connection);
           if (!retentionNamesDatasets({ datasets }, choice))
             return {
               ok: false,

@@ -7,6 +7,8 @@ import {
   type Database,
 } from "@netrics/database";
 
+import { connectorFor } from "./custom-api/connectors.js";
+
 export type OperatorBackfillResult =
   | { ok: true; jobId: string; connectorId: string }
   | { ok: false; reason: string };
@@ -40,7 +42,8 @@ export async function requestOperatorBackfill(
           "the connection is still being set up; its first backfill runs once setup finishes",
       };
     }
-    const registered = registry.get(connectorId);
+    // custom-api connections resolve from their pin (ADR 0027).
+    const registered = connectorFor(registry, connection);
     if (!registered) {
       return { ok: false, reason: `connector ${connectorId} is not installed` };
     }

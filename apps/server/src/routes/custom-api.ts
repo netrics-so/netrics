@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
+  connectionResponseSchema,
+  createCustomApiConnectionRequestSchema,
   createCustomApiDefinitionRequestSchema,
   createCustomApiDefinitionVersionRequestSchema,
   customApiDefinitionListQuerySchema,
@@ -10,6 +12,10 @@ import {
   customApiErrorResponseSchema,
   updateCustomApiDefinitionRequestSchema,
 } from "@netrics/contracts";
+import type {
+  ConnectorRegistry,
+  ExecuteOptions,
+} from "@netrics/connector-runtime";
 import type { Database } from "@netrics/database";
 import { can, type WorkspaceAction } from "@netrics/domain";
 
@@ -18,6 +24,8 @@ import {
   createCustomApiService,
   type CustomApiResult,
 } from "../custom-api/service.js";
+import { createCustomApiConnectionService } from "../custom-api/connections.js";
+import type { CredentialKeyring } from "../credentials.js";
 import type { CustomApiInstanceConfig } from "../env.js";
 import {
   parseBody,
@@ -37,6 +45,12 @@ export interface CustomApiRouteDeps {
   authService: AuthService;
   db: Database;
   limits: CustomApiInstanceConfig;
+  registry: ConnectorRegistry;
+  credentialKeyring: CredentialKeyring;
+  /** Self-host only (NETRICS_CUSTOM_API_PRIVATE_HOSTS). */
+  privateHosts: readonly string[];
+  /** Tests only: options for every connector call (e.g. local egress). */
+  executeOptions?: ExecuteOptions;
 }
 
 const definitionParamsSchema = z.object({ definitionId: z.uuid() });
@@ -65,6 +79,7 @@ export function registerCustomApiRoutes(
 ): void {
   const requireSession = createRequireSession(deps.authService);
   const definitions = createCustomApiService(deps);
+  const connections = createCustomApiConnectionService(deps);
 
   async function authorize(
     request: FastifyRequest,
@@ -293,6 +308,47 @@ export function registerCustomApiRoutes(
             return;
           }
           return customApiDefinitionResponseSchema.parse(archived);
+        },
+      );
+
+      scope.post(
+        `${BASE}/:definitionId/connections`,
+        {
+          schema: routeSchema({
+            summary:
+              "Connect a custom API definition: pins a version (default: the current one) and an environment, checks the credentials, then stores the connection and queues its backfill",
+            tags: TAGS,
+            body: createCustomApiConnectionRequestSchema,
+            response: connectionResponseSchema,
+            responseStatus: 201,
+            errors: [403, 404, 409],
+            errorSchemas: customApiErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:create");
+          const id = access && definitionId(request, reply);
+          if (!access || !id) {
+            return;
+          }
+          const body = parseBody(
+            createCustomApiConnectionRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) {
+            return;
+          }
+          const created = unwrap(
+            await connections.create(access, id, body),
+            reply,
+          );
+          if (!created) {
+            return;
+          }
+          return reply
+            .code(201)
+            .send(connectionResponseSchema.parse({ connection: created }));
         },
       );
 

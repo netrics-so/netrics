@@ -45,6 +45,7 @@ import {
   connectionRetentionChoiceSchema,
   connectorDatasetRetentionSchema,
 } from "./connection-retention.js";
+import { connectionCustomApiViewSchema } from "./custom-api.js";
 import { goalProgressSchema, goalResponseSchema } from "./goals.js";
 import { imageContentTypeSchema } from "./images.js";
 import { projectFilterQuerySchema } from "./project-filter.js";
@@ -1014,6 +1015,11 @@ export const connectionSchema = z.object({
    * connection is scheduled and its backfill queued in the same commit.
    */
   setupPending: z.boolean(),
+  /**
+   * The definition, version and environment of a custom API connection
+   * (milestone 13); null for bundled connectors.
+   */
+  customApi: connectionCustomApiViewSchema.nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   state: connectionStateViewSchema,
@@ -1207,6 +1213,21 @@ export const updateConnectionRequestSchema = z.object({
   projectId: z.uuid().nullable().optional(),
   /** null follows all current/future resources; omitted keeps the selection. */
   resources: z.array(z.string().min(1)).nullable().optional(),
+  /**
+   * Custom API connections: another environment of the pinned definition.
+   * Credentials are bound to the environment host, so this needs
+   * `credentials` too, unless the login method is none and the definition
+   * has no secret variables.
+   */
+  customApiEnvironmentId: z.string().min(1).max(40).optional(),
+  /**
+   * Custom API connections: the values of every secret variable (input
+   * only). Required with a new environment when the definition has secret
+   * variables: secrets are never carried to another host.
+   */
+  secretVariables: z
+    .record(z.string(), z.string().min(1).max(2_000))
+    .optional(),
 });
 export type UpdateConnectionRequest = z.infer<
   typeof updateConnectionRequestSchema

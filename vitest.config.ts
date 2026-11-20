@@ -23,6 +23,12 @@ export default defineConfig({
       "@netrics/connector-runtime": r(
         "./packages/connector-runtime/src/index.ts",
       ),
+      "@netrics/connectors/custom-api/testing": r(
+        "./packages/connectors/src/custom-api/testing/index.ts",
+      ),
+      "@netrics/connectors/custom-api": r(
+        "./packages/connectors/src/custom-api/index.ts",
+      ),
       "@netrics/connectors": r("./packages/connectors/src/index.ts"),
       "@netrics/database/testing": r("./packages/database/src/test-db.ts"),
       "@netrics/database": r("./packages/database/src/index.ts"),

@@ -24,11 +24,81 @@ export interface ConnectionOAuthAccount {
   grantedScopes: string[];
 }
 
+/**
+ * The definition version and environment a custom-api connection is pinned
+ * to (milestone 13), with the version's document. The document is opaque
+ * here; the server validates it before use.
+ */
+export interface ConnectionCustomApi {
+  definitionId: string;
+  versionId: string;
+  version: number;
+  environmentId: string;
+  document: unknown;
+  datasetVersions: Record<string, number>;
+}
+
 export interface ConnectionWithState {
   row: ConnectionRow;
   state: ConnectionStateRow | null;
   /** Null for connections that are not authorized through OAuth. */
   oauth: ConnectionOAuthAccount | null;
+  /** Null for bundled connectors (and connections without a pin). */
+  customApi: ConnectionCustomApi | null;
+}
+
+/**
+ * The pinned version's columns, for a left join on
+ * custom_api_definition_versions by `customApiPinJoin`.
+ */
+export const customApiPinColumns = {
+  definitionId: schema.customApiDefinitionVersions.definitionId,
+  versionId: schema.customApiDefinitionVersions.id,
+  version: schema.customApiDefinitionVersions.version,
+  document: schema.customApiDefinitionVersions.document,
+  datasetVersions: schema.customApiDefinitionVersions.datasetVersions,
+};
+
+/** Join condition of a connection's pinned version, with the workspace predicate. */
+export function customApiPinJoin(workspaceId: string) {
+  return and(
+    eq(
+      schema.customApiDefinitionVersions.id,
+      schema.connections.customApiDefinitionVersionId,
+    ),
+    eq(schema.customApiDefinitionVersions.workspaceId, workspaceId),
+  );
+}
+
+type PinColumns = {
+  definitionId: string | null;
+  versionId: string | null;
+  version: number | null;
+  document: unknown;
+  datasetVersions: unknown;
+} | null;
+
+/** The pin of a joined row, or null when the connection has none. */
+export function connectionCustomApi(
+  environmentId: string | null,
+  pin: PinColumns,
+): ConnectionCustomApi | null {
+  if (
+    !pin ||
+    environmentId === null ||
+    pin.versionId === null ||
+    pin.definitionId === null ||
+    pin.version === null
+  )
+    return null;
+  return {
+    definitionId: pin.definitionId,
+    versionId: pin.versionId,
+    version: pin.version,
+    environmentId,
+    document: pin.document,
+    datasetVersions: (pin.datasetVersions ?? {}) as Record<string, number>,
+  };
 }
 
 const oauthAccountColumns = {
@@ -56,14 +126,16 @@ export async function findConnection(
   workspaceId: string,
   connectionId: string,
 ): Promise<ConnectionWithState | null> {
-  const [row] = await tx
-    .select()
+  const [found] = await tx
+    .select({ row: schema.connections, pin: customApiPinColumns })
     .from(schema.connections)
+    .leftJoin(schema.customApiDefinitionVersions, customApiPinJoin(workspaceId))
     .where(connectionScope(workspaceId, connectionId))
     .limit(1);
-  if (!row) {
+  if (!found) {
     return null;
   }
+  const row = found.row;
   const [state] = await tx
     .select()
     .from(schema.connectionState)
@@ -79,7 +151,12 @@ export async function findConnection(
       ),
     )
     .limit(1);
-  return { row, state: state ?? null, oauth: oauth ?? null };
+  return {
+    row,
+    state: state ?? null,
+    oauth: oauth ?? null,
+    customApi: connectionCustomApi(row.customApiEnvironmentId, found.pin),
+  };
 }
 
 export async function listConnections(
@@ -93,6 +170,7 @@ export async function listConnections(
       row: schema.connections,
       state: schema.connectionState,
       oauth: oauthAccountColumns,
+      pin: customApiPinColumns,
     })
     .from(schema.connections)
     .leftJoin(
@@ -109,6 +187,7 @@ export async function listConnections(
         eq(schema.connectionOAuth.workspaceId, workspaceId),
       ),
     )
+    .leftJoin(schema.customApiDefinitionVersions, customApiPinJoin(workspaceId))
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
@@ -116,7 +195,10 @@ export async function listConnections(
       ),
     )
     .orderBy(schema.connections.createdAt);
-  return rows;
+  return rows.map(({ pin, ...rest }) => ({
+    ...rest,
+    customApi: connectionCustomApi(rest.row.customApiEnvironmentId, pin),
+  }));
 }
 
 /** The ids of the workspace's connections (a status board's sources). */
@@ -208,14 +290,39 @@ export async function insertConnection(
       pollIntervalSeconds: input.pollIntervalSeconds,
     })
     .returning();
-  return { row, state: state ?? null, oauth: null };
+  const [pin] = input.customApi
+    ? await tx
+        .select(customApiPinColumns)
+        .from(schema.customApiDefinitionVersions)
+        .where(
+          and(
+            eq(
+              schema.customApiDefinitionVersions.workspaceId,
+              input.workspaceId,
+            ),
+            eq(
+              schema.customApiDefinitionVersions.id,
+              input.customApi.definitionVersionId,
+            ),
+          ),
+        )
+        .limit(1)
+    : [];
+  return {
+    row,
+    state: state ?? null,
+    oauth: null,
+    customApi: connectionCustomApi(row.customApiEnvironmentId, pin ?? null),
+  };
 }
 
 export interface ConnectionChanges {
   name?: string;
   config?: Record<string, unknown>;
-  credentialsEncrypted?: Buffer;
+  credentialsEncrypted?: Buffer | null;
   projectId?: string | null;
+  /** A custom-api connection's environment (milestone 13). */
+  customApiEnvironmentId?: string;
 }
 
 /**
