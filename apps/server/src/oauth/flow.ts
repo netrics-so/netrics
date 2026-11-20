@@ -4,6 +4,7 @@ import { CUSTOM_API_CONNECTOR_ID } from "@netrics/connectors/custom-api";
 import type { FastifyBaseLogger } from "fastify";
 
 import type {
+  OAuthAuthorizationPurpose,
   OAuthCallbackOutcome,
   OAuthCallbackRequest,
   OAuthCallbackResponse,
@@ -114,8 +115,15 @@ function oauthStrategy(
   );
 }
 
-function requiredAction(purpose: "connect" | "reauthorize"): WorkspaceAction {
-  return purpose === "connect" ? "connections:create" : "connections:update";
+/**
+ * connect and authorize (the first grant of a custom API connection or
+ * draft the member is setting up) need connections:create; reauthorize
+ * needs connections:update.
+ */
+function requiredAction(purpose: OAuthAuthorizationPurpose): WorkspaceAction {
+  return purpose === "reauthorize"
+    ? "connections:update"
+    : "connections:create";
 }
 
 /** Thrown inside the flow to end it with an outcome; never carries secrets. */
@@ -137,7 +145,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
     tx: Transaction,
     workspaceId: string,
     userId: string,
-    purpose: "connect" | "reauthorize",
+    purpose: OAuthAuthorizationPurpose,
   ): Promise<boolean> {
     const membership = await findMembership(tx, workspaceId, userId);
     return (
@@ -399,7 +407,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
           now: now(),
         });
         const account = verifyIdToken(tokens.idToken, {
-          issuers: provider.definition.openIdConnect.issuers,
+          issuers: provider.definition.openIdConnect?.issuers ?? [],
           clientId: provider.clientId,
           nonce: authorization.nonce,
           now: now(),

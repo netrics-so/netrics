@@ -12,7 +12,12 @@ export type OAuthAuthorizationRow =
   typeof schema.oauthAuthorizations.$inferSelect;
 export type ConnectionOAuthRow = typeof schema.connectionOAuth.$inferSelect;
 
-export type OAuthAuthorizationPurpose = "connect" | "reauthorize";
+/**
+ * connect: a new connection; reauthorize: a new grant for a connection
+ * that has one; authorize: the first grant of a connection that exists
+ * without one (a custom OAuth connection holding its client credentials).
+ */
+export type OAuthAuthorizationPurpose = "connect" | "reauthorize" | "authorize";
 
 export interface NewOAuthAuthorization {
   /** Chosen by the caller: the PKCE verifier envelope is bound to it. */

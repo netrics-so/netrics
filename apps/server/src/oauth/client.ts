@@ -74,12 +74,16 @@ export function pkceChallenge(verifier: string): string {
 
 export interface AuthorizationRequest {
   state: string;
+  /** Sent only to OpenID Connect providers (it comes back in the ID token). */
   nonce: string;
   codeVerifier: string;
   scopes: readonly string[];
 }
 
-/** The provider URL the browser is sent to. */
+/**
+ * The provider URL the browser is sent to. Without OpenID Connect no
+ * `nonce`; without scopes no `scope`; with PKCE off no challenge.
+ */
 export function buildAuthorizationUrl(
   provider: ConfiguredOAuthProvider,
   request: AuthorizationRequest,
@@ -89,11 +93,17 @@ export function buildAuthorizationUrl(
   params.set("response_type", "code");
   params.set("client_id", provider.clientId);
   params.set("redirect_uri", provider.redirectUri);
-  params.set("scope", request.scopes.join(" "));
+  if (request.scopes.length > 0) {
+    params.set("scope", request.scopes.join(" "));
+  }
   params.set("state", request.state);
-  params.set("nonce", request.nonce);
-  params.set("code_challenge", pkceChallenge(request.codeVerifier));
-  params.set("code_challenge_method", provider.definition.pkce);
+  if (provider.definition.openIdConnect) {
+    params.set("nonce", request.nonce);
+  }
+  if (provider.definition.pkce) {
+    params.set("code_challenge", pkceChallenge(request.codeVerifier));
+    params.set("code_challenge_method", provider.definition.pkce);
+  }
   for (const [key, value] of Object.entries(
     provider.definition.authorizationParams,
   )) {
@@ -139,7 +149,41 @@ function form(values: Record<string, string>): ConnectorFetchInit {
   };
 }
 
-/** Exchanges an authorization code with its PKCE verifier (RFC 6749 4.1.3). */
+/**
+ * A form POST to a token or revocation endpoint with the client's
+ * credentials: in the body (default) or as HTTP basic with both values
+ * form-encoded first (RFC 6749 2.3.1).
+ */
+export function clientForm(
+  provider: Pick<ConfiguredOAuthProvider, "clientId" | "clientSecret"> & {
+    clientAuth?: "body" | "basic";
+  },
+  values: Record<string, string>,
+): ConnectorFetchInit {
+  if (provider.clientAuth === "basic") {
+    const encode = (value: string) =>
+      encodeURIComponent(value).replace(/%20/g, "+");
+    const basic = Buffer.from(
+      `${encode(provider.clientId)}:${encode(provider.clientSecret.reveal())}`,
+      "utf8",
+    ).toString("base64");
+    const init = form(values);
+    return {
+      ...init,
+      headers: { ...init.headers, authorization: `Basic ${basic}` },
+    };
+  }
+  return form({
+    ...values,
+    client_id: provider.clientId,
+    client_secret: provider.clientSecret.reveal(),
+  });
+}
+
+/**
+ * Exchanges an authorization code (RFC 6749 4.1.3), with its PKCE verifier
+ * when the provider uses PKCE.
+ */
 export async function exchangeCode(
   provider: ConfiguredOAuthProvider,
   http: OAuthHttp,
@@ -149,13 +193,13 @@ export async function exchangeCode(
   try {
     response = await http(
       provider.definition.tokenEndpoint,
-      form({
+      clientForm(provider, {
         grant_type: "authorization_code",
         code: input.code,
         redirect_uri: provider.redirectUri,
-        client_id: provider.clientId,
-        client_secret: provider.clientSecret.reveal(),
-        code_verifier: input.codeVerifier,
+        ...(provider.definition.pkce
+          ? { code_verifier: input.codeVerifier }
+          : {}),
       }),
     );
   } catch (error) {
@@ -313,11 +357,9 @@ export async function isRefreshTokenLive(
   try {
     response = await http(
       provider.definition.tokenEndpoint,
-      form({
+      clientForm(provider, {
         grant_type: "refresh_token",
         refresh_token: refreshToken.reveal(),
-        client_id: provider.clientId,
-        client_secret: provider.clientSecret.reveal(),
       }),
     );
   } catch (error) {

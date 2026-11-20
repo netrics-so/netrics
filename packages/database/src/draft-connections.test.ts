@@ -11,6 +11,7 @@ import {
 import { withWorkspace } from "./context.js";
 import {
   DRAFT_CONNECTION_TTL_HOURS,
+  enqueueExpiredDraftGrants,
   pruneDraftConnections,
 } from "./draft-connections.js";
 import * as schema from "./schema.js";
@@ -171,6 +172,66 @@ describe("pruneDraftConnections", () => {
   it("runs only as the scheduler role", async () => {
     await expect(
       appClient`select prune_draft_connections(now(), interval '1 hour', 10)`,
+    ).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("drafts holding an OAuth grant (#805)", () => {
+  async function grant(connectionId: string) {
+    await owner`
+      insert into connection_oauth (connection_id, workspace_id, provider,
+        account_sub, granted_scopes)
+      values (${connectionId}, ${workspaceId}, 'custom',
+        ${`custom:${connectionId}`}, '{}')`;
+  }
+
+  it("leaves an expired draft with a grant to a revoke job, once per touch", async () => {
+    await owner`delete from jobs`;
+    const granted = await insertDraft(
+      "custom-api",
+      new Date(NOW.getTime() - 25 * HOUR),
+    );
+    await grant(granted);
+    const young = await insertDraft(
+      "custom-api",
+      new Date(NOW.getTime() - 2 * HOUR),
+    );
+    await grant(young);
+    const plain = await insertDraft(
+      "custom-api",
+      new Date(NOW.getTime() - 25 * HOUR),
+    );
+    expect(await pruneDraftConnections(schedulerDb, NOW)).toBe(1);
+    expect(await ids()).toEqual([granted, young].sort());
+    expect(await ids()).not.toContain(plain);
+
+    expect(await enqueueExpiredDraftGrants(schedulerDb, NOW)).toBe(1);
+    expect(await enqueueExpiredDraftGrants(schedulerDb, NOW)).toBe(0);
+    const jobs = await owner`
+      select kind, workspace_id, connection_id, payload from jobs`;
+    expect(jobs).toEqual([
+      {
+        kind: "custom_api.draft_expired",
+        workspace_id: workspaceId,
+        connection_id: granted,
+        payload: { workspace_id: workspaceId, connection_id: granted },
+      },
+    ]);
+  });
+
+  it("prunes a draft with a grant once it is twice as old", async () => {
+    const stale = await insertDraft(
+      "custom-api",
+      new Date(NOW.getTime() - 49 * HOUR),
+    );
+    await grant(stale);
+    expect(await pruneDraftConnections(schedulerDb, NOW)).toBe(1);
+    expect(await ids()).toEqual([]);
+  });
+
+  it("queues the revoke jobs only as the scheduler role", async () => {
+    await expect(
+      appClient`select enqueue_expired_draft_grants(now(), interval '1 hour', 10)`,
     ).rejects.toThrow(/permission denied/);
   });
 });

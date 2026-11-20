@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { request as httpsRequest } from "node:https";
 
 import type { ConnectorResponse } from "@netrics/connector-sdk";
@@ -5,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   FIXTURE_DEFINITION_NAMES,
+  FIXTURE_OAUTH_CLIENT,
   FIXTURE_SECRETS,
   fixtureDefinition,
   fixtureRuntime,
@@ -120,6 +122,142 @@ describe("custom API fixture server", () => {
       expect(
         fixtureDefinition(name, fixture.origin).environments[0]!.baseUrl,
       ).toBe(fixture.origin);
+  });
+
+  it("issues, refreshes and revokes tokens", async () => {
+    const runtime = fixtureRuntime(["127.0.0.1"]);
+    const { clientId, clientSecret } = FIXTURE_OAUTH_CLIENT;
+    const post = (
+      path: string,
+      values: Record<string, string>,
+      headers: Record<string, string> = {},
+    ) =>
+      runtime.fetch(`${fixture.origin}${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          ...headers,
+        },
+        body: new URLSearchParams(values).toString(),
+      });
+    const json = (response: ConnectorResponse) =>
+      response.json() as Record<string, string>;
+    const items = (token: string) =>
+      runtime.fetch(`${fixture.origin}/oauth/api/items`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+    // Client credentials, body and basic; a wrong secret is invalid_client.
+    const minted = await post("/oauth/token", {
+      grant_type: "client_credentials",
+      scope: "items.read",
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+    expect(minted.status).toBe(200);
+    expect(json(minted)).toMatchObject({
+      token_type: "Bearer",
+      scope: "items.read",
+    });
+    expect(json(minted).refresh_token).toBeUndefined();
+    expect((await items(json(minted).access_token!)).status).toBe(200);
+    const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    expect(
+      (
+        await post(
+          "/oauth/token",
+          { grant_type: "client_credentials" },
+          { authorization: `Basic ${basic}` },
+        )
+      ).status,
+    ).toBe(200);
+    expect(fixture.oauth.tokenRequests.at(-1)!.clientAuth).toBe("basic");
+    const refused = await post("/oauth/token", {
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: "wrong",
+    });
+    expect(refused.status).toBe(401);
+    expect(json(refused)).toEqual({ error: "invalid_client" });
+
+    // Authorization code with PKCE.
+    const verifier = "v".repeat(43);
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const redirectUri = "http://localhost:3000/oauth/custom/callback";
+    const authorize = await runtime.fetch(
+      `${fixture.origin}/oauth/authorize?${new URLSearchParams({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        state: "s1",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      })}`,
+    );
+    expect(authorize.status).toBe(302);
+    const back = new URL(authorize.headers.location!);
+    expect(back.searchParams.get("state")).toBe("s1");
+    const code = back.searchParams.get("code")!;
+    const exchange = (codeVerifier: string) =>
+      post("/oauth/token?rotate=1", {
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+        client_id: clientId,
+        client_secret: clientSecret,
+      });
+    const granted = await exchange(verifier);
+    expect(granted.status).toBe(200);
+    const refresh = json(granted).refresh_token!;
+    expect(refresh).toBeTruthy();
+    // A code works once.
+    expect((await exchange(verifier)).status).toBe(400);
+
+    // Refresh rotates with ?rotate=1; the old refresh token is dead.
+    const refreshed = await post("/oauth/token?rotate=1", {
+      grant_type: "refresh_token",
+      refresh_token: refresh,
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+    expect(refreshed.status).toBe(200);
+    const rotated = json(refreshed).refresh_token!;
+    expect(rotated).not.toBe(refresh);
+    const stale = await post("/oauth/token", {
+      grant_type: "refresh_token",
+      refresh_token: refresh,
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+    expect(json(stale)).toEqual({ error: "invalid_grant" });
+
+    // Revocation ends the grant; expired access tokens are refused.
+    expect(
+      (
+        await post("/oauth/revoke", {
+          token: rotated,
+          client_id: clientId,
+          client_secret: clientSecret,
+        })
+      ).status,
+    ).toBe(200);
+    expect(fixture.oauth.revoked).toEqual([rotated]);
+    expect(
+      json(
+        await post("/oauth/token", {
+          grant_type: "refresh_token",
+          refresh_token: rotated,
+          client_id: clientId,
+          client_secret: clientSecret,
+        }),
+      ),
+    ).toEqual({ error: "invalid_grant" });
+    const access = json(refreshed).access_token!;
+    expect((await items(access)).status).toBe(200);
+    fixture.oauth.expireAccessTokens();
+    expect((await items(access)).status).toBe(401);
+    expect(fixture.oauth.issued).toContain(code);
   });
 
   it("refuses hosts the fixture runtime does not allow", async () => {

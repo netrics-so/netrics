@@ -30,3 +30,26 @@ export async function pruneDraftConnections(
   );
   return row?.deleted ?? 0;
 }
+
+/**
+ * Queues one `custom_api.draft_expired` job per draft untouched for `hours`
+ * that holds an OAuth grant (scheduler role; enqueue_expired_draft_grants
+ * is SECURITY DEFINER, migration 0089). The worker revokes the grant at the
+ * provider and then deletes the draft; pruneDraftConnections skips such
+ * drafts until they are twice as old. Returns the number of jobs queued.
+ */
+export async function enqueueExpiredDraftGrants(
+  schedulerDb: Db | Transaction,
+  now: Date,
+  hours: number = DRAFT_CONNECTION_TTL_HOURS,
+  batch = 1_000,
+): Promise<number> {
+  const [row] = await schedulerDb.execute<{ queued: number }>(
+    sql`select enqueue_expired_draft_grants(
+          ${now.toISOString()}::timestamptz,
+          make_interval(hours => ${hours}),
+          ${batch}
+        ) as queued`,
+  );
+  return row?.queued ?? 0;
+}

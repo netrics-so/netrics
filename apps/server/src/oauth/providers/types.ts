@@ -16,15 +16,16 @@ export interface OAuthProviderDefinition {
   readonly tokenEndpoint: string;
   /** Token revocation (called by the server); null when unsupported. */
   readonly revocationEndpoint: string | null;
-  /** PKCE method; S256 only. */
-  readonly pkce: "S256";
+  /** PKCE method; S256 only. Null: no PKCE (a custom API that turned it off). */
+  readonly pkce: "S256" | null;
   /**
    * OpenID Connect: the ID token from the token endpoint names the linked
-   * account. `issuers` are the accepted `iss` values.
+   * account. `issuers` are the accepted `iss` values. Null for a provider
+   * without OpenID (custom OAuth: netrics generates the account id).
    */
   readonly openIdConnect: {
     readonly issuers: readonly string[];
-  };
+  } | null;
   /** Scopes asked for besides the connector's, to identify the account. */
   readonly identityScopes: readonly string[];
   /** Extra authorization request parameters. */

@@ -464,6 +464,7 @@ export {
 } from "./custom-api.js";
 export {
   DRAFT_CONNECTION_TTL_HOURS,
+  enqueueExpiredDraftGrants,
   pruneDraftConnections,
 } from "./draft-connections.js";
 export type {
