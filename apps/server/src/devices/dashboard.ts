@@ -14,6 +14,7 @@ import {
   type FreshnessDependency,
   type FreshnessManifests,
   type FreshnessReader,
+  readCoverage,
 } from "../dashboards/freshness.js";
 import { createHash } from "node:crypto";
 
@@ -305,6 +306,8 @@ interface DataContext {
   sources: DeviceStatusData["items"];
   /** Connections with a backfill queued or running. */
   backfilling: Set<string>;
+  /** Where each connection's read history starts (#378). */
+  historyFrom: Map<string, Date | null>;
   /** Connections that hold a reviews key (asked once per connection). */
   reviewsKey(connectionId: string): boolean;
   label(widget: DataWidget, metricName: string | undefined): string;
@@ -376,6 +379,9 @@ async function loadDataContext(
     states,
     sources,
     backfilling,
+    historyFrom: new Map(
+      connections.map(({ row, state }) => [row.id, state?.historyFrom ?? null]),
+    ),
     freshness: options.freshness
       ? createFreshnessReader(workspaceId, options.freshness, options.locale)
       : null,
@@ -467,18 +473,38 @@ async function guarded<T>(
   return result?.ok ? result.value : null;
 }
 
-function queryWidget(
+async function queryWidget(
   tx: Transaction,
   widget: DataWidget,
   context: DataContext,
 ): Promise<MetricQueryResponse | null> {
+  // The days the provider published and netrics read (#378): an empty sum
+  // over them is 0.
+  const coverage = context.freshness
+    ? readCoverage(
+        await context.freshness.read(tx, [
+          metricDependency(
+            widget.connectionId,
+            widget.metricKey,
+            widget.dimensions,
+          ),
+        ]),
+        {
+          historyFrom: context.historyFrom.get(widget.connectionId) ?? null,
+          backfilling: context.backfilling.has(widget.connectionId),
+        },
+      )
+    : undefined;
   return guarded(tx, widget, context, (savepoint) =>
     queryMetric(
       savepoint,
       context.workspaceId,
       metricRequest(widget),
       context.options.now,
-      queryOptions(context.options),
+      {
+        ...queryOptions(context.options),
+        ...(coverage ? { coverage } : {}),
+      },
     ),
   );
 }

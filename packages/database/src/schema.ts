@@ -489,6 +489,11 @@ export const connectionState = pgTable(
     backfillRequestCount: integer("backfill_request_count")
       .notNull()
       .default(0),
+    // Where the connection's read history starts (#378): the start of the
+    // window the last backfill read completely, set when a backfill
+    // succeeds and cleared when one fails. Null: no complete history is
+    // known, so an empty window is never taken for a zero.
+    historyFrom: timestamp("history_from", { withTimezone: true }),
     // When a member last asked to reload the history (#617): rate limit.
     historyReloadRequestedAt: timestamp("history_reload_requested_at", {
       withTimezone: true,

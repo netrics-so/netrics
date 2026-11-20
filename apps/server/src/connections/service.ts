@@ -74,6 +74,7 @@ import {
   listConnectionFreshness,
   listRecentSyncRuns,
   releaseOAuthGrant,
+  latestBackfillFailed,
   requestConnectionBackfill,
   requestConnectionSync,
   resetConnectionAuth,
@@ -2640,6 +2641,45 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           reviewTextDeleted > 0 ? { reviewTextDeleted } : {};
         let state = existing.state;
         let setupPending = row.setupPending;
+        /**
+         * New credentials for a connection whose backfill ended without
+         * reading its history (#378: one that died on a refused key): it
+         * is queued again, unless one waits or runs already. Connections
+         * whose history start is only unknown (runs pruned before it was
+         * recorded) are left alone: no 12-month reads on every key change.
+         */
+        const backfillUnreadHistory = async (
+          tx: Transaction,
+          id: string,
+          current: { historyFrom: Date | null } | null,
+          active: readonly string[],
+        ) => {
+          if (
+            !registered.manifest.supportsBackfill ||
+            !current ||
+            current.historyFrom !== null ||
+            active.includes(id) ||
+            !(await latestBackfillFailed(tx, actor.workspaceId, id))
+          ) {
+            return;
+          }
+          const jobId = await requestConnectionBackfill(tx, {
+            workspaceId: actor.workspaceId,
+            connectionId: id,
+          });
+          await insertAuditEvent(tx, {
+            workspaceId: actor.workspaceId,
+            actorUserId: actor.callerId,
+            action: "connection.backfill_requested",
+            target: id,
+            metadata: {
+              connectorId: row.connectorId,
+              by: "member",
+              reason: "history_incomplete",
+              jobId,
+            },
+          });
+        };
         // Finishing setup (ADR 0012): a connection created by an OAuth
         // callback gets its first checked config. It is scheduled and its
         // backfill queued in this commit, like a newly created connection;
@@ -2720,6 +2760,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             target: connectionId,
             metadata: { connectorId: row.connectorId, ...reviewsDeletedNote },
           });
+          const active = registered.manifest.supportsBackfill
+            ? await activeBackfillConnections(tx, actor.workspaceId)
+            : [];
+          if (!setupPending) {
+            await backfillUnreadHistory(tx, connectionId, state, active);
+          }
           for (const sibling of siblingKeys) {
             const updated = await updateConnectionRow(
               tx,
@@ -2752,10 +2798,16 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
                 sibling.connectionId,
               );
             }
-            await resetConnectionAuth(
+            const siblingState = await resetConnectionAuth(
               tx,
               actor.workspaceId,
               sibling.connectionId,
+            );
+            await backfillUnreadHistory(
+              tx,
+              sibling.connectionId,
+              siblingState,
+              active,
             );
             await insertAuditEvent(tx, {
               workspaceId: actor.workspaceId,

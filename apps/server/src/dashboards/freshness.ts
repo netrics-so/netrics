@@ -249,6 +249,27 @@ export function createFreshnessReader(
 }
 
 /**
+ * The days a widget's metric is read completely (#378): from the start of
+ * the connection's last complete backfill (`history_from`) to the least
+ * fresh periodic `dataThrough` of the streams it uses. None while a
+ * backfill runs, without a complete backfill, for continuous streams and
+ * for connectors that report no freshness: their empty windows stay "no
+ * data" (ADR 0025 section 9).
+ */
+export function readCoverage(
+  found: { freshness?: WidgetFreshness | undefined },
+  history: { historyFrom: Date | null; backfilling: boolean },
+): { from: string; through: string } | undefined {
+  const freshness = found.freshness;
+  const through =
+    freshness?.kind === "periodic" ? freshness.dataThrough : undefined;
+  if (!through || history.backfilling || !history.historyFrom) {
+    return undefined;
+  }
+  return { from: history.historyFrom.toISOString().slice(0, 10), through };
+}
+
+/**
  * A live query's freshness fields (#727): `freshness`, and `status`
  * "stale" when a row used is overdue by 24 h. Nothing without rows, so
  * those responses stay as they were.

@@ -336,6 +336,63 @@ export async function findBackfillingConnectionIds(
   );
 }
 
+/**
+ * How far a connection's history is read (#378): where its last complete
+ * backfill started (null without one), and whether a backfill is queued
+ * or running, which may still be reading it.
+ */
+export async function findConnectionHistory(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+): Promise<{ historyFrom: Date | null; backfilling: boolean }> {
+  const [state] = await tx
+    .select({ historyFrom: schema.connectionState.historyFrom })
+    .from(schema.connectionState)
+    .where(
+      and(
+        eq(schema.connectionState.workspaceId, workspaceId),
+        eq(schema.connectionState.connectionId, connectionId),
+      ),
+    );
+  const [job] = await tx
+    .select({ id: schema.jobs.id })
+    .from(schema.jobs)
+    .where(
+      and(
+        eq(schema.jobs.workspaceId, workspaceId),
+        eq(schema.jobs.connectionId, connectionId),
+        eq(schema.jobs.kind, "connection.backfill"),
+        inArray(schema.jobs.status, ["pending", "running", "continuing"]),
+      ),
+    )
+    .limit(1);
+  return { historyFrom: state?.historyFrom ?? null, backfilling: !!job };
+}
+
+/**
+ * The one currency a connection's configuration names (`currency`, as an
+ * Apple Ads ad account's), or null (#378).
+ */
+export async function findConnectionCurrency(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({ config: schema.connections.config })
+    .from(schema.connections)
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        eq(schema.connections.id, connectionId),
+      ),
+    );
+  const currency = (row?.config as Record<string, unknown> | undefined)
+    ?.currency;
+  return typeof currency === "string" ? currency : null;
+}
+
 export async function listRecentSyncRuns(
   tx: Transaction,
   workspaceId: string,

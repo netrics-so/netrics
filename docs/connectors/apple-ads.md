@@ -124,9 +124,11 @@ same workspace lends its key
 (`GET` and `POST /v1/workspaces/{workspaceId}/connections/{connectionId}/shared-key/…`).
 
 Do not run the wizard again for an API user that already has a
-connection: it generates a new key pair, and if you paste its public key
-for the same API user, the earlier key may stop working (_to be confirmed_
-at #378: whether Apple Ads keeps more than one public key per API user).
+connection: it generates a new key pair, and pasting its public key for
+the same API user replaces the earlier one in Apple Ads. The `keyId` stays
+the same, and Apple then refuses the earlier key with `invalid_client`
+(seen at the exit gate, #378), so the earlier connections stop until
+they get the new key.
 
 Ad accounts of different API users have separate keys and connections;
 they can sit side by side in one workspace.
@@ -135,16 +137,30 @@ they can sit side by side in one workspace.
 
 - **Rotate**: on the connection page choose **Replace key**, generate a new
   pair (or paste a private key), paste the public key in Apple Ads and enter
-  the new IDs. netrics checks the new key with Apple first; if the check
-  fails, the stored key stays as it is and syncing continues. When it
-  passes, the new key replaces the old one, in every connection that shared
-  it, and the cached access token is dropped. If Apple Ads still lists the
-  old public key under Account Settings → API, remove it there.
+  the IDs Apple Ads shows. They usually stay the same: saving a new public
+  key for the same API user replaces the old one under the same `keyId`
+  (#378), and the client ID and team ID belong to the API user. netrics
+  checks the new key with Apple first; if the check fails, the stored key
+  stays as it is and syncing continues. When it passes, the new key
+  replaces the old one, in every connection that shared it, and the cached
+  access token is dropped. Since Apple Ads replaced the public key in
+  place, there is usually nothing to remove; only if it still lists the
+  old public key as a separate key under Account Settings → API, remove it
+  there.
 - **Removed key or lost access**: when Apple refuses the key (the public key
   was removed, the API user lost its API role or the ad account), the
-  connection is paused in "Auth failed" with Apple's reason, and the page
-  offers **Set up a new key**. Syncing restarts as soon as a new key passes
-  the check; the data collected so far is kept.
+  connection is paused in "Auth failed" with Apple's reason, in the
+  viewer's language, and the page offers **Set up a new key**. Syncing
+  restarts as soon as a new key passes the check; the data collected so
+  far is kept. If the refusal had stopped the first 12-month read before
+  it finished, the new key queues it again, for every connection that
+  shares the key.
+- **A removed key is noticed at the next token exchange.** netrics caches
+  the access token for up to 1 hour (ADR 0020), and Apple does not revoke
+  tokens it has already issued. Syncs can therefore still succeed for up
+  to an hour after you remove or replace the public key in Apple Ads; the
+  first exchange after that is refused and the connection goes to "Auth
+  failed".
 - **Delete the connection**: netrics deletes its copy of the private key and
   the cached token. Then remove the public key under **Account Settings →
   API** in Apple Ads, unless another connection still uses the same key;
@@ -171,7 +187,24 @@ they can sit side by side in one workspace.
   (_to be confirmed_: whether the day before yesterday still changes needs
   two captures on consecutive days).
 - A day with no campaign activity counts as zero only once it is older than
-  those 3 days.
+  those 3 days. Apple answers such a day with its date alone, and netrics
+  stores nothing for it in a month without any activity. An ad account
+  with no activity in a widget's period still shows 0 (spend in the ad
+  account's currency, impressions, taps, installs), not "No data yet"
+  (#378), when:
+  - the history was read completely: the last backfill succeeded, and the
+    period starts on or after where it started (12 months back);
+  - the period starts no later than the day the widget's numbers go up
+    to (so not "today");
+  - the widget filters by nothing but the currency. A country, keyword,
+    ad group or app filter (or a slide scoped to an app) keeps "No data
+    yet": countries and keywords are stored as the top ones plus
+    "Others", and an app may not have been read.
+
+  Cost per install then has no value ("–"), since nothing was installed.
+  "No data yet" also stays while the history is loading, and the change
+  against the previous period is left out.
+
 - Ad groups and keywords are read per campaign over the same days, only
   for campaigns with numbers in them, 10 campaigns per sync step (fewer
   when Apple answers slowly, so a step stays within its time limit): an
@@ -188,14 +221,28 @@ they can sit side by side in one workspace.
   decimal string with up to four decimals (`3.8127`); netrics stores whole
   minor units of that currency (cents, yen, fils), rounded half to even per
   day and row, never through floating point. A month's sum can therefore
-  differ from Apple's total by a few cents, and the "Others" ad group or
-  keyword of a day can hold a cent of rounding, even below zero, so that
-  ad-group and keyword sums still equal the campaign's. Amounts in
+  differ from Apple's total by a few cents. A campaign's countries, ad
+  groups and keywords of a day, with their "Others", share the campaign's
+  rounded total by largest remainder (#378): each row gets its exact
+  amount rounded down, and the cents left go to the rows with the largest
+  remainders. Their sums equal the campaign's to the cent, and "Others" is
+  never below zero; a row can be a cent below its own rounding (2.7075 +
+  1.1052 EUR on a 3.8127 EUR campaign day are 2.71 + 1.10). Should Apple's
+  rows add up to more than its campaign total, "Others" is 0 and the rows
+  with the smallest remainders give the difference back. Before this
+  (#378), such a day could store "Others" as -1 cent; a sync that reads the
+  day again writes 0 over it. For days older than the 3-day lookback, use
+  **Reload history** once. Amounts in
   different currencies are separate series and never add up; the display
   currency of a dashboard converts only for display, at daily ECB
   reference rates, labelled approximate.
 - Currency and time zone are kept as Apple reported them when you
   connected. If Apple changes either for an ad account, connect it again.
+- **Comparing with Apple Ads**: use **Insights**. Its numbers matched
+  netrics exactly for a campaign day at the exit gate (#378), and its
+  footer names the report time zone, which should be the ad account's.
+  The campaign list (**Manage campaigns**) cuts days differently: the same
+  date there shows other numbers, while the sum of two days matches.
 
 ## Configuration
 
@@ -310,16 +357,17 @@ share it.
 
 ## When something goes wrong
 
-| What you see                                                                | What to do                                                                                       |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| "Client ID starts with SEARCHADS. …" / "Key ID is an ID such as …"          | Copy the values from Account Settings → API; the key ID has no `SEARCHADS.` prefix.              |
-| "Apple Ads refused the key: the client ID, team ID and key ID do not match" | The IDs belong to another key, or the public key was removed. Check them, or set up a new key.   |
-| "The Apple Ads API user needs an API role"                                  | An Account Admin gives the user API Account Read Only in that ad account (User Management).      |
-| "This Apple Ads API user has no ad accounts"                                | The user has no role in any ad account yet. Ask an Account Admin to add one.                     |
-| "Apple Maps ads are not supported yet"                                      | Choose an App Store ad account. Apple Maps ad accounts follow later.                             |
-| "no longer has access to ad account …"                                      | The API user lost that ad account. Restore its role, or set up a new key on the connection page. |
-| "The generated key pair is no longer available"                             | Generate a new key pair and paste its public key in Apple Ads again.                             |
-| "Apple Ads' request limit for this API user is used up"                     | Nothing: netrics retries automatically.                                                          |
+| What you see                                                                | What to do                                                                                               |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| "Client ID starts with SEARCHADS. …" / "Key ID is an ID such as …"          | Copy the values from Account Settings → API; the key ID has no `SEARCHADS.` prefix.                      |
+| "Apple Ads refused the key: the client ID, team ID and key ID do not match" | The IDs belong to another key, or the public key was removed. Check them, or set up a new key.           |
+| Numbers differ from the campaign list in Apple Ads                          | Compare with Apple Ads Insights, in the ad account's time zone; the campaign list cuts days differently. |
+| "The Apple Ads API user needs an API role"                                  | An Account Admin gives the user API Account Read Only in that ad account (User Management).              |
+| "This Apple Ads API user has no ad accounts"                                | The user has no role in any ad account yet. Ask an Account Admin to add one.                             |
+| "Apple Maps ads are not supported yet"                                      | Choose an App Store ad account. Apple Maps ad accounts follow later.                                     |
+| "no longer has access to ad account …"                                      | The API user lost that ad account. Restore its role, or set up a new key on the connection page.         |
+| "The generated key pair is no longer available"                             | Generate a new key pair and paste its public key in Apple Ads again.                                     |
+| "Apple Ads' request limit for this API user is used up"                     | Nothing: netrics retries automatically.                                                                  |
 
 ## Self-hosted
 

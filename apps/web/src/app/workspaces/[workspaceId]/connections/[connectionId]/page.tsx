@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { can } from "@netrics/domain";
+import { can, localizedProviderMessage } from "@netrics/domain";
 
 import { HealthBadge, RateLimitText } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
@@ -140,9 +140,15 @@ export default async function ConnectionDetailPage({
   const authFailed = connection.state.authState === "auth_failed";
   // A sync can only fail until the grant is reconnected (the API refuses it).
   const needsReconnect = connection.state.authState === "needs_reauthorization";
-  const authMessage = syncRuns.find(
+  const recordedAuthMessage = syncRuns.find(
     (run) => run.errorClass === "auth",
   )?.errorMessage;
+  // A refusal the catalog knows reads in the viewer's language (#378);
+  // other provider words stay as they came.
+  const authMessage = recordedAuthMessage
+    ? (localizedProviderMessage(recordedAuthMessage, locale) ??
+      recordedAuthMessage)
+    : undefined;
   const oauth = connection.oauth;
   const searchConsole = connection.connectorId === SEARCH_CONSOLE_CONNECTOR_ID;
   const returnPath = `/workspaces/${workspaceId}/connections/${connection.id}`;
@@ -435,7 +441,8 @@ export default async function ConnectionDetailPage({
               {ads("daysLabel", { timeZone: adAccount.timeZone })}{" "}
               {adAccount.currency
                 ? ads("currencyNote", { currency: adAccount.currency })
-                : null}
+                : null}{" "}
+              {ads("compareHint")}
             </p>
           ) : null}
           <p className="muted">

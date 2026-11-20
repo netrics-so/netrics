@@ -101,6 +101,24 @@ export const sharedEn = {
     /** The ratio's change in percentage points. */
     changePoints: "{name} · change (pt)",
   },
+  /**
+   * A provider's refusal of a connection's key (#378). The server records
+   * the English text as a failed sync's or key check's message; clients
+   * show it in the viewer's language (`localizedProviderMessage`).
+   */
+  providerMessages: {
+    appleAds: {
+      /** The token exchange answered `invalid_client`. */
+      invalidClient:
+        "Apple Ads refused the key: the client ID, team ID and key ID do not match the public key you saved in Apple Ads, or the key was removed. Check the three values under Account Settings → API, or set up a new key.",
+      /** A call answered 401 with an exchanged token. */
+      unauthorized:
+        "Apple Ads refused the access token: the key was removed, or the API user lost access. Set up a new Apple Ads key.",
+      /** A call answered 403. */
+      forbidden:
+        "Apple Ads refused access: the API user needs an API role, such as API Account Read Only (API Read Only in Apple's answers), in this ad account. A non-API role removes API access. Ask an Account Admin to change the role, or set up a new key.",
+    },
+  },
 } as const;
 
 export type SharedMessages = typeof sharedEn;

@@ -19,6 +19,7 @@ import {
   OTHERS,
   reportDayTimestamp,
 } from "./index.js";
+import { allocateSpend, amountMicros } from "./observations.js";
 import { fixture } from "./test-helpers.js";
 
 /** One day of `AppsMetrics` as Apple documents it (#370 confirms). */
@@ -418,5 +419,98 @@ describe("dayObservations", () => {
     expect(() => dayObservations(CAMPAIGN, day(overrides), options())).toThrow(
       AppleAdsReportError,
     );
+  });
+});
+
+describe("allocateSpend (#378)", () => {
+  it("rounds rows by largest remainder to the campaign's total", () => {
+    // 2.7075 + 1.1052 EUR: 381 cents in all, never 382 or an Others of -1.
+    expect(
+      allocateSpend(
+        381,
+        [amountMicros("2.7075"), amountMicros("1.1052")],
+        null,
+        "EUR",
+      ),
+    ).toEqual({ named: [271, 110], others: 0 });
+    // Three thirds of a cent each round down; the missing cent goes to the
+    // largest remainder.
+    expect(
+      allocateSpend(
+        1,
+        [
+          amountMicros("0.0033"),
+          amountMicros("0.0033"),
+          amountMicros("0.0034"),
+        ],
+        null,
+        "EUR",
+      ),
+    ).toEqual({ named: [0, 0, 1], others: 0 });
+    expect(allocateSpend(5, [amountMicros("5")], null, "JPY")).toEqual({
+      named: [5],
+      others: 0,
+    });
+  });
+
+  it("gives Others its exact share", () => {
+    // Campaign 20.25: US 15.004 + CA 5.004, the rest (0.242) is Others.
+    // Rounded down 1500 + 500 + 24; the cent left goes to the largest
+    // remainder (0.4 of a cent, the earlier of two).
+    const allocated = allocateSpend(
+      2025,
+      [amountMicros("15.004"), amountMicros("5.004")],
+      amountMicros("20.25") - amountMicros("15.004") - amountMicros("5.004"),
+      "EUR",
+    );
+    expect(allocated).toEqual({ named: [1500 + 1, 500], others: 24 });
+  });
+
+  it("takes an overshoot back from the smallest remainders when Apple's rows exceed its total", () => {
+    // Rows 2.7075 + 1.1252 EUR against a campaign of 3.8127: Others would
+    // be -0.02. It is 0, and the rows give back what exceeds 381 cents.
+    const rows = [amountMicros("2.7075"), amountMicros("1.1252")];
+    const allocated = allocateSpend(
+      381,
+      rows,
+      amountMicros("3.8127") - rows[0]! - rows[1]!,
+      "EUR",
+    )!;
+    expect(allocated).toEqual({ named: [270, 111], others: 0 });
+    expect(allocated.named[0]! + allocated.named[1]!).toBe(381);
+    // Exactly one cent per row over (2.03 rounded down to 2.02 against
+    // 2.00): still taken back.
+    expect(
+      allocateSpend(
+        200,
+        [amountMicros("1.015"), amountMicros("1.015")],
+        amountMicros("2") - amountMicros("2.03"),
+        "EUR",
+      ),
+    ).toEqual({ named: [100, 100], others: 0 });
+  });
+
+  it("keeps each row's own rounding when Apple's rows exceed its total by more than rounding", () => {
+    // 5.00 + 0.505 EUR against a campaign of 1.00: Others is 0, the rows
+    // are rounded on their own (0.505 half to even: 50), not squeezed.
+    expect(
+      allocateSpend(
+        100,
+        [amountMicros("5"), amountMicros("0.505")],
+        amountMicros("1") - amountMicros("5.505"),
+        "EUR",
+      ),
+    ).toEqual({ named: [500, 50], others: 0 });
+  });
+
+  it("leaves credits to their own rounding", () => {
+    expect(allocateSpend(100, [-10_000], null, "EUR")).toBeNull();
+    expect(allocateSpend(-1, [0], null, "EUR")).toBeNull();
+  });
+
+  it("reads exact amounts", () => {
+    expect(amountMicros("3.8127")).toBe(3_812_700);
+    expect(amountMicros("12")).toBe(12_000_000);
+    expect(amountMicros("-0.5")).toBe(-500_000);
   });
 });

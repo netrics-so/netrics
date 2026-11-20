@@ -18,6 +18,8 @@ import {
   appleAdsDimensions,
   countryValue,
   isEmptyDay,
+  allocateSpend,
+  isRoundingOnly,
   isZeroDayValues,
   parseDayMetrics,
   reportDayTimestamp,
@@ -404,6 +406,9 @@ function rankedMonthObservations(
   const earlierLeaders = new Set<string>();
   let top = new Set<string>();
   let hasGap = false;
+  // A gap of rounding only: before #378 it was stored as "Others" (-1 or
+  // +1 cent), so those rows are overwritten with 0.
+  let hadRounding = false;
   for (const day of days) {
     const values = byDay.get(day) ?? new Map<string, DayValues>();
     for (const [value, numbers] of values) {
@@ -413,11 +418,13 @@ function rankedMonthObservations(
       );
     }
     const gap = addDayValues(totalOf(day), sumOf(values.values()), -1);
-    if (!isZeroDayValues(gap)) hasGap = true;
+    if (!isRoundingOnly(gap)) hasGap = true;
+    else if (!isZeroDayValues(gap)) hadRounding = true;
     top = topValues(monthTotals, limit);
     for (const value of top) earlierLeaders.add(value);
   }
   const hasOthers = hasGap || monthTotals.size > limit;
+  const zeroOthers = !hasOthers && hadRounding;
   const named = [...top].sort(order);
 
   const observations: Observation[] = [];
@@ -435,19 +442,29 @@ function rankedMonthObservations(
     if (!hasData) {
       if (settled) {
         for (const value of named) push(value, day, zeroDayValues());
-        if (hasOthers) push(OTHERS, day, zeroDayValues());
+        if (hasOthers || zeroOthers) push(OTHERS, day, zeroDayValues());
       }
       continue;
     }
     const present = values ?? new Map<string, DayValues>();
-    let others = addDayValues(totalOf(day), sumOf(present.values()), -1);
-    for (const value of [...present.keys()].sort(order)) {
-      const numbers = present.get(value)!;
+    const total = totalOf(day);
+    let others = addDayValues(total, sumOf(present.values()), -1);
+    const sorted = [...present.keys()].sort(order);
+    const kept = sorted.filter((value) => top.has(value));
+    for (const value of sorted) {
+      if (!top.has(value)) others = addDayValues(others, present.get(value)!);
+    }
+    const spend = dayAllocation(
+      total,
+      kept.map((value) => present.get(value)!),
+      hasOthers ? others : null,
+      currency,
+    );
+    for (const value of sorted) {
       if (top.has(value)) {
-        push(value, day, numbers);
-      } else {
-        others = addDayValues(others, numbers);
-        if (earlierLeaders.has(value)) push(value, day, zeroDayValues());
+        push(value, day, spend.part(present.get(value)!, kept.indexOf(value)));
+      } else if (earlierLeaders.has(value)) {
+        push(value, day, zeroDayValues());
       }
     }
     if (settled) {
@@ -455,9 +472,41 @@ function rankedMonthObservations(
         if (!present.has(value)) push(value, day, zeroDayValues());
       }
     }
-    if (hasOthers) push(OTHERS, day, others);
+    if (hasOthers) push(OTHERS, day, spend.others(others));
+    else if (zeroOthers) push(OTHERS, day, zeroDayValues());
   }
   return observations;
+}
+
+/**
+ * One day's spend split between its named rows and "Others" (#378): by
+ * largest remainder from the exact amounts (allocateSpend), so the rows
+ * add up to the campaign's rounded total and "Others" is never negative.
+ * Counts are never changed. Credits (negative amounts) keep their own
+ * rounding, with "Others" what is left.
+ */
+function dayAllocation(
+  total: DayValues,
+  rows: readonly DayValues[],
+  others: DayValues | null,
+  currency: string,
+): {
+  part(row: DayValues, index: number): DayValues;
+  others(values: DayValues): DayValues;
+} {
+  const allocated = allocateSpend(
+    total.spend,
+    rows.map((row) => row.spendMicros),
+    others ? others.spendMicros : null,
+    currency,
+  );
+  if (!allocated) {
+    return { part: (row) => row, others: (values) => values };
+  }
+  return {
+    part: (row, index) => ({ ...row, spend: allocated.named[index]! }),
+    others: (values) => ({ ...values, spend: allocated.others }),
+  };
 }
 
 /** The main observations of one campaign in one month: by country (#374). */
@@ -610,9 +659,13 @@ function adGroupMonthObservations(
     }
     return sum;
   };
-  const gapOn = (day: string) =>
-    addDayValues(entry.totals.get(day) ?? sumOn(day), sumOn(day), -1);
-  const hasOthers = [...days].some((day) => !isZeroDayValues(gapOn(day)));
+  const totalOn = (day: string) => entry.totals.get(day) ?? sumOn(day);
+  const gapOn = (day: string) => addDayValues(totalOn(day), sumOn(day), -1);
+  const hasOthers = [...days].some((day) => !isRoundingOnly(gapOn(day)));
+  // Before #378 a gap of rounding only was stored as "Others" (-1 or +1
+  // cent): those rows are overwritten with 0.
+  const zeroOthers =
+    !hasOthers && [...days].some((day) => !isZeroDayValues(gapOn(day)));
 
   const observations: Observation[] = [];
   const push = (adGroup: string, day: string, values: DayValues) =>
@@ -631,16 +684,26 @@ function adGroupMonthObservations(
     if (!days.has(day)) {
       if (settled) {
         for (const adGroup of named) push(adGroup, day, zeroDayValues());
-        if (hasOthers) push(OTHERS, day, zeroDayValues());
+        if (hasOthers || zeroOthers) push(OTHERS, day, zeroDayValues());
       }
       continue;
     }
+    const withData = named.filter((adGroup) => adGroups.get(adGroup)!.has(day));
+    const gap = gapOn(day);
+    const spend = dayAllocation(
+      totalOn(day),
+      withData.map((adGroup) => adGroups.get(adGroup)!.get(day)!),
+      hasOthers ? gap : null,
+      currency,
+    );
     for (const adGroup of named) {
       const values = adGroups.get(adGroup)!.get(day);
-      if (values) push(adGroup, day, values);
+      if (values)
+        push(adGroup, day, spend.part(values, withData.indexOf(adGroup)));
       else if (settled) push(adGroup, day, zeroDayValues());
     }
-    if (hasOthers) push(OTHERS, day, gapOn(day));
+    if (hasOthers) push(OTHERS, day, spend.others(gap));
+    else if (zeroOthers) push(OTHERS, day, zeroDayValues());
   }
   return observations;
 }

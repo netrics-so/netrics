@@ -8,6 +8,7 @@ import type {
   ConnectorCatalogEntry,
   SignedKeyPairResponse,
 } from "@netrics/contracts";
+import { localizedProviderMessage } from "@netrics/domain";
 
 import { SignedKeyFields } from "../signed-key-fields";
 import {
@@ -139,7 +140,12 @@ export function AppleAdsSetup({
       });
       setPreview(result);
       if (!result.check.ok) {
-        showFailure(result.check.message ?? t("checkFailed"));
+        showFailure(
+          result.check.message
+            ? (localizedProviderMessage(result.check.message, locale) ??
+                result.check.message)
+            : t("checkFailed"),
+        );
         return;
       }
       // The first account that can be connected is chosen; more can be.

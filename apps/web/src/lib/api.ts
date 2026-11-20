@@ -212,7 +212,11 @@ import {
   type ThemeResponse,
   type UpdateThemeRequest,
 } from "@netrics/contracts";
-import type { Locale, MessageKey } from "@netrics/domain";
+import {
+  localizedProviderMessage,
+  type Locale,
+  type MessageKey,
+} from "@netrics/domain";
 
 import { apiFetch } from "./api-fetch";
 import { webTranslator, type WebMessages } from "./i18n/catalogs";
@@ -288,8 +292,9 @@ export function apiErrorMessage(error: unknown, locale: Locale): string {
       return t.has(code) ? t(code) : t("requestFailed", { code });
     }
     // Connector check/preview failures arrive as human-readable,
-    // already-redacted messages rather than snake_case codes.
-    return error.code;
+    // already-redacted messages rather than snake_case codes; a provider's
+    // refusal the catalog knows is shown in the viewer's language (#378).
+    return localizedProviderMessage(error.code, locale) ?? error.code;
   }
   if (error instanceof ZodError) {
     return t("invalidInput");

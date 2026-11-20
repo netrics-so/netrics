@@ -8,6 +8,7 @@ import { compareCatalogs } from "../catalog.js";
 import {
   aggregationName,
   comparisonLabel,
+  localizedProviderMessage,
   othersLabel,
   periodLabel,
   sharedDe,
@@ -91,5 +92,30 @@ describe("scope labels in German", () => {
         ),
       }),
     ).toBe("Downloads · Alle Apps");
+  });
+});
+
+describe("provider messages (#378)", () => {
+  const refused = sharedEn.providerMessages.appleAds.invalidClient;
+
+  it("shows a refused Apple Ads key in the viewer's language", () => {
+    expect(localizedProviderMessage(refused, "de")).toBe(
+      sharedDe.providerMessages.appleAds.invalidClient,
+    );
+    expect(localizedProviderMessage(refused, "de")).toMatch(
+      /^Apple Ads hat den Schlüssel abgelehnt/,
+    );
+    expect(localizedProviderMessage(` ${refused}\n`, "en")).toBe(refused);
+  });
+
+  it("formats every message to its catalog text, apostrophes included", () => {
+    for (const english of Object.values(sharedEn.providerMessages.appleAds)) {
+      expect(localizedProviderMessage(english)).toBe(english);
+      expect(localizedProviderMessage(english, "de")).not.toBe(english);
+    }
+  });
+
+  it("leaves any other text to the caller", () => {
+    expect(localizedProviderMessage("Apple Ads answered 500")).toBeNull();
   });
 });

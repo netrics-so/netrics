@@ -735,6 +735,8 @@ export const workspaceEn = {
       timeZone: "Time zone",
       unknown: "Not known yet",
       daysLabel: "Days in {timeZone}, as in Apple Ads.",
+      compareHint:
+        "To compare numbers with Apple Ads, use Insights: it names its report time zone at the bottom. The campaign list (Manage campaigns) can cut days differently.",
       currencyNote:
         "Spend stays in {currency}; nothing is converted when it is stored.",
       timing:
@@ -743,10 +745,10 @@ export const workspaceEn = {
         "The same key also reads {names}. Replacing it here replaces it there too, after the new key is checked for each of them.",
       setUpNewKey: "Set up a new key",
       setUpNewKeyDetail:
-        "Generate a new key pair, paste the public key in Apple Ads and enter the new IDs. The data collected so far is kept.",
+        "Generate a new key pair, paste the public key in Apple Ads and enter the IDs Apple Ads shows; they usually stay the same. The data collected so far is kept.",
       replacedShared: "The new key replaced the old one in {names} too.",
       removeOldKey:
-        "If Apple Ads still lists the old public key under Account Settings → API, remove it there: netrics cannot do that for you.",
+        "Saving the new public key in Apple Ads replaces the old one there, usually under the same key ID, so there is nothing to remove. If Apple Ads still lists the old public key as a separate key under Account Settings → API, remove it there: netrics cannot do that for you.",
       deleteHint:
         "netrics deletes its copy of the private key. Afterwards, remove the public key under Account Settings → API in Apple Ads.",
       deleteHintShared:

@@ -1,7 +1,7 @@
 import type { Observation } from "@netrics/connector-sdk";
 import { z } from "zod";
 
-import { isCurrencyCode } from "../currency.js";
+import { currencyExponent, isCurrencyCode } from "../currency.js";
 import { DecimalAmountError, parseDecimalAmount } from "../decimal-amount.js";
 import {
   APPLE_ADS_AD_GROUP_METRIC_KEYS,
@@ -222,6 +222,11 @@ export interface DayObservationsOptions {
  */
 export interface DayValues {
   spend: number;
+  /**
+   * The exact spend in millionths of the currency's major unit, as Apple
+   * sent it: what rounded rows are allocated from (#378). Not stored.
+   */
+  spendMicros: number;
   impressions: number;
   taps: number;
   tapInstalls: number;
@@ -235,6 +240,7 @@ export interface DayValues {
 /** The fields of DayValues, in a fixed order. */
 export const DAY_VALUE_FIELDS = [
   "spend",
+  "spendMicros",
   "impressions",
   "taps",
   "tapInstalls",
@@ -248,6 +254,7 @@ export const DAY_VALUE_FIELDS = [
 export function zeroDayValues(): DayValues {
   return {
     spend: 0,
+    spendMicros: 0,
     impressions: 0,
     taps: 0,
     tapInstalls: 0,
@@ -264,6 +271,105 @@ export function addDayValues(a: DayValues, b: DayValues, sign = 1): DayValues {
   const sum = zeroDayValues();
   for (const field of DAY_VALUE_FIELDS) sum[field] = a[field] + sign * b[field];
   return sum;
+}
+
+/**
+ * Whether a remainder holds nothing but the rounding of its rows' spend
+ * (#378): no exact spend and no counts. It needs no "Others" row; the
+ * rounding is allocated to the named rows (allocateSpend).
+ */
+export function isRoundingOnly(values: DayValues): boolean {
+  return DAY_VALUE_FIELDS.every(
+    (field) => field === "spend" || values[field] === 0,
+  );
+}
+
+/** A non-negative exact amount in minor units, half to even. */
+function roundHalfEven(micros: number, unit: number): number {
+  const floor = Math.floor(micros / unit);
+  const remainder = micros - floor * unit;
+  if (remainder * 2 > unit) return floor + 1;
+  if (remainder * 2 < unit) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
+/** Millionths of a major unit: Apple sends at most four decimals. */
+const MICROS_DIGITS = 6;
+
+/** An exact decimal amount ("3.8127") in millionths of its major unit. */
+export function amountMicros(amount: string): number {
+  const negative = amount.startsWith("-");
+  const [whole = "0", fraction = ""] = (
+    negative ? amount.slice(1) : amount
+  ).split(".");
+  const value = Number(
+    BigInt(whole + fraction.slice(0, MICROS_DIGITS).padEnd(MICROS_DIGITS, "0")),
+  );
+  return negative ? -value : value;
+}
+
+/**
+ * The spend of a day's named rows and "Others" in minor units (#378), so
+ * that they add up to `total` (the campaign's rounded spend) exactly and
+ * none is negative. Each part gets its exact amount rounded down; the
+ * cents still missing go to the parts with the largest remainders, ties to
+ * the earlier part. When Apple's exact rows add up to more than its exact
+ * total, "Others" is 0 and the named rows give the overshoot back, a cent
+ * at a time from those with the smallest remainders, when it is rounding
+ * (at most a cent per row); a larger overshoot leaves each row its own
+ * rounding (half to even). Null for amounts below zero (credits), which
+ * keep their own rounding.
+ */
+export function allocateSpend(
+  total: number,
+  namedMicros: readonly number[],
+  othersMicros: number | null,
+  currency: string,
+): { named: number[]; others: number } | null {
+  if (total < 0 || namedMicros.some((micros) => micros < 0)) return null;
+  const unit = 10 ** (MICROS_DIGITS - currencyExponent(currency));
+  // "Others" takes part only when it holds something.
+  const parts =
+    othersMicros !== null && othersMicros > 0
+      ? [...namedMicros, othersMicros]
+      : [...namedMicros];
+  if (parts.length === 0) {
+    return total === 0 ? { named: [], others: 0 } : null;
+  }
+  const allocated = parts.map((micros) => Math.floor(micros / unit));
+  let left = total - allocated.reduce((sum, minor) => sum + minor, 0);
+  const byRemainder = parts
+    .map((micros, index) => ({ index, remainder: micros % unit }))
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+  // Missing cents: largest remainders first, round after round.
+  for (let at = 0; left > 0; at = (at + 1) % byRemainder.length) {
+    allocated[byRemainder[at]!.index]! += 1;
+    left -= 1;
+  }
+  // Too many: Apple's rows add up to more than its total. Within a cent
+  // per row (rounding), the smallest remainders give back first; beyond
+  // that the numbers disagree, and each row keeps its own rounding.
+  if (left < 0) {
+    if (-left > namedMicros.length) {
+      return {
+        named: namedMicros.map((micros) => roundHalfEven(micros, unit)),
+        others: 0,
+      };
+    }
+    const smallestFirst = [...byRemainder].reverse();
+    for (const { index } of smallestFirst) {
+      if (left === 0) break;
+      if (allocated[index]! > 0) {
+        allocated[index]! -= 1;
+        left += 1;
+      }
+    }
+    if (left < 0) return null;
+  }
+  return {
+    named: allocated.slice(0, namedMicros.length),
+    others: parts.length > namedMicros.length ? allocated.at(-1)! : 0,
+  };
 }
 
 export function isZeroDayValues(values: DayValues): boolean {
@@ -305,9 +411,11 @@ export function parseDayMetrics(
     );
   }
   let spend: number;
+  let spendMicros: number;
   try {
     const amount = parseDecimalAmount(metrics.localSpend.amount, currency);
     spend = amount.minor;
+    spendMicros = amountMicros(metrics.localSpend.amount);
     if (amount.rounded) {
       options.note(
         AMOUNT_ROUNDED_NOTE,
@@ -337,6 +445,7 @@ export function parseDayMetrics(
     date: metrics.date,
     values: {
       spend,
+      spendMicros,
       impressions: metrics.impressions,
       taps: metrics.taps,
       tapInstalls: metrics.tapInstalls,

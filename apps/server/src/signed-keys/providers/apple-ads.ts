@@ -5,6 +5,7 @@ import {
   createAppleAdsClient,
   isAppleAdsRateLimited,
 } from "@netrics/connectors";
+import { sharedEn } from "@netrics/domain";
 import { z } from "zod";
 
 import type {
@@ -51,8 +52,13 @@ const SEARCHADS_ID = /^SEARCHADS\.[0-9a-z]+(?:-[0-9a-z]+){2,}$/i;
 /** A UUID-like key ID (`a273d0d3-4d9e-458c-a173-0db8619ca7d7`). */
 const KEY_ID = /^[0-9a-z]+(?:-[0-9a-z]+){2,}$/i;
 
-export const INVALID_CLIENT_MESSAGE =
-  "Apple Ads refused the key: the client ID, team ID and key ID do not match the public key you saved in Apple Ads, or the key was removed. Check the three values under Account Settings → API, or set up a new key.";
+/**
+ * The refusals' English texts come from the shared catalog (#378), so the
+ * web shows a recorded refusal in the viewer's language.
+ */
+const REFUSALS = sharedEn.providerMessages.appleAds;
+
+export const INVALID_CLIENT_MESSAGE: string = REFUSALS.invalidClient;
 
 function searchAdsIdField(
   key: "clientId" | "teamId",
@@ -179,9 +185,7 @@ export const appleAdsProvider: SignedKeyProviderDefinition = {
   },
   probes: appleAdsProbes,
   authFailure: {
-    unauthorized:
-      "Apple Ads refused the access token: the key was removed, or the API user lost access. Set up a new Apple Ads key.",
-    forbidden:
-      "Apple Ads refused access: the API user needs an API role, such as API Account Read Only (API Read Only in Apple's answers), in this ad account. A non-API role removes API access. Ask an Account Admin to change the role, or set up a new key.",
+    unauthorized: REFUSALS.unauthorized,
+    forbidden: REFUSALS.forbidden,
   },
 };

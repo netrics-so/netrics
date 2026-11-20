@@ -123,3 +123,27 @@ export function reviewWidgetLabel(
   const title = input.title ?? sharedTranslator(locale)("latestReview");
   return input.resourceName ? `${title} · ${input.resourceName}` : title;
 }
+
+/**
+ * A provider message the server recorded in English (a refused key, #378)
+ * in `locale`, found by its exact English text; null for any other text,
+ * which clients show as it is (the provider's own words).
+ */
+export function localizedProviderMessage(
+  message: string,
+  locale: Locale = "en",
+): string | null {
+  const text = message.trim();
+  for (const [provider, messages] of Object.entries(
+    sharedEn.providerMessages,
+  )) {
+    for (const [code, english] of Object.entries(messages)) {
+      if (english === text) {
+        return sharedTranslator(locale)(
+          `providerMessages.${provider}.${code}` as MessageKey<SharedMessages>,
+        );
+      }
+    }
+  }
+  return null;
+}

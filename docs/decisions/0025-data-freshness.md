@@ -5,7 +5,9 @@ Status: accepted design (2026-11-16;
 Implemented by #702 (SDK, storage, scheduler), #703 (connectors), #704
 (widget data and device payload), #705 (web) and #706 (netrics TV). It
 describes no shipped behaviour yet. Amended 2026-11-19 by #784: widgets
-that combine sources list each source's freshness (sections 7 and 8).
+that combine sources list each source's freshness (sections 7 and 8). Amended
+2026-11-20 by #378: an empty window of days the connection has read
+completely sums to 0 (section 9).
 
 Extends ADR 0015 (widgets), ADR 0018 section 5 (freshness footer) and
 ADR 0022 (models and their sources).
@@ -481,6 +483,33 @@ without activity look the same there. A connector that declares streams
 but reports nothing for one has the same fallback for that stream.
 Connectors require `^0.2.13` only once they use the field; the host
 accepts manifests without it.
+
+**Empty windows of read days (#378).** The reverse holds where the host
+knows what was read: from where the connection's last complete backfill
+started (`connection_state.history_from`, set when a backfill succeeds and
+cleared when one fails) to a periodic stream's `dataThrough`. A sum of a
+`delta` metric (spend, installs, downloads) whose current window starts
+within those days and has no observations is 0, not "no data": the
+provider had nothing to report (Apple Ads answers inactive days with their
+date alone, which are not stored). Limits:
+
+- Only the current window: the previous one can reach back before the
+  history.
+- Only without filters other than the currency. A resource may be outside
+  the selection or selected after its history was read; other dimensions
+  (countries, keywords, queries) are stored as top rows, where a value
+  outside them has no observations although it had activity.
+- An amount without a currency filter reads 0 in the currency the
+  connection's configuration names (Apple Ads), else stays "no data".
+- Not for averages, minimums, maximums or latest readings, not for a
+  window that starts after `dataThrough` (today), and not while a backfill
+  of the connection runs.
+- A connection stuck in `auth_failed` keeps its last `dataThrough`: its
+  windows count as read only up to that day, and its widgets are marked
+  stale by the connection's state.
+
+Ratios over two zeros (cost per install) stay without a value. Breakdowns
+(bars, tables) keep their empty state.
 
 ## Alternatives considered
 

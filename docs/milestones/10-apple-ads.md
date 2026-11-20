@@ -124,7 +124,9 @@ one request of at most 90 days, newest first, because the top 10 countries
 are ranked per campaign and month. The main metrics hold only campaign ×
 country or region rows; countries outside the top 10 and anything the
 breakdown leaves out of a campaign's total are "Others", so an unfiltered
-sum is the ad account's total.
+sum is the ad account's total. The rows' cents are allocated from the exact
+amounts by largest remainder (#378), so this holds to the cent and "Others"
+is never negative.
 
 ## Security invariants
 

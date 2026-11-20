@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
 
 import { hasSqlstate, type Db, type Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -475,6 +475,38 @@ export async function requestConnectionSync(
  * left alone; the new job runs after it (one connection job runs at a time).
  * When a concurrent request queued one first, that job is returned instead.
  */
+/** The last error of a waiting backfill a newer one replaced. */
+export const SUPERSEDED_BACKFILL = "superseded by a newer backfill";
+
+/**
+ * Whether the connection's latest backfill job ended without reading its
+ * window (#378): dead, or failed for a reason other than being replaced by
+ * a newer one (a refused key, for example). False without such a job, also
+ * once the job history retention pruned it.
+ */
+export async function latestBackfillFailed(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+): Promise<boolean> {
+  const [latest] = await tx
+    .select({ status: schema.jobs.status, lastError: schema.jobs.lastError })
+    .from(schema.jobs)
+    .where(
+      and(
+        eq(schema.jobs.workspaceId, workspaceId),
+        eq(schema.jobs.connectionId, connectionId),
+        eq(schema.jobs.kind, "connection.backfill"),
+      ),
+    )
+    .orderBy(desc(schema.jobs.createdAt))
+    .limit(1);
+  return (
+    latest?.status === "dead" ||
+    (latest?.status === "failed" && latest.lastError !== SUPERSEDED_BACKFILL)
+  );
+}
+
 export async function requestConnectionBackfill(
   tx: Transaction,
   input: { workspaceId: string; connectionId: string },
@@ -487,7 +519,7 @@ export async function requestConnectionBackfill(
   );
   await tx
     .update(schema.jobs)
-    .set({ status: "failed", lastError: "superseded by a newer backfill" })
+    .set({ status: "failed", lastError: SUPERSEDED_BACKFILL })
     .where(waiting);
   const inserted = await tx
     .insert(schema.jobs)

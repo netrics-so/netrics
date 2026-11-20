@@ -652,6 +652,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       timeZone: "Zeitzone",
       unknown: "Noch nicht bekannt",
       daysLabel: "Tage in {timeZone}, wie in Apple Ads.",
+      compareHint:
+        "Zum Vergleich mit Apple Ads nimm Insights: Dort steht unten die Zeitzone des Berichts. Die Kampagnenliste (Manage campaigns) kann Tage anders abgrenzen.",
       currencyNote:
         "Ausgaben bleiben in {currency}; beim Speichern wird nichts umgerechnet.",
       timing:
@@ -660,11 +662,11 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "Derselbe Schlüssel liest auch {names}. Ersetzt du ihn hier, wird er dort ebenfalls ersetzt, nachdem der neue Schlüssel für jede davon geprüft wurde.",
       setUpNewKey: "Neuen Schlüssel einrichten",
       setUpNewKeyDetail:
-        "Erzeug ein neues Schlüsselpaar, füg den öffentlichen Schlüssel in Apple Ads ein und gib die neuen IDs ein. Die bisher gesammelten Daten bleiben erhalten.",
+        "Erzeug ein neues Schlüsselpaar, füg den öffentlichen Schlüssel in Apple Ads ein und gib die IDs ein, die Apple Ads zeigt; sie bleiben meist gleich. Die bisher gesammelten Daten bleiben erhalten.",
       replacedShared:
         "Der neue Schlüssel hat den alten auch in {names} ersetzt.",
       removeOldKey:
-        "Steht der alte öffentliche Schlüssel noch unter Account Settings → API in Apple Ads, entfern ihn dort: Das kann netrics nicht für dich tun.",
+        "Speicherst du den neuen öffentlichen Schlüssel in Apple Ads, ersetzt er dort den alten, meist unter derselben Schlüssel-ID; entfernen musst du dann nichts. Steht der alte öffentliche Schlüssel noch als eigener Schlüssel unter Account Settings → API, entfern ihn dort: Das kann netrics nicht für dich tun.",
       deleteHint:
         "netrics löscht seine Kopie des privaten Schlüssels. Entfern danach den öffentlichen Schlüssel unter Account Settings → API in Apple Ads.",
       deleteHintShared:

@@ -50,6 +50,7 @@ export {
   listDueConnections,
   pruneHistory,
   renewJobLease,
+  latestBackfillFailed,
   requestConnectionBackfill,
   requestConnectionSync,
   setConnectionNextDue,
@@ -286,6 +287,8 @@ export type {
 export {
   deleteConnection,
   findBackfillingConnectionIds,
+  findConnectionCurrency,
+  findConnectionHistory,
   findConnection,
   finishConnectionSetup,
   insertConnection,
