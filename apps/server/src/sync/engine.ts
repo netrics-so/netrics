@@ -100,11 +100,12 @@ const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 const INSERT_BATCH_ROWS = 5_000;
 /** How often a successful sync refreshes the resource names (#194). */
 const RESOURCE_NAMES_REFRESH_MS = 24 * 60 * 60 * 1000;
-/** The image quota when the host passes none (the contract's defaults). */
+/** The custom API item image quota when the host passes none (#809). */
 const DEFAULT_CUSTOM_API_IMAGE_QUOTA: ImageQuota = {
   maxCount: CUSTOM_API_IMAGE_QUOTA_DEFAULT_COUNT,
   maxBytes: CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES,
 };
+/** The image quota when the host passes none (the contract's defaults). */
 const DEFAULT_IMAGE_QUOTA: ImageQuota = {
   maxCount: IMAGE_QUOTA_DEFAULT_COUNT,
   maxBytes: IMAGE_QUOTA_DEFAULT_BYTES,
