@@ -154,6 +154,14 @@ const previewConnectors = z
   );
 
 /** An instance's OAuth app at one provider (ADR 0012). */
+/** Instance limits for custom API definitions (milestone 13). */
+export interface CustomApiInstanceConfig {
+  maxDefinitions: number;
+  maxStreams: number;
+  maxConnections: number;
+  minRefreshMinutes: number;
+}
+
 export interface OAuthClientConfig {
   clientId: string;
   clientSecret: Secret;
@@ -292,6 +300,32 @@ const envSchema = z
       .min(0)
       .max(100_000)
       .default(IMAGE_QUOTA_DEFAULT_BYTES / 1_048_576),
+    // Custom API limits (milestone 13): definitions per workspace (not
+    // archived), streams per definition (never above the schema's 20),
+    // custom-api connections per workspace, and the shortest refresh
+    // interval a custom API connection may run at.
+    NETRICS_CUSTOM_API_MAX_DEFINITIONS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(50),
+    NETRICS_CUSTOM_API_MAX_STREAMS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(20),
+    NETRICS_CUSTOM_API_MAX_CONNECTIONS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(100),
+    NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1440)
+      .default(15),
     // Self-hosting only: hosts or ranges custom API definitions may reach on
     // private networks (comma-separated, e.g.
     // `intranet.example,*.corp.example,10.20.0.0/16`). Metadata and
@@ -466,6 +500,12 @@ const envSchema = z
       maxBytes: env.NETRICS_IMAGE_QUOTA_MIB * 1_048_576,
     },
     customApiPrivateHosts: env.NETRICS_CUSTOM_API_PRIVATE_HOSTS,
+    customApi: {
+      maxDefinitions: env.NETRICS_CUSTOM_API_MAX_DEFINITIONS,
+      maxStreams: env.NETRICS_CUSTOM_API_MAX_STREAMS,
+      maxConnections: env.NETRICS_CUSTOM_API_MAX_CONNECTIONS,
+      minRefreshMinutes: env.NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES,
+    } satisfies CustomApiInstanceConfig,
     version: env.APP_VERSION,
     commit: env.GIT_SHA,
   }));
