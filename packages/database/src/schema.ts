@@ -357,6 +357,108 @@ export const metricDefinitions = pgTable(
   ],
 );
 
+// Custom API definitions (milestone 13, #803): a workspace's own API
+// description, stored as immutable versions. The definition row carries the
+// current version number and a copy of its name for lists; definitions are
+// archived, never deleted by the app (netrics_app has no DELETE).
+export const customApiDefinitions = pgTable(
+  "custom_api_definitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+    currentVersion: integer("current_version").notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("custom_api_definitions_id_workspace_unique").on(
+      table.id,
+      table.workspaceId,
+    ),
+    index("custom_api_definitions_workspace_archived_idx").on(
+      table.workspaceId,
+      table.archivedAt,
+    ),
+    check(
+      "custom_api_definitions_current_version_positive",
+      sql`${table.currentVersion} > 0`,
+    ),
+  ],
+);
+
+// One immutable version of a definition (netrics_app: SELECT and INSERT
+// only). `document` is the validated definition (no secrets);
+// `dataset_versions` maps each stream key to its dataset schema version.
+export const customApiDefinitionVersions = pgTable(
+  "custom_api_definition_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    definitionId: uuid("definition_id").notNull(),
+    version: integer("version").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    document: jsonb("document").notNull(),
+    documentSha256: text("document_sha256").notNull(),
+    datasetVersions: jsonb("dataset_versions").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "custom_api_definition_versions_definition_fk",
+      columns: [table.definitionId, table.workspaceId],
+      foreignColumns: [
+        customApiDefinitions.id,
+        customApiDefinitions.workspaceId,
+      ],
+    }).onDelete("cascade"),
+    unique("custom_api_definition_versions_definition_version_unique").on(
+      table.definitionId,
+      table.version,
+    ),
+    unique("custom_api_definition_versions_id_workspace_unique").on(
+      table.id,
+      table.workspaceId,
+    ),
+    check(
+      "custom_api_definition_versions_version_positive",
+      sql`${table.version} > 0`,
+    ),
+    check(
+      "custom_api_definition_versions_document_object",
+      sql`jsonb_typeof(${table.document}) = 'object'`,
+    ),
+    check(
+      "custom_api_definition_versions_dataset_versions_object",
+      sql`jsonb_typeof(${table.datasetVersions}) = 'object'`,
+    ),
+    check(
+      "custom_api_definition_versions_sha256",
+      sql`${table.documentSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
 export const connections = pgTable(
   "connections",
   {
@@ -396,6 +498,10 @@ export const connections = pgTable(
     retentionChosenAt: timestamp("retention_chosen_at", {
       withTimezone: true,
     }),
+    // The custom API definition version and environment a custom-api
+    // connection runs (milestone 13); both null for bundled connectors.
+    customApiDefinitionVersionId: uuid("custom_api_definition_version_id"),
+    customApiEnvironmentId: text("custom_api_environment_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -418,6 +524,24 @@ export const connections = pgTable(
     check(
       "connections_retention_basis_valid",
       sql`${table.retentionBasis} in ('preset','chosen','migrated')`,
+    ),
+    // NO ACTION: the app never deletes versions; a workspace deletion that
+    // cascades to both is checked at the end of the statement.
+    foreignKey({
+      name: "connections_custom_api_version_fk",
+      columns: [table.customApiDefinitionVersionId, table.workspaceId],
+      foreignColumns: [
+        customApiDefinitionVersions.id,
+        customApiDefinitionVersions.workspaceId,
+      ],
+    }),
+    check(
+      "connections_custom_api_pin",
+      sql`(${table.connectorId} = 'custom-api') = (${table.customApiDefinitionVersionId} is not null) and (${table.customApiDefinitionVersionId} is null) = (${table.customApiEnvironmentId} is null)`,
+    ),
+    index("connections_custom_api_version_idx").on(
+      table.workspaceId,
+      table.customApiDefinitionVersionId,
     ),
   ],
 );
