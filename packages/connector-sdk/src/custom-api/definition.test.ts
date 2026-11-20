@@ -877,3 +877,163 @@ describe("customApiDefinitionSchema", () => {
     ).toBe(false);
   });
 });
+
+describe("hardening (review round 1)", () => {
+  const withBase = (baseUrl: string) =>
+    doc((d) => (d.environments[0].baseUrl = baseUrl));
+  const withTokenUrl = (tokenUrl: string) =>
+    doc(
+      (d) =>
+        (d.auth = {
+          type: "oauth_authorization_code",
+          authorizeUrl: "https://auth.example.com/authorize",
+          tokenUrl,
+          revokeUrl: "https://auth.example.com/revoke",
+          scopes: [],
+        }),
+    );
+  const confusing = [
+    "https://evil.example\\@api.example.com",
+    "https://evil.example\\api.example.com",
+    "https://api.exa\nmple.com",
+    "https://api.example.com\t",
+    "https://api.exa\rmple.com",
+    "https://api.example.com/v1\n",
+    " https://api.example.com",
+    "https://api.example.com/a b",
+    "https://API.example.com",
+    "https://api.example.com:443",
+    "https://api.example.com/./v1",
+    "https://api.example.com/v1/../v2",
+    "https://@api.example.com",
+    "https://user@api.example.com",
+  ];
+
+  it.each(confusing)("refuses the base URL %j", (url) =>
+    expect(issuesOf(withBase(url))).toContainEqual(
+      expect.objectContaining({
+        code: "environment_url",
+        path: "environments.0.baseUrl",
+      }),
+    ),
+  );
+
+  it.each(confusing)("refuses the token URL %j", (url) =>
+    expect(issuesOf(withTokenUrl(url))).toContainEqual(
+      expect.objectContaining({ code: "invalid", path: "auth.tokenUrl" }),
+    ),
+  );
+
+  it.each([
+    "https://api.example.com",
+    "https://api.example.com/v1",
+    "https://api.example.com:8443/v2/beta",
+    "https://xn--bcher-kva.example/api",
+    "https://api.example.com/users/@me",
+  ])("shows the host requests go to for %s", (url) => {
+    const parsed = customApiDefinitionSchema.parse(withBase(url));
+    const shown = parsed.environments[0]!.baseUrl;
+    const displayedHost = shown.slice("https://".length).split(/[/:]/)[0];
+    expect(displayedHost).toBe(new URL(shown).hostname);
+  });
+
+  it("accepts a canonical token URL with a query and without a path", () => {
+    expect(
+      customApiDefinitionSchema.safeParse(
+        withTokenUrl("https://auth.example.com?tenant=a"),
+      ).success,
+    ).toBe(true);
+    expect(
+      customApiDefinitionSchema.safeParse(
+        withTokenUrl("https://auth.example.com/oauth/token?tenant=a"),
+      ).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["the path", (d: Doc) => (d.streams[0].request.path = "/a\r\nX-Evil: 1")],
+    ["a query value", (d: Doc) => (d.streams[0].request.query = { q: "a\nb" })],
+    ["a query key", (d: Doc) => (d.streams[0].request.query = { "q\n": "a" })],
+    [
+      "a header value",
+      (d: Doc) => (d.streams[0].request.headers = { "X-A": "a\r\nX-Evil: 1" }),
+    ],
+    [
+      "a header name",
+      (d: Doc) => (d.streams[0].request.headers = { "X-A\r\n": "a" }),
+    ],
+    [
+      "an auth header value",
+      (d: Doc) => (d.auth = { type: "none", headers: { "X-A": "a\u0000" } }),
+    ],
+    [
+      "a tab in a header value",
+      (d: Doc) => (d.streams[0].request.headers = { "X-A": "a\tb" }),
+    ],
+    ["DEL in the path", (d: Doc) => (d.streams[0].request.path = "/a\u007f")],
+  ])("refuses control characters in %s", (_name, change) => {
+    const result = customApiDefinitionSchema.safeParse(doc(change));
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
+    "//evil.example.com/x",
+    "/a//b",
+    "/a\\b",
+    "/./a",
+    "/a/..",
+    "/a/../b",
+    "/a/%2e%2e/b",
+    "/a/%2E/b",
+    "/a/.%2e/b",
+  ])("refuses the request path %j", (path) =>
+    expect(
+      issuesOf(doc((d) => (d.streams[0].request.path = path))),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "invalid",
+        path: "streams.0.request.path",
+      }),
+    ),
+  );
+
+  it.each(["/", "/a/b.json", "/a/.well-known/x", "/a/{{id}}/b..c"])(
+    "accepts the request path %j",
+    (path) => {
+      const input = doc((d) => {
+        d.variables = [{ id: "id", label: "ID" }];
+        d.streams[0].request.path = path;
+      });
+      const result = customApiDefinitionSchema.safeParse(input);
+      expect(result.success, JSON.stringify(result.error?.issues)).toBe(true);
+    },
+  );
+
+  it("refuses header names that differ only in case", () => {
+    expect(
+      issuesOf(
+        doc(
+          (d) => (d.streams[0].request.headers = { Accept: "a", accept: "b" }),
+        ),
+      ),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "duplicate_id",
+        path: "streams.0.request.headers.accept",
+      }),
+    );
+    expect(
+      issuesOf(
+        doc(
+          (d) =>
+            (d.auth = { type: "basic", headers: { "X-K": "a", "x-k": "b" } }),
+        ),
+      ),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "duplicate_id",
+        path: "auth.headers.x-k",
+      }),
+    );
+  });
+});

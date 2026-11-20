@@ -133,9 +133,21 @@ const datasetId = datasetFieldSchema.shape.id;
 const name = z.string().min(1).max(CUSTOM_API_LIMITS.nameLength);
 
 /** A `{{ placeholder }}` template; which names it may use is a document rule. */
+/** No control characters (C0, DEL): rules out CR/LF header and request-line injection. */
+function hasControlCharacter(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
 const template = z
   .string()
   .max(CUSTOM_API_LIMITS.templateLength)
+  .refine((value) => !hasControlCharacter(value), {
+    message: "Control characters are not allowed",
+  })
   .refine(
     (value) => {
       try {
@@ -165,53 +177,54 @@ const dataPath = z
     issue("path_syntax", "Invalid data path"),
   );
 
-function parsedUrl(value: string): URL | undefined {
+/**
+ * Parses an https URL only when it is canonical: no backslash, whitespace or
+ * control character anywhere, no credentials or fragment, and `URL.href`
+ * reproduces the input (the WHATWG parser's implicit "/" path aside). So the
+ * host a person reads in the definition is the host requests go to;
+ * `https://evil.example\@api.example.com` or a newline inside the host
+ * cannot be accepted.
+ */
+function canonicalHttpsUrl(value: string): URL | undefined {
+  if (hasControlCharacter(value) || /[\s\\]/.test(value)) return undefined;
+  let url: URL;
   try {
-    return new URL(value);
+    url = new URL(value);
   } catch {
     return undefined;
   }
+  if (
+    url.protocol !== "https:" ||
+    url.hostname === "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    value.includes("#")
+  )
+    return undefined;
+  const implicitRoot =
+    url.pathname === "/" && value === `${url.origin}${url.search}`;
+  return url.href === value || implicitRoot ? url : undefined;
 }
 
 /** An https URL without credentials or fragment (OAuth endpoints may carry a query). */
 const httpsUrl = z
   .string()
   .max(CUSTOM_API_LIMITS.nextUrlLength)
-  .refine(
-    (value) => {
-      const url = parsedUrl(value);
-      return (
-        url !== undefined &&
-        url.protocol === "https:" &&
-        url.hostname !== "" &&
-        url.username === "" &&
-        url.password === "" &&
-        !value.includes("#")
-      );
-    },
-    { message: "Expected an https URL without credentials or fragment" },
-  );
+  .refine((value) => canonicalHttpsUrl(value) !== undefined, {
+    message: "Expected a canonical https URL without credentials or fragment",
+  });
 
 const baseUrl = z
   .string()
   .max(CUSTOM_API_LIMITS.nextUrlLength)
   .refine(
     (value) => {
-      const url = parsedUrl(value);
-      return (
-        url !== undefined &&
-        url.protocol === "https:" &&
-        url.hostname !== "" &&
-        url.username === "" &&
-        url.password === "" &&
-        !value.includes("?") &&
-        !value.includes("#") &&
-        !value.endsWith("/")
-      );
+      const url = canonicalHttpsUrl(value);
+      return url !== undefined && url.search === "" && !value.endsWith("/");
     },
     issue(
       "environment_url",
-      "Base URL must be https, without credentials, query, fragment or trailing slash",
+      "Base URL must be a canonical https URL, without credentials, query, fragment or trailing slash",
     ),
   );
 
@@ -276,7 +289,16 @@ function headerRecord() {
     template,
     CUSTOM_API_LIMITS.headers,
   ).superRefine((headers, ctx) => {
+    const seen = new Set<string>();
     for (const header of Object.keys(headers)) {
+      const lower = header.toLowerCase();
+      if (seen.has(lower))
+        ctx.addIssue({
+          code: "custom",
+          path: [header],
+          ...issue("duplicate_id", "Header names are case-insensitive"),
+        });
+      seen.add(lower);
       if (!HEADER_TOKEN.test(header))
         ctx.addIssue({
           code: "custom",
@@ -458,15 +480,28 @@ export const customApiWindowSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+const DOT_SEGMENTS = new Set([".", "..", "%2e", "%2e%2e", ".%2e", "%2e."]);
+
+/** A request path stays below the base URL: no "//", backslash or dot segments. */
+function requestPathOk(value: string): boolean {
+  return (
+    value.startsWith("/") &&
+    !value.includes("?") &&
+    !value.includes("#") &&
+    !value.includes("\\") &&
+    !value.includes("//") &&
+    !value.split("/").some((segment) => DOT_SEGMENTS.has(segment.toLowerCase()))
+  );
+}
+
 export const customApiStreamSchema = z.strictObject({
   key: datasetId,
   name,
   request: z.strictObject({
-    path: template.refine(
-      (value) =>
-        value.startsWith("/") && !value.includes("?") && !value.includes("#"),
-      { message: 'The path starts with "/" and has no query or fragment' },
-    ),
+    path: template.refine(requestPathOk, {
+      message:
+        'The path starts with "/" and has no query, fragment, backslash, empty or dot segments',
+    }),
     query: boundedRecord(
       paramName,
       template,
