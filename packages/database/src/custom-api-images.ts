@@ -279,24 +279,47 @@ export async function latestDatasetValues(
   return rows.map((row) => row.value);
 }
 
+/** Bounds of one prune run: passes and wall time. */
+export interface PruneLimits {
+  /** Default 50. */
+  maxPasses?: number;
+  /** Default 60 s; checked between passes. */
+  maxMs?: number;
+}
+
 /**
  * Deletes lookups unseen for `graceDays` as of `now`, then custom_api images
- * no lookup refers to (older than an hour, and named by no dashboard), at
- * most `batch` of each (scheduler role; prune_custom_api_item_images is
- * SECURITY DEFINER). Returns the rows deleted.
+ * no lookup refers to (older than an hour, and named by no dashboard), in
+ * passes of at most `batch` of each (scheduler role;
+ * prune_custom_api_item_images is SECURITY DEFINER). Passes repeat while a
+ * pass fills a batch, so expiring signed URLs cannot outgrow the hourly
+ * maintenance, up to `limits`. Returns the rows deleted.
  */
 export async function pruneCustomApiItemImages(
   schedulerDb: Db | Transaction,
   now: Date,
   graceDays: number = CUSTOM_API_IMAGE_GRACE_DAYS,
   batch = 10_000,
+  limits: PruneLimits = {},
 ): Promise<number> {
-  const [row] = await schedulerDb.execute<{ deleted: number }>(
-    sql`select prune_custom_api_item_images(
-          ${now.toISOString()}::timestamptz,
-          make_interval(days => ${graceDays}),
-          ${batch}
-        ) as deleted`,
-  );
-  return row?.deleted ?? 0;
+  const maxPasses = limits.maxPasses ?? 50;
+  const deadline = Date.now() + (limits.maxMs ?? 60_000);
+  let deleted = 0;
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const [row] = await schedulerDb.execute<{
+      lookups: number;
+      images: number;
+    }>(
+      sql`select lookups, images from prune_custom_api_item_images(
+            ${now.toISOString()}::timestamptz,
+            make_interval(days => ${graceDays}),
+            ${batch}
+          )`,
+    );
+    const lookups = row?.lookups ?? 0;
+    const images = row?.images ?? 0;
+    deleted += lookups + images;
+    if ((lookups < batch && images < batch) || Date.now() >= deadline) break;
+  }
+  return deleted;
 }

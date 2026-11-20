@@ -461,6 +461,35 @@ describe("pruneCustomApiItemImages", () => {
     await admin`delete from dashboards where id = ${dashboard!.id as string}`;
   });
 
+  it("deletes more than one batch in one run, then stops at the pass cap", async () => {
+    const ids = await insertCustomApi(5);
+    await admin`update workspace_images set created_at = ${new Date(
+      NOW.getTime() - 10 * DAY,
+    )}`;
+    for (const [index, imageId] of ids.entries())
+      await inWs(ws, (tx) =>
+        upsertItemImage(tx, ws, {
+          urlSha256: hash(`stale-${index}`),
+          imageId,
+          now: new Date(NOW.getTime() - 8 * DAY),
+        }),
+      );
+    // Batches of 2: three passes for 5 lookups and 5 images.
+    expect(await pruneCustomApiItemImages(schedulerDb, NOW, 7, 2)).toBe(10);
+    expect(await admin`select 1 from workspace_images`).toHaveLength(0);
+
+    const more = await insertCustomApi(5);
+    await admin`update workspace_images set created_at = ${new Date(
+      NOW.getTime() - 10 * DAY,
+    )}`;
+    expect(more).toHaveLength(5);
+    // One pass of 2 orphans only, when the cap is one pass.
+    expect(
+      await pruneCustomApiItemImages(schedulerDb, NOW, 7, 2, { maxPasses: 1 }),
+    ).toBe(2);
+    expect(await admin`select 1 from workspace_images`).toHaveLength(3);
+  });
+
   it("is not callable by the application role", async () => {
     const error = await pruneCustomApiItemImages(db, NOW).then(
       () => null,

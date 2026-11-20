@@ -160,6 +160,13 @@ describe("the custom API item images migration", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("indexes lookups by last_seen_at alone, for the instance-wide prune", async () => {
+    const [row] = await owner`
+      select indexdef from pg_indexes
+      where indexname = 'custom_api_item_images_seen_idx'`;
+    expect(row!.indexdef as string).toMatch(/\(last_seen_at\)$/);
+  });
+
   it("enables and forces row level security on both new tables", async () => {
     const rows = await owner`
       select relname, relrowsecurity, relforcerowsecurity from pg_class

@@ -1096,10 +1096,8 @@ export const customApiItemImages = pgTable(
       columns: [table.imageId, table.workspaceId],
       foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
     }).onDelete("cascade"),
-    index("custom_api_item_images_seen_idx").on(
-      table.workspaceId,
-      table.lastSeenAt,
-    ),
+    // The scheduler's prune runs across workspaces by last_seen_at.
+    index("custom_api_item_images_seen_idx").on(table.lastSeenAt),
     index("custom_api_item_images_image_idx").on(table.imageId),
     check(
       "custom_api_item_images_url_sha256_valid",

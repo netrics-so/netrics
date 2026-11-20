@@ -33,7 +33,7 @@ CREATE TABLE "custom_api_stream_images" (
 --> statement-breakpoint
 ALTER TABLE "custom_api_item_images" ADD CONSTRAINT "custom_api_item_images_image_fk" FOREIGN KEY ("image_id","workspace_id") REFERENCES "public"."workspace_images"("id","workspace_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "custom_api_stream_images" ADD CONSTRAINT "custom_api_stream_images_connection_fk" FOREIGN KEY ("connection_id","workspace_id") REFERENCES "public"."connections"("id","workspace_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "custom_api_item_images_seen_idx" ON "custom_api_item_images" USING btree ("workspace_id","last_seen_at");--> statement-breakpoint
+CREATE INDEX "custom_api_item_images_seen_idx" ON "custom_api_item_images" USING btree ("last_seen_at");--> statement-breakpoint
 CREATE INDEX "custom_api_item_images_image_idx" ON "custom_api_item_images" USING btree ("image_id");--> statement-breakpoint
 CREATE INDEX "custom_api_stream_images_workspace_idx" ON "custom_api_stream_images" USING btree ("workspace_id");--> statement-breakpoint
 CREATE INDEX "workspace_images_custom_api_sha_idx" ON "workspace_images" USING btree ("workspace_id","sha256") WHERE "workspace_images"."origin" = 'custom_api';--> statement-breakpoint
@@ -59,26 +59,24 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON custom_api_item_images, custom_api_strea
 --> statement-breakpoint
 -- Garbage collection, run by the scheduler's maintenance as the owner (like
 -- prune_revoked_devices, migration 0070): netrics_scheduler has no grant on
--- these tables. First up to p_batch lookup rows unseen for p_grace, then up
--- to p_batch custom_api images that no lookup row refers to. An image is kept
--- for an hour after its insert, so an image whose lookup upsert has not yet
--- committed (or lost a race to another one) is not deleted under it, and
--- an image a dashboard still names is kept. Returns the rows deleted; a
--- count of 2 * p_batch means more may remain for the next run.
+-- these tables. One pass deletes up to p_batch lookup rows unseen for
+-- p_grace (by the last_seen_at index), then up to p_batch custom_api images
+-- that no lookup row refers to. An image is kept for an hour after its
+-- insert, so an image whose lookup upsert has not yet committed (or lost a
+-- race to another one) is not deleted under it, and an image a dashboard
+-- still names is kept. Returns both counts; the caller repeats passes while
+-- either equals p_batch.
 CREATE FUNCTION prune_custom_api_item_images(
   p_now timestamptz,
   p_grace interval,
   p_batch integer
 )
-RETURNS integer
+RETURNS TABLE (lookups integer, images integer)
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-DECLARE
-  lookups integer;
-  images integer;
 BEGIN
   DELETE FROM custom_api_item_images
   WHERE (workspace_id, url_sha256) IN (
@@ -108,7 +106,7 @@ BEGIN
     LIMIT p_batch
   );
   GET DIAGNOSTICS images = ROW_COUNT;
-  RETURN lookups + images;
+  RETURN NEXT;
 END;
 $$;
 --> statement-breakpoint

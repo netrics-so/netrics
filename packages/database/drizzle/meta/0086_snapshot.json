@@ -1558,12 +1558,6 @@
           "name": "custom_api_item_images_seen_idx",
           "columns": [
             {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
               "expression": "last_seen_at",
               "isExpression": false,
               "asc": true,
