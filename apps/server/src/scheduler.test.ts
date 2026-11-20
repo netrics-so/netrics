@@ -9,6 +9,7 @@ import {
   createRawSqlClient,
   createWorkspace,
   DEFAULT_RETENTION,
+  insertConnection,
   schema,
   withWorkspace,
   type Database,
@@ -610,6 +611,50 @@ describe("createScheduler loop", () => {
         select image_id from custom_api_item_images
         where workspace_id = ${workspaceId}`;
       expect(lookups.map((row) => row.image_id as string)).toEqual([b]);
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
+
+  it("never plans a sync for a draft and prunes stale drafts during maintenance (#806)", async () => {
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      const draftId = await withWorkspace(appDb, { workspaceId }, (tx) =>
+        insertConnection(tx, {
+          id: crypto.randomUUID(),
+          workspaceId,
+          connectorId: "custom-api",
+          name: "builder draft",
+          config: {},
+          credentialsEncrypted: null,
+          projectId: null,
+          pollIntervalSeconds: 60,
+          status: "draft",
+        }).then((connection) => connection.row.id),
+      );
+      const tick = await runSchedulerTick(schedulerDb, new Date());
+      expect(tick.ran).toBe(true);
+      const jobs = await admin`
+        select 1 from jobs where connection_id = ${draftId}`;
+      expect(jobs).toHaveLength(0);
+
+      const now = new Date(Date.now() + 25 * 60 * 60 * 1000);
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-draft-prune-test",
+        now: () => now,
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from connections where id = ${draftId}`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
     } finally {
       await admin.end({ timeout: 5 }).catch(() => undefined);
     }

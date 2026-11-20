@@ -21,6 +21,7 @@ import {
   type Database,
   type TableLocks,
   type Transaction,
+  notDraftConnection,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -362,6 +363,7 @@ export async function storeTemplateSources(
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
         inArray(schema.connections.id, connectionIds),
       ),
     )
@@ -432,6 +434,7 @@ export function createStoreTemplateService(deps: {
             .where(
               and(
                 eq(schema.connections.workspaceId, actor.workspaceId),
+                notDraftConnection(),
                 inArray(schema.connections.connectorId, [
                   "app-store-connect",
                   "google-play",

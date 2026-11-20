@@ -3,7 +3,11 @@ import {
   storeTemplateResultSchema,
   type StoreTemplateResult,
 } from "@netrics/contracts";
-import { schema, type Transaction } from "@netrics/database";
+import {
+  schema,
+  type Transaction,
+  notDraftConnection,
+} from "@netrics/database";
 import type {
   PreparationGraph,
   SemanticModelDefinition,
@@ -383,6 +387,7 @@ export async function deriveInstallCompletion(
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
         inArray(schema.connections.connectorId, [
           "app-store-connect",
           "google-play",

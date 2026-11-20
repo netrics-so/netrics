@@ -311,6 +311,7 @@ export {
   listConnectionIds,
   listConnections,
   latestObservationByResource,
+  notDraftConnection,
   listObservations,
   listRecentSyncRuns,
   resetConnectionAuth,
@@ -406,6 +407,7 @@ export type {
   ConnectionRow,
   ConnectionStateRow,
   ConnectionWithState,
+  FindConnectionOptions,
   NewConnection,
   ObservationFilter,
   ObservationRow,
@@ -460,6 +462,10 @@ export {
   listCustomApiDefinitions,
   updateCustomApiDefinition,
 } from "./custom-api.js";
+export {
+  DRAFT_CONNECTION_TTL_HOURS,
+  pruneDraftConnections,
+} from "./draft-connections.js";
 export type {
   CustomApiDefinitionRow,
   CustomApiDefinitionVersionRow,

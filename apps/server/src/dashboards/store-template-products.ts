@@ -17,6 +17,7 @@ import {
   type Database,
   type ImageRow,
   type Transaction,
+  notDraftConnection,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -556,6 +557,7 @@ async function websiteChoices(
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
         eq(schema.connections.connectorId, "vercel"),
       ),
     )
@@ -670,6 +672,7 @@ export function createStoreProductService(deps: {
                 .where(
                   and(
                     eq(schema.connections.workspaceId, actor.workspaceId),
+                    notDraftConnection(),
                     eq(schema.connections.connectorId, "vercel"),
                     inArray(schema.connections.id, websiteIds),
                   ),
@@ -850,6 +853,7 @@ export async function installIconSources(
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
         inArray(schema.connections.id, input.connections),
       ),
     );

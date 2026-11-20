@@ -502,6 +502,10 @@ export const connections = pgTable(
     // connection runs (milestone 13); both null for bundled connectors.
     customApiDefinitionVersionId: uuid("custom_api_definition_version_id"),
     customApiEnvironmentId: text("custom_api_environment_id"),
+    // 'draft': a custom API builder's test connection (milestone 13, #806):
+    // never scheduled, hidden from every connection path, no pin, deleted by
+    // prune_draft_connections 24 hours after it was last touched.
+    status: text("status").notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -535,14 +539,44 @@ export const connections = pgTable(
         customApiDefinitionVersions.workspaceId,
       ],
     }),
+    // A draft has no pin; promotion sets both columns in the same UPDATE as
+    // status = 'active'.
     check(
       "connections_custom_api_pin",
-      sql`(${table.connectorId} = 'custom-api') = (${table.customApiDefinitionVersionId} is not null) and (${table.customApiDefinitionVersionId} is null) = (${table.customApiEnvironmentId} is null)`,
+      sql`case when ${table.status} = 'draft' then ${table.customApiDefinitionVersionId} is null and ${table.customApiEnvironmentId} is null else (${table.connectorId} = 'custom-api') = (${table.customApiDefinitionVersionId} is not null) and (${table.customApiDefinitionVersionId} is null) = (${table.customApiEnvironmentId} is null) end`,
+    ),
+    check(
+      "connections_status_valid",
+      sql`${table.status} in ('active','draft')`,
+    ),
+    check(
+      "connections_draft_custom_api",
+      sql`${table.status} <> 'draft' or ${table.connectorId} = 'custom-api'`,
     ),
     index("connections_custom_api_version_idx").on(
       table.workspaceId,
       table.customApiDefinitionVersionId,
     ),
+    index("connections_draft_updated_idx")
+      .on(table.updatedAt)
+      .where(sql`${table.status} = 'draft'`),
+  ],
+);
+
+// Test requests of the custom API builder per workspace in a fixed one-minute
+// window (milestone 13, #806), counted here so the limit holds across API
+// replicas.
+export const customApiTestRate = pgTable(
+  "custom_api_test_rate",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull(),
+  },
+  (table) => [
+    check("custom_api_test_rate_count_nonnegative", sql`${table.count} >= 0`),
   ],
 );
 

@@ -72,6 +72,7 @@ import {
   type ProjectFilter,
   type TableLocks,
   type Transaction,
+  notDraftConnection,
 } from "@netrics/database";
 import {
   collectDataImpact,
@@ -779,6 +780,7 @@ async function resourceCatalog(
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
         eq(schema.connections.id, connectionId),
       ),
     );
@@ -3331,7 +3333,12 @@ async function filterSourcesByProject(
       projectId: schema.connections.projectId,
     })
     .from(schema.connections)
-    .where(eq(schema.connections.workspaceId, workspaceId));
+    .where(
+      and(
+        eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
+      ),
+    );
   const connectionProjects = new Map(
     connections.map((row) => [row.id, row.projectId]),
   );

@@ -49,6 +49,7 @@ import {
   type DashboardWidgetRow,
   projectFilterSql,
   type ProjectFilter,
+  notDraftConnection,
 } from "@netrics/database";
 import {
   createDataLoader,
@@ -192,6 +193,7 @@ async function modelSourceHealth(
     .where(
       and(
         eq(schema.connections.workspaceId, workspaceId),
+        notDraftConnection(),
         inArray(schema.connections.id, connections),
       ),
     );

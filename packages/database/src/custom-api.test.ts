@@ -274,6 +274,28 @@ describe("custom API definitions", () => {
     );
   });
 
+  it("does not count builder drafts as connections (#806)", async () => {
+    const before = await inA((tx) => countCustomApiConnections(tx, workspaceA));
+    const connection = await inA((tx) =>
+      insertConnection(tx, {
+        id: randomUUID(),
+        workspaceId: workspaceA,
+        connectorId: "custom-api",
+        name: "Draft",
+        config: {},
+        credentialsEncrypted: null,
+        projectId: null,
+        pollIntervalSeconds: 3600,
+        status: "draft",
+      }),
+    );
+    expect(connection.row.status).toBe("draft");
+    expect(connection.state?.nextDueAt).toBeNull();
+    expect(await inA((tx) => countCustomApiConnections(tx, workspaceA))).toBe(
+      before,
+    );
+  });
+
   it("lists archived definitions only when asked", async () => {
     const input = definitionInput("Archived");
     await inA((tx) => insertCustomApiDefinition(tx, workspaceA, input));
