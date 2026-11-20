@@ -5,10 +5,13 @@ import {
   createCustomApiDraftRequestSchema,
   customApiDraftResponseSchema,
   customApiErrorResponseSchema,
+  customApiTestRequestSchema,
+  customApiTestResponseSchema,
   promoteCustomApiDraftRequestSchema,
   promoteCustomApiDraftResponseSchema,
   updateCustomApiDraftRequestSchema,
 } from "@netrics/contracts";
+import type { ExecuteOptions } from "@netrics/connector-runtime";
 import type { Database } from "@netrics/database";
 import { can, type WorkspaceAction } from "@netrics/domain";
 
@@ -18,6 +21,7 @@ import {
   createCustomApiDraftService,
   type DraftResult,
 } from "../custom-api/drafts.js";
+import { createCustomApiTestRequestService } from "../custom-api/test-request.js";
 import type { CustomApiInstanceConfig } from "../env.js";
 import {
   parseBody,
@@ -37,7 +41,16 @@ export interface CustomApiBuilderRouteDeps {
   db: Database;
   limits: CustomApiInstanceConfig;
   credentialKeyring: CredentialKeyring;
+  /** Self-host only (NETRICS_CUSTOM_API_PRIVATE_HOSTS). */
+  privateHosts: readonly string[];
+  /** Tests only: egress options of the test request (e.g. a local fixture). */
+  executeOptions?: ExecuteOptions;
+  /** Clock of the draft touches and the test rate window; tests pin it. */
+  now?: () => Date;
 }
+
+/** A test request carries one unsaved definition. */
+const TEST_BODY_LIMIT = 512 * 1024;
 
 const draftParamsSchema = z.object({ draftId: z.uuid() });
 
@@ -64,6 +77,7 @@ export function registerCustomApiBuilderRoutes(
 ): void {
   const requireSession = createRequireSession(deps.authService);
   const drafts = createCustomApiDraftService(deps);
+  const tests = createCustomApiTestRequestService(deps);
 
   async function authorize(
     request: FastifyRequest,
@@ -201,6 +215,41 @@ export function registerCustomApiBuilderRoutes(
           );
           if (!promoted) return;
           return promoteCustomApiDraftResponseSchema.parse(promoted);
+        },
+      );
+
+      scope.post(
+        `${BASE}/:draftId/test`,
+        {
+          bodyLimit: TEST_BODY_LIMIT,
+          schema: routeSchema({
+            summary:
+              "Run one stream of the builder's unsaved definition against the draft's secrets (at most 5 pages, 1,000 records, 60 s) and answer the redacted, bounded first response, record arrays, field suggestions, mapped preview rows and a request log. The definition is stored on the draft first. At most 30 test requests per workspace and minute (429 custom_api_test_rate_limited with Retry-After); 409 custom_api_credentials_host_changed without any request when the secrets were entered for other hosts",
+            tags: TAGS,
+            body: customApiTestRequestSchema,
+            response: customApiTestResponseSchema,
+            errors: [403, 404, 409, 429],
+            errorSchemas: {
+              ...customApiErrors,
+              429: customApiErrorResponseSchema,
+            },
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:create");
+          const id = access && draftId(request, reply);
+          if (!access || !id) return;
+          const body = parseBody(customApiTestRequestSchema, request, reply);
+          if (!body) return;
+          const result = await tests.run(access, id, body, (fields) =>
+            request.log.info(fields, "custom api test request"),
+          );
+          if (result.ok) return customApiTestResponseSchema.parse(result.value);
+          if (result.status === 429)
+            void reply.header("retry-after", String(result.retryAfterSeconds));
+          return reply
+            .code(result.status)
+            .send(customApiErrorResponseSchema.parse({ error: result.error }));
         },
       );
 
