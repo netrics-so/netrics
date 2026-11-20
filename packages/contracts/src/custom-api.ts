@@ -65,7 +65,8 @@ export type CustomApiDefinitionListResponse = z.infer<
 
 export const customApiDefinitionResponseSchema = z.object({
   definition: customApiDefinitionSummarySchema.extend({
-    document: customApiDefinitionSchema,
+    // One OpenAPI component instead of a copy per route.
+    document: customApiDefinitionSchema.meta({ id: "CustomApiDefinition" }),
     datasetVersions: z.record(z.string(), z.number().int().positive()),
   }),
 });

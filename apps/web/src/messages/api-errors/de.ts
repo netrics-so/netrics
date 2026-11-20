@@ -97,6 +97,17 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     theme_not_found: "Dieses Design existiert nicht mehr.",
     review_not_found: "Diese Bewertung gibt es nicht mehr.",
     connection_not_found: "Diese Verbindung gibt es nicht mehr.",
+    custom_api_definition_not_found: "Diese eigene API gibt es nicht mehr.",
+    custom_api_definition_invalid:
+      "Die Definition der eigenen API enthält Fehler. Korrigier die markierten Felder und speichere erneut.",
+    custom_api_definition_stale:
+      "Jemand hat eine neuere Version dieser eigenen API gespeichert. Lade sie neu, um die Änderungen zu sehen.",
+    custom_api_definition_archived:
+      "Diese eigene API ist archiviert und kann nicht geändert oder verbunden werden.",
+    custom_api_definition_limit:
+      "Dieser Workspace hat die Höchstzahl eigener APIs erreicht. Archiviere eine, die du nicht mehr brauchst.",
+    custom_api_stream_limit:
+      "Diese eigene API hat mehr Streams, als dieser Server erlaubt.",
     retention_dataset_unknown:
       "Diese Verbindung hat keine solche Datentabelle. Lade die Seite neu und wähle erneut.",
     reviews_not_supported:
