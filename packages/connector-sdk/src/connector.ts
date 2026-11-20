@@ -174,7 +174,8 @@ export interface ConnectorFetchInit {
 /**
  * A fully buffered response. The whole body is read within the host's size
  * limit (10 MiB by default) before the connector sees it; a larger body
- * fails the fetch.
+ * fails the fetch. The host may also bound decoded bytes of a
+ * content-encoded body and the time per request.
  */
 export interface ConnectorResponse {
   status: number;

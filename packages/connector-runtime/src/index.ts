@@ -1,9 +1,14 @@
 export {
   EgressDeniedError,
+  EgressTimeoutError,
   createEgressFetch,
   hostAllowed,
   isBlockedAddress,
+  isMetadataAddress,
+  parsePrivateHostEntries,
+  privateHostPolicy,
   type EgressOptions,
+  type PrivateHostPolicy,
 } from "./egress.js";
 export {
   assertContextIsPlain,
