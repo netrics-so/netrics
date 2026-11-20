@@ -1,0 +1,1020 @@
+[
+  {
+    "name": "record outside its window",
+    "definition": {
+      "key": "v1-replace-window",
+      "name": "v1-replace-window",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "region",
+          "name": "Region",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "clicks",
+          "name": "Clicks",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id", "day"],
+      "grain": "one v1-replace-window row",
+      "mode": "replace_window",
+      "reportingField": "day",
+      "reportingTimeZone": "Europe/Berlin"
+    },
+    "page": {
+      "datasetKey": "v1-replace-window",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "x",
+            "day": "2026-11-03",
+            "region": "eu",
+            "clicks": 1
+          }
+        }
+      ],
+      "window": {
+        "from": "2026-11-01",
+        "toExclusive": "2026-11-03",
+        "partition": {}
+      }
+    }
+  },
+  {
+    "name": "record outside its partition",
+    "definition": {
+      "key": "v1-replace-window",
+      "name": "v1-replace-window",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "region",
+          "name": "Region",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "clicks",
+          "name": "Clicks",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id", "day"],
+      "grain": "one v1-replace-window row",
+      "mode": "replace_window",
+      "reportingField": "day",
+      "reportingTimeZone": "Europe/Berlin"
+    },
+    "page": {
+      "datasetKey": "v1-replace-window",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "x",
+            "day": "2026-11-01",
+            "region": "us",
+            "clicks": 1
+          }
+        }
+      ],
+      "window": {
+        "from": "2026-11-01",
+        "toExclusive": "2026-11-03",
+        "partition": {
+          "region": "eu"
+        }
+      }
+    }
+  },
+  {
+    "name": "replace window page without a window",
+    "definition": {
+      "key": "v1-replace-window",
+      "name": "v1-replace-window",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "region",
+          "name": "Region",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "clicks",
+          "name": "Clicks",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id", "day"],
+      "grain": "one v1-replace-window row",
+      "mode": "replace_window",
+      "reportingField": "day",
+      "reportingTimeZone": "Europe/Berlin"
+    },
+    "page": {
+      "datasetKey": "v1-replace-window",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": []
+    }
+  },
+  {
+    "name": "window on a non-window dataset",
+    "definition": {
+      "key": "v1-all-types",
+      "name": "v1-all-types",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "flag",
+          "name": "Flag",
+          "type": "boolean",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "count",
+          "name": "Count",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "ratio",
+          "name": "Ratio",
+          "type": "number",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "amount",
+          "name": "Amount",
+          "type": "decimal",
+          "nullable": false,
+          "classification": "internal",
+          "scale": 4
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "at",
+          "name": "At",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "extra",
+          "name": "Extra",
+          "type": "json",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-all-types row",
+      "mode": "upsert",
+      "reportingField": "day"
+    },
+    "page": {
+      "datasetKey": "v1-all-types",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [],
+      "window": {
+        "from": "2026-11-01",
+        "toExclusive": "2026-11-03"
+      }
+    }
+  },
+  {
+    "name": "tombstone in an append dataset",
+    "definition": {
+      "key": "v1-append",
+      "name": "v1-append",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "at",
+          "name": "At",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "number",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-append row",
+      "mode": "append",
+      "reportingField": "at"
+    },
+    "page": {
+      "datasetKey": "v1-append",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "e1"
+          },
+          "deleted": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "missing field",
+    "definition": {
+      "key": "v1-money",
+      "name": "v1-money",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "currency",
+          "name": "Currency",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "proceeds",
+          "name": "Proceeds",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal",
+          "unit": "currency_minor",
+          "currencyField": "currency"
+        },
+        {
+          "id": "price",
+          "name": "Price",
+          "type": "decimal",
+          "nullable": true,
+          "classification": "internal",
+          "unit": "currency",
+          "currencyField": "currency",
+          "scale": 2
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-money row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-money",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "m",
+            "currency": "EUR",
+            "proceeds": 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown field",
+    "definition": {
+      "key": "v1-retention-default",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-retention-default",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "a",
+            "label": null,
+            "other": 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "null in a non-null field",
+    "definition": {
+      "key": "v1-retention-default",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-retention-default",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": null,
+            "label": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "decimal as a number",
+    "definition": {
+      "key": "v1-composite-key",
+      "name": "v1-composite-key",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "seq",
+          "name": "Seq",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "amount",
+          "name": "Amount",
+          "type": "decimal",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id", "seq", "amount"],
+      "grain": "one v1-composite-key row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-composite-key",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "k",
+            "seq": 1,
+            "amount": 1.5
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "decimal beyond its scale",
+    "definition": {
+      "key": "v1-all-types",
+      "name": "v1-all-types",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "flag",
+          "name": "Flag",
+          "type": "boolean",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "count",
+          "name": "Count",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "ratio",
+          "name": "Ratio",
+          "type": "number",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "amount",
+          "name": "Amount",
+          "type": "decimal",
+          "nullable": false,
+          "classification": "internal",
+          "scale": 4
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "at",
+          "name": "At",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "extra",
+          "name": "Extra",
+          "type": "json",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-all-types row",
+      "mode": "upsert",
+      "reportingField": "day"
+    },
+    "page": {
+      "datasetKey": "v1-all-types",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "a",
+            "flag": true,
+            "count": 1,
+            "ratio": 1,
+            "amount": "1.23456",
+            "day": "2026-11-05",
+            "at": "2026-11-05T00:00:00Z",
+            "extra": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "timestamp with an offset",
+    "definition": {
+      "key": "v1-append",
+      "name": "v1-append",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "at",
+          "name": "At",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "number",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-append row",
+      "mode": "append",
+      "reportingField": "at"
+    },
+    "page": {
+      "datasetKey": "v1-append",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "e",
+            "at": "2026-11-05T00:00:00+01:00",
+            "value": 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "timestamp beyond nanoseconds",
+    "definition": {
+      "key": "v1-append",
+      "name": "v1-append",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "at",
+          "name": "At",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "number",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-append row",
+      "mode": "append",
+      "reportingField": "at"
+    },
+    "page": {
+      "datasetKey": "v1-append",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "e",
+            "at": "2026-11-05T00:00:00.1234567891Z",
+            "value": 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "unsafe integer",
+    "definition": {
+      "key": "v1-money",
+      "name": "v1-money",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "currency",
+          "name": "Currency",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "proceeds",
+          "name": "Proceeds",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal",
+          "unit": "currency_minor",
+          "currencyField": "currency"
+        },
+        {
+          "id": "price",
+          "name": "Price",
+          "type": "decimal",
+          "nullable": true,
+          "classification": "internal",
+          "unit": "currency",
+          "currencyField": "currency",
+          "scale": 2
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-money row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-money",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "m",
+            "currency": "EUR",
+            "proceeds": 9007199254740992,
+            "price": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "lowercase currency",
+    "definition": {
+      "key": "v1-money",
+      "name": "v1-money",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "currency",
+          "name": "Currency",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "proceeds",
+          "name": "Proceeds",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal",
+          "unit": "currency_minor",
+          "currencyField": "currency"
+        },
+        {
+          "id": "price",
+          "name": "Price",
+          "type": "decimal",
+          "nullable": true,
+          "classification": "internal",
+          "unit": "currency",
+          "currencyField": "currency",
+          "scale": 2
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-money row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-money",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "m",
+            "currency": "eur",
+            "proceeds": 1,
+            "price": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "image role holding a number",
+    "definition": {
+      "key": "v1-image-role",
+      "name": "v1-image-role",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "title",
+          "name": "Title",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "image_url",
+          "name": "Image url",
+          "type": "string",
+          "nullable": true,
+          "classification": "public",
+          "role": "image"
+        },
+        {
+          "id": "published",
+          "name": "Published",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-image-role row",
+      "mode": "upsert",
+      "reportingField": "published"
+    },
+    "page": {
+      "datasetKey": "v1-image-role",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [
+        {
+          "values": {
+            "id": "i",
+            "title": "A",
+            "image_url": 5,
+            "published": "2026-11-05T08:00:00Z"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "wrong schema version",
+    "definition": {
+      "key": "v1-retention-default",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-retention-default",
+      "schemaVersion": 2,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": []
+    }
+  },
+  {
+    "name": "half a staging identity",
+    "definition": {
+      "key": "v1-retention-default",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-retention-default",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [],
+      "stagingId": "00000000-0000-4000-8000-000000000000"
+    }
+  },
+  {
+    "name": "unknown page member",
+    "definition": {
+      "key": "v1-retention-default",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    },
+    "page": {
+      "datasetKey": "v1-retention-default",
+      "schemaVersion": 1,
+      "refreshKey": "r1",
+      "pageKey": "p1",
+      "previousPageKey": null,
+      "complete": true,
+      "records": [],
+      "cursor": "x"
+    }
+  }
+]

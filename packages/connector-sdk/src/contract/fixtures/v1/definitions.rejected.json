@@ -1,0 +1,720 @@
+[
+  {
+    "name": "duplicate field ids",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "nullable key field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "json key field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "json",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "duplicate key fields",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id", "id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "missing key field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["nope"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "nullable reporting field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert",
+      "reportingField": "day"
+    }
+  },
+  {
+    "name": "string reporting field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert",
+      "reportingField": "label"
+    }
+  },
+  {
+    "name": "replace_window without reporting field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "replace_window"
+    }
+  },
+  {
+    "name": "unknown reporting timezone",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert",
+      "reportingField": "day",
+      "reportingTimeZone": "Mars/Olympus"
+    }
+  },
+  {
+    "name": "money without currency field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "price",
+          "name": "Price",
+          "type": "decimal",
+          "nullable": false,
+          "classification": "internal",
+          "unit": "currency"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "money with a nullable currency field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "cur",
+          "name": "Cur",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "price",
+          "name": "Price",
+          "type": "decimal",
+          "nullable": false,
+          "classification": "internal",
+          "unit": "currency",
+          "currencyField": "cur"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "money on a number field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "cur",
+          "name": "Cur",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "price",
+          "name": "Price",
+          "type": "number",
+          "nullable": false,
+          "classification": "internal",
+          "unit": "currency",
+          "currencyField": "cur"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "scale on a string field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "code",
+          "name": "Code",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal",
+          "scale": 2
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "personal field without retention",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "email",
+          "name": "Email",
+          "type": "string",
+          "nullable": true,
+          "classification": "personal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "image role on an integer",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "pic",
+          "name": "Pic",
+          "type": "integer",
+          "nullable": true,
+          "classification": "internal",
+          "role": "image"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "unknown role",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "pic",
+          "name": "Pic",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal",
+          "role": "video"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "unknown member on a field",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal",
+          "format": "url"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "unknown member on a dataset",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert",
+      "description": "extra"
+    }
+  },
+  {
+    "name": "reserved field id",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "constructor",
+          "name": "Constructor",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "no fields",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "version zero",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 0,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "unknown mode",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "merge"
+    }
+  },
+  {
+    "name": "unknown type",
+    "value": {
+      "key": "v1-rejected",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        },
+        {
+          "id": "blob",
+          "name": "Blob",
+          "type": "binary",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  }
+]

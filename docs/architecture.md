@@ -381,25 +381,26 @@ The testing kit (`@netrics/connector-sdk/testing`) builds fixture responses:
 SDK versions are additive within 0.2: a connector that declares `^0.2.0`
 keeps loading on every 0.2.x runtime.
 
-| SDK    | Adds                                                              |
-| ------ | ----------------------------------------------------------------- |
-| 0.2.0  | The contract above; `token` and `none` auth strategies            |
-| 0.2.1  | The `oauth2` auth strategy (ADR 0012)                             |
-| 0.2.2  | The `signed-key` auth strategy and `bytes()` (ADR 0014)           |
-| 0.2.3  | The `currency_minor` unit with a `currency` dimension (ADR 0014)  |
-| 0.2.4  | `resourceNoun`: what the connector calls its resources (#208)     |
-| 0.2.5  | Optional `resourceIcons` capability (resource icons, #226)        |
-| 0.2.6  | Optional `translations` of the manifest's texts (ADR 0016, #257)  |
-| 0.2.7  | Optional `category` and `brandColor` for the catalogue (#306)     |
-| 0.2.8  | Optional `reviews` and `reviewWindows` in `SyncResult` (ADR 0019) |
-| 0.2.9  | Optional typed source datasets and dataset pages (ADR 0022)       |
-| 0.2.10 | Optional durable dataset staging (ADR 0023)                       |
-| 0.2.11 | Optional incremental staging, `datasetStaging.begin` (ADR 0024)   |
-| 0.2.12 | Optional `receivedDatasets` in a final `SyncResult` (#666)        |
-| 0.2.13 | Optional `freshnessStreams` and a final `freshness` (ADR 0025)    |
-| 0.2.14 | Optional `runtime.log`, a structured connector logger (#638)      |
-| 0.2.15 | Optional final `nextFrom`, the next window start (#758)           |
-| 0.2.16 | `RateLimitedError` with `retryAt`: wait for a known reset (#781)  |
+| SDK    | Adds                                                                |
+| ------ | ------------------------------------------------------------------- |
+| 0.2.0  | The contract above; `token` and `none` auth strategies              |
+| 0.2.1  | The `oauth2` auth strategy (ADR 0012)                               |
+| 0.2.2  | The `signed-key` auth strategy and `bytes()` (ADR 0014)             |
+| 0.2.3  | The `currency_minor` unit with a `currency` dimension (ADR 0014)    |
+| 0.2.4  | `resourceNoun`: what the connector calls its resources (#208)       |
+| 0.2.5  | Optional `resourceIcons` capability (resource icons, #226)          |
+| 0.2.6  | Optional `translations` of the manifest's texts (ADR 0016, #257)    |
+| 0.2.7  | Optional `category` and `brandColor` for the catalogue (#306)       |
+| 0.2.8  | Optional `reviews` and `reviewWindows` in `SyncResult` (ADR 0019)   |
+| 0.2.9  | Optional typed source datasets and dataset pages (ADR 0022)         |
+| 0.2.10 | Optional durable dataset staging (ADR 0023)                         |
+| 0.2.11 | Optional incremental staging, `datasetStaging.begin` (ADR 0024)     |
+| 0.2.12 | Optional `receivedDatasets` in a final `SyncResult` (#666)          |
+| 0.2.13 | Optional `freshnessStreams` and a final `freshness` (ADR 0025)      |
+| 0.2.14 | Optional `runtime.log`, a structured connector logger (#638)        |
+| 0.2.15 | Optional final `nextFrom`, the next window start (#758)             |
+| 0.2.16 | `RateLimitedError` with `retryAt`: wait for a known reset (#781)    |
+| 0.2.17 | Optional dataset field role "image"; dataset contract v1 (ADR 0026) |
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),
@@ -707,7 +708,11 @@ driver).
 The agreed product direction now includes reusable source datasets, data
 preparation, relationships across systems, named measures and dashboard-wide
 filtering. [ADR 0022](./decisions/0022-reusable-data-model-and-processing.md)
-proposes the logical schema, execution model and compatibility path. These
+proposes the logical schema, execution model and compatibility path. The
+dataset transport connectors use (fields, types, modes, keys, reporting field,
+retention, versions, pages and checkpoints) is frozen as dataset contract v1
+in [ADR 0026](./decisions/0026-dataset-contract-v1.md), with compatibility
+fixtures in `packages/connector-sdk/src/contract/fixtures/v1/`. These
 capabilities are not implemented by the current observation model; the numeric
 observations and connector contract above describe the existing implementation.
 

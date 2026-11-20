@@ -19,6 +19,8 @@ export type DataType =
   | "date"
   | "timestamp"
   | "json";
+/** Presentation role of a string field (dataset contract v1, ADR 0026). */
+export type DataFieldRole = "image";
 export interface DataField {
   id: string;
   name: string;
@@ -27,6 +29,8 @@ export interface DataField {
   unit?: string;
   currencyField?: string;
   scale?: number;
+  /** Kept where a field is carried unchanged; never on calculated outputs. */
+  role?: DataFieldRole;
 }
 export type DataRow = Record<string, unknown>;
 export const DATA_FUNCTIONS = [

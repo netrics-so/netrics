@@ -1,0 +1,47 @@
+[
+  {
+    "name": "observations only, done",
+    "value": {
+      "observations": [],
+      "done": true
+    }
+  },
+  {
+    "name": "a dataset page with a cursor, not done",
+    "value": {
+      "observations": [],
+      "datasetPages": [
+        {
+          "datasetKey": "v1-image-role",
+          "schemaVersion": 1,
+          "refreshKey": "r1",
+          "pageKey": "p1",
+          "previousPageKey": null,
+          "complete": true,
+          "records": [
+            {
+              "values": {
+                "id": "i",
+                "title": "Alpha",
+                "image_url": "https://img.example.com/a.png",
+                "published": "2026-11-05T08:00:00Z"
+              }
+            }
+          ]
+        }
+      ],
+      "nextCursor": "c2",
+      "done": false
+    }
+  },
+  {
+    "name": "received datasets and the next window start, done",
+    "value": {
+      "observations": [],
+      "datasetPages": [],
+      "receivedDatasets": ["v1-image-role", "v1-append"],
+      "nextFrom": "2026-11-04T00:00:00Z",
+      "done": true
+    }
+  }
+]

@@ -559,10 +559,13 @@ export function executePreparation(
               previous.currencyField !== field.currencyField)
           )
             dataFail("preparation_append_schema_mismatch");
-          fields.set(field.id, {
+          const merged: DataField = {
             ...(previous ?? field),
             nullable: field.nullable || previous?.nullable === true,
-          });
+          };
+          // Roles never fail an append: a disagreement drops the role.
+          if (previous && previous.role !== field.role) delete merged.role;
+          fields.set(field.id, merged);
         }
       for (const field of fields.values())
         if (
@@ -722,15 +725,16 @@ export function executePreparation(
           dataFail("preparation_unit_cast_requires_calculation");
         // Reading the value pays its deferred rounding; the result is new.
         carried.delete(node.fieldId);
-        output.fields = output.fields.map((f) =>
-          f.id === node.fieldId
-            ? {
-                ...f,
-                type: node.to,
-                nullable: f.nullable || node.onError === "null",
-              }
-            : f,
-        );
+        // A cast field is a new value: it keeps no presentation role.
+        output.fields = output.fields.map((f) => {
+          if (f.id !== node.fieldId) return f;
+          const { role: _role, ...rest } = f;
+          return {
+            ...rest,
+            type: node.to,
+            nullable: f.nullable || node.onError === "null",
+          };
+        });
         output.rows = input.rows.map((row) => {
           try {
             return {

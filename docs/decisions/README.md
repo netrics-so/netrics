@@ -30,3 +30,4 @@ product is built.
 | [0023](./0023-connector-dataset-staging.md)             | Durable parsed dataset staging for connector continuations            |
 | [0024](./0024-streaming-connector-staging.md)           | Incremental connector dataset staging with compressed pages           |
 | [0025](./0025-data-freshness.md)                        | Data freshness: covered day, next expected, sync timing               |
+| [0026](./0026-dataset-contract-v1.md)                   | Dataset contract v1: the frozen dataset transport for connectors      |

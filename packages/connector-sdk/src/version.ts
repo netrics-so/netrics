@@ -23,7 +23,8 @@ import { satisfiesRange } from "./semver.js";
 // start; the host no longer reads a window from the cursor (#758).
 // 0.2.16: RateLimitedError, a provider limit with a known reset: the host
 // defers the connection's jobs to it instead of retrying (#781).
-export const SDK_VERSION = "0.2.16";
+// 0.2.17: optional dataset field role "image" (dataset contract v1, ADR 0026).
+export const SDK_VERSION = "0.2.17";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

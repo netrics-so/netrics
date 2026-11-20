@@ -42,6 +42,12 @@ export const dataFieldViewSchema = z.object({
   unit: z.string().min(1).max(100).optional(),
   currencyField: id.optional(),
   scale: z.number().int().min(0).max(18).optional(),
+  role: z
+    .enum(["image"])
+    .optional()
+    .describe(
+      'Presentation role of a string field. "image": the value is an image URL (dataset contract v1, SDK 0.2.17).',
+    ),
 });
 const literal = z.strictObject({
   kind: z.literal("literal"),
