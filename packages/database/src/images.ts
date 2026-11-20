@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import * as schema from "./schema.js";
@@ -19,7 +19,7 @@ export interface ImageInput {
   height: number;
   sha256: string;
   content: Buffer;
-  origin?: "upload" | "resource_icon";
+  origin?: "upload" | "resource_icon" | "custom_api";
   connectionId?: string | null;
   resourceId?: string | null;
   createdByUserId: string | null;
@@ -33,6 +33,23 @@ export interface ImageQuota {
 export interface ImageUsage {
   count: number;
   bytes: number;
+}
+
+/**
+ * Which quota an image counts against. "library": uploads and resource
+ * icons (ADR 0015); "custom_api": custom API item images (milestone 13),
+ * a quota of their own that neither side's images count against.
+ */
+export type ImageQuotaScope = "library" | "custom_api";
+
+function scopeOf(origin: ImageInput["origin"]): ImageQuotaScope {
+  return origin === "custom_api" ? "custom_api" : "library";
+}
+
+function inScope(scope: ImageQuotaScope) {
+  return scope === "custom_api"
+    ? eq(schema.workspaceImages.origin, "custom_api")
+    : ne(schema.workspaceImages.origin, "custom_api");
 }
 
 const metadata = {
@@ -58,6 +75,7 @@ function imageScope(workspaceId: string, imageId: string) {
   );
 }
 
+/** The workspace's image library: uploads and icons, never item images. */
 export async function listImages(
   tx: Transaction,
   workspaceId: string,
@@ -65,7 +83,12 @@ export async function listImages(
   return tx
     .select(metadata)
     .from(schema.workspaceImages)
-    .where(eq(schema.workspaceImages.workspaceId, workspaceId))
+    .where(
+      and(
+        eq(schema.workspaceImages.workspaceId, workspaceId),
+        inScope("library"),
+      ),
+    )
     .orderBy(desc(schema.workspaceImages.createdAt), schema.workspaceImages.id);
 }
 
@@ -98,6 +121,7 @@ export async function readImageContent(
 export async function imageUsage(
   tx: Transaction,
   workspaceId: string,
+  scope: ImageQuotaScope = "library",
 ): Promise<ImageUsage> {
   const [row] = await tx
     .select({
@@ -105,7 +129,9 @@ export async function imageUsage(
       bytes: sql<number>`coalesce(sum(${schema.workspaceImages.bytes}), 0)::bigint`,
     })
     .from(schema.workspaceImages)
-    .where(eq(schema.workspaceImages.workspaceId, workspaceId));
+    .where(
+      and(eq(schema.workspaceImages.workspaceId, workspaceId), inScope(scope)),
+    );
   return { count: Number(row?.count ?? 0), bytes: Number(row?.bytes ?? 0) };
 }
 
@@ -114,9 +140,9 @@ export type InsertImageResult =
   | { status: "quota_exceeded"; usage: ImageUsage };
 
 /**
- * Inserts an image if the workspace stays within its quota. A transaction
- * advisory lock per workspace serialises concurrent uploads, so two of them
- * cannot both pass the check.
+ * Inserts an image if the workspace stays within the quota of the image's
+ * scope (its origin). A transaction advisory lock per workspace and scope
+ * serialises concurrent inserts, so two of them cannot both pass the check.
  */
 export async function insertImageWithinQuota(
   tx: Transaction,
@@ -124,10 +150,16 @@ export async function insertImageWithinQuota(
   input: ImageInput,
   quota: ImageQuota,
 ): Promise<InsertImageResult> {
+  const scope = scopeOf(input.origin);
+  // The library keeps its lock key from before item images existed.
+  const lock =
+    scope === "library"
+      ? `workspace_images:${workspaceId}`
+      : `workspace_images:${workspaceId}:${scope}`;
   await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${`workspace_images:${workspaceId}`}, 0))`,
+    sql`select pg_advisory_xact_lock(hashtextextended(${lock}, 0))`,
   );
-  const usage = await imageUsage(tx, workspaceId);
+  const usage = await imageUsage(tx, workspaceId, scope);
   if (
     usage.count + 1 > quota.maxCount ||
     usage.bytes + input.content.length > quota.maxBytes
@@ -181,7 +213,11 @@ const IMAGE_REFERENCES = [
   "dashboard_widgets_image_fk",
 ].join(", ");
 
-/** Which of `imageIds` are images of the workspace. */
+/**
+ * Which of `imageIds` are library images of the workspace. Item images
+ * (origin custom_api) are not: a dashboard cannot name one as a logo,
+ * background or image widget, since garbage collection deletes them.
+ */
 export async function findImageIds(
   tx: Transaction,
   workspaceId: string,
@@ -197,6 +233,7 @@ export async function findImageIds(
       and(
         eq(schema.workspaceImages.workspaceId, workspaceId),
         inArray(schema.workspaceImages.id, [...imageIds]),
+        inScope("library"),
       ),
     );
   return new Set(rows.map((row) => row.id));
@@ -268,6 +305,7 @@ export async function findDeviceImage(
     join dashboards d
       on d.workspace_id = ${workspaceId} and d.id = dv.dashboard_id
     where i.workspace_id = ${workspaceId} and i.id = ${imageId}
+      and i.origin <> 'custom_api'
       and (
         d.logo_image_id = i.id
         or exists (

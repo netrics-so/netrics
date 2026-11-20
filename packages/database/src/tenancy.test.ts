@@ -184,6 +184,40 @@ describe("workspace-scoped visibility", () => {
   });
 });
 
+describe("custom API item image tables (#809)", () => {
+  it("refuse rows for another workspace and show none without context", async () => {
+    await expectDbError(
+      withWorkspace(db, { workspaceId: workspaceA, userId: u1 }, (tx) =>
+        tx.insert(schema.customApiItemImages).values({
+          workspaceId: workspaceB,
+          urlSha256: "a".repeat(64),
+          imageId: crypto.randomUUID(),
+          lastSeenAt: new Date(),
+        }),
+      ),
+      /row-level security/,
+    );
+    await expectDbError(
+      withWorkspace(db, { workspaceId: workspaceA, userId: u1 }, (tx) =>
+        tx.insert(schema.customApiStreamImages).values({
+          workspaceId: workspaceB,
+          connectionId: crypto.randomUUID(),
+          streamKey: "photos",
+          checkedAt: new Date(),
+          stored: 0,
+          unchanged: 0,
+          skipped: 0,
+        }),
+      ),
+      /row-level security/,
+    );
+    expect(await db.select().from(schema.customApiItemImages)).toHaveLength(0);
+    expect(await db.select().from(schema.customApiStreamImages)).toHaveLength(
+      0,
+    );
+  });
+});
+
 describe("user context (workspace discovery)", () => {
   it("shows U2 exactly his own memberships across both workspaces", async () => {
     const memberships = await withUserContext(db, { userId: u2 }, (tx) =>
