@@ -378,6 +378,74 @@ describe("custom API draft connections", () => {
     );
   });
 
+  it("accepts a short Basic username but not a short password (review #820)", async () => {
+    const { draft } = await createDraft();
+    const basic = { ...bearerDraft(), auth: { type: "basic" } };
+    const short = await updateDraft(draft.id, {
+      definition: basic,
+      environmentId: "production",
+      secrets: { username: "bob", password: "pass-0001" },
+    });
+    expect(short.statusCode, short.body).toBe(200);
+    expect(short.json().draft.secretsSet).toEqual(["password", "username"]);
+    expectError(
+      await updateDraft(draft.id, {
+        definition: basic,
+        environmentId: "production",
+        secrets: { username: "bob", password: "abc" },
+      }),
+      400,
+      "invalid_request",
+    );
+  });
+
+  it("refuses secrets that do not complete the login method (review #820)", async () => {
+    const { draft } = await createDraft();
+    expectError(
+      await updateDraft(draft.id, {
+        definition: { ...bearerDraft(), auth: { type: "basic" } },
+        environmentId: "production",
+        secrets: { username: "fx-user" },
+      }),
+      400,
+      "custom_api_credentials_invalid",
+    );
+  });
+
+  it("forgets secrets the new login method no longer declares (review #820)", async () => {
+    const { draft } = await createDraft();
+    const withTenant = {
+      ...bearerDraft(),
+      variables: [{ id: "tenant", label: "Tenant", secret: true }],
+    };
+    const stored = await updateDraft(draft.id, {
+      definition: withTenant,
+      environmentId: "production",
+      secrets: { token: TOKEN, tenant: "tenant-secret" },
+    });
+    expect(stored.json().draft.secretsSet).toEqual(["tenant", "token"]);
+    // Bearer → none: the token goes, the secret variable stays.
+    const none = await updateDraft(draft.id, {
+      definition: { ...withTenant, auth: { type: "none" } },
+      environmentId: "production",
+    });
+    expect(none.json().draft.secretsSet).toEqual(["tenant"]);
+    expect(await decrypted(draft.id)).toEqual({
+      host: new URL(fixture.origin).host,
+      variables: { tenant: "tenant-secret" },
+    });
+    // → API key without secret variables: nothing declared is left.
+    const key = await updateDraft(draft.id, {
+      definition: {
+        ...bearerDraft(),
+        auth: { type: "api_key", placement: "header", name: "X-Api-Key" },
+      },
+      environmentId: "production",
+    });
+    expect(key.json().draft.secretsSet).toEqual([]);
+    expect(await storedEnvelope(draft.id)).toBeNull();
+  });
+
   it("stores secret variables in the envelope and plain values in the draft", async () => {
     const { draft } = await createDraft();
     const base = bearerDraft();
@@ -433,7 +501,11 @@ describe("custom API draft connections", () => {
     expect(state!.next_due_at).not.toBeNull();
     // Instance minimum 15 minutes, definition default 60.
     expect(state!.poll_interval_seconds).toBe(3600);
-    expect(await decrypted(id)).toMatchObject({ token: TOKEN });
+    // The envelope a connection created through C-G3 would hold.
+    expect(await decrypted(id)).toEqual({
+      host: new URL(fixture.origin).host,
+      token: TOKEN,
+    });
     const jobs = await admin`
       select kind from jobs where connection_id = ${id}`;
     expect(jobs.map((job) => job.kind)).toEqual(["connection.backfill"]);

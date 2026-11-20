@@ -71344,7 +71344,7 @@
                     },
                     "additionalProperties": {
                       "type": "string",
-                      "minLength": 4,
+                      "minLength": 1,
                       "maxLength": 8192
                     }
                   }
@@ -72921,6 +72921,9 @@
                     "ok": {
                       "type": "boolean"
                     },
+                    "truncated": {
+                      "type": "boolean"
+                    },
                     "error": {
                       "anyOf": [
                         {
@@ -73290,6 +73293,7 @@
                   },
                   "required": [
                     "ok",
+                    "truncated",
                     "error",
                     "response",
                     "recordArrays",

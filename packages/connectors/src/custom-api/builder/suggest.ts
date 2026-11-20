@@ -238,17 +238,25 @@ function suggestType(
   return { type: "string" };
 }
 
-function sample(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+/** Redacted first, then cut: a cut must never split a secret out of reach of the redaction. */
+function sample(value: unknown, redact: (text: string) => string): string {
+  const text = redact(
+    typeof value === "string" ? value : JSON.stringify(value),
+  );
   return text.length > SAMPLE_CHARS
     ? `${text.slice(0, SAMPLE_CHARS - 1)}…`
     : text;
 }
 
-/** Leaf paths of the first `limit` records (objects up to depth 4; arrays of scalars and deeper objects → json). */
+/**
+ * Leaf paths of the first `limit` records (objects up to depth 4; arrays of
+ * scalars and deeper objects → json). `redact` runs on every path and
+ * sample before anything is shortened or derived from it (ids, names).
+ */
 export function suggestFields(
   records: readonly unknown[],
   limit = 100,
+  redact: (text: string) => string = (text) => text,
 ): FieldSuggestion[] {
   const read = records.slice(0, limit);
   const byPath = new Map<string, Leaf[]>();
@@ -266,18 +274,19 @@ export function suggestFields(
       if (value === undefined || value === null) missing = true;
       else values.push(value);
     }
-    const id = fieldIdFromPath(path, taken);
+    const shown = redact(path);
+    const id = fieldIdFromPath(shown, taken);
     taken.add(id);
     const samples: string[] = [];
     for (const value of values) {
-      const text = sample(value);
+      const text = sample(value, redact);
       if (!samples.includes(text)) samples.push(text);
       if (samples.length >= MAX_SAMPLES) break;
     }
     out.push({
-      path,
+      path: shown,
       id,
-      name: fieldName(path),
+      name: fieldName(shown),
       ...suggestType(lastKey(path), values),
       nullable: missing || values.length === 0,
       samples,

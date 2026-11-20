@@ -27,7 +27,7 @@ export interface CustomApiPageTrace {
   status: number | null;
   durationMs: number;
   bytes: number;
-  /** Parsed JSON, or the text when the body is not JSON; null without a response. */
+  /** Page 1 only: parsed JSON, or the text when the body is not JSON. Null without a response and on later pages. */
   body: unknown;
   contentType: string | null;
   records: number | null;
@@ -138,7 +138,9 @@ export async function runCustomApiTestStream(input: {
     trace.status = response.status;
     trace.durationMs = Math.max(0, Math.round(now() - started));
     trace.bytes = Buffer.byteLength(text, "utf8");
-    trace.body = body.value;
+    // Only the first page's body is shown; later pages keep their
+    // metadata, so a test never holds every page in memory.
+    trace.body = page === 1 ? body.value : null;
     trace.contentType = response.headers["content-type"] ?? null;
 
     if (response.status === 401 || response.status === 403) {

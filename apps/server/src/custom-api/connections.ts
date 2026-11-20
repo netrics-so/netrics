@@ -80,7 +80,9 @@ function sameKeys(values: Record<string, string>, ids: string[]): boolean {
 }
 
 /** Whether the login method needs nothing stored (no credentials, no secret variables). */
-export function customApiNeedsNoSecrets(definition: CustomApiDefinition) {
+export function customApiNeedsNoSecrets(
+  definition: Pick<CustomApiDefinition, "auth" | "variables">,
+) {
   return (
     definition.auth.type === "none" &&
     !definition.variables.some((variable) => variable.secret)
@@ -94,7 +96,7 @@ export function customApiNeedsNoSecrets(definition: CustomApiDefinition) {
  * credentials do not fit the login method.
  */
 export function customApiEnvelope(
-  definition: CustomApiDefinition,
+  definition: Pick<CustomApiDefinition, "environments" | "auth" | "variables">,
   environmentId: string,
   credentials: Record<string, string>,
   secretVariables: Record<string, string>,

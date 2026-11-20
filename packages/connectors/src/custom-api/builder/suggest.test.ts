@@ -152,6 +152,17 @@ describe("suggestFields", () => {
       expect(id).toMatch(/^[a-z][a-z0-9_.-]{0,99}$/);
   });
 
+  it("redacts samples, paths and names before it cuts them (review #820)", () => {
+    const key = "k3y5ecretZq8LmN0pW2xR7vT4bY6cH9d";
+    const url = `https://api.example.test/echo?pad=${"p".repeat(20)}&api_key=${key}`;
+    expect(url.indexOf(key)).toBeLessThan(79);
+    expect(url.indexOf(key) + key.length).toBeGreaterThan(79);
+    const redact = (text: string) => text.replaceAll(key, "[redacted]");
+    const out = JSON.stringify(suggestFields([{ url, [key]: 1 }], 100, redact));
+    for (let i = 0; i + 6 <= key.length; i++)
+      expect(out).not.toContain(key.slice(i, i + 6));
+  });
+
   it("cuts samples to 80 characters", () => {
     const [field] = suggestFields([{ text: "x".repeat(500) }]);
     expect(field!.samples[0]!.length).toBeLessThanOrEqual(80);

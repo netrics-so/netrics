@@ -66,6 +66,9 @@ describe("runCustomApiTestStream", () => {
     expect(traces[0]!.contentType).toMatch(/application\/json/);
     expect(traces[0]!.bytes).toBeGreaterThan(0);
     expect(traces[0]!.body).toMatchObject({ meta: { next: "c10" } });
+    // Later pages keep their metadata only (review #820).
+    expect(traces[1]!.body).toBeNull();
+    expect(traces[2]!.body).toBeNull();
   });
 
   it("never puts the API key in a trace URL", async () => {

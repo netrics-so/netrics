@@ -332,6 +332,64 @@ describe("the custom API test request", () => {
     expect(JSON.stringify(failedBody.response!.body)).toContain("[redacted]");
   });
 
+  it("returns no part of a 32-character key the API echoes in a URL, not even across a cut (review #820)", async () => {
+    const key = "k3y5ecretZq8LmN0pW2xR7vT4bY6cH9d";
+    const prefix = `${fixture.origin}/builder/echo-query?pad=`;
+    // The key starts a few characters before the 80-character sample cut.
+    const pad = "p".repeat(
+      Math.max(1, 70 - prefix.length - "&api_key=".length),
+    );
+    const definition = draftDefinition({
+      path: "/builder/echo-query",
+      auth: { type: "api_key", placement: "query", name: "api_key" },
+      pagination: { type: "none" },
+      fields: [{ id: "url", name: "URL", path: "url", type: "string" }],
+    });
+    definition.stream.request = {
+      path: "/builder/echo-query",
+      query: { pad },
+    } as never;
+    const id = await newDraft({ apiKey: key }, definition);
+    const res = await testRequest(id, { definition });
+    const body = parsed(res);
+    expect(body.ok).toBe(true);
+    const echoed = String(
+      (fixture.requests[0]!.query as Record<string, string>).api_key,
+    );
+    expect(echoed).toBe(key);
+    const at = `${prefix}${pad}&api_key=`.length;
+    expect(at).toBeLessThan(79);
+    expect(at + key.length).toBeGreaterThan(79);
+    expect(body.suggestions[0]!.samples[0]).toContain("[redacted]");
+    for (let i = 0; i + 6 <= key.length; i++)
+      expect(res.body).not.toContain(key.slice(i, i + 6));
+  });
+
+  it("keeps the whole answer within 1 MiB and says it cut the rows", async () => {
+    const definition = draftDefinition({
+      path: "/builder/wide",
+      auth: { type: "none" },
+      pagination: { type: "none" },
+      fields: Array.from({ length: 10 }, (_, i) => ({
+        id: `f${i}`,
+        name: `F${i}`,
+        path: `f${i}`,
+        type: "string",
+      })),
+    });
+    const id = await newDraft(null, definition);
+    const res = await testRequest(id, { definition });
+    const body = parsed(res);
+    expect(body.ok).toBe(true);
+    expect(Buffer.byteLength(res.body)).toBeLessThanOrEqual(1_048_576);
+    expect(body.truncated).toBe(true);
+    expect(body.rows.length).toBeGreaterThan(0);
+    expect(body.rows.length).toBeLessThan(100);
+    expect(Buffer.byteLength(JSON.stringify(body.rows))).toBeLessThanOrEqual(
+      524_288,
+    );
+  });
+
   it("makes no request when the base URL host changed after the secret was entered", async () => {
     const id = await newDraft();
     const moved = draftDefinition({ baseUrl: "https://other.example.test/v1" });
@@ -420,6 +478,7 @@ describe("the custom API test request", () => {
     const body = parsed(res);
     expect(body.ok).toBe(true);
     expect(body.response!.truncated).toBe(true);
+    expect(body.truncated).toBe(true);
     expect(
       Buffer.byteLength(JSON.stringify(body.response!.body)),
     ).toBeLessThanOrEqual(262_144);

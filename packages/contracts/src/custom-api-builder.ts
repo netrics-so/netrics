@@ -74,6 +74,9 @@ export type CreateCustomApiDraftRequest = z.infer<
   typeof createCustomApiDraftRequestSchema
 >;
 
+/** Credential names whose values are not secrets (no minimum length). */
+const NON_SECRET_CREDENTIALS = new Set(["username", "clientId"]);
+
 export const updateCustomApiDraftRequestSchema = z.strictObject({
   definition: customApiDraftDefinitionSchema,
   environmentId: z.string().min(1).max(64),
@@ -81,7 +84,20 @@ export const updateCustomApiDraftRequestSchema = z.strictObject({
   // Keys: the auth method's credential names (apiKey | token | username +
   // password | clientId + clientSecret) plus secret variable ids. Replaces
   // all stored secrets when present.
-  secrets: z.record(z.string(), z.string().min(4).max(8192)).optional(),
+  // Secret values have at least 4 characters; the Basic auth username and
+  // the OAuth client ID are not secrets and may be shorter.
+  secrets: z
+    .record(z.string(), z.string().min(1).max(8192))
+    .superRefine((secrets, ctx) => {
+      for (const [name, value] of Object.entries(secrets))
+        if (!NON_SECRET_CREDENTIALS.has(name) && value.length < 4)
+          ctx.addIssue({
+            code: "custom",
+            path: [name],
+            message: "A secret has at least 4 characters",
+          });
+    })
+    .optional(),
 });
 export type UpdateCustomApiDraftRequest = z.input<
   typeof updateCustomApiDraftRequestSchema
@@ -153,6 +169,12 @@ export type CustomApiRequestLogEntry = z.infer<
 
 export const customApiTestResponseSchema = z.object({
   ok: z.boolean(),
+  /**
+   * Something in the answer was cut to keep it bounded: the response tree
+   * (256 KiB), the preview rows (512 KiB together) or, past 1 MiB for the
+   * whole answer, rows, samples and the tree.
+   */
+  truncated: z.boolean(),
   /** The message is redacted. */
   error: z.object({ code: z.string(), message: z.string() }).nullable(),
   /** The first page. */

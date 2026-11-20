@@ -31,7 +31,6 @@ import {
 import {
   CUSTOM_API_CONNECTOR_ID,
   customApiCredentialHosts,
-  customApiCredentialsSchema,
   customApiEnvironmentHost,
 } from "@netrics/connectors/custom-api";
 import {
@@ -57,6 +56,7 @@ import {
   type CredentialKeyring,
 } from "../credentials.js";
 import type { CustomApiInstanceConfig } from "../env.js";
+import { customApiEnvelope } from "./connections.js";
 
 /** Open drafts per workspace. */
 export const CUSTOM_API_DRAFT_LIMIT = 10;
@@ -182,6 +182,63 @@ export function draftBindingHolds(
     state.secretNames.length === 0 ||
     (sameSet(state.credentialHosts, binding.hosts) &&
       state.secretHost === binding.host)
+  );
+}
+
+/** The secrets of a stored envelope by name: credentials and secret variables. */
+export function envelopeSecrets(
+  envelope: Record<string, unknown> | null,
+): Record<string, string> {
+  if (!envelope) return {};
+  const {
+    host: _host,
+    variables,
+    refreshToken: _refreshToken,
+    ...rest
+  } = envelope;
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries({
+    ...rest,
+    ...(variables && typeof variables === "object" ? variables : {}),
+  }))
+    if (typeof value === "string") out[name] = value;
+  return out;
+}
+
+/**
+ * The envelope a draft stores for these secrets, in the shape a connection
+ * keeps: C-G3's customApiEnvelope for none/API key/bearer/basic, C-G4's
+ * `{ host, clientId, clientSecret, refreshToken: null }` for OAuth.
+ * Undefined when the secrets do not fit the login method (all of them are
+ * entered together); null when the method needs nothing stored.
+ */
+export function draftEnvelope(
+  definition: Pick<
+    CustomApiDraftDefinition,
+    "environments" | "auth" | "variables"
+  >,
+  environmentId: string,
+  secrets: Record<string, string>,
+): Record<string, unknown> | null | undefined {
+  const pick = (names: readonly string[]) =>
+    Object.fromEntries(
+      names.flatMap((name) =>
+        Object.hasOwn(secrets, name) ? [[name, secrets[name]!]] : [],
+      ),
+    ) as Record<string, string>;
+  const names = customApiCredentialNames(definition.auth);
+  const credentials = pick(names);
+  if (isCustomApiOAuth(definition.auth)) {
+    if (names.some((name) => !Object.hasOwn(credentials, name)))
+      return undefined;
+    const { host } = draftBinding(definition, environmentId);
+    return { host, ...credentials, refreshToken: null };
+  }
+  return customApiEnvelope(
+    definition,
+    environmentId,
+    credentials,
+    pick(secretVariableIds(definition)),
   );
 }
 
@@ -380,48 +437,52 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
           variables,
         };
         let credentials: Buffer | null | undefined;
-        if (body.secrets !== undefined) {
-          const names = customApiCredentialNames(definition.auth);
-          const secretIds = secretVariableIds(definition);
-          const allowed = new Set([...names, ...secretIds]);
-          const given = Object.keys(body.secrets);
-          if (given.some((name) => !allowed.has(name)))
-            return fail(400, "custom_api_secret_unknown");
-          const authSecrets = Object.fromEntries(
-            names.flatMap((name) =>
-              Object.hasOwn(body.secrets!, name)
-                ? [[name, body.secrets![name]!]]
-                : [],
-            ),
-          );
-          const variableSecrets = Object.fromEntries(
-            secretIds.flatMap((id) =>
-              Object.hasOwn(body.secrets!, id)
-                ? [[id, body.secrets![id]!]]
-                : [],
-            ),
-          );
-          const envelope = isCustomApiOAuth(definition.auth)
-            ? {
-                host: binding.host,
-                ...authSecrets,
-                refreshToken: null,
-              }
-            : {
-                host: binding.host,
-                ...authSecrets,
-                ...(secretIds.length ? { variables: variableSecrets } : {}),
-              };
-          next.secretNames = given.sort();
-          next.credentialHosts = given.length ? binding.hosts : [];
-          next.secretHost = given.length ? binding.host : null;
-          credentials = given.length ? seal(actor, draftId, envelope) : null;
-        } else if (!draftBindingHolds(state, binding)) {
-          // The secrets were entered for another host: never sent there.
+        const forget = () => {
           next.secretNames = [];
           next.credentialHosts = [];
           next.secretHost = null;
           credentials = null;
+        };
+        const store = (secrets: Record<string, string>) => {
+          const envelope = draftEnvelope(
+            definition,
+            body.environmentId,
+            secrets,
+          );
+          if (envelope === undefined) return false;
+          if (envelope === null) {
+            forget();
+            return true;
+          }
+          next.secretNames = Object.keys(secrets).sort();
+          next.credentialHosts = binding.hosts;
+          next.secretHost = binding.host;
+          credentials = seal(actor, draftId, envelope);
+          return true;
+        };
+        const declared = new Set([
+          ...customApiCredentialNames(definition.auth),
+          ...secretVariableIds(definition),
+        ]);
+        if (body.secrets !== undefined) {
+          const given = Object.keys(body.secrets);
+          if (given.some((name) => !declared.has(name)))
+            return fail(400, "custom_api_secret_unknown");
+          if (given.length === 0) forget();
+          else if (!store(body.secrets))
+            return fail(400, "custom_api_credentials_invalid");
+        } else if (!draftBindingHolds(state, binding)) {
+          // The secrets were entered for another host: never sent there.
+          forget();
+        } else if (state.secretNames.some((name) => !declared.has(name))) {
+          // Another login method: keep only what it and the secret
+          // variables still declare, or ask for the login again.
+          const kept = Object.fromEntries(
+            Object.entries(envelopeSecrets(open(actor, row))).filter(([name]) =>
+              declared.has(name),
+            ),
+          );
+          if (Object.keys(kept).length === 0 || !store(kept)) forget();
         }
         const written = await write(tx, actor, draftId, next, credentials);
         if (!written) return fail(404, "custom_api_draft_not_found");
@@ -507,16 +568,13 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
           return fail(400, "custom_api_oauth_unavailable");
         if (!draftBindingHolds(state, draftBinding(definition, environmentId)))
           return fail(409, "custom_api_credentials_host_changed");
-        const envelope = open(actor, row);
-        const needsSecrets =
-          definition.auth.type !== "none" || secretIds.length > 0;
-        if (
-          needsSecrets
-            ? !envelope ||
-              !customApiCredentialsSchema(definition).safeParse(envelope)
-                .success
-            : envelope !== null
-        )
+        // Built again for the saved version, as a connection stores it.
+        const envelope = draftEnvelope(
+          definition,
+          environmentId,
+          envelopeSecrets(open(actor, row)),
+        );
+        if (envelope === undefined)
           return fail(400, "custom_api_credentials_invalid");
         if (
           (await countCustomApiConnections(tx, actor.workspaceId)) >=
@@ -547,6 +605,9 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
             customApiDefinitionVersionId: version.id,
             customApiEnvironmentId: environmentId,
             config: { ...state.variables },
+            credentialsEncrypted: envelope
+              ? seal(actor, draftId, envelope)
+              : null,
             updatedAt: now(),
           })
           .where(

@@ -165,6 +165,69 @@ export function testChunk(
   return chunks.at(-1) ?? null;
 }
 
+/**
+ * The mapped preview rows: at most 100, bounded together to
+ * CUSTOM_API_TEST_LIMITS.rowsBytes (each row gets what is left of it).
+ */
+function previewRows(
+  rows: readonly Record<string, unknown>[],
+  secrets: SecretSet,
+): { rows: Record<string, JsonValue>[]; truncated: boolean } {
+  const out: Record<string, JsonValue>[] = [];
+  let left: number = CUSTOM_API_TEST_LIMITS.rowsBytes;
+  let truncated = rows.length > CUSTOM_API_TEST_LIMITS.rows;
+  for (const row of rows.slice(0, CUSTOM_API_TEST_LIMITS.rows)) {
+    if (left < 8_192) {
+      truncated = true;
+      break;
+    }
+    const bounded = boundedPreview(
+      row,
+      secrets,
+      Math.min(left, CUSTOM_API_TEST_LIMITS.previewBytes),
+    );
+    if (bounded.truncated) truncated = true;
+    if (
+      typeof bounded.body !== "object" ||
+      bounded.body === null ||
+      Array.isArray(bounded.body)
+    ) {
+      truncated = true;
+      break;
+    }
+    left -= Buffer.byteLength(JSON.stringify(bounded.body), "utf8") + 1;
+    out.push(bounded.body);
+  }
+  return { rows: out, truncated };
+}
+
+/**
+ * The whole answer stays within CUSTOM_API_TEST_LIMITS.responseBytes: the
+ * parts are bounded on their own already (tree 256 KiB, rows 512 KiB,
+ * 100 suggestions with 3 samples of 80 characters, 5 log lines); should
+ * they still add up to more, rows, then samples, then the tree go.
+ */
+function capResponse(response: CustomApiTestResponse): CustomApiTestResponse {
+  const size = () => Buffer.byteLength(JSON.stringify(response), "utf8");
+  const limit = CUSTOM_API_TEST_LIMITS.responseBytes;
+  if (size() <= limit) return response;
+  response = { ...response, truncated: true, rows: [] };
+  if (size() <= limit) return response;
+  response = {
+    ...response,
+    suggestions: response.suggestions.map((s) => ({ ...s, samples: [] })),
+  };
+  if (size() <= limit || !response.response) return response;
+  return {
+    ...response,
+    response: {
+      ...response.response,
+      body: "… (response too large to show)",
+      truncated: true,
+    },
+  };
+}
+
 export function createCustomApiTestRequestService(
   deps: CustomApiTestRequestDeps,
 ) {
@@ -229,6 +292,7 @@ export function createCustomApiTestRequestService(
       ): DraftResult<CustomApiTestResponse> => ({
         ok: true,
         value: {
+          truncated: false,
           ok: false,
           error: { code, message },
           response: null,
@@ -344,6 +408,7 @@ export function createCustomApiTestRequestService(
               ? [recordsAt.value]
               : [];
         const preview = first ? boundedPreview(firstBody, secrets) : null;
+        const rows = previewRows(result?.rows ?? [], secrets);
         const stopped: CustomApiTestStop | "error" = failure
           ? "error"
           : result!.stopped;
@@ -355,7 +420,8 @@ export function createCustomApiTestRequestService(
         });
         return {
           ok: true,
-          value: {
+          value: capResponse({
+            truncated: rows.truncated || (preview?.truncated ?? false),
             ok: failure === null,
             error: failure
               ? {
@@ -389,23 +455,9 @@ export function createCustomApiTestRequestService(
             suggestions: suggestFields(
               records,
               CUSTOM_API_TEST_LIMITS.rows,
-            ).map((suggestion) => ({
-              ...suggestion,
-              path: redactText(suggestion.path, secrets),
-              name: redactText(suggestion.name, secrets),
-              samples: suggestion.samples.map((sample) =>
-                redactText(sample, secrets),
-              ),
-            })),
-            rows: (result?.rows ?? [])
-              .slice(0, CUSTOM_API_TEST_LIMITS.rows)
-              .map(
-                (row) =>
-                  boundedPreview(row, secrets).body as Record<
-                    string,
-                    JsonValue
-                  >,
-              ),
+              (text) => redactText(text, secrets),
+            ),
+            rows: rows.rows,
             mapping: {
               skipped: result?.skipped ?? 0,
               nulled: result?.nulled ?? {},
@@ -422,7 +474,7 @@ export function createCustomApiTestRequestService(
             stopped,
             window: chunk ? { start: chunk.from, end: chunk.to } : null,
             draft,
-          },
+          }),
         };
       } finally {
         running.delete(draftId);

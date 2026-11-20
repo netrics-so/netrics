@@ -57,10 +57,14 @@ most 10 drafts are open per workspace.
   secrets are deleted and have to be entered again.
 - `POST …/drafts/:draftId/test` runs the stream against the draft's secrets:
   at most 5 pages, 1,000 records and 60 seconds. The answer holds the first
-  response as a tree (at most 256 KiB, 50 items per list, 2,000 characters
-  per text, 32 levels), the lists that may hold the records, suggested fields
-  from the first 100 records, up to 100 mapped rows and a log per page.
-  Every secret value, raw or URL-encoded, reads `[redacted]` in all of it.
+  response as a tree (at most 256 KiB, 50 items per list, 200 keys per
+  object, 2,000 characters per text, 32 levels), the lists that may hold the
+  records, suggested fields from the first 100 records, up to 100 mapped
+  rows (512 KiB together) and a log per page. The whole answer stays within
+  1 MiB; `truncated` says when anything was cut. Only the first page's body
+  is kept while the test runs. Every secret value (raw, URL-encoded in
+  either case, form-encoded or JSON-escaped) reads `[redacted]` in all of
+  it, and values are redacted before they are shortened.
   Nothing from the test is stored. At most 30 test requests run per
   workspace and minute (`429 custom_api_test_rate_limited` with
   `Retry-After`); a definition whose host changed after the secrets were

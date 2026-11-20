@@ -502,6 +502,21 @@ export async function startCustomApiFixtureServer(
           whoami: headers.authorization,
         });
       }
+      case "/builder/echo-query":
+        // Echoes its own URL, query (and so a query API key) included.
+        return send(200, { data: [{ url: `${origin}${request.url ?? "/"}` }] });
+      case "/builder/wide":
+        // 100 records of 10 texts of 2,000 characters (about 2 MB).
+        return send(200, {
+          data: Array.from({ length: 100 }, (_, index) =>
+            Object.fromEntries(
+              Array.from({ length: 10 }, (_, field) => [
+                `f${field}`,
+                `${index}:`.padEnd(2_000, "w"),
+              ]),
+            ),
+          ),
+        });
       case "/builder/huge":
         return send(200, {
           data: Array.from({ length: 100_000 }, (_, index) => ({

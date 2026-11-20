@@ -1,16 +1,28 @@
 // The test response of the custom API builder (milestone 13, #806), made
 // safe to return: every string (keys and values) is redacted by value with
-// the draft's secrets, raw and URL-encoded, and the body is bounded in
-// array length, string length, depth and serialized size. Pure. Key-based
+// the draft's secrets (raw, URL-encoded in either hex case, form-encoded
+// and JSON-escaped), and the body is bounded in array length, keys per
+// object, string length, depth and serialized size. Pure. Key-based
 // redaction (redactSecrets) is deliberately not applied: API data has keys
 // like "keyword" or "token_count" whose values are not secrets.
+//
+// Bounding is one pass with a running byte budget: the work is bounded by
+// the budget, not by the size of the body (review of #820: re-serializing
+// after every cut was quadratic). Strings are redacted before they are cut,
+// so a cut never splits a secret out of reach of the redaction.
 
 export const CUSTOM_API_TEST_LIMITS = {
   maxPages: 5,
   maxRecords: 1_000,
   totalMs: 60_000,
+  /** The first response's tree, serialized. */
   previewBytes: 262_144,
+  /** All preview rows together, serialized. */
+  rowsBytes: 524_288,
+  /** The whole test answer, serialized (tree, rows, suggestions, log). */
+  responseBytes: 1_048_576,
   arrayItems: 50,
+  objectKeys: 200,
   stringChars: 2_000,
   depth: 32,
   rows: 100,
@@ -23,23 +35,51 @@ const REDACTED = "[redacted]";
 /** Shorter values would over-redact; real secrets are never this short. */
 const MIN_SECRET_LENGTH = 4;
 
-/** Raw and URL-encoded forms of every secret, each at least 4 characters, longest first. */
+/** Every form of every secret, each at least 4 characters, longest first, and one pattern matching them all. */
 export interface SecretSet {
   values: readonly string[];
+  /** Percent-escapes match in either hex case. Null without secrets. */
+  pattern: RegExp | null;
+}
+
+function forms(value: string): string[] {
+  const json = JSON.stringify(value).slice(1, -1);
+  return [
+    value,
+    encodeURIComponent(value),
+    // application/x-www-form-urlencoded (URLSearchParams): spaces as "+".
+    new URLSearchParams({ v: value }).toString().slice(2),
+    // JSON-escaped, with and without escaped slashes.
+    json,
+    json.replaceAll("/", "\\/"),
+  ];
 }
 
 function collect(value: unknown, into: Set<string>): void {
   if (typeof value === "string") {
     if (value.length < MIN_SECRET_LENGTH) return;
-    into.add(value);
-    into.add(encodeURIComponent(value));
-    // application/x-www-form-urlencoded (URLSearchParams): spaces as "+".
-    into.add(new URLSearchParams({ v: value }).toString().slice(2));
+    for (const form of forms(value)) into.add(form);
     return;
   }
   if (Array.isArray(value)) for (const item of value) collect(item, into);
   else if (value !== null && typeof value === "object")
     for (const item of Object.values(value)) collect(item, into);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+}
+
+/** A secret form as a pattern whose percent-escapes match in either hex case. */
+function formPattern(form: string): string {
+  return form
+    .split(/(%[0-9A-Fa-f]{2})/)
+    .map((part, index) =>
+      index % 2 === 1
+        ? `%[${part[1]!.toLowerCase()}${part[1]!.toUpperCase()}][${part[2]!.toLowerCase()}${part[2]!.toUpperCase()}]`
+        : escapeRegExp(part),
+    )
+    .join("");
 }
 
 /**
@@ -53,32 +93,38 @@ export function secretSetOf(
   secretVariables: Record<string, string>,
   extra: readonly string[] = [],
 ): SecretSet {
-  const values = new Set<string>();
+  const set = new Set<string>();
   const { host: _host, ...secrets } = credentials;
-  collect(secrets, values);
-  collect(secretVariables, values);
-  collect([...extra], values);
+  collect(secrets, set);
+  collect(secretVariables, set);
+  collect([...extra], set);
+  const values = [...set]
+    .filter((value) => value.length >= MIN_SECRET_LENGTH)
+    .sort((a, b) => b.length - a.length);
   return {
-    values: [...values]
-      .filter((value) => value.length >= MIN_SECRET_LENGTH)
-      .sort((a, b) => b.length - a.length),
+    values,
+    pattern: values.length
+      ? new RegExp(values.map(formPattern).join("|"), "g")
+      : null,
   };
 }
 
 export function redactText(text: string, secrets: SecretSet): string {
-  let out = text;
-  for (const secret of secrets.values)
-    if (out.includes(secret)) out = out.split(secret).join(REDACTED);
-  return out;
+  return secrets.pattern ? text.replace(secrets.pattern, REDACTED) : text;
 }
 
-/** Redacts secrets in a URL, also strips userinfo; a URL that does not parse is redacted as text. */
+/**
+ * Redacts secrets in a URL and strips userinfo. The text is redacted before
+ * and after parsing: new URL() re-encodes some characters (such as "'"),
+ * which would hide a raw secret from the stored forms.
+ */
 export function redactUrl(url: string, secrets: SecretSet): string {
+  const raw = redactText(url, secrets);
   let parsed: URL;
   try {
-    parsed = new URL(url);
+    parsed = new URL(raw);
   } catch {
-    return redactText(url, secrets);
+    return raw;
   }
   parsed.username = "";
   parsed.password = "";
@@ -88,30 +134,35 @@ export function redactUrl(url: string, secrets: SecretSet): string {
   );
 }
 
-interface CutArray {
-  node: JsonValue[];
-  items: JsonValue[];
-  /** Length of the array in the response. */
-  total: number;
-  kept: number;
+/** Serialized size of a JSON string or scalar. */
+function bytesOf(value: string | number | boolean | null): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
-function arrayMarker(omitted: number): string {
-  return `… ${omitted} more`;
-}
+/** Room kept for the markers and closing brackets added once the budget is used. */
+const RESERVE = 4_096;
 
-/** Redacts every string (keys and values), truncates arrays/strings/depth, then cuts to previewBytes. */
+/**
+ * Redacts every string (keys and values) and bounds the body in one pass:
+ * at most 50 items per array ("… N more"), 200 keys per object (key "…":
+ * "N more keys"), 2,000 characters per string ("… (N characters)"), depth
+ * 32 ("… (nested deeper)"), and `maxBytes` serialized: once the budget is
+ * used, every open array or object ends with its marker.
+ */
 export function boundedPreview(
   body: unknown,
   secrets: SecretSet,
+  maxBytes: number = CUSTOM_API_TEST_LIMITS.previewBytes,
 ): {
   body: JsonValue;
   truncated: boolean;
-  omitted: { arrays: number; strings: number; depth: number };
+  omitted: { arrays: number; strings: number; depth: number; bytes: number };
 } {
   const limits = CUSTOM_API_TEST_LIMITS;
-  const omitted = { arrays: 0, strings: 0, depth: 0 };
-  const arrays: CutArray[] = [];
+  const omitted = { arrays: 0, strings: 0, depth: 0, bytes: 0 };
+  const budget = Math.max(0, maxBytes - RESERVE);
+  let used = 0;
+  const full = () => used >= budget;
 
   const text = (value: string): string => {
     const clean = redactText(value, secrets);
@@ -119,66 +170,65 @@ export function boundedPreview(
     omitted.strings += 1;
     return `${clean.slice(0, limits.stringChars)}… (${value.length} characters)`;
   };
+  const scalar = <T extends string | number | boolean | null>(value: T): T => {
+    used += bytesOf(value) + 1;
+    return value;
+  };
 
   const walk = (value: unknown, depth: number): JsonValue => {
-    if (value === null || typeof value === "boolean") return value;
-    if (typeof value === "number") return Number.isFinite(value) ? value : null;
-    if (typeof value === "string") return text(value);
-    if (typeof value !== "object") return null;
+    if (value === null || typeof value === "boolean") return scalar(value);
+    if (typeof value === "number")
+      return scalar(Number.isFinite(value) ? value : null);
+    if (typeof value === "string") return scalar(text(value));
+    if (typeof value !== "object") return scalar(null);
     if (depth >= limits.depth) {
       omitted.depth += 1;
-      return "… (nested deeper)";
+      return scalar("… (nested deeper)");
     }
+    used += 2;
     if (Array.isArray(value)) {
-      const items = value
-        .slice(0, limits.arrayItems)
-        .map((item) => walk(item, depth + 1));
-      const node: JsonValue[] = [...items];
-      if (value.length > items.length) {
-        omitted.arrays += 1;
-        node.push(arrayMarker(value.length - items.length));
+      const out: JsonValue[] = [];
+      const max = Math.min(value.length, limits.arrayItems);
+      for (let i = 0; i < max && !full(); i++)
+        out.push(walk(value[i], depth + 1));
+      if (out.length < value.length) {
+        if (out.length < max) omitted.bytes += 1;
+        else omitted.arrays += 1;
+        out.push(scalar(`… ${value.length - out.length} more`));
       }
-      arrays.push({
-        node,
-        items,
-        total: value.length,
-        kept: items.length,
-      });
-      return node;
+      return out;
     }
     const out: { [key: string]: JsonValue } = {};
-    for (const key of Object.keys(value)) {
-      const safeKey = text(key);
-      if (safeKey === "__proto__") continue;
-      out[safeKey] = walk((value as Record<string, unknown>)[key], depth + 1);
+    const keys = Object.keys(value);
+    const max = Math.min(keys.length, limits.objectKeys);
+    let kept = 0;
+    for (; kept < max && !full(); kept++) {
+      const key = text(keys[kept]!);
+      if (key === "__proto__") continue;
+      used += bytesOf(key) + 1;
+      out[key] = walk(
+        (value as Record<string, unknown>)[keys[kept]!],
+        depth + 1,
+      );
+    }
+    if (kept < keys.length) {
+      if (kept < max) omitted.bytes += 1;
+      else omitted.arrays += 1;
+      out["…"] = scalar(`${keys.length - kept} more keys`);
     }
     return out;
   };
 
   let result = walk(body, 0);
-  const size = () => Buffer.byteLength(JSON.stringify(result), "utf8");
-  let cut = false;
-  while (size() > limits.previewBytes) {
-    const largest = arrays
-      .filter((entry) => entry.kept > 0)
-      .sort((a, b) => b.kept - a.kept)[0];
-    if (!largest) {
-      result = "… (response too large to show)";
-      cut = true;
-      break;
-    }
-    largest.kept = Math.floor(largest.kept / 2);
-    largest.node.splice(
-      0,
-      largest.node.length,
-      ...largest.items.slice(0, largest.kept),
-      arrayMarker(largest.total - largest.kept),
-    );
-    cut = true;
+  // A guard only: the reserve covers the markers of every open container.
+  if (Buffer.byteLength(JSON.stringify(result), "utf8") > maxBytes) {
+    result = "… (response too large to show)";
+    omitted.bytes += 1;
   }
   return {
     body: result,
-    truncated: cut || omitted.arrays + omitted.strings + omitted.depth > 0,
+    truncated:
+      omitted.arrays + omitted.strings + omitted.depth + omitted.bytes > 0,
     omitted,
   };
 }
