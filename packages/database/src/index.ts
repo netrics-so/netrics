@@ -50,6 +50,7 @@ export {
   listDueConnections,
   pruneHistory,
   renewJobLease,
+  latestBackfillFailed,
   requestConnectionBackfill,
   requestConnectionSync,
   setConnectionNextDue,

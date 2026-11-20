@@ -478,16 +478,29 @@ describe("allocateSpend (#378)", () => {
     )!;
     expect(allocated).toEqual({ named: [270, 111], others: 0 });
     expect(allocated.named[0]! + allocated.named[1]!).toBe(381);
-    // Far more than a cent per row: still the total, none below zero.
-    const far = allocateSpend(
-      100,
-      [amountMicros("5"), amountMicros("0.5")],
-      -amountMicros("4.5"),
-      "EUR",
-    )!;
-    expect(far.named.reduce((a, b) => a + b, 0)).toBe(100);
-    expect(far.named.every((minor) => minor >= 0)).toBe(true);
-    expect(far.others).toBe(0);
+    // Exactly one cent per row over (2.03 rounded down to 2.02 against
+    // 2.00): still taken back.
+    expect(
+      allocateSpend(
+        200,
+        [amountMicros("1.015"), amountMicros("1.015")],
+        amountMicros("2") - amountMicros("2.03"),
+        "EUR",
+      ),
+    ).toEqual({ named: [100, 100], others: 0 });
+  });
+
+  it("keeps each row's own rounding when Apple's rows exceed its total by more than rounding", () => {
+    // 5.00 + 0.505 EUR against a campaign of 1.00: Others is 0, the rows
+    // are rounded on their own (0.505 half to even: 50), not squeezed.
+    expect(
+      allocateSpend(
+        100,
+        [amountMicros("5"), amountMicros("0.505")],
+        amountMicros("1") - amountMicros("5.505"),
+        "EUR",
+      ),
+    ).toEqual({ named: [500, 50], others: 0 });
   });
 
   it("leaves credits to their own rounding", () => {

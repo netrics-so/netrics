@@ -74,6 +74,7 @@ import {
   listConnectionFreshness,
   listRecentSyncRuns,
   releaseOAuthGrant,
+  latestBackfillFailed,
   requestConnectionBackfill,
   requestConnectionSync,
   resetConnectionAuth,
@@ -2641,9 +2642,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         let state = existing.state;
         let setupPending = row.setupPending;
         /**
-         * New credentials for a connection whose history was never read
-         * completely (#378: a backfill that died on a refused key): its
-         * backfill is queued again, unless one waits or runs already.
+         * New credentials for a connection whose backfill ended without
+         * reading its history (#378: one that died on a refused key): it
+         * is queued again, unless one waits or runs already. Connections
+         * whose history start is only unknown (runs pruned before it was
+         * recorded) are left alone: no 12-month reads on every key change.
          */
         const backfillUnreadHistory = async (
           tx: Transaction,
@@ -2655,7 +2658,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             !registered.manifest.supportsBackfill ||
             !current ||
             current.historyFrom !== null ||
-            active.includes(id)
+            active.includes(id) ||
+            !(await latestBackfillFailed(tx, actor.workspaceId, id))
           ) {
             return;
           }

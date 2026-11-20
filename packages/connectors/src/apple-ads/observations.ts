@@ -284,6 +284,15 @@ export function isRoundingOnly(values: DayValues): boolean {
   );
 }
 
+/** A non-negative exact amount in minor units, half to even. */
+function roundHalfEven(micros: number, unit: number): number {
+  const floor = Math.floor(micros / unit);
+  const remainder = micros - floor * unit;
+  if (remainder * 2 > unit) return floor + 1;
+  if (remainder * 2 < unit) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
 /** Millionths of a major unit: Apple sends at most four decimals. */
 const MICROS_DIGITS = 6;
 
@@ -306,8 +315,10 @@ export function amountMicros(amount: string): number {
  * cents still missing go to the parts with the largest remainders, ties to
  * the earlier part. When Apple's exact rows add up to more than its exact
  * total, "Others" is 0 and the named rows give the overshoot back, a cent
- * at a time from those with the smallest remainders. Null only for amounts
- * below zero (credits), which keep their own rounding.
+ * at a time from those with the smallest remainders, when it is rounding
+ * (at most a cent per row); a larger overshoot leaves each row its own
+ * rounding (half to even). Null for amounts below zero (credits), which
+ * keep their own rounding.
  */
 export function allocateSpend(
   total: number,
@@ -335,19 +346,25 @@ export function allocateSpend(
     allocated[byRemainder[at]!.index]! += 1;
     left -= 1;
   }
-  // Too many: smallest remainders give back first, never below zero.
-  const smallestFirst = [...byRemainder].reverse();
-  while (left < 0) {
-    let taken = false;
+  // Too many: Apple's rows add up to more than its total. Within a cent
+  // per row (rounding), the smallest remainders give back first; beyond
+  // that the numbers disagree, and each row keeps its own rounding.
+  if (left < 0) {
+    if (-left > namedMicros.length) {
+      return {
+        named: namedMicros.map((micros) => roundHalfEven(micros, unit)),
+        others: 0,
+      };
+    }
+    const smallestFirst = [...byRemainder].reverse();
     for (const { index } of smallestFirst) {
       if (left === 0) break;
       if (allocated[index]! > 0) {
         allocated[index]! -= 1;
         left += 1;
-        taken = true;
       }
     }
-    if (!taken) return null;
+    if (left < 0) return null;
   }
   return {
     named: allocated.slice(0, namedMicros.length),
