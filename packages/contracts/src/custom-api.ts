@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { customApiDefinitionSchema } from "@netrics/connector-sdk/custom-api";
 
+import { connectionRetentionChoiceSchema } from "./connection-retention.js";
 import { projectFilterQuerySchema } from "./project-filter.js";
 
 // Custom API definitions (milestone 13). The document schema lives in the
@@ -124,4 +125,44 @@ export const customApiErrorResponseSchema = z.object({
 });
 export type CustomApiErrorResponse = z.infer<
   typeof customApiErrorResponseSchema
+>;
+
+/**
+ * A connection of a custom API definition (milestone 13): the version it
+ * pins (default: the current one), the environment it reads, the values of
+ * the definition's connection variables, and the credentials its login
+ * method needs. Secret variables and credentials are input only: no
+ * response ever carries them.
+ */
+export const createCustomApiConnectionRequestSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  environmentId: z.string().min(1).max(40),
+  /** Default: the definition's current version. */
+  version: z.number().int().positive().optional(),
+  /** The non-secret connection variables, by id. */
+  variables: z.record(z.string(), z.string().min(1).max(500)).default({}),
+  /** The secret connection variables, by id (input only). */
+  secretVariables: z
+    .record(z.string(), z.string().min(1).max(2_000))
+    .default({}),
+  /** apiKey | token | username + password (input only). */
+  credentials: z.record(z.string(), z.string().min(1).max(4_096)).default({}),
+  projectId: z.uuid().optional(),
+  /** Overrides the definition's refresh interval, never below the instance minimum. */
+  refreshMinutes: z.number().int().positive().max(10_080).optional(),
+  retention: connectionRetentionChoiceSchema.optional(),
+});
+export type CreateCustomApiConnectionRequest = z.infer<
+  typeof createCustomApiConnectionRequestSchema
+>;
+
+/** What a custom-api connection runs; null on bundled connectors. */
+export const connectionCustomApiViewSchema = z.object({
+  definitionId: z.uuid(),
+  version: z.number().int().positive(),
+  environmentId: z.string(),
+  environmentName: z.string(),
+});
+export type ConnectionCustomApiView = z.infer<
+  typeof connectionCustomApiViewSchema
 >;

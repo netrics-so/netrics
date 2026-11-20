@@ -321,6 +321,8 @@ export interface ConnectionChanges {
   config?: Record<string, unknown>;
   credentialsEncrypted?: Buffer;
   projectId?: string | null;
+  /** A custom-api connection's environment (milestone 13). */
+  customApiEnvironmentId?: string;
 }
 
 /**

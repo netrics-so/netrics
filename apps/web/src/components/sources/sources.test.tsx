@@ -82,6 +82,7 @@ function connection(
     hasCredentials: true,
     oauth: null,
     setupPending: false,
+    customApi: null,
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-01T00:00:00Z",
     state: {
@@ -102,6 +103,7 @@ const CONNECTIONS = [
   connection("c2", "app-store-connect", "App Store Connect", "auth_failed"),
   connection("c3", "google-search-console", "Search Console", "pending", {
     setupPending: true,
+    customApi: null,
   }),
 ];
 

@@ -279,6 +279,10 @@ export async function buildApp(
     authService,
     db,
     limits: config.customApi,
+    registry,
+    credentialKeyring,
+    privateHosts: config.customApiPrivateHosts,
+    ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
   });
   registerGoalRoutes(app, {
     authService,

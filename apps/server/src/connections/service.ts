@@ -143,6 +143,7 @@ import {
   connectorFor,
   type ResolvedConnector,
 } from "../custom-api/connectors.js";
+import { prepareCustomApiUpdate } from "../custom-api/connections.js";
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   applyFreshness,
@@ -2401,8 +2402,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!existing) {
         return fail(404, NOT_FOUND);
       }
-      const registered = connectorFor(registry, existing);
+      let registered = connectorFor(registry, existing);
       if (!registered) {
+        return fail(400, "invalid_request");
+      }
+      const customApi = existing.row.connectorId === CUSTOM_API_CONNECTOR_ID;
+      if (body.customApiEnvironmentId !== undefined && !customApi) {
         return fail(400, "invalid_request");
       }
       // An OAuth connection's credentials are its grant: they change only
@@ -2427,6 +2432,72 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
       const { pending } = resolved.value;
       body = { ...body, credentials: resolved.value.credentials };
+
+      /**
+       * A custom API connection's environment or credentials (milestone
+       * 13): credentials are bound to the environment host, so a new
+       * environment needs them again; both are checked against the target
+       * environment before the pin changes.
+       */
+      let customApiChange:
+        | {
+            environmentId: string;
+            envelope: Record<string, unknown> | null | undefined;
+          }
+        | undefined;
+      if (
+        customApi &&
+        (body.credentials !== undefined ||
+          body.customApiEnvironmentId !== undefined)
+      ) {
+        let stored: Record<string, unknown> | null = null;
+        if (existing.row.credentialsEncrypted) {
+          try {
+            stored = JSON.parse(
+              decryptCredentials(
+                existing.row.credentialsEncrypted.toString("utf8"),
+                credentialKeyring,
+                { workspaceId: actor.workspaceId, connectionId },
+              ),
+            ) as Record<string, unknown>;
+          } catch (error) {
+            return fail(400, safeMessage(error));
+          }
+        }
+        const prepared = prepareCustomApiUpdate({
+          registry,
+          existing,
+          environmentId: body.customApiEnvironmentId,
+          credentials: body.credentials,
+          stored,
+        });
+        if (!prepared.ok) {
+          return fail(
+            prepared.status === 409 ? 400 : prepared.status,
+            prepared.error,
+          );
+        }
+        registered = prepared.value.resolved;
+        const envelope =
+          prepared.value.envelope === undefined
+            ? stored
+            : prepared.value.envelope;
+        const check = await checkCredentials(
+          registered,
+          connectionId,
+          (body.config as Record<string, unknown> | undefined) ??
+            (existing.row.config as Record<string, unknown>),
+          envelope ?? {},
+          callOptions,
+        );
+        if (!check.ok) {
+          return check;
+        }
+        customApiChange = {
+          environmentId: prepared.value.environmentId,
+          envelope: prepared.value.envelope,
+        };
+      }
 
       const existingConfig = existing.row.config as Record<string, unknown>;
       let nextConfig: Record<string, unknown> | undefined;
@@ -2551,6 +2622,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
         storedCredentials = changed.value.stored;
         additionalChanges = changed.value.changes;
+      } else if (customApiChange) {
+        // Checked above against the target environment.
+        if (customApiChange.envelope !== undefined)
+          storedCredentials = customApiChange.envelope ?? undefined;
       } else if (
         !existing.oauth &&
         (body.config !== undefined || body.credentials !== undefined)
@@ -2653,6 +2728,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             }
           : {}),
         ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
+        ...(customApiChange
+          ? { customApiEnvironmentId: customApiChange.environmentId }
+          : {}),
       };
 
       return inWorkspace(actor, async (tx) => {
@@ -2894,7 +2972,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               row: { ...row, setupPending },
               state,
               oauth: existing.oauth,
-              customApi: existing.customApi,
+              customApi:
+                existing.customApi && row.customApiEnvironmentId
+                  ? {
+                      ...existing.customApi,
+                      environmentId: row.customApiEnvironmentId,
+                    }
+                  : existing.customApi,
             },
             await withSharedKey(tx, actor.workspaceId, row),
             actor.locale,

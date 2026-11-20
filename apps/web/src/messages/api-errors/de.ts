@@ -108,6 +108,20 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Dieser Workspace hat die Höchstzahl eigener APIs erreicht. Archiviere eine, die du nicht mehr brauchst.",
     custom_api_stream_limit:
       "Diese eigene API hat mehr Streams, als dieser Server erlaubt.",
+    custom_api_requires_definition:
+      "Verbindungen zu eigenen APIs entstehen aus einer Definition.",
+    custom_api_environment_not_found:
+      "Diese Umgebung gehört nicht zu dieser eigenen API.",
+    custom_api_variables_invalid:
+      "Füll alle Verbindungswerte aus, die diese eigene API braucht.",
+    custom_api_credentials_invalid:
+      "Gib die Zugangsdaten ein, die die Anmeldemethode dieser eigenen API braucht.",
+    custom_api_environment_needs_credentials:
+      "Zum Wechsel der Umgebung brauchst du die Zugangsdaten erneut.",
+    custom_api_connection_limit:
+      "Dieser Workspace hat die Höchstzahl an Verbindungen zu eigenen APIs erreicht.",
+    custom_api_oauth_unavailable:
+      "OAuth-Anmeldung für eigene APIs ist noch nicht verfügbar.",
     retention_dataset_unknown:
       "Diese Verbindung hat keine solche Datentabelle. Lade die Seite neu und wähle erneut.",
     reviews_not_supported:
