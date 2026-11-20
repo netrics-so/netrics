@@ -5,7 +5,11 @@ import type {
 import type { CustomApiDefinition } from "@netrics/connector-sdk/custom-api";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
-import { fetchItemImages, type FetchItemImagesInput } from "./item-images.js";
+import {
+  fetchItemImages,
+  forEachItemImage,
+  type FetchItemImagesInput,
+} from "./item-images.js";
 import {
   FIXTURE_SECRETS,
   fixtureDefinition,
@@ -219,5 +223,79 @@ describe("fetchItemImages", () => {
     expect(results.map((r) => r.url)).toEqual(urls);
     expect(results.every((r) => r.ok)).toBe(true);
     expect(peak).toBe(2);
+  });
+
+  it("skips a non-image content type without reading its body", async () => {
+    let read = 0;
+    const runtime: ConnectorRuntime = {
+      signal: new AbortController().signal,
+      async fetch(url): Promise<ConnectorResponse> {
+        const html = url.endsWith("/page");
+        return {
+          status: 200,
+          headers: {
+            "content-type": html
+              ? "text/html; charset=utf-8"
+              : "binary/octet-stream",
+          },
+          text: () => "",
+          json: () => null,
+          bytes: () => {
+            read += 1;
+            return new Uint8Array(fixturePng(1));
+          },
+        };
+      },
+    };
+    const results = await fetchItemImages(
+      input({ urls: [`${api}/page`, `${api}/object`], runtime }),
+    );
+    expect(results.map((r) => (r.ok ? "ok" : r.reason))).toEqual([
+      "unsupported_type",
+      "ok",
+    ]);
+    expect(read).toBe(1);
+    // The real fixture route: an HTML answer is not an image either.
+    const [html] = await fetchItemImages(
+      input({ urls: [`${api}/images/html`] }),
+    );
+    expect(html).toMatchObject({ ok: false, reason: "unsupported_type" });
+  });
+
+  it("hands each image over before fetching the next, so at most `concurrency` bodies are alive", async () => {
+    let alive = 0;
+    let peak = 0;
+    const runtime: ConnectorRuntime = {
+      signal: new AbortController().signal,
+      async fetch(url): Promise<ConnectorResponse> {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        alive += 1;
+        peak = Math.max(peak, alive);
+        const bytes = fixturePng(Number(/(\d+)\.png$/.exec(url)![1]));
+        return {
+          status: 200,
+          headers: { "content-type": "image/png" },
+          text: () => "",
+          json: () => null,
+          bytes: () => new Uint8Array(bytes),
+        };
+      },
+    };
+    const urls = Array.from(
+      { length: 12 },
+      (_, i) => `${api}/images/n/${i + 1}.png`,
+    );
+    const seen: number[] = [];
+    await forEachItemImage(
+      input({ urls, runtime, concurrency: 3 }),
+      async (result, index) => {
+        expect(result.ok).toBe(true);
+        seen.push(index);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        alive -= 1;
+      },
+    );
+    expect(seen.sort((a, b) => a - b)).toEqual(urls.map((_, i) => i));
+    expect(peak).toBeLessThanOrEqual(3);
   });
 });

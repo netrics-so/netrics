@@ -8,7 +8,8 @@ import {
 import { executeTrustedCall } from "@netrics/connector-runtime";
 import type { CustomApiStream } from "@netrics/connector-sdk/custom-api";
 import {
-  fetchItemImages,
+  forEachItemImage,
+  ITEM_IMAGE_BODY_TYPES,
   type CustomApiCredentials,
   type ItemImageFetch,
 } from "@netrics/connectors/custom-api";
@@ -129,8 +130,10 @@ function validate(fetched: Extract<ItemImageFetch, { ok: true }>):
 
 /**
  * Copies the newest items' images of every image stream of the connection
- * and records each stream's outcome. Throws only for database failures; the
- * engine logs those and keeps the run's status.
+ * and records each stream's outcome. Each image is validated and stored as
+ * soon as it arrives, so at most four bodies are in memory. A failure of
+ * one image (a download, a database error while storing it) counts against
+ * that image only; every stream's outcome is recorded.
  */
 export async function ingestCustomApiImages(
   input: IngestCustomApiImagesInput,
@@ -148,6 +151,47 @@ export async function ingestCustomApiImages(
     withWorkspace(input.db, { workspaceId: input.workspaceId }, run);
   const outcomes: StreamImageOutcome[] = [];
 
+  /** Stores one validated image; false when the quota is full. */
+  const store = (
+    image: Extract<ReturnType<typeof validate>, { ok: true }>,
+    urlSha256: string,
+  ): Promise<boolean> => {
+    const sha256 = createHash("sha256").update(image.content).digest("hex");
+    return inWorkspace(async (tx) => {
+      const existing = await findCustomApiImageBySha256(
+        tx,
+        input.workspaceId,
+        sha256,
+      );
+      let imageId = existing?.id;
+      if (!imageId) {
+        const inserted = await insertImageWithinQuota(
+          tx,
+          input.workspaceId,
+          {
+            name: "item",
+            contentType: image.contentType,
+            width: image.width,
+            height: image.height,
+            sha256,
+            content: image.content,
+            origin: "custom_api",
+            createdByUserId: null,
+          },
+          input.quota,
+        );
+        if (inserted.status !== "ok") return false;
+        imageId = inserted.image.id;
+      }
+      await upsertItemImage(tx, input.workspaceId, {
+        urlSha256,
+        imageId,
+        now: input.now,
+      });
+      return true;
+    });
+  };
+
   for (const { stream, field, orderField } of imageStreams(
     definition.streams,
   )) {
@@ -159,142 +203,142 @@ export async function ingestCustomApiImages(
       skippedReasons: {},
     };
     const skip = (reason: CustomApiImageSkipReason, count = 1) => {
+      if (count <= 0) return;
       outcome.skipped += count;
       outcome.skippedReasons[reason] =
         (outcome.skippedReasons[reason] ?? 0) + count;
     };
 
-    const urls = await inWorkspace((tx) =>
-      latestDatasetValues(tx, {
-        workspaceId: input.workspaceId,
-        connectionId: input.connectionId,
-        datasetKey: stream.key,
-        valueField: field,
-        orderField,
-        limit: newest,
-        now: input.now,
-      }),
-    );
-    const hashes = new Map(urls.map((url) => [url, itemImageUrlHash(url)]));
-    const known = await inWorkspace(async (tx) => {
-      const found = await findItemImages(tx, input.workspaceId, [
-        ...hashes.values(),
-      ]);
-      await touchItemImages(
-        tx,
-        input.workspaceId,
-        [...found.keys()],
-        input.now,
+    try {
+      const urls = await inWorkspace((tx) =>
+        latestDatasetValues(tx, {
+          workspaceId: input.workspaceId,
+          connectionId: input.connectionId,
+          datasetKey: stream.key,
+          valueField: field,
+          orderField,
+          limit: newest,
+          now: input.now,
+        }),
       );
-      return found;
-    });
-    outcome.unchanged = known.size;
-    const missing = urls.filter((url) => !known.has(hashes.get(url)!));
-
-    let fetched: ItemImageFetch[] | null = null;
-    const remaining = deadline - clock();
-    if (missing.length > 0 && remaining > 0) {
-      try {
-        fetched = await input.run((context, options) =>
-          executeTrustedCall(
-            input.resolved.connector,
-            context,
-            {
-              ...options,
-              egress: {
-                ...options.egress,
-                redirects: "same-host",
-                maxResponseBytes: CUSTOM_API_IMAGE_MAX_BYTES,
-                maxDecompressedBytes: CUSTOM_API_IMAGE_MAX_BYTES,
-                requestTimeoutMs: CUSTOM_API_IMAGE_REQUEST_TIMEOUT_MS,
-              },
-              timeoutMs: remaining,
-            },
-            (runtime) =>
-              fetchItemImages({
-                definition,
-                environmentId: pin.environmentId,
-                credentials: context.credentials as CustomApiCredentials,
-                config: context.config,
-                runtime,
-                urls: missing,
-                maxBytes: CUSTOM_API_IMAGE_MAX_BYTES,
-                ...(options.egress?.allowInsecureHttp
-                  ? { allowInsecureHttp: true }
-                  : {}),
-              }),
-          ),
+      const hashes = new Map(urls.map((url) => [url, itemImageUrlHash(url)]));
+      const known = await inWorkspace(async (tx) => {
+        const found = await findItemImages(tx, input.workspaceId, [
+          ...hashes.values(),
+        ]);
+        await touchItemImages(
+          tx,
+          input.workspaceId,
+          [...found.keys()],
+          input.now,
         );
-      } catch {
-        // The budget ran out or the call failed as a whole (an OAuth token
-        // that cannot be refreshed): every image of the stream waits.
-        fetched = null;
-      }
-    }
-    if (fetched === null) {
-      skip("fetch_failed", missing.length);
-    } else {
-      for (const result of fetched) {
+        return found;
+      });
+      outcome.unchanged = known.size;
+      const missing = urls.filter((url) => !known.has(hashes.get(url)!));
+
+      // Each image is counted once, by the handler that finished it. When
+      // the call ends early (budget, a failed token refresh), the rest count
+      // as fetch_failed, and a handler still running afterwards counts
+      // nothing.
+      const finished = new Set<number>();
+      let closed = false;
+      const handle = async (result: ItemImageFetch, index: number) => {
+        let counted: () => void;
         if (!result.ok) {
-          skip(result.reason);
-          continue;
-        }
-        const image = validate(result);
-        if (!image.ok) {
-          skip(image.reason);
-          continue;
-        }
-        const sha256 = createHash("sha256").update(image.content).digest("hex");
-        const stored = await inWorkspace(async (tx) => {
-          const existing = await findCustomApiImageBySha256(
-            tx,
-            input.workspaceId,
-            sha256,
-          );
-          let imageId = existing?.id;
-          if (!imageId) {
-            const inserted = await insertImageWithinQuota(
-              tx,
-              input.workspaceId,
-              {
-                name: "item",
-                contentType: image.contentType,
-                width: image.width,
-                height: image.height,
-                sha256,
-                content: image.content,
-                origin: "custom_api",
-                createdByUserId: null,
-              },
-              input.quota,
-            );
-            if (inserted.status !== "ok") return false;
-            imageId = inserted.image.id;
+          const reason = result.reason;
+          counted = () => skip(reason);
+        } else {
+          const image = validate(result);
+          if (!image.ok) {
+            const reason = image.reason;
+            counted = () => skip(reason);
+          } else {
+            try {
+              const stored = await store(image, hashes.get(result.url)!);
+              counted = stored
+                ? () => (outcome.stored += 1)
+                : () => skip("quota_exceeded");
+            } catch {
+              counted = () => skip("fetch_failed");
+            }
           }
-          await upsertItemImage(tx, input.workspaceId, {
-            urlSha256: hashes.get(result.url)!,
-            imageId,
-            now: input.now,
-          });
-          return true;
-        });
-        if (stored) outcome.stored += 1;
-        else skip("quota_exceeded");
+        }
+        if (closed) return;
+        finished.add(index);
+        counted();
+      };
+
+      const remaining = deadline - clock();
+      if (missing.length > 0 && remaining > 0) {
+        try {
+          await input.run((context, options) =>
+            executeTrustedCall(
+              input.resolved.connector,
+              context,
+              {
+                ...options,
+                egress: {
+                  ...options.egress,
+                  redirects: "same-host",
+                  maxResponseBytes: CUSTOM_API_IMAGE_MAX_BYTES,
+                  maxDecompressedBytes: CUSTOM_API_IMAGE_MAX_BYTES,
+                  requestTimeoutMs: CUSTOM_API_IMAGE_REQUEST_TIMEOUT_MS,
+                  bodyContentTypes: ITEM_IMAGE_BODY_TYPES,
+                },
+                timeoutMs: remaining,
+              },
+              (runtime) =>
+                forEachItemImage(
+                  {
+                    definition,
+                    environmentId: pin.environmentId,
+                    credentials: context.credentials as CustomApiCredentials,
+                    config: context.config,
+                    runtime,
+                    urls: missing,
+                    maxBytes: CUSTOM_API_IMAGE_MAX_BYTES,
+                    ...(options.egress?.allowInsecureHttp
+                      ? { allowInsecureHttp: true }
+                      : {}),
+                  },
+                  handle,
+                ),
+            ),
+          );
+        } catch {
+          // The budget ran out or the call failed as a whole: the images
+          // not handled yet wait for the next run.
+        }
       }
+      closed = true;
+      skip("fetch_failed", missing.length - finished.size);
+    } catch (error) {
+      input.log("item images of a stream not checked", {
+        stream: stream.key,
+        error: error instanceof Error ? error.name : "unknown",
+      });
     }
 
-    await inWorkspace((tx) =>
-      recordStreamImages(tx, {
-        workspaceId: input.workspaceId,
-        connectionId: input.connectionId,
-        streamKey: stream.key,
-        checkedAt: input.now,
-        stored: outcome.stored,
-        unchanged: outcome.unchanged,
-        skipped: outcome.skipped,
-        skippedReasons: outcome.skippedReasons,
-      }),
-    );
+    try {
+      await inWorkspace((tx) =>
+        recordStreamImages(tx, {
+          workspaceId: input.workspaceId,
+          connectionId: input.connectionId,
+          streamKey: stream.key,
+          checkedAt: input.now,
+          stored: outcome.stored,
+          unchanged: outcome.unchanged,
+          skipped: outcome.skipped,
+          skippedReasons: outcome.skippedReasons,
+        }),
+      );
+    } catch (error) {
+      input.log("item images outcome not recorded", {
+        stream: stream.key,
+        error: error instanceof Error ? error.name : "unknown",
+      });
+    }
     if (outcome.stored > 0 || outcome.skipped > 0)
       input.log("item images checked", {
         stream: stream.key,

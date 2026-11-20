@@ -27,6 +27,7 @@ import {
   createDatabase,
   createRawSqlClient,
   createWorkspace,
+  findConnection,
   insertConnection,
   insertCustomApiDefinition,
   insertImageWithinQuota,
@@ -41,7 +42,11 @@ import {
 import { createCredentialKeyring, encryptCredentials } from "./credentials.js";
 import { createConnectionService } from "./connections/service.js";
 import { canonicalSha256 } from "./custom-api/canonical-json.js";
-import { itemImageUrlHash } from "./images/custom-api-images.js";
+import { callOptionsFor, connectorFor } from "./custom-api/connectors.js";
+import {
+  ingestCustomApiImages,
+  itemImageUrlHash,
+} from "./images/custom-api-images.js";
 import { ContinueJobError, createJobHandlers } from "./jobs/handlers.js";
 import { createOAuthProviders } from "./oauth/config.js";
 import {
@@ -440,6 +445,127 @@ describe("custom API item images after a sync", () => {
     expect(text).not.toContain("127.0.0.1");
     expect(text).not.toContain("/images/");
     expect(text).not.toContain(fixture.origin);
+  });
+});
+
+describe("item images: failures of one image, and the time budget", () => {
+  /** The image step alone, as the engine runs it, with a test clock. */
+  async function ingest(
+    connectionId: string,
+    options: { clock: () => number; budgetMs: number },
+  ) {
+    const connection = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      findConnection(tx, workspaceId, connectionId),
+    );
+    const resolved = connectorFor(registry, connection!)!;
+    const context = { connectionId, config: {}, credentials: {} };
+    const callOptions = callOptionsFor(
+      resolved,
+      {
+        egress: {
+          tlsCa: fixture.ca!,
+          allowPrivateHosts: ["127.0.0.1", "localhost"],
+        },
+      },
+      { credentials: {}, privateHosts: [] },
+    );
+    return ingestCustomApiImages({
+      db: appDb,
+      workspaceId,
+      connectionId,
+      resolved,
+      run: (call) => call(context, callOptions),
+      quota: { maxCount: 500, maxBytes: 200 * 1_048_576 },
+      now: new Date(),
+      log: () => undefined,
+      ...options,
+    });
+  }
+
+  it("counts a database error on one image against that image only", async () => {
+    const connectionId = await connect(definition("photos"));
+    const failing = itemImageUrlHash(`${fixture.origin}/images/n/4.png`);
+    await owner.unsafe(`
+      create or replace function fail_one_item_image() returns trigger
+      language plpgsql as $$
+      begin
+        if new.url_sha256 = '${failing}' then
+          raise exception 'storage failed';
+        end if;
+        return new;
+      end $$`);
+    await owner.unsafe(`
+      create trigger fail_one_item_image before insert
+      on custom_api_item_images for each row
+      execute function fail_one_item_image()`);
+    try {
+      await runSync(connectionId);
+    } finally {
+      await owner.unsafe(
+        "drop trigger fail_one_item_image on custom_api_item_images",
+      );
+    }
+    expect(await lastRunStatus(connectionId)).toBe("succeeded");
+    expect(await streamStatus(connectionId)).toEqual({
+      stored: 2,
+      unchanged: 0,
+      skipped: 1,
+      skippedReasons: { fetch_failed: 1 },
+    });
+  });
+
+  it("counts every missing image as fetch_failed once the budget is spent, without a request", async () => {
+    const connectionId = await connect(definition("photos"));
+    // The sync stores nothing: its quota is zero.
+    await runSync(connectionId, { quota: { maxCount: 0, maxBytes: 0 } });
+    fixture.reset();
+    let now = 1_000;
+    const outcomes = await ingest(connectionId, {
+      budgetMs: 5_000,
+      // The first reading sets the deadline; every later one is past it.
+      clock: () => {
+        const at = now;
+        now += 10_000;
+        return at;
+      },
+    });
+    expect(outcomes).toEqual([
+      {
+        streamKey: "photos",
+        stored: 0,
+        unchanged: 0,
+        skipped: 3,
+        skippedReasons: { fetch_failed: 3 },
+      },
+    ]);
+    expect(imageRequests()).toHaveLength(0);
+    expect(await streamStatus(connectionId)).toMatchObject({
+      skipped: 3,
+      skippedReasons: { fetch_failed: 3 },
+    });
+  });
+
+  it("bounds the downloads by what is left of the budget", async () => {
+    const connectionId = await connect(definition("photos"));
+    // The newest photo never answers (the sync's own step waits out its
+    // 15 s request timeout once); the next two are ordinary images.
+    fixture.setImages(["slow"]);
+    await runSync(connectionId, { quota: { maxCount: 0, maxBytes: 0 } });
+    fixture.reset();
+    // 200 ms left when the downloads start: the slow image is cut off by
+    // the budget, not by its 15 s request timeout.
+    let readings = 0;
+    const started = Date.now();
+    const outcomes = await ingest(connectionId, {
+      budgetMs: 200,
+      clock: () => (readings++ === 0 ? started : Date.now()),
+    });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(outcomes[0]).toMatchObject({
+      stored: 2,
+      skipped: 1,
+      skippedReasons: { fetch_failed: 1 },
+    });
   });
 });
 
