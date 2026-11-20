@@ -10,6 +10,7 @@ import {
   dataPolicyOverrideSchema,
   parseDataPolicyDefaults,
 } from "@netrics/contracts";
+import { parsePrivateHostEntries } from "@netrics/connector-runtime";
 import { DEFAULT_BACKFILLS_PER_APP } from "@netrics/database";
 
 import { BUNDLE_CONNECTORS, PREVIEW_CONNECTORS } from "./preview-connectors.js";
@@ -291,6 +292,21 @@ const envSchema = z
       .min(0)
       .max(100_000)
       .default(IMAGE_QUOTA_DEFAULT_BYTES / 1_048_576),
+    // Self-hosting only: hosts or ranges custom API definitions may reach on
+    // private networks (comma-separated, e.g.
+    // `intranet.example,*.corp.example,10.20.0.0/16`). Metadata and
+    // link-local addresses stay refused. The hosted service never sets it.
+    NETRICS_CUSTOM_API_PRIVATE_HOSTS: z
+      .string()
+      .default("")
+      .transform((value, ctx) => {
+        try {
+          return parsePrivateHostEntries(value.split(","));
+        } catch (error) {
+          ctx.addIssue({ code: "custom", message: (error as Error).message });
+          return z.NEVER;
+        }
+      }),
     APP_VERSION: z.string().min(1).default("0.0.0-dev"),
     GIT_SHA: z.string().min(1).default("dev"),
   })
@@ -449,6 +465,7 @@ const envSchema = z
       maxCount: env.NETRICS_IMAGE_QUOTA_COUNT,
       maxBytes: env.NETRICS_IMAGE_QUOTA_MIB * 1_048_576,
     },
+    customApiPrivateHosts: env.NETRICS_CUSTOM_API_PRIVATE_HOSTS,
     version: env.APP_VERSION,
     commit: env.GIT_SHA,
   }));

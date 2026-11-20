@@ -339,8 +339,31 @@ runner can then use the same contract over JSON-RPC or another process boundary.
 Connector code reaches the network only through `runtime.fetch`. It allows
 https hosts from `outboundDomains`, refuses private and metadata addresses,
 re-checks redirects and buffers the whole body within a size cap (10 MiB by
-default) before the connector sees it. A `ConnectorResponse` offers the body
-three ways:
+default) before the connector sees it. The guard (`createEgressFetch`) also:
+
+- checks every resolved address at connect time and pins the first accepted
+  DNS answer for a name for the rest of the connector call, so a name cannot
+  rebind to another address; an answer with any refused address is refused
+  whole and not pinned. IPv4-mapped and IPv4-compatible IPv6 forms are
+  judged by their IPv4 address; NAT64, 6to4, Teredo and site-local ranges
+  are refused;
+- follows redirects only to allowed hosts (`redirects: "allowlist"`, the
+  default) or only to the first URL's scheme, host and port
+  (`"same-host"`), and drops `authorization`, `proxy-authorization` and
+  `cookie` on any hop to another origin;
+- bounds the decoded bytes of a `gzip`, `deflate`, `br` or `zstd` body
+  (`maxDecompressedBytes`, by default the response cap); a body under any
+  other content coding counts against the response cap;
+- bounds each request, every redirect hop and the whole body read included,
+  by `requestTimeoutMs` (60 s by default, the connector call budget). A
+  timeout is an `EgressTimeoutError`: a retryable provider failure, not a
+  broken connector;
+- lets a self-hosted instance name private hosts or ranges custom API
+  definitions may reach (`NETRICS_CUSTOM_API_PRIVATE_HOSTS`, off by default
+  and never set on the hosted service). It never widens the allowed hosts,
+  and metadata and link-local addresses stay refused even when listed.
+
+A `ConnectorResponse` offers the body three ways:
 
 - `text()`: decoded as UTF-8;
 - `json()`: parsed as JSON;
