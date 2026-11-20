@@ -29,6 +29,10 @@ export const datasetFieldTypeSchema = z.enum([
   "timestamp",
   "json",
 ]);
+/** Presentation roles of a field. "image": a string field holding an image URL. */
+export const DATASET_FIELD_ROLES = ["image"] as const;
+export const datasetFieldRoleSchema = z.enum(DATASET_FIELD_ROLES);
+export type DatasetFieldRole = z.infer<typeof datasetFieldRoleSchema>;
 export const datasetFieldSchema = z.strictObject({
   id,
   name: z.string().min(1).max(100),
@@ -46,6 +50,8 @@ export const datasetFieldSchema = z.strictObject({
   unit: z.string().min(1).max(100).optional(),
   currencyField: id.optional(),
   scale: z.number().int().min(0).max(18).optional(),
+  /** Presentation only (SDK 0.2.17): never changes values, keys or storage. */
+  role: datasetFieldRoleSchema.optional(),
 });
 export const sourceDatasetSchema = z
   .strictObject({
@@ -119,6 +125,8 @@ export const sourceDatasetSchema = z
         !["decimal", "integer"].includes(field.type)
       )
         problem("Scale requires an exact numeric field");
+      if (field.role === "image" && field.type !== "string")
+        problem("Image fields must be strings");
       if (
         field.classification === "personal" &&
         field.retentionDays === undefined

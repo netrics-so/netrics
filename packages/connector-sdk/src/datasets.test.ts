@@ -7,7 +7,7 @@ import {
   type DatasetPage,
 } from "./datasets.js";
 
-const definition = sourceDatasetSchema.parse({
+const definitionInput = {
   key: "orders",
   name: "Orders",
   version: 1,
@@ -52,7 +52,18 @@ const definition = sourceDatasetSchema.parse({
       classification: "internal",
     },
   ],
-});
+};
+const definition = sourceDatasetSchema.parse(definitionInput);
+const stringField = {
+  id: "label",
+  name: "Label",
+  type: "string",
+  nullable: true,
+  classification: "internal",
+};
+function withField(field: Record<string, unknown>) {
+  return { ...definitionInput, fields: [...definitionInput.fields, field] };
+}
 const values = {
   id: "one",
   amount: "12345678901234567890.12",
@@ -74,6 +85,36 @@ function page(overrides: Partial<DatasetPage> = {}): DatasetPage {
 }
 
 describe("typed source datasets", () => {
+  it("accepts the image role on a string field (SDK 0.2.17)", () => {
+    const parsed = sourceDatasetSchema.parse(
+      withField({
+        id: "image_url",
+        name: "Image",
+        type: "string",
+        nullable: true,
+        classification: "public",
+        role: "image",
+      }),
+    );
+    expect(parsed.fields.at(-1)?.role).toBe("image");
+  });
+  it("refuses the image role on a non-string field and unknown roles", () => {
+    expect(
+      sourceDatasetSchema.safeParse(
+        withField({ ...stringField, type: "integer", role: "image" }),
+      ).success,
+    ).toBe(false);
+    expect(
+      sourceDatasetSchema.safeParse(
+        withField({ ...stringField, role: "video" }),
+      ).success,
+    ).toBe(false);
+  });
+  it("leaves fields without a role unchanged", () => {
+    expect(
+      "role" in sourceDatasetSchema.parse(definitionInput).fields[0]!,
+    ).toBe(false);
+  });
   it("requires a complete staged-page provenance reference", () => {
     const stagingId = "00000000-0000-4000-8000-000000000000";
     expect(() =>
