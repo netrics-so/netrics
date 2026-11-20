@@ -154,8 +154,9 @@ and the `web` app).
 
 Connectors that are not finished yet ship in the images as previews and
 stay off: the catalogue does not list them, and nothing can connect or sync
-them. To try one, name it in `NETRICS_PREVIEW_CONNECTORS` in `.env`
-(comma-separated IDs; today only `apple-ads`) and run
+them. There are currently none: every connector in the images is
+available without a setting. When a release ships one, name it in
+`NETRICS_PREVIEW_CONNECTORS` in `.env` (comma-separated IDs) and run
 `docker compose up -d`. It applies to `migrate` (the connector catalog),
 the `api` and the `worker`, which log the connectors they registered at
 startup. The catalogue then lists the connector with a "Preview" tag: it
@@ -171,7 +172,9 @@ done with the preview.
 Once a preview is finished, a release turns it on for every installation.
 An ID in the variable that is no longer a preview is then ignored with a
 warning in the log, so upgrading needs no change to `.env`; remove the ID
-whenever convenient.
+whenever convenient. Apple Ads was a preview up to v0.3.2: a leftover
+`NETRICS_PREVIEW_CONNECTORS=apple-ads` now only logs that warning and can
+be removed.
 
 ### Image quota
 

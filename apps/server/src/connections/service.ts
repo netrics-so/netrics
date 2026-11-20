@@ -169,6 +169,11 @@ export interface ConnectionServiceDeps {
   signedKeys?: SignedKeyProviders;
   /** Default: pending generated keys over db and keyring (ADR 0020 §3). */
   pendingKeys?: PendingKeyStore;
+  /**
+   * Connectors the catalog marks as previews. Default: PREVIEW_CONNECTORS;
+   * tests pass their own.
+   */
+  previews?: ReadonlySet<string>;
 }
 
 /** Who acts on which workspace (see routes/access.ts). */
@@ -579,6 +584,7 @@ function historyView(
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db, registry, credentialKeyring, oauthProviders } = deps;
   const signedKeys = deps.signedKeys ?? createSignedKeyProviders();
+  const previews = deps.previews ?? PREVIEW_CONNECTORS;
   // Cached exchanged tokens of stored signed keys (ADR 0020 §2); candidate
   // keys (create, preview, rotation) are never cached.
   const signedKeyTokens = createSignedKeyTokenStore({ db, credentialKeyring });
@@ -1858,7 +1864,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             presentAuthStrategy(strategy, signedKeys),
           ),
           ...oauthProviders.connectorAvailability(manifest, signedKeys),
-          preview: PREVIEW_CONNECTORS.has(manifest.id),
+          preview: previews.has(manifest.id),
         };
       });
     },

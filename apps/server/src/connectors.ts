@@ -26,13 +26,19 @@ export interface DefaultRegistryOptions {
    * Default: none.
    */
   previewConnectors?: ReadonlySet<string>;
+  /**
+   * Which connectors count as previews. Default: PREVIEW_CONNECTORS; tests
+   * pass their own, since the bundle has no preview at the moment.
+   */
+  previews?: ReadonlySet<string>;
 }
 
 /**
  * The connector bundle compiled into this server image: the demo connector,
- * Vercel Web Analytics, Google Search Console, App Store Connect and Apple
- * Ads (a preview, PREVIEW_CONNECTORS: outside production, or in production
- * when listed in NETRICS_PREVIEW_CONNECTORS). Reviewed connectors join here
+ * Vercel Web Analytics, Google Search Console, App Store Connect, Google
+ * Play and Apple Ads. A preview connector (PREVIEW_CONNECTORS, currently
+ * none) is registered outside production, and in production only when
+ * listed in NETRICS_PREVIEW_CONNECTORS. Reviewed connectors join here
  * per the architecture's distribution workflow. The runtime only knows the
  * registry; which connectors ship is decided by the application (#39).
  * OAuth connectors are listed as unavailable until their provider is
@@ -47,6 +53,7 @@ export function createDefaultRegistry(
 ): ConnectorRegistry {
   const allPreviews = (options.nodeEnv ?? "development") !== "production";
   const enabledPreviews = options.previewConnectors ?? new Set<string>();
+  const previews = options.previews ?? PREVIEW_CONNECTORS;
   const registry = new ConnectorRegistry();
   const connectors = [
     createDemoConnector(),
@@ -58,7 +65,7 @@ export function createDefaultRegistry(
   ];
   for (const connector of connectors) {
     const id = connector.manifest.id;
-    if (allPreviews || !PREVIEW_CONNECTORS.has(id) || enabledPreviews.has(id)) {
+    if (allPreviews || !previews.has(id) || enabledPreviews.has(id)) {
       registry.register(connector);
     }
   }
@@ -80,9 +87,14 @@ export interface ConnectorLog {
 export function logRegisteredConnectors(
   log: ConnectorLog,
   registry: ConnectorRegistry,
-  options: { previewConnectorsIgnored?: readonly string[] } = {},
+  options: {
+    previewConnectorsIgnored?: readonly string[];
+    /** Default: PREVIEW_CONNECTORS. */
+    previews?: ReadonlySet<string>;
+  } = {},
 ): void {
   const ignored = options.previewConnectorsIgnored ?? [];
+  const previews = options.previews ?? PREVIEW_CONNECTORS;
   if (ignored.length > 0) {
     log.warn(
       { ignored },
@@ -95,7 +107,7 @@ export function logRegisteredConnectors(
       previews: registry
         .list()
         .map(({ manifest }) => manifest.id)
-        .filter((id) => PREVIEW_CONNECTORS.has(id)),
+        .filter((id) => previews.has(id)),
     },
     "connectors registered",
   );

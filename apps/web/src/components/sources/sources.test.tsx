@@ -215,9 +215,10 @@ describe("ConnectorCatalogue", () => {
   it("marks a preview connector, in English and German (#378)", () => {
     const connectors = [
       ...CONNECTORS,
+      // No connector of the bundle is a preview at the moment (#378).
       entry({
-        id: "apple-ads",
-        name: "Apple Ads",
+        id: "example-ads",
+        name: "Example Ads",
         category: "ads",
         preview: true,
       }),

@@ -7,16 +7,17 @@ the ad account's currency and time zone
 It uses the Apple Ads Platform API 1.0 (`api.ads.apple.com/v1`), not the
 Campaign Management API v5, which Apple sunsets on 2027-01-26.
 
-> Status: preview (milestone 10). The key exchange (#369), the generated key
-> pair (#371), ad-account discovery (#373), the campaign report sync (#374),
-> the guided setup (#375), ad groups (#376, #394) and keywords (#396) are in
-> place, tested against documented response shapes and against shapes
-> captured from a real account (#370). Until the exit gate (#378) passes,
-> Apple Ads is available in development, and in production only where the
-> operator sets `NETRICS_PREVIEW_CONNECTORS=apple-ads` (see
-> [Preview connectors](../../deploy/compose/README.md#preview-connectors));
-> the catalogue then marks it "Preview". Points marked _to be confirmed_
-> below are still open.
+> Status: available (milestone 10). The key exchange (#369), the generated
+> key pair (#371), ad-account discovery (#373), the campaign report sync
+> (#374), the guided setup (#375), ad groups (#376, #394) and keywords
+> (#396) are tested against documented response shapes and against shapes
+> captured from a real account (#370). The exit gate (#378) passed on the
+> hosted service and on a self-hosted install on 2026-11-20, so Apple Ads
+> is available on every installation without any setting. A leftover
+> `NETRICS_PREVIEW_CONNECTORS=apple-ads` only logs a warning and can be
+> removed (see
+> [Preview connectors](../../deploy/compose/README.md#preview-connectors)).
+> Points marked _to be confirmed_ below are still open.
 
 ## Connect
 

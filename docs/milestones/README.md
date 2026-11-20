@@ -143,9 +143,11 @@ State on 2026-11-14.
 - In progress: the hosted web frontend moves to Vercel
   ([ADR 0013](../decisions/0013-web-frontend-on-vercel.md)). The web build
   guard (#160) and the cut-over (#161) remain.
-- Built, real-account acceptance open: 10 (Apple Ads), designed in
-  [ADR 0020](../decisions/0020-apple-ads-platform-api-token-exchange.md)
-  (#370, #378 and the separate owner OAuth application #379 remain).
+- Done: 10 (Apple Ads), designed in
+  [ADR 0020](../decisions/0020-apple-ads-platform-api-token-exchange.md).
+  The exit gate (#378) passed hosted and self-hosted on 2026-11-20, and
+  Apple Ads is available on every installation. The separate owner OAuth
+  application (#379) sits outside the gate and remains.
 - Built, real-device/store acceptance open: 10.1 (netrics TV on iPad and
   iPhone, #419 and #420), designed
   in [ADR 0021](../decisions/0021-netrics-tv-on-ipad-and-iphone.md) and

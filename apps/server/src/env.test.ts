@@ -111,14 +111,6 @@ describe("loadConfig", () => {
     expect([
       ...loadConfig({ NETRICS_PREVIEW_CONNECTORS: "" }).previewConnectors,
     ]).toEqual([]);
-    expect([
-      ...loadConfig({ NETRICS_PREVIEW_CONNECTORS: " apple-ads , " })
-        .previewConnectors,
-    ]).toEqual(["apple-ads"]);
-    expect([
-      ...loadMigrationConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-ads" })
-        .previewConnectors,
-    ]).toEqual(["apple-ads"]);
     expect([...loadMigrationConfig({}).previewConnectors]).toEqual([]);
   });
 
@@ -133,7 +125,7 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-adz" }),
     ).toThrow(
-      /"apple-adz" is not a connector of this release \(preview connectors: apple-ads\)/,
+      /"apple-adz" is not a connector of this release \(preview connectors: none\)/,
     );
   });
 
@@ -142,8 +134,14 @@ describe("loadConfig", () => {
       const config = load({
         NETRICS_PREVIEW_CONNECTORS: "demo,apple-ads,demo",
       });
-      expect([...config.previewConnectors]).toEqual(["apple-ads"]);
-      expect(config.previewConnectorsIgnored).toEqual(["demo"]);
+      expect([...config.previewConnectors]).toEqual([]);
+      expect(config.previewConnectorsIgnored).toEqual(["demo", "apple-ads"]);
+    }
+    // Apple Ads left the previews (#378): a leftover opt-in still loads.
+    for (const load of [loadConfig, loadMigrationConfig]) {
+      const config = load({ NETRICS_PREVIEW_CONNECTORS: " apple-ads , " });
+      expect([...config.previewConnectors]).toEqual([]);
+      expect(config.previewConnectorsIgnored).toEqual(["apple-ads"]);
     }
     expect(loadConfig({}).previewConnectorsIgnored).toEqual([]);
   });

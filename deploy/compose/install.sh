@@ -148,8 +148,9 @@ NETRICS_SIGNUP=closed
 # Default language for people and screens without their own: en or de.
 # NETRICS_DEFAULT_LOCALE=de
 
-# Preview connectors (not final yet) to turn on, comma-separated: apple-ads.
-# NETRICS_PREVIEW_CONNECTORS=apple-ads
+# Preview connectors (not final yet) to turn on, comma-separated; currently
+# none.
+# NETRICS_PREVIEW_CONNECTORS=
 ENV
 chmod 600 .env
 
