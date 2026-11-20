@@ -560,6 +560,68 @@ describe("data API authorization and contract", () => {
       ).statusCode,
     ).toBe(404);
   });
+  it("returns the image role of source and prepared fields", async () => {
+    const field = (id: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      name: id,
+      type: "string",
+      nullable: false,
+      classification: "internal",
+      ...extra,
+    });
+    const created = await call("POST", "/manual", editor, {
+      definition: {
+        ...manual.definition,
+        key: "pictures",
+        name: "Pictures",
+        fields: [
+          field("id"),
+          field("title"),
+          field("image_url", { nullable: true, role: "image" }),
+        ],
+      },
+      records: [
+        {
+          values: {
+            id: "a",
+            title: "Alpha",
+            image_url: "https://img.example.com/a.png",
+          },
+        },
+      ],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const sourceId = created.json().datasetId as string;
+    const source = await call("POST", "/preview", editor, { sourceId });
+    expect(source.statusCode, source.body).toBe(200);
+    const sourceFields = source.json().fields as { id: string }[];
+    expect(sourceFields.find((f) => f.id === "image_url")).toMatchObject({
+      role: "image",
+    });
+    expect(sourceFields.find((f) => f.id === "title")).not.toHaveProperty(
+      "role",
+    );
+    const prepared = await call("POST", "/preparations/preview", editor, {
+      graph: {
+        version: 1,
+        nodes: [
+          { id: "source", type: "source", datasetId: sourceId },
+          {
+            id: "picked",
+            type: "select",
+            input: "source",
+            fields: ["image_url", "title"],
+          },
+        ],
+        outputs: ["picked"],
+      },
+    });
+    expect(prepared.statusCode, prepared.body).toBe(200);
+    const fields = preparationPreviewResponseSchema.parse(prepared.json())
+      .outputs.picked!.fields;
+    expect(fields.find((f) => f.id === "image_url")?.role).toBe("image");
+    expect(fields.find((f) => f.id === "title")).not.toHaveProperty("role");
+  });
   it("previews preparation steps for editors without saving anything", async () => {
     const graph = {
       version: 1,

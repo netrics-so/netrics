@@ -33756,6 +33756,13 @@
                                   "type": "integer",
                                   "minimum": 0,
                                   "maximum": 18
+                                },
+                                "role": {
+                                  "description": "Presentation role of a string field. \"image\": the value is an image URL (dataset contract v1, SDK 0.2.17).",
+                                  "type": "string",
+                                  "enum": [
+                                    "image"
+                                  ]
                                 }
                               },
                               "required": [
@@ -34161,6 +34168,13 @@
                             "type": "integer",
                             "minimum": 0,
                             "maximum": 18
+                          },
+                          "role": {
+                            "description": "Presentation role of a string field. \"image\": the value is an image URL (dataset contract v1, SDK 0.2.17).",
+                            "type": "string",
+                            "enum": [
+                              "image"
+                            ]
                           }
                         },
                         "required": [
@@ -34495,6 +34509,12 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 18
+                            },
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "image"
+                              ]
                             }
                           },
                           "required": [
@@ -34942,6 +34962,12 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 18
+                            },
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "image"
+                              ]
                             }
                           },
                           "required": [
@@ -35451,6 +35477,12 @@
                                 "type": "integer",
                                 "minimum": 0,
                                 "maximum": 18
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "image"
+                                ]
                               }
                             },
                             "required": [
@@ -35886,6 +35918,12 @@
                               "type": "integer",
                               "minimum": 0,
                               "maximum": 18
+                            },
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "image"
+                              ]
                             }
                           },
                           "required": [
@@ -39517,6 +39555,13 @@
                                   "type": "integer",
                                   "minimum": 0,
                                   "maximum": 18
+                                },
+                                "role": {
+                                  "description": "Presentation role of a string field. \"image\": the value is an image URL (dataset contract v1, SDK 0.2.17).",
+                                  "type": "string",
+                                  "enum": [
+                                    "image"
+                                  ]
                                 }
                               },
                               "required": [
@@ -52830,6 +52875,13 @@
                                   "type": "integer",
                                   "minimum": 0,
                                   "maximum": 18
+                                },
+                                "role": {
+                                  "description": "Presentation role of a string field. \"image\": the value is an image URL (dataset contract v1, SDK 0.2.17).",
+                                  "type": "string",
+                                  "enum": [
+                                    "image"
+                                  ]
                                 }
                               },
                               "required": [
@@ -55769,6 +55821,13 @@
                                   "type": "integer",
                                   "minimum": 0,
                                   "maximum": 18
+                                },
+                                "role": {
+                                  "description": "Presentation role of a string field. \"image\": the value is an image URL (dataset contract v1, SDK 0.2.17).",
+                                  "type": "string",
+                                  "enum": [
+                                    "image"
+                                  ]
                                 }
                               },
                               "required": [
