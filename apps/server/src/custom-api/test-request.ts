@@ -29,6 +29,7 @@ import {
   findRecordArrays,
   readPath,
   runCustomApiTestStream,
+  shortPath,
   streamChunks,
   suggestFields,
   type Chunk,
@@ -205,7 +206,8 @@ function previewRows(
  * The whole answer stays within CUSTOM_API_TEST_LIMITS.responseBytes: the
  * parts are bounded on their own already (tree 256 KiB, rows 512 KiB,
  * 100 suggestions with 3 samples of 80 characters, 5 log lines); should
- * they still add up to more, rows, then samples, then the tree go.
+ * they still add up to more, rows, then samples, then the tree, then the
+ * suggestions and record arrays go.
  */
 function capResponse(response: CustomApiTestResponse): CustomApiTestResponse {
   const size = () => Buffer.byteLength(JSON.stringify(response), "utf8");
@@ -217,15 +219,19 @@ function capResponse(response: CustomApiTestResponse): CustomApiTestResponse {
     ...response,
     suggestions: response.suggestions.map((s) => ({ ...s, samples: [] })),
   };
-  if (size() <= limit || !response.response) return response;
-  return {
-    ...response,
-    response: {
-      ...response.response,
-      body: "… (response too large to show)",
-      truncated: true,
-    },
-  };
+  if (size() <= limit) return response;
+  if (response.response)
+    response = {
+      ...response,
+      response: {
+        ...response.response,
+        body: "… (response too large to show)",
+        truncated: true,
+      },
+    };
+  if (size() <= limit) return response;
+  // Paths are cut to 500 characters, so this is a last guard only.
+  return { ...response, suggestions: [], recordArrays: [] };
 }
 
 export function createCustomApiTestRequestService(
@@ -443,7 +449,7 @@ export function createCustomApiTestRequestService(
                 : null,
             recordArrays: first
               ? findRecordArrays(firstBody).map(({ path, length }) => ({
-                  path: redactText(path, secrets),
+                  path: shortPath(redactText(path, secrets)),
                   length,
                 }))
               : [],

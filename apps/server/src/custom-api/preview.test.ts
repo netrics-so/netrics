@@ -163,6 +163,66 @@ describe("boundedPreview", () => {
     expect(out.truncated).toBe(true);
   });
 
+  it("keeps a partial tree within the budget for large multibyte text (review #820 N1)", () => {
+    const jp = "日本語のテキスト".repeat(300);
+    for (let pad = 0; pad < 40; pad++) {
+      const body = {
+        data: range(50).map((i) => ({
+          id: i,
+          pad: "x".repeat(pad * 37),
+          title: jp,
+          body: jp,
+        })),
+      };
+      const out = boundedPreview(body, none);
+      const serialized = JSON.stringify(out.body);
+      expect(Buffer.byteLength(serialized)).toBeLessThanOrEqual(
+        CUSTOM_API_TEST_LIMITS.previewBytes,
+      );
+      expect(typeof out.body).toBe("object");
+      const data = (out.body as { data: unknown[] }).data;
+      expect(data.length).toBeGreaterThan(1);
+      expect(String(data.at(-1))).toMatch(/^… \d+ more$/);
+      expect(JSON.parse(serialized)).toEqual(out.body);
+      expect(out.truncated).toBe(true);
+    }
+  });
+
+  it("keeps a partial tree for many empty containers (review #820 N1)", () => {
+    const empties = range(50).map(() =>
+      Object.fromEntries(
+        range(200).map((k) => [`k${k}`, range(50).map(() => ({}))]),
+      ),
+    );
+    const cube = range(50).map(() =>
+      range(50).map(() => range(50).map(() => [])),
+    );
+    for (const body of [empties, cube]) {
+      const out = boundedPreview(body, none);
+      const serialized = JSON.stringify(out.body);
+      expect(Array.isArray(out.body)).toBe(true);
+      expect(Buffer.byteLength(serialized)).toBeLessThanOrEqual(
+        CUSTOM_API_TEST_LIMITS.previewBytes,
+      );
+      expect(JSON.parse(serialized)).toEqual(out.body);
+      expect(out.truncated).toBe(true);
+    }
+  });
+
+  it("fits every budget exactly, down to a tiny one", () => {
+    const body = {
+      a: range(50).map((i) => ({ t: "€".repeat(500 + i), n: [{}, [], null] })),
+    };
+    for (const budget of [200, 1_000, 5_000, 20_000, 100_000]) {
+      const out = boundedPreview(body, none, budget);
+      expect(
+        Buffer.byteLength(JSON.stringify(out.body)),
+        String(budget),
+      ).toBeLessThanOrEqual(budget);
+      expect(typeof out.body).toBe("object");
+    }
+  });
+
   it("passes scalars and null through", () => {
     expect(boundedPreview("plain", none).body).toBe("plain");
     expect(boundedPreview(42, none).body).toBe(42);

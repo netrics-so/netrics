@@ -163,6 +163,17 @@ describe("suggestFields", () => {
       expect(out).not.toContain(key.slice(i, i + 6));
   });
 
+  it("cuts long paths to 500 characters after redaction (review #820 N4)", () => {
+    const key = "k".repeat(5_000);
+    const [field] = suggestFields([{ [key]: 1 }], 100, (text) =>
+      text.replaceAll("kkkk", "[redacted]"),
+    );
+    expect(field!.path.length).toBeLessThanOrEqual(500);
+    expect(field!.path.startsWith("[redacted]")).toBe(true);
+    expect(field!.id.length).toBeLessThanOrEqual(100);
+    expect(field!.name.length).toBeLessThanOrEqual(100);
+  });
+
   it("cuts samples to 80 characters", () => {
     const [field] = suggestFields([{ text: "x".repeat(500) }]);
     expect(field!.samples[0]!.length).toBeLessThanOrEqual(80);

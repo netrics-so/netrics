@@ -139,15 +139,25 @@ function bytesOf(value: string | number | boolean | null): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
-/** Room kept for the markers and closing brackets added once the budget is used. */
-const RESERVE = 4_096;
+/**
+ * Held back for every open array or object while its items are written:
+ * the closing bracket and a "more" marker with its comma (at most 30 bytes
+ * for `,"…":"<10 digits> more keys"`).
+ */
+const CLOSE_RESERVE = 48;
+/** A string is cut to fit what is left only when at least this much is left. */
+const MIN_STRING_ROOM = 40;
 
 /**
  * Redacts every string (keys and values) and bounds the body in one pass:
  * at most 50 items per array ("… N more"), 200 keys per object (key "…":
  * "N more keys"), 2,000 characters per string ("… (N characters)"), depth
- * 32 ("… (nested deeper)"), and `maxBytes` serialized: once the budget is
- * used, every open array or object ends with its marker.
+ * 32 ("… (nested deeper)"), and `maxBytes` serialized. Every emitted byte
+ * is counted (UTF-8, separators, brackets, quotes, markers), and the cost
+ * of closing each open container is held back while it is open, so a cut
+ * always leaves a valid, partial tree: a string that does not fit is cut
+ * to what is left, and a container that does not fit ends with its marker.
+ * Only a body whose top level cannot be opened at all is replaced.
  */
 export function boundedPreview(
   body: unknown,
@@ -160,9 +170,9 @@ export function boundedPreview(
 } {
   const limits = CUSTOM_API_TEST_LIMITS;
   const omitted = { arrays: 0, strings: 0, depth: 0, bytes: 0 };
-  const budget = Math.max(0, maxBytes - RESERVE);
   let used = 0;
-  const full = () => used >= budget;
+  let reserved = 0;
+  const room = () => maxBytes - used - reserved;
 
   const text = (value: string): string => {
     const clean = redactText(value, secrets);
@@ -170,58 +180,114 @@ export function boundedPreview(
     omitted.strings += 1;
     return `${clean.slice(0, limits.stringChars)}… (${value.length} characters)`;
   };
-  const scalar = <T extends string | number | boolean | null>(value: T): T => {
-    used += bytesOf(value) + 1;
-    return value;
+
+  /** A string cut to at most `bytes` serialized, or undefined. */
+  const cutToFit = (
+    clean: string,
+    length: number,
+    bytes: number,
+  ): string | undefined => {
+    if (bytes < MIN_STRING_ROOM) return undefined;
+    const marker = `… (${length} characters)`;
+    let low = 0;
+    let high = clean.length;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (bytesOf(clean.slice(0, mid) + marker) <= bytes) low = mid;
+      else high = mid - 1;
+    }
+    const cut = clean.slice(0, low) + marker;
+    return bytesOf(cut) <= bytes ? cut : undefined;
   };
 
-  const walk = (value: unknown, depth: number): JsonValue => {
+  /** Places a value after `prefix` bytes (separator, key); undefined when it does not fit. */
+  const place = (
+    value: unknown,
+    depth: number,
+    prefix: number,
+  ): JsonValue | undefined => {
+    const scalar = (
+      out: string | number | boolean | null,
+    ): JsonValue | undefined => {
+      const cost = prefix + bytesOf(out);
+      if (cost <= room()) {
+        used += cost;
+        return out;
+      }
+      if (typeof out !== "string") return undefined;
+      const cut = cutToFit(out, out.length, room() - prefix);
+      if (cut === undefined) return undefined;
+      omitted.bytes += 1;
+      used += prefix + bytesOf(cut);
+      return cut;
+    };
     if (value === null || typeof value === "boolean") return scalar(value);
     if (typeof value === "number")
       return scalar(Number.isFinite(value) ? value : null);
     if (typeof value === "string") return scalar(text(value));
     if (typeof value !== "object") return scalar(null);
     if (depth >= limits.depth) {
-      omitted.depth += 1;
-      return scalar("… (nested deeper)");
+      const placed = scalar("… (nested deeper)");
+      if (placed !== undefined) omitted.depth += 1;
+      return placed;
     }
-    used += 2;
+    if (prefix + 1 + CLOSE_RESERVE > room()) return undefined;
+    used += prefix + 1;
+    reserved += CLOSE_RESERVE;
+    const close = (markerBytes: number) => {
+      reserved -= CLOSE_RESERVE;
+      used += markerBytes + 1;
+    };
     if (Array.isArray(value)) {
       const out: JsonValue[] = [];
       const max = Math.min(value.length, limits.arrayItems);
-      for (let i = 0; i < max && !full(); i++)
-        out.push(walk(value[i], depth + 1));
+      for (let i = 0; i < max; i++) {
+        const item = place(value[i], depth + 1, out.length > 0 ? 1 : 0);
+        if (item === undefined) break;
+        out.push(item);
+      }
+      let markerBytes = 0;
       if (out.length < value.length) {
         if (out.length < max) omitted.bytes += 1;
         else omitted.arrays += 1;
-        out.push(scalar(`… ${value.length - out.length} more`));
+        const marker = `… ${value.length - out.length} more`;
+        markerBytes = (out.length > 0 ? 1 : 0) + bytesOf(marker);
+        out.push(marker);
       }
+      close(markerBytes);
       return out;
     }
     const out: { [key: string]: JsonValue } = {};
     const keys = Object.keys(value);
     const max = Math.min(keys.length, limits.objectKeys);
+    let count = 0;
     let kept = 0;
-    for (; kept < max && !full(); kept++) {
+    for (; kept < max; kept++) {
       const key = text(keys[kept]!);
-      if (key === "__proto__") continue;
-      used += bytesOf(key) + 1;
-      out[key] = walk(
+      if (key === "__proto__" || key === "…") continue;
+      const item = place(
         (value as Record<string, unknown>)[keys[kept]!],
         depth + 1,
+        (count > 0 ? 1 : 0) + bytesOf(key) + 1,
       );
+      if (item === undefined) break;
+      out[key] = item;
+      count += 1;
     }
+    let markerBytes = 0;
     if (kept < keys.length) {
       if (kept < max) omitted.bytes += 1;
       else omitted.arrays += 1;
-      out["…"] = scalar(`${keys.length - kept} more keys`);
+      const marker = `${keys.length - kept} more keys`;
+      markerBytes = (count > 0 ? 1 : 0) + bytesOf("…") + 1 + bytesOf(marker);
+      out["…"] = marker;
     }
+    close(markerBytes);
     return out;
   };
 
-  let result = walk(body, 0);
-  // A guard only: the reserve covers the markers of every open container.
-  if (Buffer.byteLength(JSON.stringify(result), "utf8") > maxBytes) {
+  let result = place(body, 0, 0);
+  if (result === undefined) {
     result = "… (response too large to show)";
     omitted.bytes += 1;
   }

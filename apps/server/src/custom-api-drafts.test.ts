@@ -399,20 +399,104 @@ describe("custom API draft connections", () => {
     );
   });
 
-  it("refuses secrets that do not complete the login method (review #820)", async () => {
+  it("merges secrets sent one by one and checks the set on promote (review #820 N2)", async () => {
     const { draft } = await createDraft();
+    const basic = { ...bearerDraft(), auth: { type: "basic" } };
+    const first = await updateDraft(draft.id, {
+      definition: basic,
+      environmentId: "production",
+      secrets: { username: "fx-user" },
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().draft.secretsSet).toEqual(["username"]);
+    // Incomplete: promote refuses it.
+    const definition = await saveDefinition({
+      ...bearerDefinition(),
+      auth: { type: "basic" },
+    } as CustomApiDefinition);
     expectError(
-      await updateDraft(draft.id, {
-        definition: { ...bearerDraft(), auth: { type: "basic" } },
-        environmentId: "production",
-        secrets: { username: "fx-user" },
+      await promote(draft.id, {
+        definitionId: definition.id,
+        version: 1,
+        name: "Half",
+        projectId: null,
       }),
       400,
       "custom_api_credentials_invalid",
     );
+    const second = await updateDraft(draft.id, {
+      definition: basic,
+      environmentId: "production",
+      secrets: { password: "pass-0001" },
+    });
+    expect(second.json().draft.secretsSet).toEqual(["password", "username"]);
+    expect(await decrypted(draft.id)).toEqual({
+      host: new URL(fixture.origin).host,
+      username: "fx-user",
+      password: "pass-0001",
+    });
+    // {} keeps everything; null removes one name.
+    const kept = await updateDraft(draft.id, {
+      definition: basic,
+      environmentId: "production",
+      secrets: {},
+    });
+    expect(kept.json().draft.secretsSet).toEqual(["password", "username"]);
+    const removed = await updateDraft(draft.id, {
+      definition: basic,
+      environmentId: "production",
+      secrets: { password: null },
+    });
+    expect(removed.json().draft.secretsSet).toEqual(["username"]);
   });
 
-  it("forgets secrets the new login method no longer declares (review #820)", async () => {
+  it("adds a secret variable without the token being sent again (review #820 N2)", async () => {
+    const id = await draftWithToken();
+    const withTenant = {
+      ...bearerDraft(),
+      variables: [{ id: "tenant", label: "Tenant", secret: true }],
+    };
+    const res = await updateDraft(id, {
+      definition: withTenant,
+      environmentId: "production",
+      secrets: { tenant: "tenant-secret" },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().draft.secretsSet).toEqual(["tenant", "token"]);
+    expect(await decrypted(id)).toEqual({
+      host: new URL(fixture.origin).host,
+      token: TOKEN,
+      variables: { tenant: "tenant-secret" },
+    });
+    // The variable leaves the definition: its secret goes, the token stays.
+    const gone = await updateDraft(id, {
+      definition: bearerDraft(),
+      environmentId: "production",
+    });
+    expect(gone.json().draft.secretsSet).toEqual(["token"]);
+    expect(await decrypted(id)).toEqual({
+      host: new URL(fixture.origin).host,
+      token: TOKEN,
+    });
+  });
+
+  it("drops every stored secret when the host changes, even with new ones sent (review #820 N2)", async () => {
+    const id = await draftWithToken();
+    const withTenant = {
+      ...bearerDraft(),
+      variables: [{ id: "tenant", label: "Tenant", secret: true }],
+    };
+    const moved = await updateDraft(id, {
+      definition: withBaseUrl(withTenant, "https://other.example.test/v1"),
+      environmentId: "production",
+      secrets: { tenant: "tenant-secret" },
+    });
+    expect(moved.json().draft.secretsSet).toEqual(["tenant"]);
+    expect(moved.json().draft.credentialHosts).toEqual(["other.example.test"]);
+    expect(await decrypted(id)).not.toHaveProperty("token");
+  });
+
+  it("drops every stored secret when the login method changes (review #820 N2)", async () => {
     const { draft } = await createDraft();
     const withTenant = {
       ...bearerDraft(),
@@ -424,25 +508,11 @@ describe("custom API draft connections", () => {
       secrets: { token: TOKEN, tenant: "tenant-secret" },
     });
     expect(stored.json().draft.secretsSet).toEqual(["tenant", "token"]);
-    // Bearer → none: the token goes, the secret variable stays.
     const none = await updateDraft(draft.id, {
       definition: { ...withTenant, auth: { type: "none" } },
       environmentId: "production",
     });
-    expect(none.json().draft.secretsSet).toEqual(["tenant"]);
-    expect(await decrypted(draft.id)).toEqual({
-      host: new URL(fixture.origin).host,
-      variables: { tenant: "tenant-secret" },
-    });
-    // → API key without secret variables: nothing declared is left.
-    const key = await updateDraft(draft.id, {
-      definition: {
-        ...bearerDraft(),
-        auth: { type: "api_key", placement: "header", name: "X-Api-Key" },
-      },
-      environmentId: "production",
-    });
-    expect(key.json().draft.secretsSet).toEqual([]);
+    expect(none.json().draft.secretsSet).toEqual([]);
     expect(await storedEnvelope(draft.id)).toBeNull();
   });
 

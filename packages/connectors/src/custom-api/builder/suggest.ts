@@ -178,7 +178,13 @@ const MONEY_NAME = /amount|price|revenue|cost|total|value/i;
 const UNIX_SECONDS = [946_684_800, 4_102_444_800] as const;
 
 function lastKey(path: string): string {
-  const segments = parseDataPath(path);
+  let segments: DataPathSegment[];
+  try {
+    segments = parseDataPath(path);
+  } catch {
+    // Longer than a field path may be: no name hint.
+    return "";
+  }
   for (let i = segments.length - 1; i >= 0; i--) {
     const segment = segments[i]!;
     if ("key" in segment) return segment.key;
@@ -238,6 +244,16 @@ function suggestType(
   return { type: "string" };
 }
 
+/** Longest path shown (= DATA_PATH_MAX_LENGTH: a longer one is not a valid field path anyway). */
+export const SUGGESTION_PATH_CHARS = 500;
+
+/** A path cut to SUGGESTION_PATH_CHARS; cut after redaction. */
+export function shortPath(path: string): string {
+  return path.length > SUGGESTION_PATH_CHARS
+    ? `${path.slice(0, SUGGESTION_PATH_CHARS - 1)}…`
+    : path;
+}
+
 /** Redacted first, then cut: a cut must never split a secret out of reach of the redaction. */
 function sample(value: unknown, redact: (text: string) => string): string {
   const text = redact(
@@ -274,7 +290,7 @@ export function suggestFields(
       if (value === undefined || value === null) missing = true;
       else values.push(value);
     }
-    const shown = redact(path);
+    const shown = shortPath(redact(path));
     const id = fieldIdFromPath(shown, taken);
     taken.add(id);
     const samples: string[] = [];

@@ -82,15 +82,21 @@ export const updateCustomApiDraftRequestSchema = z.strictObject({
   environmentId: z.string().min(1).max(64),
   variables: z.record(z.string(), z.string().max(1000)).default({}),
   // Keys: the auth method's credential names (apiKey | token | username +
-  // password | clientId + clientSecret) plus secret variable ids. Replaces
-  // all stored secrets when present.
-  // Secret values have at least 4 characters; the Basic auth username and
-  // the OAuth client ID are not secrets and may be shorter.
+  // password | clientId + clientSecret) plus secret variable ids.
+  // Merged into the stored secrets while the hosts and the login method
+  // stay the same: only the names sent are replaced, null removes one, {}
+  // keeps everything. Secret values have at least 4 characters; the Basic
+  // auth username and the OAuth client ID are not secrets and may be
+  // shorter.
   secrets: z
-    .record(z.string(), z.string().min(1).max(8192))
+    .record(z.string(), z.string().min(1).max(8192).nullable())
     .superRefine((secrets, ctx) => {
       for (const [name, value] of Object.entries(secrets))
-        if (!NON_SECRET_CREDENTIALS.has(name) && value.length < 4)
+        if (
+          value !== null &&
+          !NON_SECRET_CREDENTIALS.has(name) &&
+          value.length < 4
+        )
           ctx.addIssue({
             code: "custom",
             path: [name],

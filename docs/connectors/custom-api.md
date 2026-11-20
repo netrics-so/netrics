@@ -53,8 +53,12 @@ most 10 drafts are open per workspace.
   environment, the connection values and, optionally, the secrets. Answers
   name the stored secrets, never their values. Secrets are bound to the hosts
   they were entered for (the environment host with its port, and the token
-  endpoints of OAuth): when the definition moves to another host, stored
-  secrets are deleted and have to be entered again.
+  endpoints of OAuth): when the definition moves to another host or another
+  login method, stored secrets are deleted and have to be entered again.
+  Otherwise secrets sent later are merged into the stored ones (only the
+  names sent change, `null` removes one), and secrets the definition no
+  longer declares are forgotten. The set is checked when the draft is
+  tested or promoted.
 - `POST …/drafts/:draftId/test` runs the stream against the draft's secrets:
   at most 5 pages, 1,000 records and 60 seconds. The answer holds the first
   response as a tree (at most 256 KiB, 50 items per list, 200 keys per
