@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  DATASET_FIELD_ROLES,
+  type DatasetFieldRole,
+} from "@netrics/connector-sdk";
+import type { DataFieldRole } from "@netrics/domain";
+import {
+  dataFieldViewSchema,
   dataImpactQuerySchema,
   modelMeasureCellSchema,
   semanticModelDefinitionSchema,
@@ -111,5 +117,17 @@ describe("dataImpactQuerySchema", () => {
   it("rejects invalid measure ids", () => {
     expect(() => dataImpactQuerySchema.parse({ measureId: "1bad" })).toThrow();
     expect(() => dataImpactQuerySchema.parse({ other: "x" })).toThrow();
+  });
+});
+
+describe("data field roles (dataset contract v1, ADR 0026)", () => {
+  it("names the same roles as the SDK and the domain", () => {
+    expect(dataFieldViewSchema.shape.role.unwrap().options).toEqual([
+      ...DATASET_FIELD_ROLES,
+    ]);
+    // Compile-time: the domain type and the SDK type are the same union.
+    const fromSdk: DataFieldRole[] = [...DATASET_FIELD_ROLES];
+    const fromDomain: DatasetFieldRole[] = fromSdk;
+    expect(fromDomain).toEqual(["image"]);
   });
 });

@@ -1,0 +1,414 @@
+[
+  {
+    "name": "all-types",
+    "value": {
+      "key": "v1-all-types",
+      "name": "v1-all-types",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "flag",
+          "name": "Flag",
+          "type": "boolean",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "count",
+          "name": "Count",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "ratio",
+          "name": "Ratio",
+          "type": "number",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "amount",
+          "name": "Amount",
+          "type": "decimal",
+          "nullable": false,
+          "classification": "internal",
+          "scale": 4
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "at",
+          "name": "At",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "extra",
+          "name": "Extra",
+          "type": "json",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-all-types row",
+      "mode": "upsert",
+      "reportingField": "day"
+    }
+  },
+  {
+    "name": "append",
+    "value": {
+      "key": "v1-append",
+      "name": "v1-append",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "at",
+          "name": "At",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "value",
+          "name": "Value",
+          "type": "number",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-append row",
+      "mode": "append",
+      "reportingField": "at"
+    }
+  },
+  {
+    "name": "replace-window",
+    "value": {
+      "key": "v1-replace-window",
+      "name": "v1-replace-window",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "type": "date",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "region",
+          "name": "Region",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "clicks",
+          "name": "Clicks",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id", "day"],
+      "grain": "one v1-replace-window row",
+      "mode": "replace_window",
+      "reportingField": "day",
+      "reportingTimeZone": "Europe/Berlin"
+    }
+  },
+  {
+    "name": "snapshot-keep",
+    "value": {
+      "key": "v1-snapshot-keep",
+      "name": "v1-snapshot-keep",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-snapshot-keep row",
+      "mode": "snapshot",
+      "retentionDays": null
+    }
+  },
+  {
+    "name": "retention-days",
+    "value": {
+      "key": "v1-retention-days",
+      "name": "v1-retention-days",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-days row",
+      "mode": "snapshot",
+      "retentionDays": 90
+    }
+  },
+  {
+    "name": "retention-default",
+    "value": {
+      "key": "v1-retention-default",
+      "name": "v1-retention-default",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "label",
+          "name": "Label",
+          "type": "string",
+          "nullable": true,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-retention-default row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "personal",
+    "value": {
+      "key": "v1-personal",
+      "name": "v1-personal",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "email",
+          "name": "Email",
+          "type": "string",
+          "nullable": true,
+          "classification": "personal",
+          "retentionDays": 14
+        },
+        {
+          "id": "note",
+          "name": "Note",
+          "type": "string",
+          "nullable": true,
+          "classification": "personal",
+          "retentionDays": null
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-personal row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "money",
+    "value": {
+      "key": "v1-money",
+      "name": "v1-money",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "currency",
+          "name": "Currency",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "proceeds",
+          "name": "Proceeds",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal",
+          "unit": "currency_minor",
+          "currencyField": "currency"
+        },
+        {
+          "id": "price",
+          "name": "Price",
+          "type": "decimal",
+          "nullable": true,
+          "classification": "internal",
+          "unit": "currency",
+          "currencyField": "currency",
+          "scale": 2
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-money row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "image-role",
+    "value": {
+      "key": "v1-image-role",
+      "name": "v1-image-role",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "title",
+          "name": "Title",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "image_url",
+          "name": "Image url",
+          "type": "string",
+          "nullable": true,
+          "classification": "public",
+          "role": "image"
+        },
+        {
+          "id": "published",
+          "name": "Published",
+          "type": "timestamp",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id"],
+      "grain": "one v1-image-role row",
+      "mode": "upsert",
+      "reportingField": "published"
+    }
+  },
+  {
+    "name": "image-role-key",
+    "value": {
+      "key": "v1-image-role-key",
+      "name": "v1-image-role-key",
+      "version": 1,
+      "fields": [
+        {
+          "id": "image_url",
+          "name": "Image url",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal",
+          "role": "image"
+        }
+      ],
+      "keyFields": ["image_url"],
+      "grain": "one v1-image-role-key row",
+      "mode": "upsert"
+    }
+  },
+  {
+    "name": "composite-key",
+    "value": {
+      "key": "v1-composite-key",
+      "name": "v1-composite-key",
+      "version": 1,
+      "fields": [
+        {
+          "id": "id",
+          "name": "Id",
+          "type": "string",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "seq",
+          "name": "Seq",
+          "type": "integer",
+          "nullable": false,
+          "classification": "internal"
+        },
+        {
+          "id": "amount",
+          "name": "Amount",
+          "type": "decimal",
+          "nullable": false,
+          "classification": "internal"
+        }
+      ],
+      "keyFields": ["id", "seq", "amount"],
+      "grain": "one v1-composite-key row",
+      "mode": "upsert"
+    }
+  }
+]

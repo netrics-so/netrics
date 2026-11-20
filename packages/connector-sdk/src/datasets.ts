@@ -1,3 +1,5 @@
+// Dataset contract v1, docs/decisions/0026-dataset-contract-v1.md. Changes
+// are additive only; see the ADR.
 import { z } from "zod";
 import { utf8ByteLength } from "./utf8.js";
 

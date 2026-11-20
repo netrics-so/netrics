@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -23,6 +24,7 @@ import {
   replayDatasetRefresh,
   listObservationDatasets,
   readObservationDataset,
+  registerSourceDataset,
 } from "./datasets.js";
 import * as schema from "./schema.js";
 import * as auth from "./auth-schema.js";
@@ -464,6 +466,86 @@ describe("durable typed dataset ingestion", () => {
     });
     const r = await ingest(next, page(next, { refreshKey: "r2", records: [] }));
     expect((await preview(r.datasetId))?.rows[0]?.label).toBeNull();
+  });
+  // Dataset contract v1 (ADR 0026): the SDK's frozen fixtures register and
+  // ingest at the database layer too.
+  const v1 = <T>(file: string): T[] =>
+    JSON.parse(
+      readFileSync(
+        new URL(
+          `../../connector-sdk/src/contract/fixtures/v1/${file}`,
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as T[];
+  it("registers and ingests every v1 accepted fixture", async () => {
+    for (const { name, value } of v1<{ name: string; value: unknown }>(
+      "definitions.accepted.json",
+    ))
+      await expect(
+        withWorkspace(db, { workspaceId: a }, (tx) =>
+          registerSourceDataset(tx, {
+            workspaceId: a,
+            connectionId: ca,
+            definition: sourceDatasetSchema.parse(value),
+          }),
+        ),
+        name,
+      ).resolves.toMatchObject({ key: (value as { key: string }).key });
+    const pages = v1<{ name: string; definition: unknown; page: DatasetPage }>(
+      "pages.accepted.json",
+    );
+    let published = 0;
+    // Staged pages need a host-created stage (ADR 0023); the SDK suite
+    // covers their shape.
+    for (const { name, definition: raw, page: p } of pages.filter(
+      (entry) => !entry.page.stagingId,
+    )) {
+      const result = await ingest(sourceDatasetSchema.parse(raw), p);
+      if (p.complete) {
+        expect(result.generationId, name).toBeTruthy();
+        published++;
+        const rows = (await preview(result.datasetId))?.rows ?? [];
+        expect(rows.length, name).toBe(
+          p.records.filter((r) => !r.deleted).length,
+        );
+      } else expect(result.generationId, name).toBeNull();
+    }
+    expect(published).toBeGreaterThanOrEqual(7);
+  });
+  it("treats a role change as compatible in a new version and as a conflict in the same version", async () => {
+    const d = definition("roles");
+    const withImage = (version: number, role?: "image") =>
+      sourceDatasetSchema.parse({
+        ...d,
+        version,
+        fields: [
+          ...d.fields,
+          {
+            id: "image_url",
+            name: "Image",
+            type: "string",
+            nullable: true,
+            classification: "public",
+            ...(role ? { role } : {}),
+          },
+        ],
+      });
+    const v1Plain = withImage(1);
+    await ingest(v1Plain, page(v1Plain, { records: [] }));
+    const v2 = withImage(2, "image");
+    await expect(
+      ingest(v2, page(v2, { refreshKey: "r2", records: [] })),
+    ).resolves.toMatchObject({ datasetId: expect.any(String) });
+    const v2Plain = withImage(2);
+    await expect(
+      ingest(v2Plain, page(v2Plain, { refreshKey: "r3", records: [] })),
+    ).rejects.toThrow("dataset_schema_version_conflict");
+    const v3Plain = withImage(3);
+    await expect(
+      ingest(v3Plain, page(v3Plain, { refreshKey: "r4", records: [] })),
+    ).resolves.toMatchObject({ datasetId: expect.any(String) });
   });
   it("does not let an older in-progress snapshot replace newer data", async () => {
     const d = definition("snapshots", "snapshot");
