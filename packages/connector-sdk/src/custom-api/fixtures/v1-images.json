@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "name": "Gallery API",
+  "environments": [
+    {
+      "id": "production",
+      "name": "Production",
+      "baseUrl": "https://gallery.example.com/api"
+    }
+  ],
+  "auth": { "type": "none" },
+  "images": {
+    "hosts": ["gallery.example.com", "*.cdn.example.com"],
+    "newestItems": 20
+  },
+  "streams": [
+    {
+      "key": "images",
+      "name": "Images",
+      "request": { "path": "/images" },
+      "records": "images",
+      "fields": [
+        {
+          "id": "id",
+          "name": "ID",
+          "path": "id",
+          "type": "string",
+          "nullable": false
+        },
+        { "id": "title", "name": "Title", "path": "title", "type": "string" },
+        {
+          "id": "url",
+          "name": "Image",
+          "path": "urls.large",
+          "type": "string",
+          "role": "image"
+        },
+        {
+          "id": "published",
+          "name": "Published",
+          "path": "published_at",
+          "type": "timestamp",
+          "nullable": false,
+          "format": "iso"
+        }
+      ],
+      "keyFields": ["id"],
+      "mode": "snapshot",
+      "reportingField": "published"
+    }
+  ]
+}

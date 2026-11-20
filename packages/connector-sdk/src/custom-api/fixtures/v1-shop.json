@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "name": "Shop API",
+  "environments": [
+    {
+      "id": "production",
+      "name": "Production",
+      "baseUrl": "https://api.example.com/v1"
+    },
+    {
+      "id": "staging",
+      "name": "Staging",
+      "baseUrl": "https://staging.example.com/v1"
+    }
+  ],
+  "variables": [{ "id": "account_id", "label": "Account ID", "secret": false }],
+  "auth": { "type": "bearer" },
+  "defaults": { "refreshMinutes": 60, "timeZone": "UTC" },
+  "streams": [
+    {
+      "key": "daily_stats",
+      "name": "Daily stats",
+      "request": {
+        "path": "/accounts/{{account_id}}/stats",
+        "query": { "from": "{{window.start}}", "to": "{{window.end}}" },
+        "headers": { "Accept": "application/json" }
+      },
+      "pagination": {
+        "type": "cursor",
+        "cursorPath": "meta.next",
+        "param": "cursor"
+      },
+      "records": "data",
+      "fields": [
+        {
+          "id": "day",
+          "name": "Day",
+          "path": "date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "id": "orders",
+          "name": "Orders",
+          "path": "orders",
+          "type": "integer"
+        },
+        {
+          "id": "revenue",
+          "name": "Revenue",
+          "path": "revenue.amount",
+          "type": "decimal",
+          "scale": 2,
+          "currencyField": "currency"
+        },
+        {
+          "id": "currency",
+          "name": "Currency",
+          "path": "revenue.currency",
+          "type": "string",
+          "nullable": false
+        }
+      ],
+      "keyFields": ["day"],
+      "mode": "upsert",
+      "reportingField": "day",
+      "window": {
+        "type": "date",
+        "stepDays": 31,
+        "lookbackDays": 3,
+        "backfillDays": 365,
+        "paramFormat": "date"
+      }
+    }
+  ]
+}

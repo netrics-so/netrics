@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "name": "Every pagination style",
+  "environments": [
+    {
+      "id": "production",
+      "name": "Production",
+      "baseUrl": "https://api.example.com"
+    }
+  ],
+  "variables": [
+    { "id": "account_id", "label": "Account ID" },
+    { "id": "api_version", "label": "API version", "secret": false }
+  ],
+  "auth": { "type": "api_key", "placement": "header", "name": "X-Api-Key" },
+  "defaults": { "refreshMinutes": 30, "timeZone": "Europe/Berlin" },
+  "streams": [
+    {
+      "key": "plain",
+      "name": "No pagination",
+      "request": { "path": "/accounts/{{account_id}}" },
+      "records": "",
+      "fields": [
+        {
+          "id": "id",
+          "name": "ID",
+          "path": "id",
+          "type": "string",
+          "nullable": false
+        },
+        { "id": "name", "name": "Name", "path": "name", "type": "string" }
+      ],
+      "keyFields": ["id"],
+      "mode": "snapshot"
+    },
+    {
+      "key": "pages",
+      "name": "Page numbers",
+      "request": {
+        "path": "/orders",
+        "query": { "version": "{{api_version}}" }
+      },
+      "pagination": {
+        "type": "page_number",
+        "param": "page",
+        "start": 1,
+        "sizeParam": "per_page",
+        "size": 100
+      },
+      "records": "orders",
+      "fields": [
+        {
+          "id": "id",
+          "name": "ID",
+          "path": "id",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "id": "created",
+          "name": "Created",
+          "path": "created_at",
+          "type": "timestamp",
+          "nullable": false,
+          "format": "unix_seconds"
+        }
+      ],
+      "keyFields": ["id"],
+      "mode": "append",
+      "reportingField": "created",
+      "window": {
+        "type": "timestamp",
+        "stepDays": 7,
+        "backfillDays": 90,
+        "paramFormat": "unix_seconds"
+      }
+    },
+    {
+      "key": "offsets",
+      "name": "Offset and limit",
+      "request": {
+        "path": "/customers",
+        "query": { "skip": "{{page.offset}}", "take": "{{page.size}}" }
+      },
+      "pagination": {
+        "type": "offset",
+        "offsetParam": "offset",
+        "limitParam": "limit",
+        "limit": 50
+      },
+      "records": "data.items",
+      "fields": [
+        {
+          "id": "id",
+          "name": "ID",
+          "path": "id",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "id": "email",
+          "name": "Email",
+          "path": "contact.email",
+          "type": "string",
+          "classification": "personal",
+          "retentionDays": 30
+        }
+      ],
+      "keyFields": ["id"],
+      "mode": "upsert",
+      "retentionDays": 365
+    },
+    {
+      "key": "cursor_days",
+      "name": "Cursor",
+      "request": {
+        "path": "/stats",
+        "query": { "from": "{{window.start}}", "until": "{{window.end}}" }
+      },
+      "pagination": {
+        "type": "cursor",
+        "cursorPath": "meta.next",
+        "param": "cursor"
+      },
+      "records": "data",
+      "fields": [
+        {
+          "id": "day",
+          "name": "Day",
+          "path": "day",
+          "type": "date",
+          "nullable": false,
+          "format": "dd.MM.yyyy"
+        },
+        {
+          "id": "visits",
+          "name": "Visits",
+          "path": "visits",
+          "type": "integer"
+        }
+      ],
+      "keyFields": ["day"],
+      "mode": "replace_window",
+      "reportingField": "day",
+      "window": {
+        "type": "date",
+        "stepDays": 1,
+        "lookbackDays": 2,
+        "backfillDays": 30,
+        "paramFormat": "date",
+        "endInclusive": true
+      }
+    },
+    {
+      "key": "next_body",
+      "name": "Next URL in the body",
+      "request": { "path": "/events" },
+      "pagination": {
+        "type": "next_url",
+        "source": "body",
+        "path": "links.next"
+      },
+      "records": "events",
+      "fields": [
+        {
+          "id": "id",
+          "name": "ID",
+          "path": "id",
+          "type": "string",
+          "nullable": false
+        },
+        { "id": "payload", "name": "Payload", "path": "data", "type": "json" }
+      ],
+      "keyFields": ["id"],
+      "mode": "append"
+    },
+    {
+      "key": "next_link",
+      "name": "Next URL in the Link header",
+      "request": {
+        "path": "/tags",
+        "headers": { "Accept": "application/json" }
+      },
+      "pagination": { "type": "next_url", "source": "link_header" },
+      "fields": [
+        {
+          "id": "tag",
+          "name": "Tag",
+          "path": "[\"tag name\"]",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "id": "count",
+          "name": "Count",
+          "path": "stats.count",
+          "type": "number"
+        }
+      ],
+      "keyFields": ["tag"],
+      "mode": "snapshot"
+    }
+  ]
+}

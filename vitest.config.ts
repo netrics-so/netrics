@@ -13,6 +13,9 @@ export default defineConfig({
       // apps/web's own path alias (tsconfig "@/*").
       "@": r("./apps/web/src"),
       "@netrics/contracts": r("./packages/contracts/src/index.ts"),
+      "@netrics/connector-sdk/custom-api": r(
+        "./packages/connector-sdk/src/custom-api/index.ts",
+      ),
       "@netrics/connector-sdk/testing": r(
         "./packages/connector-sdk/src/testing/index.ts",
       ),
