@@ -432,6 +432,24 @@ export type {
   Workspace,
 } from "./workspaces.js";
 
+export {
+  countCustomApiConnections,
+  countCustomApiDefinitions,
+  customApiDatasetVersionHighWater,
+  findCustomApiDefinition,
+  findCustomApiDefinitionVersion,
+  insertCustomApiDefinition,
+  insertCustomApiDefinitionVersion,
+  listCustomApiDefinitions,
+  updateCustomApiDefinition,
+} from "./custom-api.js";
+export type {
+  CustomApiDefinitionRow,
+  CustomApiDefinitionVersionRow,
+  CustomApiDefinitionWithVersion,
+  NewCustomApiDefinition,
+  NewCustomApiDefinitionVersion,
+} from "./custom-api.js";
 export { projectFilterSql } from "./project-filter.js";
 export type { ProjectFilter } from "./project-filter.js";
 

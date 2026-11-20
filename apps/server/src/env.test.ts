@@ -565,6 +565,42 @@ describe("custom API private hosts (#801)", () => {
   );
 });
 
+describe("custom API limits (#803)", () => {
+  it("reads the custom API limits with defaults and refuses NETRICS_CUSTOM_API_MAX_STREAMS=21", () => {
+    expect(loadConfig({}).customApi).toEqual({
+      maxDefinitions: 50,
+      maxStreams: 20,
+      maxConnections: 100,
+      minRefreshMinutes: 15,
+    });
+    expect(
+      loadConfig({
+        NETRICS_CUSTOM_API_MAX_DEFINITIONS: "5",
+        NETRICS_CUSTOM_API_MAX_STREAMS: "3",
+        NETRICS_CUSTOM_API_MAX_CONNECTIONS: "7",
+        NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES: "60",
+      }).customApi,
+    ).toEqual({
+      maxDefinitions: 5,
+      maxStreams: 3,
+      maxConnections: 7,
+      minRefreshMinutes: 60,
+    });
+    expect(() => loadConfig({ NETRICS_CUSTOM_API_MAX_STREAMS: "21" })).toThrow(
+      /NETRICS_CUSTOM_API_MAX_STREAMS/,
+    );
+    expect(() =>
+      loadConfig({ NETRICS_CUSTOM_API_MAX_DEFINITIONS: "0" }),
+    ).toThrow(/NETRICS_CUSTOM_API_MAX_DEFINITIONS/);
+    expect(() =>
+      loadConfig({ NETRICS_CUSTOM_API_MAX_CONNECTIONS: "0" }),
+    ).toThrow(/NETRICS_CUSTOM_API_MAX_CONNECTIONS/);
+    expect(() =>
+      loadConfig({ NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES: "1441" }),
+    ).toThrow(/NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES/);
+  });
+});
+
 describe("image quota (#217)", () => {
   it("defaults to 100 images and 50 MiB per workspace", () => {
     expect(loadConfig({}).imageQuota).toEqual({

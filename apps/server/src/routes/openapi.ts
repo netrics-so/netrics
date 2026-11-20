@@ -35,6 +35,8 @@ export interface RouteDoc {
   querystring?: z.ZodType;
   /** Success response; omit for 204 No Content. */
   response?: z.ZodType;
+  /** The success status of `response`: 200 (default) or 201 Created. */
+  responseStatus?: 200 | 201;
   errors?: ErrorStatus[];
   /** A richer error body for some statuses (it still has `error`). */
   errorSchemas?: Partial<Record<ErrorStatus, z.ZodType>>;
@@ -70,7 +72,7 @@ export function routeSchema(doc: RouteDoc) {
     errors.add(400);
   }
   const response: Record<number, z.ZodType> = doc.response
-    ? { 200: doc.response }
+    ? { [doc.responseStatus ?? 200]: doc.response }
     : { 204: z.null().describe("No content") };
   if (doc.notModified) {
     response[304] = z

@@ -182,6 +182,11 @@ beforeAll(async () => {
         now: new Date(now),
       }),
     );
+  // The install runs today's service code, which reads every connections
+  // column, so it runs on the migrated schema; the rows above are in the
+  // previous shape, and the install keeps the template version from before
+  // 0079 and has no product settings.
+  await test.migrate();
   ({ productDatasetId, mappingDatasetId } = await createStoreTemplateService({
     db,
     registry,
@@ -203,7 +208,6 @@ beforeAll(async () => {
       },
     ],
   }));
-  await test.migrate();
   // Proceeds: the group's App Store app sold in-app purchases; beta earned
   // within 90 days; gamma's only charge is older than 90 days, and its
   // recent rows are fees and free units.

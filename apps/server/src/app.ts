@@ -56,6 +56,7 @@ import { registerOpenApi, routeSchema } from "./routes/openapi.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerGoalRoutes } from "./routes/goals.js";
 import { registerThemeRoutes } from "./routes/themes.js";
+import { registerCustomApiRoutes } from "./routes/custom-api.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 
 export interface AppDeps {
@@ -263,6 +264,11 @@ export async function buildApp(
     fetchIcons: (actor, sources) => storeIcons.fetchMissing(actor, sources),
   });
   registerThemeRoutes(app, { authService, db });
+  registerCustomApiRoutes(app, {
+    authService,
+    db,
+    limits: config.customApi,
+  });
   registerGoalRoutes(app, {
     authService,
     db,

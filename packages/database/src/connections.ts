@@ -154,6 +154,11 @@ export interface NewConnection {
     choice: Record<string, number | null>;
     chosenBy: string | null;
   };
+  /**
+   * The definition version and environment a custom-api connection runs
+   * (milestone 13); absent for bundled connectors.
+   */
+  customApi?: { definitionVersionId: string; environmentId: string };
 }
 
 /**
@@ -175,6 +180,12 @@ export async function insertConnection(
       credentialsEncrypted: input.credentialsEncrypted,
       projectId: input.projectId,
       setupPending: input.setupPending ?? false,
+      ...(input.customApi
+        ? {
+            customApiDefinitionVersionId: input.customApi.definitionVersionId,
+            customApiEnvironmentId: input.customApi.environmentId,
+          }
+        : {}),
       ...(input.retention
         ? {
             retentionChoice: input.retention.choice,

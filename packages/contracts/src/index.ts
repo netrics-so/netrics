@@ -47,6 +47,7 @@ import {
 } from "./connection-retention.js";
 import { goalProgressSchema, goalResponseSchema } from "./goals.js";
 import { imageContentTypeSchema } from "./images.js";
+import { projectFilterQuerySchema } from "./project-filter.js";
 
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
 export type ProcessRole = z.infer<typeof processRoleSchema>;
@@ -367,16 +368,10 @@ export type RenameProjectRequest = z.infer<typeof renameProjectRequestSchema>;
 export const projectResponseSchema = z.object({ project: projectSchema });
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;
 
-/**
- * Narrows a list to a project (#572). Absent: the full list. "all": unassigned
- * items and items of unarchived projects. A project id: that project's items,
- * plus unassigned ones with `unassigned=include`.
- */
-export const projectFilterQuerySchema = z.strictObject({
-  project: z.union([z.literal("all"), z.uuid()]).optional(),
-  unassigned: z.literal("include").optional(),
-});
-export type ProjectFilterQuery = z.infer<typeof projectFilterQuerySchema>;
+export {
+  projectFilterQuerySchema,
+  type ProjectFilterQuery,
+} from "./project-filter.js";
 
 /** The dashboard list's query: a project filter, and archived ones (11E). */
 export const dashboardListQuerySchema = projectFilterQuerySchema.extend({

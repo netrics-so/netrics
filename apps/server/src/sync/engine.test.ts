@@ -722,10 +722,12 @@ afterAll(async () => {
 describe("catalog sync", () => {
   it("upserts connectors and metric definitions from manifests", async () => {
     const connectors = await appDb.select().from(schema.connectors);
+    // custom-api's row comes from migration 0085, not the bundle.
     expect(connectors.map((row) => row.id).sort()).toEqual([
       "app-store-connect",
       "apple-ads",
       "broken",
+      "custom-api",
       "dataset-conflicts",
       "dataset-faults",
       "demo",

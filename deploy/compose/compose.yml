@@ -73,6 +73,11 @@ services:
       # Workspace image quota (#217): images and MiB per workspace.
       NETRICS_IMAGE_QUOTA_COUNT: ${NETRICS_IMAGE_QUOTA_COUNT:-100}
       NETRICS_IMAGE_QUOTA_MIB: ${NETRICS_IMAGE_QUOTA_MIB:-50}
+      # Custom API limits (README, "Custom API limits").
+      NETRICS_CUSTOM_API_MAX_DEFINITIONS: ${NETRICS_CUSTOM_API_MAX_DEFINITIONS:-50}
+      NETRICS_CUSTOM_API_MAX_STREAMS: ${NETRICS_CUSTOM_API_MAX_STREAMS:-20}
+      NETRICS_CUSTOM_API_MAX_CONNECTIONS: ${NETRICS_CUSTOM_API_MAX_CONNECTIONS:-100}
+      NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES: ${NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES:-15}
       # Self-hosting only: hosts or ranges custom APIs may reach on your own
       # network (README, "Custom APIs on your own network"); unset: none.
       # Set the same on the worker.

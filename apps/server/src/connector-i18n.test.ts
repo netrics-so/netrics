@@ -125,7 +125,7 @@ describe("connector catalog sync", () => {
     const rows = await world.admin`
       select id, manifest -> 'translations' as translations,
              manifest ->> 'sdkVersion' as sdk_version
-      from connectors order by id`;
+      from connectors where id <> 'custom-api' order by id`;
     expect(rows.map((row) => row.id)).toEqual([
       "app-store-connect",
       "apple-ads",

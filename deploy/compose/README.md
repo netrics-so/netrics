@@ -185,6 +185,24 @@ set `NETRICS_IMAGE_QUOTA_COUNT` and `NETRICS_IMAGE_QUOTA_MIB` in `.env` and
 restart the `api`. Images above a lowered quota stay; only new uploads are
 refused.
 
+### Custom API limits
+
+Each workspace may keep 50 custom API definitions (archived ones don't
+count) with at most 20 streams each, and 100 custom API connections; a
+custom API connection refreshes at most every 15 minutes. To change that,
+set these in `.env` and restart the `api`:
+
+```dotenv
+NETRICS_CUSTOM_API_MAX_DEFINITIONS=50
+NETRICS_CUSTOM_API_MAX_STREAMS=20
+NETRICS_CUSTOM_API_MAX_CONNECTIONS=100
+NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES=15
+```
+
+`NETRICS_CUSTOM_API_MAX_STREAMS` can't go above 20, and
+`NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES` takes 1 to 1440. Existing
+definitions above a lowered limit stay; only new ones are refused.
+
 ### Custom APIs on your own network
 
 Connectors, custom API definitions included, may only reach public

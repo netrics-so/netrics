@@ -247,7 +247,8 @@ describe("tenant RLS on the connector/metrics tables", () => {
 
   it("keeps installation-level catalogs visible without a tenant context", async () => {
     const connectors = await db.select().from(schema.connectors);
-    expect(connectors.map((c) => c.id)).toEqual(["demo"]);
+    // custom-api: the catalog row migration 0085 inserts.
+    expect(connectors.map((c) => c.id).sort()).toEqual(["custom-api", "demo"]);
     const metrics = await db.select().from(schema.metricDefinitions);
     expect(metrics.map((m) => m.key)).toEqual(["requests"]);
   });

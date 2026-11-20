@@ -93,6 +93,17 @@ export const apiErrorsEn = {
     goal_not_found: "That goal no longer exists.",
     review_not_found: "That review no longer exists.",
     connection_not_found: "That connection no longer exists.",
+    custom_api_definition_not_found: "That custom API no longer exists.",
+    custom_api_definition_invalid:
+      "The custom API definition has errors. Fix the marked fields and save again.",
+    custom_api_definition_stale:
+      "Someone saved a newer version of this custom API. Reload it to see the changes.",
+    custom_api_definition_archived:
+      "This custom API is archived and can't be changed or connected.",
+    custom_api_definition_limit:
+      "This workspace has reached its limit of custom APIs. Archive one you no longer need.",
+    custom_api_stream_limit:
+      "This custom API has more streams than this server allows.",
     retention_dataset_unknown:
       "This connection has no such data table. Reload the page and choose again.",
     reviews_not_supported:
