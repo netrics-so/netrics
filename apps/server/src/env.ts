@@ -3,6 +3,8 @@ import { isIP } from "node:net";
 import { z } from "zod";
 
 import {
+  CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES,
+  CUSTOM_API_IMAGE_QUOTA_DEFAULT_COUNT,
   IMAGE_QUOTA_DEFAULT_BYTES,
   IMAGE_QUOTA_DEFAULT_COUNT,
   localeSchema,
@@ -300,6 +302,21 @@ const envSchema = z
       .min(0)
       .max(100_000)
       .default(IMAGE_QUOTA_DEFAULT_BYTES / 1_048_576),
+    // Custom API item images (milestone 13): their own workspace quota,
+    // apart from uploads and resource icons. Images beyond it are skipped
+    // and counted on the stream; existing ones stay.
+    NETRICS_CUSTOM_API_IMAGE_QUOTA_COUNT: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100_000)
+      .default(CUSTOM_API_IMAGE_QUOTA_DEFAULT_COUNT),
+    NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(100_000)
+      .default(CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES / 1_048_576),
     // Custom API limits (milestone 13): definitions per workspace (not
     // archived), streams per definition (never above the schema's 20),
     // custom-api connections per workspace, and the shortest refresh
@@ -498,6 +515,10 @@ const envSchema = z
     imageQuota: {
       maxCount: env.NETRICS_IMAGE_QUOTA_COUNT,
       maxBytes: env.NETRICS_IMAGE_QUOTA_MIB * 1_048_576,
+    },
+    customApiImageQuota: {
+      maxCount: env.NETRICS_CUSTOM_API_IMAGE_QUOTA_COUNT,
+      maxBytes: env.NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB * 1_048_576,
     },
     customApiPrivateHosts: env.NETRICS_CUSTOM_API_PRIVATE_HOSTS,
     customApi: {

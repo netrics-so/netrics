@@ -19,6 +19,8 @@ import {
   pruneOAuthAuthorizations,
   prunePendingKeys,
   pruneRevokedDevices,
+  pruneCustomApiItemImages,
+  CUSTOM_API_IMAGE_GRACE_DAYS,
   pruneSecurityRecords,
   SECURITY_RETENTION,
   setConnectionNextDue,
@@ -307,6 +309,23 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
       );
       if (Object.values(reviews).some((count) => count > 0)) {
         logger.info(reviews, "pruned app review text");
+      }
+    });
+    // Custom API item images (#809): lookups no stream's newest items
+    // listed for CUSTOM_API_IMAGE_GRACE_DAYS, then the images no lookup
+    // refers to. Counts only in the log.
+    await runTask("custom_api_images", async () => {
+      const customApiImagesDeleted = await pruneCustomApiItemImages(
+        schedulerDb,
+        now(),
+        CUSTOM_API_IMAGE_GRACE_DAYS,
+        (deps.retention ?? DEFAULT_RETENTION).batch,
+      );
+      if (customApiImagesDeleted > 0) {
+        logger.info(
+          { customApiImagesDeleted },
+          "pruned custom API item images",
+        );
       }
     });
   }

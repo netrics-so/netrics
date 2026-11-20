@@ -12,11 +12,20 @@ import type {
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
 
-/** globalThis.fetch with redirect "manual", only to `allowedHosts` (host names), bounded body. */
+/**
+ * globalThis.fetch with redirect "manual", only to `allowedHosts` (host
+ * names), bounded body. `maxBytes` refuses a larger body with the egress
+ * guard's error name and wording; `timeoutMs` bounds each request.
+ */
 export function fixtureRuntime(
   allowedHosts: readonly string[],
-  options: { log?: ConnectorLogger } = {},
+  options: {
+    log?: ConnectorLogger;
+    maxBytes?: number;
+    timeoutMs?: number;
+  } = {},
 ): ConnectorRuntime {
+  const maxBytes = options.maxBytes ?? MAX_BODY_BYTES;
   const controller = new AbortController();
   return {
     signal: controller.signal,
@@ -37,11 +46,21 @@ export function fixtureRuntime(
         ...(init.headers ? { headers: init.headers } : {}),
         ...(init.body !== undefined ? { body: init.body } : {}),
         redirect: "manual",
-        signal: controller.signal,
+        signal:
+          options.timeoutMs === undefined
+            ? controller.signal
+            : AbortSignal.any([
+                controller.signal,
+                AbortSignal.timeout(options.timeoutMs),
+              ]),
       });
+      const declared = Number(response.headers.get("content-length") ?? "0");
+      if (declared > maxBytes) {
+        await response.body?.cancel();
+        throw tooLarge(maxBytes);
+      }
       const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength > MAX_BODY_BYTES)
-        throw new Error("fixture runtime: response too large");
+      if (bytes.byteLength > maxBytes) throw tooLarge(maxBytes);
       const headers: Record<string, string> = {};
       response.headers.forEach((value, key) => {
         headers[key] = value;
@@ -56,4 +75,10 @@ export function fixtureRuntime(
       };
     },
   };
+}
+
+function tooLarge(maxBytes: number): Error {
+  const error = new Error(`egress denied: response exceeds ${maxBytes} bytes`);
+  error.name = "EgressDeniedError";
+  return error;
 }

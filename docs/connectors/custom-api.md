@@ -10,8 +10,9 @@ datasets of bundled connectors. Design: [ADR 0027](../decisions/0027-custom-api-
 
 > Status: milestone 13. Definitions, their versions and connections with the
 > login methods none, API key, bearer token and HTTP basic work through the
-> API. OAuth (client credentials, authorization code), the builder UI and
-> images follow.
+> API, and the images of image streams are copied after each sync. OAuth
+> (client credentials, authorization code), the builder UI and the latest
+> items widget follow.
 
 ## Definitions and connections
 
@@ -73,6 +74,32 @@ another host), and the DNS answer checked once is the one connected to.
 Next page links are stored in the run's position without the API key and
 any other secret; netrics adds the key again when it requests them.
 
+## Images
+
+A string field with the role `image` holds an image URL. After every
+succeeded sync of a stream with an image field, netrics copies the images of
+the stream's newest items (by its reporting field; `images.newestItems`,
+default 12, at most 50) into the workspace:
+
+- Only from the definition's `images.hosts` (exact hosts or `*.example.com`),
+  or, without an `images` block, from the environment host. Only https.
+- Through the egress guard, at most 2 MiB and 15 seconds per image, with
+  redirects only to the same host. The connection's credentials are sent
+  only when the image host is the environment host; other hosts get a plain
+  request.
+- PNG, JPEG or WebP by their bytes (the Content-Type is ignored), at most
+  4096 px per side, metadata stripped without re-encoding.
+- Stored per workspace and SHA-256 of the exact URL. A URL already stored is
+  not downloaded again, and an image whose bytes are already stored (an
+  expiring signed URL) is reused.
+- Their own quota per workspace (default 500 images, 200 MiB), apart from
+  uploaded images.
+- Images that no stream lists among its newest items for 7 days are deleted.
+
+A failed or skipped image never fails the sync. The connection page shows
+per image stream how many images are stored and how many were skipped, and
+why.
+
 ## Instance settings
 
 | Setting                                  | Default | Meaning                                                |
@@ -81,6 +108,8 @@ any other secret; netrics adds the key again when it requests them.
 | `NETRICS_CUSTOM_API_MAX_STREAMS`         | 20      | streams per definition (never above 20)                |
 | `NETRICS_CUSTOM_API_MAX_CONNECTIONS`     | 100     | custom API connections per workspace                   |
 | `NETRICS_CUSTOM_API_MIN_REFRESH_MINUTES` | 15      | the shortest refresh interval a connection may request |
+| `NETRICS_CUSTOM_API_IMAGE_QUOTA_COUNT`   | 500     | item images per workspace (worker)                     |
+| `NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB`     | 200     | MiB of item images per workspace (worker)              |
 
 Self-hosted only: `NETRICS_CUSTOM_API_PRIVATE_HOSTS` lets custom APIs reach
 named hosts or address ranges on your own network (never metadata

@@ -18,6 +18,7 @@ export {
   executeDiscover,
   executeResourceIcons,
   executeSync,
+  executeTrustedCall,
   supportsResourceIcons,
   type ExecuteOptions,
   type FetchedResourceIcon,

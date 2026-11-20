@@ -19,6 +19,7 @@ import { SignedKeyPanel } from "./signed-key-panel";
 import { RetentionSettings } from "./retention-settings";
 import { ConnectionProject } from "./connection-project";
 import { ConnectionFreshness } from "./connection-freshness";
+import { ConnectionItemImages } from "./connection-item-images";
 import { SyncRunError } from "./sync-run-error";
 import {
   getConnection,
@@ -396,6 +397,10 @@ export default async function ConnectionDetailPage({
         authState={connection.state.authState}
         resourceNames={resourceNames}
       />
+
+      {detail.itemImages ? (
+        <ConnectionItemImages streams={detail.itemImages} />
+      ) : null}
 
       {keyStrategy ? (
         <SignedKeyPanel

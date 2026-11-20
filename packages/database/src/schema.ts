@@ -1045,7 +1045,7 @@ export const workspaceImages = pgTable(
     ),
     check(
       "workspace_images_bytes_valid",
-      sql`${table.bytes} > 0 and ${table.bytes} <= 1048576 and ${table.bytes} = octet_length(${table.content})`,
+      sql`${table.bytes} > 0 and ${table.bytes} <= case when ${table.origin} = 'custom_api' then 2097152 else 1048576 end and ${table.bytes} = octet_length(${table.content})`,
     ),
     check(
       "workspace_images_dimensions_valid",
@@ -1057,11 +1057,83 @@ export const workspaceImages = pgTable(
     ),
     check(
       "workspace_images_origin_valid",
-      sql`(${table.origin} = 'upload' and ${table.connectionId} is null and ${table.resourceId} is null) or (${table.origin} = 'resource_icon' and ${table.connectionId} is not null and ${table.resourceId} is not null)`,
+      sql`(${table.origin} = 'upload' and ${table.connectionId} is null and ${table.resourceId} is null) or (${table.origin} = 'resource_icon' and ${table.connectionId} is not null and ${table.resourceId} is not null) or (${table.origin} = 'custom_api' and ${table.connectionId} is null and ${table.resourceId} is null)`,
     ),
+    // Custom API item images are reused by content hash (milestone 13).
+    index("workspace_images_custom_api_sha_idx")
+      .on(table.workspaceId, table.sha256)
+      .where(sql`${table.origin} = 'custom_api'`),
     check(
       "workspace_images_name_valid",
       sql`char_length(${table.name}) <= 100`,
+    ),
+  ],
+);
+
+// Custom API item images (milestone 13, ADR 0027): which stored image an
+// item image URL resolved to, keyed by workspace and the SHA-256 of the exact
+// URL, never by record or connection. `last_seen_at` moves on every sync that
+// still lists the URL among a stream's newest items; the scheduler deletes
+// rows unseen for the grace period, then the images no row refers to.
+export const customApiItemImages = pgTable(
+  "custom_api_item_images",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    urlSha256: text("url_sha256").notNull(),
+    imageId: uuid("image_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "custom_api_item_images_pk",
+      columns: [table.workspaceId, table.urlSha256],
+    }),
+    foreignKey({
+      name: "custom_api_item_images_image_fk",
+      columns: [table.imageId, table.workspaceId],
+      foreignColumns: [workspaceImages.id, workspaceImages.workspaceId],
+    }).onDelete("cascade"),
+    // The scheduler's prune runs across workspaces by last_seen_at.
+    index("custom_api_item_images_seen_idx").on(table.lastSeenAt),
+    index("custom_api_item_images_image_idx").on(table.imageId),
+    check(
+      "custom_api_item_images_url_sha256_valid",
+      sql`${table.urlSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
+// The outcome of the last image step per custom API stream: how many of
+// its newest items' images were stored, already known or skipped, and why.
+export const customApiStreamImages = pgTable(
+  "custom_api_stream_images",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    streamKey: text("stream_key").notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+    stored: integer("stored").notNull(),
+    unchanged: integer("unchanged").notNull(),
+    skipped: integer("skipped").notNull(),
+    skippedReasons: jsonb("skipped_reasons").notNull().default({}),
+  },
+  (table) => [
+    primaryKey({
+      name: "custom_api_stream_images_pk",
+      columns: [table.connectionId, table.streamKey],
+    }),
+    foreignKey({
+      name: "custom_api_stream_images_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    index("custom_api_stream_images_workspace_idx").on(table.workspaceId),
+    check(
+      "custom_api_stream_images_counts_valid",
+      sql`${table.stored} >= 0 and ${table.unchanged} >= 0 and ${table.skipped} >= 0`,
     ),
   ],
 );

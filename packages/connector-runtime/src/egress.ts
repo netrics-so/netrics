@@ -296,6 +296,13 @@ export interface EgressOptions {
   allowInsecureHttp?: boolean;
   /** Tests only: an extra trusted CA (PEM), added to the default roots. */
   tlsCa?: string;
+  /**
+   * Media types whose bodies are read ("image/*" matches a whole type). A
+   * response that names another Content-Type comes back with its status
+   * and headers but an empty body, unread. A response without one is read.
+   * Default: every body is read.
+   */
+  bodyContentTypes?: readonly string[];
 }
 
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
@@ -434,9 +441,25 @@ export function createEgressFetch(options: EgressOptions) {
     return url;
   }
 
+  function bodyWanted(contentType: string | null): boolean {
+    const wanted = options.bodyContentTypes;
+    if (!wanted || contentType === null) return true;
+    const type = contentType.split(";")[0]!.trim().toLowerCase();
+    return wanted.some((entry) => {
+      const pattern = entry.toLowerCase();
+      return pattern.endsWith("/*")
+        ? type.startsWith(pattern.slice(0, -1))
+        : type === pattern;
+    });
+  }
+
   async function readBody(
     response: Awaited<ReturnType<typeof fetch>>,
   ): Promise<Buffer> {
+    if (!bodyWanted(response.headers.get("content-type"))) {
+      await response.body?.cancel();
+      return Buffer.alloc(0);
+    }
     const codings = (response.headers.get("content-encoding") ?? "")
       .split(",")
       .map((coding) => coding.trim().toLowerCase())

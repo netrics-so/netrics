@@ -105,6 +105,8 @@ export interface JobHandlerDeps {
   customApiPrivateHosts?: readonly string[];
   /** The workspace image quota icons count against (#226). */
   imageQuota?: ImageQuota;
+  /** The workspace quota of custom API item images (#809). */
+  customApiImageQuota?: ImageQuota;
 }
 
 /**

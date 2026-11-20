@@ -10,3 +10,4 @@ export * from "./records.js";
 export * from "./connector.js";
 export * from "./cursor.js";
 export * from "./windows.js";
+export * from "./item-images.js";

@@ -44,6 +44,8 @@ import {
   type Transaction,
 } from "@netrics/database";
 import {
+  CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES,
+  CUSTOM_API_IMAGE_QUOTA_DEFAULT_COUNT,
   IMAGE_QUOTA_DEFAULT_BYTES,
   IMAGE_QUOTA_DEFAULT_COUNT,
 } from "@netrics/contracts";
@@ -55,6 +57,7 @@ import {
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
 import { callOptionsFor, connectorFor } from "../custom-api/connectors.js";
+import { ingestCustomApiImages } from "../images/custom-api-images.js";
 import { refreshConnectionIcons } from "../images/resource-icons.js";
 import {
   NonRetryableJobError,
@@ -97,6 +100,11 @@ const INITIAL_INCREMENTAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 const INSERT_BATCH_ROWS = 5_000;
 /** How often a successful sync refreshes the resource names (#194). */
 const RESOURCE_NAMES_REFRESH_MS = 24 * 60 * 60 * 1000;
+/** The custom API item image quota when the host passes none (#809). */
+const DEFAULT_CUSTOM_API_IMAGE_QUOTA: ImageQuota = {
+  maxCount: CUSTOM_API_IMAGE_QUOTA_DEFAULT_COUNT,
+  maxBytes: CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES,
+};
 /** The image quota when the host passes none (the contract's defaults). */
 const DEFAULT_IMAGE_QUOTA: ImageQuota = {
   maxCount: IMAGE_QUOTA_DEFAULT_COUNT,
@@ -127,6 +135,8 @@ export interface SyncEngineDeps {
   customApiPrivateHosts?: readonly string[];
   /** The workspace image quota icons count against (#226). */
   imageQuota?: ImageQuota;
+  /** The workspace quota of custom API item images (#809). */
+  customApiImageQuota?: ImageQuota;
 }
 
 type ErrorClass = "auth" | "transient" | "contract" | "budget";
@@ -1401,6 +1411,26 @@ async function runSync(
       });
     } catch (error) {
       log.warn({ err: safeMessage(error) }, "resource icons not refreshed");
+    }
+  }
+
+  // Step 6 (#809): a custom API's item images, the newest items' of each
+  // image stream, after every succeeded run. Best effort: a failed or
+  // skipped image is counted on its stream and never fails the run.
+  if (registered.customApi) {
+    try {
+      await ingestCustomApiImages({
+        db: appDb,
+        workspaceId,
+        connectionId,
+        resolved: registered,
+        run: (call) => callConnector(call),
+        quota: deps.customApiImageQuota ?? DEFAULT_CUSTOM_API_IMAGE_QUOTA,
+        now,
+        log: (message, fields) => log.info(fields ?? {}, message),
+      });
+    } catch (error) {
+      log.warn({ err: safeMessage(error) }, "item images not stored");
     }
   }
 }

@@ -255,10 +255,23 @@ export {
 export type {
   ImageInput,
   ImageQuota,
+  ImageQuotaScope,
   ImageRow,
   ImageUsage,
   InsertImageResult,
 } from "./images.js";
+export {
+  CUSTOM_API_IMAGE_GRACE_DAYS,
+  findCustomApiImageBySha256,
+  findItemImages,
+  latestDatasetValues,
+  listStreamImages,
+  pruneCustomApiItemImages,
+  recordStreamImages,
+  touchItemImages,
+  upsertItemImage,
+} from "./custom-api-images.js";
+export type { ItemImageRef, StreamImagesRecord } from "./custom-api-images.js";
 export {
   BREAKDOWN_TIMEOUT_MS,
   findConnectionMetric,

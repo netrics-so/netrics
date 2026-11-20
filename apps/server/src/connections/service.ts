@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AppStoreAnalyticsStatusResponse,
   AppStoreReviewsStatusResponse,
+  ConnectionItemImages,
   ConnectionPreviewResponse,
   ConnectionResourcesResponse,
   ConnectionSignedKeyView,
@@ -25,6 +26,7 @@ import type {
 } from "@netrics/contracts";
 import {
   connectorDatasetRetention,
+  CUSTOM_API_IMAGE_SKIP_REASONS,
   HISTORY_RELOAD_INTERVAL_HOURS,
   validateConnectionConfig,
   type ConnectionHistory,
@@ -43,6 +45,7 @@ import type {
   ConnectorManifest,
 } from "@netrics/connector-sdk";
 import { ANALYTICS_METRIC_KEYS, ANALYTICS_STREAM } from "@netrics/connectors";
+import { upgradeCustomApiDefinition } from "@netrics/connector-sdk/custom-api";
 import { CUSTOM_API_CONNECTOR_ID } from "@netrics/connectors/custom-api";
 import {
   DEFAULT_LOCALE,
@@ -73,6 +76,7 @@ import {
   listConnections as listConnectionRows,
   listObservations as listObservationRows,
   listConnectionFreshness,
+  listStreamImages,
   listRecentSyncRuns,
   releaseOAuthGrant,
   latestBackfillFailed,
@@ -2277,6 +2281,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.workspaceId,
           connectionId,
         );
+        const itemImages = await connectionItemImages(
+          tx,
+          actor.workspaceId,
+          loaded,
+        );
         return {
           ...loaded,
           syncRuns,
@@ -2284,6 +2293,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           backfill,
           incomplete,
           freshness,
+          itemImages,
         };
       });
       if (!found) {
@@ -2304,6 +2314,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           found.freshness,
           actor.locale,
         ),
+        ...(found.itemImages ? { itemImages: found.itemImages } : {}),
       });
     },
 
@@ -3409,3 +3420,49 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 }
 
 export type ConnectionService = ReturnType<typeof createConnectionService>;
+
+/**
+ * The last image step per image stream of a custom API connection (#809),
+ * with the stream names of its pinned definition; undefined for bundled
+ * connectors and definitions without an image stream.
+ */
+async function connectionItemImages(
+  tx: Transaction,
+  workspaceId: string,
+  loaded: ConnectionWithState,
+): Promise<ConnectionItemImages[] | undefined> {
+  if (!loaded.customApi) return undefined;
+  let names: Map<string, string>;
+  try {
+    const definition = upgradeCustomApiDefinition(loaded.customApi.document);
+    names = new Map(
+      definition.streams
+        .filter((stream) => stream.fields.some((f) => f.role === "image"))
+        .map((stream) => [stream.key, stream.name]),
+    );
+  } catch {
+    return undefined;
+  }
+  if (names.size === 0) return undefined;
+  const rows = await listStreamImages(tx, workspaceId, loaded.row.id);
+  return rows
+    .filter((row) => names.has(row.streamKey))
+    .map((row) => ({
+      streamKey: row.streamKey,
+      streamName: names.get(row.streamKey) || row.streamKey,
+      checkedAt: row.checkedAt.toISOString(),
+      stored: row.stored,
+      unchanged: row.unchanged,
+      skipped: row.skipped,
+      skippedReasons: Object.fromEntries(
+        Object.entries(row.skippedReasons).filter(
+          ([reason, count]) =>
+            (CUSTOM_API_IMAGE_SKIP_REASONS as readonly string[]).includes(
+              reason,
+            ) &&
+            Number.isInteger(count) &&
+            count > 0,
+        ),
+      ) as ConnectionItemImages["skippedReasons"],
+    }));
+}
