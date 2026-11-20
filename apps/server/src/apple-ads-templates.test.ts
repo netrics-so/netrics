@@ -57,8 +57,9 @@ import {
 // Apple Ads slide that the API accepts without a readability warning in
 // any format (what the Studio, the web TV mode and the kiosk lay out), and
 // whose device payload (what tvOS and the kiosk decode) carries the
-// numbers. A server without the preview connector (production) offers no
-// Apple Ads slide, even with an Apple Ads connection in its database.
+// numbers. A server whose bundle leaves Apple Ads out (as production did
+// while it was a preview, until #378) offers no Apple Ads slide, even with
+// an Apple Ads connection in its database.
 
 const ENCRYPTION_KEY = randomBytes(32).toString("base64");
 const NOW = Date.parse("2026-10-29T12:00:00.000Z");
@@ -407,9 +408,14 @@ describe("Apple Ads in the Overview template (#377)", () => {
     }
   });
 
-  it("offers no Apple Ads slide on a server without the preview connector (production)", async () => {
+  it("offers no Apple Ads slide on a server without the Apple Ads connector", async () => {
+    // Apple Ads is no preview any more (#378); a test-only preview set
+    // leaves it out of this production bundle.
     const production = await appWith(
-      createDefaultRegistry({ nodeEnv: "production" }),
+      createDefaultRegistry({
+        nodeEnv: "production",
+        previews: new Set(["apple-ads"]),
+      }),
     );
     try {
       const response = await call(production, "GET", "/dashboard-templates");

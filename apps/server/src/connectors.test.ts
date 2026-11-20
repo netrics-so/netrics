@@ -18,49 +18,53 @@ import { loadConfig, loadMigrationConfig } from "./env.js";
 import { BUNDLE_CONNECTORS } from "./preview-connectors.js";
 
 describe("createDefaultRegistry", () => {
-  it("keeps Apple Ads out of production until its setup is finished (#374, #375)", () => {
-    expect(PREVIEW_CONNECTORS.has("apple-ads")).toBe(true);
-    const production = createDefaultRegistry({ nodeEnv: "production" });
-    expect(production.get("apple-ads")).toBeUndefined();
-    expect(production.list().map(({ manifest }) => manifest.id)).toEqual([
-      "demo",
-      "vercel",
-      "google-search-console",
-      "app-store-connect",
-      "google-play",
-    ]);
-    for (const nodeEnv of ["development", "test"] as const) {
-      expect(createDefaultRegistry({ nodeEnv }).get("apple-ads")).toBeDefined();
-    }
-    expect(createDefaultRegistry().get("apple-ads")).toBeDefined();
-  });
-
-  it("registers an opted-in preview connector in production (#378)", () => {
-    const optedIn = createDefaultRegistry({
-      nodeEnv: "production",
-      previewConnectors: new Set(["apple-ads"]),
-    });
-    expect(optedIn.list().map(({ manifest }) => manifest.id)).toEqual([
+  it("ships Apple Ads in production without an opt-in, since its exit gate passed (#378)", () => {
+    expect(PREVIEW_CONNECTORS.has("apple-ads")).toBe(false);
+    expect([...PREVIEW_CONNECTORS]).toEqual([]);
+    const all = [
       "demo",
       "vercel",
       "google-search-console",
       "app-store-connect",
       "google-play",
       "apple-ads",
-    ]);
-    expect(
-      createDefaultRegistry({
-        nodeEnv: "production",
-        previewConnectors: new Set(),
-      }).get("apple-ads"),
-    ).toBeUndefined();
-    // Outside production the opt-in changes nothing.
+    ];
+    for (const nodeEnv of ["production", "development", "test"] as const) {
+      expect(
+        createDefaultRegistry({ nodeEnv })
+          .list()
+          .map(({ manifest }) => manifest.id),
+      ).toEqual(all);
+    }
+  });
+
+  // The bundle has no preview at the moment; a test-only set keeps the
+  // mechanism covered for the next one.
+  it("keeps a preview out of production unless opted in (#378)", () => {
+    const previews = new Set(["google-play"]);
+    const production = createDefaultRegistry({
+      nodeEnv: "production",
+      previews,
+    });
+    expect(production.get("google-play")).toBeUndefined();
+    expect(production.get("apple-ads")).toBeDefined();
+    const optedIn = createDefaultRegistry({
+      nodeEnv: "production",
+      previews,
+      previewConnectors: new Set(["google-play"]),
+    });
+    expect(optedIn.get("google-play")).toBeDefined();
+    // Outside production every preview is registered, opt-in or not.
     for (const previewConnectors of [
       new Set<string>(),
-      new Set(["apple-ads"]),
+      new Set(["google-play"]),
     ]) {
       expect(
-        createDefaultRegistry({ nodeEnv: "development", previewConnectors })
+        createDefaultRegistry({
+          nodeEnv: "development",
+          previews,
+          previewConnectors,
+        })
           .list()
           .map(({ manifest }) => manifest.id),
       ).toEqual(
@@ -103,6 +107,7 @@ describe("createDefaultRegistry", () => {
             "google-search-console",
             "app-store-connect",
             "google-play",
+            "apple-ads",
           ],
           previews: [],
         },
@@ -110,12 +115,16 @@ describe("createDefaultRegistry", () => {
       ],
     ]);
     lines.length = 0;
-    logRegisteredConnectors(log, createDefaultRegistry(), {
-      previewConnectorsIgnored: ["demo"],
+    // A leftover NETRICS_PREVIEW_CONNECTORS=apple-ads, with a test-only
+    // preview to show the previews field.
+    const previews = new Set(["google-play"]);
+    logRegisteredConnectors(log, createDefaultRegistry({ previews }), {
+      previewConnectorsIgnored: ["apple-ads"],
+      previews,
     });
     expect(lines.map(([level]) => level)).toEqual(["warn", "info"]);
-    expect(lines[0]![1]).toEqual({ ignored: ["demo"] });
-    expect(lines[1]![1]).toMatchObject({ previews: ["apple-ads"] });
+    expect(lines[0]![1]).toEqual({ ignored: ["apple-ads"] });
+    expect(lines[1]![1]).toMatchObject({ previews: ["google-play"] });
   });
 
   it("builds the same bundle from the API and the migration config (#378)", () => {
@@ -134,6 +143,8 @@ describe("createDefaultRegistry", () => {
     });
     const migrate = loadMigrationConfig(env);
     expect(ids(createDefaultRegistry(api))).toContain("apple-ads");
+    expect(api.previewConnectorsIgnored).toEqual(["apple-ads"]);
+    expect(migrate.previewConnectorsIgnored).toEqual(["apple-ads"]);
     expect(ids(createDefaultRegistry(migrate))).toEqual(
       ids(createDefaultRegistry(api)),
     );

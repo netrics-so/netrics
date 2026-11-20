@@ -64,6 +64,8 @@ export interface ConnectionRouteDeps {
   signedKeys?: SignedKeyProviders;
   /** Instance data policy defaults (workspace maximum retention, #492). */
   dataPolicy?: DataPolicy;
+  /** Default: PREVIEW_CONNECTORS (see connections/service.ts). */
+  previews?: ReadonlySet<string>;
 }
 
 const connectionParamsSchema = z.object({ connectionId: z.uuid() });

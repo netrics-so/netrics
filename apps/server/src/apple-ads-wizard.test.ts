@@ -312,18 +312,16 @@ describe("Apple Ads guided setup (#375)", () => {
     expect(strategy.generatedKeyPair).toBe(true);
   });
 
-  it("marks Apple Ads as a preview in the catalog, and finished connectors not (#378)", async () => {
+  it("lists Apple Ads as a finished connector, not a preview (#378)", async () => {
     const response = await app.inject({
       method: "GET",
       url: "/v1/connectors",
       headers: { cookie: owner },
     });
     const { connectors } = connectorListResponseSchema.parse(response.json());
-    const previews = connectors.filter((entry) => entry.preview);
-    expect(previews.map((entry) => entry.id)).toEqual(["apple-ads"]);
-    expect(connectors.length).toBeGreaterThan(1);
+    expect(connectors.map((entry) => entry.id)).toContain("apple-ads");
     for (const entry of connectors) {
-      expect(entry.preview).toBe(entry.id === "apple-ads");
+      expect(entry.preview).toBe(false);
     }
   });
 

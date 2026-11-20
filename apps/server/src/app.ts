@@ -64,6 +64,11 @@ export interface AppDeps {
   authService?: AuthService;
   mailer?: Mailer;
   registry?: ConnectorRegistry;
+  /**
+   * Which connectors count as previews (registry, startup log, catalog
+   * badge). Default: PREVIEW_CONNECTORS; tests pass their own.
+   */
+  previews?: ReadonlySet<string>;
   /** Clock for metric queries ("today" etc.); tests pin it. */
   now?: () => Date;
   /** Default: the providers configured in the environment (ADR 0012). */
@@ -170,8 +175,10 @@ export async function buildApp(
       }),
   );
 
-  const registry = deps.registry ?? createDefaultRegistry(config);
-  logRegisteredConnectors(app.log, registry, config);
+  const previews = deps.previews ? { previews: deps.previews } : {};
+  const registry =
+    deps.registry ?? createDefaultRegistry({ ...config, ...previews });
+  logRegisteredConnectors(app.log, registry, { ...config, ...previews });
   const credentialKeyring = createCredentialKeyring(
     config.appEncryptionKey,
     config.appEncryptionKeysPrevious,
@@ -287,6 +294,7 @@ export async function buildApp(
     oauthTokens,
     dataPolicy: config.dataPolicy,
     ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
+    ...previews,
   });
   registerTemplateRoutes(app, {
     authService,
