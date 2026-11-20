@@ -20,6 +20,10 @@
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "default": "./dist/testing/index.js"
+    },
+    "./custom-api": {
+      "types": "./dist/custom-api/index.d.ts",
+      "default": "./dist/custom-api/index.js"
     }
   },
   "scripts": {

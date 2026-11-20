@@ -893,3 +893,74 @@ export function customApiIssues(error: z.ZodError): CustomApiIssue[] {
     };
   });
 }
+
+// ------------------------------------------------------------------ upgrade
+
+export type CustomApiDefinitionErrorCode =
+  "not_an_object" | "unsupported_schema_version" | "invalid";
+
+const ERROR_MESSAGES: Record<CustomApiDefinitionErrorCode, string> = {
+  not_an_object: "A custom API definition is a JSON object",
+  unsupported_schema_version:
+    "This custom API definition uses a schema version this netrics does not support",
+  invalid: "The custom API definition is invalid",
+};
+
+export class CustomApiDefinitionError extends Error {
+  constructor(
+    readonly code: CustomApiDefinitionErrorCode,
+    readonly issues: CustomApiIssue[],
+  ) {
+    super(ERROR_MESSAGES[code]);
+    this.name = "CustomApiDefinitionError";
+  }
+}
+
+/**
+ * Upgrade steps by source version: UPGRADES[n] turns a version-n document into
+ * n+1. Empty while only v1 exists. Every step needs fixtures/v<n>-*.json.
+ */
+export const CUSTOM_API_UPGRADES: Readonly<
+  Record<number, (doc: Record<string, unknown>) => Record<string, unknown>>
+> = Object.freeze({});
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/** Validates any stored or imported document: upgrades older versions step by step, then parses with the current schema. */
+export function upgradeCustomApiDefinition(raw: unknown): CustomApiDefinition {
+  if (!isPlainObject(raw))
+    throw new CustomApiDefinitionError("not_an_object", []);
+  let doc = raw;
+  for (;;) {
+    const version = doc.schemaVersion;
+    if (
+      typeof version !== "number" ||
+      !Number.isSafeInteger(version) ||
+      version < 1 ||
+      version > CUSTOM_API_SCHEMA_VERSION
+    )
+      throw new CustomApiDefinitionError("unsupported_schema_version", []);
+    if (version === CUSTOM_API_SCHEMA_VERSION) break;
+    const step = Object.hasOwn(CUSTOM_API_UPGRADES, version)
+      ? CUSTOM_API_UPGRADES[version]
+      : undefined;
+    if (!step)
+      throw new CustomApiDefinitionError("unsupported_schema_version", []);
+    const next = step(doc);
+    if (!isPlainObject(next) || next.schemaVersion !== version + 1)
+      throw new Error(`Custom API upgrade from version ${version} is broken`);
+    doc = next;
+  }
+  const parsed = customApiDefinitionSchema.safeParse(doc);
+  if (!parsed.success)
+    throw new CustomApiDefinitionError(
+      "invalid",
+      customApiIssues(parsed.error),
+    );
+  return parsed.data;
+}
