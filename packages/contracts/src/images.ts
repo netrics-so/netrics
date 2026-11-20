@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { CUSTOM_API_LIMITS } from "@netrics/connector-sdk/custom-api";
+
 // Workspace images (ADR 0015, section 5): raster only, metadata stripped,
 // stored in PostgreSQL. Listing never carries the bytes; they are served by
 // the content routes with the image's SHA-256 as the cache key.
@@ -27,7 +29,35 @@ export const IMAGE_NAME_MAX_LENGTH = 100;
 /** The upload's display name travels in this header, percent-encoded. */
 export const IMAGE_NAME_HEADER = "x-netrics-image-name";
 
-export const imageOriginSchema = z.enum(["upload", "resource_icon"]);
+/**
+ * Custom API item images (milestone 13): copied from an API after a sync,
+ * at most 2 MiB each, with their own workspace quota apart from uploads.
+ */
+export const CUSTOM_API_IMAGE_MAX_BYTES = 2_097_152;
+export const CUSTOM_API_IMAGE_QUOTA_DEFAULT_COUNT = 500;
+export const CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES = 200 * 1_048_576;
+/** Newest N items per image stream (the definition's `images.newestItems`). */
+export const CUSTOM_API_IMAGE_NEWEST_DEFAULT =
+  CUSTOM_API_LIMITS.imageItemsDefault;
+export const CUSTOM_API_IMAGE_NEWEST_MAX = CUSTOM_API_LIMITS.imageItemsMax;
+/** Why an item image was not stored; counted per stream. */
+export const CUSTOM_API_IMAGE_SKIP_REASONS = [
+  "invalid_url", // not https, unparsable, credentials in URL
+  "host_not_allowed", // host not in the definition's images.hosts
+  "fetch_failed", // network, timeout, non-2xx, cross-host redirect
+  "too_large", // > 2 MiB
+  "unsupported_type", // not PNG/JPEG/WebP by magic bytes
+  "invalid_image", // image_invalid, image_animated, image_dimensions_too_large
+  "quota_exceeded",
+] as const;
+export type CustomApiImageSkipReason =
+  (typeof CUSTOM_API_IMAGE_SKIP_REASONS)[number];
+
+export const imageOriginSchema = z.enum([
+  "upload",
+  "resource_icon",
+  "custom_api",
+]);
 export type ImageOrigin = z.infer<typeof imageOriginSchema>;
 
 const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -36,7 +66,7 @@ export const workspaceImageSchema = z.object({
   id: z.uuid(),
   name: z.string().max(IMAGE_NAME_MAX_LENGTH),
   contentType: imageContentTypeSchema,
-  bytes: z.number().int().positive().max(IMAGE_MAX_BYTES),
+  bytes: z.number().int().positive().max(CUSTOM_API_IMAGE_MAX_BYTES),
   width: z.number().int().positive().max(IMAGE_MAX_SIDE),
   height: z.number().int().positive().max(IMAGE_MAX_SIDE),
   sha256: sha256Schema,

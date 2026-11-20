@@ -3,9 +3,12 @@ import { crc32 } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
 
-import { IMAGE_MAX_BYTES } from "@netrics/contracts";
+import {
+  CUSTOM_API_IMAGE_MAX_BYTES,
+  IMAGE_MAX_BYTES,
+} from "@netrics/contracts";
 
-import { sanitizeImage } from "./format.js";
+import { sanitizeImage, sniffImageType } from "./format.js";
 import { sanitizeImageName } from "./service.js";
 
 // Fixtures are tiny images written by Pillow (24 × 16 px), some with the
@@ -767,6 +770,55 @@ describe("sanitizeImage: refused files", () => {
         );
         expect(result.ok).toBe(false);
       }
+    }
+  });
+});
+
+/**
+ * A valid PNG made large: one private ancillary chunk (dropped by the
+ * sanitizer) of `size` bytes, inserted before the first IDAT.
+ */
+function padPng(png: Buffer, size: number): Buffer {
+  const chunks = pngChunks(png);
+  const at = chunks.findIndex((chunk) => chunk.type === "IDAT");
+  const encoded = chunks.map((chunk) => pngChunk(chunk.type, chunk.data));
+  encoded.splice(at, 0, pngChunk("prVt", Buffer.alloc(size)));
+  return Buffer.concat([PNG_SIGNATURE, ...encoded]);
+}
+
+describe("sanitizeImage: per-origin size cap (custom API item images)", () => {
+  it("accepts up to maxBytes when the caller raises the cap", () => {
+    const big = padPng(fixture("plain.png"), 1_500_000);
+    expect(sanitizeImage("image/png", big).ok).toBe(false);
+    expect(
+      sanitizeImage("image/png", big, CUSTOM_API_IMAGE_MAX_BYTES),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("refuses above the raised cap with image_too_large", () => {
+    const huge = padPng(fixture("plain.png"), CUSTOM_API_IMAGE_MAX_BYTES + 1);
+    expect(
+      sanitizeImage("image/png", huge, CUSTOM_API_IMAGE_MAX_BYTES),
+    ).toEqual({ ok: false, error: "image_too_large" });
+  });
+});
+
+describe("sniffImageType", () => {
+  it.each([
+    ["plain.png", "image/png"],
+    ["plain.jpg", "image/jpeg"],
+    ["lossy.webp", "image/webp"],
+  ])("sniffs %s as %s", (file, type) => {
+    expect(sniffImageType(fixture(file))).toBe(type);
+  });
+
+  it("sniffs HTML, SVG and empty input as null", () => {
+    for (const text of [
+      "<html>",
+      "<svg xmlns='http://www.w3.org/2000/svg'/>",
+      "",
+    ]) {
+      expect(sniffImageType(Buffer.from(text))).toBeNull();
     }
   });
 });

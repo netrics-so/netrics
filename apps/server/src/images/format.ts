@@ -696,15 +696,27 @@ const SANITIZERS: Record<
   "image/webp": sanitizeWebp,
 };
 
+/** The type the magic bytes name, or null; never trusts a Content-Type header. */
+export function sniffImageType(input: Buffer): ImageContentType | null {
+  for (const type of ["image/png", "image/jpeg", "image/webp"] as const) {
+    if (MAGIC[type](input)) {
+      return type;
+    }
+  }
+  return null;
+}
+
 /**
- * Checks an upload against its declared type and returns it without
- * metadata, or the reason it is refused.
+ * Checks an image against its declared type and returns it without
+ * metadata, or the reason it is refused. `maxBytes` is the cap of the
+ * image's origin: uploads 1 MiB, custom API item images 2 MiB.
  */
 export function sanitizeImage(
   contentType: ImageContentType,
   input: Buffer,
+  maxBytes: number = IMAGE_MAX_BYTES,
 ): SanitizedImage {
-  if (input.length > IMAGE_MAX_BYTES) {
+  if (input.length > maxBytes) {
     return { ok: false, error: "image_too_large" };
   }
   if (!MAGIC[contentType](input)) {
