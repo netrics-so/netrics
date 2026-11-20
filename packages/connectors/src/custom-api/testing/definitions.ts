@@ -125,7 +125,11 @@ function dailyStream(mode: "upsert" | "replace_window", unix: boolean) {
   };
 }
 
-function simple(key: string, path: string, fields = idOnly) {
+function simple(
+  key: string,
+  path: string,
+  fields: Record<string, unknown>[] = idOnly,
+) {
   return {
     key,
     name: key,

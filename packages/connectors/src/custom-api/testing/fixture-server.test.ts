@@ -1,5 +1,6 @@
 import { request as httpsRequest } from "node:https";
 
+import type { ConnectorResponse } from "@netrics/connector-sdk";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -64,7 +65,7 @@ describe("custom API fixture server", () => {
       ["/edge/deep", {}, 200],
       ["/edge/429", {}, 429],
     ];
-    const responses = [];
+    const responses: ConnectorResponse[] = [];
     for (const [path, headers, status] of cases) {
       const response = await get(path, headers);
       expect(response.status, path).toBe(status);

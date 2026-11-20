@@ -52,3 +52,4 @@ export {
   searchConsoleManifest,
 } from "./google-search-console/index.js";
 export { createVercelConnector, vercelManifest } from "./vercel/index.js";
+export * from "./custom-api/index.js";

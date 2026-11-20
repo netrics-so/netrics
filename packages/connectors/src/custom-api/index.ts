@@ -7,3 +7,6 @@ export * from "./messages.js";
 export * from "./request.js";
 export * from "./pagination.js";
 export * from "./records.js";
+export * from "./connector.js";
+export * from "./cursor.js";
+export * from "./windows.js";
