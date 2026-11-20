@@ -126,6 +126,8 @@ export const apiErrorsEn = {
       "This test connection has expired. Start the login again.",
     custom_api_draft_limit:
       "This workspace has too many unsaved custom APIs in progress. Finish or close one, or try again tomorrow.",
+    custom_api_variable_reserved:
+      "A secret connection value can't be named token, password, username or host. Rename it.",
     custom_api_secret_unknown:
       "This login method does not use one of the entered secrets.",
     custom_api_credentials_host_changed:

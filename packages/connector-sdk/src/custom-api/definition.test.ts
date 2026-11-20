@@ -826,6 +826,29 @@ describe("customApiDefinitionSchema", () => {
       expect([...CUSTOM_API_ISSUE_CODES, "invalid"]).toContain(issue.code);
   });
 
+  it("refuses a secret variable named like a login credential", () => {
+    for (const id of ["token", "password", "username", "host"]) {
+      expect(
+        issuesOf(
+          doc((d) => (d.variables = [{ id, label: "Secret", secret: true }])),
+        ),
+      ).toContainEqual(
+        expect.objectContaining({
+          code: "variable_reserved",
+          path: "variables.0.id",
+        }),
+      );
+    }
+    expect(
+      customApiDefinitionSchema.safeParse(
+        doc(
+          (d) =>
+            (d.variables = [{ id: "token", label: "Token", secret: false }]),
+        ),
+      ).success,
+    ).toBe(true);
+  });
+
   it("drops __proto__ keys instead of polluting prototypes", () => {
     const input = doc(() => {});
     input.streams[0].request.headers = JSON.parse(

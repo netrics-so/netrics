@@ -130,6 +130,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Diese Testverbindung ist abgelaufen. Melde dich erneut an.",
     custom_api_draft_limit:
       "In diesem Workspace sind zu viele ungespeicherte eigene APIs in Arbeit. Schließ eine ab oder versuch es morgen erneut.",
+    custom_api_variable_reserved:
+      "Ein geheimer Verbindungswert darf nicht token, password, username oder host heißen. Benenne ihn um.",
     custom_api_secret_unknown:
       "Diese Anmeldemethode verwendet eines der eingegebenen Geheimnisse nicht.",
     custom_api_credentials_host_changed:

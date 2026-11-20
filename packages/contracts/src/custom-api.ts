@@ -9,6 +9,7 @@ import { projectFilterQuerySchema } from "./project-filter.js";
 // connector SDK's internal subpath, the one package both contracts and
 // connectors may import; the API contract re-exports it.
 export {
+  CUSTOM_API_CREDENTIAL_NAMES,
   CUSTOM_API_ISSUE_CODES,
   CUSTOM_API_LIMITS,
   CUSTOM_API_SCHEMA_VERSION,
@@ -19,6 +20,7 @@ export {
   customApiFieldSchema,
   customApiIssues,
   customApiPaginationSchema,
+  customApiReservedVariableId,
   customApiStreamSchema,
   customApiVariableSchema,
   customApiWindowSchema,

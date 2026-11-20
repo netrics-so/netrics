@@ -89,8 +89,34 @@ export const CUSTOM_API_ISSUE_CODES = [
   "pagination_param_clash",
   "document_too_large",
   "image_stream_needs_reporting_field",
+  "variable_reserved",
 ] as const;
 export type CustomApiIssueCode = (typeof CUSTOM_API_ISSUE_CODES)[number];
+
+/**
+ * Names a connection's credential envelope uses for the login method's
+ * credentials and its own bookkeeping. A secret variable may not take one:
+ * the builder's draft keeps credentials and secret variables in one map by
+ * name, so `token` could be either.
+ */
+export const CUSTOM_API_CREDENTIAL_NAMES = [
+  "apiKey",
+  "token",
+  "username",
+  "password",
+  "clientId",
+  "clientSecret",
+  "accessToken",
+  "refreshToken",
+  "host",
+  "variables",
+] as const;
+const CREDENTIAL_NAMES = new Set<string>(CUSTOM_API_CREDENTIAL_NAMES);
+
+/** True when a secret variable may not use this id (a credential name). */
+export function customApiReservedVariableId(id: string): boolean {
+  return CREDENTIAL_NAMES.has(id);
+}
 
 /** Header names a definition may never set (case-insensitive). */
 export const CUSTOM_API_FORBIDDEN_HEADERS = [
@@ -667,6 +693,15 @@ function checkDocument(doc: CustomApiDefinition, ctx: z.RefinementCtx): void {
     doc.streams.map((s) => s.key),
     (i) => ["streams", i, "key"],
   );
+
+  doc.variables.forEach((variable, index) => {
+    if (variable.secret && customApiReservedVariableId(variable.id))
+      add(
+        ["variables", index, "id"],
+        "variable_reserved",
+        "A secret connection value cannot use the name of a login credential",
+      );
+  });
 
   const variables = new Map(doc.variables.map((v) => [v.id, v]));
   const auth = doc.auth;

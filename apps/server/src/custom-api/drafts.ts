@@ -24,6 +24,7 @@ import {
   type UpdateCustomApiDraftRequest,
 } from "@netrics/contracts";
 import {
+  customApiReservedVariableId,
   upgradeCustomApiDefinition,
   type CustomApiAuth,
   type CustomApiDefinition,
@@ -513,6 +514,13 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
         const state = readState(row);
         if (!definition.environments.some((e) => e.id === body.environmentId))
           return fail(400, "custom_api_environment_not_found");
+        // Credentials and secret variables share one map by name.
+        if (
+          definition.variables.some(
+            (v) => v.secret && customApiReservedVariableId(v.id),
+          )
+        )
+          return fail(400, "custom_api_variable_reserved");
         const plain = new Set(
           definition.variables.filter((v) => !v.secret).map((v) => v.id),
         );
