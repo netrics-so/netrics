@@ -3,9 +3,12 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { fixtureDefinition } from "@netrics/connectors/custom-api/testing";
 import {
   createDatabase,
   createWorkspace,
+  insertConnection,
+  insertCustomApiDefinition,
   schema,
   withWorkspace,
   type Database,
@@ -124,5 +127,42 @@ describe("requestOperatorBackfill", () => {
       connectionId: pendingConnectionId,
     });
     expect(pending.ok).toBe(false);
+  });
+
+  it("finds a custom-api connection by its pin, not the registry (ADR 0027)", async () => {
+    const id = randomUUID();
+    await withWorkspace(appDb, { workspaceId }, async (tx) => {
+      const document = fixtureDefinition("pages", "https://127.0.0.1:4443");
+      const stored = await insertCustomApiDefinition(tx, workspaceId, {
+        id: randomUUID(),
+        projectId: null,
+        name: document.name,
+        createdBy: null,
+        document: document as unknown as Record<string, unknown>,
+        documentSha256: "0".repeat(64),
+        schemaVersion: 1,
+        datasetVersions: { items: 1 },
+      });
+      await insertConnection(tx, {
+        id,
+        workspaceId,
+        connectorId: "custom-api",
+        name: "custom",
+        config: {},
+        credentialsEncrypted: null,
+        projectId: null,
+        pollIntervalSeconds: 3600,
+        customApi: {
+          definitionVersionId: stored.version.id,
+          environmentId: "production",
+        },
+      });
+    });
+    expect(registry.get("custom-api")).toBeUndefined();
+    const result = await requestOperatorBackfill(appDb, registry, {
+      workspaceId,
+      connectionId: id,
+    });
+    expect(result).toMatchObject({ ok: true, connectorId: "custom-api" });
   });
 });

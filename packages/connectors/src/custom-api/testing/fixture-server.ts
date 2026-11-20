@@ -321,6 +321,25 @@ export async function startCustomApiFixtureServer(
                 send(400, { error: `bad request for key ${key}` }),
         );
       }
+      case "/auth/api-key-query-echo": {
+        // Next links built from the request URI, echoing the key (as
+        // frameworks do); the second page fails.
+        const key = query.api_key;
+        const after = int("after", 0);
+        return authorize(
+          key === FIXTURE_SECRETS.apiKey,
+          key === FIXTURE_FORBIDDEN,
+          () =>
+            after === 0
+              ? send(200, {
+                  data: items.slice(0, PAGE_SIZE),
+                  links: {
+                    next: `${origin}/auth/api-key-query-echo?after=${PAGE_SIZE}&api_key=${key}`,
+                  },
+                })
+              : send(500, { error: "page two is broken" }),
+        );
+      }
       case "/auth/bearer": {
         const value = headers.authorization;
         return authorize(

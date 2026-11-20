@@ -17,6 +17,7 @@ import {
   startCustomApiFixtureServer,
   type CustomApiFixtureServer,
 } from "@netrics/connectors/custom-api/testing";
+import { ConnectorRegistry } from "@netrics/connector-runtime";
 import {
   createDatabase,
   createRawSqlClient,
@@ -24,7 +25,12 @@ import {
   type Sql,
 } from "@netrics/database";
 
+import { randomUUID } from "node:crypto";
+
+import type { Job } from "@netrics/database";
+
 import { buildApp } from "./app.js";
+import { createJobHandlers } from "./jobs/handlers.js";
 import { createAuthService } from "./auth/index.js";
 import { createCredentialKeyring, decryptCredentials } from "./credentials.js";
 import { loadConfig } from "./env.js";
@@ -52,7 +58,7 @@ let viewer: string;
 let workspaceId: string;
 
 function call(
-  method: "GET" | "POST" | "PATCH",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
   url: string,
   cookie: string | null,
   payload?: unknown,
@@ -427,21 +433,59 @@ describe("connections from a custom API definition", () => {
     }
   });
 
-  it("refuses an environment change without credentials and accepts it with them", async () => {
+  it("refuses an environment change without every secret and accepts it with them", async () => {
     const definition = await createDefinition();
     const created = connectionResponseSchema.parse(
       (await connect(definition.id)).json(),
     ).connection;
     const url = `/v1/workspaces/${workspaceId}/connections/${created.id}`;
+    const envelope = async () => {
+      const [row] = await admin<{ credentials_encrypted: Buffer }[]>`
+        select credentials_encrypted from connections where id = ${created.id}`;
+      return JSON.parse(
+        decryptCredentials(
+          row!.credentials_encrypted.toString("utf8"),
+          createCredentialKeyring(KEY),
+          { workspaceId, connectionId: created.id },
+        ),
+      ) as Record<string, unknown>;
+    };
     expectError(
       await call("PATCH", url, owner, { customApiEnvironmentId: "staging" }),
       400,
       "custom_api_environment_needs_credentials",
     );
+    // Stored secret variables never move to another environment's host.
+    expectError(
+      await call("PATCH", url, owner, {
+        customApiEnvironmentId: "staging",
+        credentials: { apiKey: FIXTURE_SECRETS.apiKey },
+      }),
+      400,
+      "custom_api_environment_needs_credentials",
+    );
+    expectError(
+      await call("PATCH", url, owner, {
+        customApiEnvironmentId: "staging",
+        secretVariables: { tenant: "tenant-secret-0002" },
+      }),
+      400,
+      "custom_api_environment_needs_credentials",
+    );
+    expectError(
+      await call("PATCH", url, owner, {
+        customApiEnvironmentId: "staging",
+        credentials: { apiKey: FIXTURE_SECRETS.apiKey },
+        secretVariables: { other: "x" },
+      }),
+      400,
+      "custom_api_variables_invalid",
+    );
     expectError(
       await call("PATCH", url, owner, {
         customApiEnvironmentId: "nope",
         credentials: { apiKey: FIXTURE_SECRETS.apiKey },
+        secretVariables: { tenant: "tenant-secret-0002" },
       }),
       400,
       "custom_api_environment_not_found",
@@ -450,41 +494,131 @@ describe("connections from a custom API definition", () => {
       await call("PATCH", url, owner, {
         customApiEnvironmentId: "staging",
         credentials: { apiKey: "wrong-key-0001" },
+        secretVariables: { tenant: "tenant-secret-0002" },
       }),
       400,
       CUSTOM_API_MESSAGES.unauthorized,
     );
+    expect((await envelope()).variables).toEqual({
+      tenant: "tenant-secret-0001",
+    });
     const moved = await call("PATCH", url, owner, {
       customApiEnvironmentId: "staging",
       credentials: { apiKey: FIXTURE_SECRETS.apiKey },
+      secretVariables: { tenant: "tenant-secret-0002" },
     });
     expect(moved.statusCode, moved.body).toBe(200);
     expect(
       connectionResponseSchema.parse(moved.json()).connection.customApi,
     ).toMatchObject({ environmentId: "staging", environmentName: "Staging" });
-    const [row] = await admin<{ credentials_encrypted: Buffer }[]>`
-      select credentials_encrypted from connections where id = ${created.id}`;
-    // The secret variables stay with the new credentials.
-    expect(
-      JSON.parse(
-        decryptCredentials(
-          row!.credentials_encrypted.toString("utf8"),
-          createCredentialKeyring(KEY),
-          { workspaceId, connectionId: created.id },
-        ),
-      ),
-    ).toMatchObject({ variables: { tenant: "tenant-secret-0001" } });
-    // Credentials of another login method are refused.
+    expect(await envelope()).toEqual({
+      host: `127.0.0.1:${fixture.port}`,
+      apiKey: FIXTURE_SECRETS.apiKey,
+      variables: { tenant: "tenant-secret-0002" },
+    });
+    // On the same environment, new credentials keep the secret variables.
+    const rotated = await call("PATCH", url, owner, {
+      credentials: { apiKey: FIXTURE_SECRETS.apiKey },
+    });
+    expect(rotated.statusCode, rotated.body).toBe(200);
+    expect((await envelope()).variables).toEqual({
+      tenant: "tenant-secret-0002",
+    });
+    // Credentials of another login method, or a host of their own, are refused.
+    for (const credentials of [
+      { token: "t0k3n-0001" },
+      { apiKey: FIXTURE_SECRETS.apiKey, host: "evil.example.com" },
+    ])
+      expectError(
+        await call("PATCH", url, owner, { credentials }),
+        400,
+        "custom_api_credentials_invalid",
+      );
     expectError(
-      await call(
-        "PATCH",
-        `/v1/workspaces/${workspaceId}/connections/${created.id}`,
-        owner,
-        { credentials: { token: "t0k3n-0001" } },
-      ),
+      await connect(definition.id, {
+        credentials: {
+          apiKey: FIXTURE_SECRETS.apiKey,
+          host: "evil.example.com",
+        },
+      }),
       400,
       "custom_api_credentials_invalid",
     );
+  });
+
+  it("previews a stored connection with the custom API egress and redaction", async () => {
+    const bearer = {
+      type: "bearer" as const,
+      headerName: "Authorization",
+      prefix: "Bearer",
+    };
+    const definition = await createDefinition({
+      ...fixtureDefinition("pages", fixture.origin),
+      auth: bearer,
+    });
+    const created = connectionResponseSchema.parse(
+      (
+        await call("POST", `${defs()}/${definition.id}/connections`, owner, {
+          name: "Redirecting",
+          environmentId: "production",
+          credentials: { token: FIXTURE_SECRETS.token },
+        })
+      ).json(),
+    ).connection;
+    // The API now redirects to another host: version 2, pinned by hand.
+    const next = await call(
+      "POST",
+      `${defs()}/${definition.id}/versions`,
+      owner,
+      {
+        baseVersion: 1,
+        document: {
+          ...fixtureDefinition("redirect_off_host", fixture.origin),
+          auth: bearer,
+        },
+      },
+    );
+    expect(next.statusCode, next.body).toBe(201);
+    await admin`
+      update connections set custom_api_definition_version_id = (
+        select id from custom_api_definition_versions
+        where definition_id = ${definition.id} and version = 2)
+      where id = ${created.id}`;
+    // The fixture now answers the check, then the stored preview: the
+    // redirect to another host is refused there too, and nothing reaches it.
+    fixture.reset();
+    const preview = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections/${created.id}/preview`,
+      owner,
+      { config: {} },
+    );
+    expect(preview.statusCode).toBe(400);
+    expect(preview.body).toContain("egress denied");
+    expect(preview.body).not.toContain("call options");
+    expect(fixture.requests.length).toBeGreaterThan(0);
+    expect(fixture.requests.every((r) => r.host.startsWith("127.0.0.1:"))).toBe(
+      true,
+    );
+    expect(preview.body).not.toContain(FIXTURE_SECRETS.token);
+
+    // The API echoing the key: the preview's error carries none.
+    const echoing = await createDefinition(
+      fixtureDefinition("api_key_query_400", fixture.origin),
+    );
+    const stored = await call(
+      "POST",
+      `${defs()}/${echoing.id}/connections`,
+      owner,
+      {
+        name: "Echo",
+        environmentId: "production",
+        credentials: { apiKey: FIXTURE_SECRETS.apiKey },
+      },
+    );
+    expect(stored.statusCode).toBe(400);
+    expect(stored.body).toContain("api_key=[redacted]");
+    expect(stored.body).not.toContain(FIXTURE_SECRETS.apiKey);
   });
 
   it("refuses custom-api on the generic create, batch and preview routes", async () => {
@@ -536,6 +670,18 @@ describe("connections from a custom API definition", () => {
     expect(first.statusCode, first.body).toBe(201);
     const second = await connect(definition.id, {}, workspace, limitedApp);
     expectError(second, 409, "custom_api_connection_limit");
+    // Deleted connections and other workspaces' connections do not count.
+    const firstId = connectionResponseSchema.parse(first.json()).connection.id;
+    const removed = await call(
+      "DELETE",
+      `/v1/workspaces/${workspace}/connections/${firstId}`,
+      owner,
+      undefined,
+      limitedApp,
+    );
+    expect(removed.statusCode, removed.body).toBe(200);
+    const third = await connect(definition.id, {}, workspace, limitedApp);
+    expect(third.statusCode, third.body).toBe(201);
     expect(customApiErrorResponseSchema.parse(second.json()).error).toBe(
       "custom_api_connection_limit",
     );
@@ -563,5 +709,73 @@ describe("connections from a custom API definition", () => {
       body(),
     );
     expect(refused.statusCode).toBe(403);
+  });
+
+  it("stores no echoed API key in cursors and shows viewers none", async () => {
+    const definition = await createDefinition(
+      fixtureDefinition("api_key_query_echo", fixture.origin),
+    );
+    const response = await call(
+      "POST",
+      `${defs()}/${definition.id}/connections`,
+      owner,
+      {
+        name: "Echoing next links",
+        environmentId: "production",
+        credentials: { apiKey: FIXTURE_SECRETS.apiKey },
+      },
+    );
+    expect(response.statusCode, response.body).toBe(201);
+    const created = connectionResponseSchema.parse(response.json()).connection;
+    // One backfill attempt: page one commits, page two fails.
+    const handler = createJobHandlers({
+      registry: new ConnectorRegistry(),
+      credentialKeyring: createCredentialKeyring(KEY),
+      executeOptions: {
+        egress: { tlsCa: fixture.ca!, allowPrivateHosts: ["127.0.0.1"] },
+      },
+    })["connection.backfill"]!;
+    await handler({
+      job: {
+        id: randomUUID(),
+        kind: "connection.backfill",
+        workspaceId,
+        connectionId: created.id,
+        attempts: 0,
+        payload: {},
+      } as unknown as Job,
+      appDb: db,
+      schedulerDb: db,
+      logger: pino({ level: "silent" }),
+    }).catch(() => undefined);
+    const [state] = await admin<{ cursor: string | null }[]>`
+      select cursor from connection_state where connection_id = ${created.id}`;
+    expect(state!.cursor).toMatch(/^cav1\./);
+    const runs = await admin<
+      { cursor_after: string | null; error_message: string | null }[]
+    >`select cursor_after, error_message from sync_runs
+      where connection_id = ${created.id}`;
+    expect(runs.some((run) => run.cursor_after !== null)).toBe(true);
+    const decode = (cursor: string) =>
+      Buffer.from(cursor.slice(5), "base64url").toString("utf8");
+    for (const cursor of [
+      state!.cursor!,
+      ...runs.flatMap((run) => (run.cursor_after ? [run.cursor_after] : [])),
+    ])
+      expect(decode(cursor)).not.toContain(FIXTURE_SECRETS.apiKey);
+    for (const run of runs)
+      expect(run.error_message ?? "").not.toContain(FIXTURE_SECRETS.apiKey);
+    const seen = await call(
+      "GET",
+      `/v1/workspaces/${workspaceId}/connections/${created.id}`,
+      viewer,
+    );
+    expect(seen.statusCode).toBe(200);
+    expect(seen.body).toContain("cav1.");
+    const cursors = [...seen.body.matchAll(/cav1\.[A-Za-z0-9_-]+/g)];
+    expect(cursors.length).toBeGreaterThan(0);
+    for (const [cursor] of cursors)
+      expect(decode(cursor)).not.toContain(FIXTURE_SECRETS.apiKey);
+    expect(seen.body).not.toContain(FIXTURE_SECRETS.apiKey);
   });
 });

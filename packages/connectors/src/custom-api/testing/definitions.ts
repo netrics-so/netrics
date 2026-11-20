@@ -22,6 +22,7 @@ export const FIXTURE_DEFINITION_NAMES = [
   "api_key_header",
   "api_key_query",
   "api_key_query_400",
+  "api_key_query_echo",
   "bearer",
   "bearer_custom",
   "basic",
@@ -234,6 +235,14 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
         "data",
         name === "api_key_query_400" ? { query: { bad: "1" } } : {},
       );
+      break;
+    case "api_key_query_echo":
+      auth = { type: "api_key", placement: "query", name: "api_key" };
+      stream = itemStream("items", "/auth/api-key-query-echo", {
+        type: "next_url",
+        source: "body",
+        path: "links.next",
+      });
       break;
     case "bearer":
       auth = { type: "bearer" };

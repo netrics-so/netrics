@@ -1213,3 +1213,34 @@ describe("redactValues (custom API)", () => {
     expect(plain.message).toContain(derived);
   });
 });
+
+describe("custom-api call options guard (ADR 0027)", () => {
+  it("refuses to run custom-api without its call options", async () => {
+    const custom = connectorWith({ ...demoManifest, id: "custom-api" });
+    for (const options of [
+      {},
+      { egress: { redirects: "allowlist" as const }, redactValues: [] },
+      { egress: { redirects: "same-host" as const } },
+    ]) {
+      await expect(
+        executeCheck(custom, baseContext, options),
+      ).rejects.toBeInstanceOf(ContractViolationError);
+      await expect(
+        executeSync(custom, baseContext, request, options),
+      ).rejects.toBeInstanceOf(ContractViolationError);
+      await expect(
+        executeDiscover(custom, baseContext, options),
+      ).rejects.toBeInstanceOf(ContractViolationError);
+    }
+    expect(
+      await executeCheck(custom, baseContext, {
+        egress: { redirects: "same-host" },
+        redactValues: [],
+      }),
+    ).toEqual({ ok: true });
+    // Bundled connectors need nothing extra.
+    expect(
+      await executeCheck(connectorWith(demoManifest), baseContext, {}),
+    ).toEqual({ ok: true });
+  });
+});

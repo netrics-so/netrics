@@ -700,6 +700,16 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     const config =
       configOverride ?? (existing.row.config as Record<string, unknown>);
     const connector = registered.connector;
+    /** Every call through here: custom API egress, bounds and redaction (ADR 0027). */
+    const optionsFor = (
+      base: ExecuteOptions,
+      credentials: Record<string, unknown>,
+    ): ExecuteOptions =>
+      callOptionsFor(
+        registered,
+        { ...deps.executeOptions, ...base },
+        { credentials, config, privateHosts: callOptions.privateHosts },
+      );
     if (existing.oauth) {
       const strategy = oauthStrategyFor(
         registered.manifest,
@@ -718,7 +728,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             call(
               connector,
               { connectionId, config, credentials: { ...credentials } },
-              options,
+              optionsFor(options, { ...credentials }),
             ),
         }),
       );
@@ -741,7 +751,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             call(
               connector,
               { connectionId, config, credentials: { ...tokenCredentials } },
-              options,
+              optionsFor(options, { ...tokenCredentials }),
             ),
         }),
       );
@@ -750,7 +760,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       await call(
         connector,
         { connectionId, config, credentials: envelope.value },
-        {},
+        optionsFor({}, envelope.value),
       ),
     );
   }
@@ -2407,7 +2417,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return fail(400, "invalid_request");
       }
       const customApi = existing.row.connectorId === CUSTOM_API_CONNECTOR_ID;
-      if (body.customApiEnvironmentId !== undefined && !customApi) {
+      if (
+        (body.customApiEnvironmentId !== undefined ||
+          body.secretVariables !== undefined) &&
+        !customApi
+      ) {
         return fail(400, "invalid_request");
       }
       // An OAuth connection's credentials are its grant: they change only
@@ -2448,7 +2462,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (
         customApi &&
         (body.credentials !== undefined ||
-          body.customApiEnvironmentId !== undefined)
+          body.customApiEnvironmentId !== undefined ||
+          body.secretVariables !== undefined)
       ) {
         let stored: Record<string, unknown> | null = null;
         if (existing.row.credentialsEncrypted) {
@@ -2469,6 +2484,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           existing,
           environmentId: body.customApiEnvironmentId,
           credentials: body.credentials,
+          secretVariables: body.secretVariables,
           stored,
         });
         if (!prepared.ok) {
@@ -2730,6 +2746,18 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
         ...(customApiChange
           ? { customApiEnvironmentId: customApiChange.environmentId }
+          : {}),
+        // A custom API connection's envelope for its (new) environment;
+        // null when its login needs no secrets.
+        ...(customApiChange?.envelope !== undefined
+          ? {
+              credentialsEncrypted: customApiChange.envelope
+                ? encrypt(credentialKeyring, customApiChange.envelope, {
+                    workspaceId: actor.workspaceId,
+                    connectionId,
+                  })
+                : null,
+            }
           : {}),
       };
 

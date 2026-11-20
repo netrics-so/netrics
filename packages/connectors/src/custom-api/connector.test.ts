@@ -347,4 +347,70 @@ describe("custom-api connector", () => {
     );
     expect(fixture.requests.map((request) => request.host)).toEqual([host]);
   });
+
+  it("keeps no API key in a stored next link and sends it again", async () => {
+    fixture.reset();
+    const target = connector(def("api_key_query_echo"));
+    const context = ctx({ apiKey: FIXTURE_SECRETS.apiKey });
+    const first = await target.sync(context, BACKFILL, runtime);
+    expect(first.nextCursor).toBeDefined();
+    const raw = Buffer.from(
+      first.nextCursor!.slice("cav1.".length),
+      "base64url",
+    ).toString("utf8");
+    expect(raw).not.toContain(FIXTURE_SECRETS.apiKey);
+    expect(decodeCursor(first.nextCursor)!.page).toEqual({
+      type: "next_url",
+      url: `${fixture.origin}/auth/api-key-query-echo?after=10`,
+    });
+    const error = (await target
+      .sync(context, { ...BACKFILL, cursor: first.nextCursor }, runtime)
+      .catch((e: unknown) => e)) as Error;
+    expect(fixture.requests[1]!.query).toEqual({
+      after: "10",
+      api_key: FIXTURE_SECRETS.apiKey,
+    });
+    expect(error.message).not.toContain(FIXTURE_SECRETS.apiKey);
+  });
+
+  it("starts every stream again when a later run gets another window", async () => {
+    const pages = def("pages");
+    const endless = def("endless");
+    const twoStreams: CustomApiDefinition = {
+      ...pages,
+      streams: [pages.streams[0]!, { ...endless.streams[0]!, key: "endless" }],
+    };
+    const target = connector(twoStreams);
+    // Run 1: the first stream completes, the second hits the page limit.
+    let cursor: string | undefined;
+    let error: Error | undefined;
+    const received: string[] = [];
+    for (let call = 0; call < 260 && !error; call++) {
+      try {
+        const result = await target.sync(
+          ctx(),
+          { ...BACKFILL, ...(cursor ? { cursor } : {}) },
+          runtime,
+        );
+        received.push(...(result.datasetPages ?? []).map((p) => p.datasetKey));
+        expect(result.done).toBe(false);
+        cursor = result.nextCursor;
+      } catch (caught) {
+        error = caught as Error;
+      }
+    }
+    expect(error?.name).toBe(CUSTOM_API_LIMIT_ERROR);
+    expect(decodeCursor(cursor)!.stream).toBe(1);
+    // Run 2, a later window, with run 1's last cursor: stream A first.
+    fixture.reset();
+    const later = { ...BACKFILL, to: "2024-03-16T12:00:00.000Z", cursor };
+    const result = await target.sync(ctx(), later, runtime);
+    expect(fixture.requests[0]!.path).toBe("/items/pages");
+    expect(result.datasetPages![0]!.datasetKey).toBe("items");
+    expect(result.done).toBe(false);
+    expect(decodeCursor(result.nextCursor)).toMatchObject({
+      stream: 0,
+      run: { pages: 1 },
+    });
+  });
 });

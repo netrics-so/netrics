@@ -44,9 +44,10 @@ definition, which pins the version and environment.
 The credential envelope is `{ host, …credentials, variables }`: `host` is
 the environment's host when the credentials were entered. The connector
 refuses to send them when the pinned environment's host differs
-(`hostChanged`), so changing a connection's environment needs the
-credentials again (checked against the new environment before the pin
-changes). Auth is applied only to URLs on the environment host
+(`hostChanged`), so changing a connection's environment needs every secret
+again: the credentials and every secret variable, checked against the new
+environment before the pin changes. Nothing stored is carried to another
+host. Auth is applied only to URLs on the environment host
 (`applyCustomApiAuth`); a next page link on another host fails the run
 before any request goes there. Secret variables are usable only in the
 definition's auth headers.
@@ -60,6 +61,9 @@ as an API key on another origin), 10 MiB per response, 50 MiB decompressed,
 30 s per request, DNS pinning, and the self-host private hosts
 (`NETRICS_CUSTOM_API_PRIVATE_HOSTS`). Only the custom-api connector gets the
 private hosts; `callOptionsFor` strips them from bundled connectors' calls.
+The executor refuses to run `custom-api` without these options (same-host
+redirects and a redaction set), so a call site that forgot `callOptionsFor`
+fails loudly.
 
 ### 4. Redaction
 
@@ -78,7 +82,10 @@ run's counters. A run reads at most 200 pages and 100,000 records in 30
 minutes: reaching one throws `CustomApiLimitError`, which the engine records
 as error class `budget` (what earlier pages committed stays; a snapshot
 refresh that did not complete replaces nothing). A cursor of an earlier run
-(another sync window) restarts its stream with fresh counters. `401`/`403`
+(another sync window) starts over from the first stream with fresh
+counters, so no run reports a stream done that it did not read for its
+window. Next page URLs are stored in the cursor without the API key query
+parameter or any other secret value; auth is applied again per request. `401`/`403`
 throw `CustomApiAuthError` (error class `auth`, the connection needs
 attention); a `429` with `Retry-After` is a `RateLimitedError`. The engine
 recognises the custom errors by name, which the runtime's redaction keeps.

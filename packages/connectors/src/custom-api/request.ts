@@ -254,3 +254,27 @@ export function customApiSecretValues(
   }
   return [...new Set(values.filter((value) => value.length > 0))];
 }
+
+/**
+ * A next-page URL as it may be stored in a cursor: without the API key
+ * query parameter and without any parameter whose value is a secret (APIs
+ * that build next links from the request echo them). buildRequest adds the
+ * auth again on every request.
+ */
+export function stripCustomApiSecrets(
+  url: string,
+  definition: AuthInput,
+  credentials: CustomApiCredentials,
+  config: Record<string, unknown> = {},
+): string {
+  const parsed = new URL(url);
+  const auth = definition.auth;
+  if (auth.type === "api_key" && auth.placement === "query")
+    parsed.searchParams.delete(auth.name);
+  const secrets = new Set(
+    customApiSecretValues(definition, credentials, config),
+  );
+  for (const [name, value] of [...parsed.searchParams])
+    if (secrets.has(value)) parsed.searchParams.delete(name, value);
+  return parsed.href;
+}

@@ -45,7 +45,11 @@ import {
 import { CUSTOM_API_MESSAGES } from "./messages.js";
 import { nextPage, pageParams, type PageState } from "./pagination.js";
 import { jsonTooDeep, mapRecords, selectRecords } from "./records.js";
-import { buildRequest, type BuiltRequest } from "./request.js";
+import {
+  buildRequest,
+  stripCustomApiSecrets,
+  type BuiltRequest,
+} from "./request.js";
 import {
   chunkDates,
   chunkInstants,
@@ -240,9 +244,11 @@ export function createCustomApiConnector(
   ): Promise<SyncResult> {
     const runRequest = `${request.mode}|${request.from}|${request.to}`;
     const decoded = decodeCursor(request.cursor);
-    // A cursor of another run (a later window after a failed run) keeps
-    // only the stream it stopped in: that stream starts again, from its
-    // first chunk and page, with fresh limit counters.
+    // A cursor of another run (a later window after a failed run) starts
+    // over from the first stream with fresh counters: every stream reads
+    // the new window, so the run never reports a stream done that it did
+    // not read for this window. Re-reads are idempotent (keyed upserts,
+    // refresh keys per window); snapshot streams simply refresh.
     const fresh = (stream: number): CustomApiCursorV1 => ({
       v: 1,
       stream,
@@ -258,11 +264,11 @@ export function createCustomApiConnector(
       },
     });
     let cursor: CustomApiCursorV1 =
-      decoded === null || decoded.stream >= definition.streams.length
+      decoded === null ||
+      decoded.stream >= definition.streams.length ||
+      decoded.run.request !== runRequest
         ? fresh(0)
-        : decoded.run.request !== runRequest
-          ? fresh(decoded.stream)
-          : decoded;
+        : decoded;
 
     const stream = definition.streams[cursor.stream]!;
     const chunks = streamChunks(stream, request, timeZone);
@@ -340,7 +346,7 @@ export function createCustomApiConnector(
       }
     }
 
-    const next = nextPage({
+    const found = nextPage({
       pagination: stream.pagination,
       state: cursor.page,
       body,
@@ -349,6 +355,19 @@ export function createCustomApiConnector(
       requestUrl: built.url,
       apiHost,
     });
+    // The cursor is stored and shown to viewers: never with a secret in it.
+    const next: PageState | null =
+      found?.type === "next_url"
+        ? {
+            type: "next_url",
+            url: stripCustomApiSecrets(
+              found.url,
+              definition,
+              context.credentials as CustomApiCredentials,
+              context.config,
+            ),
+          }
+        : found;
 
     // Dataset pages of this response; the refresh's last one completes it.
     const groups = cutRows(rows);

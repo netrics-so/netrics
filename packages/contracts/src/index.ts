@@ -1220,6 +1220,14 @@ export const updateConnectionRequestSchema = z.object({
    * has no secret variables.
    */
   customApiEnvironmentId: z.string().min(1).max(40).optional(),
+  /**
+   * Custom API connections: the values of every secret variable (input
+   * only). Required with a new environment when the definition has secret
+   * variables: secrets are never carried to another host.
+   */
+  secretVariables: z
+    .record(z.string(), z.string().min(1).max(2_000))
+    .optional(),
 });
 export type UpdateConnectionRequest = z.infer<
   typeof updateConnectionRequestSchema

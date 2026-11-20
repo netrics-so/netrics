@@ -319,7 +319,7 @@ export async function insertConnection(
 export interface ConnectionChanges {
   name?: string;
   config?: Record<string, unknown>;
-  credentialsEncrypted?: Buffer;
+  credentialsEncrypted?: Buffer | null;
   projectId?: string | null;
   /** A custom-api connection's environment (milestone 13). */
   customApiEnvironmentId?: string;

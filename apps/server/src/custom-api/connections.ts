@@ -106,6 +106,11 @@ export function customApiEnvelope(
     (entry) => entry.id === environmentId,
   );
   if (!environment) return undefined;
+  if (
+    Object.hasOwn(credentials, "host") ||
+    Object.hasOwn(credentials, "variables")
+  )
+    return undefined;
   const envelope = {
     host: customApiEnvironmentHost(environment),
     ...credentials,
@@ -118,17 +123,20 @@ export function customApiEnvelope(
 }
 
 /**
- * A custom-api connection's new environment and/or credentials (PATCH):
- * the connector for the target environment and the envelope to store
- * (undefined: keep the stored one). Changing the environment needs new
- * credentials, since they are bound to the environment host, unless the
- * login method needs none.
+ * A custom-api connection's new environment, credentials and/or secret
+ * variables (PATCH): the connector for the target environment and the
+ * envelope to store (undefined: keep the stored one). Secrets are bound to
+ * the environment host, so a new environment needs every secret again:
+ * the login method's credentials (unless it is none) and every secret
+ * variable. Nothing stored is carried to another host. On the same
+ * environment, what the request leaves out is kept.
  */
 export function prepareCustomApiUpdate(input: {
   registry: ConnectorRegistry;
   existing: ConnectionWithState;
   environmentId: string | undefined;
   credentials: Record<string, unknown> | undefined;
+  secretVariables: Record<string, string> | undefined;
   /** The stored envelope, decrypted; null without one. */
   stored: Record<string, unknown> | null;
 }): CustomApiConnectionResult<{
@@ -144,37 +152,61 @@ export function prepareCustomApiUpdate(input: {
   if (!definition.environments.some((entry) => entry.id === environmentId))
     return fail(400, "custom_api_environment_not_found");
   const changed = environmentId !== pinned.environmentId;
+  const secretIds = definition.variables
+    .filter((variable) => variable.secret)
+    .map((variable) => variable.id);
   if (
     changed &&
-    input.credentials === undefined &&
-    !customApiNeedsNoSecrets(definition)
+    ((definition.auth.type !== "none" && input.credentials === undefined) ||
+      (secretIds.length > 0 && input.secretVariables === undefined))
   )
     return fail(400, "custom_api_environment_needs_credentials");
+  if (
+    input.secretVariables !== undefined &&
+    !sameKeys(input.secretVariables, secretIds)
+  )
+    return fail(400, "custom_api_variables_invalid");
   const resolved = connectorFor(input.registry, {
     row: input.existing.row,
     customApi: { ...pinned, environmentId },
   });
   if (!resolved) return fail(400, "custom_api_environment_not_found");
-  let envelope: Record<string, unknown> | null | undefined;
+  if (
+    !changed &&
+    input.credentials === undefined &&
+    input.secretVariables === undefined
+  )
+    return {
+      ok: true,
+      value: { resolved, environmentId, envelope: undefined },
+    };
+
+  // Auth credentials: the request's, else (same environment only) the stored ones.
+  let credentials: Record<string, string> = {};
   if (input.credentials !== undefined) {
-    const strings: Record<string, string> = {};
     for (const [key, value] of Object.entries(input.credentials)) {
       if (typeof value !== "string" || key === "host" || key === "variables")
         return fail(400, "custom_api_credentials_invalid");
-      strings[key] = value;
+      credentials[key] = value;
     }
-    const storedVariables = input.stored?.variables;
-    envelope = customApiEnvelope(
-      definition,
-      environmentId,
-      strings,
-      storedVariables && typeof storedVariables === "object"
-        ? (storedVariables as Record<string, string>)
-        : {},
-    );
-    if (envelope === undefined)
-      return fail(400, "custom_api_credentials_invalid");
+  } else if (!changed && input.stored) {
+    const { host: _host, variables: _variables, ...rest } = input.stored;
+    credentials = rest as Record<string, string>;
   }
+  const storedVariables = input.stored?.variables;
+  const variables =
+    input.secretVariables ??
+    (!changed && storedVariables && typeof storedVariables === "object"
+      ? (storedVariables as Record<string, string>)
+      : {});
+  const envelope = customApiEnvelope(
+    definition,
+    environmentId,
+    credentials,
+    variables,
+  );
+  if (envelope === undefined)
+    return fail(400, "custom_api_credentials_invalid");
   return { ok: true, value: { resolved, environmentId, envelope } };
 }
 

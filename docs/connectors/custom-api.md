@@ -29,8 +29,9 @@ holds:
 Secret variables and credentials are stored encrypted with the connection
 and never returned. They are bound to the environment's host: changing a
 connection's environment (`PATCH …/connections/:id` with
-`customApiEnvironmentId`) needs the credentials again, unless the login
-method is none and the definition has no secret variables.
+`customApiEnvironmentId`) needs every secret again: the login method's
+credentials (unless it is none) and every secret variable
+(`secretVariables`). Nothing stored moves to another environment's host.
 
 Create a connection with
 `POST /v1/workspaces/:workspaceId/custom-api/definitions/:definitionId/connections`
@@ -44,7 +45,8 @@ generic connection routes refuse `custom-api` with
 - **Login**: none; API key in a header or query parameter; bearer token
   (header name and prefix configurable, default `Authorization: Bearer`);
   HTTP basic. A `401` or `403` marks the connection "needs attention" with a
-  message that says what to do.
+  message that says what to do. A `429` with `Retry-After` waits until then; a
+  `429` without it is retried with the usual backoff.
 - **Pagination**: none; page number; offset and limit; cursor from a body
   path; next URL from a body path or the `Link` header. A next URL must stay
   on the API host. A stream ends on an empty page, a page shorter than the
@@ -62,12 +64,14 @@ generic connection routes refuse `custom-api` with
 Each request may answer at most 10 MiB (50 MiB once decompressed) within
 30 seconds. A run reads at most 200 pages and 100,000 records in at most
 30 minutes; a run that reaches one of these ends as incomplete (error class
-`budget`): what earlier pages stored stays, and the next run starts the
-stream again. JSON nested deeper than 64 levels is refused.
+`budget`): what earlier pages stored stays, and the next run (a new time
+window) reads every stream again from the first one. JSON nested deeper than 64 levels is refused.
 
 Requests go out only through the egress guard: https only, public addresses
 only, redirects only to the same host (with credentials never sent to
 another host), and the DNS answer checked once is the one connected to.
+Next page links are stored in the run's position without the API key and
+any other secret; netrics adds the key again when it requests them.
 
 ## Instance settings
 
