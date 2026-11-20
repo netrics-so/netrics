@@ -52,8 +52,8 @@ test("a rate-limited connection says when syncing continues, not an outage", asy
   const connectionId = await seedRateLimited(workspaceId);
   const limitReached =
     locale === "de"
-      ? /-Limit erreicht, weiter um \d{1,2}:\d{2}/
-      : /limit reached, continuing at \d{1,2}:\d{2}/;
+      ? /-Limit erreicht, weiter (?:am .+? )?um \d{1,2}:\d{2}/
+      : /limit reached, continuing (?:on .+? )?at \d{1,2}:\d{2}/;
 
   await page.goto(`/workspaces/${workspaceId}/sources`);
   const row = page.getByRole("row", { name: /Limited site/ });
