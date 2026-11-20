@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -549,6 +551,65 @@ describe("createScheduler loop", () => {
       const kept = await admin`
         select 1 from app_reviews where provider_review_id = 'recent'`;
       expect(kept).toHaveLength(1);
+    } finally {
+      await admin.end({ timeout: 5 }).catch(() => undefined);
+    }
+  });
+
+  it("prunes item images unseen for longer than the grace period, and orphans older than an hour (#809)", async () => {
+    const now = new Date("2031-03-15T12:00:00.000Z");
+    const hours = (n: number) => new Date(now.getTime() - n * 3_600_000);
+    const admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+    try {
+      const image = async (label: string, createdAt: Date) => {
+        const content = Buffer.from(`item image ${label}`);
+        const [row] = await admin`
+          insert into workspace_images (workspace_id, name, content_type,
+            bytes, width, height, sha256, content, origin, created_at)
+          values (${workspaceId}, 'item', 'image/png', ${content.length}, 1, 1,
+            ${createHash("sha256").update(content).digest("hex")}, ${content},
+            'custom_api', ${createdAt})
+          returning id`;
+        return row!.id as string;
+      };
+      const lookup = (imageId: string, seenAt: Date) => admin`
+        insert into custom_api_item_images (workspace_id, url_sha256,
+          image_id, last_seen_at)
+        values (${workspaceId},
+          ${createHash("sha256").update(imageId).digest("hex")}, ${imageId},
+          ${seenAt})`;
+      // A: seen 8 days ago; B: seen now; C: an orphan from a race, 2 h old;
+      // D: an orphan 30 minutes old (its lookup upsert may be in flight).
+      const a = await image("a", hours(24 * 10));
+      const b = await image("b", hours(24 * 10));
+      const c = await image("c", hours(2));
+      const d = await image("d", hours(0.5));
+      await lookup(a, hours(24 * 8));
+      await lookup(b, now);
+      const scheduler = createScheduler({
+        schedulerDb,
+        pollMs: 50,
+        schedulerId: "scheduler-item-images-prune-test",
+        now: () => now,
+      });
+      scheduler.start();
+      try {
+        await waitFor(async () => {
+          const rows = await admin`
+            select 1 from workspace_images where id in ${admin([a, c])}`;
+          return rows.length === 0;
+        });
+      } finally {
+        await scheduler.stop();
+      }
+      const kept = await admin`
+        select id from workspace_images
+        where workspace_id = ${workspaceId} and origin = 'custom_api'`;
+      expect(kept.map((row) => row.id as string).sort()).toEqual([b, d].sort());
+      const lookups = await admin`
+        select image_id from custom_api_item_images
+        where workspace_id = ${workspaceId}`;
+      expect(lookups.map((row) => row.image_id as string)).toEqual([b]);
     } finally {
       await admin.end({ timeout: 5 }).catch(() => undefined);
     }
