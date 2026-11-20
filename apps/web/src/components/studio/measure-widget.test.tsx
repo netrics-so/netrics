@@ -838,7 +838,7 @@ describe("a total with its split, and freshness per source (#784)", () => {
     // A wide tile: each store's day and next time.
     const wide = text(view(data(), { w: 12, h: 3 }));
     expect(wide).toMatch(
-      /App Store up to Nov 17 · next ~[^|]+ · Google Play up to Nov 11/,
+      /App Store up to Nov 17 · next (?:tomorrow )?~[^|]+ · Google Play up to Nov 11/,
     );
     // A third of the width: the days only, or shorter, never a store less.
     const narrow = text(view(data(), { w: 4, h: 3 }, "de"));
