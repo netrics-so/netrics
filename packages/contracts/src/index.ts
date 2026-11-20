@@ -47,7 +47,10 @@ import {
 } from "./connection-retention.js";
 import { connectionCustomApiViewSchema } from "./custom-api.js";
 import { goalProgressSchema, goalResponseSchema } from "./goals.js";
-import { imageContentTypeSchema } from "./images.js";
+import {
+  CUSTOM_API_IMAGE_SKIP_REASONS,
+  imageContentTypeSchema,
+} from "./images.js";
 import { projectFilterQuerySchema } from "./project-filter.js";
 
 export const processRoleSchema = z.enum(["api", "worker", "scheduler"]);
@@ -1191,6 +1194,25 @@ export type ConnectionFreshnessStream = z.infer<
   typeof connectionFreshnessStreamSchema
 >;
 
+/**
+ * The last image step of one custom API image stream (#809): how many of
+ * its newest items' images were stored, already known or skipped, by reason.
+ */
+export const connectionItemImagesSchema = z.object({
+  streamKey: z.string().min(1),
+  /** The stream's name from the pinned definition. */
+  streamName: z.string().min(1),
+  checkedAt: z.iso.datetime(),
+  stored: z.number().int().nonnegative(),
+  unchanged: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  skippedReasons: z.partialRecord(
+    z.enum(CUSTOM_API_IMAGE_SKIP_REASONS),
+    z.number().int().positive(),
+  ),
+});
+export type ConnectionItemImages = z.infer<typeof connectionItemImagesSchema>;
+
 export const connectionDetailResponseSchema = z.object({
   connection: connectionDetailSchema,
   syncRuns: z.array(syncRunSchema),
@@ -1200,6 +1222,11 @@ export const connectionDetailResponseSchema = z.object({
    * for connectors that declare none.
    */
   freshness: z.array(connectionFreshnessStreamSchema),
+  /**
+   * Custom API connections with image streams only: the last image step
+   * per stream (#809), by stream key.
+   */
+  itemImages: z.array(connectionItemImagesSchema).optional(),
 });
 export type ConnectionDetailResponse = z.infer<
   typeof connectionDetailResponseSchema

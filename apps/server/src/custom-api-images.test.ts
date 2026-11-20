@@ -13,6 +13,7 @@ import {
   vi,
 } from "vitest";
 
+import { connectionDetailResponseSchema } from "@netrics/contracts";
 import { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { CustomApiDefinition } from "@netrics/connector-sdk/custom-api";
 import {
@@ -38,9 +39,11 @@ import {
 } from "@netrics/database";
 
 import { createCredentialKeyring, encryptCredentials } from "./credentials.js";
+import { createConnectionService } from "./connections/service.js";
 import { canonicalSha256 } from "./custom-api/canonical-json.js";
 import { itemImageUrlHash } from "./images/custom-api-images.js";
 import { ContinueJobError, createJobHandlers } from "./jobs/handlers.js";
+import { createOAuthProviders } from "./oauth/config.js";
 import {
   createTestDatabase,
   type TestDatabase,
@@ -437,5 +440,60 @@ describe("custom API item images after a sync", () => {
     expect(text).not.toContain("127.0.0.1");
     expect(text).not.toContain("/images/");
     expect(text).not.toContain(fixture.origin);
+  });
+});
+
+describe("item images in the connection detail", () => {
+  const detail = async (connectionId: string) => {
+    const service = createConnectionService({
+      db: appDb,
+      registry,
+      credentialKeyring: KEYRING,
+      oauthProviders: createOAuthProviders({
+        webOrigin: "https://netrics.example",
+        oauthClients: { google: null },
+      }),
+    });
+    const result = await service.get(
+      { workspaceId, callerId: userId },
+      connectionId,
+    );
+    if (!result.ok) throw new Error(result.error);
+    return connectionDetailResponseSchema.parse(result.value);
+  };
+
+  it("lists stored and skipped counts per image stream in the connection detail", async () => {
+    const connectionId = await connect(definition("photos"));
+    fixture.setImages(["big.png", "html", "redirect-other-host"]);
+    await runSync(connectionId);
+    const { itemImages } = await detail(connectionId);
+    expect(itemImages).toEqual([
+      {
+        streamKey: "photos",
+        streamName: "Photos",
+        checkedAt: expect.any(String),
+        stored: 0,
+        unchanged: 0,
+        skipped: 3,
+        skippedReasons: { too_large: 1, unsupported_type: 1, fetch_failed: 1 },
+      },
+    ]);
+  });
+
+  it("lists an image stream with no step yet as nothing", async () => {
+    const connectionId = await connect(definition("photos"));
+    expect((await detail(connectionId)).itemImages).toEqual([]);
+  });
+
+  it("omits itemImages for bundled connectors and streams without images", async () => {
+    const custom = await connect(definition("pages"));
+    expect(await detail(custom)).not.toHaveProperty("itemImages");
+    const [bundled] = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      tx
+        .insert(schema.connections)
+        .values({ workspaceId, connectorId: "demo", name: "Demo" })
+        .returning({ id: schema.connections.id }),
+    );
+    expect(await detail(bundled!.id)).not.toHaveProperty("itemImages");
   });
 });

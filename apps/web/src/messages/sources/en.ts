@@ -73,5 +73,22 @@ export const sourcesEn = {
         "Turn your own JSON API into a source, without writing code. Planned for a later release.",
       plan: "Read the plan",
     },
+    /** A custom API connection's item images per stream (#809). */
+    itemImages: {
+      title: "Images",
+      summary:
+        "{stored, plural, one {# image} other {# images}} stored for {stream} · checked {time}",
+      skipped:
+        "{skipped, plural, one {# image skipped} other {# images skipped}}",
+      reasons: {
+        invalid_url: "Not a valid https link",
+        host_not_allowed: "Host not in the definition's image hosts",
+        fetch_failed: "Could not be downloaded",
+        too_large: "Larger than 2 MB",
+        unsupported_type: "Not a PNG, JPEG or WebP image",
+        invalid_image: "Damaged, animated or too large in pixels",
+        quota_exceeded: "The workspace's image storage for custom APIs is full",
+      },
+    },
   },
 } as const;

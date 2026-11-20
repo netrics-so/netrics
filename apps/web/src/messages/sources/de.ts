@@ -73,5 +73,22 @@ export const sourcesDe: Catalog<typeof sourcesEn> = {
         "Mach deine eigene JSON-API zur Quelle, ganz ohne Code. Geplant für ein späteres Release.",
       plan: "Zum Plan",
     },
+    itemImages: {
+      title: "Bilder",
+      summary:
+        "{stored, plural, one {# Bild} other {# Bilder}} für {stream} gespeichert · geprüft {time}",
+      skipped:
+        "{skipped, plural, one {# Bild übersprungen} other {# Bilder übersprungen}}",
+      reasons: {
+        invalid_url: "Kein gültiger https-Link",
+        host_not_allowed: "Host steht nicht in den Bild-Hosts der Definition",
+        fetch_failed: "Konnte nicht geladen werden",
+        too_large: "Größer als 2 MB",
+        unsupported_type: "Kein PNG-, JPEG- oder WebP-Bild",
+        invalid_image: "Beschädigt, animiert oder zu viele Pixel",
+        quota_exceeded:
+          "Der Bildspeicher deines Workspace für eigene APIs ist voll",
+      },
+    },
   },
 };
