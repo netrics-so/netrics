@@ -84,9 +84,10 @@ function formPattern(form: string): string {
 
 /**
  * The secrets of a draft: every credential value except the envelope's
- * `host` (not a secret, and it would redact every URL), every secret
- * variable value, and `extra` (derived values such as the basic
- * "Basic <base64>" or "Bearer <token>").
+ * binding and identifiers (`host` and an OAuth envelope's `hosts`: not
+ * secrets, and they would redact every URL; an OAuth `clientId`: public,
+ * sent in the authorization URL), every secret variable value, and `extra`
+ * (derived values such as the basic "Basic <base64>" or "Bearer <token>").
  */
 export function secretSetOf(
   credentials: Record<string, unknown>,
@@ -94,7 +95,12 @@ export function secretSetOf(
   extra: readonly string[] = [],
 ): SecretSet {
   const set = new Set<string>();
-  const { host: _host, ...secrets } = credentials;
+  const {
+    host: _host,
+    hosts: _hosts,
+    clientId: _clientId,
+    ...secrets
+  } = credentials;
   collect(secrets, set);
   collect(secretVariables, set);
   collect([...extra], set);

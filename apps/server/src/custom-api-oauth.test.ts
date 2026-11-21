@@ -408,6 +408,12 @@ describe("custom OAuth: client credentials", () => {
     const body = customApiTestResponseSchema.parse(tested.json());
     expect(body.ok, JSON.stringify(body.error)).toBe(true);
     expect(body.records.count).toBe(3);
+    // The envelope's hosts and client ID are not secrets (#834): the log
+    // shows the API host instead of "[redacted]".
+    expect(body.log[0]!.url).toBe(
+      `https://127.0.0.1:${fixture.port}/oauth/api/items`,
+    );
+    expect(JSON.stringify(body.log)).not.toContain("[redacted]");
     const minted = await grant(id);
     expect(minted).toMatchObject({
       provider: "custom",

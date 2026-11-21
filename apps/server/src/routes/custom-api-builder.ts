@@ -30,6 +30,7 @@ import type {
   ConnectorRegistry,
   ExecuteOptions,
 } from "@netrics/connector-runtime";
+import { customApiIssues } from "@netrics/connector-sdk/custom-api";
 import type { Database } from "@netrics/database";
 import { can, type WorkspaceAction } from "@netrics/domain";
 
@@ -46,12 +47,7 @@ import { createCustomApiTransferService } from "../custom-api/transfer.js";
 import { createCustomApiVersionService } from "../custom-api/versions.js";
 import type { CustomApiInstanceConfig } from "../env.js";
 import type { OAuthTokenService } from "../oauth/tokens.js";
-import {
-  parseBody,
-  resolveAccess,
-  sendError,
-  type WorkspaceAccess,
-} from "./access.js";
+import { resolveAccess, sendError, type WorkspaceAccess } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
 
@@ -113,6 +109,28 @@ const customApiErrors = {
 
 const TAGS = ["custom-api"];
 const BASE = "/workspaces/:workspaceId/custom-api/drafts";
+
+/**
+ * Parses a request body; on failure sends 400 invalid_request with the
+ * first 20 issues (path, code, message; never input values), as creating
+ * a definition does (#834). Routes using it set `attachValidation`, so
+ * Fastify's own validation does not answer a bare invalid_request first.
+ */
+function parseBody<T>(
+  schema: z.ZodType<T>,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): T | null {
+  const parsed = schema.safeParse(request.body);
+  if (parsed.success) return parsed.data;
+  void reply.code(400).send(
+    customApiErrorResponseSchema.parse({
+      error: "invalid_request",
+      issues: customApiIssues(parsed.error),
+    }),
+  );
+  return null;
+}
 
 function unwrap<T>(result: DraftResult<T>, reply: FastifyReply): T | null {
   if (result.ok) return result.value;
@@ -177,6 +195,7 @@ export function registerCustomApiBuilderRoutes(
       scope.post(
         BASE,
         {
+          attachValidation: true,
           schema: routeSchema({
             summary:
               "Start a draft connection for the custom API builder: it holds the builder's secrets on the server, is never synced and is deleted 24 hours after it was last used (409 custom_api_draft_limit beyond 10 open drafts)",
@@ -208,6 +227,7 @@ export function registerCustomApiBuilderRoutes(
       scope.put(
         `${BASE}/:draftId`,
         {
+          attachValidation: true,
           schema: routeSchema({
             summary:
               "Store the builder's definition, environment, connection values and (optionally) secrets on a draft. Secrets are bound to the hosts they were entered for: without new secrets, stored ones are forgotten when those hosts change. The response names stored secrets, never their values",
@@ -257,6 +277,7 @@ export function registerCustomApiBuilderRoutes(
       scope.post(
         `${BASE}/:draftId/promote`,
         {
+          attachValidation: true,
           schema: routeSchema({
             summary:
               "Turn a draft into a scheduled connection pinned to a saved definition version, keeping its secrets (409 custom_api_credentials_host_changed when that version sends them to other hosts)",
@@ -290,6 +311,7 @@ export function registerCustomApiBuilderRoutes(
         `${BASE}/:draftId/test`,
         {
           bodyLimit: TEST_BODY_LIMIT,
+          attachValidation: true,
           schema: routeSchema({
             summary:
               "Run one stream of the builder's unsaved definition against the draft's secrets (at most 5 pages, 1,000 records, 60 s) and answer the redacted, bounded first response, record arrays, field suggestions, mapped preview rows and a request log. The definition is stored on the draft first. At most 30 test requests per workspace and minute (429 custom_api_test_rate_limited with Retry-After); 409 custom_api_credentials_host_changed without any request when the secrets were entered for other hosts",
@@ -398,6 +420,7 @@ export function registerCustomApiBuilderRoutes(
       scope.post(
         `${DEFINITIONS}/:definitionId/versions/:version/restore`,
         {
+          attachValidation: true,
           schema: routeSchema({
             summary:
               "Restore a version: saves its document as a new version (409 custom_api_version_unchanged when it is the current content, custom_api_definition_stale when baseVersion is not current). Connections keep their version until they are updated",
@@ -484,6 +507,7 @@ export function registerCustomApiBuilderRoutes(
         `${DEFINITIONS}/import`,
         {
           bodyLimit: CUSTOM_API_IMPORT_MAX_BYTES + 1024,
+          attachValidation: true,
           schema: routeSchema({
             summary:
               'Import an exported custom API definition as a new definition (version 1). Older schema versions are upgraded; 400 custom_api_import_invalid lists up to 20 issues, custom_api_import_newer refuses files from a newer netrics. A name already used gets " (2)", " (3)"…',
@@ -597,6 +621,7 @@ export function registerCustomApiBuilderRoutes(
       scope.post(
         UPDATE,
         {
+          attachValidation: true,
           schema: routeSchema({
             summary:
               "Update a custom API connection to the definition's current version. basis is the pinned version id the plan was made from (409 custom_api_update_stale with the fresh plan otherwise); 400 custom_api_update_blocked lists what is unresolved. A login bound to other hosts, or of another method, is dropped: the connection then needs its login again",

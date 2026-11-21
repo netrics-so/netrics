@@ -448,6 +448,20 @@ describe("the custom API test request", () => {
       ),
     );
     expect(body.error?.code).toBe("custom_api_destination_blocked");
+    expect(body.error?.message).toBe(
+      "netrics may not reach this address. Custom APIs must be public https hosts.",
+    );
+    expect(fixture.requests).toHaveLength(0);
+  });
+
+  it("names the private-host allowance when the instance has one (#834)", async () => {
+    const definition = draftDefinition({
+      baseUrl: fixture.origin.replace("127.0.0.1", "localhost"),
+    });
+    const id = await newDraft({ token: TOKEN }, definition);
+    const body = parsed(await testRequest(id, { definition }));
+    expect(body.error?.code).toBe("custom_api_destination_blocked");
+    expect(body.error?.message).toContain("NETRICS_CUSTOM_API_PRIVATE_HOSTS");
     expect(fixture.requests).toHaveLength(0);
   });
 
