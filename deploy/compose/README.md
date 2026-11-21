@@ -243,8 +243,10 @@ into `certs/` next to `compose.yml`, point `NODE_EXTRA_CA_CERTS` at it in
 NODE_EXTRA_CA_CERTS=/etc/netrics/certs/internal-ca.pem
 ```
 
-`./certs` is mounted read-only at `/etc/netrics/certs` in both; the file
-must be readable by everyone (`chmod 644`), as the containers do not run as
+`./certs` is mounted read-only at `/etc/netrics/certs` in both; the folder
+must be readable and searchable by everyone (`chmod 755 certs`, which
+`install.sh` sets; after an upgrade with a strict umask set it yourself) and
+the file readable by everyone (`chmod 644`), as the containers do not run as
 your user. The public certificate authorities stay trusted; the extra ones
 are added to them. A file that is missing or unreadable adds nothing and
 only logs a warning (`Ignoring extra certs from ...`) at the first TLS

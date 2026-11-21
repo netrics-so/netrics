@@ -220,14 +220,6 @@ struct StoredImage {
     }
 }
 
-/**
- * Logo, dashboard and slide name, page, offline marker and clock (ADR
- * 0015, section 1). The format's header rule (`headerFit`, ADR 0017
- * section 6): in narrow formats (3:4, 9:16) the dashboard name wraps to two
- * lines before it shrinks, and the slide name is shown only when it fits
- * beside a one-line name, so it is dropped before the dashboard name is
- * cut. The page ("1/2") is never dropped.
- */
 /** "⚠ Offline — last update 14:05" in a corner of a slide without its header (#835). */
 struct OfflineCornerBadge: View {
     let state: DeviceState
@@ -240,7 +232,7 @@ struct OfflineCornerBadge: View {
             if let text = PollHealth.cornerBadge(
                 showHeader: false, offline: state.offline, updatedAt: state.updatedAt,
                 refreshAfterSec: refreshAfterSec, now: context.date, timeZone: TVTime.viewerZone(),
-                language: env.language)
+                language: env.language, since: state.pollingSince)
             {
                 Text(verbatim: "⚠ \(text)")
                     .font(env.font(20))
@@ -256,6 +248,14 @@ struct OfflineCornerBadge: View {
     }
 }
 
+/**
+ * Logo, dashboard and slide name, page, offline marker and clock (ADR
+ * 0015, section 1). The format's header rule (`headerFit`, ADR 0017
+ * section 6): in narrow formats (3:4, 9:16) the dashboard name wraps to two
+ * lines before it shrinks, and the slide name is shown only when it fits
+ * beside a one-line name, so it is dropped before the dashboard name is
+ * cut. The page ("1/2") is never dropped.
+ */
 struct SlideHeaderView: View {
     let payload: DeviceDashboardV2
     let slide: DeviceSlide
@@ -282,7 +282,8 @@ struct SlideHeaderView: View {
         let colors = env.colors
         let name = payload.dashboard?.name ?? ""
         let offline = PollHealth.showsOffline(
-            offline: state.offline, updatedAt: state.updatedAt, refreshAfterSec: payload.refreshAfterSec, now: now)
+            offline: state.offline, updatedAt: state.updatedAt, refreshAfterSec: payload.refreshAfterSec, now: now,
+            since: state.pollingSince)
         let logoAspect = logo.flatMap {
             $0.image.height > 0 ? Double($0.image.width) / Double($0.image.height) : nil
         }
@@ -299,7 +300,8 @@ struct SlideHeaderView: View {
         let slideName = slide.name.flatMap { $0.isEmpty || !fit.showSlideName ? nil : $0 }
         // "next refresh in 42 s" where there is room (ADR 0018 section 5).
         let cycle = RefreshCountdown.cycle(
-            updatedAt: state.updatedAt, offline: state.offline, refreshAfterSec: payload.refreshAfterSec, now: now)
+            updatedAt: state.updatedAt, offline: state.offline, refreshAfterSec: payload.refreshAfterSec, now: now,
+            pollingSince: state.pollingSince)
         let showCountdown =
             cycle != nil
             && RefreshCountdown.fits(

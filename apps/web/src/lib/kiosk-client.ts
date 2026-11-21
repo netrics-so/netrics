@@ -122,6 +122,12 @@ export interface KioskState {
   /** The latest request failed; the screen shows the last known state. */
   offline: boolean;
   lastError: string | null;
+  /**
+   * When this run started polling, epoch ms (#835): a dashboard from the
+   * cache with an old `updatedAt` is not "offline" before this run had its
+   * chance. tvOS: `DeviceState.pollingSince`.
+   */
+  pollingSince?: number | null;
 }
 
 export interface KioskClientOptions {
@@ -1058,6 +1064,7 @@ export function createKioskClient(options: KioskClientOptions): KioskClient {
         dashboard: cached?.payload ?? null,
         images: new Map(),
         updatedAt: cached?.updatedAt ?? null,
+        pollingSince: clock.now(),
         offline: false,
         lastError: null,
       });

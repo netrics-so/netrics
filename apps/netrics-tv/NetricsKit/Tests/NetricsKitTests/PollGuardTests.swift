@@ -286,3 +286,24 @@ private func staleDashboardRoute() -> Handler {
         #expect(badge(header: true, offline: true, after: 5) == nil)
     }
 }
+
+@Suite struct PollHealthSinceLaunchTests {
+    private let cachedAt = Date(timeIntervalSince1970: 1_795_000_000)
+
+    /** A cached dashboard's old time is no reason for "offline" at launch (#835). */
+    @Test func countsFromTheRunsStartWhenLater() {
+        let launch = cachedAt.addingTimeInterval(3600)
+        #expect(!PollHealth.isStale(updatedAt: cachedAt, refreshAfterSec: 60, now: launch.addingTimeInterval(5), since: launch))
+        #expect(PollHealth.isStale(updatedAt: cachedAt, refreshAfterSec: 60, now: launch.addingTimeInterval(121), since: launch))
+        #expect(
+            PollHealth.cornerBadge(
+                showHeader: false, offline: false, updatedAt: cachedAt, refreshAfterSec: 60,
+                now: launch.addingTimeInterval(5), timeZone: "UTC", language: .en, since: launch) == nil)
+        // A failing poll still says so at once.
+        #expect(
+            PollHealth.showsOffline(
+                offline: true, updatedAt: cachedAt, refreshAfterSec: 60, now: launch, since: launch))
+        // Without a start, as before: from the last confirmation.
+        #expect(PollHealth.isStale(updatedAt: cachedAt, refreshAfterSec: 60, now: launch))
+    }
+}

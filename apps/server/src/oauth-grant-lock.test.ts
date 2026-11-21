@@ -583,9 +583,9 @@ describe("config changes of an OAuth connection", () => {
     const sub = nextSub("config");
     const connectionId = await seeded(workspaceA, sub);
     checked.length = 0;
-    // Callbacks left over from earlier tests may still issue tokens, so the
-    // check is against the tokens issued since this PATCH started, not the
-    // newest one overall.
+    // Callbacks left over from earlier tests may still issue tokens, for
+    // other accounts: the check is against the one token issued for this
+    // account since this PATCH started, not the newest one overall.
     const issuedBefore = provider.accessTokens.length;
     const response = await app.inject({
       method: "PATCH",
@@ -596,9 +596,12 @@ describe("config changes of an OAuth connection", () => {
     expect(response.statusCode, response.body).toBe(200);
     expect(checked).toHaveLength(1);
     expect(Object.keys(checked[0]!)).toEqual(["accessToken"]);
-    expect(provider.accessTokens.slice(issuedBefore)).toContain(
-      checked[0]!.accessToken,
-    );
+    // Exactly the one token issued for this connection's account since.
+    expect(
+      provider.accessTokens
+        .slice(issuedBefore)
+        .filter((token) => provider.subOf(token) === sub),
+    ).toEqual([checked[0]!.accessToken]);
     const [row] = await holders(sub);
     const refreshToken = openOAuthCredentials(
       row!.credentials_encrypted,

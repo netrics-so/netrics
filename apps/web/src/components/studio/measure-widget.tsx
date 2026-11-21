@@ -694,9 +694,10 @@ export function MeasureWidgetView({
             )}
           </svg>
           {/* On a slide the tile has no room for every point's value, and a
-              screen cannot scroll: the list stays for screen readers only,
-              as tvOS draws the chart alone (#835). Without a slide (scroll
-              cards), or where its values set a filter, it shows. */}
+              screen cannot scroll: the list stays for screen readers only
+              (#835). tvOS draws no point table there at all
+              (MeasureLineChart.tableRows). Without a slide (scroll cards),
+              or where its values set a filter, it shows. */}
           <ol
             className={
               placement && !interaction ? "visually-hidden" : undefined

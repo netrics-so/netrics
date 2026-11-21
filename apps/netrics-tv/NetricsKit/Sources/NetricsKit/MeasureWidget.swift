@@ -463,6 +463,20 @@ public struct MeasureWidgetOptions: Codable, Sendable, Equatable {
     }
 }
 
+/** What a line chart draws besides its line (#835). */
+public enum MeasureLineChart {
+    /**
+     * The rows of the point table under the line: none on a slide, where
+     * the tile has no room for them and a screen cannot scroll (a line view
+     * may have up to 1,000 points, 365 by default); every row in a scroll
+     * card, which grows with its content. The web keeps the list for screen
+     * readers only on a slide.
+     */
+    public static func tableRows(placed: Bool, scroll: Bool, count: Int) -> Int {
+        placed && !scroll ? 0 : count
+    }
+}
+
 /**
  * Display rules shared with packages/domain/src/dashboard-data.ts (#619):
  * MEASURE_UNIT_FRACTION_DIGITS, roundDecimalText and formatDataDate.

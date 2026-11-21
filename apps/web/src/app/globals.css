@@ -3391,13 +3391,23 @@ a.health-badge:hover {
   color: var(--t-muted, #8a919c);
 }
 
-/* A dashboard without its header (#835): a small, muted badge, as tvOS. */
-.slide-screen-status .kiosk-offline--badge {
-  padding: 0.3vh 0.8vw;
+/* A dashboard without its header (#835): a small, muted badge in the top
+   corner of the canvas padding, sized in units (SlideCornerBadge), as tvOS. */
+.studio-slide-corner {
+  position: absolute;
+  box-sizing: border-box;
+  max-width: 50%;
   border-radius: 999px;
-  font-size: 1.6vh;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--t-muted, #8a919c);
   background: color-mix(in srgb, var(--t-background, #07090c) 70%, transparent);
+  pointer-events: none;
+}
+.studio-slide-corner .kiosk-offline {
+  font-size: inherit;
+  color: inherit;
 }
 
 .slide-screen--idle,

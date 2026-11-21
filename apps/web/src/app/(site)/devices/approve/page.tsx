@@ -8,6 +8,7 @@ import { ApproveDeviceForm, type ApprovableWorkspace } from "./approve-form";
 import { listDashboards, listProjects, listWorkspaces } from "@/lib/api";
 import { forwardedHeaders } from "@/lib/api-fetch";
 import { getT } from "@/lib/i18n/server";
+import { approveQuery } from "@/lib/device-platform";
 import { pickableDashboards } from "@/lib/project-pickers";
 import { projectScope } from "@/lib/project-scope";
 import { getSessionUser } from "@/lib/session";
@@ -36,19 +37,12 @@ interface ApproveDevicePageProps {
 export default async function ApproveDevicePage({
   searchParams,
 }: ApproveDevicePageProps) {
-  const params = await searchParams;
-  const one = (value: string | string[] | undefined, length: number) =>
-    typeof value === "string" ? value.slice(0, length) : "";
-  const code = one(params.code, 20);
-  // Opened from a workspace (and dashboard) via "Connect a TV" (#835).
-  const wantedWorkspace = one(params.workspace, 64);
-  const wantedDashboard = one(params.dashboard, 64);
-  const query = new URLSearchParams({
-    ...(code ? { code } : {}),
-    ...(wantedWorkspace ? { workspace: wantedWorkspace } : {}),
-    ...(wantedDashboard ? { dashboard: wantedDashboard } : {}),
-  }).toString();
-  const here = `/devices/approve${query ? `?${query}` : ""}`;
+  const {
+    code,
+    workspace: wantedWorkspace,
+    dashboard: wantedDashboard,
+    here,
+  } = approveQuery(await searchParams);
 
   const forwarded = forwardedHeaders(await headers());
   const user = await getSessionUser(forwarded);

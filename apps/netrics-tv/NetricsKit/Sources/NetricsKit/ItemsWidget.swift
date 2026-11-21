@@ -227,12 +227,19 @@ public enum ItemsText {
         } else {
             components.day = count(86_400)
         }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = language.locale
-        formatter.dateTimeStyle = .named
-        formatter.unitsStyle = .short
-        return formatter.localizedString(from: components)
+        return (relativeFormatters[language] ?? relativeFormatters[.en]!).localizedString(from: components)
     }
+
+    /// One formatter per language, made once (formatting is thread-safe).
+    nonisolated(unsafe) private static let relativeFormatters: [ScreenLanguage: RelativeDateTimeFormatter] =
+        Dictionary(
+            uniqueKeysWithValues: ScreenLanguage.allCases.map { language in
+                let formatter = RelativeDateTimeFormatter()
+                formatter.locale = language.locale
+                formatter.dateTimeStyle = .named
+                formatter.unitsStyle = .short
+                return (language, formatter)
+            })
 
     /** "3 items", "1 Eintrag". */
     public static func count(_ count: Int, language: ScreenLanguage) -> String {

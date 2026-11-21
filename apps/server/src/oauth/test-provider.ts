@@ -194,6 +194,11 @@ export class FixtureOAuthProvider {
     this.issuer = options.issuer ?? "https://accounts.google.com";
   }
 
+  /** The account an access token this provider issued belongs to. */
+  subOf(accessToken: string): string | undefined {
+    return this.#accessTokens.get(accessToken)?.sub;
+  }
+
   /** Every refresh_token grant request received. */
   get refreshRequests(): number {
     return this.calls.refresh_token;

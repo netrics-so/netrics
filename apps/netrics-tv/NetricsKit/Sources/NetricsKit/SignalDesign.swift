@@ -487,11 +487,11 @@ public struct RefreshCountdown: Sendable, Equatable {
      * too long (`PollHealth.isStale`, #739), when the header shows the
      * offline marker instead of counting on as if all were well.
      */
-    public static func cycle(updatedAt: Date?, offline: Bool, refreshAfterSec: Int, now: Date)
-        -> (since: Date, every: TimeInterval)?
-    {
+    public static func cycle(
+        updatedAt: Date?, offline: Bool, refreshAfterSec: Int, now: Date, pollingSince: Date? = nil
+    ) -> (since: Date, every: TimeInterval)? {
         let shown = PollHealth.showsOffline(
-            offline: offline, updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now)
+            offline: offline, updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now, since: pollingSince)
         return cycle(updatedAt: updatedAt, offline: shown, refreshAfterSec: refreshAfterSec)
     }
 
@@ -813,15 +813,24 @@ public enum StatusBoard {
 public enum PollHealth {
     public static let staleAfter = 2.0
 
-    public static func isStale(updatedAt: Date?, refreshAfterSec: Int, now: Date) -> Bool {
+    /**
+     * No poll has confirmed the dashboard for more than `staleAfter`
+     * refreshes, counted from the last confirmation or, when later, from
+     * when this run started polling (`since`): a cached dashboard's old time
+     * is no reason to say "offline" at launch (#835).
+     */
+    public static func isStale(updatedAt: Date?, refreshAfterSec: Int, now: Date, since: Date? = nil) -> Bool {
         guard let updatedAt else { return false }
         let seconds = refreshAfterSec > 0 ? refreshAfterSec : DeviceClient.defaultRefreshAfterSeconds
-        return now.timeIntervalSince(updatedAt) > staleAfter * Double(seconds)
+        let reference = since.map { max($0, updatedAt) } ?? updatedAt
+        return now.timeIntervalSince(reference) > staleAfter * Double(seconds)
     }
 
     /** The offline marker: the last poll failed, or none has been confirmed for too long. */
-    public static func showsOffline(offline: Bool, updatedAt: Date?, refreshAfterSec: Int, now: Date) -> Bool {
-        offline || isStale(updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now)
+    public static func showsOffline(
+        offline: Bool, updatedAt: Date?, refreshAfterSec: Int, now: Date, since: Date? = nil
+    ) -> Bool {
+        offline || isStale(updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now, since: since)
     }
 
     /**
@@ -832,10 +841,10 @@ public enum PollHealth {
      */
     public static func cornerBadge(
         showHeader: Bool, offline: Bool, updatedAt: Date?, refreshAfterSec: Int, now: Date, timeZone: String,
-        language: ScreenLanguage
+        language: ScreenLanguage, since: Date? = nil
     ) -> String? {
         guard !showHeader,
-            showsOffline(offline: offline, updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now)
+            showsOffline(offline: offline, updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now, since: since)
         else { return nil }
         return TVTime.offlineMarker(updatedAt: updatedAt, timeZone: timeZone, language: language)
     }

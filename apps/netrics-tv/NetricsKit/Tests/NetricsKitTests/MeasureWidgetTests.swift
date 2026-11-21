@@ -305,3 +305,15 @@ import Testing
         #expect(Set(notices.map(\.id)).count == 2)
     }
 }
+
+@Suite struct MeasureLineChartTests {
+    /** A line chart on a slide draws no table of its points, however many (#835). */
+    @Test func aPlacedLineChartDrawsTheLineAlone() {
+        #expect(MeasureLineChart.tableRows(placed: true, scroll: false, count: 365) == 0)
+        #expect(MeasureLineChart.tableRows(placed: true, scroll: false, count: 1) == 0)
+        // A scroll card grows with its content: every point.
+        #expect(MeasureLineChart.tableRows(placed: false, scroll: true, count: 365) == 365)
+        #expect(MeasureLineChart.tableRows(placed: true, scroll: true, count: 31) == 31)
+        #expect(MeasureLineChart.tableRows(placed: false, scroll: false, count: 31) == 31)
+    }
+}

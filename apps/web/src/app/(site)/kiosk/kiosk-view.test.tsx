@@ -557,6 +557,37 @@ describe("offline badge without the header (#835)", () => {
     // A failing poll shows it at once.
     expect(headless(Date.now(), true)).toContain("kiosk-offline--badge");
   });
+  it("is not shown at start for a cached dashboard's old time", () => {
+    const now = Date.parse("2026-11-21T12:00:00Z");
+    const cached = { updatedAt: now - 60 * minute, offline: false };
+    expect(
+      pollShowsOffline({ ...cached, pollingSince: now - 5_000 }, 60, now),
+    ).toBe(false);
+    expect(
+      pollShowsOffline(
+        { ...cached, pollingSince: now - 2 * minute - 1000 },
+        60,
+        now,
+      ),
+    ).toBe(true);
+    // A failing poll says so at once.
+    expect(
+      pollShowsOffline(
+        { ...cached, offline: true, pollingSince: now },
+        60,
+        now,
+      ),
+    ).toBe(true);
+  });
+  it("puts the header's marker by the same rule", () => {
+    const stale = render({
+      ...paired(slides("en")),
+      updatedAt: Date.now() - 10 * minute,
+    });
+    expect(stale).toContain("studio-offline");
+    const healthy = render({ ...paired(slides("en")), updatedAt: Date.now() });
+    expect(healthy).not.toContain("studio-offline");
+  });
   it("shows none while the poll is healthy, nor with a header", () => {
     expect(headless(Date.now(), false)).not.toContain("kiosk-offline");
     const withHeader = render({

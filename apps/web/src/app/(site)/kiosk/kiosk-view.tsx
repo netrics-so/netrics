@@ -19,7 +19,10 @@ import { QrCode } from "@/components/qr-code";
 import { DeviceScrollWidget } from "@/components/scroll/device-scroll-widget";
 import { ScrollView } from "@/components/scroll/scroll-view";
 import { DeviceWidgetView } from "@/components/studio/device-widget";
-import { SlidePlayer } from "@/components/studio/slide-player";
+import {
+  SlideCornerBadge,
+  SlidePlayer,
+} from "@/components/studio/slide-player";
 import { TileNotice, TileView } from "@/components/tile-view";
 import { TvFrame, clockTime, useClock, useIdle } from "@/components/tv-frame";
 import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
@@ -236,10 +239,11 @@ export const POLL_STALE_AFTER = 2;
  * Whether a screen says it is offline (#739, #835), as tvOS's
  * `PollHealth.showsOffline`: the last poll failed, or none has confirmed
  * the dashboard for more than two refreshes (a poll that stopped without
- * failing).
+ * failing), counted from the last confirmation or, when later, from when
+ * this run started polling (a cached dashboard is not offline at start).
  */
 export function pollShowsOffline(
-  state: Pick<KioskState, "updatedAt" | "offline">,
+  state: Pick<KioskState, "updatedAt" | "offline" | "pollingSince">,
   refreshAfterSec: number,
   now: number,
 ): boolean {
@@ -247,7 +251,8 @@ export function pollShowsOffline(
   if (state.updatedAt === null) return false;
   const seconds =
     refreshAfterSec > 0 ? refreshAfterSec : DEVICE_REFRESH_AFTER_SECONDS;
-  return now - state.updatedAt > POLL_STALE_AFTER * seconds * 1000;
+  const since = Math.max(state.updatedAt, state.pollingSince ?? 0);
+  return now - since > POLL_STALE_AFTER * seconds * 1000;
 }
 
 /** Now, every `everyMs`: for checks whose answer changes with time alone. */
@@ -323,6 +328,7 @@ export function kioskRefreshCycle(
   state: Pick<KioskState, "updatedAt" | "offline">,
   payload: { refreshAfterSec: number },
 ): RefreshCycle | null {
+  // `offline` as shown (pollShowsOffline), as tvOS's RefreshCountdown.
   if (state.updatedAt === null || state.offline) return null;
   const seconds =
     payload.refreshAfterSec > 0
@@ -361,12 +367,10 @@ function KioskSlides({
     images: state.images,
   };
   const formats = isFormatsDashboard(payload) ? payload : null;
-  // Without the header, a muted badge in the corner says the screen is
-  // offline, by tvOS's rule (#835); checked again as time passes.
+  // Offline by tvOS's rule (#739, #835), checked again as time passes: in
+  // the header, or without it in a muted badge in the canvas's corner.
   const now = useTicking(10_000);
-  const cornerOffline =
-    !dashboard.showHeader &&
-    pollShowsOffline(state, payload.refreshAfterSec, now);
+  const offline = pollShowsOffline(state, payload.refreshAfterSec, now);
   return (
     <div
       className={idle ? "slide-screen slide-screen--idle" : "slide-screen"}
@@ -382,29 +386,30 @@ function KioskSlides({
         header={{
           name: dashboard.name,
           logoImageId: dashboard.logo?.imageId ?? null,
-          offline: dashboard.showHeader && state.offline,
+          offline: dashboard.showHeader && offline,
           offlineSince:
             state.updatedAt === null
               ? null
               : clockTime(state.updatedAt, viewerZone, locale),
-          refresh: kioskRefreshCycle(state, payload),
+          refresh: kioskRefreshCycle({ ...state, offline }, payload),
         }}
+        corner={
+          offline && !dashboard.showHeader ? (
+            <SlideCornerBadge>
+              <OfflineMarker
+                state={state}
+                shown
+                className="kiosk-offline kiosk-offline--badge"
+              />
+            </SlideCornerBadge>
+          ) : null
+        }
         images={state.images}
         renderWidget={(widget) => (
           <DeviceWidgetView widget={widget} env={env} />
         )}
         empty={<p className="kiosk-text slide-screen-empty">{t("noSlides")}</p>}
       />
-      {/* With the header the marker is in it; without, in the corner. */}
-      {cornerOffline ? (
-        <div className="slide-screen-status">
-          <OfflineMarker
-            state={state}
-            shown
-            className="kiosk-offline kiosk-offline--badge"
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
