@@ -29,6 +29,7 @@ import {
 } from "@netrics/connectors/custom-api";
 import {
   countCustomApiConnections,
+  lockCustomApiLimit,
   enqueueJob,
   findConnection,
   findCustomApiDefinition,
@@ -680,6 +681,7 @@ export function createCustomApiConnectionService(
         if (!project || project.archivedAt !== null)
           return fail(404, "project_not_found");
       }
+      await lockCustomApiLimit(tx, actor.workspaceId, "connections");
       if (
         (await countCustomApiConnections(tx, actor.workspaceId)) >=
         deps.limits.maxConnections
@@ -876,8 +878,9 @@ export function createCustomApiConnectionService(
           if (!project || project.archivedAt !== null)
             return fail(404, "project_not_found");
         }
-        // Counted again inside the commit's transaction: two concurrent
-        // creates can still pass together (no lock), at most by one each.
+        // Counted again inside the commit's transaction, under the
+        // workspace's limit lock: concurrent creates cannot both pass.
+        await lockCustomApiLimit(tx, actor.workspaceId, "connections");
         if (
           (await countCustomApiConnections(tx, actor.workspaceId)) >=
           deps.limits.maxConnections

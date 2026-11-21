@@ -359,6 +359,18 @@ describe("custom API definitions API", () => {
     ).toBe(200);
   });
 
+  it("enforces the definition limit under concurrent creates", async () => {
+    const workspace = await newWorkspace(owner);
+    const responses = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        call("POST", defs(workspace), owner, { document: shop() }, limitedApp),
+      ),
+    );
+    expect(responses.map((r) => r.statusCode).sort()).toEqual([
+      201, 409, 409, 409, 409, 409,
+    ]);
+  });
+
   it("enforces the definition limit", async () => {
     const workspace = await newWorkspace(owner);
     const first = await call(

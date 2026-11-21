@@ -687,6 +687,19 @@ describe("connections from a custom API definition", () => {
     );
   });
 
+  it("enforces the connection limit under concurrent creates", async () => {
+    const workspace = await newWorkspace(owner);
+    const definition = await createDefinition(keyed(), workspace, limitedApp);
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        connect(definition.id, {}, workspace, limitedApp),
+      ),
+    );
+    expect(results.map((r) => r.statusCode).sort()).toEqual([
+      201, 409, 409, 409,
+    ]);
+  });
+
   it("lets viewers see the connection's customApi view but not create", async () => {
     const definition = await createDefinition();
     const created = connectionResponseSchema.parse(

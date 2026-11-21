@@ -317,6 +317,24 @@ export async function updateCustomApiDefinition(
   return row ?? null;
 }
 
+/**
+ * Serialises a workspace's count-then-insert against a custom API limit
+ * (definitions, custom-api connections, builder drafts): a transaction
+ * advisory lock per workspace and limit, held until the transaction ends.
+ * Take it before counting and insert in the same transaction, so two
+ * concurrent creates cannot both pass the count.
+ */
+export async function lockCustomApiLimit(
+  tx: Transaction,
+  workspaceId: string,
+  limit: "definitions" | "connections" | "drafts",
+): Promise<void> {
+  const name = `custom_api_${limit}:${workspaceId}`;
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${name}, 0))`,
+  );
+}
+
 /** The workspace's definitions that are not archived. */
 export async function countCustomApiDefinitions(
   tx: Transaction,
