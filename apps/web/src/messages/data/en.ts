@@ -323,6 +323,9 @@ export const dataEn = {
     preparationAdoptionHint:
       "Published models keep their chosen preparation version. After publishing these changes, preview and publish updated inputs in each model that should adopt them.",
     republish: "Publish updated inputs",
+    previewBeforePublish:
+      "Publish uses a checked preview: preview the current draft first.",
+    previewNow: "Preview now",
     unit: "Unit",
     unitHint:
       "Optional unit, such as visits or currency. Use a currency column for monetary amounts.",

@@ -5656,8 +5656,10 @@ a.button.primary:hover {
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
 }
-.dashboard-filter-popover > button:last-child {
-  margin-top: 12px;
+.dashboard-filter-popover-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 .dashboard-filter-popover input {
   width: 100%;

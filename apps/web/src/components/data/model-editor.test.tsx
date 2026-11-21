@@ -16,6 +16,7 @@ import {
   modelImpact,
   dimensionLabels,
   measureLabels,
+  modelPublishKind,
   newAggregateMeasure,
   newDimension,
   PreviewScopeHint,
@@ -913,5 +914,69 @@ describe("model editor unpublished mark (#632)", () => {
   it("trusts the server on a saved draft equal to its release (#697)", () => {
     expect(open(4, 3, false)).not.toContain("Unpublished changes");
     expect(open(4, 3, true)).toContain("Unpublished changes");
+  });
+});
+
+describe("model editor Publish button (#835)", () => {
+  const record = (
+    version: number,
+    publishedVersion: number | null,
+    extra: Partial<ModelDraft> = {},
+  ) => ({ ...draft([revenue]), version, publishedVersion, ...extra });
+  const publishButton = (html: string) =>
+    /<button type="button" class="primary"[^>]*>(Publish[^<]*|Veröffentlichen|Aktualisierte[^<]*)<\/button>/.exec(
+      html,
+    )![0];
+  const open = (initial: ModelDraft, locale: "en" | "de" = "en") =>
+    renderI18n(
+      <ModelEditor
+        workspaceId="workspace"
+        sources={[source]}
+        initial={initial}
+        onSaved={() => {}}
+        onClose={() => {}}
+        onDirty={() => {}}
+      />,
+      locale,
+    );
+
+  it("offers to publish updated inputs only when they changed", () => {
+    expect(modelPublishKind(null, false)).toBe("publish");
+    expect(modelPublishKind(record(2, 1), false)).toBe("publish");
+    expect(modelPublishKind(record(2, 2), true)).toBe("publish");
+    // Just published: the draft is the live release.
+    expect(modelPublishKind(record(2, 2), false)).toBe("nothing");
+    expect(modelPublishKind(record(2, 2, { inputsDiffer: true }), false)).toBe(
+      "republish",
+    );
+    expect(
+      modelPublishKind(
+        record(2, 2, { inputsDiffer: true, restoredFromVersion: 1 }),
+        false,
+      ),
+    ).toBe("nothing");
+  });
+
+  it("does not offer a republish right after publishing", () => {
+    const html = open(record(2, 2));
+    expect(html).not.toContain("Publish updated inputs");
+    expect(publishButton(html)).toContain("disabled");
+    expect(html).not.toContain("Preview now");
+    expect(publishButton(open(record(2, 2, { inputsDiffer: true })))).toContain(
+      "Publish updated inputs",
+    );
+  });
+
+  it("says why Publish waits for a preview, in English and German", () => {
+    const html = open(record(2, 1));
+    const button = publishButton(html);
+    expect(button).toContain("disabled");
+    const described = /aria-describedby="([^"]+)"/.exec(button)![1]!;
+    expect(html).toContain(`id="${described}"`);
+    expect(html).toContain("preview the current draft first.");
+    expect(html).toContain(">Preview now</button>");
+    const de = open(record(2, 1), "de");
+    expect(de).toContain("Zeige zuerst die Vorschau des aktuellen Entwurfs.");
+    expect(de).toContain(">Vorschau zeigen</button>");
   });
 });

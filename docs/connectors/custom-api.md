@@ -282,5 +282,9 @@ item image only while its own current dashboard shows it.
 Self-hosted only: `NETRICS_CUSTOM_API_PRIVATE_HOSTS` lets custom APIs reach
 named hosts or address ranges on your own network (never metadata
 addresses). It is off by default and never set on the hosted service; only
-the custom API connector receives it, bundled connectors never do. See
-[deploy/compose/README.md](../../deploy/compose/README.md).
+the custom API connector receives it, bundled connectors never do. A
+service on your own network with a certificate from a private certificate
+authority also needs that authority trusted: `NODE_EXTRA_CA_CERTS` on the api
+and the worker. See
+[deploy/compose/README.md](../../deploy/compose/README.md), "Custom APIs on
+your own network".

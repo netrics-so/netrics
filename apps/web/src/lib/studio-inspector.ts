@@ -392,6 +392,8 @@ export function convertWidget(
     goals?: ReadonlyArray<{ id: string; name: string }>;
     /** Connections that keep review text (a latest review). */
     reviewConnectionIds?: readonly string[];
+    /** The dashboard's shared filters (a latest-items widget's title). */
+    filters?: readonly import("@netrics/domain").DashboardDataFilter[];
   },
 ): { widget: WidgetFields } | { reason: string } {
   const made = newWidget(to, context);

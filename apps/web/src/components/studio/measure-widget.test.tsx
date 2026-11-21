@@ -867,3 +867,56 @@ describe("a total with its split, and freshness per source (#784)", () => {
     expect(narrow.match(/sw-measure-freshness/g)?.length).toBe(2);
   });
 });
+
+describe("line chart point list on a slide (#835)", () => {
+  const data = {
+    widgetId: "w",
+    metadata: {
+      modelId: "m",
+      modelName: "Weather",
+      measures: [{ id: "temp", name: "Max temperature" }],
+      dimensions: [{ id: "day", name: "Day", type: "date" }],
+    },
+    result: {
+      rows: [
+        {
+          dimensions: { day: "2026-11-01" },
+          measures: { temp: { value: 8, type: "integer", status: "ok" } },
+        },
+        {
+          dimensions: { day: "2026-11-02" },
+          measures: { temp: { value: 9, type: "integer", status: "ok" } },
+        },
+      ],
+      totalRows: 2,
+      warnings: [],
+      operations: 1,
+      provenance: [],
+      appliedFilter: null,
+      groupBy: ["day"],
+    },
+    exclusions: [],
+  } as unknown as DashboardWidgetData;
+  const line = (placed: boolean) =>
+    renderI18n(
+      <MeasureWidgetView
+        widget={{
+          title: "Max temperature",
+          options: { view: "line", limit: 365 },
+          binding: { measureIds: ["temp"], groupBy: ["day"] },
+        }}
+        data={data}
+        {...(placed
+          ? { placement: { x: 0, y: 0, w: 6, h: 3 }, showHeader: true }
+          : {})}
+      />,
+    );
+
+  it("keeps the values for screen readers only, so no clipped row shows", () => {
+    const placed = line(true);
+    expect(placed).toContain('<ol class="visually-hidden">');
+    expect(placed).toContain("Nov 1, 2026");
+    // A scroll card grows with its content and shows the list.
+    expect(line(false)).toContain("<ol>");
+  });
+});

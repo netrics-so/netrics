@@ -401,6 +401,7 @@ function TypeField({
   dispatch,
   connections,
   models,
+  dataFilters,
 }: WidgetPanelProps) {
   const locale = useLocale();
   const t = useT("studio.widgetPanel");
@@ -411,6 +412,7 @@ function TypeField({
     locale,
     goals: goals ?? [],
     reviewConnectionIds: reviewConnectionIds(connections),
+    filters: dataFilters ?? [],
   };
   const options = WIDGET_TYPES.map((type) => ({
     type,

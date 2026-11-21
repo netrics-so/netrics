@@ -8,7 +8,7 @@ import { installWithConnections } from "./support/store-template.ts";
  * popover is open at a time and never covers another trigger, so a press
  * meant for one never lands on another; Escape and a press outside close
  * it; focus moves into the popover and back to its trigger; "Browse
- * values" only expands the list.
+ * values" only expands the list; choosing a value moves no button.
  */
 async function openDashboard(page: Page, locale: Locale) {
   const t = labels(locale).dashboard;
@@ -148,6 +148,27 @@ test("dashboard filter popovers open one at a time", async ({
   await expect(popover(currencyName)).toBeVisible();
   await page.getByRole("heading", { level: 1 }).click();
   await expect(popover(currencyName)).toHaveCount(0);
+
+  // 6. Choosing a value adds its chip but moves no button (#835): before,
+  //    Done slid down under the new chip and a press where it had been
+  //    landed on nothing, leaving the popover open.
+  await app.click();
+  const done = popover("App").getByRole("button", { name: t.done });
+  const before = await boxOf(done);
+  await popover("App")
+    .getByRole("textbox", { name: "App", exact: true })
+    .fill("Example app");
+  await page.keyboard.press("Enter");
+  await expect(
+    popover("App").locator(".dashboard-filter-chips button"),
+  ).toHaveCount(1);
+  expect(await boxOf(done)).toEqual(before);
+  await page.mouse.click(
+    before.x + before.width / 2,
+    before.y + before.height / 2,
+  );
+  await expect(popovers).toHaveCount(0);
+  await expect(app).not.toContainText(t.allValues);
 });
 
 test.describe("on a phone", () => {
@@ -197,4 +218,37 @@ test.describe("on a phone", () => {
     for (const trigger of await triggers.all())
       await expect(trigger).toContainText(t.allValues);
   });
+});
+
+test("adding a shared filter in the Studio leaves the page in place", async ({
+  page,
+}, testInfo) => {
+  // The exit gate's window (#835): the Studio's columns each scroll; the
+  // page itself must not. Before, the hidden labels of every filter's
+  // value field made the page taller than the window, so a control scrolled
+  // into view took the whole page with it: the top bar went out of sight
+  // and a blank band showed below.
+  const locale = testInfo.project.name as Locale;
+  const t = labels(locale).dashboard;
+  const { workspaceId } = await startWorkspace(page, locale);
+  const { dashboardId } = await installWithConnections(page, workspaceId);
+  await page.setViewportSize({ width: 1372, height: 900 });
+  await page.goto(
+    `/workspaces/${workspaceId}/dashboards/${dashboardId}/studio`,
+  );
+  const add = page.getByRole("button", { name: t.addFilter, exact: true });
+  await expect(add).toBeVisible();
+  const filters = page.locator(".studio-inspector fieldset legend");
+  const before = await filters.count();
+  await add.click();
+  await expect(filters).not.toHaveCount(before);
+  const page_ = () =>
+    page.evaluate(() => ({
+      scrollY: window.scrollY,
+      overflow: document.documentElement.scrollHeight - window.innerHeight,
+    }));
+  await expect.poll(page_).toEqual({ scrollY: 0, overflow: 0 });
+  // The newest filter's name field scrolls into the inspector, not the page.
+  await page.locator(".studio-inspector input").last().focus();
+  await expect.poll(page_).toEqual({ scrollY: 0, overflow: 0 });
 });

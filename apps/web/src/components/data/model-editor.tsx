@@ -93,6 +93,23 @@ interface ModelEdit {
  * count: switching views without typing is no change, and neither is key
  * order.
  */
+/**
+ * What Publish does for the editor's record: "publish" a draft, "republish"
+ * a release whose input preparations were published again since (#697), or
+ * "nothing" when the shown draft is the live release (#835).
+ */
+export function modelPublishKind(
+  record: Pick<
+    ModelDraft,
+    "version" | "publishedVersion" | "restoredFromVersion" | "inputsDiffer"
+  > | null,
+  dirty: boolean,
+): "publish" | "republish" | "nothing" {
+  if (!record || dirty || record.publishedVersion !== record.version)
+    return "publish";
+  if (record.restoredFromVersion || !record.inputsDiffer) return "nothing";
+  return "republish";
+}
 export function modelEditorState(
   name: string,
   definition: SemanticModelDefinition,
@@ -273,7 +290,8 @@ export function ModelEditor({
   const t = useT("data"),
     nameId = useId(),
     filterId = useId(),
-    scopeHintId = useId();
+    scopeHintId = useId(),
+    publishHintId = useId();
   const fieldsRef = useRef<HTMLFieldSetElement>(null);
   const valid = () => {
     const input = fieldsRef.current?.querySelector<
@@ -373,6 +391,17 @@ export function ModelEditor({
   );
   const dirty = current !== savedState,
     fresh = previewState === current + queryState;
+  const publishKind = modelPublishKind(record, dirty);
+  // Publish needs a preview of the current draft; when that is all it
+  // waits for, a hint says so (#835).
+  const publishBlocked =
+    !!busy ||
+    inputMetadata.loading ||
+    !!inputMetadata.error ||
+    !!error ||
+    !name.trim() ||
+    publishKind === "nothing";
+  const previewFirst = !publishBlocked && !fresh;
   // The required dimensions the chosen preview neither groups by nor filters
   // to one value: the server refuses such a preview (and so publishing).
   const missingScope = useMemo(() => {
@@ -866,32 +895,33 @@ export function ModelEditor({
           <button
             type="button"
             className="primary"
-            disabled={
-              !!busy ||
-              inputMetadata.loading ||
-              !!inputMetadata.error ||
-              !fresh ||
-              !!error ||
-              !name.trim() ||
-              (!!record?.restoredFromVersion &&
-                record.publishedVersion === record.version &&
-                !dirty)
-            }
+            disabled={publishBlocked || !fresh}
+            aria-describedby={previewFirst ? publishHintId : undefined}
             onClick={() => void persist(true)}
           >
             {t(
               busy === "publish"
                 ? "publishing"
-                : !dirty &&
-                    record &&
-                    !record.restoredFromVersion &&
-                    record.publishedVersion === record.version
+                : publishKind === "republish"
                   ? "republish"
                   : "publish",
             )}
           </button>
         </div>
       </header>
+      {previewFirst ? (
+        <p id={publishHintId} className="page-meta">
+          {t("previewBeforePublish")}{" "}
+          <button
+            type="button"
+            className="link-button"
+            disabled={!measureIds.length}
+            onClick={() => void preview()}
+          >
+            {t("previewNow")}
+          </button>
+        </p>
+      ) : null}
       <p className="data-intro">{t("modelHint")}</p>
       {error ? (
         <p role="alert" className="error">

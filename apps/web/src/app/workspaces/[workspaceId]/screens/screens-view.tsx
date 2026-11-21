@@ -21,6 +21,7 @@ import { pickableDashboards } from "@/lib/project-pickers";
 import { projectScope, type ProjectScope } from "@/lib/project-scope";
 import type { ScreenCounts, ScreenPreview } from "@/lib/screens";
 import { useViewerTimeZone } from "@/lib/viewer-time-zone";
+import { connectTvHref } from "@/lib/device-platform";
 
 /**
  * One screen as the page shows it; texts are worded on the server, dates
@@ -172,7 +173,7 @@ export function ScreensView({
             </div>
           ) : null}
           {canManage ? (
-            <Link href="/devices/approve" className="button primary">
+            <Link href={connectTvHref(workspaceId)} className="button primary">
               {t("connectTv")}
             </Link>
           ) : null}
@@ -184,7 +185,7 @@ export function ScreensView({
           <h2>{t("emptyTitle")}</h2>
           <p>{canManage ? t("emptyBody") : t("emptyViewer")}</p>
           {canManage ? (
-            <Link href="/devices/approve" className="button primary">
+            <Link href={connectTvHref(workspaceId)} className="button primary">
               {t("connectTv")}
             </Link>
           ) : null}

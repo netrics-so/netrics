@@ -21,7 +21,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 interface ApproveDevicePageProps {
-  searchParams: Promise<{ code?: string | string[] }>;
+  searchParams: Promise<{
+    code?: string | string[];
+    workspace?: string | string[];
+    dashboard?: string | string[];
+  }>;
 }
 
 /**
@@ -32,9 +36,19 @@ interface ApproveDevicePageProps {
 export default async function ApproveDevicePage({
   searchParams,
 }: ApproveDevicePageProps) {
-  const raw = (await searchParams).code;
-  const code = typeof raw === "string" ? raw.slice(0, 20) : "";
-  const here = `/devices/approve${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+  const params = await searchParams;
+  const one = (value: string | string[] | undefined, length: number) =>
+    typeof value === "string" ? value.slice(0, length) : "";
+  const code = one(params.code, 20);
+  // Opened from a workspace (and dashboard) via "Connect a TV" (#835).
+  const wantedWorkspace = one(params.workspace, 64);
+  const wantedDashboard = one(params.dashboard, 64);
+  const query = new URLSearchParams({
+    ...(code ? { code } : {}),
+    ...(wantedWorkspace ? { workspace: wantedWorkspace } : {}),
+    ...(wantedDashboard ? { dashboard: wantedDashboard } : {}),
+  }).toString();
+  const here = `/devices/approve${query ? `?${query}` : ""}`;
 
   const forwarded = forwardedHeaders(await headers());
   const user = await getSessionUser(forwarded);
@@ -81,7 +95,12 @@ export default async function ApproveDevicePage({
         </div>
       ) : (
         <div className="card">
-          <ApproveDeviceForm initialCode={code} workspaces={approvable} />
+          <ApproveDeviceForm
+            initialCode={code}
+            workspaces={approvable}
+            initialWorkspaceId={wantedWorkspace || undefined}
+            initialDashboardId={wantedDashboard || undefined}
+          />
         </div>
       )}
     </>

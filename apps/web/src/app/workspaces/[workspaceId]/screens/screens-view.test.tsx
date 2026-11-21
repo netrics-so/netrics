@@ -102,7 +102,7 @@ describe("Screens page", () => {
     const html = render();
     expect(html).toContain("All screens");
     expect(html).toContain("2 screens · 1 online");
-    expect(html).toContain('href="/devices/approve"');
+    expect(html).toContain('href="/devices/approve?workspace=w"');
     expect(html).toContain("Connect a TV");
     expect(html).toMatch(/aria-pressed="true"[^>]*>Cards</);
     expect(html).toMatch(/aria-pressed="false"[^>]*>Table</);
@@ -174,7 +174,7 @@ describe("Screens page", () => {
     });
     expect(html).toContain("No screens yet");
     expect(html).toContain("shows a short code");
-    expect(html).toContain('href="/devices/approve"');
+    expect(html).toContain('href="/devices/approve?workspace=w"');
     expect(html).not.toContain("view-switch");
   });
 

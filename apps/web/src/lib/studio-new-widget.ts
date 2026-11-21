@@ -51,6 +51,8 @@ export function newWidget(
     goals?: ReadonlyArray<{ id: string; name: string }>;
     /** Connections that keep review text (latest review), first first. */
     reviewConnectionIds?: readonly string[];
+    /** The dashboard's shared filters: no item title among their dimensions. */
+    filters?: readonly import("@netrics/domain").DashboardDataFilter[];
   },
 ): { widget: NewWidget } | { reason: string } {
   const t = webTranslator(input.locale, "studio.newWidget");
@@ -74,7 +76,7 @@ export function newWidget(
     }
     case "items": {
       const binding = itemsModels(input.models ?? [])
-        .map(itemsBindingFor)
+        .map((model) => itemsBindingFor(model, input.filters))
         .find((binding) => binding !== null);
       if (!binding) return { reason: t("noImageModels") };
       return {

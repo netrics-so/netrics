@@ -22,6 +22,7 @@ import { getT } from "@/lib/i18n/server";
 import { parseOAuthOutcome } from "@/lib/oauth-connection";
 import { navigationQuery, projectScope } from "@/lib/project-scope";
 import { requireSession } from "@/lib/session";
+import { connectTvHref } from "@/lib/device-platform";
 
 export const dynamic = "force-dynamic";
 
@@ -188,7 +189,7 @@ export default async function WorkspaceHomePage({
             </Link>
           ) : null}
           {can(role, "devices:manage") ? (
-            <Link href="/devices/approve" className="button">
+            <Link href={connectTvHref(workspaceId)} className="button">
               {t("connectTv")}
             </Link>
           ) : null}

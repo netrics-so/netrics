@@ -26,3 +26,41 @@ export function hasRotationSetting(platform: DevicePlatform | null): boolean {
 export function isHandheld(platform: Device["platform"]): boolean {
   return platform === "ios" || platform === "ipados";
 }
+
+/**
+ * The "Connect a TV" page opened from a workspace (and a dashboard): it
+ * preselects them instead of the first workspace the person can manage
+ * (#835). A TV's QR code opens it with `?code=` alone.
+ */
+export function connectTvHref(
+  workspaceId: string,
+  dashboardId?: string | null,
+): string {
+  const query = new URLSearchParams({ workspace: workspaceId });
+  if (dashboardId) query.set("dashboard", dashboardId);
+  return `/devices/approve?${query.toString()}`;
+}
+
+/**
+ * The workspace and dashboard the form starts with: those asked for when
+ * the person may pair screens there and the dashboard is offered, else the
+ * first workspace and its first dashboard.
+ */
+export function initialPairingTarget(
+  workspaces: ReadonlyArray<{
+    id: string;
+    dashboards: ReadonlyArray<{ id: string }>;
+  }>,
+  wanted: {
+    workspaceId?: string | undefined;
+    dashboardId?: string | undefined;
+  },
+): { workspaceId: string; dashboardId: string } {
+  const workspace =
+    workspaces.find((w) => w.id === wanted.workspaceId) ?? workspaces[0]!;
+  const dashboard =
+    (workspace.id === wanted.workspaceId
+      ? workspace.dashboards.find((d) => d.id === wanted.dashboardId)
+      : undefined) ?? workspace.dashboards[0];
+  return { workspaceId: workspace.id, dashboardId: dashboard?.id ?? "" };
+}

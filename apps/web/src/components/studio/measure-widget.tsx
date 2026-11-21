@@ -678,7 +678,15 @@ export function MeasureWidgetView({
               ) : null,
             )}
           </svg>
-          <ol>
+          {/* On a slide the tile has no room for every point's value, and a
+              screen cannot scroll: the list stays for screen readers only,
+              as tvOS draws the chart alone (#835). Without a slide (scroll
+              cards), or where its values set a filter, it shows. */}
+          <ol
+            className={
+              placement && !interaction ? "visually-hidden" : undefined
+            }
+          >
             {chartRows.map(({ dimension, cell }, index) => (
               <li key={index}>
                 <span>

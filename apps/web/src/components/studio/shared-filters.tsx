@@ -439,7 +439,7 @@ function CompactFilter({
     else
       popover
         .querySelector<HTMLElement>(
-          "input:not([disabled]), select:not([disabled]), button:not([disabled])",
+          "input:not([disabled]), select:not([disabled]), button:not([disabled]):not(.dashboard-filter-done)",
         )
         ?.focus();
   }, [open, sheet]);
@@ -581,6 +581,18 @@ function CompactFilter({
             aria-label={filter.name}
             tabIndex={-1}
           >
+            {/* Done sits above the values (#835): below them, every chip a
+                chosen value adds pushed it down, and a press where it was
+                landed on nothing. */}
+            <div className="dashboard-filter-popover-head">
+              <button
+                type="button"
+                className="primary dashboard-filter-done"
+                onClick={() => close(true)}
+              >
+                {t("done")}
+              </button>
+            </div>
             <DashboardFilterInput
               initialBrowse
               workspaceId={workspaceId}
@@ -592,13 +604,6 @@ function CompactFilter({
             {filter.fixedValue ? (
               <p className="help">{t("fixedScopeActive")}</p>
             ) : null}
-            <button
-              type="button"
-              className="primary"
-              onClick={() => close(true)}
-            >
-              {t("done")}
-            </button>
           </div>
         </Sheet>
       ) : null}

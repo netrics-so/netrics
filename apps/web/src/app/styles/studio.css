@@ -257,9 +257,15 @@
     height: 100dvh;
   }
 
+  /* Each column contains its absolutely positioned descendants (the
+     visually hidden labels of filter values, among others): their
+     containing block otherwise lies outside the column, so they made the
+     page taller than the window, and focusing or scrolling to a control
+     scrolled the whole page, top bar and all (#835). */
   .studio-rail,
   .studio-stage,
   .studio-inspector {
+    position: relative;
     overflow: auto;
     overscroll-behavior: contain;
   }
