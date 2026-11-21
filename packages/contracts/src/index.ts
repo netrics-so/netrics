@@ -2722,6 +2722,29 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
 ]);
 export type DashboardWidget = z.infer<typeof dashboardWidgetSchema>;
 
+/**
+ * Linked products with their member apps (#777), as the mapping tables of
+ * a dashboard's models hold them. Unbounded like those tables: a mapping
+ * is read under the workspace's query limits, and one over them resolves
+ * no product at all, on screens and in browsers alike.
+ */
+export const productAppsSchema = z.record(z.string(), z.array(z.string()));
+
+/** The models a draft's shared filters map to (the Studio, #777). */
+export const dashboardProductAppsRequestSchema = z.strictObject({
+  modelIds: z.array(z.uuid()).max(200),
+});
+export type DashboardProductAppsRequest = z.infer<
+  typeof dashboardProductAppsRequestSchema
+>;
+/** Every linked product of those models with its member apps. */
+export const dashboardProductAppsResponseSchema = z.object({
+  productApps: productAppsSchema,
+});
+export type DashboardProductAppsResponse = z.infer<
+  typeof dashboardProductAppsResponseSchema
+>;
+
 export const dashboardSlideSchema = z.object({
   id: z.uuid(),
   position: z.number().int().min(0),
@@ -2766,6 +2789,14 @@ export const dashboardSchema = z.object({
    * it; only a swap or swap-back changes it.
    */
   archivedAt: z.iso.datetime().nullable(),
+  /**
+   * The linked products the slides' scopes name (`product:<id>`), each
+   * with its member apps as `<connectionId>:<resourceId>` keys (#777): a
+   * metric, line, bar, table or review widget on a slide scoped to a
+   * product reads the product's app of its connection. Absent when there
+   * are none. Read-only.
+   */
+  productApps: productAppsSchema.optional(),
   slides: z.array(dashboardSlideSchema),
   /**
    * The metric widgets of all slides in reading order, as tiles. Kept for

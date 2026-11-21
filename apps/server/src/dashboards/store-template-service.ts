@@ -715,6 +715,8 @@ export function createStoreTemplateService(deps: {
                   } else {
                     const dashboard = await createDashboardService({
                       db: tx,
+                      policy: deps.policy,
+                      now: deps.now,
                     }).create(
                       actor,
                       createDashboardRequestSchema.parse({

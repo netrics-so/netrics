@@ -20,14 +20,16 @@ import {
   localizedFreshnessStreamName,
   RESOURCE_DIMENSION,
   scopedFreshnessResources,
+  type DashboardDataFilter,
   type DashboardFilterExclusion,
+  type DashboardFilterValue,
   type DataExpression,
   type DataPolicy,
   type Locale,
   type SlideFilterScope,
 } from "@netrics/domain";
 
-import { createDataLoader, DataServiceError } from "../data/service.js";
+import { createDataLoader } from "../data/service.js";
 import {
   relevantFreshnessRows,
   selectedResourcesOf,
@@ -83,6 +85,13 @@ export interface UsedRow {
   row: ConnectionFreshnessRow;
   stream: FreshnessStream;
   manifest: ConnectorManifest;
+  /**
+   * A stand-in for an app a widget names that has no stored row yet (#776):
+   * "no data yet", so it is the least fresh row. `checked`: its `checkedAt`
+   * is its connection's latest check; `unchecked`: the connection has no
+   * rows, so it has no time and adds none to `fetchedAt`.
+   */
+  missing?: "checked" | "unchecked";
 }
 
 /**
@@ -112,6 +121,8 @@ export function createFreshnessReader(
   workspaceId: string,
   manifests: FreshnessManifests,
   locale: Locale = DEFAULT_LOCALE,
+  /** Mapping tables the response already read; else a cache of its own. */
+  scopeMappings: ScopeMappingCache = createScopeMappingCache(),
 ): FreshnessReader {
   const loaded = new Map<string, LoadedConnection | null>();
 
@@ -181,7 +192,7 @@ export function createFreshnessReader(
   }
 
   return {
-    scopeMappings: createScopeMappingCache(),
+    scopeMappings,
     async read(tx, dependencies) {
       if (!dependencies.length) return { overdue: false };
       await load(
@@ -190,6 +201,18 @@ export function createFreshnessReader(
       );
       const used = new Map<string, UsedRow>();
       const nextDue = new Map<string, Date | null>();
+      // The apps the dependencies name, each with the first periodic
+      // stream that has no row for it, until one of its streams has a row.
+      const apps = new Map<
+        string,
+        {
+          connectionId: string;
+          resource: string;
+          connection: LoadedConnection;
+          found: boolean;
+          stream?: FreshnessStream;
+        }
+      >();
       for (const dependency of dependencies) {
         const connection = loaded.get(dependency.connectionId);
         if (!connection) continue;
@@ -201,7 +224,20 @@ export function createFreshnessReader(
               : stream.key === dependency.stream,
         );
         if (!stream) continue;
-        for (const row of streamRows(connection, stream, dependency.resource))
+        const rows = streamRows(connection, stream, dependency.resource);
+        if (dependency.resource !== undefined) {
+          const key = `${dependency.connectionId}\u0000${dependency.resource}`;
+          const app = apps.get(key) ?? {
+            connectionId: dependency.connectionId,
+            resource: dependency.resource,
+            connection,
+            found: false,
+          };
+          if (rows.length) app.found = true;
+          else if (stream.kind === "periodic") app.stream ??= stream;
+          apps.set(key, app);
+        }
+        for (const row of rows)
           used.set(
             `${dependency.connectionId}\u0000${row.stream}\u0000${row.resource}`,
             {
@@ -213,6 +249,19 @@ export function createFreshnessReader(
           );
         nextDue.set(dependency.connectionId, connection.nextDueAt);
       }
+      // An app without a row in any of its streams (just added, or not
+      // synced yet) counts as "no data yet" next to the rows of the
+      // others (#776): a product is never fresher than its least fresh
+      // app. Alone it stays without freshness, as before.
+      if (used.size)
+        for (const app of apps.values()) {
+          if (app.found || !app.stream) continue;
+          const entry = missingRow(workspaceId, app, app.stream);
+          used.set(
+            `${app.connectionId}\u0000${entry.row.stream}\u0000${entry.row.resource}`,
+            entry,
+          );
+        }
       return summarizeFreshness([...used.values()], nextDue, locale);
     },
     async streams(tx, connectionIds) {
@@ -343,6 +392,37 @@ function streamRows(
   return [...picked];
 }
 
+/**
+ * The stand-in row of an app without stored rows (#776): periodic without
+ * a covered day or a next time, checked when its connection last was.
+ */
+function missingRow(
+  workspaceId: string,
+  app: { connectionId: string; resource: string; connection: LoadedConnection },
+  stream: FreshnessStream,
+): UsedRow {
+  const checks = app.connection.rows.map(({ row }) => row.checkedAt.getTime());
+  const checkedAt = new Date(checks.length ? Math.max(...checks) : 0);
+  return {
+    connectionId: app.connectionId,
+    row: {
+      workspaceId,
+      connectionId: app.connectionId,
+      stream: stream.key,
+      resource: app.resource,
+      dataThrough: null,
+      timeZone: null,
+      expectedFrom: null,
+      nextExpectedAt: null,
+      checkedAt,
+      advancedAt: null,
+    },
+    stream,
+    manifest: app.connection.manifest,
+    missing: checks.length ? "checked" : "unchecked",
+  };
+}
+
 const time = (date: Date | null) => date?.getTime() ?? null;
 
 /**
@@ -419,7 +499,9 @@ function leastFresh(
   nextDue: ReadonlyMap<string, Date | null>,
   locale: Locale,
 ): WidgetFreshnessResult {
-  if (!rows.length) return { overdue: false };
+  // Rows with a check time; stand-ins without one alone say nothing.
+  const checked = rows.filter((entry) => entry.missing !== "unchecked");
+  if (!checked.length) return { overdue: false };
   // A stable order, so equal rows always give the same summary.
   const sorted = [...rows].sort((a, b) =>
     compareText(
@@ -428,7 +510,7 @@ function leastFresh(
     ),
   );
   const fetchedAt = Math.min(
-    ...sorted.map(({ row }) => row.checkedAt.getTime()),
+    ...checked.map(({ row }) => row.checkedAt.getTime()),
   );
   const dueTimes = [
     ...new Set(sorted.map(({ connectionId }) => connectionId)),
@@ -444,7 +526,7 @@ function leastFresh(
       : { nextCheckAt: new Date(nextCheckAt).toISOString() }),
   };
   if (!periodic.length) {
-    const chosen = sorted.reduce((least, entry) =>
+    const chosen = checked.reduce((least, entry) =>
       entry.row.checkedAt.getTime() < least.row.checkedAt.getTime()
         ? entry
         : least,
@@ -526,6 +608,7 @@ export async function modelFreshnessDependencies(
   /** A paired screen's fixed scope; it can never be excluded. */
   deviceScope: SlideFilterScope = {},
   read?: ScopeRead,
+  choices?: FilterChoices,
 ): Promise<FreshnessDependency[]> {
   return sourceFreshnessDependencies(
     tx,
@@ -535,7 +618,19 @@ export async function modelFreshnessDependencies(
     exclusions,
     deviceScope,
     read,
+    undefined,
+    choices,
   );
+}
+
+/**
+ * The dashboard's filters with the viewer's choices (#776): what the data
+ * rows apply next to the scopes, a filter's chosen value (else its
+ * default) and its fixed value.
+ */
+export interface FilterChoices {
+  filters: readonly DashboardDataFilter[];
+  values: Readonly<Record<string, DashboardFilterValue>>;
 }
 
 /**
@@ -543,10 +638,11 @@ export async function modelFreshnessDependencies(
  * connection's dataset key, an observation dataset through its metric
  * definition to the metric key. `resources:` and manual datasets have no
  * stream. The resources are the apps of the connection that both the
- * slide's scope and a screen's scope (#500) pick, a linked product's
- * through the install's mapping table (scopedFreshnessResources, #767); a
- * connection neither scope names an app of adds nothing, and a scope that
- * picks no apps leaves every selected resource.
+ * slide's scope, a screen's scope (#500), the viewer's chosen filter
+ * values and the dashboard's fixed ones (#776) all pick, as the data rows
+ * apply them; a linked product's through the install's mapping table
+ * (scopedFreshnessResources, #767). A connection they name no app of adds
+ * nothing, and when none picks apps every selected resource counts.
  */
 export async function sourceFreshnessDependencies(
   tx: Transaction,
@@ -564,7 +660,18 @@ export async function sourceFreshnessDependencies(
    * store's connections ("Google Play's proceeds" lists Google Play only).
    */
   bindingFilter?: DataExpression,
+  /** The filters' chosen and fixed values, which the rows apply (#776). */
+  choices?: FilterChoices,
 ): Promise<FreshnessDependency[]> {
+  const chosen: Record<string, SlideFilterScope[string]> = {},
+    fixedValues: Record<string, SlideFilterScope[string]> = {};
+  for (const filter of choices?.filters ?? []) {
+    const value = Object.hasOwn(choices!.values, filter.id)
+      ? choices!.values[filter.id]
+      : filter.defaultValue;
+    if (value) chosen[filter.id] = value;
+    if (filter.fixedValue) fixedValues[filter.id] = filter.fixedValue;
+  }
   const fixed = fixedFilterValues(bindingFilter);
   // A fixed value of any field is a scope: values naming apps or products
   // pick their apps; any other value picks nothing and is ignored there.
@@ -631,7 +738,7 @@ export async function sourceFreshnessDependencies(
     tx,
     workspaceId,
     ids,
-    [slideScope, deviceScope, bindingScope],
+    [slideScope, deviceScope, bindingScope, chosen, fixedValues],
     read,
   );
   // A fixed store on a store template's model: only its connector's
@@ -671,17 +778,24 @@ export async function sourceFreshnessDependencies(
   return found.flatMap(({ connectionId, key, metric }) => {
     if (connectors && !storeConnectors.has(connectors.get(connectionId) ?? ""))
       return [];
-    const slide = scopedFreshnessResources(
+    // What each scope picks on this connection; those that pick apps
+    // leave the apps all of them pick.
+    const picks = [
+      scopedFreshnessResources(
         { ...slideScope, ...bindingScope },
         connectionId,
         exclusions,
         apps,
       ),
-      screen = scopedFreshnessResources(deviceScope, connectionId, [], apps);
-    const resources =
-      slide && screen
-        ? slide.filter((resource) => screen.includes(resource))
-        : (slide ?? screen);
+      scopedFreshnessResources(deviceScope, connectionId, [], apps),
+      scopedFreshnessResources(chosen, connectionId, exclusions, apps),
+      scopedFreshnessResources(fixedValues, connectionId, exclusions, apps),
+    ].filter((picked) => picked !== undefined);
+    const resources = picks.length
+      ? picks.reduce((left, right) =>
+          left.filter((resource) => right.includes(resource)),
+        )
+      : undefined;
     return (resources ?? [undefined]).map((resource) =>
       metric
         ? { connectionId, metricKey: key, resource }
@@ -801,13 +915,6 @@ const PRODUCT_PREFIX = "product:";
 const APP_KEY =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:.+$/i;
 
-/** Mapping tables that are gone or not there yet map nothing. */
-const NO_MAPPING = new Set([
-  "data_source_expired",
-  "data_source_history_unavailable",
-  "data_source_not_found",
-]);
-
 /**
  * The apps of each product a scope names (#767): a store-template app
  * slide's `product:<id>` stands for the apps the install's mapping table
@@ -824,8 +931,20 @@ async function scopeProductApps(
   scopes: readonly SlideFilterScope[],
   read: ScopeRead | undefined,
 ): Promise<Map<string, string[]>> {
-  const apps = new Map<string, string[]>();
-  const products = new Set(
+  const products = scopeProducts(scopes);
+  if (!read || !products.size) return new Map();
+  return new Map(
+    [...(await mappedProductApps(tx, workspaceId, ids, read))].filter(
+      ([product]) => products.has(product),
+    ),
+  );
+}
+
+/** The linked products (`product:<id>`) the scopes' values name. */
+export function scopeProducts(
+  scopes: readonly SlideFilterScope[],
+): Set<string> {
+  return new Set(
     scopes.flatMap((scope) =>
       Object.values(scope).flatMap((value) =>
         value.kind === "values"
@@ -837,8 +956,22 @@ async function scopeProductApps(
       ),
     ),
   );
+}
+
+/**
+ * Every product and its apps in the mapping tables among `ids`, a model's
+ * datasets: what measure widgets' freshness resolves a product scope
+ * through (#767), and connection widgets their resource (#777).
+ */
+export async function mappedProductApps(
+  tx: Transaction,
+  workspaceId: string,
+  ids: ReadonlySet<string>,
+  read: ScopeRead,
+): Promise<Map<string, string[]>> {
+  const apps = new Map<string, string[]>();
   const datasets = [...ids].filter((id) => UUID.test(id));
-  if (!read || !products.size || !datasets.length) return apps;
+  if (!datasets.length) return apps;
   const cache = read.cache ?? createScopeMappingCache();
   if (!cache.policy) {
     cache.policy = (
@@ -850,10 +983,6 @@ async function scopeProductApps(
     ).policy;
   }
   const policy = cache.policy;
-  // The policy's query timeout, as dashboard data reads set it.
-  await tx.execute(
-    sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
-  );
   const unknown = datasets.filter((id) => !cache.isMapping.has(id));
   if (unknown.length) {
     for (const id of unknown) cache.isMapping.set(id, false);
@@ -875,19 +1004,29 @@ async function scopeProductApps(
   }
   const mappings = datasets.filter((id) => cache.isMapping.get(id));
   for (const mapping of mappings) {
-    if (!cache.products.has(mapping))
+    if (!cache.products.has(mapping)) {
+      // The policy's query timeout, as dashboard data reads set it.
+      await tx.execute(
+        sql`select set_config('statement_timeout', ${String(policy.queryTimeoutMs ?? 0)}, true)`,
+      );
       cache.products.set(
         mapping,
         await readMapping(tx, workspaceId, mapping, read.now, policy),
       );
+    }
     for (const [product, keys] of cache.products.get(mapping) ?? [])
-      if (products.has(product))
-        apps.set(product, [...(apps.get(product) ?? []), ...keys]);
+      apps.set(product, [...(apps.get(product) ?? []), ...keys]);
   }
   return apps;
 }
 
-/** A mapping table's products and their apps; null when it has no rows. */
+/**
+ * A mapping table's products and their apps; null when it cannot be read.
+ * Freshness never fails a widget (#776): a table that is gone or not there
+ * yet, and any other read error (a row limit, a timeout) map
+ * nothing, so a product scope then leaves every selected resource. Read in
+ * a savepoint, so a failed statement does not abort the widget's own.
+ */
 async function readMapping(
   tx: Transaction,
   workspaceId: string,
@@ -897,16 +1036,17 @@ async function readMapping(
 ): Promise<Map<string, string[]> | null> {
   let rows: Record<string, unknown>[];
   try {
-    rows = (
-      await createDataLoader(tx, workspaceId, now, {
-        policy,
-        allowPendingResults: true,
-      }).load(mapping)
-    ).rows;
-  } catch (error) {
-    if (error instanceof DataServiceError && NO_MAPPING.has(error.code))
-      return null;
-    throw error;
+    rows = await tx.transaction(
+      async (savepoint) =>
+        (
+          await createDataLoader(savepoint, workspaceId, now, {
+            policy,
+            allowPendingResults: true,
+          }).load(mapping)
+        ).rows,
+    );
+  } catch {
+    return null;
   }
   // As resolveStoreProducts: an app's first mapping row decides.
   const products = new Map<string, string[]>(),

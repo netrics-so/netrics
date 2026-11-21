@@ -1,3 +1,4 @@
+import type { DataPolicy } from "@netrics/domain";
 import type { FastifyBaseLogger } from "fastify";
 
 import type { DashboardTileInput } from "@netrics/contracts";
@@ -49,6 +50,9 @@ export interface OnboardingDeps {
   credentialKeyring: CredentialKeyring;
   oauthProviders: OAuthProviders;
   logger: FastifyBaseLogger;
+  /** The deployment's data policy and clock: product scopes (#777). */
+  policy?: DataPolicy;
+  now?: () => Date;
 }
 
 /** Returns the demo dashboard's id, or null when it could not be added. */

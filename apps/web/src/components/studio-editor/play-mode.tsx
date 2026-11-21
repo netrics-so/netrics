@@ -52,13 +52,14 @@ export function PlayMode({
   const slides = useMemo(
     () =>
       // Widgets follow their slide's scope, as on screens (#707).
-      documentRotation(document.slides.map(scopedSlide), settings).map(
-        (slide) => ({
-          ...slide,
-          layouts: layouts?.get(slide.id) ?? null,
-        }),
-      ),
-    [document.slides, settings, layouts],
+      documentRotation(
+        document.slides.map((slide) => scopedSlide(slide, env.productApps)),
+        settings,
+      ).map((slide) => ({
+        ...slide,
+        layouts: layouts?.get(slide.id) ?? null,
+      })),
+    [document.slides, settings, layouts, env.productApps],
   );
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);

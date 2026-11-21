@@ -57,6 +57,7 @@ import {
   type LayoutMove,
 } from "./studio-layouts";
 import { slideScopeFollow, slideTitle } from "./studio-widgets";
+import type { ProductApps, SlideFilterScope } from "@netrics/domain";
 
 // The Studio's draft of one dashboard (ADR 0015, section 9): the document
 // as the user edits it, what is selected, and undo history. Everything here
@@ -287,6 +288,16 @@ export function initialStudioState(
   };
 }
 
+/** Whether a slide's scope value names a linked product (`product:<id>`). */
+function namesProduct(value: SlideFilterScope[string] | undefined): boolean {
+  return (
+    value?.kind === "values" &&
+    value.values.some(
+      (raw) => typeof raw === "string" && raw.startsWith("product:"),
+    )
+  );
+}
+
 /** The Studio's messages about the document, in `locale`. */
 function messages(locale: Locale) {
   return webTranslator(locale, "studio.document");
@@ -494,6 +505,15 @@ function durationOk(seconds: number) {
 export function documentProblems(
   document: StudioDocument,
   locale: Locale,
+  /**
+   * The linked products of the draft's shared filters with their member
+   * apps (#777, loadDraftProductApps): a connection widget follows a
+   * product slide through them, as the server validates it. Null: not
+   * known (still loading, or the request failed); a widget on a slide
+   * scoped to a product is then left to the server, so the Studio never
+   * blocks a save the server accepts.
+   */
+  productApps: ProductApps | null = {},
 ): StudioProblem[] {
   const t = messages(locale);
   const seconds = { min: SLIDE_SECONDS.min, max: SLIDE_SECONDS.max };
@@ -546,7 +566,7 @@ export function documentProblems(
       const name = widgetName(widget, locale);
       // A widget that follows the slide's scope through its resource needs
       // no exclusion of those filters (#707).
-      const follow = slideScopeFollow(widget, slide.scope);
+      const follow = slideScopeFollow(widget, slide.scope, productApps ?? {});
       if (follow?.conflict)
         at(
           webTranslator(locale, "data.dashboard")("slideScopeConflict", {
@@ -555,6 +575,13 @@ export function documentProblems(
         );
       for (const filter of document.settings.dataFilters ?? []) {
         if (!filter.fixedValue && follow?.follows.includes(filter.id)) continue;
+        if (
+          productApps === null &&
+          follow &&
+          !filter.fixedValue &&
+          namesProduct(slide.scope?.[filter.id])
+        )
+          continue;
         const exclusions =
           widget.type === "measure" || widget.type === "items"
             ? widget.binding.exclusions

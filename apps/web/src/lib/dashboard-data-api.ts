@@ -3,6 +3,7 @@ import {
   dashboardDimensionValuesResponseSchema,
   publishedModelCatalogSchema,
   dashboardDataResponseSchema,
+  dashboardProductAppsResponseSchema,
   type ItemsWidgetOptions,
   type MetricPeriod,
   type ProjectFilterQuery,
@@ -52,6 +53,19 @@ export const previewDashboardMeasures = (
     "POST",
     `/v1/workspaces/${workspaceId}/dashboards/data/preview`,
     { filters, values, widgets, ...(items.length ? { items } : {}) },
+  );
+
+/**
+ * The linked products of the models a draft's shared filters map to, with
+ * their member apps (#777): what a save validates connection widgets on a
+ * product slide against.
+ */
+export const loadProductApps = (workspaceId: string, modelIds: string[]) =>
+  browserSend(
+    dashboardProductAppsResponseSchema,
+    "POST",
+    `/v1/workspaces/${workspaceId}/dashboards/product-apps`,
+    { modelIds },
   );
 
 /** Compare widgets bound to published measures (#507), saved or not. */

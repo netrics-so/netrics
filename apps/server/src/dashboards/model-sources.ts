@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { schema, type Transaction } from "@netrics/database";
 
 // The sources a published model reads (#721): one resolution for the
@@ -62,6 +62,111 @@ export async function modelSourceDatasets(
       }
   }
   return { all, bySourceNode };
+}
+
+/** A published release as one batched read returns it. */
+export interface PublishedRelease extends ModelRelease {
+  definition: unknown;
+}
+
+/**
+ * The published releases of several models in one query (#835): what a
+ * shown dashboard reads once for its column heads, units and the products
+ * its slide scopes name. A model without a published version is absent.
+ */
+export async function publishedReleases(
+  tx: Transaction,
+  workspaceId: string,
+  modelIds: readonly string[],
+): Promise<Map<string, PublishedRelease>> {
+  const ids = [...new Set(modelIds)];
+  if (!ids.length) return new Map();
+  const rows = await tx
+    .select({
+      id: schema.dataModels.id,
+      definition: schema.dataModelReleases.definition,
+      bindings: schema.dataModelReleases.schemaBindings,
+      dependencies: schema.dataModelReleases.dependencies,
+    })
+    .from(schema.dataModels)
+    .innerJoin(
+      schema.dataModelReleases,
+      and(
+        eq(schema.dataModelReleases.workspaceId, workspaceId),
+        eq(schema.dataModelReleases.modelId, schema.dataModels.id),
+        eq(
+          schema.dataModelReleases.version,
+          schema.dataModels.publishedVersion,
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.dataModels.workspaceId, workspaceId),
+        inArray(schema.dataModels.id, ids),
+      ),
+    );
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      {
+        definition: row.definition,
+        bindings: row.bindings as Record<string, unknown>,
+        dependencies: row.dependencies as ModelRelease["dependencies"],
+      },
+    ]),
+  );
+}
+
+/**
+ * Every dataset several releases read, as `modelSourceDatasets` finds
+ * them for one, with all their pinned preparation versions in one query.
+ */
+export async function releasesSourceDatasets(
+  tx: Transaction,
+  workspaceId: string,
+  releases: Iterable<ModelRelease>,
+): Promise<Set<string>> {
+  const all = new Set<string>();
+  const pinned = new Map<string, [string, number]>();
+  for (const release of releases) {
+    for (const id of Object.keys(release.bindings)) all.add(id);
+    for (const [preparationId, version] of Object.entries(
+      release.dependencies.prepared ?? {},
+    ))
+      pinned.set(`${preparationId}@${version}`, [preparationId, version]);
+  }
+  if (!pinned.size) return all;
+  const rows = await tx
+    .select({ graph: schema.dataPreparationVersions.graph })
+    .from(schema.dataPreparationVersions)
+    .where(
+      and(
+        eq(schema.dataPreparationVersions.workspaceId, workspaceId),
+        or(
+          ...[...pinned.values()].map(([preparationId, version]) =>
+            and(
+              eq(schema.dataPreparationVersions.preparationId, preparationId),
+              eq(schema.dataPreparationVersions.version, version),
+            ),
+          ),
+        ),
+      ),
+    );
+  for (const row of rows) {
+    const nodes = (row.graph as { nodes?: unknown[] } | undefined)?.nodes;
+    for (const node of Array.isArray(nodes) ? nodes : [])
+      if (
+        node &&
+        typeof node === "object" &&
+        "type" in node &&
+        node.type === "source" &&
+        "datasetId" in node &&
+        typeof node.datasetId === "string"
+      )
+        all.add(node.datasetId);
+  }
+  return all;
 }
 
 const ID = /^[0-9a-f-]{36}$/i;

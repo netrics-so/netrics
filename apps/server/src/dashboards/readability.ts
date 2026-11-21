@@ -9,14 +9,12 @@ import {
   textWidgetOptionsSchema,
   type FormatWarning,
 } from "@netrics/contracts";
-import { and, eq, inArray } from "drizzle-orm";
 import {
   findGoalsByIds,
   findImages,
   findWorkspace,
   listConnectionIds,
   listWorkspaceMetrics,
-  schema,
   type Dashboard,
   type DashboardWidgetRow,
   type Transaction,
@@ -40,6 +38,7 @@ import {
 
 import { resolveThemeTokens } from "../themes/service.js";
 import { measureUnits } from "./data.js";
+import { publishedReleases, type PublishedRelease } from "./model-sources.js";
 
 /**
  * Readability per format for the dashboard API (ADR 0017 section 6, #280):
@@ -85,12 +84,41 @@ export interface ReadabilityInputs {
   valueSuffixOf?(widget: DashboardWidgetRow): string;
 }
 
+/** The models whose releases the checks read: tables and split values. */
+function readabilityModels(dashboard: Dashboard) {
+  const tableModels = new Set<string>(),
+    splitModels = new Set<string>();
+  for (const slide of dashboard.slides)
+    for (const widget of slide.widgets) {
+      if (widget.type !== "measure" || widget.modelId === null) continue;
+      const view = measureWidgetOptionsSchema.safeParse(widget.options).data
+        ?.view;
+      const groups =
+        measureWidgetBindingSchema.safeParse(widget.modelBinding).data?.groupBy
+          .length ?? 0;
+      if (view === "table") tableModels.add(widget.modelId);
+      if (view === "value" && groups > 0) splitModels.add(widget.modelId);
+    }
+  return { tableModels, splitModels };
+}
+
+/** The models `loadReadabilityInputs` needs the published releases of. */
+export function readabilityModelIds(dashboard: Dashboard): string[] {
+  const { tableModels, splitModels } = readabilityModels(dashboard);
+  return [...new Set([...tableModels, ...splitModels])];
+}
+
 export async function loadReadabilityInputs(
   tx: Transaction,
   workspaceId: string,
   dashboard: Dashboard,
   locale: Locale,
   label: (widget: DashboardWidgetRow, metricName: string) => string | null,
+  /**
+   * The published releases of `readabilityModelIds`, when the caller has
+   * read them already with others (presentDashboard); else read here.
+   */
+  releases?: ReadonlyMap<string, PublishedRelease>,
 ): Promise<ReadabilityInputs> {
   const hasData = dashboard.slides.some((slide) =>
     slide.widgets.some((widget) => isDataWidgetType(widget.type)),
@@ -121,47 +149,17 @@ export async function loadReadabilityInputs(
   // The models of measure tables (their column heads, #768) and of value
   // views with a grouping (their units, #835): each published release read
   // once, in one query, and each model's units probed once.
-  const tableModels = new Set<string>(),
-    splitModels = new Set<string>();
-  for (const slide of dashboard.slides)
-    for (const widget of slide.widgets) {
-      if (widget.type !== "measure" || widget.modelId === null) continue;
-      const view = measureWidgetOptionsSchema.safeParse(widget.options).data
-        ?.view;
-      const groups =
-        measureWidgetBindingSchema.safeParse(widget.modelBinding).data?.groupBy
-          .length ?? 0;
-      if (view === "table") tableModels.add(widget.modelId);
-      if (view === "value" && groups > 0) splitModels.add(widget.modelId);
-    }
+  const { tableModels, splitModels } = readabilityModels(dashboard);
   const modelIds = [...new Set([...tableModels, ...splitModels])];
   const modelNames = new Map<string, Map<string, string>>();
   const units = new Map<string, Map<string, string | undefined>>();
-  if (modelIds.length)
-    for (const row of await tx
-      .select({
-        id: schema.dataModels.id,
-        definition: schema.dataModelReleases.definition,
-        bindings: schema.dataModelReleases.schemaBindings,
-      })
-      .from(schema.dataModels)
-      .innerJoin(
-        schema.dataModelReleases,
-        and(
-          eq(schema.dataModelReleases.workspaceId, workspaceId),
-          eq(schema.dataModelReleases.modelId, schema.dataModels.id),
-          eq(
-            schema.dataModelReleases.version,
-            schema.dataModels.publishedVersion,
-          ),
-        ),
-      )
-      .where(
-        and(
-          eq(schema.dataModels.workspaceId, workspaceId),
-          inArray(schema.dataModels.id, modelIds),
-        ),
-      )) {
+  if (modelIds.length) {
+    const found =
+      releases ?? (await publishedReleases(tx, workspaceId, modelIds));
+    for (const id of modelIds) {
+      const release = found.get(id);
+      if (!release) continue;
+      const row = { id, ...release };
       const definition = row.definition as {
         dimensions?: { id: string; name: string }[];
         measures?: { id: string; name: string }[];
@@ -188,6 +186,7 @@ export async function loadReadabilityInputs(
           );
       }
     }
+  }
   const tokens = await resolveThemeTokens(tx, workspaceId, dashboard);
   let logoAspect: number | null = null;
   const slideLogoAspects = new Map<string, number | null>();

@@ -42,7 +42,7 @@ type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 let app: FastifyInstance, db: Database, admin: Sql;
 let owner: string, stranger: string;
 let workspaceId: string, otherWorkspaceId: string;
-let modelId: string, connectionId: string;
+let modelId: string, connectionId: string, databaseUrl: string;
 let ip = 0;
 
 interface Paired {
@@ -200,6 +200,7 @@ async function devicePayload(device: Paired, schema: 2 | 3 = 3) {
 
 beforeAll(async () => {
   const test = await createTestDatabase();
+  databaseUrl = test.appUrl;
   const config = loadConfig({
     DATABASE_URL: test.appUrl,
     LOG_LEVEL: "silent",
@@ -546,6 +547,378 @@ describe("a slide scoped to one app", () => {
         .json()
         .dashboard.slides.map((slide: { scope: unknown }) => slide.scope),
     ).toEqual([only(APP_A()), only(APP_B()), {}]);
+  });
+});
+
+describe("a slide scoped to a linked product (#777)", () => {
+  // A second model over a store-template install's mapping table, which
+  // links app-b into a product; the app filter maps to it as well.
+  let productsModelId: string;
+  /** More members than any response bound used to allow (1,000). */
+  const big = () =>
+    Array.from({ length: 1001 }, (_, index) =>
+      connectionResourceKey(connectionId, `big-${index}`),
+    );
+  const productFilter = () => ({
+    ...appFilter(),
+    mappings: [
+      { modelId, dimensionId: "app" },
+      { modelId: productsModelId, dimensionId: "app" },
+    ],
+  });
+
+  beforeAll(async () => {
+    const data = `/v1/workspaces/${workspaceId}/data`;
+    const mapping = await call("POST", `${data}/manual`, {
+      cookie: owner,
+      payload: {
+        definition: {
+          key: "store_mapping",
+          name: "Mapping",
+          version: 1,
+          mode: "snapshot",
+          grain: "One product per source app",
+          keyFields: ["app_key"],
+          retentionDays: null,
+          fields: ["app_key", "product_id"].map((id) => ({
+            id,
+            name: id,
+            type: "string",
+            nullable: false,
+            classification: "internal",
+          })),
+        },
+        records: [
+          { values: { app_key: APP_B(), product_id: "product:w" } },
+          // A product with two apps of the connection picks no single one.
+          { values: { app_key: APP_A(), product_id: "product:twins" } },
+          {
+            values: {
+              app_key: connectionResourceKey(connectionId, "app-c"),
+              product_id: "product:twins",
+            },
+          },
+          ...big().map((app_key) => ({
+            values: { app_key, product_id: "product:big" },
+          })),
+        ],
+      },
+    });
+    expect(mapping.statusCode, mapping.body).toBe(200);
+    const datasetId = mapping.json().datasetId as string;
+    // Another install of the workspace reuses the product's id for app-a.
+    // None of this dashboard's models reads its mapping table.
+    const other = await call("POST", `${data}/manual`, {
+      cookie: owner,
+      payload: {
+        definition: {
+          key: "store_mapping_other",
+          name: "Other mapping",
+          version: 1,
+          mode: "snapshot",
+          grain: "One product per source app",
+          keyFields: ["app_key"],
+          retentionDays: null,
+          fields: ["app_key", "product_id"].map((id) => ({
+            id,
+            name: id,
+            type: "string",
+            nullable: false,
+            classification: "internal",
+          })),
+        },
+        records: [{ values: { app_key: APP_A(), product_id: "product:w" } }],
+      },
+    });
+    expect(other.statusCode, other.body).toBe(200);
+    await admin`
+      insert into data_template_installs (workspace_id, request_id,
+        request_hash, result)
+      values (${workspaceId}, gen_random_uuid(), ${"1".repeat(64)},
+        ${admin.json({ mappingDatasetId: other.json().datasetId as string })})`;
+    const model = await call("POST", `${data}/models`, {
+      cookie: owner,
+      payload: {
+        name: "Products",
+        definition: {
+          version: 1,
+          datasets: [datasetId],
+          relationships: [],
+          dimensions: [
+            { id: "app", name: "App", datasetId, fieldId: "product_id" },
+          ],
+          measures: [
+            {
+              id: "apps",
+              name: "Apps",
+              kind: "aggregate",
+              datasetId,
+              aggregate: { id: "apps", name: "apps", op: "count" },
+            },
+          ],
+        },
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    productsModelId = model.json().model.id as string;
+    expect(
+      (
+        await call("POST", `${data}/models/${productsModelId}/publish`, {
+          cookie: owner,
+          payload: { version: 1 },
+        })
+      ).statusCode,
+    ).toBe(200);
+    await admin`
+      insert into data_template_installs (workspace_id, request_id,
+        request_hash, result)
+      values (${workspaceId}, gen_random_uuid(), ${"0".repeat(64)},
+        ${admin.json({ mappingDatasetId: datasetId })})`;
+  }, 120_000);
+
+  it("gives a metric widget the product's app of its connection", async () => {
+    const created = await createDashboard(
+      [
+        // No exclusion: the widget follows the product through its app.
+        { name: "Product", scope: only("product:w"), widgets: [downloads()] },
+        {
+          name: "All apps",
+          widgets: [
+            downloads({
+              filterExclusions: [{ filterId: "app", reason: "All apps" }],
+            }),
+          ],
+        },
+      ],
+      { dataFilters: [productFilter()] },
+    );
+    expect(created.statusCode, created.body).toBe(200);
+    const dashboard = created.json().dashboard;
+    // Browsers resolve the same scope from the product's member apps:
+    // those of the dashboard's own models, not the other install's
+    // (app-a), and only the products its slides name.
+    expect(dashboard.productApps).toEqual({ "product:w": [APP_B()] });
+    expect((await dashboardOf(dashboard.id)).productApps).toEqual(
+      dashboard.productApps,
+    );
+    const body = deviceDashboardV3ResponseSchema.parse(
+      await devicePayload(await pair(dashboard.id)),
+    );
+    // app-b's downloads only; before, every app's (3030).
+    expect(downloadsOf(slideWidgets(body, 0))).toBe(3000);
+    expect(downloadsOf(slideWidgets(body, 1))).toBe(3030);
+    // Schema 1 tiles follow it as well.
+    const tiles = (await call("GET", "/v1/device/dashboard", {
+      token: (await pair(dashboard.id)).accessToken,
+    })) as InjectResponse;
+    expect(tiles.statusCode, tiles.body).toBe(200);
+    expect(
+      (tiles.json() as { tiles: { value: number }[] }).tiles.map(
+        (tile) => tile.value,
+      ),
+    ).toEqual([3000, 3030]);
+  });
+
+  it("refuses a widget fixed to another app, and one the product picks no single app for", async () => {
+    expectError(
+      await createDashboard(
+        [
+          {
+            scope: only("product:w"),
+            widgets: [downloads({ dimensions: { resource: "app-a" } })],
+          },
+        ],
+        { dataFilters: [productFilter()] },
+      ),
+      400,
+      "slide_scope_resource_conflict",
+    );
+    for (const product of ["product:twins", "product:unknown"])
+      expectError(
+        await createDashboard(
+          [{ scope: only(product), widgets: [downloads()] }],
+          { dataFilters: [productFilter()] },
+        ),
+        400,
+        "dashboard_filter_not_applicable",
+      );
+  });
+
+  it("has no products without a product scope or a mapping among the filters' models", async () => {
+    const unscoped = await createDashboard([{ widgets: [] }], {
+      dataFilters: [productFilter()],
+    });
+    expect(unscoped.statusCode, unscoped.body).toBe(200);
+    expect(unscoped.json().dashboard).not.toHaveProperty("productApps");
+    // The app filter maps to the sales model only, which reads no mapping:
+    // the other install's products are not this dashboard's.
+    expectError(
+      await createDashboard([
+        { scope: only("product:w"), widgets: [downloads()] },
+      ]),
+      400,
+      "dashboard_filter_not_applicable",
+    );
+  });
+
+  it("reads a dashboard whose product has more than 1,000 apps", async () => {
+    const created = await createDashboard(
+      [
+        {
+          scope: only("product:big"),
+          // Many apps of the connection: no single one to follow.
+          widgets: [
+            downloads({
+              filterExclusions: [{ filterId: "app", reason: "All apps" }],
+            }),
+          ],
+        },
+      ],
+      { dataFilters: [productFilter()] },
+    );
+    expect(created.statusCode, created.body).toBe(200);
+    const stored = await dashboardOf(created.json().dashboard.id as string);
+    expect(stored.productApps["product:big"]).toHaveLength(1001);
+    // Without the exclusion the widget is refused, as browsers find too.
+    expectError(
+      await createDashboard(
+        [{ scope: only("product:big"), widgets: [downloads()] }],
+        { dataFilters: [productFilter()] },
+      ),
+      400,
+      "dashboard_filter_not_applicable",
+    );
+  });
+
+  it("gives the Studio a draft's products before it is saved", async () => {
+    const ask = (modelIds: string[], cookie = owner) =>
+      call("POST", `/v1/workspaces/${workspaceId}/dashboards/product-apps`, {
+        cookie,
+        payload: { modelIds },
+      });
+    const found = await ask([modelId, productsModelId]);
+    expect(found.statusCode, found.body).toBe(200);
+    const { productApps } = found.json() as {
+      productApps: Record<string, string[]>;
+    };
+    expect(Object.keys(productApps)).toEqual([
+      "product:big",
+      "product:twins",
+      "product:w",
+    ]);
+    expect(productApps["product:w"]).toEqual([APP_B()]);
+    // No mapping among the sales model's datasets, and no model at all.
+    expect((await ask([modelId])).json()).toEqual({ productApps: {} });
+    expect((await ask([])).json()).toEqual({ productApps: {} });
+    expect((await ask([crypto.randomUUID()])).json()).toEqual({
+      productApps: {},
+    });
+    // Another workspace's member cannot ask about this one's models.
+    expect((await ask([productsModelId], stranger)).statusCode).toBe(404);
+    expect((await ask(["nope"])).statusCode).toBe(400);
+  });
+});
+
+describe("a deployment whose query limit is below the mapping table (#846)", () => {
+  // NETRICS_DATA_POLICY lowers the row limit and the workspace overrides
+  // nothing: the mapping (over 1,000 rows) cannot be read, so no product
+  // resolves. The dashboard read, save validation, the Studio's route and
+  // the screen's payload must all say so; before, the dashboard service
+  // read with the built-in default limits and resolved it.
+  let limited: FastifyInstance;
+  let productsModelId: string;
+  const ask = (
+    method: "GET" | "POST",
+    url: string,
+    options: { token?: string; payload?: unknown } = {},
+  ) =>
+    limited.inject({
+      method,
+      url,
+      headers: options.token
+        ? { authorization: `Bearer ${options.token}` }
+        : { cookie: owner },
+      remoteAddress: `198.51.100.${(ip += 1)}`,
+      ...(options.payload !== undefined
+        ? { payload: options.payload as InjectOptions["payload"] }
+        : {}),
+    });
+
+  beforeAll(async () => {
+    const config = loadConfig({
+      DATABASE_URL: databaseUrl,
+      LOG_LEVEL: "silent",
+      BETTER_AUTH_URL: "http://localhost:3001",
+      WEB_ORIGIN: "http://localhost:3000",
+      NETRICS_DATA_POLICY: JSON.stringify({ queryRows: 500 }),
+    });
+    limited = await buildApp(config, {
+      db,
+      authService: createAuthService(config, db, {
+        logger: pino({ level: "silent" }),
+      }),
+      checkDb: async () => true,
+    });
+    const [model] = await admin`
+      select id from data_models
+      where workspace_id = ${workspaceId} and name = 'Products'`;
+    productsModelId = model!.id as string;
+  });
+  afterAll(async () => {
+    await limited?.close();
+  });
+
+  it("resolves no product on the read, the save, the route and the screen", async () => {
+    const filters = [
+      {
+        ...appFilter(),
+        mappings: [
+          { modelId, dimensionId: "app" },
+          { modelId: productsModelId, dimensionId: "app" },
+        ],
+      },
+    ];
+    const slides = [{ scope: only("product:w"), widgets: [downloads()] }];
+    // Stored where the mapping can be read: a product slide whose widget
+    // follows the product.
+    const created = await createDashboard(slides, { dataFilters: filters });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().dashboard.id as string;
+    expect(created.json().dashboard.productApps).toEqual({
+      "product:w": [APP_B()],
+    });
+    const dashboards = `/v1/workspaces/${workspaceId}/dashboards`;
+
+    // The Studio's route.
+    const route = await ask("POST", `${dashboards}/product-apps`, {
+      payload: { modelIds: [productsModelId] },
+    });
+    expect(route.statusCode, route.body).toBe(200);
+    expect(route.json()).toEqual({ productApps: {} });
+    // The dashboard read.
+    const read = await ask("GET", `${dashboards}/${id}`);
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json().dashboard).not.toHaveProperty("productApps");
+    // Save validation: the widget cannot follow the product.
+    const saved = await ask("POST", dashboards, {
+      payload: {
+        name: "Limited",
+        settings: { dataFilters: filters },
+        slides,
+      },
+    });
+    expectError(saved, 400, "dashboard_filter_not_applicable");
+    // The screen: every app's downloads, not the product's (3000).
+    const screen = await pair(id);
+    const payload = await ask("GET", "/v1/device/dashboard?schema=3", {
+      token: screen.accessToken,
+    });
+    expect(payload.statusCode, payload.body).toBe(200);
+    expect(
+      downloadsOf(
+        slideWidgets(deviceDashboardV3ResponseSchema.parse(payload.json()), 0),
+      ),
+    ).toBe(3030);
   });
 });
 

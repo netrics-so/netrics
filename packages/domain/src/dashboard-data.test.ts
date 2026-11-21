@@ -448,6 +448,68 @@ describe("shared dashboard filters", () => {
       ).conflict,
     ).toBe(false);
   });
+  it("lets connection widgets follow a linked product through its member apps (#777)", () => {
+    const apple = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e001",
+      play = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e002",
+      other = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e003";
+    const app = (...values: string[]) => ({
+      app: { kind: "values" as const, values },
+    });
+    const products = new Map([
+      [
+        "product:wurfel",
+        [
+          connectionResourceKey(apple, "123"),
+          connectionResourceKey(play, "com.example"),
+        ],
+      ],
+      [
+        "product:twins",
+        [connectionResourceKey(apple, "1"), connectionResourceKey(apple, "2")],
+      ],
+    ]);
+    // Each store's widget reads the product's app of its connection.
+    expect(
+      slideScopeResource(app("product:wurfel"), apple, [], undefined, products),
+    ).toEqual({ follows: ["app"], resource: "123", conflict: false });
+    expect(
+      slideScopeResource(app("product:wurfel"), play, [], undefined, products),
+    ).toEqual({ follows: ["app"], resource: "com.example", conflict: false });
+    // The record an API response carries resolves the same way.
+    expect(
+      slideScopeResource(
+        app("product:wurfel"),
+        play,
+        [],
+        undefined,
+        Object.fromEntries(products),
+      ).resource,
+    ).toBe("com.example");
+    // A widget fixed to another app of the connection conflicts.
+    expect(
+      slideScopeResource(app("product:wurfel"), apple, [], "456", products)
+        .conflict,
+    ).toBe(true);
+    // Not followed: a connection the product has no app of, a product with
+    // two apps of the connection, a product no mapping names, and an
+    // exclusion.
+    for (const [scope, connection, exclusions] of [
+      [app("product:wurfel"), other, []],
+      [app("product:twins"), apple, []],
+      [app("product:unknown"), apple, []],
+      [app("constructor"), apple, []],
+      [app("product:wurfel"), apple, [{ filterId: "app", reason: "All" }]],
+    ] as const)
+      expect(
+        slideScopeResource(
+          scope,
+          connection,
+          exclusions,
+          undefined,
+          connection === other ? products : Object.fromEntries(products),
+        ),
+      ).toEqual({ follows: [], conflict: false });
+  });
   it("picks a connection's apps of a scope for freshness (#767)", () => {
     const apple = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e001",
       play = "0b1c6c0e-1e43-4c55-9b0f-5a4ad1f4e002";
