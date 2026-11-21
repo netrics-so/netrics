@@ -23,6 +23,9 @@ export const FIXTURE_DEFINITION_NAMES = [
   "api_key_query",
   "api_key_query_400",
   "api_key_query_echo",
+  "api_key_self_link",
+  "next_cycle",
+  "next_reorder",
   "bearer",
   "bearer_custom",
   "basic",
@@ -268,12 +271,19 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
       );
       break;
     case "api_key_query_echo":
+    case "api_key_self_link":
       auth = { type: "api_key", placement: "query", name: "api_key" };
-      stream = itemStream("items", "/auth/api-key-query-echo", {
-        type: "next_url",
-        source: "body",
-        path: "links.next",
-      });
+      stream = itemStream(
+        "items",
+        name === "api_key_self_link"
+          ? "/auth/api-key-self-link"
+          : "/auth/api-key-query-echo",
+        {
+          type: "next_url",
+          source: "body",
+          path: "links.next",
+        },
+      );
       break;
     case "bearer":
       auth = { type: "bearer" };
@@ -286,6 +296,14 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
     case "basic":
       auth = { type: "basic" };
       stream = itemStream("items", "/auth/basic", none);
+      break;
+    case "next_cycle":
+    case "next_reorder":
+      stream = itemStream(
+        "items",
+        name === "next_cycle" ? "/edge/next-cycle" : "/edge/next-reorder",
+        { type: "next_url", source: "body", path: "links.next" },
+      );
       break;
     case "next_off_host":
       stream = itemStream("items", "/edge/next-off-host", {

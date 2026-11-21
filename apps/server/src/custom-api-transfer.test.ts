@@ -260,6 +260,27 @@ describe("custom API import", () => {
     );
   });
 
+  it("cuts and escapes key names from the file in envelope issues", async () => {
+    const long = `sk_live_${"k".repeat(200)}`;
+    const res = await importFile({
+      format: CUSTOM_API_EXPORT_FORMAT,
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      definition: bearer(),
+      [long]: 1,
+      'a"b\nc': 2,
+    });
+    expect(res.statusCode).toBe(400);
+    const body = customApiErrorResponseSchema.parse(res.json());
+    expect(body.error).toBe("custom_api_import_invalid");
+    expect(res.body).not.toContain(long);
+    expect(body.issues).toContainEqual({
+      path: "",
+      code: "invalid",
+      message: `Unknown properties: "${long.slice(0, 63)}…", "a\\"b\\nc"`,
+    });
+  });
+
   it("refuses a newer schema version with a clear code", async () => {
     for (const file of [
       {

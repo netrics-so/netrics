@@ -1,4 +1,7 @@
-import { ConnectorRegistry } from "@netrics/connector-runtime";
+import {
+  ConnectorRegistry,
+  broadPrivateHostEntries,
+} from "@netrics/connector-runtime";
 import {
   createAppStoreConnectConnector,
   createAppleAdsConnector,
@@ -91,6 +94,8 @@ export function logRegisteredConnectors(
     previewConnectorsIgnored?: readonly string[];
     /** Default: PREVIEW_CONNECTORS. */
     previews?: ReadonlySet<string>;
+    /** NETRICS_CUSTOM_API_PRIVATE_HOSTS; broad entries get a warning. */
+    customApiPrivateHosts?: readonly string[];
   } = {},
 ): void {
   const ignored = options.previewConnectorsIgnored ?? [];
@@ -99,6 +104,13 @@ export function logRegisteredConnectors(
     log.warn(
       { ignored },
       "NETRICS_PREVIEW_CONNECTORS names connectors that are not previews (any more); they are registered anyway, remove them from the variable",
+    );
+  }
+  const broad = broadPrivateHostEntries(options.customApiPrivateHosts ?? []);
+  if (broad.length > 0) {
+    log.warn(
+      { entries: broad },
+      "NETRICS_CUSTOM_API_PRIVATE_HOSTS has broad entries; a listed name may resolve to any private address, loopback included (metadata stays refused). List exact hosts or ranges instead",
     );
   }
   log.info(

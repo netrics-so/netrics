@@ -17,6 +17,7 @@ import {
 } from "@netrics/contracts";
 import {
   countCustomApiDefinitions,
+  lockCustomApiLimit,
   customApiDatasetVersionHighWater,
   findCustomApiDefinition,
   findProject,
@@ -224,8 +225,9 @@ export function createCustomApiService(deps: {
             return refused;
           }
         }
-        // Two concurrent creates may both pass this count and end one above
-        // the limit; the limit bounds abuse, it is not an exact quota.
+        // Serialised per workspace: two concurrent creates cannot both
+        // pass the count.
+        await lockCustomApiLimit(tx, actor.workspaceId, "definitions");
         const count = await countCustomApiDefinitions(tx, actor.workspaceId);
         if (count >= deps.limits.maxDefinitions) {
           return fail(409, "custom_api_definition_limit");

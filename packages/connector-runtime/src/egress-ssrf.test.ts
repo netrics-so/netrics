@@ -24,6 +24,7 @@ import {
   createEgressFetch,
   isBlockedAddress,
   isMetadataAddress,
+  broadPrivateHostEntries,
   parsePrivateHostEntries,
   privateHostPolicy,
   type EgressOptions,
@@ -64,10 +65,17 @@ describe("isBlockedAddress (SSRF)", () => {
     "fec0::1",
     "ff02::1",
   ])("blocks %s", (a) => expect(isBlockedAddress(a)).toBe(true));
-  it.each(["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "::ffff:1.1.1.1"])(
-    "allows public %s",
-    (a) => expect(isBlockedAddress(a)).toBe(false),
-  );
+  it.each([
+    "1.1.1.1",
+    "8.8.8.8",
+    "2606:4700:4700::1111",
+    "2a00:1450:4001::200e",
+    "100:0:0:1::1",
+    // Mapped and compatible forms of a public address stay that address.
+    "::ffff:1.1.1.1",
+    "::ffff:101:101",
+    "::101:101",
+  ])("allows public %s", (a) => expect(isBlockedAddress(a)).toBe(false));
 });
 
 describe("tunnelled and legacy IPv6 forms (each named, so a regression points at the form)", () => {
@@ -81,6 +89,18 @@ describe("tunnelled and legacy IPv6 forms (each named, so a regression points at
     ["Teredo prefix", "2001::1"],
     ["site-local", "fec0::1"],
     ["site-local upper", "feff:ffff::1"],
+    ["IPv4-translated loopback", "::ffff:0:7f00:1"],
+    [
+      "IPv4-translated public (whole ::ffff:0:0:0/96 refused)",
+      "::ffff:0:101:101",
+    ],
+    ["IPv4-translated dotted", "::ffff:0:10.0.0.1"],
+    ["reserved ::/8 outside the /96 ranges", "::ffff:1:7f00:1"],
+    ["reserved ::/8, public-looking tail", "::1:0:0:101:101"],
+    [
+      "reserved ::/8, top of the range",
+      "ff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    ],
   ])("blocks %s (%s)", (_name, a) => expect(isBlockedAddress(a)).toBe(true));
 });
 
@@ -96,12 +116,43 @@ describe("isMetadataAddress", () => {
     "100.100.100.200",
     "192.0.0.192",
     "fe80::1",
+    "::ffff:0:a9fe:a9fe",
+    "::ffff:0:169.254.169.254",
   ])("%s", (a) => expect(isMetadataAddress(a)).toBe(true));
   it("does not treat ordinary private addresses as metadata", () => {
     expect(isMetadataAddress("10.0.0.1")).toBe(false);
     expect(isMetadataAddress("127.0.0.1")).toBe(false);
     expect(isMetadataAddress("fd12::1")).toBe(false);
   });
+});
+
+describe("broadPrivateHostEntries", () => {
+  it("names single-label wildcards and localhost", () =>
+    expect(
+      broadPrivateHostEntries([
+        "*.com",
+        "*.local",
+        "*.co.uk",
+        "*.com.au",
+        "*.github.io",
+        "localhost",
+        "api.localhost",
+        "*.corp.example",
+        "*.example.co.uk",
+        "intranet.example",
+        "intranet",
+        "10.20.0.0/16",
+        "127.0.0.1",
+      ]),
+    ).toEqual([
+      "*.com",
+      "*.local",
+      "*.co.uk",
+      "*.com.au",
+      "*.github.io",
+      "localhost",
+      "api.localhost",
+    ]));
 });
 
 describe("private host entries", () => {

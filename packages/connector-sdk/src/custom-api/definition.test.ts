@@ -9,6 +9,8 @@ import {
   customApiDefinitionSchema,
   customApiIssues,
   customApiStreamSchema,
+  CustomApiDefinitionError,
+  upgradeCustomApiDefinition,
   type CustomApiDefinition,
 } from "./definition.js";
 
@@ -849,18 +851,85 @@ describe("customApiDefinitionSchema", () => {
     ).toBe(true);
   });
 
-  it("drops __proto__ keys instead of polluting prototypes", () => {
-    const input = doc(() => {});
-    input.streams[0].request.headers = JSON.parse(
-      '{"__proto__":{"polluted":"yes"},"Accept":"x"}',
+  it.each<[string, (d: Doc, value: unknown) => void, string]>([
+    [
+      "request headers",
+      (d, value) => (d.streams[0].request.headers = value),
+      "streams.0.request.headers.__proto__",
+    ],
+    [
+      "request query",
+      (d, value) => (d.streams[0].request.query = value),
+      "streams.0.request.query.__proto__",
+    ],
+    [
+      "auth headers",
+      (d, value) =>
+        (d.auth = {
+          type: "bearer",
+          headerName: "Authorization",
+          headers: value,
+        }),
+      "auth.headers.__proto__",
+    ],
+    [
+      "authorize parameters",
+      (d, value) =>
+        (d.auth = {
+          type: "oauth_authorization_code",
+          authorizeUrl: "https://auth.example.com/authorize",
+          tokenUrl: "https://auth.example.com/token",
+          authorizeParams: value,
+        }),
+      "auth.authorizeParams.__proto__",
+    ],
+  ])("refuses a __proto__ key in %s with an issue", (_name, put, path) => {
+    const input = doc((d) =>
+      put(d, JSON.parse('{"__proto__":{"polluted":"yes"},"Accept":"x"}')),
     );
-    const result = customApiDefinitionSchema.safeParse(input);
-    if (result.success) {
-      const headers = result.data.streams[0]!.request.headers;
-      expect(Object.getPrototypeOf(headers)).toBe(Object.prototype);
-      expect(Object.keys(headers)).toEqual(["Accept"]);
+    try {
+      upgradeCustomApiDefinition(input);
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(CustomApiDefinitionError);
+      expect((error as CustomApiDefinitionError).issues).toEqual([
+        { path, code: "invalid", message: "Reserved key" },
+      ]);
     }
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("refuses constructor and prototype keys in records", () => {
+    for (const key of ["constructor", "prototype"]) {
+      const input = doc(() => {});
+      input.streams[0].request.query = { [key]: "x" };
+      expect(issuesOf(input)).toContainEqual(
+        expect.objectContaining({ path: `streams.0.request.query.${key}` }),
+      );
+    }
+  });
+
+  it("names unknown properties cut and escaped", () => {
+    const long = `sk_live_${"x".repeat(200)}`;
+    const input = doc((d) => {
+      d[long] = 1;
+      d['a"b\nc'] = 2;
+    });
+    const [unknown] = issuesOf(input).filter((i) => i.path === "");
+    expect(unknown!.message).toBe(
+      `Unknown properties: "${long.slice(0, 63)}…", "a\\"b\\nc"`,
+    );
+    expect(unknown!.message).not.toContain(long);
+  });
+
+  it("cuts and escapes key names in issue paths", () => {
+    const long = `k${"y".repeat(150)}`;
+    const input = doc((d) => {
+      d.streams[0].request.query = { [long]: "{{nope}}" };
+    });
+    const paths = issuesOf(input).map((i) => i.path);
+    expect(paths).toContain(`streams.0.request.query.${long.slice(0, 63)}…`);
+    expect(paths.join()).not.toContain(long);
   });
 
   it("yields a valid source dataset for every stream", () => {

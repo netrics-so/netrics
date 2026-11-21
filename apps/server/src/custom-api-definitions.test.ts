@@ -359,6 +359,61 @@ describe("custom API definitions API", () => {
     ).toBe(200);
   });
 
+  it("answers a raw __proto__ key in the body with a plain 400 and stores nothing", async () => {
+    // Fastify's body parser refuses __proto__ keys before any route runs
+    // (onProtoPoisoning "error", its default, left as is); the API's error
+    // handler answers its generic invalid_request, without a stack. The
+    // definition schema's "Reserved key" issue is for documents that reach
+    // it another way (stored or programmatic).
+    const workspace = await newWorkspace(owner);
+    const inject = (url: string, payload: string) =>
+      app.inject({
+        method: "POST",
+        url,
+        headers: { cookie: owner, "content-type": "application/json" },
+        payload,
+      });
+    const proto = '{"__proto__":{"polluted":"yes"},';
+    for (const [url, raw] of [
+      [
+        defs(workspace),
+        JSON.stringify({ document: shop() }).replace(
+          '"document":{',
+          `"document":${proto}`,
+        ),
+      ],
+      [
+        `${defs(workspace)}/import`,
+        JSON.stringify({
+          file: { format: "x", schemaVersion: 1, definition: shop() },
+        }).replace('"definition":{', `"definition":${proto}`),
+      ],
+    ] as const) {
+      expect(raw).toContain('"__proto__"');
+      const res = await inject(url, raw);
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: "invalid_request" });
+      expect(res.body).not.toMatch(/stack|at .*\.js|__proto__|polluted/);
+    }
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    const list = await call("GET", defs(workspace), owner);
+    expect(
+      customApiDefinitionListResponseSchema.parse(list.json()).definitions,
+    ).toEqual([]);
+  });
+
+  it("enforces the definition limit under concurrent creates", async () => {
+    const workspace = await newWorkspace(owner);
+    const responses = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        call("POST", defs(workspace), owner, { document: shop() }, limitedApp),
+      ),
+    );
+    expect(responses.map((r) => r.statusCode).sort()).toEqual([
+      201, 409, 409, 409, 409, 409,
+    ]);
+  });
+
   it("enforces the definition limit", async () => {
     const workspace = await newWorkspace(owner);
     const first = await call(

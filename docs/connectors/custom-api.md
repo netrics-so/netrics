@@ -143,7 +143,13 @@ definition }` as `<name>.netrics-api.json` (`cache-control: no-store`):
   validation (strict: unknown keys such as `credentials` are refused) and
   creates a new definition at version 1; a name in use gets " (2)",
   " (3)"…. `custom_api_import_invalid` lists up to 20 issues without
-  values; `custom_api_import_newer` refuses files of a newer schema.
+  values (key names from the file cut to 64 characters and escaped);
+  `custom_api_import_newer` refuses files of a newer schema.
+- **`__proto__` keys.** A request body (save, import, draft, test) with a
+  `__proto__` key anywhere is refused by the HTTP layer before validation,
+  with a plain `400 { "error": "invalid_request" }`. A document that
+  reaches validation another way gets the issue `Reserved key` at that
+  key's path; the key is never dropped silently or stored.
 
 ## OAuth
 
@@ -192,7 +198,9 @@ clientSecret } }`.
 - **Pagination**: none; page number; offset and limit; cursor from a body
   path; next URL from a body path or the `Link` header. A next URL must stay
   on the API host. A stream ends on an empty page, a page shorter than the
-  page size, a missing or repeated cursor, or a missing next URL.
+  page size, a missing or repeated cursor, a missing next URL, or a next
+  URL back to a page it has already read (compared without secrets and with
+  sorted parameters).
 - **Records**: a dotted path (`data`, `meta.items`, `items[0].rows`) to a
   list or a single object.
 - **Fields**: every dataset type. A value that does not fit its field's type

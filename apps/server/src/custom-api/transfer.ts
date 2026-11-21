@@ -10,6 +10,7 @@ import {
   CUSTOM_API_SCHEMA_VERSION,
   CustomApiDefinitionError,
   customApiExportSchema,
+  customApiIssues,
   upgradeCustomApiDefinition,
   type CustomApiDefinition,
   type CustomApiDefinitionResponse,
@@ -97,11 +98,11 @@ export function parseImport(
     return {
       ok: false,
       error: "custom_api_import_invalid",
-      issues: envelope.error.issues.slice(0, 20).map((issue) => ({
-        path: issue.path.map(String).join("."),
+      // As every definition issue: at most 20, key names from the file
+      // cut and escaped (zod's unknown-key message repeats them whole).
+      issues: customApiIssues(envelope.error).map((issue) => ({
+        ...issue,
         code: "invalid",
-        // zod's built-in messages name the expectation, not the input.
-        message: issue.message,
       })),
     };
   try {
