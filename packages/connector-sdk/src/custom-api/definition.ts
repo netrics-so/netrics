@@ -1144,9 +1144,7 @@ export function upgradeCustomApiDefinition(raw: unknown): CustomApiDefinition {
       throw new Error(`Custom API upgrade from version ${version} is broken`);
     doc = next;
   }
-  const reserved = protoKeyIssues(doc);
-  if (reserved.length > 0)
-    throw new CustomApiDefinitionError("invalid", reserved);
+  // Size first: the key walk below only ever sees a bounded document.
   if (inputBytes(doc) > CUSTOM_API_LIMITS.documentBytes)
     throw new CustomApiDefinitionError("invalid", [
       {
@@ -1155,6 +1153,9 @@ export function upgradeCustomApiDefinition(raw: unknown): CustomApiDefinition {
         message: "The definition is too large",
       },
     ]);
+  const reserved = protoKeyIssues(doc);
+  if (reserved.length > 0)
+    throw new CustomApiDefinitionError("invalid", reserved);
   const parsed = customApiDefinitionSchema.safeParse(doc);
   if (!parsed.success)
     throw new CustomApiDefinitionError(

@@ -53,8 +53,9 @@ describe("upgradeCustomApiDefinition", () => {
   it("refuses an oversized document before parsing it", () => {
     const raw = {
       ...fixture("v1-shop"),
-      // Unknown and over the size limit: only the size is reported, so the
-      // parse never ran.
+      // Unknown and over the size limit, with a __proto__ key: only the
+      // size is reported, so neither the key walk nor the parse ran.
+      ...JSON.parse('{"__proto__":{"x":1}}'),
       padding: "x".repeat(300_000),
     };
     try {
