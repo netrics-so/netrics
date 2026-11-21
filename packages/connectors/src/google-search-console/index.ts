@@ -658,8 +658,12 @@ export function createSearchConsoleConnector(
         todayMs + DAY_MS,
       );
       // A page cursor carries the newest final day this run read so far
-      // ("<instant>|<YYYY-MM-DD>"); a bare instant carries none.
-      const [cursorAt, cursorThrough] = (request.cursor ?? "").split("|");
+      // and where the run started reading (#765):
+      // "<instant>|<YYYY-MM-DD or empty>|<instant>". A bare instant carries
+      // neither, and a cursor from before #765 no run start.
+      const [cursorAt, cursorThrough, cursorRunStart] = (
+        request.cursor ?? ""
+      ).split("|");
       const readThrough =
         cursorThrough && /^\d{4}-\d{2}-\d{2}$/.test(cursorThrough)
           ? cursorThrough
@@ -681,6 +685,17 @@ export function createSearchConsoleConnector(
         );
         return entries.length > 0 ? { freshness: entries } : {};
       };
+      // Where this run started reading: the first page's start, carried in
+      // the page cursors. A later page starts further on, and a checkpoint
+      // may come back in a later run with a later window (#765).
+      const carriedRunStart = cursorRunStart
+        ? Date.parse(cursorRunStart)
+        : Number.NaN;
+      const runStartMs = Math.min(
+        fromMs,
+        startMs,
+        Number.isFinite(carriedRunStart) ? carriedRunStart : startMs,
+      );
       // Where the next incremental sync starts: recent days are not final yet.
       // Never later than where this run started reading: a run resuming a
       // checkpoint before `from` (the host's window ignores cursors, #758)
@@ -688,7 +703,7 @@ export function createSearchConsoleConnector(
       const resumeAt = new Date(
         Math.max(
           startOfUtcDay(toMs) - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-          Math.min(fromMs, startMs),
+          runStartMs,
         ),
       ).toISOString();
       if (
@@ -827,7 +842,7 @@ export function createSearchConsoleConnector(
         const at = new Date(chunkEnd).toISOString();
         return {
           observations,
-          nextCursor: through === undefined ? at : `${at}|${through}`,
+          nextCursor: `${at}|${through ?? ""}|${new Date(runStartMs).toISOString()}`,
           done: false,
         };
       }

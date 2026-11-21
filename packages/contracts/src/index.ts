@@ -1146,9 +1146,15 @@ export const connectionHistorySchema = z.object({
   /** A backfill of the connection is waiting ("queued") or running. */
   backfill: z.enum(["idle", "queued", "running"]),
   /**
-   * Datasets no backfill has read yet at their current schema version:
-   * their history is incomplete until one has. Empty when complete or not
-   * known yet.
+   * The last backfill ended without reading its whole window (its retries
+   * used up, #787) and none waits or runs: the history is incomplete until
+   * one succeeds. Absent from servers before #787.
+   */
+  backfillFailed: z.boolean().optional(),
+  /**
+   * Datasets whose history is incomplete: no backfill has read them yet at
+   * their current schema version, or the last backfill failed
+   * (`backfillFailed`). Empty when complete or not known yet.
    */
   incompleteDatasets: z.array(
     z.object({ key: z.string().min(1), name: z.string().min(1) }),

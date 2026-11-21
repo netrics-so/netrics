@@ -559,6 +559,10 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "Der Verlauf von {datasets} ist unvollständig: Die Daten kamen mit einem Connector-Update dazu und werden erst seitdem gesammelt. Lade den Verlauf neu, um ihn zu füllen.",
       incompleteReadOnly:
         "Der Verlauf von {datasets} ist unvollständig: Die Daten kamen mit einem Connector-Update dazu und werden erst seitdem gesammelt.",
+      failed:
+        "Der Verlauf ist unvollständig: Das letzte Laden wurde nicht abgeschlossen, frühere Tage können fehlen. Lade den Verlauf neu, um ihn noch einmal zu lesen.",
+      failedReadOnly:
+        "Der Verlauf ist unvollständig: Das letzte Laden wurde nicht abgeschlossen, frühere Tage können fehlen.",
       availableAgain: "Der Verlauf kann {when} wieder neu geladen werden.",
     },
     retention: {

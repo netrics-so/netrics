@@ -1521,6 +1521,30 @@ describe("sources whose history is still loading (#635)", () => {
     expect((await warnings()).source).toEqual([]);
   });
 
+  it("warns after a backfill that ended without reading its window (#787)", async () => {
+    const { connectionId, datasetId } = await backfilledSource("dead_sales");
+    const source = async () =>
+      (await service.preview(actor, datasetId)).warnings;
+    expect(await source()).toEqual([]);
+    // A backfill died with its retries used up; an earlier one had read
+    // the dataset, so the record still covers it.
+    await admin`update connection_state set backfill_failed_at=now() where connection_id=${connectionId}`;
+    expect(await source()).toEqual(["source_history_incomplete"]);
+    // The next succeeded backfill clears it.
+    await admin`update connection_state set backfill_failed_at=null, history_from=now() where connection_id=${connectionId}`;
+    expect(await source()).toEqual([]);
+
+    // A backfill job that died without a failed run, while no history
+    // start is known.
+    const [job] =
+      await admin`insert into jobs(kind,workspace_id,connection_id,status,last_error,payload) values ('connection.backfill',${actor.workspaceId},${connectionId},'dead','stale lock requeued',${admin.json({ workspace_id: actor.workspaceId, connection_id: connectionId })}) returning id`;
+    expect(await source()).toEqual([]);
+    await admin`update connection_state set history_from=null where connection_id=${connectionId}`;
+    expect(await source()).toEqual(["source_history_incomplete"]);
+    await admin`delete from jobs where id=${job!.id as string}`;
+    expect(await source()).toEqual([]);
+  });
+
   it("keeps the warning for a source a batch read before", async () => {
     const first = await backfilledSource("loading_a");
     const second = await backfilledSource("loading_b");

@@ -659,6 +659,14 @@ export const connectionState = pgTable(
     // succeeds and cleared when one fails. Null: no complete history is
     // known, so an empty window is never taken for a zero.
     historyFrom: timestamp("history_from", { withTimezone: true }),
+    // When an attempt of the connection's latest backfill failed (#787):
+    // set with every failed backfill run, cleared when a backfill succeeds.
+    // While no backfill waits or runs it says that the last one ended
+    // without reading its window (its retries used up): the history is
+    // incomplete until one succeeds. Kept apart from history_from, which is
+    // also null when the start is only unknown, and from the jobs and sync
+    // runs, which the history retention prunes.
+    backfillFailedAt: timestamp("backfill_failed_at", { withTimezone: true }),
     // When a member last asked to reload the history (#617): rate limit.
     historyReloadRequestedAt: timestamp("history_reload_requested_at", {
       withTimezone: true,
