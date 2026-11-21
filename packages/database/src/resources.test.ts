@@ -11,6 +11,7 @@ import {
   findDimensionValueNames,
   findResourceNames,
   listMetricResources,
+  listNamedResources,
   resourceNameKey,
   upsertConnectionResources,
 } from "./resources.js";
@@ -188,6 +189,68 @@ describe("connection resources", () => {
         }),
       ),
     ).toEqual([{ id: "app-1", name: "Wurfel" }]);
+  });
+
+  it("an explicit empty selection offers none, for a connector that honors selections (#782)", async () => {
+    await admin`insert into connectors (id, version, manifest)
+      values ('selecting', '1.0.0',
+        '{"id":"selecting","supportsResourceSelection":true}'::jsonb)`;
+    await admin`
+      insert into metric_definitions (connector_id, key, name, description,
+        kind, unit, granularity, dimensions, aggregations)
+      values ('selecting', 'visits', 'Visits', 'Visits', 'delta', 'count',
+        'day', '["resource"]', '["sum"]')`;
+    const connection = async (connectorId: string, config: object) => {
+      const [row] = await admin`
+        insert into connections (workspace_id, connector_id, name, config)
+        values (${workspaceA}, ${connectorId}, 'Sites', ${admin.json(config as never)})
+        returning id`;
+      const id = row!.id as string;
+      await inA((tx) =>
+        upsertConnectionResources(tx, {
+          workspaceId: workspaceA,
+          connectionId: id,
+          resources: [{ id: "site-1", name: "Site", kind: "project" }],
+          now: new Date("2026-09-01T00:00:00Z"),
+        }),
+      );
+      return id;
+    };
+    const listed = async (id: string, metricKey: string) => ({
+      named: (await inA((tx) => listNamedResources(tx, workspaceA, [id]))).map(
+        (resource) => resource.resourceId,
+      ),
+      metric: (
+        await inA((tx) =>
+          listMetricResources(tx, {
+            workspaceId: workspaceA,
+            connectionId: id,
+            metricKey,
+          }),
+        )
+      ).map((resource) => resource.id),
+    });
+    // "Collect nothing": no resource is offered.
+    expect(
+      await listed(
+        await connection("selecting", { resourceSelection: [] }),
+        "visits",
+      ),
+    ).toEqual({ named: [], metric: [] });
+    // No selection stored (also every connection from before selections):
+    // all resources.
+    expect(await listed(await connection("selecting", {}), "visits")).toEqual({
+      named: ["site-1"],
+      metric: ["site-1"],
+    });
+    // A connector that does not honor selections collects everything
+    // whatever is stored, as the sync engine reads it.
+    expect(
+      await listed(
+        await connection("demo", { resourceSelection: [] }),
+        "downloads",
+      ),
+    ).toEqual({ named: ["site-1"], metric: ["site-1"] });
   });
 
   it("knows a connection's resources by data, name or selection only", async () => {

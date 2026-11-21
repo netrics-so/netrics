@@ -8,6 +8,7 @@ import {
 } from "@netrics/contracts";
 import {
   connectionHasResource,
+  resourceIsSelected,
   insertAuditEvent,
   listResourceIcons,
   resolveDataPolicy,
@@ -333,11 +334,11 @@ async function resourceCatalog(
         where m.connector_id = c.connector_id
           and r.kind <> 'resource' and m.dimensions ? r.kind
       )
-      and (
-        jsonb_typeof(c.config -> 'resourceSelection') is distinct from 'array'
-        or jsonb_array_length(c.config -> 'resourceSelection') = 0
-        or c.config -> 'resourceSelection' ? r.resource_id
-      )
+      and ${resourceIsSelected(
+        sql`c.config`,
+        sql`c.connector_id`,
+        sql`r.resource_id`,
+      )}
     order by r.connection_id, r.resource_id, r.name
     ${queryRows === null ? sql`` : sql`limit ${queryRows + 1}`}`);
   if (exceedsDataPolicy(rows.length, queryRows))

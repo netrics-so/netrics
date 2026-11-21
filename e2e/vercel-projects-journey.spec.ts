@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import postgres from "postgres";
 
+import { commonDe } from "../apps/web/src/messages/common/de.ts";
+import { commonEn } from "../apps/web/src/messages/common/en.ts";
 import { workspaceDe } from "../apps/web/src/messages/workspace/de.ts";
 import { workspaceEn } from "../apps/web/src/messages/workspace/en.ts";
 import { type Locale } from "./support/labels.ts";
@@ -82,6 +84,8 @@ test("a Vercel connection names its projects and changes which are synced", asyn
 }, testInfo) => {
   const locale = testInfo.project.name as Locale;
   const t = messages(locale);
+  const common = (locale === "de" ? commonDe : commonEn)
+    .common as typeof commonEn.common;
   const { workspaceId } = await startWorkspace(page, locale);
   const connectionId = await seedConnection(workspaceId);
   const path = `/v1/workspaces/${workspaceId}/connections/${connectionId}`;
@@ -151,6 +155,27 @@ test("a Vercel connection names its projects and changes which are synced", asyn
   const save = panel.getByRole("button", { name: t.projects.save });
   await expect(save).toBeDisabled();
 
+  await beta.uncheck();
+
+  // Unsaved: an in-app link asks in the app's own dialog. Stay keeps the
+  // page and the change, Leave follows the link.
+  const back = page.getByRole("link", { name: t.detail.back });
+  const dialog = page.getByRole("dialog", { name: t.projects.unsaved });
+  await back.click();
+  await expect(dialog).toHaveCount(1);
+  await dialog.getByRole("button", { name: common.stay, exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(beta).not.toBeChecked();
+  await back.click();
+  await dialog.getByRole("button", { name: common.leave, exact: true }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/workspaces/${workspaceId}/sources`),
+  );
+  expect(saved).toEqual([]);
+
+  // Back on the page: change and save.
+  await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
+  await panel.getByRole("button", { name: t.projects.check }).click();
   await beta.uncheck();
   await save.click();
   await expect(panel.getByText(t.projects.saved)).toBeVisible();

@@ -78,7 +78,7 @@ export function ProjectSelection({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  useLeaveGuard(dirty, t("unsaved"));
+  const leaveDialog = useLeaveGuard(dirty, t("unsaved"));
 
   async function load() {
     setPending("load");
@@ -200,6 +200,7 @@ export function ProjectSelection({
           {error}
         </p>
       ) : null}
+      {leaveDialog}
     </form>
   );
 }

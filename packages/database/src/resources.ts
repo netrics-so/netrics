@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 
 import {
   DEFAULT_LOCALE,
@@ -39,6 +39,56 @@ function labelsResourceDimension(connectorId: ReturnType<typeof sql>) {
 
 /** `discovered_at` of names no daily discovery has confirmed yet. */
 const NEVER_DISCOVERED = new Date(0);
+
+/**
+ * Whether the connection's connector honors a stored resource selection
+ * (its manifest's `supportsResourceSelection`, as migrate stores it).
+ */
+function honorsSelection(connectorId: SQL) {
+  return sql`exists (
+    select 1 from connectors k
+    where k.id = ${connectorId}
+      and k.manifest -> 'supportsResourceSelection' = 'true'::jsonb
+  )`;
+}
+
+/**
+ * Whether a connection collects nothing (#782): its connector honors
+ * selections and an explicit empty one is stored. `config` and
+ * `connectorId` are SQL expressions of the connections row.
+ */
+export function collectsNoResources(config: SQL, connectorId: SQL): SQL {
+  return sql`(
+    jsonb_typeof(${config} -> 'resourceSelection') = 'array'
+    and jsonb_array_length(${config} -> 'resourceSelection') = 0
+    and ${honorsSelection(connectorId)}
+  )`;
+}
+
+/**
+ * Whether the connection's stored selection includes a resource: the one
+ * rule every reader of `config.resourceSelection` in SQL uses (#782), the
+ * same as the sync engine's `selectedResourcesOf`. No selection stored
+ * (also every connection from before selections existed) includes all
+ * resources; a list includes its members; an explicit empty list includes
+ * none for a connector that honors selections, and all for one that does
+ * not. `config` and `connectorId` are SQL expressions of the connections
+ * row, `resourceId` of the resource.
+ */
+export function resourceIsSelected(
+  config: SQL,
+  connectorId: SQL,
+  resourceId: SQL,
+): SQL {
+  return sql`(
+    jsonb_typeof(${config} -> 'resourceSelection') is distinct from 'array'
+    or ${config} -> 'resourceSelection' ? ${resourceId}
+    or (
+      jsonb_array_length(${config} -> 'resourceSelection') = 0
+      and not ${honorsSelection(connectorId)}
+    )
+  )`;
+}
 
 export interface DiscoveredResourceName {
   id: string;
@@ -146,7 +196,7 @@ export async function listMetricResources(
 ): Promise<MetricResource[]> {
   const rows = await tx.execute(sql`
     with connection as (
-      select c.id, c.connector_id, c.config -> 'resourceSelection' as selection
+      select c.id, c.connector_id, c.config
       from connections c
       where c.workspace_id = ${query.workspaceId}
         and c.id = ${query.connectionId}
@@ -169,11 +219,11 @@ export async function listMetricResources(
       where r.workspace_id = ${query.workspaceId}
         and r.connection_id = ${query.connectionId}
         and ${labelsResourceDimension(sql`c.connector_id`)}
-        and (
-          jsonb_typeof(c.selection) is distinct from 'array'
-          or jsonb_array_length(c.selection) = 0
-          or c.selection ? r.resource_id
-        )
+        and ${resourceIsSelected(
+          sql`c.config`,
+          sql`c.connector_id`,
+          sql`r.resource_id`,
+        )}
     )
     select ids.id, r.name
     from (select id from seen union select id from named) ids
@@ -436,11 +486,11 @@ export async function listNamedResources(
         sql`, `,
       )})
       and ${labelsResourceDimension(sql`c.connector_id`)}
-      and (
-        jsonb_typeof(c.config -> 'resourceSelection') is distinct from 'array'
-        or jsonb_array_length(c.config -> 'resourceSelection') = 0
-        or c.config -> 'resourceSelection' ? r.resource_id
-      )
+      and ${resourceIsSelected(
+        sql`c.config`,
+        sql`c.connector_id`,
+        sql`r.resource_id`,
+      )}
     order by r.connection_id, r.name, r.resource_id
     limit ${MAX_RESOURCES}`);
   return rows.map((row) => ({

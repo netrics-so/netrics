@@ -332,6 +332,25 @@ describe("store product identity", { timeout: 20_000 }, () => {
     }
   });
 
+  it("offers no project of a connection that collects nothing (#782)", async () => {
+    // The catalog has the Vercel connector's manifest as migrate stores it.
+    await owner`update connectors
+      set manifest = manifest || '{"supportsResourceSelection":true}'::jsonb
+      where id = 'vercel'`;
+    await owner`update connections
+      set config = ${owner.json({ resourceSelection: [] })}
+      where id = ${vercelId}`;
+    try {
+      const read = await products().read(actor(), requestId);
+      expect(read.websites).toEqual([
+        { connectionId: vercelId, name: "Websites", projects: [] },
+      ]);
+    } finally {
+      await owner`update connections set config = '{}'::jsonb
+        where id = ${vercelId}`;
+    }
+  });
+
   it("lets the owner override auto, and back", async () => {
     const changed = await products().update(actor(), requestId, {
       products: [

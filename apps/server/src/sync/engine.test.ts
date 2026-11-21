@@ -314,6 +314,43 @@ const namingConnector: Connector = {
   },
 };
 
+/**
+ * Learns its resource's name while it syncs, like Google Play without
+ * the Reporting API (package IDs first, the listing's name from the sync).
+ */
+let learnedName: string | null = null;
+let learningDiscovers = 0;
+const learningConnector: Connector = {
+  manifest: testManifest("learning", "learning.installs"),
+  async check() {
+    return { ok: true };
+  },
+  async discover() {
+    learningDiscovers += 1;
+    return [
+      {
+        id: "com.example.app",
+        name: learnedName ?? "com.example.app",
+        kind: "app",
+      },
+    ];
+  },
+  async sync() {
+    learnedName = "Example App";
+    return {
+      observations: [
+        {
+          metricKey: "learning.installs",
+          sourceTimestamp: "2026-09-20T00:00:00.000Z",
+          value: 1,
+          dimensions: { resource: "com.example.app" },
+        },
+      ],
+      done: true,
+    };
+  },
+};
+
 /** Reports one daily value that the "provider" may later correct. */
 let revisingValue = 10;
 const revisingConnector: Connector = {
@@ -686,6 +723,7 @@ beforeAll(async () => {
 
   registry = createDefaultRegistry();
   registry.register(flakyConnector);
+  registry.register(learningConnector);
   registry.register(largePagerConnector);
   registry.register(resumePagerConnector);
   registry.register(freshPagerConnector);
@@ -759,6 +797,7 @@ describe("catalog sync", () => {
       "google-play",
       "google-search-console",
       "leaky",
+      "learning",
       "logging",
       "naming",
       "opaque-cursor",
@@ -1911,7 +1950,9 @@ describe("resource names (#194)", () => {
     namingName = "Wurfel";
 
     await syncAt(connectionId, start);
-    expect(namingDiscovers).toBe(1);
+    // Listed before the pages of the first run (#782, provisional), and
+    // discovered after the sync as always.
+    expect(namingDiscovers).toBe(2);
     expect(await names(connectionId)).toEqual([
       { id: "app-1", name: "Wurfel" },
       { id: "app-2", name: "Dicey" },
@@ -1920,11 +1961,11 @@ describe("resource names (#194)", () => {
     // An hour later: the names are fresh, no discover.
     namingName = "Wurfel 2";
     await syncAt(connectionId, new Date(start.getTime() + 60 * 60 * 1000));
-    expect(namingDiscovers).toBe(1);
+    expect(namingDiscovers).toBe(2);
 
     // A day later: refreshed.
     await syncAt(connectionId, new Date(start.getTime() + DAY_MS));
-    expect(namingDiscovers).toBe(2);
+    expect(namingDiscovers).toBe(3);
     expect((await names(connectionId))[0]).toEqual({
       id: "app-1",
       name: "Wurfel 2",
@@ -1963,6 +2004,23 @@ describe("resource names (#194)", () => {
     // And then at most daily, as before.
     await syncAt(connectionId, new Date(start.getTime() + 180_000));
     expect(namingDiscovers).toBe(2);
+  });
+
+  it("names learned during the first sync are stored by that run, as before (#782)", async () => {
+    const connectionId = await seedConnection(workspaceA, "learning");
+    const start = new Date("2026-09-21T08:00:00Z");
+    learnedName = null;
+    learningDiscovers = 0;
+    await syncAt(connectionId, start);
+    // The listing before the pages only knew the ID; the discovery after
+    // the sync runs as it always did and stores the name.
+    expect(await names(connectionId)).toEqual([
+      { id: "com.example.app", name: "Example App" },
+    ]);
+    // And it counts as the daily discovery: none an hour later.
+    const after = learningDiscovers;
+    await syncAt(connectionId, new Date(start.getTime() + 60 * 60 * 1000));
+    expect(learningDiscovers).toBe(after);
   });
 
   it("never fail the sync when discover fails", async () => {

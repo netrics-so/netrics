@@ -324,7 +324,9 @@ export {
 } from "./connections.js";
 export {
   connectionHasResource,
+  collectsNoResources,
   connectionResourcesDiscoveredAt,
+  resourceIsSelected,
   findDimensionValueNames,
   findResourceNames,
   listMetricResources,
