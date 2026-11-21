@@ -129,10 +129,12 @@ export interface WidgetInput {
   goalId: string | null;
   options: Record<string, unknown>;
   modelId?: string | null;
-  /** A measure widget's binding, or a compare widget's measures (#507). */
+  /** A measure widget's binding, a compare widget's measures (#507), or
+   * a latest-items widget's dimensions (#810). */
   modelBinding?:
     | import("@netrics/domain").MeasureWidgetBinding
     | import("@netrics/domain").CompareMeasureBinding
+    | import("@netrics/domain").ItemsWidgetBinding
     | null;
   filterExclusions?: import("@netrics/domain").DashboardFilterExclusion[];
   /**

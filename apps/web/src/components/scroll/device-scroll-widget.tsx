@@ -1,5 +1,6 @@
 "use client";
 import { MeasureWidgetView } from "@/components/studio/measure-widget";
+import { ItemsWidgetView } from "@/components/studio/items-widget";
 
 import type { DeviceWidget } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
@@ -13,6 +14,7 @@ import {
   deviceStatusReading,
   deviceTableReading,
   deviceCompareReading,
+  deviceItemViews,
   type DeviceWidgetEnv,
 } from "@/components/studio/device-widget";
 import { deviceReviewReading } from "@/components/studio/review-widget";
@@ -34,6 +36,7 @@ import {
   ScrollTableCard,
   ScrollCompareCard,
   ScrollTextCard,
+  SCROLL_ITEMS_PLACEMENT,
   type ScrollCardSize,
 } from "./scroll-widgets";
 
@@ -124,6 +127,21 @@ export function DeviceScrollWidget({
           data={widget.data}
           audience="viewer"
         />
+      );
+    case "items":
+      return (
+        <div className="scroll-items">
+          <ItemsWidgetView
+            label={widget.label}
+            items={deviceItemViews(widget, env.images)}
+            options={widget.options}
+            status={widget.data.status}
+            placement={SCROLL_ITEMS_PLACEMENT}
+            showHeader={false}
+            fontScale={env.fontScale}
+            audience="viewer"
+          />
+        </div>
       );
     case "metric":
       return (

@@ -89,6 +89,12 @@ export const screenDe: Catalog<typeof screenEn> = {
         "Der Zugriff wurde abgelehnt. Ein Admin kann das unter Verbindungen beheben.",
       loadingHistory: "Verlauf wird geladen …",
     },
+    items: {
+      empty: "Noch keine Einträge",
+      noImage: "Kein Bild",
+      image: "Bild",
+      unavailable: "Die Einträge können gerade nicht angezeigt werden.",
+    },
     player: {
       nextRefresh: "nächste Aktualisierung in {seconds} s",
       position: "{number} / {count}",

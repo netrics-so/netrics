@@ -8,6 +8,7 @@ import {
 } from "@netrics/contracts";
 import {
   findDeviceImage,
+  findImage,
   findImageUsers,
   hasSqlstate,
   insertAuditEvent,
@@ -17,6 +18,12 @@ import {
   type ImageRow,
 } from "@netrics/database";
 
+import type { DataPolicy } from "@netrics/domain";
+
+import {
+  createDeviceItemImages,
+  type DeviceItemImages,
+} from "../devices/item-images.js";
 import { sanitizeImage, type ImageRejection } from "./format.js";
 import { postgresImageStore, type ImageStore } from "./store.js";
 
@@ -303,14 +310,22 @@ export interface DevicePrincipal {
 
 /**
  * Images for paired screens (ADR 0015, section 5): only those the device's
- * assigned dashboard shows. Everything else, including any image of
+ * assigned dashboard shows, and the item images its current payload's
+ * latest-items widgets show (#810). Everything else, including any image of
  * another workspace, is 404; a revoked device is 401.
  */
 export function createDeviceImageService(deps: {
   db: Database;
   store?: ImageStore;
+  /** The clock of the items queries (#810); tests pin it. */
+  now?: () => Date;
+  dataPolicy?: DataPolicy;
+  /** The item images a device's payload shows, memoized (#810). */
+  itemImages?: DeviceItemImages;
 }) {
   const store = deps.store ?? postgresImageStore;
+  const now = deps.now ?? (() => new Date());
+  const itemImages = deps.itemImages ?? createDeviceItemImages();
   return {
     async read(
       device: DevicePrincipal,
@@ -320,8 +335,39 @@ export function createDeviceImageService(deps: {
       const image = await withWorkspace(
         deps.db,
         { workspaceId: device.workspaceId },
-        (tx) =>
-          findDeviceImage(tx, device.workspaceId, device.deviceId, imageId),
+        async (tx) => {
+          const shown = await findDeviceImage(
+            tx,
+            device.workspaceId,
+            device.deviceId,
+            imageId,
+          );
+          if (shown) return shown;
+          // An item image (#810) only while the device's own current
+          // payload references it; any other is unknown, like a wrong id.
+          // A wrong version is unknown too, before any items query runs.
+          //
+          // A 404 here is transient: the payload and this request are
+          // evaluated separately, so a sync between them (or a failed
+          // items query) can drop an image the screen was just sent.
+          // Screens show the placeholder and try again with their next
+          // payload, never treating it as permanent.
+          const found = await findImage(tx, device.workspaceId, imageId);
+          if (
+            found?.origin !== "custom_api" ||
+            (version !== undefined && version !== found.sha256)
+          )
+            return null;
+          const referenced = await itemImages(
+            tx,
+            device.workspaceId,
+            device.deviceId,
+            now(),
+            deps.dataPolicy,
+          );
+          return referenced.has(imageId) ? found : null;
+        },
+        { isolationLevel: "repeatable read" },
       );
       if (!image || (version !== undefined && version !== image.sha256)) {
         return fail(404, NOT_FOUND);

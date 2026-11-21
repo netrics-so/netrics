@@ -7,6 +7,7 @@ import {
   slideScopeOf,
   slideScopedWidgets,
 } from "../dashboards/data.js";
+import { queryDashboardItems } from "../dashboards/items.js";
 import {
   applyFreshness,
   createFreshnessReader,
@@ -29,6 +30,8 @@ import {
   countdownWidgetOptionsSchema,
   gaugeWidgetOptionsSchema,
   imageWidgetOptionsSchema,
+  itemsWidgetBindingSchema,
+  itemsWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
   statusWidgetOptionsSchema,
@@ -47,6 +50,7 @@ import {
   type DeviceTileStatus,
   type DeviceWidget,
   type ImageContentType,
+  type ItemsWidgetData,
   type MetricAggregation,
   type MetricBreakdownResponse,
   type MetricPeriod,
@@ -81,6 +85,7 @@ import {
   amountCurrency,
   compareRatioUnit,
   countdownLabel,
+  itemsWidgetLabel,
   isBuiltinThemeKey,
   isScreenFormat,
   slideLayoutFor,
@@ -102,6 +107,7 @@ import {
   zonedIsoString,
   type GoalAggregation,
   type GoalPeriod,
+  type DashboardDataFilter,
   type DeviceFilterScope,
   type Locale,
   type ThemeTokens,
@@ -186,8 +192,8 @@ export function hasDeviceScope(scope: DeviceFilterScope | undefined): boolean {
 }
 
 /**
- * Whether a widget is shown on a screen with this scope: only measure
- * widgets follow shared filters, so a scoped screen gets no other widget
+ * Whether a widget is shown on a screen with this scope: only measure and
+ * latest-items widgets (#810) follow shared filters, so a scoped screen gets no other widget
  * that reads data. Text, images, clocks, countdowns and connection status
  * stay.
  */
@@ -196,7 +202,10 @@ export function followsDeviceScope(
   scope: DeviceFilterScope | undefined,
 ): boolean {
   return (
-    !hasDeviceScope(scope) || type === "measure" || dataWidgetCost(type) === 0
+    !hasDeviceScope(scope) ||
+    type === "measure" ||
+    type === "items" ||
+    dataWidgetCost(type) === 0
   );
 }
 
@@ -1234,6 +1243,73 @@ interface BuiltDashboard {
 }
 
 /**
+ * The slides a screen shows: enabled ones, and with a fixed scope (#500)
+ * only widgets that follow it and no slide scoped to something the scope
+ * leaves out (#707): the screen's scope wins, and such a slide would show
+ * nothing. Widgets read the app their slide is scoped to (#707).
+ */
+export function screenSlides(
+  dashboard: Awaited<ReturnType<typeof findDashboard>>,
+  filters: DashboardDataFilter[],
+  scope: DeviceFilterScope | undefined,
+) {
+  return (dashboard?.slides ?? [])
+    .filter(
+      (slide) =>
+        slide.enabled &&
+        !(
+          hasDeviceScope(scope) &&
+          slideScopeConflicts(filters, slideScopeOf(slide), scope!)
+        ),
+    )
+    .map((slide) => ({
+      ...slide,
+      widgets: slideScopedWidgets(slide).filter((widget) =>
+        followsDeviceScope(widget.type, scope),
+      ),
+    }));
+}
+
+/**
+ * The latest-items widgets' data on a screen's slides (#810), by widget
+ * id: the same queries for the payload and for the device image route,
+ * which serves an item image only when this answers it.
+ */
+export async function deviceItemsWidgets(
+  tx: Transaction,
+  workspaceId: string,
+  slides: ReturnType<typeof screenSlides>,
+  filters: DashboardDataFilter[],
+  options: Pick<BuildOptions, "now" | "dataPolicy" | "scope">,
+  freshness?: FreshnessReader,
+): Promise<Map<string, ItemsWidgetData>> {
+  const items = new Map<string, ItemsWidgetData>();
+  for (const slide of slides)
+    for (const widget of slide.widgets) {
+      if (widget.type !== "items") continue;
+      const binding = itemsWidgetBindingSchema.safeParse(widget.modelBinding);
+      const parsed = itemsWidgetOptionsSchema.safeParse(widget.options);
+      if (!binding.success || !parsed.success) continue;
+      items.set(
+        widget.id,
+        await queryDashboardItems(
+          tx,
+          workspaceId,
+          { id: widget.id, binding: binding.data, options: parsed.data },
+          filters,
+          {},
+          options.now,
+          options.dataPolicy,
+          options.scope,
+          slideScopeOf(slide),
+          freshness,
+        ),
+      );
+    }
+  return items;
+}
+
+/**
  * Loads the dashboard and computes every widget of its enabled slides,
  * inside the device's workspace transaction. Data widgets are computed like
  * schema 1 tiles: one that fails reports `no_data` (or its connection's
@@ -1253,25 +1329,23 @@ async function buildSlides(
   const filters = dashboardDataFiltersSchema.parse(
     dashboard?.dataFilters ?? [],
   );
-  // A scoped screen gets only widgets that follow its scope (#500), and no
-  // slide scoped to something its scope leaves out (#707): the screen's
-  // scope wins, and such a slide would show nothing.
-  const slides = (dashboard?.slides ?? [])
-    .filter(
-      (slide) =>
-        slide.enabled &&
-        !(
-          hasDeviceScope(options.scope) &&
-          slideScopeConflicts(filters, slideScopeOf(slide), options.scope!)
-        ),
-    )
-    .map((slide) => ({
-      ...slide,
-      // Widgets read the app their slide is scoped to (#707).
-      widgets: slideScopedWidgets(slide).filter((widget) =>
-        followsDeviceScope(widget.type, options.scope),
-      ),
-    }));
+  const slides = screenSlides(dashboard, filters, options.scope);
+
+  const context = await loadDataContext(
+    tx,
+    workspaceId,
+    slides.flatMap((slide) => slide.widgets.filter(isDataWidget)),
+    options,
+  );
+  // Latest-items widgets (#810) before the images: theirs are referenced.
+  const items = await deviceItemsWidgets(
+    tx,
+    workspaceId,
+    slides,
+    filters,
+    options,
+    context.freshness ?? undefined,
+  );
 
   // Only images that exist in the workspace are referenced (the foreign
   // keys make that certain; this keeps the payload consistent regardless).
@@ -1288,6 +1362,10 @@ async function buildSlides(
               : null,
           ),
         ]),
+        // The latest items' stored images (#810).
+        ...[...items.values()].flatMap((data) =>
+          data.items.map((item) => item.image?.id ?? null),
+        ),
       ].filter((id): id is string => id !== null),
     ),
   ]);
@@ -1306,12 +1384,6 @@ async function buildSlides(
   const imageRef = (id: string | null) =>
     id !== null && known.has(id) ? id : null;
 
-  const context = await loadDataContext(
-    tx,
-    workspaceId,
-    slides.flatMap((slide) => slide.widgets.filter(isDataWidget)),
-    options,
-  );
   // The goals of the goal widgets; an id not found is a deleted goal.
   const goals = await findGoalsByIds(
     tx,
@@ -1387,6 +1459,28 @@ async function buildSlides(
           options: measureOptions,
           data,
         });
+      } else if (widget.type === "items") {
+        const data = items.get(widget.id);
+        if (data)
+          widgets.push({
+            type: "items",
+            ...placement,
+            label: itemsWidgetLabel(
+              widget.title,
+              options.locale ?? DEFAULT_LOCALE,
+            ),
+            options: parsedOptions(itemsWidgetOptionsSchema, widget.options),
+            data: {
+              status: data.status,
+              items: data.items.map((item) => ({
+                title: item.title,
+                subtitle: item.subtitle,
+                time: item.time,
+                imageId: imageRef(item.image?.id ?? null),
+              })),
+              ...(data.freshness ? { freshness: data.freshness } : {}),
+            },
+          });
       } else if (isDataWidget(widget)) {
         widgets.push(await dataWidgetOf(tx, widget, context));
       } else if (widget.type === "gauge") {

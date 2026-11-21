@@ -14,6 +14,7 @@ import {
 import type { Database, ImageQuota, ImageRow } from "@netrics/database";
 import { can, type WorkspaceAction } from "@netrics/domain";
 
+import { createDeviceItemImages } from "../devices/item-images.js";
 import type { AuthService } from "../auth/index.js";
 import {
   createDeviceImageService,
@@ -35,6 +36,10 @@ export interface ImageRouteDeps {
   authService: AuthService;
   db: Database;
   quota: ImageQuota;
+  now?: () => Date;
+  dataPolicy?: import("@netrics/domain").DataPolicy;
+  /** How long a device's item image ids are reused (#810). */
+  itemImagesMs?: number;
 }
 
 const imageParamsSchema = z.object({ imageId: z.uuid() });
@@ -128,7 +133,14 @@ export function registerImageRoutes(
 ): void {
   const requireSession = createRequireSession(deps.authService);
   const images = createImageService({ db: deps.db, quota: deps.quota });
-  const deviceImages = createDeviceImageService({ db: deps.db });
+  const deviceImages = createDeviceImageService({
+    db: deps.db,
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.dataPolicy ? { dataPolicy: deps.dataPolicy } : {}),
+    ...(deps.itemImagesMs !== undefined
+      ? { itemImages: createDeviceItemImages({ ttlMs: deps.itemImagesMs }) }
+      : {}),
+  });
   const requireDevice = createRequireDevice({ db: deps.db });
 
   async function authorize(

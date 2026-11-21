@@ -27,6 +27,7 @@ import {
   publishedModels,
   safeDataError,
 } from "../dashboards/data.js";
+import { queryDashboardItems } from "../dashboards/items.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
@@ -200,37 +201,51 @@ export function registerDashboardRoutes(
           return withWorkspace(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
-            async (tx) => ({
-              widgets: await (async () => {
-                const results = [];
-                const now = deps.now?.() ?? new Date();
-                const freshness = deps.registry
-                  ? createFreshnessReader(
-                      access.workspaceId,
-                      deps.registry,
-                      access.locale,
-                    )
-                  : undefined;
-                for (const widget of body.widgets)
-                  results.push(
-                    await queryDashboardMeasure(
-                      tx,
-                      access.workspaceId,
-                      widget,
-                      body.filters,
-                      body.values,
-                      now,
-                      deps.policy ?? DEFAULT_DATA_POLICY,
-                      access.locale,
-                      {},
-                      widget.scope,
-                      freshness,
-                    ),
-                  );
-                return results;
-              })(),
-              values: body.values,
-            }),
+            async (tx) => {
+              const now = deps.now?.() ?? new Date();
+              const freshness = deps.registry
+                ? createFreshnessReader(
+                    access.workspaceId,
+                    deps.registry,
+                    access.locale,
+                  )
+                : undefined;
+              const widgets = [];
+              for (const widget of body.widgets)
+                widgets.push(
+                  await queryDashboardMeasure(
+                    tx,
+                    access.workspaceId,
+                    widget,
+                    body.filters,
+                    body.values,
+                    now,
+                    deps.policy ?? DEFAULT_DATA_POLICY,
+                    access.locale,
+                    {},
+                    widget.scope,
+                    freshness,
+                  ),
+                );
+              // Latest-items widgets (#810).
+              const items = [];
+              for (const widget of body.items)
+                items.push(
+                  await queryDashboardItems(
+                    tx,
+                    access.workspaceId,
+                    widget,
+                    body.filters,
+                    body.values,
+                    now,
+                    deps.policy ?? DEFAULT_DATA_POLICY,
+                    {},
+                    widget.scope,
+                    freshness,
+                  ),
+                );
+              return { widgets, items, values: body.values };
+            },
             { isolationLevel: "repeatable read" },
           );
         },

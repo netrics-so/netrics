@@ -2031,6 +2031,7 @@ a.health-badge:hover {
 .sw-status,
 .sw-compare,
 .sw-review,
+.sw-items,
 .sw-clock,
 .sw-countdown,
 .sw-failed {
@@ -2356,6 +2357,81 @@ a.health-badge:hover {
 .sw-review-author {
   line-height: 1.15;
   padding-top: calc(var(--u) * 8);
+}
+
+/* Latest items (#810): a grid of the newest items, or one at a time. An
+   item without an image shows a themed tile, never a broken image. */
+.sw-items-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+}
+
+.sw-items-rotate .sw-items-list {
+  display: flex;
+}
+
+.sw-items-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.sw-items-rotate .sw-items-tile {
+  animation: sw-items-in 400ms ease-out;
+}
+
+@keyframes sw-items-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sw-items-rotate .sw-items-tile {
+    animation: none;
+  }
+}
+
+.sw-items-image {
+  flex: 1;
+  min-height: calc(var(--u) * 96);
+  width: 100%;
+  height: auto;
+  border-radius: calc(var(--u) * 12);
+  margin-bottom: calc(var(--u) * 8);
+  background: color-mix(in srgb, var(--t-border) 45%, transparent);
+}
+
+.sw-items-noimage {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--t-border) 55%, transparent) 0 calc(var(--u) * 12),
+    color-mix(in srgb, var(--t-border) 25%, transparent) calc(var(--u) * 12)
+      calc(var(--u) * 24)
+  );
+}
+
+.sw-items-title,
+.sw-items-subtitle,
+.sw-items-time {
+  flex: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-items-title {
+  font-weight: 600;
+  color: var(--t-text);
 }
 
 .scroll-review-body {
@@ -5447,6 +5523,10 @@ a.button.primary:hover {
 .scroll-card .sw-measure {
   --u: 0.6px;
   height: 100%;
+}
+/* In the scroll view the latest items take a card's room (#810). */
+.scroll-items {
+  min-height: 360px;
 }
 .dashboard-shared-filters {
   padding: 16px 0;

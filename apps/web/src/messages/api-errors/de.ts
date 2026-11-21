@@ -4,6 +4,10 @@ import type { apiErrorsEn } from "./en";
 
 export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
   apiErrors: {
+    // A latest-items widget's binding (#810).
+    items_image_dimension_invalid: "Wähle ein Feld, das als Bild markiert ist.",
+    items_time_dimension_invalid: "Wähle ein Datums- oder Zeitfeld.",
+    items_dimension_unknown: "Dieses Feld gibt es im Modell nicht mehr.",
     store_mapping_duplicate:
       "Jede App darf nur zu einem verknüpften Produkt gehören.",
     store_scope_invalid:

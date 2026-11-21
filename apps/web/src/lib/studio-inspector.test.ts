@@ -131,6 +131,21 @@ const context = {
       measures: [{ id: "income", name: "Income" }],
       dimensions: [],
     },
+    // With an image and a time: latest items (#810).
+    {
+      modelId: ID(81),
+      modelName: "Photos",
+      measures: [],
+      dimensions: [
+        {
+          id: "photo",
+          name: "Photo",
+          type: "string" as const,
+          role: "image" as const,
+        },
+        { id: "taken", name: "Taken", type: "timestamp" as const },
+      ],
+    },
   ],
   metrics,
   imageIds: [ID(50)],

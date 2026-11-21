@@ -2006,6 +2006,126 @@ describe("the updated dashboard copy", { timeout: TIMEOUT_MS }, () => {
     expect(copies).toHaveLength(2);
   });
 
+  it("keeps a customer's latest items widget in the copy (#810)", async () => {
+    let binding: Record<string, unknown> = {};
+    const { workspaceId, update } = await appliedUpdate(v2, async (install) => {
+      // The customer's own photos model, with an image field.
+      const data = createDataService(db, () => new Date(now));
+      const field = (id: string, type: string, extra: object = {}) => ({
+        id,
+        name: id,
+        type,
+        nullable: id !== "id",
+        classification: "internal",
+        ...extra,
+      });
+      const manual = await data.saveManual(actor(install.workspaceId), {
+        definition: {
+          key: "photos",
+          name: "Photos",
+          version: 1,
+          mode: "snapshot",
+          grain: "one photo",
+          keyFields: ["id"],
+          fields: [
+            field("id", "string"),
+            field("taken_at", "date"),
+            field("photo", "string", { role: "image" }),
+          ],
+        },
+        records: [
+          {
+            values: {
+              id: "a",
+              taken_at: "2026-11-01",
+              photo: "https://img.example/a.png",
+            },
+          },
+        ],
+      } as never);
+      const datasetId = manual.datasetId;
+      const model = await data.saveModel(actor(install.workspaceId), {
+        name: "Photos",
+        definition: {
+          version: 1,
+          datasets: [datasetId],
+          relationships: [],
+          dimensions: ["taken_at", "photo", "id"].map((id) => ({
+            id,
+            name: id,
+            datasetId,
+            fieldId: id,
+            ...(id === "taken_at"
+              ? { timeAlignment: "reporting_date" as const }
+              : {}),
+          })),
+          measures: [
+            {
+              id: "photos",
+              name: "Photos",
+              kind: "aggregate",
+              datasetId,
+              aggregate: { id: "photos", name: "photos", op: "count" },
+            },
+          ],
+        },
+      } as never);
+      await data.publishModel(actor(install.workspaceId), model.model.id, 1);
+      binding = {
+        modelId: model.model.id,
+        imageDimensionId: "photo",
+        titleDimensionId: "id",
+        timeDimensionId: "taken_at",
+        // The template's filters do not apply to the customer's model.
+        exclusions: (
+          (
+            await readDashboard(
+              install.workspaceId,
+              install.installed.dashboardId,
+            )
+          ).settings.dataFilters ?? []
+        ).map((filter) => ({ filterId: filter.id, reason: "All of them" })),
+      };
+      await editDashboard(
+        install.workspaceId,
+        install.installed.dashboardId,
+        (slides) => [
+          ...slides,
+          {
+            name: "Photos",
+            widgets: [
+              {
+                type: "items",
+                x: 0,
+                y: 0,
+                w: 6,
+                h: 4,
+                title: "Latest photos",
+                binding,
+                options: { layout: "rotate", count: 4 },
+              },
+            ],
+          },
+        ],
+      );
+    });
+    await publishDrafts(workspaceId, update);
+    const next = await updates(v2).createCopy(
+      actor(workspaceId),
+      update.id,
+      "dashboard:portfolio",
+    );
+    const copy = await readDashboard(workspaceId, next.dashboards[0]!.copyId!);
+    const widget = copy.slides
+      .flatMap((slide) => slide.widgets)
+      .find((widget) => widget.type === "items");
+    expect(widget).toMatchObject({
+      title: "Latest photos",
+      binding,
+      options: { layout: "rotate", count: 4, rotateSeconds: 8 },
+    });
+  });
+
   it("keeps each slide's scope and logo in the copy (#707)", async () => {
     const scope = {
       app: { kind: "values", values: ["store:app-1"] },

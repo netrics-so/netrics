@@ -5,6 +5,10 @@
  */
 export const apiErrorsEn = {
   apiErrors: {
+    // A latest-items widget's binding (#810).
+    items_image_dimension_invalid: "Pick a field marked as image.",
+    items_time_dimension_invalid: "Pick a date or time field.",
+    items_dimension_unknown: "This field is no longer in the model.",
     store_mapping_duplicate: "Each app can belong to only one linked product.",
     store_scope_invalid: "Choose an app from one of the selected connections.",
     store_website_invalid:

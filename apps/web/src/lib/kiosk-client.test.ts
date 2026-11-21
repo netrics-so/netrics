@@ -921,7 +921,9 @@ describe("kiosk payload schema", () => {
     const url = (api.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
       .map(([input]) => String(input))
       .find((input) => input.startsWith("/v1/device/dashboard"));
-    expect(url).toBe("/v1/device/dashboard?schema=2&features=measure_split");
+    expect(url).toBe(
+      "/v1/device/dashboard?schema=2&features=measure_split,items",
+    );
     expect(request!.headers.get("authorization")).toBe("Bearer access-a");
     const state = kiosk.getState().dashboard!;
     expect(isSlidesDashboard(state)).toBe(true);
@@ -982,7 +984,7 @@ describe("kiosk payload schema", () => {
 
     expect(
       urls.filter((url) => url.startsWith("/v1/device/dashboard")),
-    ).toEqual(["/v1/device/dashboard?schema=2&features=measure_split"]);
+    ).toEqual(["/v1/device/dashboard?schema=2&features=measure_split,items"]);
     // Same schema: the ETag is offered and the screen keeps its slides.
     expect(
       api.callsTo("GET /v1/device/dashboard")[0]!.headers.get("if-none-match"),
@@ -1057,7 +1059,7 @@ describe("kiosk payload schema 3 (#277)", () => {
     const kiosk = startWith({ fetch: api.fetch, storage });
     await vi.advanceTimersByTimeAsync(0);
     expect(dashboardUrls(api)).toEqual([
-      "/v1/device/dashboard?schema=2&features=measure_split",
+      "/v1/device/dashboard?schema=2&features=measure_split,items",
     ]);
     expect(isSlidesDashboard(kiosk.getState().dashboard!)).toBe(true);
   });
@@ -1072,7 +1074,7 @@ describe("kiosk payload schema 3 (#277)", () => {
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(dashboardUrls(api)).toEqual([
-      "/v1/device/dashboard?schema=3&features=measure_split",
+      "/v1/device/dashboard?schema=3&features=measure_split,items",
     ]);
     const payload = kiosk.getState().dashboard!;
     expect(isFormatsDashboard(payload)).toBe(true);
@@ -1101,7 +1103,7 @@ describe("kiosk payload schema 3 (#277)", () => {
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(dashboardUrls(api)).toEqual([
-      "/v1/device/dashboard?schema=2&features=measure_split",
+      "/v1/device/dashboard?schema=2&features=measure_split,items",
     ]);
     expect(isSlidesDashboard(kiosk.getState().dashboard!)).toBe(true);
   });

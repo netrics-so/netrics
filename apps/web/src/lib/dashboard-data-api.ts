@@ -3,6 +3,7 @@ import {
   dashboardDimensionValuesResponseSchema,
   publishedModelCatalogSchema,
   dashboardDataResponseSchema,
+  type ItemsWidgetOptions,
   type MetricPeriod,
   type ProjectFilterQuery,
 } from "@netrics/contracts";
@@ -11,6 +12,7 @@ import type {
   CompareMeasureBinding,
   DashboardDataFilter,
   DashboardFilterValue,
+  ItemsWidgetBinding,
   MeasureWidgetBinding,
   SlideFilterScope,
 } from "@netrics/domain";
@@ -37,12 +39,19 @@ export const previewDashboardMeasures = (
     /** The widget's slide's scope (#707). */
     scope?: SlideFilterScope;
   }>,
+  /** Latest-items widgets (#810). */
+  items: Array<{
+    id: string;
+    binding: ItemsWidgetBinding;
+    options: ItemsWidgetOptions;
+    scope?: SlideFilterScope;
+  }> = [],
 ) =>
   browserSend(
     dashboardDataResponseSchema,
     "POST",
     `/v1/workspaces/${workspaceId}/dashboards/data/preview`,
-    { filters, values, widgets },
+    { filters, values, widgets, ...(items.length ? { items } : {}) },
   );
 
 /** Compare widgets bound to published measures (#507), saved or not. */

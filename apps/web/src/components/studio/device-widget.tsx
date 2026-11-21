@@ -17,6 +17,7 @@ import { GaugeWidgetView, type GaugeReadingProps } from "./gauge-widget";
 import { LiveClockWidget } from "./clock-widget";
 import { LiveCountdownWidget } from "./countdown-widget";
 import { ImageWidgetView } from "./image-widget";
+import { ItemsWidgetView, type ItemsWidgetItemView } from "./items-widget";
 import { LineWidgetView, type LineReadingProps } from "./line-widget";
 import { MetricWidgetView, type MetricReadingProps } from "./metric-widget";
 import { StatusWidgetView, type StatusReadingProps } from "./status-widget";
@@ -328,6 +329,28 @@ function DeviceCompareView({
   );
 }
 
+/**
+ * A payload items widget's items (#810) with the images the screen loaded
+ * from netrics (the payload's `images`); an image it does not have shows
+ * the placeholder tile.
+ */
+export function deviceItemViews(
+  widget: Extract<DeviceWidget, { type: "items" }>,
+  images: StudioImages,
+): ItemsWidgetItemView[] {
+  return widget.data.items.map((item) => {
+    const image = item.imageId ? images.get(item.imageId) : undefined;
+    return {
+      title: item.title,
+      subtitle: item.subtitle,
+      time: item.time,
+      image: image
+        ? { src: image.url, width: image.width, height: image.height }
+        : null,
+    };
+  });
+}
+
 export function DeviceWidgetView({
   widget,
   env,
@@ -397,6 +420,17 @@ export function DeviceWidgetView({
         <ReviewWidgetView
           {...common}
           {...deviceReviewReading(widget, env.images, locale)}
+        />
+      );
+    case "items":
+      return (
+        <ItemsWidgetView
+          {...common}
+          label={widget.label}
+          items={deviceItemViews(widget, env.images)}
+          options={widget.options}
+          status={widget.data.status}
+          audience="viewer"
         />
       );
     case "image":

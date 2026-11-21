@@ -7,6 +7,8 @@ import {
   dashboardDataFilterSchema,
   gaugeWidgetOptionsSchema,
   imageWidgetOptionsSchema,
+  itemsWidgetBindingSchema,
+  itemsWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
@@ -609,6 +611,8 @@ export interface NormalizedDashboard {
 
 const optionSchemas: Record<string, z.ZodType> = {
   measure: measureWidgetOptionsSchema,
+  // A customer's latest-items widget (#810); templates have none.
+  items: itemsWidgetOptionsSchema,
   metric: metricWidgetOptionsSchema,
   line: lineWidgetOptionsSchema,
   bar: barWidgetOptionsSchema,
@@ -661,7 +665,9 @@ function widgetValue(row: Record<string, unknown>): unknown {
         ? null
         : type === "measure"
           ? withDefaults(measureWidgetBindingSchema, binding)
-          : binding,
+          : type === "items"
+            ? withDefaults(itemsWidgetBindingSchema, binding)
+            : binding,
     filterExclusions: row.filterExclusions,
     options: withDefaults(optionSchemas[type], row.options),
     connectionId: row.connectionId,

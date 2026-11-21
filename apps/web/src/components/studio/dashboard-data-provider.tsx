@@ -7,7 +7,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { DashboardWidget, DashboardWidgetData } from "@netrics/contracts";
+import type {
+  DashboardWidget,
+  DashboardWidgetData,
+  ItemsWidgetData,
+} from "@netrics/contracts";
 import type {
   DashboardDataFilter,
   DashboardFilterValue,
@@ -16,6 +20,8 @@ import type {
 import { previewDashboardMeasures } from "@/lib/dashboard-data-api";
 const Context = createContext<{
   widgets: ReadonlyMap<string, DashboardWidgetData>;
+  /** Latest-items widgets' data (#810); absent in older test doubles. */
+  items?: ReadonlyMap<string, ItemsWidgetData>;
   loading: boolean;
 } | null>(null);
 export const useDashboardData = () => useContext(Context);
@@ -25,6 +31,39 @@ type MeasureWidget = Extract<DashboardWidget, { type: "measure" }>;
 type MeasureQuery = Pick<MeasureWidget, "id" | "binding" | "options"> & {
   scope?: SlideFilterScope;
 };
+type ItemsWidget = Extract<DashboardWidget, { type: "items" }>;
+/** A latest-items widget as queried (#810), with its slide's scope. */
+type ItemsQuery = Pick<ItemsWidget, "id" | "binding" | "options"> & {
+  scope?: SlideFilterScope;
+};
+
+/**
+ * The latest-items widgets after a failed load (#810): with `keepLastGood`
+ * each one's last items, else none, with the error.
+ */
+export function failedItems(
+  widgets: readonly Pick<ItemsWidget, "id" | "binding">[],
+  previous: ReadonlyMap<string, ItemsWidgetData> | undefined,
+  keepLastGood: boolean,
+): Map<string, ItemsWidgetData> {
+  return new Map(
+    widgets.map((widget) => {
+      const last = keepLastGood ? previous?.get(widget.id) : undefined;
+      return [
+        widget.id,
+        last && !last.error
+          ? last
+          : {
+              widgetId: widget.id,
+              status: "no_data",
+              items: [],
+              error: "data_storage_failed",
+              exclusions: widget.binding.exclusions,
+            },
+      ];
+    }),
+  );
+}
 
 /**
  * One load of the dashboard's measure tiles: the tiles by id, and the
@@ -124,51 +163,86 @@ export function DashboardDataProvider({
           : [],
       ),
     ),
+    items: slides.flatMap((slide) =>
+      slide.widgets.flatMap((widget): ItemsQuery[] =>
+        widget.type === "items"
+          ? [
+              {
+                id: widget.id,
+                binding: widget.binding,
+                options: widget.options,
+                ...(slide.scope && Object.keys(slide.scope).length
+                  ? { scope: slide.scope }
+                  : {}),
+              },
+            ]
+          : [],
+      ),
+    ),
     filters,
     values,
   });
   const [state, setState] = useState<{
     key: string;
     widgets: Map<string, DashboardWidgetData>;
+    items: Map<string, ItemsWidgetData>;
     loading: boolean;
-  }>({ key, widgets: new Map(), loading: true });
+  }>({ key, widgets: new Map(), items: new Map(), loading: true });
   useEffect(() => {
     let alive = true;
     const input = JSON.parse(key) as {
       widgets: MeasureQuery[];
+      items: ItemsQuery[];
       filters: DashboardDataFilter[];
       values: Record<string, DashboardFilterValue>;
     };
     async function refresh() {
-      if (!input.widgets.length) {
-        if (alive) setState({ key, widgets: new Map(), loading: false });
+      if (!input.widgets.length && !input.items.length) {
+        if (alive)
+          setState({
+            key,
+            widgets: new Map(),
+            items: new Map(),
+            loading: false,
+          });
         return;
       }
       if (alive)
         setState((state) => ({
           key,
           widgets: state.key === key ? state.widgets : new Map(),
+          items: state.key === key ? state.items : new Map(),
           loading: true,
         }));
+      let items = new Map<string, ItemsWidgetData>();
       const result = await loadDashboardData(
-        () =>
-          previewDashboardMeasures(
+        async () => {
+          const response = await previewDashboardMeasures(
             workspaceId,
             input.filters,
             input.values,
             input.widgets,
-          ),
+            input.items,
+          );
+          items = new Map(response.items.map((data) => [data.widgetId, data]));
+          return response;
+        },
         (at) => loaded.current?.(at),
       );
       if (!alive) return;
       if (result) {
-        setState({ key, widgets: result, loading: false });
+        setState({ key, widgets: result, items, loading: false });
       } else {
         setState((state) => ({
           key,
           widgets: failedWidgets(
             input.widgets,
             state.key === key ? state.widgets : undefined,
+            keepLastGood,
+          ),
+          items: failedItems(
+            input.items,
+            state.key === key ? state.items : undefined,
             keepLastGood,
           ),
           loading: false,
@@ -185,7 +259,11 @@ export function DashboardDataProvider({
   }, [workspaceId, key, keepLastGood]);
   return (
     <Context
-      value={state.key === key ? state : { widgets: new Map(), loading: true }}
+      value={
+        state.key === key
+          ? state
+          : { widgets: new Map(), items: new Map(), loading: true }
+      }
     >
       {children}
     </Context>
