@@ -71,6 +71,39 @@ export function limitForView(
     return DEFAULT_MEASURE_LIMIT;
   return limit;
 }
+type MeasureView = Extract<
+  DashboardWidget,
+  { type: "measure" }
+>["options"]["view"];
+/** Tables and value views group by several dimensions; charts by one. */
+const groupsBySeveral = (view: MeasureView) =>
+  view === "table" || view === "value";
+/**
+ * The grouping a view switch leaves (#788): what the widget groups by
+ * stays wherever the new view can show it. A value keeps it all (its total
+ * with a line per group, #784), a table its first three, a chart its
+ * first. Only a table or chart without any gets the model's first
+ * dimension (a line chart's first date); a plain value stays plain.
+ */
+export function groupByForView(
+  view: MeasureView,
+  groupBy: string[],
+  model: CatalogModel | undefined,
+): string[] {
+  if (view === "value") return groupBy;
+  if (groupBy.length) return groupBy.slice(0, view === "table" ? 3 : 1);
+  return (
+    model?.dimensions
+      .filter(
+        (dimension) =>
+          view !== "line" ||
+          dimension.type === "date" ||
+          dimension.type === "timestamp",
+      )
+      .slice(0, 1)
+      .map((dimension) => dimension.id) ?? []
+  );
+}
 export function valueViewMeasureId(
   model: CatalogModel | undefined,
   measureIds: string[],
@@ -80,6 +113,37 @@ export function valueViewMeasureId(
     model?.measures.find((measure) => !perDateMeasure(model, measure.id))?.id ??
     measureIds[0]!
   );
+}
+/**
+ * A measure widget switched to another view: the measures and grouping the
+ * view can show (`groupByForView`), and the options that still name them.
+ */
+export function patchForView(
+  widget: Pick<
+    Extract<DashboardWidget, { type: "measure" }>,
+    "binding" | "options"
+  >,
+  view: MeasureView,
+  model: CatalogModel | undefined,
+) {
+  const binding = {
+    ...widget.binding,
+    measureIds:
+      view === "table"
+        ? widget.binding.measureIds
+        : view === "value"
+          ? [valueViewMeasureId(model, widget.binding.measureIds)]
+          : widget.binding.measureIds.slice(0, 1),
+    groupBy: groupByForView(view, widget.binding.groupBy, model),
+  };
+  return {
+    binding,
+    options: measureOptionsForBinding(binding, {
+      ...widget.options,
+      view,
+      limit: limitForView(view, widget.options.limit),
+    }),
+  };
 }
 export function MeasureFields({
   widget,
@@ -152,43 +216,6 @@ export function MeasureFields({
       },
     });
   };
-  function changeView(view: typeof widget.options.view) {
-    const binding = {
-      ...widget.binding,
-      measureIds:
-        view === "table"
-          ? widget.binding.measureIds
-          : view === "value"
-            ? [valueViewMeasureId(model, widget.binding.measureIds)]
-            : widget.binding.measureIds.slice(0, 1),
-      groupBy:
-        view === "value"
-          ? []
-          : widget.binding.groupBy.length
-            ? widget.binding.groupBy.slice(0, view === "table" ? 3 : 1)
-            : (model?.dimensions
-                .filter(
-                  (dimension) =>
-                    view !== "line" ||
-                    dimension.type === "date" ||
-                    dimension.type === "timestamp",
-                )
-                .slice(0, 1)
-                .map((dimension) => dimension.id) ?? []),
-    };
-    dispatch({
-      type: "updateWidget",
-      widgetId: widget.id,
-      patch: {
-        binding,
-        options: measureOptionsForBinding(binding, {
-          ...widget.options,
-          view,
-          limit: limitForView(view, widget.options.limit),
-        }),
-      },
-    });
-  }
   return (
     <fieldset className="measure-fields">
       <legend>{t("binding")}</legend>
@@ -258,7 +285,15 @@ export function MeasureFields({
           id={`${id}-view`}
           value={widget.options.view}
           onChange={(event) =>
-            changeView(event.target.value as typeof widget.options.view)
+            dispatch({
+              type: "updateWidget",
+              widgetId: widget.id,
+              patch: patchForView(
+                widget,
+                event.target.value as MeasureView,
+                model,
+              ),
+            })
           }
         >
           {(["value", "table", "bar", "line"] as const).map((view) => (
@@ -321,41 +356,14 @@ export function MeasureFields({
           ) : null,
         )}
       </fieldset>
-      {widget.options.view !== "value" ? (
-        <fieldset>
-          <legend>{t("groupBy")}</legend>
-          {model?.dimensions
-            .filter(
-              (dimension) =>
-                widget.options.view !== "line" ||
-                dimension.type === "date" ||
-                dimension.type === "timestamp",
-            )
-            .map((dimension) => (
-              <label key={dimension.id} className="check">
-                <input
-                  type={widget.options.view === "table" ? "checkbox" : "radio"}
-                  name={`${id}-group`}
-                  checked={widget.binding.groupBy.includes(dimension.id)}
-                  onChange={(event) =>
-                    update({
-                      groupBy:
-                        widget.options.view === "table"
-                          ? event.target.checked
-                            ? [...widget.binding.groupBy, dimension.id]
-                            : widget.binding.groupBy.filter(
-                                (id) => id !== dimension.id,
-                              )
-                          : [dimension.id],
-                    })
-                  }
-                />
-                {dimension.name}
-              </label>
-            ))}
-        </fieldset>
-      ) : null}
-      {widget.options.view !== "value" ? (
+      <GroupByField
+        view={widget.options.view}
+        dimensions={model?.dimensions ?? []}
+        groupBy={widget.binding.groupBy}
+        onChange={(groupBy) => update({ groupBy })}
+      />
+      {/* A plain value has no rows; a split shows up to this many lines. */}
+      {widget.options.view !== "value" || widget.binding.groupBy.length ? (
         <div className="field">
           <label htmlFor={`${id}-limit`}>{t("limit")}</label>
           <input
@@ -440,6 +448,63 @@ export function MeasureFields({
         onChange={(exclusions) => update({ exclusions })}
       />
       <InteractionField widget={widget} filters={filters} update={update} />
+    </fieldset>
+  );
+}
+
+/**
+ * What the widget groups by. Every view has it (#788): a value view with a
+ * grouping is its total with a line per group (#784), and without one a
+ * single value. Its choices are the model's dimensions as the view can
+ * show them; a control per chosen dimension would go next to its label.
+ */
+function GroupByField({
+  view,
+  dimensions,
+  groupBy,
+  onChange,
+}: {
+  view: MeasureView;
+  dimensions: CatalogModel["dimensions"];
+  groupBy: string[];
+  onChange: (groupBy: string[]) => void;
+}) {
+  const t = useT("data.dashboard"),
+    id = useId();
+  const several = groupsBySeveral(view);
+  const offered = dimensions.filter(
+    (dimension) =>
+      view !== "line" ||
+      dimension.type === "date" ||
+      dimension.type === "timestamp",
+  );
+  return (
+    <fieldset aria-describedby={view === "value" ? `${id}-help` : undefined}>
+      <legend>{t(view === "value" ? "splitBy" : "groupBy")}</legend>
+      {offered.map((dimension) => (
+        <label key={dimension.id} className="check">
+          <input
+            type={several ? "checkbox" : "radio"}
+            name={`${id}-group`}
+            checked={groupBy.includes(dimension.id)}
+            onChange={(event) =>
+              onChange(
+                several
+                  ? event.target.checked
+                    ? [...groupBy, dimension.id]
+                    : groupBy.filter((id) => id !== dimension.id)
+                  : [dimension.id],
+              )
+            }
+          />
+          {dimension.name}
+        </label>
+      ))}
+      {view === "value" ? (
+        <p className="help" id={`${id}-help`}>
+          {t("splitByHelp")}
+        </p>
+      ) : null}
     </fieldset>
   );
 }

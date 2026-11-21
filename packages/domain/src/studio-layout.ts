@@ -1284,6 +1284,74 @@ interface MeasureTableBox {
   pixel?: number;
   /** Whose text widths to count (default: the wider of web and TV). */
   font?: MeasureFont;
+  /**
+   * Column widths that keep the column heads' words whole where the box
+   * has the room (`measureTableColumnWidths`, #780), as the web draws
+   * them. Without it every column has an even share (netrics TV, and the
+   * readability check, until its renderer draws the same widths).
+   */
+  wholeHeadWords?: boolean;
+}
+
+/**
+ * A measure table's column widths in units, padding included (#780): an
+ * even share each, unless a column head has a word wider than that. Then,
+ * where every head's widest word fits the box side by side, such a column
+ * is as wide as its widest word needs and the others share the rest
+ * evenly, so no head breaks inside a word ("Downloa / ds"). Where even
+ * that does not fit, the shares stay even and a word breaks, as before:
+ * nothing is ever cut. Head words are the head split at spaces, semibold
+ * at the cell size. Pure: the same heads and box, the same widths.
+ */
+export function measureTableColumnWidths(input: {
+  /** The content box's width in units. */
+  width: number;
+  columns: readonly string[];
+  fontScale?: number;
+  pixel?: number;
+  font?: MeasureFont;
+}): number[] {
+  const count = input.columns.length;
+  if (count === 0) return [];
+  const m = MEASURE_TABLE_METRICS;
+  const width = Math.max(0, input.width);
+  const cell = m.cell * effectiveFontScale(input.fontScale);
+  const side = m.cellPadding + measurePixel(input.pixel);
+  const even = width / count;
+  // What each column needs for its head's widest word, padding included.
+  const needs = input.columns.map(
+    (head) =>
+      Math.max(
+        0,
+        ...head
+          .split(" ")
+          .map((word) => measureTextWidth(word, cell, "semibold", input.font)),
+      ) + side,
+  );
+  if (
+    needs.every((need) => need <= even + 1e-9) ||
+    needs.reduce((sum, need) => sum + need, 0) > width + 1e-9
+  )
+    return needs.map(() => even);
+  // Columns that need more than a share take what they need; the others
+  // share the rest, which may put another column over its share.
+  const wide = new Set<number>();
+  let share = even;
+  for (;;) {
+    const taken = [...wide].reduce((sum, index) => sum + needs[index]!, 0);
+    share = (width - taken) / (count - wide.size);
+    const over = needs.findIndex(
+      (need, index) => !wide.has(index) && need > share + 1e-9,
+    );
+    if (over === -1) break;
+    wide.add(over);
+  }
+  return needs.map((need, index) => (wide.has(index) ? need : share));
+}
+
+/** Units per screen pixel a line keeps room for (default 1, see `pixel`). */
+function measurePixel(pixel: number | undefined): number {
+  return pixel !== undefined && Number.isFinite(pixel) && pixel > 0 ? pixel : 1;
 }
 
 /** The parts of a measure table's height (see `measureTableLayout`). */
@@ -1309,16 +1377,23 @@ function measureTableParts(input: MeasureTableBox) {
     Math.max(1, wrap(input.label, width, title, "semibold")),
   );
   const columns = input.columns?.length ? input.columns : null;
-  // Both renderers give every column an even share (a fixed table layout).
-  const pixel =
-    input.pixel !== undefined && Number.isFinite(input.pixel) && input.pixel > 0
-      ? input.pixel
-      : 1;
+  const pixel = measurePixel(input.pixel);
+  // Every column an even share (a fixed table layout), or the widths that
+  // keep the heads' words whole (#780).
+  const columnWidths =
+    columns && input.wholeHeadWords
+      ? measureTableColumnWidths({ ...input, width, columns })
+      : null;
+  const even = width / (columns?.length ?? 1);
   // A pixel less than the column: glyphs at a screen's small sizes may
   // round wider than their share (#768).
-  const columnWidth = width / (columns?.length ?? 1) - m.cellPadding - pixel;
+  const room = (column: number) =>
+    (columnWidths?.[column] ?? even) - m.cellPadding - pixel;
   const lines = (texts: readonly string[], weight: StudioFontWeight) =>
-    Math.max(1, ...texts.map((text) => wrap(text, columnWidth, cell, weight)));
+    Math.max(
+      1,
+      ...texts.map((text, column) => wrap(text, room(column), cell, weight)),
+    );
   const row = (count: number) =>
     count * (cell * m.lineHeight + pixel) + m.cellPadding + m.border;
   const footerLine = (text: string | null) =>
@@ -1331,6 +1406,7 @@ function measureTableParts(input: MeasureTableBox) {
     titleLines,
     headLines,
     lines,
+    columnWidths,
     row,
     footerLine,
     /** Title, gap and column heads. */
@@ -1352,7 +1428,11 @@ export function measureTableLayout(
 ): MeasureTableLayout {
   const parts = measureTableParts(input);
   const rowLines = input.columns?.length
-    ? parts.lines([MEASURE_TABLE_CELL_SAMPLE], "regular")
+    ? // In its narrowest column (the shares are even unless `wholeHeadWords`).
+      parts.lines(
+        input.columns.map(() => MEASURE_TABLE_CELL_SAMPLE),
+        "regular",
+      )
     : 1;
   const rowPitch = parts.row(rowLines);
   const fixedHeight =
@@ -1392,8 +1472,16 @@ export function measureTableRowsShown(
     footer: readonly (string | null)[];
     rowsLine: (shown: number, total: number) => string;
   },
-): { shown: number; rowsLine: string | null } {
+): {
+  shown: number;
+  rowsLine: string | null;
+  /** With `wholeHeadWords` and column heads: each column's width in units. */
+  columnWidths?: number[];
+} {
   const parts = measureTableParts(input);
+  const columnWidths = parts.columnWidths
+    ? { columnWidths: parts.columnWidths }
+    : {};
   const total = Math.max(input.total, input.rows.length);
   const fit = (footer: readonly (string | null)[]) => {
     let room =
@@ -1409,12 +1497,12 @@ export function measureTableRowsShown(
     return shown;
   };
   const all = fit(input.footer);
-  if (all >= total) return { shown: total, rowsLine: null };
+  if (all >= total) return { shown: total, rowsLine: null, ...columnWidths };
   // The line's own room comes from the rows; its wording barely changes
   // with the count, so measure it once at the count without it.
   const line = input.rowsLine(all, total);
   const shown = fit([...input.footer, line]);
-  return { shown, rowsLine: input.rowsLine(shown, total) };
+  return { shown, rowsLine: input.rowsLine(shown, total), ...columnWidths };
 }
 
 /**
