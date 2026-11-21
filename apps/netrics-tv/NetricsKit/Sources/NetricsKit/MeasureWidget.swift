@@ -61,18 +61,25 @@ public struct MeasureCell: Codable, Sendable, Equatable {
 
     /// A percent-change measure's ratio shows as the signed percentage compare
     /// widgets use ("+8.3%", "−60%"); anything else as `text(language:)`.
-    public func text(language: ScreenLanguage, percentChange: Bool, timeZone: TimeZone = .current) -> String {
-        guard percentChange, let ratio = value.chartNumber else { return text(language: language, timeZone: timeZone) }
+    public func text(language: ScreenLanguage, percentChange: Bool, timeZone: TimeZone = .current, single: Bool = false)
+        -> String
+    {
+        guard percentChange, let ratio = value.chartNumber else {
+            return text(language: language, timeZone: timeZone, single: single)
+        }
         return MetricFormat.change(delta: ratio, ratio: ratio, unit: "count", language: language)?.text
-            ?? text(language: language, timeZone: timeZone)
+            ?? text(language: language, timeZone: timeZone, single: single)
     }
     /**
      * The cell as shown (formatMeasureCell on the web, #619): days and
      * timestamps in the screen language's date format, timestamps in
      * `timeZone` (the device's); a unit with a display precision (ratings)
-     * rounded on its decimal text. The value itself stays exact.
+     * rounded on its decimal text, and a single value (the value view, its
+     * total and split lines) without one to `DataFormat.valueFractionDigits`
+     * unless it is money (#835); then its currency, or its unit's word
+     * (`DataFormat.unitSuffix`). The value itself stays exact.
      */
-    public func text(language: ScreenLanguage, timeZone: TimeZone = .current) -> String {
+    public func text(language: ScreenLanguage, timeZone: TimeZone = .current, single: Bool = false) -> String {
         switch value {
         case .null: return "—"
         case .boolean: return value.text(language: language)
@@ -80,7 +87,9 @@ public struct MeasureCell: Codable, Sendable, Equatable {
             if let date = DataFormat.date(text, type: type, language: language, timeZone: timeZone) { return date }
         case .number: break
         }
-        let fractionDigits = unit.flatMap { DataFormat.unitFractionDigits[$0] }
+        let fractionDigits =
+            unit.flatMap { DataFormat.unitFractionDigits[$0] }
+            ?? (single && currency == nil ? DataFormat.valueFractionDigits : nil)
         let text: String
         if type == "decimal" || currency != nil, let raw = decimalText {
             // Decimal strings never pass through Double, beyond IEEE-754 precision too.
@@ -95,9 +104,7 @@ public struct MeasureCell: Codable, Sendable, Equatable {
             text = value.text(language: language)
         }
         if let currency { return "\(text) \(currency)" }
-        if unit == "percent" { return "\(text)%" }
-        if unit == "stars" { return "\(text) ★" }
-        return text
+        return text + DataFormat.unitSuffix(unit, language: language)
     }
     /// The value as a plain decimal string ("-1234.5"), minor units shifted to
     /// major ones; nil when it is none (text, or a number beyond exact integers).
@@ -414,11 +421,13 @@ public struct MeasureNotice: Sendable, Equatable, Identifiable {
 extension MeasureWidgetData {
     /// A measure cell as displayed, honouring the measure's metadata.
     public func text(
-        _ cell: MeasureCell?, measure id: String, language: ScreenLanguage, timeZone: TimeZone = .current
+        _ cell: MeasureCell?, measure id: String, language: ScreenLanguage, timeZone: TimeZone = .current,
+        single: Bool = false
     ) -> String {
         cell?.text(
             language: language,
-            percentChange: metadata?.measures.first { $0.id == id }?.percentChange == true, timeZone: timeZone) ?? "—"
+            percentChange: metadata?.measures.first { $0.id == id }?.percentChange == true, timeZone: timeZone,
+            single: single) ?? "—"
     }
     /// A row's dimension value as displayed: its label, else the value in its
     /// type's format (a day as "07.01.2026", like the web's table and charts).
@@ -461,6 +470,33 @@ public struct MeasureWidgetOptions: Codable, Sendable, Equatable {
 public enum DataFormat {
     /// Fraction digits a unit's values are shown with; other units show every digit.
     public static let unitFractionDigits: [String: Int] = ["stars": 2]
+
+    /// A single value's most fraction digits without a unit precision (#835):
+    /// MEASURE_VALUE_FRACTION_DIGITS.
+    public static let valueFractionDigits = 2
+
+    /// Units that are codes, never words after a value (isMeasureUnitCode).
+    public static func isUnitCode(_ unit: String) -> Bool {
+        unit == "count" || unit == "currency" || unit == "ratio" || unit == "position" || unit.hasSuffix("_minor")
+    }
+
+    /// Connector units in German (MEASURE_UNIT_WORDS_DE); others as named.
+    public static let unitWordsDE: [String: String] = [
+        "clicks": "Klicks", "downloads": "Downloads", "events": "Ereignisse", "impressions": "Impressionen",
+        "installs": "Installationen", "pageviews": "Seitenaufrufe", "purchases": "Käufe", "reviews": "Bewertungen",
+        "signups": "Registrierungen", "taps": "Taps", "updates": "Updates", "views": "Aufrufe", "visitors": "Besucher",
+    ]
+
+    /**
+     * What follows a value for its unit (measureUnitSuffix, #835): "%",
+     * " ★", nothing for a code or none, else a space and its word.
+     */
+    public static func unitSuffix(_ unit: String?, language: ScreenLanguage) -> String {
+        guard let unit, !unit.isEmpty, !isUnitCode(unit) else { return "" }
+        if unit == "percent" { return "%" }
+        if unit == "stars" { return " ★" }
+        return " " + (language == .de ? unitWordsDE[unit] ?? unit : unit)
+    }
 
     /**
      * A decimal string rounded to at most `digits` fraction digits, half away
@@ -630,7 +666,7 @@ extension MeasureWidgetData {
             (
                 groupBy.filter { $0 != "currency" }.map { dimensionText(row, dimension: $0, language: language) }
                     .joined(separator: " · "),
-                measureIds.first.map { text(row.measures[$0], measure: $0, language: language) } ?? "—"
+                measureIds.first.map { text(row.measures[$0], measure: $0, language: language, single: true) } ?? "—"
             )
         }
     }
@@ -639,7 +675,8 @@ extension MeasureWidgetData {
     /// nil without one.
     public func splitTotal(measureIds: [String], language: ScreenLanguage = .en) -> String? {
         guard let totals, !totals.isEmpty, let id = measureIds.first else { return nil }
-        return StudioLayout.measureSplitTotalText(totals.map { text($0, measure: id, language: language) })
+        return StudioLayout.measureSplitTotalText(
+            totals.map { text($0, measure: id, language: language, single: true) })
     }
 
     /// How a total with its split fits its tile (StudioLayout.measureSplitLayout,

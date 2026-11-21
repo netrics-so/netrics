@@ -713,6 +713,67 @@ export const MEASURE_UNIT_FRACTION_DIGITS: Readonly<Record<string, number>> = {
 };
 
 /**
+ * The most fraction digits a measure's single value (the value view, its
+ * total and split lines) shows when its unit sets none and it is no amount
+ * of money (#835): an average of 9.448387… reads as 9.45. Tables and charts
+ * keep every digit (#619); the stored and exported value stays exact.
+ */
+export const MEASURE_VALUE_FRACTION_DIGITS = 2;
+
+/**
+ * Units that are codes, never words after a value (#835): a plain count,
+ * amounts of money (their currency is shown), shares and ranks.
+ */
+export function isMeasureUnitCode(unit: string): boolean {
+  return (
+    unit === "count" ||
+    unit === "currency" ||
+    unit === "ratio" ||
+    unit === "position" ||
+    unit.endsWith("_minor")
+  );
+}
+
+/**
+ * Connector units in German; other units (and every unit in English) read
+ * as they are named. tvOS: `DataFormat.unitWords`.
+ */
+export const MEASURE_UNIT_WORDS_DE: Readonly<Record<string, string>> = {
+  clicks: "Klicks",
+  downloads: "Downloads",
+  events: "Ereignisse",
+  impressions: "Impressionen",
+  installs: "Installationen",
+  pageviews: "Seitenaufrufe",
+  purchases: "Käufe",
+  reviews: "Bewertungen",
+  signups: "Registrierungen",
+  taps: "Taps",
+  updates: "Updates",
+  views: "Aufrufe",
+  visitors: "Besucher",
+};
+
+/**
+ * What follows a measure's value for its unit (#619, #835): "%" for
+ * percent, " ★" for stars, nothing for a code or no unit, else a space and
+ * the unit's word in `locale` ("1,284 downloads", "1.284 Downloads",
+ * "9.45 °C").
+ */
+export function measureUnitSuffix(
+  unit: string | undefined,
+  locale: string,
+): string {
+  if (!unit || isMeasureUnitCode(unit)) return "";
+  if (unit === "percent") return "%";
+  if (unit === "stars") return " ★";
+  const word = locale.toLowerCase().startsWith("de")
+    ? (MEASURE_UNIT_WORDS_DE[unit] ?? unit)
+    : unit;
+  return ` ${word}`;
+}
+
+/**
  * A decimal string rounded to at most `digits` fraction digits, half away
  * from zero, trailing zeros dropped; computed on the digits, never through a
  * float. Text that is no plain decimal is returned unchanged.
