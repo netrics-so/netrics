@@ -208,6 +208,7 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       nextHeader: "Link-Header",
       nextPath: "Link zur nächsten Seite in der Antwort",
       pickInTree: "Klicke unten in der Antwort auf den Wert.",
+      useValue: "Verwenden",
       notPicked: "Noch nicht gewählt",
       test: "Seiten testen",
       fetched:

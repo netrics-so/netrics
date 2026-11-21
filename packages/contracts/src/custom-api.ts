@@ -27,13 +27,16 @@ export {
   customApiStreamSchema,
   customApiVariableSchema,
   customApiWindowSchema,
+  formatDataPath,
   PAGE_PLACEHOLDERS,
   parseDataPath,
   parsePlaceholders,
+  readDataPath,
   upgradeCustomApiDefinition,
   WINDOW_PLACEHOLDERS,
 } from "@netrics/connector-sdk/custom-api";
 export type {
+  DataPathSegment,
   CustomApiAuth,
   CustomApiDefinition,
   CustomApiDefinitionErrorCode,

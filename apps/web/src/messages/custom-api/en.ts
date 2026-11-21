@@ -205,6 +205,7 @@ export const customApiEn = {
       nextHeader: "Link header",
       nextPath: "Next link in the response",
       pickInTree: "Click the value in the response below.",
+      useValue: "Use",
       notPicked: "Not picked yet",
       test: "Test paging",
       fetched:
