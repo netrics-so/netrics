@@ -311,6 +311,19 @@ log only ids, dates, counts and statuses, never personal data or provider
 payloads. `recordingLogger()` in `@netrics/connector-sdk/testing` records the
 lines in tests.
 
+A failure with a known reason can carry a reason code next to its English
+message (SDK 0.2.18, #795): a failed check returns `code`, and connector code
+throws `ConnectorError(message, code)`. A code is a fixed word (lowercase
+words joined by `_` or `.`, at most 64 characters, such as
+`acme.key_revoked`), never a secret or a part of the provider's answer; the
+runtime refuses anything else. The host stores it as `sync_runs.error_code`
+and returns it with the message (`errorCode` on a sync run and on a refused
+credential check). The web app shows its own text for a code it knows
+(`PROVIDER_MESSAGE_CODES` in `@netrics/domain`, English and German) and the
+recorded message otherwise, so rewording a message breaks no translation.
+Signed-key providers name the codes of their refusals the same way. The code
+is optional: connectors that set none keep working.
+
 A connector that meets a provider's request limit with a known reset (a 429
 with `Retry-After` or a reset header, a daily quota) throws
 `RateLimitedError(message, retryAt)` (SDK 0.2.16, #781). The runtime keeps the
@@ -424,6 +437,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.15 | Optional final `nextFrom`, the next window start (#758)             |
 | 0.2.16 | `RateLimitedError` with `retryAt`: wait for a known reset (#781)    |
 | 0.2.17 | Optional dataset field role "image"; dataset contract v1 (ADR 0026) |
+| 0.2.18 | Optional reason codes: `CheckResult.code`, `ConnectorError` (#795)  |
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),

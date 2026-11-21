@@ -1,20 +1,22 @@
 "use client";
 
 import type { SyncRun } from "@netrics/contracts";
-import { localizedProviderMessage } from "@netrics/domain";
+import { localizedProviderFailure } from "@netrics/domain";
 
 import { useLocale, useT } from "@/lib/i18n/client";
 
 /**
  * A failed run's error (#781): what went wrong in the viewer's language,
- * then the provider's own words, which are English, unless the catalog
- * knows them (a refused key, #378). A rate limit says all there is in its
+ * then the provider's own words, which are English, unless the run has a
+ * reason code the catalog knows (a refused key, #795; runs recorded before
+ * codes are found by their exact text, #378). A rate limit says all there is in its
  * class: when syncing continues is on the connection.
  */
 export function SyncRunError({
   run,
 }: {
-  run: Pick<SyncRun, "errorClass" | "errorMessage">;
+  run: Pick<SyncRun, "errorClass" | "errorMessage"> &
+    Partial<Pick<SyncRun, "errorCode">>;
 }) {
   const t = useT("connections.detail.errorClass");
   const locale = useLocale();
@@ -23,7 +25,9 @@ export function SyncRunError({
     run.errorClass !== "rate_limited" && run.errorMessage
       ? run.errorMessage
       : null;
-  const localized = detail ? localizedProviderMessage(detail, locale) : null;
+  const localized = detail
+    ? localizedProviderFailure({ code: run.errorCode, message: detail }, locale)
+    : null;
   return (
     <>
       {t(run.errorClass)}

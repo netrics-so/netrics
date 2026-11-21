@@ -12,6 +12,8 @@ import {
   type ExecuteOptions,
 } from "@netrics/connector-runtime";
 import {
+  ConnectorError,
+  isErrorCode,
   observationKey,
   RateLimitedError,
   type ConnectionContext,
@@ -229,6 +231,20 @@ interface StateRow {
 function safeMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return String(redactSecrets(message)).slice(0, 500);
+}
+
+/**
+ * The stable reason code of a failure, stored next to its message (#795):
+ * a refused signed key's (the provider definition names it) or a
+ * connector's (ConnectorError, SDK 0.2.18). Null for any other error, and
+ * for a code that is not well formed: a code is a fixed word, never text.
+ */
+function errorCodeOf(error: unknown): string | null {
+  const code =
+    error instanceof SignedKeyRejectedError || error instanceof ConnectorError
+      ? error.code
+      : undefined;
+  return isErrorCode(code) ? code : null;
 }
 
 function iso(date: Date): string {
@@ -570,6 +586,7 @@ async function runSync(
     envelopeDigest?: string | null,
   ): Promise<void> => {
     const message = safeMessage(error);
+    const errorCode = errorCodeOf(error);
     try {
       await withWorkspace(appDb, { workspaceId }, async (tx) => {
         let replaced = false;
@@ -605,6 +622,7 @@ async function runSync(
           finishedAt: new Date(),
           errorClass,
           errorMessage: message,
+          errorCode,
           observationsWritten: progress.observationsWritten,
         });
         const statePatch = {
@@ -653,7 +671,10 @@ async function runSync(
         "failed to record sync failure",
       );
     }
-    log.warn({ errorClass, err: message }, "sync run failed");
+    log.warn(
+      { errorClass, ...(errorCode ? { errorCode } : {}), err: message },
+      "sync run failed",
+    );
   };
 
   /**
@@ -1082,7 +1103,11 @@ async function runSync(
     throw error;
   }
   if (!check.ok) {
-    const error = new Error(check.message ?? "credential check failed");
+    // The check's reason code is recorded with its message (#795).
+    const message = check.message ?? "credential check failed";
+    const error = isErrorCode(check.code)
+      ? new ConnectorError(message, check.code)
+      : new Error(message);
     await recordFailure("auth", error);
     throw new TerminalJobError(safeMessage(error));
   }

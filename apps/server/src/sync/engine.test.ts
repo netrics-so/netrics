@@ -395,6 +395,24 @@ const loggingConnector: Connector = {
  * Returns `opaqueNext` on a done result and records every request (#758):
  * what the host hands back as cursor and window.
  */
+/** Its credential check is refused with a reason code (#795). */
+const refusedCheckConnector: Connector = {
+  manifest: testManifest("refused-check", "refused.hits"),
+  async check() {
+    return {
+      ok: false,
+      message: "The key was revoked. Enter a new key.",
+      code: "refused_check.key_revoked",
+    };
+  },
+  async discover() {
+    return [];
+  },
+  async sync() {
+    return { observations: [], done: true };
+  },
+};
+
 let opaqueRequests: SyncRequest[] = [];
 let opaqueNext: Pick<SyncResult, "nextCursor" | "nextFrom"> = {};
 const opaqueCursorConnector: Connector = {
@@ -673,6 +691,7 @@ beforeAll(async () => {
   registry.register(leakyConnector);
   registry.register(loggingConnector);
   registry.register(opaqueCursorConnector);
+  registry.register(refusedCheckConnector);
   registry.register(probeConnector);
   registry.register(revisingConnector);
   registry.register(namingConnector);
@@ -743,6 +762,7 @@ describe("catalog sync", () => {
       "pager-large",
       "pager-resume",
       "probe",
+      "refused-check",
       "revising",
       "vercel",
       "wide-page",
@@ -1059,6 +1079,22 @@ describe("sync engine", () => {
     const state = await stateFor(workspaceA, connectionId);
     expect(state!.authState).toBe("auth_failed");
     expect(state!.consecutiveFailures).toBe(1);
+  });
+
+  it("records the reason code of a refused credential check on the run (#795)", async () => {
+    const connectionId = await seedConnection(workspaceA, "refused-check");
+    const jobId = await enqueue(workspaceA, connectionId, "connection.sync");
+    await waitFor(async () => (await jobRow(jobId))?.status === "failed");
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      error_class: "auth",
+      error_message: "The key was revoked. Enter a new key.",
+      error_code: "refused_check.key_revoked",
+    });
+    expect((await stateFor(workspaceA, connectionId))!.authState).toBe(
+      "auth_failed",
+    );
   });
 
   it("provider outage: retryable job with backoff, outage state", async () => {

@@ -24,7 +24,9 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.16: RateLimitedError, a provider limit with a known reset: the host
 // defers the connection's jobs to it instead of retrying (#781).
 // 0.2.17: optional dataset field role "image" (dataset contract v1, ADR 0026).
-export const SDK_VERSION = "0.2.17";
+// 0.2.18: optional reason codes next to messages: CheckResult.code and
+// ConnectorError (#795). Connectors that set none keep working.
+export const SDK_VERSION = "0.2.18";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

@@ -144,9 +144,65 @@ export function itemsNeedNewerAppText(locale: Locale = "en"): string {
 }
 
 /**
- * A provider message the server recorded in English (a refused key, #378)
+ * The reason codes the server records next to a provider message (#795),
+ * and the shared catalog entry each one reads. A code is stable: the
+ * English wording may change without breaking a translation, and a code
+ * is never renamed or reused for another reason once rows carry it.
+ */
+export const PROVIDER_MESSAGE_CODES = {
+  "apple_ads.invalid_client": "providerMessages.appleAds.invalidClient",
+  "apple_ads.unauthorized": "providerMessages.appleAds.unauthorized",
+  "apple_ads.forbidden": "providerMessages.appleAds.forbidden",
+  "app_store_connect.unauthorized":
+    "providerMessages.appStoreConnect.unauthorized",
+  "app_store_connect.forbidden": "providerMessages.appStoreConnect.forbidden",
+  "app_store_connect.key_mismatch":
+    "providerMessages.appStoreConnect.keyMismatch",
+  "app_store_connect.role_missing":
+    "providerMessages.appStoreConnect.roleMissing",
+  "app_store_connect.agreements_missing":
+    "providerMessages.appStoreConnect.agreementsMissing",
+} as const satisfies Readonly<Record<string, MessageKey<SharedMessages>>>;
+
+export type ProviderMessageCode = keyof typeof PROVIDER_MESSAGE_CODES;
+
+/**
+ * The text of a recorded reason code in `locale` (#795); null for a code
+ * this build does not know (a community connector's, or a newer server's),
+ * for which clients show the recorded message.
+ */
+export function providerMessageForCode(
+  code: string | null | undefined,
+  locale: Locale = "en",
+): string | null {
+  if (!code || !Object.hasOwn(PROVIDER_MESSAGE_CODES, code)) {
+    return null;
+  }
+  return sharedTranslator(locale)(
+    PROVIDER_MESSAGE_CODES[code as ProviderMessageCode],
+  );
+}
+
+/**
+ * A recorded provider failure in `locale`: by its reason code (#795), else
+ * (rows recorded before codes) by its exact English text; null when
+ * neither is known, and clients show the message as it is.
+ */
+export function localizedProviderFailure(
+  failure: { code?: string | null | undefined; message?: string | null },
+  locale: Locale = "en",
+): string | null {
+  return (
+    providerMessageForCode(failure.code, locale) ??
+    (failure.message ? localizedProviderMessage(failure.message, locale) : null)
+  );
+}
+
+/**
+ * A provider message recorded in English before reason codes (#378, #795)
  * in `locale`, found by its exact English text; null for any other text,
- * which clients show as it is (the provider's own words).
+ * which clients show as it is (the provider's own words). New rows carry a
+ * code: use `localizedProviderFailure`.
  */
 export function localizedProviderMessage(
   message: string,

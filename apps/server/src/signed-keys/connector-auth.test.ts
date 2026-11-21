@@ -75,6 +75,10 @@ describe("callWithSignedKey", () => {
     expect((error as Error).message).toMatch(
       /Upload a new App Store Connect key/,
     );
+    // The reason code is stored next to the message (#795).
+    expect((error as SignedKeyRejectedError).code).toBe(
+      "app_store_connect.unauthorized",
+    );
   });
 
   it("turns a 403 into the role message", async () => {
@@ -88,6 +92,9 @@ describe("callWithSignedKey", () => {
     }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(SignedKeyRejectedError);
     expect((error as Error).message).toMatch(/Sales or Finance role/);
+    expect((error as SignedKeyRejectedError).code).toBe(
+      "app_store_connect.forbidden",
+    );
   });
 
   it("treats a refused check result after a 401 as the key's failure", async () => {
