@@ -51,7 +51,15 @@ export function parseStoredBuilder(
   )
     return null;
   return {
-    state: { ...stored.state, lastTest: null },
+    state: {
+      ...stored.state,
+      images: stored.state.images ?? null,
+      // Stored before #834's review: every field counts as set.
+      nullableChosen:
+        stored.state.nullableChosen ??
+        stored.state.stream.fields.map((field) => field.id),
+      lastTest: null,
+    },
     step: stored.step as BuilderStep,
     definitionId,
     baseVersion: stored.baseVersion ?? null,

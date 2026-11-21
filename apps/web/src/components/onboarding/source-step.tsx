@@ -14,7 +14,10 @@ import {
 } from "@/lib/onboarding";
 
 /** What the explainer says netrics may do with a source. */
-export type SourceAccess = "oauth" | "key" | "none" | "demo";
+export type SourceAccess = "oauth" | "key" | "none" | "demo" | "customApi";
+
+/** The custom API card's choice (#834): it opens the builder. */
+export const CUSTOM_API_CHOICE = "custom-api-builder";
 
 export function sourceAccess(connector: ConnectorCatalogEntry): SourceAccess {
   if (connector.id === DEMO_CONNECTOR_ID) {
@@ -47,11 +50,13 @@ const EXPLAIN = {
   key: "explainKey",
   none: "explainNone",
   demo: "explainDemo",
+  customApi: "explainCustomApi",
 } as const;
 
 /**
  * Step 2, "Connect your first source" (#308): source cards from the
- * connector catalogue and the demo as one more choice. Continue opens the
+ * connector catalogue, a custom API (#834: opens the builder) and the demo
+ * as one more choice. Continue opens the
  * new-connection wizard with the connector chosen; the demo (or "Skip, use
  * demo data") adds the demo connection and dashboard when the workspace has
  * none yet, then goes on to step 3.
@@ -76,8 +81,14 @@ export function SourceStep({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const customApi = selected === CUSTOM_API_CHOICE;
   const chosen = choices.find((c) => c.id === selected) ?? null;
-  const access: SourceAccess = chosen ? sourceAccess(chosen) : "demo";
+  const chosenName = customApi ? t("customApiName") : (chosen?.name ?? null);
+  const access: SourceAccess = customApi
+    ? "customApi"
+    : chosen
+      ? sourceAccess(chosen)
+      : "demo";
 
   async function startWithDemo() {
     setError(null);
@@ -101,7 +112,9 @@ export function SourceStep({
   }
 
   function onContinue() {
-    if (chosen) {
+    if (customApi) {
+      router.push(`/workspaces/${workspaceId}/custom-apis/new`);
+    } else if (chosen) {
       router.push(connectSourcePath(workspaceId, chosen.id));
     } else {
       void startWithDemo();
@@ -142,6 +155,21 @@ export function SourceStep({
         <button
           type="button"
           className="source-choice"
+          aria-pressed={customApi}
+          disabled={pending}
+          onClick={() => setSelected(CUSTOM_API_CHOICE)}
+        >
+          <span className="source-choice-icon" aria-hidden="true">
+            {"{ }"}
+          </span>
+          <span>
+            <span className="source-choice-name">{t("customApiName")}</span>
+            <span className="source-choice-text">{t("customApiText")}</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="source-choice"
           aria-pressed={selected === DEMO_CONNECTOR_ID}
           disabled={pending}
           onClick={() => setSelected(DEMO_CONNECTOR_ID)}
@@ -161,7 +189,7 @@ export function SourceStep({
         <span className="onboarding-explainer-mark" aria-hidden="true">
           {"i"}
         </span>
-        <span>{t(EXPLAIN[access], { name: chosen?.name ?? "" })}</span>
+        <span>{t(EXPLAIN[access], { name: chosenName ?? "" })}</span>
       </p>
       {error ? (
         <div className="error" role="alert">
@@ -182,7 +210,7 @@ export function SourceStep({
           disabled={pending}
           onClick={onContinue}
         >
-          {chosen ? t("continueWith", { name: chosen.name }) : t("continue")}
+          {chosenName ? t("continueWith", { name: chosenName }) : t("continue")}
         </button>
       </div>
     </div>

@@ -1220,6 +1220,29 @@ export const connectionItemImagesSchema = z.object({
 });
 export type ConnectionItemImages = z.infer<typeof connectionItemImagesSchema>;
 
+/**
+ * The last run's skipped records of one stream of a custom API connection
+ * (#834 review): how many records were skipped, and by field path how
+ * many of them a field that may not be empty skipped (most first, at most
+ * 5). Paths and counts only, never values.
+ */
+export const connectionRecordSkipsSchema = z.object({
+  streamKey: z.string().min(1),
+  /** The stream's name from the pinned definition. */
+  streamName: z.string().min(1),
+  checkedAt: z.iso.datetime(),
+  skipped: z.number().int().nonnegative(),
+  skippedFields: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        count: z.number().int().positive(),
+      }),
+    )
+    .max(5),
+});
+export type ConnectionRecordSkips = z.infer<typeof connectionRecordSkipsSchema>;
+
 export const connectionDetailResponseSchema = z.object({
   connection: connectionDetailSchema,
   syncRuns: z.array(syncRunSchema),
@@ -1234,6 +1257,11 @@ export const connectionDetailResponseSchema = z.object({
    * per stream (#809), by stream key.
    */
   itemImages: z.array(connectionItemImagesSchema).optional(),
+  /**
+   * Custom API connections only: the last run's skipped records per
+   * stream (#834 review), by stream key; empty before the first sync.
+   */
+  recordSkips: z.array(connectionRecordSkipsSchema).optional(),
 });
 export type ConnectionDetailResponse = z.infer<
   typeof connectionDetailResponseSchema

@@ -364,6 +364,21 @@ describe("custom API connection updates", () => {
     );
   });
 
+  it("lists the issues of a malformed apply body (#834 review)", async () => {
+    const definition = await define(doc("bearer"));
+    const id = await connect(definition.id, LOGINS.bearer);
+    await save(definition.id, withField(doc("bearer")));
+    const offer = await plan(id);
+    const res = await apply(id, offer, { toVersionId: "not-a-uuid", extra: 1 });
+    expect(res.statusCode, res.body).toBe(400);
+    expect(res.json().error).toBe("invalid_request");
+    expect(res.json().issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "toVersionId" }),
+      ]),
+    );
+  });
+
   it("never applies an update by itself", async () => {
     const definition = await define(doc("bearer"));
     const id = await connect(definition.id, LOGINS.bearer);

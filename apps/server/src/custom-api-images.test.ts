@@ -658,6 +658,30 @@ describe("item images in the connection detail", () => {
     ]);
   });
 
+  it("lists the last sync's skipped records per stream (#834 review)", async () => {
+    const connectionId = await connect(definition("bad_values"));
+    expect((await detail(connectionId)).recordSkips).toEqual([]);
+    await runSync(connectionId);
+    expect((await detail(connectionId)).recordSkips).toEqual([
+      {
+        streamKey: "values",
+        streamName: expect.any(String),
+        checkedAt: expect.any(String),
+        skipped: 1,
+        skippedFields: [{ path: "id", count: 1 }],
+      },
+    ]);
+    const custom = await connect(definition("pages"));
+    await runSync(custom);
+    expect((await detail(custom)).recordSkips).toEqual([
+      expect.objectContaining({
+        streamKey: "items",
+        skipped: 0,
+        skippedFields: [],
+      }),
+    ]);
+  });
+
   it("lists an image stream with no step yet as nothing", async () => {
     const connectionId = await connect(definition("photos"));
     expect((await detail(connectionId)).itemImages).toEqual([]);
@@ -673,5 +697,6 @@ describe("item images in the connection detail", () => {
         .returning({ id: schema.connections.id }),
     );
     expect(await detail(bundled!.id)).not.toHaveProperty("itemImages");
+    expect(await detail(bundled!.id)).not.toHaveProperty("recordSkips");
   });
 });

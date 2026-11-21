@@ -76,6 +76,15 @@ export const sourcesEn = {
       connectExistingName: "Connect an existing custom API",
     },
     /** A custom API connection's item images per stream (#809). */
+    recordSkips: {
+      title: "Skipped records",
+      summary:
+        "{stream}: {count, plural, one {# record} other {# records}} skipped in the last sync · {time}",
+      none: "{stream}: no records skipped in the last sync · {time}",
+      field:
+        "{path} was empty or unreadable in {count, plural, one {# record} other {# records}}",
+      help: "A field that may not be empty skips the whole record. To keep these records, let the field be empty in a new version of the custom API.",
+    },
     itemImages: {
       title: "Images",
       summary:

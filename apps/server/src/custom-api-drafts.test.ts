@@ -426,6 +426,36 @@ describe("custom API draft connections", () => {
     );
   });
 
+  it("lists the issues of a refused draft body, without the values (#834)", async () => {
+    const { draft } = await createDraft();
+    const refused = await updateDraft(draft.id, {
+      definition: withBaseUrl(bearerDraft(), "http://api.example.test"),
+      environmentId: "production",
+      streams: [],
+      secrets: { token: "abc" },
+    });
+    expectError(refused, 400, "invalid_request");
+    const issues = refused.json().issues as { path: string; message: string }[];
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining(["secrets.token", ""]),
+    );
+    expect(
+      issues.some((issue) => issue.path.startsWith("definition.environments")),
+    ).toBe(true);
+    expect(refused.body).not.toContain('abc"');
+    const promoted = await call(
+      "POST",
+      `${drafts(workspaceId)}/${draft.id}/promote`,
+      owner,
+      { definitionId: "not-a-uuid", version: 1, name: "x", projectId: null },
+    );
+    expectError(promoted, 400, "invalid_request");
+    expect(promoted.json().issues).toEqual([
+      expect.objectContaining({ path: "definitionId" }),
+    ]);
+  });
+
   it("merges secrets sent one by one and checks the set on promote (review #820 N2)", async () => {
     const { draft } = await createDraft();
     const basic = { ...bearerDraft(), auth: { type: "basic" } };

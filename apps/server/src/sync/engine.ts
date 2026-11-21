@@ -32,6 +32,7 @@ import {
   receiveEmptySourceDataset,
   intersectDatasetVersions,
   queueDatasetBackfill,
+  recordStreamRecords,
   DatasetStoreError,
   DatasetStageUnavailableError,
   resolveDataPolicy,
@@ -52,7 +53,13 @@ import {
 } from "@netrics/contracts";
 
 import {
+  CUSTOM_API_SKIPPED_FIELDS,
+  CUSTOM_API_SKIPPED_LOG,
+  readSkippedLogFields,
+} from "@netrics/connector-sdk/custom-api";
+import {
   CUSTOM_API_AUTH_ERROR,
+  CUSTOM_API_CONNECTOR_ID,
   CUSTOM_API_LIMIT_ERROR,
 } from "@netrics/connectors/custom-api";
 
@@ -698,6 +705,8 @@ async function runSync(
               consecutiveFailures: 0,
             },
           });
+        // The skipped records of the pages committed before the limit.
+        await saveRecordSkips(tx);
         await tx
           .update(schema.jobs)
           .set({
@@ -848,12 +857,113 @@ async function runSync(
   // Connector log lines (SDK 0.2.14, #638), already sanitized by the
   // runtime, attributed to this connection, run (jobId) and attempt.
   const connectorLog = log.child({ source: "connector" });
+  // A custom API's skipped records of this job, per stream (#834 review):
+  // its "records skipped" lines, kept for the connection page. Only
+  // streams of the pinned definition and paths of their fields count.
+  const customApiStreams = new Map(
+    (registered.customApi?.definition.streams ?? []).map((stream) => [
+      stream.key,
+      new Set(stream.fields.map((field) => field.path)),
+    ]),
+  );
+  type Skips = Map<string, { skipped: number; byPath: Map<string, number> }>;
+  const recordSkips: Skips = new Map();
+  /**
+   * The skips of the sync call running now; null outside sync calls (a
+   * check reads the first page too, and must not count). Merged into
+   * recordSkips only when the call answered, so a failed call's page,
+   * never committed, never counts.
+   */
+  let callSkips: Skips | null = null;
+  const mergeSkips = (into: Skips, from: Skips) => {
+    for (const [stream, part] of from) {
+      const total = into.get(stream) ?? {
+        skipped: 0,
+        byPath: new Map<string, number>(),
+      };
+      total.skipped += part.skipped;
+      for (const [path, count] of part.byPath)
+        total.byPath.set(path, (total.byPath.get(path) ?? 0) + count);
+      into.set(stream, total);
+    }
+  };
+  const countSkips = (
+    connectorId: string,
+    message: string,
+    fields: Readonly<Record<string, unknown>>,
+  ) => {
+    if (
+      callSkips === null ||
+      connectorId !== CUSTOM_API_CONNECTOR_ID ||
+      message !== CUSTOM_API_SKIPPED_LOG ||
+      typeof fields.stream !== "string"
+    )
+      return;
+    const paths = customApiStreams.get(fields.stream);
+    const read = readSkippedLogFields(fields);
+    if (!paths || !read) return;
+    mergeSkips(
+      callSkips,
+      new Map([
+        [
+          fields.stream,
+          {
+            skipped: read.skipped,
+            byPath: new Map(
+              [...read.byPath].filter(([path]) => paths.has(path)),
+            ),
+          },
+        ],
+      ]),
+    );
+  };
+  /**
+   * Writes the skipped records counted since the last commit, in the
+   * transaction that commits their pages (#834 re-review): every page
+   * checkpoint, a continuation, a rate limit and the run's end. The summary
+   * is the last run's, a failed one included, as far as that run committed
+   * pages. A job that is no continuation replaces it with its first write;
+   * every other write adds to it, so a continued or rate-limited run counts
+   * every page once, and a retried attempt (read again from the start)
+   * too. Every write moves each stream's checkedAt to this job, also for a
+   * stream without new skips. Call skipsCommitted() once the transaction
+   * committed.
+   */
+  let skipsWritten = false;
+  // Only a continuation keeps its window, and the custom API connector
+  // resumes a cursor only for the same window: a retried attempt (a new
+  // window) reads its stream again from the first page, so it starts over
+  // too, even from a stored checkpoint.
+  const startsOver = continuation === undefined;
+  const saveRecordSkips = async (tx: Transaction) => {
+    const add = skipsWritten || !startsOver;
+    for (const streamKey of customApiStreams.keys()) {
+      const total = recordSkips.get(streamKey);
+      await recordStreamRecords(tx, {
+        workspaceId,
+        connectionId,
+        streamKey,
+        checkedAt: now,
+        skipped: total?.skipped ?? 0,
+        skippedFields: Object.fromEntries(total?.byPath ?? []),
+        add,
+        maxFields: CUSTOM_API_SKIPPED_FIELDS,
+      });
+    }
+  };
+  const skipsCommitted = () => {
+    if (customApiStreams.size === 0) return;
+    recordSkips.clear();
+    skipsWritten = true;
+  };
   const executeOptions: ExecuteOptions = callOptionsFor(
     registered,
     {
       ...deps.executeOptions,
-      log: ({ level, connector: connectorId, message, fields }) =>
-        connectorLog[level]({ connector: connectorId, fields }, message),
+      log: ({ level, connector: connectorId, message, fields }) => {
+        countSkips(connectorId, message, fields);
+        connectorLog[level]({ connector: connectorId, fields }, message);
+      },
     },
     {
       credentials,
@@ -1200,6 +1310,7 @@ async function runSync(
               finishedAt: new Date(),
               observationsWritten: progress.observationsWritten,
             });
+            await saveRecordSkips(tx);
           });
           throw new ContinueJobError({
             syncWindow: { mode, from: iso(window.from), to: iso(window.to) },
@@ -1212,21 +1323,29 @@ async function runSync(
           ...(cursor ? { cursor } : {}),
           ...(selectedResources ? { resources: selectedResources } : {}),
         };
-        const result = await callConnector((callContext, options) =>
-          executeSync(connector, callContext, request, {
-            ...options,
-            datasetStaging: (signal) =>
-              createDatasetStaging({
-                db: appDb,
-                workspaceId,
-                connectionId,
-                manifest,
-                clock,
-                policyDefaults: deps.dataPolicy,
-                signal,
-              }),
-          }),
-        );
+        const skipsOfCall: Skips = new Map();
+        callSkips = skipsOfCall;
+        let result: SyncResult;
+        try {
+          result = await callConnector((callContext, options) =>
+            executeSync(connector, callContext, request, {
+              ...options,
+              datasetStaging: (signal) =>
+                createDatasetStaging({
+                  db: appDb,
+                  workspaceId,
+                  connectionId,
+                  manifest,
+                  clock,
+                  policyDefaults: deps.dataPolicy,
+                  signal,
+                }),
+            }),
+          );
+        } finally {
+          callSkips = null;
+        }
+        mergeSkips(recordSkips, skipsOfCall);
         if (result.done) {
           finalObservations = result.observations;
           finalDatasetPages = result;
@@ -1271,8 +1390,10 @@ async function runSync(
               target: schema.connectionState.connectionId,
               set: { cursor: nextCursor, ...backfillMarker },
             });
+          await saveRecordSkips(tx);
           return count;
         });
+        skipsCommitted();
         progress.pagesCommitted += 1;
         progress.observationsWritten += written;
         progress.cursor = nextCursor;
@@ -1354,6 +1475,7 @@ async function runSync(
         finishedAt: new Date(),
         observationsWritten,
       });
+      await saveRecordSkips(tx);
     });
   } catch (error) {
     if (error instanceof ContinueJobError) throw error;

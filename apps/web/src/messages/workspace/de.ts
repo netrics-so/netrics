@@ -276,6 +276,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       dataTablesHelp:
         "Erkunde Rohberichte, bereite Daten auf und erstelle wiederverwendbare Kennzahlen für deine Dashboards.",
       openData: "Daten & Kennzahlen öffnen",
+      datasetRows: "{count, plural, one {# Zeile} other {# Zeilen}}",
+      noRecords: "Noch keine Einträge gespeichert.",
       back: "Zurück zu den Quellen",
       setupFinished:
         "Einrichtung abgeschlossen. Der erste Import für den eingestellten Zeitraum ist eingeplant; neue Daten werden danach nach dem Zeitplan dieser Verbindung abgerufen.",

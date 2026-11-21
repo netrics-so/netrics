@@ -138,14 +138,24 @@ export function registerDataRoutes(
             "List typed source and prepared datasets",
             contracts.dataSourcesResponseSchema,
             undefined,
-            contracts.projectFilterQuerySchema,
+            contracts.dataSourcesQuerySchema,
           ),
         },
         (request, reply) =>
           execute(request, reply, "data:preview", async (a) => {
-            const filter = projectFilter(request, reply);
-            if (!filter) return;
-            return service.listSources(a, filter);
+            const query = contracts.dataSourcesQuerySchema.safeParse(
+              request.query,
+            );
+            if (!query.success) {
+              sendError(reply, 400, "invalid_request");
+              return;
+            }
+            const { connection, ...filter } = query.data;
+            return service.listSources(
+              a,
+              filter,
+              connection ? { connectionId: connection } : {},
+            );
           }),
       );
       scope.post(

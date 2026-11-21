@@ -291,6 +291,13 @@ export function convertValue(
 export interface MappedPage {
   rows: Record<string, unknown>[];
   skipped: number;
+  /**
+   * Records skipped by the field that skipped them, by field id (#834
+   * review): empty or unreadable though it may not be empty, or a money
+   * field's currency that is no ISO code. Size refusals count in `skipped`
+   * only.
+   */
+  skippedFields: Record<string, number>;
   /** Values set to null because they did not convert, by field id. */
   nulled: Record<string, number>;
 }
@@ -314,7 +321,13 @@ export function mapRecords(
 ): MappedPage {
   const rows: Record<string, unknown>[] = [];
   const nulled: Record<string, number> = {};
+  const skippedFields: Record<string, number> = {};
   let skipped = 0;
+  const skip = (fieldId?: string) => {
+    skipped += 1;
+    if (fieldId !== undefined)
+      skippedFields[fieldId] = (skippedFields[fieldId] ?? 0) + 1;
+  };
   const money = stream.fields.flatMap((field) =>
     field.currencyField === undefined ? [] : [field.currencyField],
   );
@@ -333,13 +346,14 @@ export function mapRecords(
         row[field.id] = null;
         nulledHere.push(field.id);
       } else {
-        skipped += 1;
+        skip(field.id);
         continue records;
       }
     }
     // What the dataset contract refuses for a whole page skips the record.
-    if (money.some((id) => !/^[A-Z]{3}$/.test(String(row[id])))) {
-      skipped += 1;
+    const badCurrency = money.find((id) => !/^[A-Z]{3}$/.test(String(row[id])));
+    if (badCurrency !== undefined) {
+      skip(badCurrency);
       continue;
     }
     const keyBytes = encoder.encode(
@@ -350,13 +364,13 @@ export function mapRecords(
       encoder.encode(JSON.stringify({ values: row })).length >
         DATASET_LIMITS.rowBytes
     ) {
-      skipped += 1;
+      skip();
       continue;
     }
     for (const id of nulledHere) nulled[id] = (nulled[id] ?? 0) + 1;
     rows.push(row);
   }
-  return { rows, skipped, nulled };
+  return { rows, skipped, skippedFields, nulled };
 }
 
 /** Non-recursive scan of the body text; true when nesting exceeds CUSTOM_API_LIMITS.jsonDepth. */
@@ -377,4 +391,21 @@ export function jsonTooDeep(text: string): boolean {
     } else if (char === 0x7d || char === 0x5d) depth -= 1;
   }
   return false;
+}
+
+/**
+ * A page's skipped records by field path (#834): two fields may read the
+ * same path (as text and as a number), so their counts add up.
+ */
+export function skippedFieldPaths(
+  fields: readonly Pick<CustomApiField, "id" | "path">[],
+  skippedFields: Readonly<Record<string, number>>,
+): Map<string, number> {
+  const paths = new Map(fields.map((field) => [field.id, field.path]));
+  const byPath = new Map<string, number>();
+  for (const [id, count] of Object.entries(skippedFields)) {
+    const path = paths.get(id) ?? id;
+    byPath.set(path, (byPath.get(path) ?? 0) + count);
+  }
+  return byPath;
 }

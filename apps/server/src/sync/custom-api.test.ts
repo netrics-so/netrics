@@ -4,6 +4,7 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ConnectorRegistry } from "@netrics/connector-runtime";
+import { DEFAULT_DATA_POLICY } from "@netrics/domain";
 import type { CustomApiDefinition } from "@netrics/connector-sdk/custom-api";
 import { CUSTOM_API_MESSAGES } from "@netrics/connectors/custom-api";
 import {
@@ -28,7 +29,12 @@ import {
 
 import { createCredentialKeyring, encryptCredentials } from "../credentials.js";
 import { canonicalSha256 } from "../custom-api/canonical-json.js";
-import { ContinueJobError, createJobHandlers } from "../jobs/handlers.js";
+import { createDataService } from "../data/service.js";
+import {
+  ContinueJobError,
+  createJobHandlers,
+  DeferJobError,
+} from "../jobs/handlers.js";
 import {
   createTestDatabase,
   type TestDatabase,
@@ -117,10 +123,16 @@ async function connect(
   return connectionId;
 }
 
-/** One job, continued (same job id and window) until it ends. */
-async function run(
+/** One attempt of a job; answers the error it ended with, if any. */
+async function attempt(
   kind: "connection.sync" | "connection.backfill",
   connectionId: string,
+  job: {
+    id: string;
+    attempts: number;
+    continuation?: Record<string, unknown> | undefined;
+    pagesPerRun?: number;
+  },
 ): Promise<unknown> {
   const handler = createJobHandlers({
     registry,
@@ -128,33 +140,56 @@ async function run(
     executeOptions: {
       egress: { tlsCa: fixture.ca!, allowPrivateHosts: ["127.0.0.1"] },
     },
+    ...(job.pagesPerRun
+      ? {
+          dataPolicy: {
+            ...DEFAULT_DATA_POLICY,
+            syncPagesPerRun: job.pagesPerRun,
+          },
+        }
+      : {}),
   })[kind]!;
+  try {
+    await handler({
+      job: {
+        id: job.id,
+        kind,
+        workspaceId,
+        connectionId,
+        attempts: job.attempts,
+        payload: {
+          workspace_id: workspaceId,
+          connection_id: connectionId,
+          ...(job.continuation ? { continuation: job.continuation } : {}),
+        },
+      } as unknown as Job,
+      appDb,
+      schedulerDb,
+      logger: pino({ level: "silent" }),
+    });
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+/** One job, continued (same job id and window) until it ends. */
+async function run(
+  kind: "connection.sync" | "connection.backfill",
+  connectionId: string,
+  options: { pagesPerRun?: number } = {},
+): Promise<unknown> {
   const jobId = randomUUID();
   let continuation: Record<string, unknown> | undefined;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try {
-      await handler({
-        job: {
-          id: jobId,
-          kind,
-          workspaceId,
-          connectionId,
-          attempts: attempt,
-          payload: {
-            workspace_id: workspaceId,
-            connection_id: connectionId,
-            ...(continuation ? { continuation } : {}),
-          },
-        } as unknown as Job,
-        appDb,
-        schedulerDb,
-        logger: pino({ level: "silent" }),
-      });
-      return undefined;
-    } catch (error) {
-      if (!(error instanceof ContinueJobError)) return error;
-      continuation = error.continuation;
-    }
+  for (let n = 0; n < 10; n++) {
+    const error = await attempt(kind, connectionId, {
+      id: jobId,
+      attempts: n,
+      continuation,
+      ...options,
+    });
+    if (!(error instanceof ContinueJobError)) return error;
+    continuation = error.continuation;
   }
   throw new Error("job did not end");
 }
@@ -229,6 +264,124 @@ describe("custom-api on the sync engine", () => {
       new Set([3]),
     );
     expect(await authState(connectionId)).toBe("ok");
+    // Datasets are named by stream: the listing prefixes the connection's
+    // name, so two connections can be told apart (#834).
+    const [user] = await owner<{ id: string }[]>`
+      select id from users where email = 'custom-api@example.com'`;
+    const { sources } = await createDataService(appDb).listSources({
+      workspaceId,
+      callerId: user!.id,
+    });
+    expect(
+      sources.find((source) => source.connectionId === connectionId)?.name,
+    ).toBe(
+      `${definition("pages").name} · ${definition("pages").streams[0]!.name}`,
+    );
+    // The connection page lists its own datasets only (#834 review).
+    const other = await connect(definition("pages"), null, { items: 3 });
+    expect(await run("connection.backfill", other)).toBeUndefined();
+    const own = await createDataService(appDb).listSources(
+      { workspaceId, callerId: user!.id },
+      {},
+      { connectionId },
+    );
+    expect(own.sources.map((source) => source.connectionId)).toEqual([
+      connectionId,
+    ]);
+    expect(own.sources[0]!.name).toBe(
+      sources.find((source) => source.connectionId === connectionId)?.name,
+    );
+  });
+
+  it("keeps the last sync's skipped records per stream, by field path (#834 review)", async () => {
+    const connectionId = await connect(definition("bad_values"), null);
+    expect(await run("connection.backfill", connectionId)).toBeUndefined();
+    expect(await lastRun(connectionId)).toMatchObject({ status: "succeeded" });
+    const summary = async () =>
+      owner<{ stream_key: string; skipped: number; skipped_fields: unknown }[]>`
+        select stream_key, skipped, skipped_fields
+        from custom_api_stream_records where connection_id = ${connectionId}`;
+    expect(await summary()).toEqual([
+      { stream_key: "values", skipped: 1, skipped_fields: { id: 1 } },
+    ]);
+    // The next sync replaces it, not adds to it.
+    expect(await run("connection.sync", connectionId)).toBeUndefined();
+    expect(await summary()).toEqual([
+      { stream_key: "values", skipped: 1, skipped_fields: { id: 1 } },
+    ]);
+  });
+
+  describe("skipped records over several pages (#834 re-review)", () => {
+    const summary = async (connectionId: string) =>
+      owner<{ skipped: number; skipped_fields: unknown }[]>`
+        select skipped, skipped_fields from custom_api_stream_records
+        where connection_id = ${connectionId}`;
+    const all = [{ skipped: 3, skipped_fields: { id: 3 } }];
+
+    it("adds up a run continued page by page", async () => {
+      const connectionId = await connect(definition("bad_pages"), null);
+      expect(
+        await run("connection.backfill", connectionId, { pagesPerRun: 1 }),
+      ).toBeUndefined();
+      expect(await summary(connectionId)).toEqual(all);
+      // The last job read only the empty page: its time is still the
+      // summary's, so the card's "… ago" is the run's (#834 re-review 2).
+      const [times] = await owner<{ checked: Date; started: Date }[]>`
+        select
+          (select checked_at from custom_api_stream_records
+            where connection_id = ${connectionId}) as checked,
+          (select max(started_at) from sync_runs
+            where connection_id = ${connectionId}) as started`;
+      expect(times!.checked).toEqual(times!.started);
+      // A new sync starts over.
+      expect(await run("connection.sync", connectionId)).toBeUndefined();
+      expect(await summary(connectionId)).toEqual(all);
+    });
+
+    it("keeps the pages before a rate limit and adds the resumed rest", async () => {
+      const connectionId = await connect(definition("bad_pages"), null);
+      fixture.failPageOnce(2, 429);
+      const jobId = randomUUID();
+      const limited = await attempt("connection.backfill", connectionId, {
+        id: jobId,
+        attempts: 0,
+      });
+      expect(limited).toBeInstanceOf(DeferJobError);
+      expect(await summary(connectionId)).toEqual([
+        { skipped: 1, skipped_fields: { id: 1 } },
+      ]);
+      // The provider's reset has passed.
+      await owner`
+        update connection_state set rate_limited_until = null
+        where connection_id = ${connectionId}`;
+      expect(
+        await attempt("connection.backfill", connectionId, {
+          id: jobId,
+          attempts: 1,
+          continuation: (limited as DeferJobError).continuation,
+        }),
+      ).toBeUndefined();
+      expect(await summary(connectionId)).toEqual(all);
+    });
+
+    it("counts a retried attempt once: it reads the stream again from the start", async () => {
+      const connectionId = await connect(definition("bad_pages"), null);
+      fixture.failPageOnce(2, 503);
+      const jobId = randomUUID();
+      expect(
+        await attempt("connection.backfill", connectionId, {
+          id: jobId,
+          attempts: 0,
+        }),
+      ).toBeInstanceOf(Error);
+      expect(
+        await attempt("connection.backfill", connectionId, {
+          id: jobId,
+          attempts: 1,
+        }),
+      ).toBeUndefined();
+      expect(await summary(connectionId)).toEqual(all);
+    });
   });
 
   it("marks the connection auth_failed with the 401 message", async () => {

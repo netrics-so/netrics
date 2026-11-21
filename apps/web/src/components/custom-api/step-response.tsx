@@ -3,14 +3,21 @@
 import { useState } from "react";
 
 import {
+  CUSTOM_API_LIMITS,
   parseDataPath,
   readDataPath,
+  suggestCustomApiFieldType,
   type CustomApiFieldSuggestion,
 } from "@netrics/contracts";
 
 import { DataTable } from "@/components/data/data-table";
-import { toggleField } from "@/lib/custom-api-builder";
-import { useT } from "@/lib/i18n/client";
+import {
+  hostOf,
+  imageHostsSeen,
+  toggleField,
+  withImageHosts,
+} from "@/lib/custom-api-builder";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 import { FieldMapping } from "./field-mapping";
 import { JsonTree } from "./json-tree";
@@ -33,8 +40,15 @@ export function firstRecord(body: Json, records: string): Json | undefined {
   return isObject(value) ? value : undefined;
 }
 
-/** A field for a leaf the server did not suggest (beyond the first records). */
-function plainSuggestion(path: string): CustomApiFieldSuggestion {
+/**
+ * A field for a leaf the server did not suggest (beyond the first records,
+ * or an array item such as `daily.time[0]`): its type is suggested from
+ * the value in the first record (#834).
+ */
+export function plainSuggestion(
+  path: string,
+  record?: Json,
+): CustomApiFieldSuggestion {
   const id =
     path
       .toLowerCase()
@@ -42,14 +56,102 @@ function plainSuggestion(path: string): CustomApiFieldSuggestion {
       .replace(/^_+|_+$/g, "")
       .replace(/^(?![a-z])/, "f_")
       .slice(0, 90) || "field";
+  let value: unknown;
+  let name = "";
+  try {
+    const segments = parseDataPath(path);
+    value = record === undefined ? undefined : readDataPath(record, segments);
+    for (const segment of [...segments].reverse())
+      if ("key" in segment) {
+        name = segment.key;
+        break;
+      }
+  } catch {
+    value = undefined;
+  }
+  const values = value === undefined || value === null ? [] : [value];
   return {
     path,
     id,
     name: path,
-    type: "string",
+    ...suggestCustomApiFieldType(name, values),
     nullable: true,
     samples: [],
   };
+}
+
+/** Exact host or "*.example.com" (as the connection matches image hosts). */
+function hostAllowed(host: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern) =>
+    pattern.startsWith("*.")
+      ? host.endsWith(pattern.slice(1)) && host !== pattern.slice(2)
+      : host === pattern,
+  );
+}
+
+/**
+ * The hosts images are copied from (#834): shown once a field is an image.
+ * Hosts seen in the test's records but not allowed are offered.
+ */
+export function ImageHosts({
+  state,
+  update,
+}: Pick<StepProps, "state" | "update">) {
+  const t = useT("customApi.response.images");
+  const locale = useLocale();
+  if (!state.stream.fields.some((f) => f.role === "image")) return null;
+  const list = (hosts: readonly string[]) =>
+    new Intl.ListFormat(locale, { type: "conjunction" }).format(hosts);
+  const environment =
+    state.environments.find((e) => e.id === state.environmentId) ??
+    state.environments[0];
+  const apiHost = environment ? hostOf(environment.baseUrl) : null;
+  const apiHostname = apiHost ? new URL(`https://${apiHost}`).hostname : null;
+  const current = state.images?.hosts ?? [];
+  const seen = imageHostsSeen(state);
+  const blocked = seen.filter((host) =>
+    current.length ? !hostAllowed(host, current) : host !== apiHostname,
+  );
+  // Allowing goes past the limit: the user removes hosts first.
+  const room =
+    CUSTOM_API_LIMITS.imageHosts - (current.length ? current.length : 0);
+  const commit = (next: string[]) =>
+    update((current) => withImageHosts(current, next));
+  return (
+    <div className="field">
+      <label htmlFor="custom-api-image-hosts">{t("label")}</label>
+      <input
+        id="custom-api-image-hosts"
+        key={current.join(",")}
+        defaultValue={current.join(", ")}
+        placeholder={apiHostname ?? ""}
+        onBlur={(event) => commit(event.target.value.split(/[\s,]+/))}
+      />
+      <p className="help">
+        {t("help")}
+        {current.length === 0 && apiHost
+          ? ` ${t("apiOnly", { host: apiHost })}`
+          : ""}
+      </p>
+      {blocked.length ? (
+        <p className="notice" role="status">
+          {t("seen", { hosts: list(blocked) })}{" "}
+          {room >= blocked.length ? (
+            <button
+              type="button"
+              onClick={() =>
+                commit(current.length ? [...current, ...blocked] : seen)
+              }
+            >
+              {t("allow", { hosts: list(blocked) })}
+            </button>
+          ) : (
+            t("limit", { max: CUSTOM_API_LIMITS.imageHosts })
+          )}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -76,7 +178,15 @@ export function StepResponse({
   const test = state.lastTest;
   const body = test?.response?.body;
   if (!test || body === undefined)
-    return <p className="muted">{t("noTest")}</p>;
+    // Editing a saved definition: its fields can be changed without a test
+    // (#834); ticking others needs one.
+    return (
+      <div className="custom-api-form">
+        <p className="muted">{t("noTest")}</p>
+        <FieldMapping state={state} update={update} suggestions={[]} />
+        <ImageHosts state={state} update={update} />
+      </div>
+    );
 
   const records = state.stream.records;
   if (records === null || choosing) {
@@ -116,7 +226,7 @@ export function StepResponse({
   const fieldPaths = new Set(state.stream.fields.map((f) => f.path));
   const suggestion = (path: string) =>
     (counted ? test.suggestions.find((s) => s.path === path) : undefined) ??
-    plainSuggestion(path);
+    plainSuggestion(path, record);
   const fields = state.stream.fields;
 
   return (
@@ -169,6 +279,7 @@ export function StepResponse({
         update={update}
         suggestions={counted ? test.suggestions : []}
       />
+      <ImageHosts state={state} update={update} />
       {fields.length ? (
         <section className="custom-api-preview">
           <h3>{t("preview", { count: test.rows.length })}</h3>

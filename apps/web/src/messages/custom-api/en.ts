@@ -40,7 +40,6 @@ export const customApiEn = {
       environmentName: "Environment name",
       removeEnvironment: "Remove environment",
       testEnvironment: "Test with",
-      project: "Project",
       environmentWarning:
         "Testing with another environment, or removing this one, deletes the saved login.",
       hostWarning:
@@ -130,7 +129,7 @@ export const customApiEn = {
       pickFields: "Tick the fields to keep. Everything else is not stored.",
       noRecords:
         "The request returned no records. Change the request or the time window and send it again.",
-      noTest: "Send a test request first.",
+      noTest: "Send a test request to see the response and tick fields.",
       useAsRecords: "Use as records",
       wholeResponse: "The whole response",
       suggestedList: "Suggested",
@@ -168,6 +167,9 @@ export const customApiEn = {
       keyField: "Key field",
       timeField: "Time field",
       noTimeField: "None",
+      keyWarning:
+        "The key is {key}. Records with the same {key} merge into one, so most of them may be lost. Pick a field that identifies each record.",
+      useTimeKey: "Use {time} as key",
       preview: "Preview ({count, plural, one {# row} other {# rows}})",
       updatePreview: "Update preview",
       previewStale: "The fields changed. Update the preview to see them.",
@@ -178,6 +180,16 @@ export const customApiEn = {
       nulled:
         "{field}: {count, plural, one {# value} other {# values}} could not be read and became empty.",
       cut: "{count, plural, one {# more} other {# more}}",
+      images: {
+        label: "Image hosts",
+        help: "netrics copies images only from these hosts. Separate them with commas; *.example.com allows every subdomain.",
+        apiOnly:
+          "Without image hosts, images are copied only from the API host {host}.",
+        seen: "Images in the test response are on {hosts}, which images aren't copied from yet.",
+        allow: "Allow {hosts}",
+        limit:
+          "A custom API copies images from at most {max} image hosts: remove one before adding more.",
+      },
     },
     tree: {
       label: "Response",
@@ -253,6 +265,7 @@ export const customApiEn = {
       streamSummary:
         "{name}: {count, plural, one {# field} other {# fields}}, key {key}",
       hosts: "netrics will send requests to {hosts}.",
+      imageHosts: "netrics will copy images from {hosts}.",
       save: "Save and connect",
       saveVersion: "Save new version",
       saving: "Saving…",
@@ -337,6 +350,8 @@ export const customApiEn = {
         "To send a test request, enter and save the login. Saving changes doesn't need it.",
       secretValueMissing:
         "To send a test request, enter and save the secret connection values. Saving changes doesn't need them.",
+      variableValue:
+        "To send a test request, enter a value for every connection value. Saving changes doesn't need them.",
     },
     errors: {
       leave: "Leave the builder? Your test login is deleted after 24 hours.",
@@ -410,6 +425,8 @@ export const customApiEn = {
         variable_added: "Connection value {variable} is new.",
         variable_removed: "Connection value {variable} is no longer used.",
         schedule_changed: "The refresh interval changes.",
+        images_changed:
+          "The image settings change: which hosts images are copied from, or how many.",
       },
       aspects: {
         type: "type",
@@ -418,6 +435,8 @@ export const customApiEn = {
         format: "format",
         unit: "unit",
         classification: "classification",
+        nullable: "may be empty",
+        name: "name",
       },
       needs: {
         title: "Before you update",

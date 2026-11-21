@@ -36,6 +36,7 @@ export {
   parseDataPath,
   parsePlaceholders,
   readDataPath,
+  suggestCustomApiFieldType,
   upgradeCustomApiDefinition,
   WINDOW_PLACEHOLDERS,
 } from "@netrics/connector-sdk/custom-api";
@@ -50,6 +51,7 @@ export type {
   CustomApiIssue,
   CustomApiIssueCode,
   CustomApiPagination,
+  CustomApiFieldTypeSuggestion,
   CustomApiStream,
   CustomApiVariable,
   CustomApiWindow,

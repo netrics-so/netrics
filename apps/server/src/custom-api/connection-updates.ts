@@ -98,6 +98,9 @@ function fieldChanges(from: CustomApiField, to: CustomApiField): FieldAspect[] {
   )
     changes.push("unit");
   if (from.classification !== to.classification) changes.push("classification");
+  // Whether a missing value skips the record or stays empty (#834).
+  if (from.nullable !== to.nullable) changes.push("nullable");
+  if (from.name !== to.name) changes.push("name");
   return changes;
 }
 
@@ -228,6 +231,9 @@ export function diffCustomApiVersions(
 
   if (!same(from.defaults, to.defaults))
     changes.push({ kind: "schedule_changed" });
+  // Which images are copied (#834).
+  if (!same(from.images ?? null, to.images ?? null))
+    changes.push({ kind: "images_changed" });
 
   // The login: same method and same hosts carry it over.
   const target = connection.targetEnvironmentId ?? connection.environmentId;

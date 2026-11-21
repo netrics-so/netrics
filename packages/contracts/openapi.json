@@ -37159,6 +37159,16 @@
           },
           {
             "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "query",
+            "name": "connection",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "in": "path",
@@ -77281,7 +77291,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -77379,6 +77391,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -77645,7 +77672,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -77743,6 +77772,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -77908,6 +77952,30 @@
                             "additionalProperties": false
                           }
                         ]
+                      }
+                    },
+                    "issues": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
                       }
                     }
                   },
@@ -78101,7 +78169,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -78199,6 +78269,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -78365,6 +78450,30 @@
                           }
                         ]
                       }
+                    },
+                    "issues": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -78515,7 +78624,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -78613,6 +78724,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -78778,6 +78904,30 @@
                             "additionalProperties": false
                           }
                         ]
+                      }
+                    },
+                    "issues": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
                       }
                     }
                   },
@@ -79353,7 +79503,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -79451,6 +79603,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -79616,6 +79783,30 @@
                             "additionalProperties": false
                           }
                         ]
+                      }
+                    },
+                    "issues": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
                       }
                     }
                   },
@@ -79809,7 +80000,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -79907,6 +80100,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -80073,6 +80281,30 @@
                           }
                         ]
                       }
+                    },
+                    "issues": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -80223,7 +80455,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -80321,6 +80555,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -80486,6 +80735,30 @@
                             "additionalProperties": false
                           }
                         ]
+                      }
+                    },
+                    "issues": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
                       }
                     }
                   },
@@ -99497,6 +99770,63 @@
                           "unchanged",
                           "skipped",
                           "skippedReasons"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "recordSkips": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "streamKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "streamName": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "checkedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          },
+                          "skipped": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "skippedFields": {
+                            "maxItems": 5,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "path",
+                                "count"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "streamKey",
+                          "streamName",
+                          "checkedAt",
+                          "skipped",
+                          "skippedFields"
                         ],
                         "additionalProperties": false
                       }

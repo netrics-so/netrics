@@ -289,8 +289,9 @@ function secretQueryNames(
  * links from the request echo what it carried). Stripped by name, whatever
  * the value: the API key query parameter and any query parameter the
  * stream fills from a secret variable. Stripped by value: any parameter
- * whose value is a secret of at least 8 characters. buildRequest adds the
- * auth and the stream's query again on every request.
+ * whose value is a secret of at least 8 characters. For a next_url page,
+ * buildRequest uses the stored URL as is (the stream's query is not added
+ * again) and adds the auth again, an API key query parameter included.
  */
 export function stripCustomApiSecrets(
   url: string,

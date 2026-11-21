@@ -322,14 +322,20 @@ describe("custom-api connector", () => {
     );
   });
 
-  it("logs skipped records and nulled values by count only", async () => {
+  it("logs skipped records, the fields that skipped them and nulled values, by count only", async () => {
     const { pages, log } = await syncAll(connector(def("bad_values")));
     expect(pages[0]!.records).toHaveLength(3);
     expect(log.entries).toEqual([
       {
         level: "warn",
         message: "records skipped",
-        fields: { stream: "values", skipped: 1, "nulled.orders": 2 },
+        fields: {
+          stream: "values",
+          skipped: 1,
+          field1: "id",
+          count1: 1,
+          "nulled.orders": 2,
+        },
       },
     ]);
   });

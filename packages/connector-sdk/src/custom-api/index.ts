@@ -3,3 +3,5 @@
 // published in milestone 12; shared by contracts (API) and connectors.
 export * from "./definition.js";
 export * from "./config.js";
+export * from "./suggest-type.js";
+export * from "./records-summary.js";

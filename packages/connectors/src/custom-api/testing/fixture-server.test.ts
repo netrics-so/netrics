@@ -295,3 +295,38 @@ describe("custom API fixture server over https", () => {
     }
   });
 });
+
+describe("custom API fixture server under another host name (#834)", () => {
+  it("links images and pages to the public host it was given", async () => {
+    const fixture = await startCustomApiFixtureServer({
+      publicHost: "host.docker.internal",
+    });
+    try {
+      expect(fixture.origin).toBe(
+        `http://host.docker.internal:${fixture.port}`,
+      );
+      expect(fixture.host).toBe("host.docker.internal");
+      const local = `http://127.0.0.1:${fixture.port}`;
+      const photos = (await (await fetch(`${local}/photos`)).json()) as {
+        data: { photo: string }[];
+      };
+      expect(photos.data[0]!.photo).toMatch(
+        new RegExp(`^http://host\\.docker\\.internal:${fixture.port}/images/`),
+      );
+      const items = (await (
+        await fetch(`${local}/items/next-body`)
+      ).json()) as {
+        data: { image_url: string }[];
+        links: { next: string | null };
+      };
+      expect(items.data[0]!.image_url).toContain("//host.docker.internal:");
+      expect(items.links.next).toContain("//host.docker.internal:");
+      const offHost = (await (
+        await fetch(`${local}/edge/next-off-host`)
+      ).json()) as { links: { next: string } };
+      expect(offHost.links.next).toContain(`//localhost:${fixture.port}/`);
+    } finally {
+      await fixture.close();
+    }
+  });
+});

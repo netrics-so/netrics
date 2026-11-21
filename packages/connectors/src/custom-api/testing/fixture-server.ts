@@ -77,9 +77,13 @@ export interface RecordedRequest {
 }
 
 export interface CustomApiFixtureServer {
-  /** "http://127.0.0.1:<port>" or, with tls, "https://127.0.0.1:<port>". */
+  /**
+   * "http://<publicHost>:<port>" or, with tls, "https://<publicHost>:<port>"
+   * (publicHost: 127.0.0.1 unless given).
+   */
   origin: string;
-  host: "127.0.0.1";
+  /** The public host (127.0.0.1 unless given). */
+  host: string;
   port: number;
   /** The self-signed certificate (PEM) with tls, for egress `tlsCa`; null without. */
   ca: string | null;
@@ -94,6 +98,11 @@ export interface CustomApiFixtureServer {
   setImages(paths: readonly string[] | null): void;
   /** GET /photos: adds `?sig=<value>` to every photo URL; null removes it. */
   signUrls(value: string | null): void;
+  /**
+   * GET /edge/bad-pages: the next request for this page answers `status`
+   * once (429 with Retry-After: 1, or another error); null clears it.
+   */
+  failPageOnce(page: number | null, status?: number): void;
   /** The /oauth/* endpoints' state (#805). */
   oauth: FixtureOAuthServer;
   close(): Promise<void>;
@@ -263,6 +272,11 @@ function selfSignedCertificate(): { key: string; cert: string } {
   return certificate;
 }
 
+/** A host as written in a URL: IPv6 addresses in brackets. */
+function urlHost(host: string): string {
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
 function single(value: string | string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 }
@@ -271,13 +285,26 @@ function single(value: string | string[] | undefined): string {
  * Starts the fixture API on 127.0.0.1 (port 0 unless given). With
  * `tls: true` it serves https with a self-signed certificate for
  * 127.0.0.1 (exposed as `ca`); an object supplies key and certificate.
+ *
+ * `publicHost` is the host name the answers link to (image URLs, next
+ * links, echoed URLs), for a client that reaches the fixture under another
+ * name, such as a containerised netrics through `host.docker.internal`
+ * (#834); `otherHost` is the "another host" of the off-host edge cases
+ * (default: localhost, or 127.0.0.1 when publicHost is localhost). With
+ * tls and a public host name, supply a certificate for that name.
  */
 export async function startCustomApiFixtureServer(
   options: {
     port?: number;
     tls?: boolean | { key: string; cert: string };
+    publicHost?: string;
+    otherHost?: string;
   } = {},
 ): Promise<CustomApiFixtureServer> {
+  const publicHost = options.publicHost ?? "127.0.0.1";
+  const otherHost =
+    options.otherHost ??
+    (publicHost === "localhost" ? "127.0.0.1" : "localhost");
   const tls =
     options.tls === true
       ? selfSignedCertificate()
@@ -289,6 +316,7 @@ export async function startCustomApiFixtureServer(
   let port = 0;
   let photoImages: readonly string[] | null = null;
   let photoSignature: string | null = null;
+  let failingPage: { page: number; status: number } | null = null;
   const codes = new Map<
     string,
     {
@@ -521,8 +549,8 @@ export async function startCustomApiFixtureServer(
       query,
       headers,
     });
-    const origin = `${scheme}://127.0.0.1:${port}`;
-    const otherOrigin = `${scheme}://localhost:${port}`;
+    const origin = `${scheme}://${urlHost(publicHost)}:${port}`;
+    const otherOrigin = `${scheme}://${urlHost(otherHost)}:${port}`;
     const items = FIXTURE_ITEMS.map((item) => ({
       ...item,
       image_url: `${origin}/images/${item.id}.png`,
@@ -567,6 +595,23 @@ export async function startCustomApiFixtureServer(
         const start = (page - 1) * size;
         return send(200, {
           data: start < 0 ? [] : items.slice(start, start + size),
+        });
+      }
+      case "/edge/bad-pages": {
+        // Three full pages of two records, each with one record without an
+        // id (skipped by a definition whose id may not be empty), then an
+        // empty page (#834 re-review: skipped records over several pages).
+        const page = int("page", 1);
+        if (failingPage?.page === page) {
+          const { status } = failingPage;
+          failingPage = null;
+          return status === 429
+            ? send(429, { error: "slow down" }, { "retry-after": "1" })
+            : send(status, { error: "page failed" });
+        }
+        return send(200, {
+          data:
+            page >= 1 && page <= 3 ? [{ id: page * 2 - 1 }, { id: null }] : [],
         });
       }
       case "/items/offset": {
@@ -891,8 +936,8 @@ export async function startCustomApiFixtureServer(
   });
   port = (server.address() as AddressInfo).port;
   return {
-    origin: `${scheme}://127.0.0.1:${port}`,
-    host: "127.0.0.1",
+    origin: `${scheme}://${urlHost(publicHost)}:${port}`,
+    host: publicHost,
     port,
     ca: tls ? tls.cert : null,
     requests,
@@ -904,6 +949,9 @@ export async function startCustomApiFixtureServer(
     },
     signUrls(value) {
       photoSignature = value;
+    },
+    failPageOnce(page, status = 429) {
+      failingPage = page === null ? null : { page, status };
     },
     oauth,
     close() {
