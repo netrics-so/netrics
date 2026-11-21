@@ -509,7 +509,24 @@ public enum DataFormat {
         guard let unit, !unit.isEmpty, !isUnitCode(unit) else { return "" }
         if unit == "percent" { return "%" }
         if unit == "stars" { return " ★" }
-        return " " + (language == .de ? unitWordsDE[unit] ?? unit : unit)
+        return " " + unitWords(unit, language: language)
+    }
+
+    /**
+     * A unit's words (measureUnitWords, #835): a combined unit from a
+     * formula ("installs/impressions", "clicks × views") translated part by
+     * part, its separators kept; a part without a word stays as it is.
+     */
+    public static func unitWords(_ unit: String, language: ScreenLanguage) -> String {
+        guard language == .de else { return unit }
+        var result = ""
+        var rest = Substring(unit)
+        while let separator = rest.firstMatch(of: /\s*[\/×*]\s*/) {
+            let part = String(rest[..<separator.range.lowerBound])
+            result += (unitWordsDE[part] ?? part) + separator.output
+            rest = rest[separator.range.upperBound...]
+        }
+        return result + (unitWordsDE[String(rest)] ?? String(rest))
     }
 
     /**

@@ -767,10 +767,22 @@ export function measureUnitSuffix(
   if (!unit || isMeasureUnitCode(unit)) return "";
   if (unit === "percent") return "%";
   if (unit === "stars") return " ★";
-  const word = locale.toLowerCase().startsWith("de")
-    ? (MEASURE_UNIT_WORDS_DE[unit] ?? unit)
-    : unit;
-  return ` ${word}`;
+  return ` ${measureUnitWords(unit, locale)}`;
+}
+
+/**
+ * A unit's words in `locale` (#835): a combined unit from a formula
+ * ("installs/impressions", "clicks × views", "taps*days") is translated
+ * part by part, its separators kept; a part without a word stays as it is.
+ */
+export function measureUnitWords(unit: string, locale: string): string {
+  if (!locale.toLowerCase().startsWith("de")) return unit;
+  return unit
+    .split(/(\s*[/×*]\s*)/)
+    .map((part, index) =>
+      index % 2 === 1 ? part : (MEASURE_UNIT_WORDS_DE[part] ?? part),
+    )
+    .join("");
 }
 
 /**

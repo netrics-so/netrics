@@ -32,6 +32,7 @@ import type {
 } from "@netrics/contracts";
 import {
   isDataWidgetType,
+  measureUnitSuffix,
   sourcesLabel,
   type ScreenFormat,
 } from "@netrics/domain";
@@ -456,6 +457,15 @@ export function StudioEditor({
         return [...entry.binding.groupBy, ...entry.binding.measureIds].map(
           (id) => entry.options.labels?.[id] ?? names.get(id) ?? id,
         );
+      },
+      valueSuffixOf: (entry: DashboardWidget) => {
+        if (entry.type !== "measure") return "";
+        const unit = catalog.models
+          .find((candidate) => candidate.modelId === entry.binding.modelId)
+          ?.measures.find(
+            (measure) => measure.id === entry.binding.measureIds[0],
+          )?.unit;
+        return measureUnitSuffix(unit, locale);
       },
     };
     return new Map(

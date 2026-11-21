@@ -1,5 +1,5 @@
 {
-  "description": "A measure cell as shown (#619, #835): unit precision, single-value rounding (the value view, its total and split lines) and unit words. Read by apps/web/src/components/studio/measure-widget.test.tsx (formatMeasureCell) and apps/netrics-tv/NetricsKit/Tests/NetricsKitTests/MeasureWidgetTests.swift (MeasureCell.text); both must give every case.",
+  "description": "A measure cell as shown (#619, #835): unit precision, single-value rounding (the value view, its total and split lines) and unit words, combined units from formulas translated part by part. Read by apps/web/src/components/studio/measure-widget.test.tsx (formatMeasureCell) and apps/netrics-tv/NetricsKit/Tests/NetricsKitTests/MeasureCellVectorTests.swift (MeasureCell.text); both must give every case.",
   "cases": [
     { "value": 9.448387096774193, "type": "number", "unit": "°C", "single": true, "en": "9.45 °C", "de": "9,45 °C" },
     { "value": "9.448387096774193", "type": "decimal", "unit": "°C", "single": true, "en": "9.45 °C", "de": "9,45 °C" },
@@ -20,6 +20,10 @@
     { "value": "4.2857", "type": "decimal", "unit": "stars", "single": false, "en": "4.29 ★", "de": "4,29 ★" },
     { "value": 150, "type": "integer", "unit": "currency_minor", "currency": "EUR", "single": true, "en": "1.50 EUR", "de": "1,50 EUR" },
     { "value": "1234.5", "type": "decimal", "unit": "currency", "currency": "EUR", "single": true, "en": "1,234.50 EUR", "de": "1.234,50 EUR" },
-    { "value": 150, "type": "integer", "unit": "EUR_minor", "single": false, "en": "150", "de": "150" }
+    { "value": 150, "type": "integer", "unit": "EUR_minor", "single": false, "en": "150", "de": "150" },
+    { "value": "0.0312", "type": "decimal", "unit": "installs/impressions", "single": true, "en": "0.03 installs/impressions", "de": "0,03 Installationen/Impressionen" },
+    { "value": 2.5, "type": "number", "unit": "clicks × views", "single": false, "en": "2.5 clicks × views", "de": "2,5 Klicks × Aufrufe" },
+    { "value": 4, "type": "integer", "unit": "taps*sessions", "single": false, "en": "4 taps*sessions", "de": "4 Taps*sessions" },
+    { "value": 1.5, "type": "number", "unit": "kg/m", "single": false, "en": "1.5 kg/m", "de": "1,5 kg/m" }
   ]
 }

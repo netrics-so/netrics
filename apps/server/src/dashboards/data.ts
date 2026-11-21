@@ -33,6 +33,7 @@ import {
   DataProcessingError,
   DEFAULT_DATA_POLICY,
   type DataField,
+  type SemanticModelDefinition,
   type DataPolicy,
   type DashboardDataFilter,
   type DashboardFilterExclusion,
@@ -127,6 +128,7 @@ export async function publishedModel(
         const { id, name } = measure;
         const requiredDimensions = measureRequiredDimensions(definition, [id]);
         const perDateDimensions = measurePerDateDimensions(definition, [id]);
+        const unit = measureUnitOf(definition, bindings, id);
         return {
           id,
           name,
@@ -135,11 +137,34 @@ export async function publishedModel(
           ...(measureIsPercentChange(definition, id)
             ? { percentChange: true as const }
             : {}),
+          ...(unit ? { unit } : {}),
         };
       }),
       dimensions,
     },
   };
+}
+/**
+ * The unit a measure's cells carry (#835), by the model's static probe of
+ * its published schema; undefined for none, or when the probe refuses it
+ * (a query then says why).
+ */
+function measureUnitOf(
+  definition: SemanticModelDefinition,
+  bindings: Record<string, DataField[]>,
+  id: string,
+): string | undefined {
+  try {
+    const tables = new Map(
+      Object.entries(bindings).map(([dataset, fields]) => [
+        dataset,
+        { fields },
+      ]),
+    );
+    return measureTypeProbe(definition, tables, [id]).get(id)?.unit;
+  } catch {
+    return undefined;
+  }
 }
 export async function publishedModels(
   tx: Transaction,

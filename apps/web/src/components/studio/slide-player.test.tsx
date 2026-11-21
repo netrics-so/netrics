@@ -906,3 +906,36 @@ describe("the corner badge never covers a widget (#835)", () => {
     expect(html).toContain("font-size:calc(var(--u) * 20)");
   });
 });
+
+describe("the corner badge waits for a measured canvas (#835)", () => {
+  const slide = {
+    id: ID(1),
+    name: null,
+    durationSec: 20,
+    enabled: true,
+    widgets: [],
+  } as never;
+  const player = (screen: ScreenSize | null) =>
+    renderI18n(
+      <SlidePlayer
+        slides={[slide]}
+        autoAdvance={false}
+        transition="none"
+        tokens={tokens}
+        showHeader={false}
+        header={{ name: "Lobby", logoImageId: null }}
+        images={new Map()}
+        renderWidget={() => null}
+        screen={screen}
+        corner={<SlideCornerBadge>Offline</SlideCornerBadge>}
+      />,
+    );
+  it("is drawn once the canvas has a size", () => {
+    expect(player({ width: 1920, height: 1080 })).toContain(
+      "studio-slide-corner",
+    );
+  });
+  it("is not drawn before, when its unit is a guess", () => {
+    expect(player(null)).not.toContain("studio-slide-corner");
+  });
+});

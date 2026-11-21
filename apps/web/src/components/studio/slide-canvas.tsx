@@ -550,7 +550,11 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
   fill?: boolean;
   /** Drawn in the canvas's bottom padding (the player's slide footer). */
   footer?: ReactNode;
-  /** Drawn over the canvas (the player's corner badge, #835). */
+  /**
+   * Drawn over the canvas (the player's corner badge, #835), once the
+   * canvas has a size: before, its unit is a guess, and the badge is sized
+   * in units.
+   */
   corner?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -645,7 +649,7 @@ export function SlideCanvas<W extends CanvasWidget = StudioWidget>({
         );
       })}
       {footer}
-      {corner}
+      {screen ? corner : null}
     </div>
   );
 }

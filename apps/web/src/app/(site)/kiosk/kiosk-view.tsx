@@ -265,6 +265,22 @@ function useTicking(everyMs: number): number {
   return now;
 }
 
+/**
+ * The offline badge of a dashboard without its header (#835): the marker
+ * in a muted badge in the top corner of the canvas padding.
+ */
+export function KioskOfflineBadge({ state }: { state: KioskState }) {
+  return (
+    <SlideCornerBadge>
+      <OfflineMarker
+        state={state}
+        shown
+        className="kiosk-offline kiosk-offline--badge"
+      />
+    </SlideCornerBadge>
+  );
+}
+
 /** The offline note; its last update in the viewer's zone (#736). */
 function OfflineMarker({
   state,
@@ -395,13 +411,7 @@ function KioskSlides({
         }}
         corner={
           offline && !dashboard.showHeader ? (
-            <SlideCornerBadge>
-              <OfflineMarker
-                state={state}
-                shown
-                className="kiosk-offline kiosk-offline--badge"
-              />
-            </SlideCornerBadge>
+            <KioskOfflineBadge state={state} />
           ) : null
         }
         images={state.images}

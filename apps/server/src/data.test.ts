@@ -2842,7 +2842,13 @@ describe("rolling and period-offset model measures", () => {
     // Only windows need the date grouped; a date grain can be filtered.
     expect(line.metadata.measures).toEqual(
       expect.arrayContaining([
-        { id: "kg_daily", name: "Weight per day", requiredDimensions: ["day"] },
+        // The unit its cells carry, for the Studio's readability (#835).
+        {
+          id: "kg_daily",
+          name: "Weight per day",
+          requiredDimensions: ["day"],
+          unit: "kg",
+        },
         expect.objectContaining({
           id: "pct_and_share",
           requiredDimensions: ["day"],

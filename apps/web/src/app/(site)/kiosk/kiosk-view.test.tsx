@@ -26,6 +26,7 @@ import {
   kioskRefreshCycle,
   kioskShown,
   payloadRotation,
+  KioskOfflineBadge,
   pollShowsOffline,
 } from "./kiosk-view";
 
@@ -546,16 +547,28 @@ describe("offline badge without the header (#835)", () => {
     payload.dashboard!.showHeader = false;
     return render({ ...paired(payload, offline), updatedAt });
   };
-  it("shows a muted badge in the corner, in English and German", () => {
-    const stale = Date.now() - 10 * minute;
-    const en = headless(stale, false);
+  const badge = (state: KioskState, locale: Locale) =>
+    renderToStaticMarkup(
+      <I18nProvider locale={locale} messages={WEB_CATALOGS[locale]}>
+        <ViewerTimeZoneProvider zone={VIEWER_ZONE}>
+          <KioskOfflineBadge state={state} />
+        </ViewerTimeZoneProvider>
+      </I18nProvider>,
+    );
+  it("is a muted badge in the corner, in English and German", () => {
+    const state = { ...paired(slides("en")), updatedAt: Date.now() - minute };
+    const en = badge(state, "en");
+    expect(en).toContain('class="studio-slide-corner"');
     expect(en).toContain("kiosk-offline--badge");
     expect(en).toContain("Offline — last update");
-    expect(headless(stale, false, "de")).toContain(
-      "Offline – letzte Aktualisierung",
+    expect(badge(state, "de")).toContain("Offline – letzte Aktualisierung");
+  });
+  it("is not drawn before the screen is measured (no unit size yet)", () => {
+    // Server render and the first paint: no measured canvas, no badge,
+    // however offline the screen is.
+    expect(headless(Date.now() - 10 * minute, true)).not.toContain(
+      "studio-slide-corner",
     );
-    // A failing poll shows it at once.
-    expect(headless(Date.now(), true)).toContain("kiosk-offline--badge");
   });
   it("is not shown at start for a cached dashboard's old time", () => {
     const now = Date.parse("2026-11-21T12:00:00Z");
@@ -587,13 +600,5 @@ describe("offline badge without the header (#835)", () => {
     expect(stale).toContain("studio-offline");
     const healthy = render({ ...paired(slides("en")), updatedAt: Date.now() });
     expect(healthy).not.toContain("studio-offline");
-  });
-  it("shows none while the poll is healthy, nor with a header", () => {
-    expect(headless(Date.now(), false)).not.toContain("kiosk-offline");
-    const withHeader = render({
-      ...paired(slides("en")),
-      updatedAt: Date.now() - 10 * minute,
-    });
-    expect(withHeader).not.toContain("kiosk-offline--badge");
   });
 });

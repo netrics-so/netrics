@@ -25,6 +25,7 @@ import {
   effectiveFontScale,
   isDataWidgetType,
   isScreenFormat,
+  measureUnitSuffix,
   slideFormatWarnings,
   sourcesLabel,
   zonedInstant,
@@ -36,6 +37,7 @@ import {
 } from "@netrics/domain";
 
 import { resolveThemeTokens } from "../themes/service.js";
+import { publishedModel } from "./data.js";
 
 /**
  * Readability per format for the dashboard API (ADR 0017 section 6, #280):
@@ -74,6 +76,11 @@ export interface ReadabilityInputs {
    * measures' names in its model's published release; null when unknown.
    */
   columnsOf?(widget: DashboardWidgetRow): string[] | null;
+  /**
+   * What follows a measure value view's values for its first measure's
+   * unit (`measureUnitSuffix`, #835); unknown: "".
+   */
+  valueSuffixOf?(widget: DashboardWidgetRow): string;
 }
 
 export async function loadReadabilityInputs(
@@ -164,6 +171,32 @@ export async function loadReadabilityInputs(
         ),
       );
     }
+  // The units of value views with a grouping (#835): their sample values
+  // carry the unit's words, as screens show them.
+  const units = new Map<string, Map<string, string | undefined>>();
+  for (const modelId of new Set(
+    dashboard.slides.flatMap((slide) =>
+      slide.widgets.flatMap((widget) => {
+        if (widget.type !== "measure" || widget.modelId === null) return [];
+        const view = measureWidgetOptionsSchema.safeParse(widget.options).data
+          ?.view;
+        const groups =
+          measureWidgetBindingSchema.safeParse(widget.modelBinding).data
+            ?.groupBy.length ?? 0;
+        return view === "value" && groups > 0 ? [widget.modelId] : [];
+      }),
+    ),
+  )) {
+    try {
+      const { metadata } = await publishedModel(tx, workspaceId, modelId);
+      units.set(
+        modelId,
+        new Map(metadata.measures.map((measure) => [measure.id, measure.unit])),
+      );
+    } catch {
+      // Unpublished or changed: the check counts no unit.
+    }
+  }
   const tokens = await resolveThemeTokens(tx, workspaceId, dashboard);
   let logoAspect: number | null = null;
   const slideLogoAspects = new Map<string, number | null>();
@@ -240,6 +273,16 @@ export async function loadReadabilityInputs(
         (id) => labels?.[id] ?? names.get(id) ?? id,
       );
     },
+    valueSuffixOf(widget) {
+      const binding = measureWidgetBindingSchema.safeParse(
+        widget.modelBinding,
+      ).data;
+      const unit =
+        widget.modelId && binding
+          ? units.get(widget.modelId)?.get(binding.measureIds[0]!)
+          : undefined;
+      return measureUnitSuffix(unit, locale);
+    },
     labelOf(widget) {
       // A latest review has no metric (ADR 0019 section 12).
       if (widget.type === "review") {
@@ -307,6 +350,7 @@ export function dashboardFormatWarnings(
           // A value view with a grouping: a total with its split (#784).
           splitLines:
             options?.view === "value" && groups > 0 ? options.limit : null,
+          valueSuffix: inputs.valueSuffixOf?.(widget) ?? "",
           columns: inputs.columnsOf?.(widget) ?? null,
         };
       }

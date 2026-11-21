@@ -14145,6 +14145,9 @@
                                   "enum": [
                                     true
                                   ]
+                                },
+                                "unit": {
+                                  "type": "string"
                                 }
                               },
                               "required": [
@@ -15314,6 +15317,9 @@
                                           "enum": [
                                             true
                                           ]
+                                        },
+                                        "unit": {
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -17167,6 +17173,9 @@
                                           "enum": [
                                             true
                                           ]
+                                        },
+                                        "unit": {
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -84366,6 +84375,9 @@
                                                             "enum": [
                                                               true
                                                             ]
+                                                          },
+                                                          "unit": {
+                                                            "type": "string"
                                                           }
                                                         },
                                                         "required": [
@@ -89586,6 +89598,9 @@
                                                             "enum": [
                                                               true
                                                             ]
+                                                          },
+                                                          "unit": {
+                                                            "type": "string"
                                                           }
                                                         },
                                                         "required": [
