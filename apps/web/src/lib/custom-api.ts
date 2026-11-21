@@ -430,3 +430,17 @@ export function applyConnectionUpdate(
     customApiUpdateApplyRequestSchema.parse(body),
   );
 }
+
+/**
+ * The version a connection shows next to its connector (#834): a custom
+ * API's definition version ("v2", as the custom APIs list and definition
+ * page show it), not the generated connector version ("1.0.2").
+ */
+export function connectorVersionLabel(connection: {
+  connectorVersion: string;
+  customApi?: { version: number } | null;
+}): string {
+  return connection.customApi
+    ? `v${connection.customApi.version}`
+    : connection.connectorVersion;
+}

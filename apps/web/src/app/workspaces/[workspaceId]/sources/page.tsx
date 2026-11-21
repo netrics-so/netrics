@@ -18,6 +18,7 @@ import {
   listProjects,
   listWorkspaces,
 } from "@/lib/api";
+import { connectorVersionLabel } from "@/lib/custom-api";
 import { getLocale, getT } from "@/lib/i18n/server";
 import { parseDisconnected, parseOAuthOutcome } from "@/lib/oauth-connection";
 import {
@@ -218,7 +219,8 @@ export default async function SourcesPage({
                       </Link>
                     </td>
                     <td className="muted">
-                      {connection.connectorName} {connection.connectorVersion}
+                      {connection.connectorName}{" "}
+                      {connectorVersionLabel(connection)}
                     </td>
                     <td>
                       {connection.setupPending ? (

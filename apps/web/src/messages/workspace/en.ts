@@ -264,6 +264,8 @@ export const workspaceEn = {
       dataTablesHelp:
         "Explore raw reports, prepare data and create reusable measures for your dashboards.",
       openData: "Open Data & measures",
+      datasetRows: "{count, plural, one {# row} other {# rows}}",
+      noRecords: "No records stored yet.",
       back: "Back to sources",
       setupFinished:
         "Setup finished. The first import is queued for the configured history; new data then arrives on this connection’s schedule.",

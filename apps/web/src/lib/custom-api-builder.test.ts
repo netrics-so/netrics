@@ -12,10 +12,12 @@ import {
   draftDefinitionOf,
   emptyBuilderState,
   environmentIdFromName,
+  chooseKey,
   pickRecords,
   setFieldType,
   stateFromDefinition,
   stepIssues,
+  suggestedTimeKey,
   toggleField,
   withRequest,
   type BuilderState,
@@ -207,6 +209,17 @@ describe("custom API builder state", () => {
     ]);
   });
 
+  it("lets ticked text fields be empty by default, keys excepted (#834)", () => {
+    let state = pickRecords(basics(), "data");
+    state = toggleField(state, suggestion("id", "integer"), true);
+    state = toggleField(state, suggestion("prompt", "string"), true);
+    state = toggleField(state, suggestion("count", "integer"), true);
+    const byId = (id: string) => state.stream.fields.find((f) => f.id === id);
+    expect(byId("prompt")?.nullable).toBe(true);
+    expect(byId("count")?.nullable).toBe(false);
+    expect(byId("id")?.nullable).toBe(false);
+  });
+
   it("ticking a suggested image field maps a string with role image", () => {
     const state = toggleField(
       pickRecords(basics(), "items"),
@@ -243,15 +256,23 @@ describe("custom API builder state", () => {
     });
   });
 
-  it("suggests the date field as key and reporting field", () => {
+  it("keeps the key when a time field is ticked later, and offers it (#834)", () => {
     let state = pickRecords(basics(), "data");
     state = toggleField(state, suggestion("orders", "integer"), true);
     expect(state.stream.keyFields).toEqual(["orders"]);
+    expect(suggestedTimeKey(state)).toBeNull();
     state = toggleField(
       state,
       suggestion("date", "date", { nullable: true }),
       true,
     );
+    expect(state.stream).toMatchObject({
+      keyFields: ["orders"],
+      reportingField: "date",
+    });
+    expect(suggestedTimeKey(state)?.id).toBe("date");
+    state = chooseKey(state, { keyField: "date" });
+    expect(suggestedTimeKey(state)).toBeNull();
     state = toggleField(state, suggestion("revenue.amount", "decimal"), true);
     expect(state.stream).toMatchObject({
       keyFields: ["date"],

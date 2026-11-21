@@ -51,7 +51,11 @@ export function parseStoredBuilder(
   )
     return null;
   return {
-    state: { ...stored.state, lastTest: null },
+    state: {
+      ...stored.state,
+      images: stored.state.images ?? null,
+      lastTest: null,
+    },
     step: stored.step as BuilderStep,
     definitionId,
     baseVersion: stored.baseVersion ?? null,

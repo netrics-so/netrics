@@ -179,17 +179,14 @@ export function StepBasics({
           {t("addEnvironment")}
         </button>
       ) : null}
-      <div className="field">
-        <label htmlFor="custom-api-project">{t("project")}</label>
-        <ProjectSelect
-          id="custom-api-project"
-          projects={projects}
-          value={state.projectId}
-          onChange={(projectId) =>
-            update((current) => ({ ...current, projectId }))
-          }
-        />
-      </div>
+      <ProjectSelect
+        id="custom-api-project"
+        projects={projects}
+        value={state.projectId}
+        onChange={(projectId) =>
+          update((current) => ({ ...current, projectId }))
+        }
+      />
     </div>
   );
 }

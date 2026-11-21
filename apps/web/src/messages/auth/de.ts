@@ -43,6 +43,8 @@ export const authDe: Catalog<typeof authEn> = {
       demoName: "Mit Demodaten ausprobieren",
       demoText: "Erzeugte Zahlen und ein Beispiel-Dashboard",
       demoReady: "Schon in diesem Workspace",
+      customApiName: "Eigene API",
+      customApiText: "Deine eigene JSON-API, ganz ohne Code eingerichtet",
       unavailable: "Auf dieser Installation nicht eingerichtet",
       explainOAuth:
         "netrics bittet {name} um Lesezugriff. Im nächsten Schritt wählst du, was synchronisiert wird, und du kannst den Zugriff jederzeit widerrufen: Trenne die Quelle hier oder entferne netrics in deinem Konto beim Anbieter.",
@@ -52,6 +54,8 @@ export const authDe: Catalog<typeof authEn> = {
         "netrics liest nur Kennzahlen von {name} und ändert dort nichts. Du kannst die Quelle jederzeit löschen.",
       explainDemo:
         "Demodaten erzeugt netrics selbst: kein Konto und kein Zugriff auf deine Daten. Du kannst sie jederzeit unter Quellen entfernen.",
+      explainCustomApi:
+        "netrics liest nur von der API, die du in den nächsten Schritten beschreibst, und ändert dort nichts. Anmeldedaten werden verschlüsselt gespeichert; wenn du die Quelle löschst, werden sie entfernt.",
       skip: "Überspringen, Demodaten nutzen",
       continue: "Weiter",
       continueWith: "Weiter mit {name}",
