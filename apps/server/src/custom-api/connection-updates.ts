@@ -523,11 +523,11 @@ export function createCustomApiConnectionUpdateService(deps: {
         );
         if (sealed === undefined)
           return fail(400, "custom_api_credentials_invalid");
-        // Stored credentials overwritten count as replaced.
+        // Anything sent (credentials or secret variable values) changed
+        // the envelope and was checked first: replaced, and healthy again
+        // (#829). Only an untouched envelope on the same hosts is kept.
         login =
-          holds && !credentialNames.some((name) => Object.hasOwn(secrets, name))
-            ? "kept"
-            : "replaced";
+          holds && Object.keys(secrets).length === 0 ? "kept" : "replaced";
       }
     }
     return {

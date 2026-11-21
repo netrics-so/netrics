@@ -76,6 +76,7 @@ import {
 } from "../oauth/connector-auth.js";
 import {
   customOAuthFailureMessage,
+  customEnvelopeDigest,
   OAuthTokenError,
   type OAuthTokenService,
 } from "../oauth/tokens.js";
@@ -549,15 +550,38 @@ async function runSync(
     cursor: startCursor,
   };
 
-  /** Records a failed sync_run + connection_state in a fresh transaction. */
+  /**
+   * Records a failed sync_run + connection_state in a fresh transaction.
+   * With `envelopeDigest` (a custom OAuth client refused, #825) the auth
+   * state changes only while that envelope is still stored: a client
+   * replaced meanwhile (PATCH credentials) stays as the PATCH left it.
+   */
   const recordFailure = async (
     errorClass: ErrorClass,
     error: unknown,
     authReason?: OAuthAuthReason,
+    envelopeDigest?: string | null,
   ): Promise<void> => {
     const message = safeMessage(error);
     try {
       await withWorkspace(appDb, { workspaceId }, async (tx) => {
+        let replaced = false;
+        if (envelopeDigest) {
+          // The connection row lock the client change writes under.
+          const [row] = await tx
+            .select({ envelope: schema.connections.credentialsEncrypted })
+            .from(schema.connections)
+            .where(
+              and(
+                eq(schema.connections.workspaceId, workspaceId),
+                eq(schema.connections.id, connectionId),
+              ),
+            )
+            .for("update");
+          replaced =
+            !row?.envelope ||
+            customEnvelopeDigest(row.envelope) !== envelopeDigest;
+        }
         await tx.insert(schema.syncRuns).values({
           workspaceId,
           connectionId,
@@ -577,33 +601,41 @@ async function runSync(
           observationsWritten: progress.observationsWritten,
         });
         const statePatch = {
-          ...(authReason
-            ? { authState: "needs_reauthorization", authReason }
-            : errorClass === "auth"
-              ? { authState: "auth_failed", authReason: null }
-              : errorClass === "transient"
-                ? { authState: "outage", authReason: null }
-                : {}),
+          ...(replaced
+            ? {}
+            : authReason
+              ? { authState: "needs_reauthorization", authReason }
+              : errorClass === "auth"
+                ? { authState: "auth_failed", authReason: null }
+                : errorClass === "transient"
+                  ? { authState: "outage", authReason: null }
+                  : {}),
           // A backfill that failed read part of its window at most: no
           // history start is claimed until one succeeds (#378).
           ...(mode === "backfill" ? { historyFrom: null } : {}),
         };
-        await tx
-          .insert(schema.connectionState)
-          .values({
-            connectionId,
-            workspaceId,
-            pollIntervalSeconds,
-            consecutiveFailures: 1,
-            ...statePatch,
-          })
-          .onConflictDoUpdate({
-            target: schema.connectionState.connectionId,
-            set: {
-              ...statePatch,
+        // A refusal of a replaced client is no failure of the connection
+        // as it is now: its failure count stays as the change left it, so
+        // the source does not read as an outage (#829).
+        const failures = replaced
+          ? {}
+          : {
               consecutiveFailures: sql`${schema.connectionState.consecutiveFailures} + 1`,
-            },
-          });
+            };
+        if (Object.keys(statePatch).length + Object.keys(failures).length > 0)
+          await tx
+            .insert(schema.connectionState)
+            .values({
+              connectionId,
+              workspaceId,
+              pollIntervalSeconds,
+              consecutiveFailures: replaced ? 0 : 1,
+              ...statePatch,
+            })
+            .onConflictDoUpdate({
+              target: schema.connectionState.connectionId,
+              set: { ...statePatch, ...failures },
+            });
       });
     } catch (recordingError) {
       log.error(
@@ -904,7 +936,7 @@ async function runSync(
         // A custom API's client was refused, lacks scopes, or was entered
         // for other hosts: only new client credentials help (auth_failed).
         const refused = new Error(custom);
-        await recordFailure("auth", refused);
+        await recordFailure("auth", refused, undefined, error.envelopeDigest);
         return new TerminalJobError(refused.message);
       }
       if (error.kind === "configuration") {

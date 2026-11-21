@@ -68,6 +68,10 @@ export function routeSchema(doc: RouteDoc) {
   if (!doc.public) {
     errors.add(401);
   }
+  // Every device API route has a request limit per device (#829).
+  if (doc.device) {
+    errors.add(429);
+  }
   if (doc.body || doc.querystring) {
     errors.add(400);
   }

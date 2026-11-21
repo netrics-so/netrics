@@ -136,6 +136,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Diese Anmeldemethode verwendet eines der eingegebenen Geheimnisse nicht.",
     custom_api_credentials_host_changed:
       "Du hast geändert, wohin netrics deine Anmeldung sendet. Gib sie erneut ein.",
+    custom_api_client_change_with_config:
+      "Speichere zuerst den neuen OAuth-Client, dann die anderen Einstellungen.",
     custom_api_test_rate_limited:
       "Zu viele Testanfragen in diesem Workspace. Warte eine Minute und versuch es erneut.",
     custom_api_test_busy: "Eine Testanfrage läuft noch.",

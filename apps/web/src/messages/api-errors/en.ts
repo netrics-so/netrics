@@ -132,6 +132,8 @@ export const apiErrorsEn = {
       "This login method does not use one of the entered secrets.",
     custom_api_credentials_host_changed:
       "You changed where netrics sends your login. Enter it again.",
+    custom_api_client_change_with_config:
+      "Save the new OAuth client first, then the other settings.",
     custom_api_test_rate_limited:
       "Too many test requests in this workspace. Wait a minute and try again.",
     custom_api_test_busy: "A test request is still running.",

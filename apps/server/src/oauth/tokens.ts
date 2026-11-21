@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   createEgressFetch,
   type EgressOptions,
@@ -97,6 +99,12 @@ export class OAuthTokenError extends Error {
    */
   readonly reason:
     "client_refused" | "scope_refused" | "binding_changed" | null;
+  /**
+   * With a reason: the digest of the custom envelope the refused call used
+   * (customEnvelopeDigest), so the failure is recorded only while that
+   * envelope is still stored (#825). Null when unknown.
+   */
+  envelopeDigest: string | null = null;
 
   constructor(
     kind: "transient" | "configuration",
@@ -132,12 +140,27 @@ export function customOAuthFailureMessage(error: unknown): string | null {
   }
 }
 
+/**
+ * A digest of a stored credentials envelope (its ciphertext): tells two
+ * envelopes apart without carrying either around.
+ */
+export function customEnvelopeDigest(envelope: Buffer): string {
+  return createHash("sha256").update(envelope).digest("hex");
+}
+
+/** The custom envelope one token call read (#825). */
+interface SeenEnvelope {
+  envelopeDigest: string | null;
+}
+
 /** One custom OAuth connection's provider and envelope (#805). */
 export interface CustomOAuthResolution {
   provider: CustomOAuthProvider;
   credentials: CustomOAuthCredentials;
   /** A builder draft (never scheduled). */
   draft: boolean;
+  /** customEnvelopeDigest of the envelope this was read from. */
+  envelopeDigest: string;
   /**
    * Whether the envelope was entered for the definition's current hosts
    * (environment host with port, token and revoke hosts). When not, nothing
@@ -218,6 +241,7 @@ export function createCustomOAuthResolver(deps: {
           deps.webOrigin,
         ),
         credentials,
+        envelopeDigest: customEnvelopeDigest(found.row.credentialsEncrypted),
         draft: loaded.draft,
         bindingHeld:
           loaded.environmentId !== null &&
@@ -520,8 +544,10 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
   async function usableCustom(
     tx: Transaction,
     binding: CredentialBinding,
+    seen: SeenEnvelope,
   ): Promise<CustomOAuthResolution> {
     const custom = await deps.customOAuth?.resolve(tx, binding);
+    if (custom) seen.envelopeDigest = custom.envelopeDigest;
     if (!custom) {
       throw new OAuthTokenError(
         "configuration",
@@ -555,13 +581,14 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     tx: Transaction,
     binding: CredentialBinding,
     locked: { oauth: ConnectionOAuthRow; credentialsEncrypted: Buffer | null },
+    seen: SeenEnvelope,
   ): Promise<{
     provider: ConfiguredOAuthProvider;
     refreshToken: string | null;
     custom: CustomOAuthResolution | null;
   }> {
     if (locked.oauth.provider === CUSTOM_OAUTH_PROVIDER_ID) {
-      const custom = await usableCustom(tx, binding);
+      const custom = await usableCustom(tx, binding, seen);
       return {
         provider: custom.provider,
         refreshToken: custom.credentials.refreshToken,
@@ -596,6 +623,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     tx: Transaction,
     binding: CredentialBinding,
     options: GetAccessTokenOptions,
+    seen: SeenEnvelope,
   ): Promise<AccessTokenResult | null> {
     const { workspaceId, connectionId } = binding;
     if (!deps.customOAuth) return null;
@@ -619,7 +647,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     const resolved = await deps.customOAuth.resolve(tx, binding);
     if (!resolved || resolved.provider.grant !== "client_credentials")
       return null;
-    const custom = await usableCustom(tx, binding);
+    const custom = await usableCustom(tx, binding, seen);
     const outcome = await refreshAtProvider(custom.provider, null);
     if (!outcome.ok) return outcome;
     const grantedScopes = outcome.scopes ?? [...custom.provider.scopes];
@@ -647,6 +675,147 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     return { ok: true, accessToken: outcome.accessToken, refreshed: true };
   }
 
+  /** getAccessToken, recording the custom envelope it used in `seen`. */
+  async function accessToken(
+    binding: CredentialBinding,
+    options: GetAccessTokenOptions,
+    seen: SeenEnvelope,
+  ): Promise<AccessTokenResult> {
+    const { workspaceId, connectionId } = binding;
+    const fast = await withWorkspace(db, { workspaceId }, async (tx) => {
+      const row = await findConnectionOAuth(tx, workspaceId, connectionId);
+      if (!row) {
+        // A custom client-credentials connection mints its first token.
+        return deps.customOAuth ? { stale: true as const } : null;
+      }
+      // A custom grant is used only with the hosts it was entered for.
+      const custom =
+        row.provider === CUSTOM_OAUTH_PROVIDER_ID
+          ? await usableCustom(tx, binding, seen)
+          : null;
+      if (!covers(row.grantedScopes, options.requiredScopes)) {
+        if (custom?.provider.grant === "client_credentials")
+          throw scopeRefused();
+        await markNeedsReauthorization(
+          tx,
+          workspaceId,
+          connectionId,
+          "scope_missing",
+        );
+        return { ok: false as const, reason: "scope_missing" as const };
+      }
+      const token = cached(row, binding);
+      return token
+        ? { ok: true as const, accessToken: token, refreshed: false }
+        : { stale: true as const };
+    });
+    if (!fast) {
+      throw new OAuthTokenError(
+        "configuration",
+        "connection has no oauth grant",
+      );
+    }
+    if (!("stale" in fast)) {
+      return fast;
+    }
+
+    return withWorkspace(db, { workspaceId }, async (tx) => {
+      const locked = await lockConnectionOAuth(tx, workspaceId, connectionId);
+      if (!locked) {
+        const minted = await mintFirst(tx, binding, options, seen);
+        if (minted) return minted;
+        throw new OAuthTokenError(
+          "configuration",
+          "connection has no oauth grant",
+        );
+      }
+      // Another caller may have refreshed while this one waited.
+      const token = cached(locked.oauth, binding);
+      if (token) {
+        return { ok: true as const, accessToken: token, refreshed: false };
+      }
+      const { provider, refreshToken, custom } = await grantOf(
+        tx,
+        binding,
+        locked,
+        seen,
+      );
+      const outcome = await refreshAtProvider(provider, refreshToken);
+      if (!outcome.ok) {
+        await updateConnectionOAuthTokens(tx, workspaceId, connectionId, {
+          accessTokenEncrypted: null,
+          accessTokenExpiresAt: null,
+        });
+        await markNeedsReauthorization(
+          tx,
+          workspaceId,
+          connectionId,
+          "invalid_grant",
+        );
+        deps.logger?.warn(
+          { connectionId, provider: provider.definition.id },
+          "oauth grant rejected (invalid_grant); connection needs reauthorization",
+        );
+        return { ok: false as const, reason: "invalid_grant" as const };
+      }
+      const grantedScopes = outcome.scopes ?? locked.oauth.grantedScopes;
+      if (
+        custom?.provider.grant === "client_credentials" &&
+        !covers(
+          outcome.scopes ?? [...custom.provider.scopes],
+          options.requiredScopes,
+        )
+      )
+        throw scopeRefused();
+      await updateConnectionOAuthTokens(tx, workspaceId, connectionId, {
+        accessTokenEncrypted: Buffer.from(
+          encryptOAuthAccessToken(outcome.accessToken, keyring, binding),
+          "utf8",
+        ),
+        accessTokenExpiresAt: new Date(
+          now().getTime() + outcome.expiresInSeconds * 1000,
+        ),
+        ...(outcome.scopes ? { grantedScopes: outcome.scopes } : {}),
+        ...(outcome.refreshToken
+          ? {
+              credentialsEncrypted: custom
+                ? sealCustomOAuthCredentials(
+                    {
+                      ...custom.credentials,
+                      refreshToken: outcome.refreshToken,
+                    },
+                    keyring,
+                    binding,
+                  )
+                : sealOAuthCredentials(outcome.refreshToken, keyring, binding),
+            }
+          : {}),
+      });
+      deps.logger?.info(
+        {
+          connectionId,
+          provider: provider.definition.id,
+          rotated: outcome.refreshToken !== null,
+        },
+        "oauth access token refreshed",
+      );
+      if (!covers(grantedScopes, options.requiredScopes)) {
+        await markNeedsReauthorization(
+          tx,
+          workspaceId,
+          connectionId,
+          "scope_missing",
+        );
+        return { ok: false as const, reason: "scope_missing" as const };
+      }
+      return {
+        ok: true as const,
+        accessToken: outcome.accessToken,
+        refreshed: true,
+      };
+    });
+  }
+
   return {
     /**
      * A valid access token for an OAuth connection, refreshed if needed
@@ -659,142 +828,16 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
       binding: CredentialBinding,
       options: GetAccessTokenOptions,
     ): Promise<AccessTokenResult> {
-      const { workspaceId, connectionId } = binding;
-      const fast = await withWorkspace(db, { workspaceId }, async (tx) => {
-        const row = await findConnectionOAuth(tx, workspaceId, connectionId);
-        if (!row) {
-          // A custom client-credentials connection mints its first token.
-          return deps.customOAuth ? { stale: true as const } : null;
-        }
-        // A custom grant is used only with the hosts it was entered for.
-        const custom =
-          row.provider === CUSTOM_OAUTH_PROVIDER_ID
-            ? await usableCustom(tx, binding)
-            : null;
-        if (!covers(row.grantedScopes, options.requiredScopes)) {
-          if (custom?.provider.grant === "client_credentials")
-            throw scopeRefused();
-          await markNeedsReauthorization(
-            tx,
-            workspaceId,
-            connectionId,
-            "scope_missing",
-          );
-          return { ok: false as const, reason: "scope_missing" as const };
-        }
-        const token = cached(row, binding);
-        return token
-          ? { ok: true as const, accessToken: token, refreshed: false }
-          : { stale: true as const };
-      });
-      if (!fast) {
-        throw new OAuthTokenError(
-          "configuration",
-          "connection has no oauth grant",
-        );
+      const seen: SeenEnvelope = { envelopeDigest: null };
+      try {
+        return await accessToken(binding, options, seen);
+      } catch (error) {
+        // A custom client refusal names the envelope it was refused with,
+        // so a client changed meanwhile is not marked failed (#825).
+        if (error instanceof OAuthTokenError && error.reason !== null)
+          error.envelopeDigest ??= seen.envelopeDigest;
+        throw error;
       }
-      if (!("stale" in fast)) {
-        return fast;
-      }
-
-      return withWorkspace(db, { workspaceId }, async (tx) => {
-        const locked = await lockConnectionOAuth(tx, workspaceId, connectionId);
-        if (!locked) {
-          const minted = await mintFirst(tx, binding, options);
-          if (minted) return minted;
-          throw new OAuthTokenError(
-            "configuration",
-            "connection has no oauth grant",
-          );
-        }
-        // Another caller may have refreshed while this one waited.
-        const token = cached(locked.oauth, binding);
-        if (token) {
-          return { ok: true as const, accessToken: token, refreshed: false };
-        }
-        const { provider, refreshToken, custom } = await grantOf(
-          tx,
-          binding,
-          locked,
-        );
-        const outcome = await refreshAtProvider(provider, refreshToken);
-        if (!outcome.ok) {
-          await updateConnectionOAuthTokens(tx, workspaceId, connectionId, {
-            accessTokenEncrypted: null,
-            accessTokenExpiresAt: null,
-          });
-          await markNeedsReauthorization(
-            tx,
-            workspaceId,
-            connectionId,
-            "invalid_grant",
-          );
-          deps.logger?.warn(
-            { connectionId, provider: provider.definition.id },
-            "oauth grant rejected (invalid_grant); connection needs reauthorization",
-          );
-          return { ok: false as const, reason: "invalid_grant" as const };
-        }
-        const grantedScopes = outcome.scopes ?? locked.oauth.grantedScopes;
-        if (
-          custom?.provider.grant === "client_credentials" &&
-          !covers(
-            outcome.scopes ?? [...custom.provider.scopes],
-            options.requiredScopes,
-          )
-        )
-          throw scopeRefused();
-        await updateConnectionOAuthTokens(tx, workspaceId, connectionId, {
-          accessTokenEncrypted: Buffer.from(
-            encryptOAuthAccessToken(outcome.accessToken, keyring, binding),
-            "utf8",
-          ),
-          accessTokenExpiresAt: new Date(
-            now().getTime() + outcome.expiresInSeconds * 1000,
-          ),
-          ...(outcome.scopes ? { grantedScopes: outcome.scopes } : {}),
-          ...(outcome.refreshToken
-            ? {
-                credentialsEncrypted: custom
-                  ? sealCustomOAuthCredentials(
-                      {
-                        ...custom.credentials,
-                        refreshToken: outcome.refreshToken,
-                      },
-                      keyring,
-                      binding,
-                    )
-                  : sealOAuthCredentials(
-                      outcome.refreshToken,
-                      keyring,
-                      binding,
-                    ),
-              }
-            : {}),
-        });
-        deps.logger?.info(
-          {
-            connectionId,
-            provider: provider.definition.id,
-            rotated: outcome.refreshToken !== null,
-          },
-          "oauth access token refreshed",
-        );
-        if (!covers(grantedScopes, options.requiredScopes)) {
-          await markNeedsReauthorization(
-            tx,
-            workspaceId,
-            connectionId,
-            "scope_missing",
-          );
-          return { ok: false as const, reason: "scope_missing" as const };
-        }
-        return {
-          ok: true as const,
-          accessToken: outcome.accessToken,
-          refreshed: true,
-        };
-      });
     },
 
     /**

@@ -83101,6 +83101,27 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many requests; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Too many requests; try again later"
+                }
+              }
+            }
           }
         }
       }
@@ -83200,6 +83221,27 @@
                   ],
                   "additionalProperties": false,
                   "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Too many requests; try again later"
                 }
               }
             }
@@ -94129,6 +94171,27 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many requests; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Too many requests; try again later"
+                }
+              }
+            }
           }
         }
       }
@@ -94279,6 +94342,27 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many requests; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Too many requests; try again later"
+                }
+              }
+            }
           }
         }
       }
@@ -94315,6 +94399,27 @@
                   ],
                   "additionalProperties": false,
                   "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests; try again later",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Too many requests; try again later"
                 }
               }
             }
@@ -99474,7 +99579,7 @@
         }
       },
       "patch": {
-        "summary": "Update a connection",
+        "summary": "Update a connection (400 custom_api_client_change_with_config when a custom API's new OAuth client comes with a config change: save them one after the other)",
         "tags": [
           "connections"
         ],

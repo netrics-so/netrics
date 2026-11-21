@@ -236,6 +236,9 @@ default 12, at most 50) into the workspace:
 - Their own quota per workspace (default 500 images, 200 MiB), apart from
   uploaded images.
 - Images that no stream lists among its newest items for 7 days are deleted.
+  Only a succeeded sync counts as listing them: when a connection does not
+  sync successfully for more than 7 days (paused, or failing), its images
+  are deleted too, and its next succeeded sync downloads them again.
 
 A failed or skipped image never fails the sync. The connection page shows
 per image stream how many images are stored and how many were skipped, and
