@@ -1303,3 +1303,71 @@ describe("custom OAuth: fix round 2 (#823 re-review)", () => {
     expect(fixture.oauth.revoked.length).toBe(revoked);
   });
 });
+
+describe("custom OAuth: connection values on the connection page (#830)", () => {
+  /** The fixture with a plain value, connected with it. */
+  async function withValue(name: FixtureName): Promise<string> {
+    const definition = await createDefinition({
+      ...document(name),
+      variables: [{ id: "shop", label: "Shop", secret: false }],
+    });
+    const response = await connect(definition.id, {
+      variables: { shop: "north" },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    return connectionResponseSchema.parse(response.json()).connection.id;
+  }
+
+  const config = async (id: string) =>
+    (await call("GET", ws(`/connections/${id}`))).json().connection.config;
+
+  it.each(["oauth_client_credentials", "oauth_code"] as const)(
+    "changes a value of a %s connection, checked with a token, keeping the grant",
+    async (name) => {
+      const id = await withValue(name);
+      if (name === "oauth_code") await authorize(id);
+      const before = await grant(id);
+      const stored = await envelope(id);
+      fixture.reset();
+      const changed = await call("PATCH", ws(`/connections/${id}`), {
+        config: { shop: "south" },
+      });
+      expect(changed.statusCode, changed.body).toBe(200);
+      expect(await config(id)).toEqual({ shop: "south" });
+      // Checked at the API with a token the fixture issued.
+      const api = fixture.requests.filter((r) => r.path === "/oauth/api/items");
+      expect(api.length).toBeGreaterThan(0);
+      const bearer = api[0]!.headers.authorization!.slice("Bearer ".length);
+      expect(fixture.oauth.issued).toContain(bearer);
+      // The grant and the client stay as they were.
+      expect(await grant(id)).toMatchObject({
+        provider: "custom",
+        account_sub: before!.account_sub,
+      });
+      expect(await envelope(id)).toEqual(stored);
+      expect((await state(id)).auth_state).toBe("ok");
+      // Limits hold here too.
+      for (const value of ["", "x".repeat(501)]) {
+        const refused = await call("PATCH", ws(`/connections/${id}`), {
+          config: { shop: value },
+        });
+        expect(refused.statusCode, refused.body).toBe(400);
+      }
+      expect(await config(id)).toEqual({ shop: "south" });
+    },
+  );
+
+  it("refuses a value change before the first sign-in, and a rename still saves", async () => {
+    const id = await withValue("oauth_code");
+    const refused = await call("PATCH", ws(`/connections/${id}`), {
+      config: { shop: "south" },
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(await config(id)).toEqual({ shop: "north" });
+    const renamed = await call("PATCH", ws(`/connections/${id}`), {
+      name: "Renamed",
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(await grant(id)).toBeNull();
+  });
+});

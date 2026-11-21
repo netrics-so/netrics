@@ -570,7 +570,12 @@ describe("connections from a custom API definition", () => {
     );
     expect(fixture.requests[0]!.headers["x-tenant"]).toBe("tenant-secret-0001");
     // Every plain value is required; a secret value is never plain config.
-    for (const config of [{}, { account_id: "acc-3", tenant: "x" }]) {
+    for (const config of [
+      {},
+      { account_id: "" },
+      { account_id: "x".repeat(501) },
+      { account_id: "acc-3", tenant: "x" },
+    ]) {
       const refused = await call("PATCH", url, owner, { config });
       expect(refused.statusCode, refused.body).toBe(400);
     }

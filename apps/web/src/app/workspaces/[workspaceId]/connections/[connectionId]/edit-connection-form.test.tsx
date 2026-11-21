@@ -94,6 +94,7 @@ describe.each<Locale>(["en", "de"])("EditConnectionForm (%s)", (locale) => {
     );
     expect(html).toContain('id="config-account_id"');
     expect(html).toContain('value="acc-1"');
+    expect(html).toContain('maxLength="500"');
     expect(html).toContain(">Account<");
     expect(html).not.toContain("config-tenant");
     expect(html).not.toContain("custom-api");
@@ -122,9 +123,14 @@ describe("editConnectionRequest (#830)", () => {
   };
 
   it("describes only the plain values, each required", () => {
-    expect(fields.map((field) => [field.key, field.required])).toEqual([
-      ["account_id", true],
-    ]);
+    expect(
+      fields.map((field) => [
+        field.key,
+        field.required,
+        field.minLength,
+        field.maxLength,
+      ]),
+    ).toEqual([["account_id", true, 1, 500]]);
   });
 
   it("sends a custom API connection's changed values", () => {

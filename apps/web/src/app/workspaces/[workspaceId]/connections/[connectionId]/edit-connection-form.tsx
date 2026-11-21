@@ -3,11 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 
-import type {
-  ConnectionDetail,
-  ConnectorCatalogEntry,
-  CustomApiVariable,
-  UpdateConnectionRequest,
+import {
+  customApiConfigSchema,
+  type ConnectionDetail,
+  type ConnectorCatalogEntry,
+  type CustomApiVariable,
+  type UpdateConnectionRequest,
 } from "@netrics/contracts";
 
 import { ConfigFields } from "../config-fields";
@@ -32,24 +33,14 @@ interface EditConnectionFormProps {
 
 /**
  * A custom API connection's config fields (#830): its pinned version's
- * plain (non-secret) values, each required, as the server's
- * `customApiConfigSchema` (packages/connectors) describes them.
+ * plain (non-secret) values, from the schema the API validates against.
  */
 export function customApiConfigFields(
   variables: readonly CustomApiVariable[],
 ): ConfigField[] {
-  const plain = variables.filter((variable) => !variable.secret);
-  return parseConfigSchema({
-    type: "object",
-    properties: Object.fromEntries(
-      plain.map((variable) => [
-        variable.id,
-        { type: "string", title: variable.label, minLength: 1, maxLength: 500 },
-      ]),
-    ),
-    required: plain.map((variable) => variable.id),
-    additionalProperties: false,
-  });
+  return parseConfigSchema(
+    customApiConfigSchema({ variables: [...variables] }),
+  );
 }
 
 /**

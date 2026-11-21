@@ -9,8 +9,10 @@ import Synchronization
  * Beyond the budget (50 MB) the least recently used images that the
  * current payload does not reference are evicted; referenced ones stay, so
  * an offline start shows every image it showed before. Latest-items images
- * (#811) count against the budget (`ImageBudget`): beyond it they are
- * neither stored nor kept, and their items show the placeholder.
+ * (#811) count against the budget (`ImageBudget`): beyond it they are not
+ * downloaded and not kept. One stored earlier still shows until it is
+ * evicted (once the cache is over budget); without it the item shows the
+ * placeholder.
  */
 public protocol ImageCache: Sendable {
     /** Whether the bytes for this hash are stored. */
@@ -53,8 +55,9 @@ public enum ImageHash {
  * images (logos, backgrounds, image widgets, review icons) are always kept
  * (ADR 0015). Latest-items images can be many (50 items per widget, up to
  * 2 MiB each), so they share what the budget leaves: the newest item of
- * every items widget first, then the second, and so on, while their
- * `bytes` fit. The rest are not downloaded, and evicted once over budget.
+ * every items widget first, then the second, and so on, up to the first
+ * one whose `bytes` do not fit. The rest are not downloaded, and evicted
+ * once the cache is over budget.
  */
 public enum ImageBudget {
     public static func kept(_ payload: DeviceDashboardV2, budget: Int) -> Set<String> {
@@ -71,12 +74,15 @@ public enum ImageBudget {
         var kept = Set(payload.images.filter { !itemIdSet.contains($0.id) }.map(\.sha256))
         var used = payload.images.filter { kept.contains($0.sha256) }
             .reduce(into: [String: Int]()) { $0[$1.sha256] = $1.bytes }.values.reduce(0, +)
+        // Newest first: every widget's first item, then the second, and so
+        // on. The fill stops at the first image that does not fit, so an
+        // older (smaller) image never takes the room of a newer one.
         let depth = itemIds.map(\.count).max() ?? 0
         for position in 0..<depth {
             for ids in itemIds where position < ids.count {
                 guard let image = payload.image(ids[position]), !kept.contains(image.sha256) else { continue }
                 let size = max(0, image.bytes)
-                guard used + size <= budget else { continue }
+                guard used + size <= budget else { return kept }
                 kept.insert(image.sha256)
                 used += size
             }

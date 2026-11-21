@@ -5,7 +5,6 @@ import type {
   AuthStrategy,
   ConnectorManifest,
   DatasetField,
-  JsonSchema,
   SourceDatasetDefinition,
 } from "@netrics/connector-sdk";
 import type {
@@ -13,6 +12,7 @@ import type {
   CustomApiEnvironment,
   CustomApiField,
 } from "@netrics/connector-sdk/custom-api";
+import { customApiConfigSchema } from "@netrics/connector-sdk/custom-api";
 
 import { CustomApiConfigError } from "./errors.js";
 
@@ -100,28 +100,8 @@ function datasetField(field: CustomApiField): DatasetField {
   };
 }
 
-/** The configuration schema: every non-secret variable, a required string. */
-export function customApiConfigSchema(
-  definition: Pick<CustomApiDefinition, "variables">,
-): JsonSchema {
-  const variables = definition.variables.filter((v) => !v.secret);
-  return {
-    type: "object",
-    properties: Object.fromEntries(
-      variables.map((variable) => [
-        variable.id,
-        {
-          type: "string",
-          title: variable.label,
-          minLength: 1,
-          maxLength: 500,
-        },
-      ]),
-    ),
-    required: variables.map((variable) => variable.id),
-    additionalProperties: false,
-  };
-}
+/** The configuration schema (shared with the web form, #830). */
+export { customApiConfigSchema };
 
 function authStrategies(definition: CustomApiDefinition): AuthStrategy[] {
   const token = (properties: Record<string, { title: string }>) => [

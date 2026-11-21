@@ -354,8 +354,10 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   `Caches/netrics/images` (in the App Group container). Beyond 50 MB, images the current payload does
   not reference are evicted, least recently used first. Latest-items
   images count against the 50 MB: the newest item of each widget first,
-  and those beyond it are not stored (their items show the placeholder),
-  while the dashboard's own images are always kept. They are decoded
+  up to the first image that does not fit. Those beyond it are not
+  downloaded; one stored earlier still shows until it is evicted (once
+  the cache is over budget), otherwise the item shows the placeholder.
+  The dashboard's own images are always kept. They are decoded
   with ImageIO at the widget's pixel size.
 - **Latest items (#811).** The app asks for `features=measure_split,items`,
   so the server sends the latest-items widget instead of its text
