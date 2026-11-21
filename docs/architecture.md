@@ -672,6 +672,17 @@ note. A snapshot (pinned pages, the last valid result) records which of its
 pinned sources were incomplete, so a read of a pinned generation keeps the
 state it had when it was pinned, not the connection's state now.
 
+**A backfill that did not finish.** A backfill whose retries are used up read
+part of its window at most (#787). The sync engine records every failed
+backfill attempt in `connection_state.backfill_failed_at` and clears it when a
+backfill succeeds; jobs and sync runs are pruned, so they cannot say this
+later. While it is set and no backfill waits or runs, the connection page says
+the history is incomplete (`history.backfillFailed`) and points to "Reload
+history", every stored dataset of the connection counts as incomplete, and
+reads of them carry `source_history_incomplete`, whatever earlier backfills
+read. A backfill job that died without a failed run (a worker that stopped
+mid-run) counts the same while the job is kept and no history start is known.
+
 **Reload history.** Members with `connections:update` can press "Reload
 history" (`POST …/connections/{id}/backfill`). It is audited with the member,
 refused while a backfill of the connection (`backfill_in_progress`) or of

@@ -35,6 +35,8 @@ import {
 
 const CONNECTOR = "history-demo";
 const NO_BACKFILL = "history-demo-live";
+// Metrics only, like most connectors: no dataset to name as incomplete.
+const METRICS = "history-demo-metrics";
 
 const sales = sourceDatasetSchema.parse({
   key: "sales",
@@ -67,6 +69,10 @@ function registry(): ConnectorRegistry {
       name: "History demo",
       datasets: [sales],
     },
+  });
+  result.register({
+    ...demo,
+    manifest: { ...base, id: METRICS, name: "Metrics only" },
   });
   result.register({
     ...demo,
@@ -430,5 +436,163 @@ describe("reload history (#617)", () => {
       update connection_state set backfilled_datasets = ${admin.json({ sales: 2 })}
       where connection_id = ${connectionId}`;
     expect((await detail(connectionId)).history.incompleteDatasets).toEqual([]);
+  });
+});
+
+describe("a backfill that ended without reading its window (#787)", () => {
+  // The shapes a dead backfill leaves behind. The connection keeps syncing
+  // incrementally, so nothing else on its page says that history is missing.
+
+  /** A failed attempt of the connection's backfill, as the engine records it. */
+  const attemptFailed = (connectionId: string) => admin`
+    update connection_state
+    set history_from = null, backfill_failed_at = now()
+    where connection_id = ${connectionId}`;
+
+  /** The connection's backfill job ends with its attempts used up. */
+  const jobDies = (connectionId: string) => admin`
+    update jobs
+    set status = 'dead', attempts = max_attempts, last_error = 'HTTP 429'
+    where connection_id = ${connectionId} and kind = 'connection.backfill'
+      and status in ('pending', 'continuing', 'running')`;
+
+  /** As a succeeded backfill leaves the connection. */
+  const backfillSucceeds = async (connectionId: string) => {
+    await finishBackfills();
+    await admin`
+      update connection_state
+      set history_from = now() - interval '1 year', backfill_failed_at = null
+      where connection_id = ${connectionId}`;
+  };
+
+  const history = async (connectionId: string) =>
+    (await detail(connectionId)).history;
+
+  it("keeps the history marked incomplete and takes a reload", async () => {
+    await finishBackfills();
+    const connectionId = await createConnection(METRICS);
+    expect(await history(connectionId)).toMatchObject({
+      backfill: "queued",
+      backfillFailed: false,
+    });
+
+    // An attempt failed and its retry waits: it may still read the window.
+    await attemptFailed(connectionId);
+    expect(await history(connectionId)).toMatchObject({
+      backfill: "queued",
+      backfillFailed: false,
+    });
+
+    // The retries are used up. Incremental syncs succeed from here on.
+    await jobDies(connectionId);
+    await admin`
+      update connection_state set last_success_at = now()
+      where connection_id = ${connectionId}`;
+    const dead = await history(connectionId);
+    expect(dead).toMatchObject({
+      supportsBackfill: true,
+      backfill: "idle",
+      backfillFailed: true,
+      incompleteDatasets: [],
+      reloadAvailableAt: null,
+    });
+
+    // The history retention prunes the dead job and its runs: still so.
+    await admin`
+      delete from jobs
+      where connection_id = ${connectionId} and kind = 'connection.backfill'`;
+    await admin`delete from sync_runs where connection_id = ${connectionId}`;
+    expect((await history(connectionId)).backfillFailed).toBe(true);
+
+    // "Reload history" queues the backfill that reads it.
+    const queued = await reload(connectionId);
+    expect(queued.statusCode, queued.body).toBe(200);
+    expect(await history(connectionId)).toMatchObject({
+      backfill: "queued",
+      backfillFailed: false,
+    });
+    await backfillSucceeds(connectionId);
+    expect(await history(connectionId)).toMatchObject({
+      backfill: "idle",
+      backfillFailed: false,
+      incompleteDatasets: [],
+    });
+  });
+
+  it("counts a backfill job that died without a failed run", async () => {
+    await finishBackfills();
+    const connectionId = await createConnection(METRICS);
+    // A worker that stopped mid-run until the attempts were used up: no
+    // attempt was recorded as failed.
+    await jobDies(connectionId);
+    expect(await history(connectionId)).toMatchObject({
+      backfill: "idle",
+      backfillFailed: true,
+    });
+    // A waiting backfill that a newer one replaced did not fail.
+    await admin`
+      update jobs
+      set status = 'failed', last_error = 'superseded by a newer backfill'
+      where connection_id = ${connectionId} and kind = 'connection.backfill'`;
+    expect((await history(connectionId)).backfillFailed).toBe(false);
+    // Nor did a dead job that a succeeded backfill (pruned earlier, as
+    // succeeded jobs are) came after: the history start is known.
+    await admin`
+      update jobs set status = 'dead', last_error = 'HTTP 500'
+      where connection_id = ${connectionId} and kind = 'connection.backfill'`;
+    expect((await history(connectionId)).backfillFailed).toBe(true);
+    await backfillSucceeds(connectionId);
+    expect((await history(connectionId)).backfillFailed).toBe(false);
+  });
+
+  it("names every stored dataset, also those an earlier backfill read", async () => {
+    await finishBackfills();
+    const connectionId = await createConnection(CONNECTOR);
+    await finishBackfills();
+    const [dataset] = await admin<{ id: string; workspace_id: string }[]>`
+      insert into data_datasets (workspace_id, connection_id, kind, key, name)
+      select workspace_id, id, 'source', 'sales', 'Sales rows'
+      from connections where id = ${connectionId}
+      returning id, workspace_id`;
+    await admin`
+      insert into data_schema_versions (dataset_id, workspace_id, version, definition)
+      values (${dataset!.id}, ${dataset!.workspace_id}, 2, '{}'::jsonb)`;
+    await admin`
+      insert into data_generations (dataset_id, workspace_id, schema_version,
+        refresh_key, source_started_at, sequence, row_count)
+      values (${dataset!.id}, ${dataset!.workspace_id}, 2, 'r1', now(), 1, 3)`;
+    // An earlier backfill read "sales" at its current version: complete.
+    await admin`
+      update connection_state
+      set backfilled_datasets = ${admin.json({ sales: 2 })},
+        history_from = now() - interval '1 year'
+      where connection_id = ${connectionId}`;
+    expect(await history(connectionId)).toMatchObject({
+      backfillFailed: false,
+      incompleteDatasets: [],
+    });
+    // A reload that died overwrote part of the window at most.
+    expect((await reload(connectionId)).statusCode).toBe(200);
+    await attemptFailed(connectionId);
+    await jobDies(connectionId);
+    expect(await history(connectionId)).toMatchObject({
+      backfill: "idle",
+      backfillFailed: true,
+      incompleteDatasets: [{ key: "sales", name: "Sales rows" }],
+    });
+  });
+
+  it("claims nothing for a connector without backfills", async () => {
+    await finishBackfills();
+    const connectionId = await createConnection(NO_BACKFILL);
+    await finishBackfills();
+    await admin`
+      update connection_state set backfill_failed_at = now()
+      where connection_id = ${connectionId}`;
+    expect(await history(connectionId)).toMatchObject({
+      supportsBackfill: false,
+      backfillFailed: false,
+      incompleteDatasets: [],
+    });
   });
 });

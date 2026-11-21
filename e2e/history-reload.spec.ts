@@ -82,3 +82,43 @@ test("reloads a connection's history after a confirmation", async ({
     page.getByRole("button", { name: t.reload, exact: true }),
   ).toBeDisabled();
 });
+
+test("says the history is incomplete after a backfill that died, and reloads it (#787)", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = history(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  const connectionId = await seedConnection(workspaceId);
+  // As a backfill whose retries are used up leaves the connection, months
+  // later: the job and its runs are pruned, incremental syncs succeed.
+  const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
+  try {
+    await sql`
+      update connection_state
+      set last_success_at = now(), history_from = null,
+        backfill_failed_at = now() - interval '100 days'
+      where connection_id = ${connectionId}`;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+
+  await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
+  await expect(page.getByText(t.failed)).toBeVisible();
+  await testInfo.attach(`history-incomplete-${locale}`, {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
+  const reload = page.getByRole("button", { name: t.reload, exact: true });
+  await expect(reload).toBeEnabled();
+  await reload.click();
+  await page
+    .getByRole("dialog", { name: fill(t.confirmTitle, { name: "Demo site" }) })
+    .getByRole("button", { name: t.confirm })
+    .click();
+
+  // The reload waits: loading now, no longer "incomplete".
+  await expect(page.getByText(t.loading)).toBeVisible();
+  await expect(page.getByText(t.failed)).toHaveCount(0);
+  expect(await pendingBackfills(connectionId)).toBe(1);
+});

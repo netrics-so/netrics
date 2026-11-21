@@ -618,8 +618,11 @@ async function runSync(
                   ? { authState: "outage", authReason: null }
                   : {}),
           // A backfill that failed read part of its window at most: no
-          // history start is claimed until one succeeds (#378).
-          ...(mode === "backfill" ? { historyFrom: null } : {}),
+          // history start is claimed until one succeeds (#378), and the
+          // history counts as incomplete once no attempt is left (#787).
+          ...(mode === "backfill"
+            ? { historyFrom: null, backfillFailedAt: new Date() }
+            : {}),
         };
         // A refusal of a replaced client is no failure of the connection
         // as it is now: its failure count stays as the change left it, so
@@ -1404,7 +1407,9 @@ async function runSync(
     // A succeeded backfill read its whole window: the connection's history
     // starts there (#378), for empty widget windows that read 0.
     const historyRecord =
-      mode === "backfill" ? { historyFrom: window.from } : {};
+      mode === "backfill"
+        ? { historyFrom: window.from, backfillFailedAt: null }
+        : {};
     await ingestTransaction(async (tx) => {
       const observationsWritten =
         progress.observationsWritten +

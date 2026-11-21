@@ -99571,6 +99571,9 @@
                             "running"
                           ]
                         },
+                        "backfillFailed": {
+                          "type": "boolean"
+                        },
                         "incompleteDatasets": {
                           "type": "array",
                           "items": {

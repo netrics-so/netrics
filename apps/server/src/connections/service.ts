@@ -56,6 +56,7 @@ import {
 } from "@netrics/domain";
 import {
   activeBackfillConnections,
+  connectionBackfillFailed,
   connectionBackfillState,
   datasetVersions,
   deleteConnection as deleteConnectionRow,
@@ -87,6 +88,7 @@ import {
   resetConnectionAuth,
   resourceNameKey,
   storedDatasetsMissingBackfill,
+  storedDeclaredDatasets,
   updateConnection as updateConnectionRow,
   withOAuthGrantLocks,
   withWorkspace,
@@ -578,26 +580,62 @@ function reloadAvailableAt(at: Date | null): Date | null {
     : null;
 }
 
+/** What of a connection's history is known to be incomplete. */
+interface IncompleteHistory {
+  /** Declared datasets the connection stores without their whole history. */
+  datasets: string[];
+  /** The last backfill ended without reading its window (#787). */
+  backfillFailed: boolean;
+}
+
 /**
- * The declared datasets the connection stores and no backfill has read
- * (#617, #634). None while nothing is recorded (a connection from before
- * #617, recorded by its next sync), during setup, or without backfills.
+ * What of the connection's history is incomplete while no backfill waits
+ * or runs (`backfill` idle; a waiting one may still read it).
+ *
+ * - The last backfill ended without reading its window (#787), e.g. with
+ *   its retries used up: every declared dataset the connection stores is
+ *   incomplete, and so are its metrics, whatever earlier backfills read.
+ * - Else the declared datasets the connection stores and no backfill has
+ *   read (#617, #634). None while nothing is recorded (a connection from
+ *   before #617, recorded by its next sync).
+ *
+ * Nothing during setup, or for a connector without backfills.
  */
 async function incompleteHistory(
   tx: Transaction,
   loaded: ConnectionWithState,
+  backfill: "idle" | "queued" | "running",
   registry: ConnectorRegistry,
-): Promise<string[]> {
+): Promise<IncompleteHistory> {
   const { row, state } = loaded;
   const manifest = connectorFor(registry, loaded)?.manifest;
-  const recorded = state?.backfilledDatasets ?? null;
-  if (!recorded || row.setupPending || !manifest?.supportsBackfill) return [];
-  return storedDatasetsMissingBackfill(tx, {
+  if (row.setupPending || !manifest?.supportsBackfill) {
+    return { datasets: [], backfillFailed: false };
+  }
+  const scope = {
     workspaceId: row.workspaceId,
     connectionId: row.id,
     declared: datasetVersions(manifest.datasets),
-    backfilled: recorded,
-  });
+  };
+  if (
+    backfill === "idle" &&
+    (await connectionBackfillFailed(tx, row.workspaceId, row.id, state))
+  ) {
+    return {
+      datasets: await storedDeclaredDatasets(tx, scope),
+      backfillFailed: true,
+    };
+  }
+  const recorded = state?.backfilledDatasets ?? null;
+  return {
+    datasets: recorded
+      ? await storedDatasetsMissingBackfill(tx, {
+          ...scope,
+          backfilled: recorded,
+        })
+      : [],
+    backfillFailed: false,
+  };
 }
 
 /**
@@ -607,7 +645,7 @@ async function incompleteHistory(
 function historyView(
   loaded: ConnectionWithState,
   backfill: "idle" | "queued" | "running",
-  missing: string[],
+  incomplete: IncompleteHistory,
   registry: ConnectorRegistry,
   now: Date = new Date(),
 ): ConnectionHistory {
@@ -620,7 +658,8 @@ function historyView(
     supportsBackfill: manifest?.supportsBackfill === true,
     backfillDays: manifest?.backfillDays ?? 0,
     backfill,
-    incompleteDatasets: missing.map((key) => ({
+    backfillFailed: incomplete.backfillFailed,
+    incompleteDatasets: incomplete.datasets.map((key) => ({
       key,
       name: manifest?.datasets?.find((d) => d.key === key)?.name ?? key,
     })),
@@ -2373,7 +2412,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.workspaceId,
           connectionId,
         );
-        const incomplete = await incompleteHistory(tx, loaded, registry);
+        const incomplete = await incompleteHistory(
+          tx,
+          loaded,
+          backfill,
+          registry,
+        );
         const freshness = await listConnectionFreshness(
           tx,
           actor.workspaceId,
