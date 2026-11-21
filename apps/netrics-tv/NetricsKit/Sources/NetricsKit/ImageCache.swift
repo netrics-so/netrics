@@ -8,7 +8,9 @@ import Synchronization
  * The bytes under one hash never change, so an image is downloaded once.
  * Beyond the budget (50 MB) the least recently used images that the
  * current payload does not reference are evicted; referenced ones stay, so
- * an offline start shows every image it showed before.
+ * an offline start shows every image it showed before. Latest-items images
+ * (#811) count against the budget (`ImageBudget`): beyond it they are
+ * neither stored nor kept, and their items show the placeholder.
  */
 public protocol ImageCache: Sendable {
     /** Whether the bytes for this hash are stored. */
@@ -27,7 +29,10 @@ public protocol ImageCache: Sendable {
 public enum ImageCacheLimits {
     /** ADR 0015: least recently used beyond 50 MB is evicted. */
     public static let budget = 50 * 1024 * 1024
-    /** The server caps images at 1 MiB; anything far larger is refused. */
+    /**
+     * The server caps uploaded images at 1 MiB and custom API item images
+     * at 2 MiB; anything far larger is refused.
+     */
     public static let maxImageBytes = 4 * 1024 * 1024
     public static let contentTypes: Set<String> = ["image/png", "image/jpeg", "image/webp"]
 }
@@ -40,6 +45,43 @@ public enum ImageHash {
     /** 64 lower-case hex digits: safe as a file name. */
     public static func isValid(_ hash: String) -> Bool {
         hash.count == 64 && hash.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+    }
+}
+
+/**
+ * Which of a payload's images the cache keeps (#830). The dashboard's own
+ * images (logos, backgrounds, image widgets, review icons) are always kept
+ * (ADR 0015). Latest-items images can be many (50 items per widget, up to
+ * 2 MiB each), so they share what the budget leaves: the newest item of
+ * every items widget first, then the second, and so on, while their
+ * `bytes` fit. The rest are not downloaded, and evicted once over budget.
+ */
+public enum ImageBudget {
+    public static func kept(_ payload: DeviceDashboardV2, budget: Int) -> Set<String> {
+        // Per items widget, the image ids of the items it can show.
+        var itemIds: [[String]] = []
+        var itemIdSet: Set<String> = []
+        for slide in payload.slides {
+            for widget in slide.widgets {
+                guard case .items(let options, let data) = widget.content else { continue }
+                itemIds.append(data.items.prefix(max(0, options.count)).compactMap(\.imageId))
+                itemIdSet.formUnion(data.items.compactMap(\.imageId))
+            }
+        }
+        var kept = Set(payload.images.filter { !itemIdSet.contains($0.id) }.map(\.sha256))
+        var used = payload.images.filter { kept.contains($0.sha256) }
+            .reduce(into: [String: Int]()) { $0[$1.sha256] = $1.bytes }.values.reduce(0, +)
+        let depth = itemIds.map(\.count).max() ?? 0
+        for position in 0..<depth {
+            for ids in itemIds where position < ids.count {
+                guard let image = payload.image(ids[position]), !kept.contains(image.sha256) else { continue }
+                let size = max(0, image.bytes)
+                guard used + size <= budget else { continue }
+                kept.insert(image.sha256)
+                used += size
+            }
+        }
+        return kept
     }
 }
 

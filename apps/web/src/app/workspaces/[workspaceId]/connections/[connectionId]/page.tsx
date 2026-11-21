@@ -605,6 +605,9 @@ export default async function ConnectionDetailPage({
               workspaceId={workspaceId}
               connection={connection}
               connector={connector}
+              {...(pinnedVersion
+                ? { customApiVariables: pinnedVersion.document.variables }
+                : {})}
             />
           )}
         </div>
