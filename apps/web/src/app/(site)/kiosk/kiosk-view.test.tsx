@@ -563,6 +563,41 @@ describe("offline badge without the header (#835)", () => {
     expect(en).toContain("Offline — last update");
     expect(badge(state, "de")).toContain("Offline – letzte Aktualisierung");
   });
+  // Measured, as a screen is once it has drawn.
+  const measured = (state: KioskState) =>
+    renderToStaticMarkup(
+      <I18nProvider locale="en" messages={WEB_CATALOGS.en}>
+        <ViewerTimeZoneProvider zone={VIEWER_ZONE}>
+          <KioskScreen state={state} screen={{ width: 1920, height: 1080 }} />
+        </ViewerTimeZoneProvider>
+      </I18nProvider>,
+    );
+  const withoutHeader = (updatedAt: number, offline: boolean) => {
+    const payload = slides("en");
+    payload.dashboard!.showHeader = false;
+    return { ...paired(payload, offline), updatedAt };
+  };
+  it("shows the badge on a measured screen once the poll is stale or failing", () => {
+    expect(measured(withoutHeader(Date.now() - 10 * minute, false))).toContain(
+      "studio-slide-corner",
+    );
+    expect(measured(withoutHeader(Date.now(), true))).toContain(
+      "studio-slide-corner",
+    );
+  });
+  it("shows no badge while the poll is healthy", () => {
+    expect(measured(withoutHeader(Date.now(), false))).not.toContain(
+      "studio-slide-corner",
+    );
+  });
+  it("shows no badge with the header: the header says it", () => {
+    const html = measured({
+      ...paired(slides("en")),
+      updatedAt: Date.now() - 10 * minute,
+    });
+    expect(html).not.toContain("studio-slide-corner");
+    expect(html).toContain("studio-offline");
+  });
   it("is not drawn before the screen is measured (no unit size yet)", () => {
     // Server render and the first paint: no measured canvas, no badge,
     // however offline the screen is.

@@ -37,6 +37,7 @@ import {
   type KioskState,
 } from "@/lib/kiosk-client";
 import { browserImageCache } from "@/lib/kiosk-image-cache";
+import type { ScreenSize } from "@/lib/screen-view";
 import { themeStyle } from "@/lib/studio-theme";
 import { pairingAddress } from "@/lib/pairing-address";
 import type { RefreshCycle } from "@/lib/refresh-countdown";
@@ -127,7 +128,14 @@ export function KioskView({ appVersion }: { appVersion: string }) {
 }
 
 /** What the kiosk shows for its state, in the screen's language. */
-export function KioskScreen({ state }: { state: KioskState }) {
+export function KioskScreen({
+  state,
+  screen = null,
+}: {
+  state: KioskState;
+  /** The screen size assumed until measured (server render, tests). */
+  screen?: ScreenSize | null;
+}) {
   const t = useT("screen.kiosk");
   if (state.phase === "pairing") {
     return <PairingScreen state={state} />;
@@ -152,6 +160,7 @@ export function KioskScreen({ state }: { state: KioskState }) {
             state={state}
             payload={payload}
             dashboard={payload.dashboard}
+            screen={screen}
           />
         ) : payload.dashboard && isTilesDashboard(payload) ? (
           <KioskDashboard state={state} dashboard={payload} />
@@ -366,10 +375,12 @@ function KioskSlides({
   state,
   payload,
   dashboard,
+  screen,
 }: {
   state: KioskState;
   payload: SlidesPayload;
   dashboard: NonNullable<SlidesPayload["dashboard"]>;
+  screen: ScreenSize | null;
 }) {
   const idle = useIdle();
   const t = useT("screen.kiosk");
@@ -409,6 +420,7 @@ function KioskSlides({
               : clockTime(state.updatedAt, viewerZone, locale),
           refresh: kioskRefreshCycle({ ...state, offline }, payload),
         }}
+        screen={screen}
         corner={
           offline && !dashboard.showHeader ? (
             <KioskOfflineBadge state={state} />

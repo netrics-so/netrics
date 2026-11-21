@@ -770,6 +770,24 @@ export function measureUnitSuffix(
   return ` ${measureUnitWords(unit, locale)}`;
 }
 
+/** A currency code as long as most, standing in for an amount's currency. */
+const SAMPLE_CURRENCY = "EUR";
+
+/**
+ * What follows a measure's sample values in the readability check (#835):
+ * what screens show after them. An amount of money ("currency",
+ * "currency_minor", "EUR_minor", a formula over amounts) shows its
+ * currency code, never the unit's words; any other unit its suffix.
+ */
+export function measureSampleSuffix(
+  unit: string | undefined,
+  locale: string,
+): string {
+  if (unit === "currency" || unit?.endsWith("_minor"))
+    return ` ${SAMPLE_CURRENCY}`;
+  return measureUnitSuffix(unit, locale);
+}
+
 /**
  * A unit's words in `locale` (#835): a combined unit from a formula
  * ("installs/impressions", "clicks × views", "taps*days") is translated

@@ -32,7 +32,7 @@ import type {
 } from "@netrics/contracts";
 import {
   isDataWidgetType,
-  measureUnitSuffix,
+  measureSampleSuffix,
   sourcesLabel,
   type ScreenFormat,
 } from "@netrics/domain";
@@ -465,7 +465,7 @@ export function StudioEditor({
           ?.measures.find(
             (measure) => measure.id === entry.binding.measureIds[0],
           )?.unit;
-        return measureUnitSuffix(unit, locale);
+        return measureSampleSuffix(unit, locale);
       },
     };
     return new Map(

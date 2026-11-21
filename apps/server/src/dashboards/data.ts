@@ -32,6 +32,7 @@ import {
   validateMeasureView,
   DataProcessingError,
   DEFAULT_DATA_POLICY,
+  type DataCell,
   type DataField,
   type SemanticModelDefinition,
   type DataPolicy,
@@ -115,6 +116,8 @@ export async function publishedModel(
       ...(field.role === "image" ? { role: "image" as const } : {}),
     };
   });
+  // One probe for every measure's unit (#835).
+  const units = measureUnits(definition, bindings);
   return {
     definition,
     dependencies: row.release.dependencies as {
@@ -128,7 +131,7 @@ export async function publishedModel(
         const { id, name } = measure;
         const requiredDimensions = measureRequiredDimensions(definition, [id]);
         const perDateDimensions = measurePerDateDimensions(definition, [id]);
-        const unit = measureUnitOf(definition, bindings, id);
+        const unit = units.get(id);
         return {
           id,
           name,
@@ -145,25 +148,36 @@ export async function publishedModel(
   };
 }
 /**
- * The unit a measure's cells carry (#835), by the model's static probe of
- * its published schema; undefined for none, or when the probe refuses it
- * (a query then says why).
+ * The unit each of a model's measures carries (#835), by the model's
+ * static type probe of its published schema: one probe for every measure;
+ * only when it refuses one, each on its own. An amount of money reads
+ * "currency": screens show its currency, never a unit's words. Undefined:
+ * none, or a measure the probe refuses (a query then says why).
  */
-function measureUnitOf(
+export function measureUnits(
   definition: SemanticModelDefinition,
   bindings: Record<string, DataField[]>,
-  id: string,
-): string | undefined {
+  probe: typeof measureTypeProbe = measureTypeProbe,
+): Map<string, string | undefined> {
+  const tables = new Map(
+    Object.entries(bindings).map(([dataset, fields]) => [dataset, { fields }]),
+  );
+  const ids = definition.measures.map((measure) => measure.id);
+  const unitOf = (cell: DataCell | undefined) =>
+    cell?.currency || cell?.unit === "currency" ? "currency" : cell?.unit;
   try {
-    const tables = new Map(
-      Object.entries(bindings).map(([dataset, fields]) => [
-        dataset,
-        { fields },
-      ]),
-    );
-    return measureTypeProbe(definition, tables, [id]).get(id)?.unit;
+    const cells = probe(definition, tables, ids);
+    return new Map(ids.map((id) => [id, unitOf(cells.get(id))]));
   } catch {
-    return undefined;
+    return new Map(
+      ids.map((id) => {
+        try {
+          return [id, unitOf(probe(definition, tables, [id]).get(id))];
+        } catch {
+          return [id, undefined];
+        }
+      }),
+    );
   }
 }
 export async function publishedModels(
