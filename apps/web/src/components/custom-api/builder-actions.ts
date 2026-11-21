@@ -167,6 +167,29 @@ export function afterSecretsSent(
 }
 
 /**
+ * Moving to a step as the builder does it: enterStep, then the Login
+ * warning and the typed inputs after the answer (afterSecretsSent).
+ */
+export async function moveToStep(
+  api: BuilderClient,
+  input: Parameters<typeof enterStep>[1],
+  wasLost: boolean,
+): Promise<
+  Awaited<ReturnType<typeof enterStep>> & {
+    clearInputs: boolean;
+    warning: boolean;
+  }
+> {
+  const entered = await enterStep(api, input);
+  const after = afterSecretsSent(entered, wasLost);
+  return {
+    ...entered,
+    clearInputs: after.clearInputs,
+    warning: after.secretsLost,
+  };
+}
+
+/**
  * The typed secrets the definition still declares (its credentials and
  * secret variables), without empty ones; null when there are none. A value
  * typed for a variable since unticked, renamed or removed is never sent:

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
 import type {
   CustomApiChange,
@@ -209,7 +209,10 @@ export function ConnectionUpdateReview({
       ? loginEntries(plan.login.method, variables, (n) => login(n as "apiKey"))
       : [];
 
+  // Only the plan of the environment chosen last is shown.
+  const planRequest = useRef(0);
   async function changeEnvironment(environmentId: string) {
+    const request = ++planRequest.current;
     setInputs((current) => ({ ...current, environmentId }));
     setError(null);
     try {
@@ -218,9 +221,10 @@ export function ConnectionUpdateReview({
         connectionId,
         environmentId,
       );
-      if (next) setPlan(next);
+      if (next && request === planRequest.current) setPlan(next);
     } catch (cause) {
-      setError(apiErrorMessage(cause, locale));
+      if (request === planRequest.current)
+        setError(apiErrorMessage(cause, locale));
     }
   }
 

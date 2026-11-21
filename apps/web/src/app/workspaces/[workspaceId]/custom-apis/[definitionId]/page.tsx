@@ -84,6 +84,12 @@ export default async function CustomApiPage({
           </p>
         </div>
         <div className="page-actions">
+          {canEdit && definition.currentVersion > 1 ? (
+            // Restore picks its version in the history below (plan Task 16).
+            <a className="button" href="#custom-api-history">
+              {t("history.restoreHeader")}
+            </a>
+          ) : null}
           <ExportDefinitionButton
             workspaceId={workspaceId}
             definitionId={definition.id}

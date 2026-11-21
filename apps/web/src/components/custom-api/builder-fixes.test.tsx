@@ -11,6 +11,7 @@ import {
   afterSecretsSent,
   builderErrorMessage,
   enterStep,
+  moveToStep,
   runTest,
   saveAndConnect,
   startSignIn,
@@ -506,5 +507,54 @@ describe("the login warning after a host change (#808 follow-up)", () => {
         secretsLost: true,
       },
     );
+  });
+
+  it("keeps the warning when moving on with part of the login typed again", async () => {
+    // The base URL moved: the draft forgot the password, and only the
+    // username was typed again. The builder's move stores the username,
+    // clears the inputs and still warns about the password.
+    const { api, raw } = client({ secretsSet: ["username"] });
+    const state = {
+      ...ready(),
+      auth: defaultAuth("basic"),
+      secretsSet: ["username", "password"],
+    };
+    const moved = await moveToStep(
+      api,
+      {
+        workspaceId: W,
+        draftId: D,
+        state,
+        target: "request",
+        secrets: { username: "fx-user" },
+      },
+      true,
+    );
+    expect(raw.updateDraft).toHaveBeenCalledWith(
+      W,
+      D,
+      expect.objectContaining({ secrets: { username: "fx-user" } }),
+    );
+    expect(moved).toMatchObject({
+      sent: true,
+      secretsLost: true,
+      clearInputs: true,
+      warning: true,
+    });
+    // Both typed again: the warning goes.
+    const whole = client({ secretsSet: ["username", "password"] });
+    await expect(
+      moveToStep(
+        whole.api,
+        {
+          workspaceId: W,
+          draftId: D,
+          state,
+          target: "request",
+          secrets: { username: "fx-user", password: "fx-pass-0001" },
+        },
+        true,
+      ),
+    ).resolves.toMatchObject({ clearInputs: true, warning: false });
   });
 });

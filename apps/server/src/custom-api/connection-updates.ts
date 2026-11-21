@@ -19,7 +19,10 @@ import type {
   CustomApiUpdatePlan,
   CustomApiDefinitionConnectionsResponse,
 } from "@netrics/contracts";
-import type { ConnectorRegistry } from "@netrics/connector-runtime";
+import type {
+  ConnectorRegistry,
+  ExecuteOptions,
+} from "@netrics/connector-runtime";
 import {
   readStoredCustomApiDefinition,
   upgradeCustomApiDefinition,
@@ -64,7 +67,9 @@ import {
 } from "../oauth/providers/custom.js";
 import type { OAuthTokenService } from "../oauth/tokens.js";
 import { canonicalJson } from "./canonical-json.js";
+import { checkCredentials } from "../connections/service.js";
 import { customApiEnvelope, customApiNeedsNoSecrets } from "./connections.js";
+import { connectorFor } from "./connectors.js";
 import { customApiCredentialNames } from "./drafts.js";
 
 // ----------------------------------------------------------------- the diff
@@ -293,6 +298,16 @@ const fail = (
   } = {},
 ) => ({ ok: false as const, status, error, ...extra });
 
+interface Decision extends Loaded {
+  pinned: NonNullable<ConnectionWithState["customApi"]>;
+  environmentId: string;
+  config: Record<string, string>;
+  diff: ReturnType<typeof diffCustomApiVersions>;
+  /** The envelope to seal; undefined keeps the stored one. */
+  sealed: Record<string, unknown> | null | undefined;
+  login: "kept" | "replaced" | "dropped" | "none";
+}
+
 interface Loaded {
   existing: ConnectionWithState;
   current: CustomApiDefinitionWithVersion;
@@ -306,6 +321,10 @@ export function createCustomApiConnectionUpdateService(deps: {
   credentialKeyring: CredentialKeyring;
   limits: CustomApiInstanceConfig;
   oauthTokens?: OAuthTokenService;
+  /** Self-host only (NETRICS_CUSTOM_API_PRIVATE_HOSTS). */
+  privateHosts: readonly string[];
+  /** Tests only: egress options of the login check. */
+  executeOptions?: ExecuteOptions;
 }) {
   const inWorkspace = <T>(
     actor: CustomApiUpdateActor,
@@ -384,6 +403,150 @@ export function createCustomApiConnectionUpdateService(deps: {
     }
   }
 
+  /**
+   * What an apply does, computed from the connection as it is now: the
+   * pin, the config, the envelope to seal (undefined: keep) and what
+   * happens to the login. Pure over the database read; writes nothing.
+   */
+  async function decide(
+    tx: Transaction,
+    actor: CustomApiUpdateActor,
+    connectionId: string,
+    body: CustomApiUpdateApplyRequest,
+  ): Promise<CustomApiUpdateResult<Decision>> {
+    const loaded = await load(tx, actor, connectionId);
+    if (!loaded.ok) {
+      // Updated meanwhile to the current version: nothing to apply.
+      return loaded.error === "custom_api_update_none" && loaded.status === 404
+        ? fail(409, "custom_api_update_stale")
+        : loaded;
+    }
+    const { existing, current, from, to } = loaded.value;
+    const pinned = existing.customApi!;
+    if (
+      pinned.versionId !== body.basis ||
+      current.version.id !== body.toVersionId
+    )
+      return fail(409, "custom_api_update_stale", {
+        plan: planOf(loaded.value, body.environmentId),
+      });
+    const environmentId = body.environmentId ?? pinned.environmentId;
+    const variables = body.variables ?? {};
+    const secrets = body.secrets ?? {};
+    const plainIds = to.variables.filter((v) => !v.secret).map((v) => v.id);
+    const secretIds = to.variables.filter((v) => v.secret).map((v) => v.id);
+    if (Object.keys(variables).some((id) => !plainIds.includes(id)))
+      return fail(400, "custom_api_variables_invalid");
+    const config: Record<string, string> = {};
+    const stored = plainValues(existing);
+    for (const id of plainIds) {
+      const value = variables[id] || stored[id];
+      if (value) config[id] = value;
+    }
+    const diff = diffCustomApiVersions(from, to, {
+      environmentId: pinned.environmentId,
+      targetEnvironmentId: environmentId,
+      variables: config,
+    });
+    const blockers = diff.blockers.filter(
+      (blocker) =>
+        !(
+          blocker.code === "variable_required" &&
+          blocker.secret &&
+          secrets[blocker.variable]
+        ),
+    );
+    if (blockers.length)
+      return fail(400, "custom_api_update_blocked", { blockers });
+
+    // The login.
+    const oauth = isCustomOAuthAuth(to.auth);
+    const credentialNames = customApiCredentialNames(to.auth);
+    if (
+      Object.keys(secrets).some(
+        (name) =>
+          oauth ||
+          !(credentialNames.includes(name) || secretIds.includes(name)),
+      )
+    )
+      return fail(400, "custom_api_credentials_invalid");
+    const envelope = openEnvelope(actor, existing);
+    const pick = (source: Record<string, unknown>, names: readonly string[]) =>
+      Object.fromEntries(
+        names.flatMap((name) =>
+          typeof source[name] === "string" ? [[name, source[name]]] : [],
+        ),
+      ) as Record<string, string>;
+    // What the stored envelope really is bound to decides, not only
+    // the documents.
+    const targetBinding = loginBinding(to, environmentId)!;
+    const holds =
+      envelope !== null &&
+      diff.login.carriesOver &&
+      (oauth
+        ? customOAuthBindingHolds(
+            envelope as { host: string; hosts: string[] },
+            customOAuthBinding(to, environmentId),
+          )
+        : envelope.host === targetBinding.host);
+    let sealed: Record<string, unknown> | null | undefined; // undefined: keep
+    let login: "kept" | "replaced" | "dropped" | "none";
+    if (customApiNeedsNoSecrets(to)) {
+      sealed = null;
+      login = "none";
+    } else if (oauth) {
+      sealed = holds ? undefined : null;
+      login = holds ? "kept" : "dropped";
+    } else {
+      const storedVariables =
+        holds && envelope && typeof envelope.variables === "object"
+          ? (envelope.variables as Record<string, unknown>)
+          : {};
+      const base = holds ? envelope! : {};
+      const credentials = {
+        ...pick(base, credentialNames),
+        ...pick(secrets, credentialNames),
+      };
+      const secretValues = {
+        ...pick(storedVariables, secretIds),
+        ...pick(secrets, secretIds),
+      };
+      if (!holds && Object.keys(secrets).length === 0) {
+        sealed = null;
+        login = "dropped";
+      } else {
+        sealed = customApiEnvelope(
+          to,
+          environmentId,
+          credentials,
+          secretValues,
+        );
+        if (sealed === undefined)
+          return fail(400, "custom_api_credentials_invalid");
+        // Stored credentials overwritten count as replaced.
+        login =
+          holds && !credentialNames.some((name) => Object.hasOwn(secrets, name))
+            ? "kept"
+            : "replaced";
+      }
+    }
+    return {
+      ok: true,
+      value: {
+        existing,
+        current,
+        from,
+        to,
+        environmentId,
+        config,
+        diff,
+        sealed,
+        login,
+        pinned,
+      },
+    };
+  }
+
   return {
     /** GET …/connections/:id/custom-api-update */
     plan(
@@ -407,7 +570,49 @@ export function createCustomApiConnectionUpdateService(deps: {
       CustomApiUpdateResult<ReturnType<typeof presentConnectionDetail>>
     > {
       const binding = { workspaceId: actor.workspaceId, connectionId };
-      let afterCommit: (() => Promise<void>) | null = null;
+      // A login sent with the update is checked at the new hosts first, as
+      // a PATCH checks it, outside any lock (network); the apply then
+      // writes exactly the envelope that was checked.
+      let checked: string | null = null;
+      if (body.secrets && Object.keys(body.secrets).length > 0) {
+        const pre = await inWorkspace(actor, (tx) =>
+          decide(tx, actor, connectionId, body),
+        );
+        if (!pre.ok) return pre;
+        const { existing, current, environmentId, config, sealed } = pre.value;
+        if (sealed) {
+          const resolved = connectorFor(deps.registry, {
+            row: existing.row,
+            customApi: {
+              ...existing.customApi!,
+              versionId: current.version.id,
+              version: current.version.version,
+              environmentId,
+              document: current.version.document,
+              datasetVersions: current.version.datasetVersions as Record<
+                string,
+                number
+              >,
+            },
+          });
+          if (!resolved) return fail(409, "custom_api_definition_invalid");
+          const check = await checkCredentials(
+            resolved,
+            connectionId,
+            config,
+            sealed,
+            {
+              ...(deps.executeOptions
+                ? { executeOptions: deps.executeOptions }
+                : {}),
+              privateHosts: deps.privateHosts,
+            },
+          );
+          if (!check.ok) return fail(400, check.error);
+        }
+        checked = canonicalJson(sealed ?? null);
+      }
+      const after: { run: (() => Promise<void>) | null } = { run: null };
       const result = await inWorkspace(
         actor,
         async (
@@ -429,126 +634,25 @@ export function createCustomApiConnectionUpdateService(deps: {
               ),
             )
             .for("update");
-          const loaded = await load(tx, actor, connectionId);
-          if (!loaded.ok) {
-            // Updated meanwhile to the current version: nothing to apply.
-            return loaded.error === "custom_api_update_none" &&
-              loaded.status === 404
-              ? fail(409, "custom_api_update_stale")
-              : loaded;
-          }
-          const { existing, current, from, to } = loaded.value;
-          const pinned = existing.customApi!;
-          if (
-            pinned.versionId !== body.basis ||
-            current.version.id !== body.toVersionId
-          )
+          const decided = await decide(tx, actor, connectionId, body);
+          if (!decided.ok) return decided;
+          const {
+            existing,
+            current,
+            from,
+            to,
+            environmentId,
+            config,
+            diff,
+            sealed,
+            login,
+            pinned,
+          } = decided.value;
+          if (checked !== null && canonicalJson(sealed ?? null) !== checked)
+            // The login was checked against a state that changed since.
             return fail(409, "custom_api_update_stale", {
-              plan: planOf(loaded.value, body.environmentId),
+              plan: planOf(decided.value),
             });
-          const environmentId = body.environmentId ?? pinned.environmentId;
-          const variables = body.variables ?? {};
-          const secrets = body.secrets ?? {};
-          const plainIds = to.variables
-            .filter((v) => !v.secret)
-            .map((v) => v.id);
-          const secretIds = to.variables
-            .filter((v) => v.secret)
-            .map((v) => v.id);
-          if (Object.keys(variables).some((id) => !plainIds.includes(id)))
-            return fail(400, "custom_api_variables_invalid");
-          const config: Record<string, string> = {};
-          const stored = plainValues(existing);
-          for (const id of plainIds) {
-            const value = variables[id] || stored[id];
-            if (value) config[id] = value;
-          }
-          const diff = diffCustomApiVersions(from, to, {
-            environmentId: pinned.environmentId,
-            targetEnvironmentId: environmentId,
-            variables: config,
-          });
-          const blockers = diff.blockers.filter(
-            (blocker) =>
-              !(
-                blocker.code === "variable_required" &&
-                blocker.secret &&
-                secrets[blocker.variable]
-              ),
-          );
-          if (blockers.length)
-            return fail(400, "custom_api_update_blocked", { blockers });
-
-          // The login.
-          const oauth = isCustomOAuthAuth(to.auth);
-          const credentialNames = customApiCredentialNames(to.auth);
-          if (
-            Object.keys(secrets).some(
-              (name) =>
-                oauth ||
-                !(credentialNames.includes(name) || secretIds.includes(name)),
-            )
-          )
-            return fail(400, "custom_api_credentials_invalid");
-          const envelope = openEnvelope(actor, existing);
-          const pick = (
-            source: Record<string, unknown>,
-            names: readonly string[],
-          ) =>
-            Object.fromEntries(
-              names.flatMap((name) =>
-                typeof source[name] === "string" ? [[name, source[name]]] : [],
-              ),
-            ) as Record<string, string>;
-          // What the stored envelope really is bound to decides, not only
-          // the documents.
-          const targetBinding = loginBinding(to, environmentId)!;
-          const holds =
-            envelope !== null &&
-            diff.login.carriesOver &&
-            (oauth
-              ? customOAuthBindingHolds(
-                  envelope as { host: string; hosts: string[] },
-                  customOAuthBinding(to, environmentId),
-                )
-              : envelope.host === targetBinding.host);
-          let sealed: Record<string, unknown> | null | undefined; // undefined: keep
-          let login: "kept" | "replaced" | "dropped" | "none";
-          if (customApiNeedsNoSecrets(to)) {
-            sealed = null;
-            login = "none";
-          } else if (oauth) {
-            sealed = holds ? undefined : null;
-            login = holds ? "kept" : "dropped";
-          } else {
-            const storedVariables =
-              holds && envelope && typeof envelope.variables === "object"
-                ? (envelope.variables as Record<string, unknown>)
-                : {};
-            const base = holds ? envelope! : {};
-            const credentials = {
-              ...pick(base, credentialNames),
-              ...pick(secrets, credentialNames),
-            };
-            const secretValues = {
-              ...pick(storedVariables, secretIds),
-              ...pick(secrets, secretIds),
-            };
-            if (!holds && Object.keys(secrets).length === 0) {
-              sealed = null;
-              login = "dropped";
-            } else {
-              sealed = customApiEnvelope(
-                to,
-                environmentId,
-                credentials,
-                secretValues,
-              );
-              if (sealed === undefined)
-                return fail(400, "custom_api_credentials_invalid");
-              login = holds ? "kept" : "replaced";
-            }
-          }
 
           // A dropped OAuth grant (or one the new method no longer uses)
           // goes; its refresh token is revoked at the hosts it was entered
@@ -562,7 +666,7 @@ export function createCustomApiConnectionUpdateService(deps: {
                 : null;
             if (fresh && refreshToken && deps.oauthTokens) {
               const tokens = deps.oauthTokens;
-              afterCommit = async () => {
+              after.run = async () => {
                 await tokens.revokeCustomGrant(fresh.provider, refreshToken);
               };
             }
@@ -601,33 +705,38 @@ export function createCustomApiConnectionUpdateService(deps: {
             );
           const pending = existing.row.setupPending;
           if (login === "dropped") {
-            // Needs its login again: not scheduled until it is entered.
+            // Needs its login again: the scheduler skips auth_failed
+            // connections until it is entered.
             await tx
               .update(schema.connectionState)
               .set({ authState: "auth_failed", authReason: null })
               .where(stateScope(actor.workspaceId, connectionId));
-          } else if (login === "replaced") {
+          } else if (login === "replaced" || login === "none") {
+            // A checked new login, or a version that needs none: healthy.
             await resetConnectionAuth(tx, actor.workspaceId, connectionId, {
               schedule: !pending,
             });
           }
-          await tx
-            .update(schema.connectionState)
-            .set({
-              // The definition's refresh interval when it changed; a
-              // connection's own interval stays otherwise.
-              ...(scheduleChanged
-                ? {
-                    pollIntervalSeconds:
-                      Math.max(
-                        to.defaults.refreshMinutes,
-                        deps.limits.minRefreshMinutes,
-                      ) * 60,
-                  }
-                : {}),
-              ...(pending ? {} : { nextDueAt: sql`now()` }),
-            })
-            .where(stateScope(actor.workspaceId, connectionId));
+          const schedule = {
+            // The definition's refresh interval when it changed; a
+            // connection's own interval stays otherwise.
+            ...(scheduleChanged
+              ? {
+                  pollIntervalSeconds:
+                    Math.max(
+                      to.defaults.refreshMinutes,
+                      deps.limits.minRefreshMinutes,
+                    ) * 60,
+                }
+              : {}),
+            // A connection whose setup is pending stays unscheduled.
+            ...(pending ? {} : { nextDueAt: sql`now()` }),
+          };
+          if (Object.keys(schedule).length > 0)
+            await tx
+              .update(schema.connectionState)
+              .set(schedule)
+              .where(stateScope(actor.workspaceId, connectionId));
           await insertAuditEvent(tx, {
             workspaceId: actor.workspaceId,
             actorUserId: actor.callerId,
@@ -658,9 +767,7 @@ export function createCustomApiConnectionUpdateService(deps: {
           };
         },
       );
-      if (result.ok && afterCommit) {
-        await (afterCommit as () => Promise<void>)().catch(() => undefined);
-      }
+      if (result.ok && after.run) await after.run().catch(() => undefined);
       return result;
     },
 

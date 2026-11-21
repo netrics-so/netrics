@@ -34,7 +34,7 @@ import {
   defaultClient,
   draftReady,
   ensureDraft,
-  enterStep,
+  moveToStep,
   runTest,
   saveAndConnect,
   startSignIn,
@@ -260,21 +260,24 @@ export function CustomApiBuilder({
     setError(null);
     setPending("draft");
     try {
-      const entered = await enterStep(api, {
-        workspaceId,
-        draftId,
-        ...(definition ? { definitionId: definition.id } : {}),
-        state,
-        target,
-        createDraft: !editing,
-        secrets: secretInputs,
-      });
+      const entered = await moveToStep(
+        api,
+        {
+          workspaceId,
+          draftId,
+          ...(definition ? { definitionId: definition.id } : {}),
+          state,
+          target,
+          createDraft: !editing,
+          secrets: secretInputs,
+        },
+        secretsLost,
+      );
       if (entered.draftId) rememberDraft(entered.draftId);
       // Typed replacements were stored with the move; a loss in the same
       // update still warns.
-      const after = afterSecretsSent(entered, secretsLost);
-      if (after.clearInputs) setSecretInputs({});
-      setSecretsLost(after.secretsLost);
+      if (entered.clearInputs) setSecretInputs({});
+      setSecretsLost(entered.warning);
       setState(entered.state);
       setStep(target);
     } catch (cause) {

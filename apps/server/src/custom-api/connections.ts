@@ -30,6 +30,7 @@ import {
 import {
   countCustomApiConnections,
   enqueueJob,
+  findConnection,
   findCustomApiDefinition,
   findCustomApiDefinitionVersion,
   findProject,
@@ -280,6 +281,18 @@ export function prepareCustomApiUpdate(input: {
 
 type ConnectionDetail = ReturnType<typeof presentConnectionDetail>;
 
+/**
+ * A client change that can no longer be written as validated (the
+ * connection moved to another definition version meanwhile); thrown from
+ * `apply`, it rolls the transaction back and the PATCH answers 400 `code`.
+ */
+export class CustomOAuthClientChangeRefused extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = "CustomOAuthClientChangeRefused";
+  }
+}
+
 /** A validated client change, written inside the caller's transaction. */
 export interface CustomOAuthClientChange {
   /**
@@ -388,6 +401,16 @@ export async function prepareCustomOAuthClientChange(input: {
         ),
       )
       .for("update");
+    // The client is sealed for the hosts of the pin read before the lock;
+    // a definition update applied meanwhile moved them: nothing is written.
+    const now = await findConnection(tx, workspaceId, connectionId);
+    if (
+      now?.customApi?.versionId !== existing.customApi?.versionId ||
+      now?.customApi?.environmentId !== existing.customApi?.environmentId
+    )
+      throw new CustomOAuthClientChangeRefused(
+        "custom_api_credentials_host_changed",
+      );
     const fresh = await resolver.resolve(tx, binding);
     return { grant: locked?.oauth ?? null, fresh };
   };

@@ -80,6 +80,7 @@ export default async function ConnectionDetailPage({
   const health = await getT("health");
   const retentionT = await getT("connections.retention");
   const historyT = await getT("connections.history");
+  const loginT = await getT("customApi.connectionLogin");
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
     listWorkspaces(forwarded),
@@ -237,7 +238,7 @@ export default async function ConnectionDetailPage({
           </div>
         </div>
       ) : null}
-      {connection.setupPending ? (
+      {connection.setupPending && !customApi ? (
         <FinishSetup
           workspaceId={workspaceId}
           connection={connection}
@@ -320,7 +321,7 @@ export default async function ConnectionDetailPage({
             ) : canUpdate ? (
               <>
                 <a href={customApi ? "#custom-api-login" : "#edit-connection"}>
-                  {t("enterToken")}
+                  {customApi ? loginT("enterAgain") : t("enterToken")}
                 </a>{" "}
                 {t("enterTokenDetail")}
               </>

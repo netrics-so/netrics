@@ -380,7 +380,7 @@ export const customApiUpdateQuerySchema = z.object({
 export const customApiUpdateApplyRequestSchema = z.strictObject({
   basis: z.uuid(),
   toVersionId: z.uuid(),
-  environmentId: z.string().optional(),
+  environmentId: z.string().min(1).max(64).optional(),
   variables: z.record(z.string(), z.string().max(1000)).optional(),
   // The login method's credentials and/or secret variable values. As on a
   // draft, the Basic username and the OAuth client ID may be short; every

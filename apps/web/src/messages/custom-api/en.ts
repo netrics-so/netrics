@@ -342,6 +342,7 @@ export const customApiEn = {
       leave: "Leave the builder? Your test login is deleted after 24 hours.",
     },
     history: {
+      restoreHeader: "Restore a version",
       title: "Versions",
       byAt: "Version {version} · {author} · {time}",
       unknownAuthor: "Someone who left",
@@ -444,6 +445,7 @@ export const customApiEn = {
       back: "Back to the connection",
     },
     connectionLogin: {
+      enterAgain: "Enter the login again in the Login panel.",
       title: "Login",
       missing:
         "This connection has no login for its current version. Enter it again to continue syncing.",

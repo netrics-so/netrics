@@ -24,10 +24,20 @@ import {
   type CustomApiFixtureServer,
   type FixtureDefinitionName,
 } from "@netrics/connectors/custom-api/testing";
-import type { Job } from "@netrics/database";
+import { findConnection, withWorkspace, type Job } from "@netrics/database";
 
 import { createCredentialKeyring, decryptCredentials } from "./credentials.js";
+import {
+  prepareCustomOAuthClientChange,
+  type CustomOAuthClientChange,
+} from "./custom-api/connections.js";
+import { connectorFor } from "./custom-api/connectors.js";
 import { createJobHandlers } from "./jobs/handlers.js";
+import { OAuthProviders } from "./oauth/config.js";
+import {
+  createCustomOAuthResolver,
+  createOAuthTokenService,
+} from "./oauth/tokens.js";
 import {
   startCustomApiTestApp,
   type CustomApiTestApp,
@@ -182,6 +192,22 @@ const pinnedVersion = async (id: string) => {
     where c.id = ${id}`;
   return row!.version;
 };
+
+/** The owner's user id (the actor of direct service calls). */
+async function callerId() {
+  const [row] = await t.admin<{ id: string }[]>`
+    select id from users where email = 'updates-owner@example.com'`;
+  return row!.id;
+}
+
+/** The login outcome of the connection's latest update. */
+async function auditLogin(id: string) {
+  const [row] = await t.admin<{ login: string }[]>`
+    select metadata->>'login' as login from audit_events
+    where action = 'connection.custom_api_updated' and target = ${id}
+    order by created_at desc limit 1`;
+  return row?.login ?? null;
+}
 
 /** One more item field, so the update has a change. */
 const withField = (definition: CustomApiDefinition): CustomApiDefinition => ({
@@ -447,6 +473,16 @@ describe("custom API connection updates", () => {
     expect(
       (await apply(id, offer, { secrets: { apiKey: "abcd" } })).statusCode,
     ).toBe(400);
+    // Checked at the new host, as a PATCH is: a refused token changes
+    // nothing.
+    a.reset();
+    const refused = await apply(id, offer, {
+      secrets: { token: "wrong-token-0001" },
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(b.requests.length).toBeGreaterThan(0);
+    expect(await pinnedVersion(id)).toBe(1);
+    expect(a.requests).toHaveLength(0);
     const updated = await applied(id, offer, {
       secrets: { token: FIXTURE_SECRETS.token },
     });
@@ -455,6 +491,34 @@ describe("custom API connection updates", () => {
       host: new URL(b.origin).host,
       token: FIXTURE_SECRETS.token,
     });
+    expect(await auditLogin(id)).toBe("replaced");
+  });
+
+  it("audits a token sent on the same hosts as replaced", async () => {
+    const definition = await define(doc("bearer"));
+    const id = await connect(definition.id, LOGINS.bearer);
+    await save(definition.id, withField(doc("bearer")));
+    await applied(id, await plan(id), {
+      secrets: { token: FIXTURE_SECRETS.token },
+    });
+    expect(await auditLogin(id)).toBe("replaced");
+    expect(a.requests.length).toBeGreaterThan(0);
+  });
+
+  it("is healthy again on a version without a login", async () => {
+    const definition = await define(doc("bearer"));
+    const id = await connect(definition.id, LOGINS.bearer);
+    await save(definition.id, moved(doc("bearer"), b));
+    await applied(id, await plan(id));
+    expect((await authState(id)).auth_state).toBe("auth_failed");
+    await save(definition.id, {
+      ...moved(doc("bearer"), b),
+      auth: { type: "none" },
+    });
+    const updated = await applied(id, await plan(id));
+    expect(updated.customApi!.loginMissing).toBe(false);
+    expect((await authState(id)).auth_state).toBe("ok");
+    expect(await auditLogin(id)).toBe("none");
   });
 
   it("drops a login of another method", async () => {
@@ -601,5 +665,56 @@ describe("custom API connection updates with OAuth", () => {
     expect(started.statusCode, started.body).toBe(200);
     const start = startOAuthAuthorizationResponseSchema.parse(started.json());
     expect(new URL(start.authorizationUrl).origin).toBe(b.origin);
+  });
+  it("refuses a client change validated before an update moved the pin", async () => {
+    // The race of a client PATCH with an update apply: the change was
+    // prepared on version 1's hosts; the apply moved the connection to
+    // version 2 before the change took its locks.
+    const definition = await define(doc("oauth_code"));
+    const id = await connect(definition.id, client);
+    const before = await envelope(id);
+    const egress = {
+      tlsCa: `${a.ca!}\n${b.ca!}`,
+      allowPrivateHosts: ["127.0.0.1"],
+    };
+    const tokens = createOAuthTokenService({
+      db: t.db,
+      credentialKeyring: keyring,
+      providers: new OAuthProviders([]),
+      logger: pino({ level: "silent" }),
+      customOAuth: createCustomOAuthResolver({
+        credentialKeyring: keyring,
+        webOrigin: "http://localhost:3000",
+        egress,
+      }),
+    });
+    const actor = { workspaceId, callerId: await callerId() };
+    const existing = (await withWorkspace(t.db, actor, (tx) =>
+      findConnection(tx, workspaceId, id),
+    ))!;
+    const prepared = await prepareCustomOAuthClientChange({
+      db: t.db,
+      credentialKeyring: keyring,
+      oauthTokens: tokens,
+      actor,
+      existing,
+      resolved: connectorFor(new ConnectorRegistry(), existing)!,
+      credentials: { clientId: "other-client", clientSecret: "other-secret" },
+      privateHosts: [],
+    });
+    expect(prepared.ok).toBe(true);
+    await save(definition.id, moved(doc("oauth_code"), b));
+    await applied(id, await plan(id));
+    const dropped = await envelope(id);
+    await expect(
+      withWorkspace(t.db, actor, (tx) =>
+        (prepared as { ok: true; value: CustomOAuthClientChange }).value.apply(
+          tx,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "custom_api_credentials_host_changed" });
+    expect(await envelope(id)).toEqual(dropped);
+    expect(dropped).toBeNull();
+    expect(before).not.toBeNull();
   });
 });

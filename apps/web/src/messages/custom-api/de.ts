@@ -351,6 +351,7 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         "Baukasten verlassen? Deine Testanmeldung wird nach 24 Stunden gelöscht.",
     },
     history: {
+      restoreHeader: "Version wiederherstellen",
       title: "Versionen",
       byAt: "Version {version} · {author} · {time}",
       unknownAuthor: "Jemand, der nicht mehr da ist",
@@ -460,6 +461,7 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       back: "Zurück zur Verbindung",
     },
     connectionLogin: {
+      enterAgain: "Gib die Anmeldung im Bereich „Anmeldung“ neu ein.",
       title: "Anmeldung",
       missing:
         "Diese Verbindung hat keine Anmeldung für ihre aktuelle Version. Gib sie neu ein, damit die Synchronisierung weiterläuft.",
