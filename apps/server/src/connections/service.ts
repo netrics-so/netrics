@@ -56,6 +56,7 @@ import {
 } from "@netrics/domain";
 import {
   activeBackfillConnections,
+  connectionBackfillFailed,
   connectionBackfillState,
   datasetVersions,
   deleteConnection as deleteConnectionRow,
@@ -87,6 +88,7 @@ import {
   resetConnectionAuth,
   resourceNameKey,
   storedDatasetsMissingBackfill,
+  storedDeclaredDatasets,
   updateConnection as updateConnectionRow,
   withOAuthGrantLocks,
   withWorkspace,
@@ -223,14 +225,28 @@ export interface Actor {
 }
 
 export type Result<T> =
-  { ok: true; value: T } | { ok: false; status: 400 | 404; error: string };
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      status: 400 | 404;
+      error: string;
+      /**
+       * The stable reason of a refused credential check, when `error` is
+       * its English message and the reason is a known one (#795).
+       */
+      errorCode?: string;
+    };
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value };
 }
 
-function fail<T>(status: 400 | 404, error: string): Result<T> {
-  return { ok: false, status, error };
+function fail<T>(
+  status: 400 | 404,
+  error: string,
+  errorCode?: string,
+): Result<T> {
+  return { ok: false, status, error, ...(errorCode ? { errorCode } : {}) };
 }
 
 /** A "Reload history" result: also busy (409) and rate limited (429). */
@@ -337,7 +353,7 @@ export async function checkCredentials(
     );
     return check.ok
       ? ok(true)
-      : fail(400, check.message ?? "credential check failed");
+      : fail(400, check.message ?? "credential check failed", check.code);
   } catch (error) {
     // Thrown checks signal a provider-side failure (outage, rate limit); the
     // message is redacted at the runtime boundary already.
@@ -374,7 +390,7 @@ async function checkSignedKey(
     });
     return check.ok
       ? ok(true)
-      : fail(400, check.message ?? "credential check failed");
+      : fail(400, check.message ?? "credential check failed", check.code);
   } catch (error) {
     return signedKeyCallFailure(error);
   }
@@ -391,12 +407,9 @@ function signedKeyCallFailure<T>(error: unknown): Result<T> {
       "The provider's sign-in service could not be reached. Try again in a few minutes.",
     );
   }
-  return fail(
-    400,
-    error instanceof SignedKeyRejectedError
-      ? error.message
-      : safeMessage(error),
-  );
+  return error instanceof SignedKeyRejectedError
+    ? fail(400, error.message, error.code)
+    : fail(400, safeMessage(error));
 }
 
 /** Which key a signed-key view names: provider and non-secret fields. */
@@ -578,26 +591,62 @@ function reloadAvailableAt(at: Date | null): Date | null {
     : null;
 }
 
+/** What of a connection's history is known to be incomplete. */
+interface IncompleteHistory {
+  /** Declared datasets the connection stores without their whole history. */
+  datasets: string[];
+  /** The last backfill ended without reading its window (#787). */
+  backfillFailed: boolean;
+}
+
 /**
- * The declared datasets the connection stores and no backfill has read
- * (#617, #634). None while nothing is recorded (a connection from before
- * #617, recorded by its next sync), during setup, or without backfills.
+ * What of the connection's history is incomplete while no backfill waits
+ * or runs (`backfill` idle; a waiting one may still read it).
+ *
+ * - The last backfill ended without reading its window (#787), e.g. with
+ *   its retries used up: every declared dataset the connection stores is
+ *   incomplete, and so are its metrics, whatever earlier backfills read.
+ * - Else the declared datasets the connection stores and no backfill has
+ *   read (#617, #634). None while nothing is recorded (a connection from
+ *   before #617, recorded by its next sync).
+ *
+ * Nothing during setup, or for a connector without backfills.
  */
 async function incompleteHistory(
   tx: Transaction,
   loaded: ConnectionWithState,
+  backfill: "idle" | "queued" | "running",
   registry: ConnectorRegistry,
-): Promise<string[]> {
+): Promise<IncompleteHistory> {
   const { row, state } = loaded;
   const manifest = connectorFor(registry, loaded)?.manifest;
-  const recorded = state?.backfilledDatasets ?? null;
-  if (!recorded || row.setupPending || !manifest?.supportsBackfill) return [];
-  return storedDatasetsMissingBackfill(tx, {
+  if (row.setupPending || !manifest?.supportsBackfill) {
+    return { datasets: [], backfillFailed: false };
+  }
+  const scope = {
     workspaceId: row.workspaceId,
     connectionId: row.id,
     declared: datasetVersions(manifest.datasets),
-    backfilled: recorded,
-  });
+  };
+  if (
+    backfill === "idle" &&
+    (await connectionBackfillFailed(tx, row.workspaceId, row.id, state))
+  ) {
+    return {
+      datasets: await storedDeclaredDatasets(tx, scope),
+      backfillFailed: true,
+    };
+  }
+  const recorded = state?.backfilledDatasets ?? null;
+  return {
+    datasets: recorded
+      ? await storedDatasetsMissingBackfill(tx, {
+          ...scope,
+          backfilled: recorded,
+        })
+      : [],
+    backfillFailed: false,
+  };
 }
 
 /**
@@ -607,7 +656,7 @@ async function incompleteHistory(
 function historyView(
   loaded: ConnectionWithState,
   backfill: "idle" | "queued" | "running",
-  missing: string[],
+  incomplete: IncompleteHistory,
   registry: ConnectorRegistry,
   now: Date = new Date(),
 ): ConnectionHistory {
@@ -620,7 +669,8 @@ function historyView(
     supportsBackfill: manifest?.supportsBackfill === true,
     backfillDays: manifest?.backfillDays ?? 0,
     backfill,
-    incompleteDatasets: missing.map((key) => ({
+    backfillFailed: incomplete.backfillFailed,
+    incompleteDatasets: incomplete.datasets.map((key) => ({
       key,
       name: manifest?.datasets?.find((d) => d.key === key)?.name ?? key,
     })),
@@ -714,7 +764,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       });
       return check.ok
         ? ok(true)
-        : fail(400, check.message ?? "credential check failed");
+        : fail(400, check.message ?? "credential check failed", check.code);
     } catch (error) {
       // OAuthTokenError and connector failures carry redacted messages.
       return oauthCallFailure(error);
@@ -981,7 +1031,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         options,
       );
       if (!key.ok) {
-        return fail(400, key.message);
+        return fail(400, key.message, key.code);
       }
       const check = await checkSignedKey(
         registry,
@@ -1066,7 +1116,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       return null;
     }
     const key = signedKeys.parse(provider, credentials);
-    return key.ok ? ok(key.value) : fail(400, key.message);
+    return key.ok ? ok(key.value) : fail(400, key.message, key.code);
   }
 
   /** The decrypted credentials envelope of a connection, or a 400. */
@@ -1145,7 +1195,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     }
     const stored = signedKeys.parse(provider, envelope.value);
     if (!stored.ok) {
-      return fail(400, stored.message);
+      return fail(400, stored.message, stored.code);
     }
     const config = existing.row.config as Record<string, unknown>;
     let key = stored.value;
@@ -1164,12 +1214,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
       const additional = signedKeys.parseAdditional(key, id, raw);
       if (!additional.ok) {
-        return fail(400, additional.message);
+        return fail(400, additional.message, additional.code);
       }
       key = key.withAdditional(id, additional.value);
       const probed = await signedKeys.probeAdditional(key, id, config);
       if (!probed.ok) {
-        return fail(400, probed.message);
+        return fail(400, probed.message, probed.code);
       }
       changes.push({ key: id, change: had ? "replaced" : "added" });
     }
@@ -1246,7 +1296,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   ): Promise<Result<ConnectionPreviewResponse>> {
     const key = await signedKeys.validate(provider, credentials, config);
     if (!key.ok) {
-      return fail(400, key.message);
+      return fail(400, key.message, key.code);
     }
     const context = { connectionId: "preview", config };
     try {
@@ -2373,7 +2423,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.workspaceId,
           connectionId,
         );
-        const incomplete = await incompleteHistory(tx, loaded, registry);
+        const incomplete = await incompleteHistory(
+          tx,
+          loaded,
+          backfill,
+          registry,
+        );
         const freshness = await listConnectionFreshness(
           tx,
           actor.workspaceId,
@@ -2724,6 +2779,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             return fail(
               400,
               preview.value.check.message ?? "credential check failed",
+              preview.value.check.code,
             );
           const allowed = new Set([
             ...preview.value.resources.map((resource) => resource.id),

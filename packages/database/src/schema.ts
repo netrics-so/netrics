@@ -659,6 +659,14 @@ export const connectionState = pgTable(
     // succeeds and cleared when one fails. Null: no complete history is
     // known, so an empty window is never taken for a zero.
     historyFrom: timestamp("history_from", { withTimezone: true }),
+    // When an attempt of the connection's latest backfill failed (#787):
+    // set with every failed backfill run, cleared when a backfill succeeds.
+    // While no backfill waits or runs it says that the last one ended
+    // without reading its window (its retries used up): the history is
+    // incomplete until one succeeds. Kept apart from history_from, which is
+    // also null when the start is only unknown, and from the jobs and sync
+    // runs, which the history retention prunes.
+    backfillFailedAt: timestamp("backfill_failed_at", { withTimezone: true }),
     // When a member last asked to reload the history (#617): rate limit.
     historyReloadRequestedAt: timestamp("history_reload_requested_at", {
       withTimezone: true,
@@ -888,6 +896,10 @@ export const syncRuns = pgTable(
     errorClass: text("error_class"),
     // Already redacted by the writer; must never carry credential material.
     errorMessage: text("error_message"),
+    // The stable reason of the failure, when it has a known one (#795):
+    // clients translate by it; the message stays the English fallback. A
+    // fixed word such as "apple_ads.invalid_client", never provider text.
+    errorCode: text("error_code"),
     observationsWritten: integer("observations_written").notNull().default(0),
   },
   (table) => [
@@ -902,6 +914,10 @@ export const syncRuns = pgTable(
     check(
       "sync_runs_error_class_valid",
       sql`${table.errorClass} in ('auth', 'transient', 'contract', 'budget', 'rate_limited')`,
+    ),
+    check(
+      "sync_runs_error_code_valid",
+      sql`${table.errorCode} ~ '^[a-z0-9]+([._][a-z0-9]+)*$' and length(${table.errorCode}) <= 64`,
     ),
     index("sync_runs_connection_started_idx").on(
       table.connectionId,

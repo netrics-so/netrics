@@ -376,6 +376,11 @@ describe("Apple Ads connections", () => {
     expect(errorResponseSchema.parse(response.json()).error).toBe(
       INVALID_CLIENT_MESSAGE,
     );
+    // With its reason code, by which the web translates it (#795).
+    expect(response.json()).toEqual({
+      error: INVALID_CLIENT_MESSAGE,
+      errorCode: "apple_ads.invalid_client",
+    });
   });
 
   it("puts no client secret, private key or access token in responses, logs, job payloads or stored errors", async () => {

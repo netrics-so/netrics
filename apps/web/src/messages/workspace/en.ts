@@ -646,6 +646,10 @@ export const workspaceEn = {
         "The history of {datasets} is incomplete: it was added by a connector update and has only been collected since then. Reload the history to fill it.",
       incompleteReadOnly:
         "The history of {datasets} is incomplete: it was added by a connector update and has only been collected since then.",
+      failed:
+        "The history is incomplete: the last attempt to load it did not finish, so earlier days may be missing. Reload the history to read it again.",
+      failedReadOnly:
+        "The history is incomplete: the last attempt to load it did not finish, so earlier days may be missing.",
       availableAgain: "History can be reloaded again {when}.",
     },
     retention: {

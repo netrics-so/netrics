@@ -2,7 +2,7 @@ import { and, eq, exists, gt, inArray, max, sql } from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import { insertAuditEvent } from "./workspaces.js";
-import { requestConnectionBackfill } from "./jobs.js";
+import { latestBackfillFailed, requestConnectionBackfill } from "./jobs.js";
 import * as schema from "./schema.js";
 
 // Which of a connector's datasets a connection's backfill has read (#617).
@@ -75,6 +75,28 @@ async function storedSourceDatasets(
 }
 
 /**
+ * The declared datasets the connection stores, whatever the backfill record
+ * says: the ones a backfill that ended without reading its window (#787)
+ * left incomplete.
+ */
+export async function storedDeclaredDatasets(
+  tx: Transaction,
+  input: {
+    workspaceId: string;
+    connectionId: string;
+    declared: DatasetVersions;
+  },
+): Promise<string[]> {
+  const keys = Object.keys(input.declared).sort();
+  const stored = await storedSourceDatasets(tx, {
+    workspaceId: input.workspaceId,
+    connectionId: input.connectionId,
+    keys,
+  });
+  return keys.filter((key) => stored.has(key));
+}
+
+/**
  * Declared datasets the record does not cover and the connection stores
  * (#634): the ones a backfill should fill, and the connection page names.
  */
@@ -125,13 +147,40 @@ export async function connectionBackfillState(
 }
 
 /**
+ * Whether the connection's last backfill ended without reading its window
+ * (#787), e.g. with its retries used up: the history is incomplete until a
+ * backfill succeeds, whatever the backfill record says. Only meaningful
+ * while no backfill of the connection waits or runs (the caller checks): a
+ * waiting retry may still read it.
+ *
+ * The sync engine records every failed backfill attempt on the state row
+ * and clears it with the next succeeded backfill. A job that died without
+ * a failed run (a worker that stopped mid-run until the attempts were used
+ * up) counts while the job is kept and no history start is known.
+ */
+export async function connectionBackfillFailed(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  state: { backfillFailedAt: Date | null; historyFrom: Date | null } | null,
+): Promise<boolean> {
+  if (!state) return false;
+  if (state.backfillFailedAt !== null) return true;
+  return (
+    state.historyFrom === null &&
+    (await latestBackfillFailed(tx, workspaceId, connectionId))
+  );
+}
+
+/**
  * Whether a connection's source dataset may lack history (#635), for the
  * Data page and dashboard tiles that read it: a backfill of the connection
- * waits or runs, or the backfill record lacks the dataset at the schema
- * version its stored rows have (`schemaVersion`), e.g. after a connector
- * update added it and before a backfill read it. A connection without a
- * record (before #617, or a connector without backfills, which never
- * writes one) is complete unless a backfill waits or runs.
+ * waits or runs, the last one ended without reading its window (#787), or
+ * the backfill record lacks the dataset at the schema version its stored
+ * rows have (`schemaVersion`), e.g. after a connector update added it and
+ * before a backfill read it. A connection without a record (before #617,
+ * or a connector without backfills, which never writes one) is complete
+ * unless a backfill waits or runs, or the last one failed.
  */
 export async function sourceHistoryIncomplete(
   tx: Transaction,
@@ -146,6 +195,8 @@ export async function sourceHistoryIncomplete(
   const [state] = await tx
     .select({
       backfilled: schema.connectionState.backfilledDatasets,
+      backfillFailedAt: schema.connectionState.backfillFailedAt,
+      historyFrom: schema.connectionState.historyFrom,
       backfilling: exists(
         tx
           .select({ one: sql`1` })
@@ -169,6 +220,8 @@ export async function sourceHistoryIncomplete(
     );
   if (!state) return false;
   if (state.backfilling) return true;
+  if (await connectionBackfillFailed(tx, workspaceId, connectionId, state))
+    return true;
   return (
     state.backfilled !== null &&
     state.backfilled[input.key] !== input.schemaVersion

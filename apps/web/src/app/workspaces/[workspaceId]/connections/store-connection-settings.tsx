@@ -12,6 +12,7 @@ import { AppPicker } from "./app-picker";
 import { ConfigFields } from "./config-fields";
 import {
   apiErrorMessage,
+  providerFailureMessage,
   previewStoredConnection,
   updateConnection,
 } from "@/lib/api";
@@ -168,7 +169,7 @@ export function StoreConnectionSettings({
           className={preview.check.ok ? "notice" : "error"}
           role={preview.check.ok ? "status" : "alert"}
         >
-          {preview.check.message ??
+          {providerFailureMessage(preview.check, locale) ??
             (preview.check.ok ? t("accessOk") : t("accessFailed"))}
         </div>
       ) : null}

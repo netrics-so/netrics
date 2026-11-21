@@ -138,6 +138,7 @@ import {
   deleteConnectionResponseSchema,
   enqueueSyncResponseSchema,
   historyReloadResponseSchema,
+  connectionErrorResponseSchema,
   errorResponseSchema,
   healthLiveResponseSchema,
   healthReadyResponseSchema,
@@ -225,7 +226,7 @@ import {
   type UpdateThemeRequest,
 } from "@netrics/contracts";
 import {
-  localizedProviderMessage,
+  localizedProviderFailure,
   type Locale,
   type MessageKey,
 } from "@netrics/domain";
@@ -250,7 +251,11 @@ export class ApiError extends Error {
     public readonly details: Omit<
       ThemeErrorResponse & DataErrorResponse & StoreTemplateErrorDetails,
       "error"
-    > & { usedBy?: DataUsers } = {},
+    > & {
+      usedBy?: DataUsers;
+      /** The reason code of a refused credential check (#795). */
+      errorCode?: string;
+    } = {},
   ) {
     super(code);
     this.name = "ApiError";
@@ -304,14 +309,37 @@ export function apiErrorMessage(error: unknown, locale: Locale): string {
       return t.has(code) ? t(code) : t("requestFailed", { code });
     }
     // Connector check/preview failures arrive as human-readable,
-    // already-redacted messages rather than snake_case codes; a provider's
-    // refusal the catalog knows is shown in the viewer's language (#378).
-    return localizedProviderMessage(error.code, locale) ?? error.code;
+    // already-redacted messages rather than snake_case codes. A refusal
+    // with a reason code is shown in the viewer's language (#795).
+    return providerFailureMessage(
+      { code: error.details.errorCode, message: error.code },
+      locale,
+    );
   }
   if (error instanceof ZodError) {
     return t("invalidInput");
   }
   return error instanceof Error ? error.message : t("generic");
+}
+
+/**
+ * A provider's failure for the user (#795): the text of its reason code in
+ * their language; without a known code the recorded English message (found
+ * in the catalog by its exact text if it was recorded before codes, #378).
+ */
+export function providerFailureMessage(
+  failure: { code?: string | null | undefined; message: string },
+  locale: Locale,
+): string;
+export function providerFailureMessage(
+  failure: { code?: string | null | undefined; message?: string | null },
+  locale: Locale,
+): string | null;
+export function providerFailureMessage(
+  failure: { code?: string | null | undefined; message?: string | null },
+  locale: Locale,
+): string | null {
+  return localizedProviderFailure(failure, locale) ?? failure.message ?? null;
 }
 
 async function readErrorCode(response: Response): Promise<string> {
@@ -326,7 +354,10 @@ async function readErrorCode(response: Response): Promise<string> {
 const detailedErrorResponseSchema = themeErrorResponseSchema
   .extend(dataErrorResponseSchema.shape)
   .extend(storeTemplateDashboardErrorSchema.shape)
-  .extend({ usedBy: dataUsersSchema.optional() });
+  .extend({
+    usedBy: dataUsersSchema.optional(),
+    errorCode: connectionErrorResponseSchema.shape.errorCode,
+  });
 
 export async function readError(response: Response): Promise<ApiError> {
   try {

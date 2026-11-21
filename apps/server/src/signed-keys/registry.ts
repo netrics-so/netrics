@@ -4,6 +4,7 @@ import {
   createEgressFetch,
   redactCredentialValues,
 } from "@netrics/connector-runtime";
+import { isErrorCode } from "@netrics/connector-sdk";
 import type {
   ConnectorFetchInit,
   ConnectorManifest,
@@ -70,14 +71,18 @@ export const signedKeyProviderHttp: SignedKeyHttpFactory =
  */
 export class SignedKeyExchangeError extends Error {
   readonly kind: "rejected" | "transient" | "configuration";
+  /** The provider's reason code of a `rejected` exchange (#795). */
+  readonly code: string | undefined;
 
   constructor(
     kind: "rejected" | "transient" | "configuration",
     message: string,
+    code?: string,
   ) {
     super(message);
     this.name = "SignedKeyExchangeError";
     this.kind = kind;
+    this.code = code;
   }
 }
 
@@ -385,7 +390,11 @@ export class SignedKey {
       );
     }
     if (REJECTED_CLIENT_CODES.has(code)) {
-      throw new SignedKeyExchangeError("rejected", exchange.invalidClient);
+      throw new SignedKeyExchangeError(
+        "rejected",
+        exchange.invalidClient,
+        exchange.invalidClientCode,
+      );
     }
     throw new SignedKeyExchangeError(
       "configuration",
@@ -407,6 +416,8 @@ export type SignedKeyResult<T> =
   | {
       ok: false;
       message: string;
+      /** The stable reason of a refusal, when it has a known one (#795). */
+      code?: string;
       /**
        * A probe could not ask the provider (rate limit, outage, network):
        * nothing was decided about the key, and trying again may pass.
@@ -684,12 +695,19 @@ export class SignedKeyProviders {
         exchanged = (await key.exchangeAccessToken()).accessToken;
         tokens.push(exchanged);
       } catch (error) {
+        if (
+          error instanceof SignedKeyExchangeError &&
+          error.kind === "rejected"
+        ) {
+          return {
+            ok: false,
+            message: error.message,
+            ...(error.code ? { code: error.code } : {}),
+          };
+        }
         return {
           ok: false,
-          message:
-            error instanceof SignedKeyExchangeError && error.kind === "rejected"
-              ? error.message
-              : `${provider.name} could not be reached to check the key. Try again in a few minutes.`,
+          message: `${provider.name} could not be reached to check the key. Try again in a few minutes.`,
         };
       }
     }
@@ -721,6 +739,11 @@ export class SignedKeyProviders {
         return {
           ok: false,
           message: redact(result.message),
+          // A code that holds a credential value or a minted token is
+          // dropped whole, like the runtime does for connector codes.
+          ...(isErrorCode(result.code) && redact(result.code) === result.code
+            ? { code: result.code }
+            : {}),
           ...(result.retry ? { retry: true as const } : {}),
         };
       }

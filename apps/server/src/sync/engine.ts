@@ -12,6 +12,8 @@ import {
   type ExecuteOptions,
 } from "@netrics/connector-runtime";
 import {
+  ConnectorError,
+  isErrorCode,
   observationKey,
   RateLimitedError,
   type ConnectionContext,
@@ -229,6 +231,20 @@ interface StateRow {
 function safeMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return String(redactSecrets(message)).slice(0, 500);
+}
+
+/**
+ * The stable reason code of a failure, stored next to its message (#795):
+ * a refused signed key's (the provider definition names it) or a
+ * connector's (ConnectorError, SDK 0.2.18). Null for any other error, and
+ * for a code that is not well formed: a code is a fixed word, never text.
+ */
+function errorCodeOf(error: unknown): string | null {
+  const code =
+    error instanceof SignedKeyRejectedError || error instanceof ConnectorError
+      ? error.code
+      : undefined;
+  return isErrorCode(code) ? code : null;
 }
 
 function iso(date: Date): string {
@@ -570,6 +586,7 @@ async function runSync(
     envelopeDigest?: string | null,
   ): Promise<void> => {
     const message = safeMessage(error);
+    const errorCode = errorCodeOf(error);
     try {
       await withWorkspace(appDb, { workspaceId }, async (tx) => {
         let replaced = false;
@@ -605,6 +622,7 @@ async function runSync(
           finishedAt: new Date(),
           errorClass,
           errorMessage: message,
+          errorCode,
           observationsWritten: progress.observationsWritten,
         });
         const statePatch = {
@@ -618,8 +636,11 @@ async function runSync(
                   ? { authState: "outage", authReason: null }
                   : {}),
           // A backfill that failed read part of its window at most: no
-          // history start is claimed until one succeeds (#378).
-          ...(mode === "backfill" ? { historyFrom: null } : {}),
+          // history start is claimed until one succeeds (#378), and the
+          // history counts as incomplete once no attempt is left (#787).
+          ...(mode === "backfill"
+            ? { historyFrom: null, backfillFailedAt: new Date() }
+            : {}),
         };
         // A refusal of a replaced client is no failure of the connection
         // as it is now: its failure count stays as the change left it, so
@@ -650,7 +671,10 @@ async function runSync(
         "failed to record sync failure",
       );
     }
-    log.warn({ errorClass, err: message }, "sync run failed");
+    log.warn(
+      { errorClass, ...(errorCode ? { errorCode } : {}), err: message },
+      "sync run failed",
+    );
   };
 
   /**
@@ -1079,7 +1103,11 @@ async function runSync(
     throw error;
   }
   if (!check.ok) {
-    const error = new Error(check.message ?? "credential check failed");
+    // The check's reason code is recorded with its message (#795).
+    const message = check.message ?? "credential check failed";
+    const error = isErrorCode(check.code)
+      ? new ConnectorError(message, check.code)
+      : new Error(message);
     await recordFailure("auth", error);
     throw new TerminalJobError(safeMessage(error));
   }
@@ -1404,7 +1432,9 @@ async function runSync(
     // A succeeded backfill read its whole window: the connection's history
     // starts there (#378), for empty widget windows that read 0.
     const historyRecord =
-      mode === "backfill" ? { historyFrom: window.from } : {};
+      mode === "backfill"
+        ? { historyFrom: window.from, backfillFailedAt: null }
+        : {};
     await ingestTransaction(async (tx) => {
       const observationsWritten =
         progress.observationsWritten +

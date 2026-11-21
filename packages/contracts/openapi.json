@@ -97707,6 +97707,11 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                     }
                   },
                   "required": [
@@ -98634,6 +98639,11 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                     }
                   },
                   "required": [
@@ -98788,6 +98798,11 @@
                         "message": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "code": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                         }
                       },
                       "required": [
@@ -98848,6 +98863,11 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                     }
                   },
                   "required": [
@@ -99528,6 +99548,18 @@
                               "null"
                             ]
                           },
+                          "errorCode": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 64,
+                                "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "observationsWritten": {
                             "type": "integer",
                             "minimum": 0,
@@ -99547,6 +99579,7 @@
                           "finishedAt",
                           "errorClass",
                           "errorMessage",
+                          "errorCode",
                           "observationsWritten"
                         ],
                         "additionalProperties": false
@@ -99570,6 +99603,9 @@
                             "queued",
                             "running"
                           ]
+                        },
+                        "backfillFailed": {
+                          "type": "boolean"
                         },
                         "incompleteDatasets": {
                           "type": "array",
@@ -100380,6 +100416,11 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                     }
                   },
                   "required": [
@@ -101276,6 +101317,11 @@
                         "message": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "code": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                         }
                       },
                       "required": [
@@ -101351,6 +101397,11 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                     }
                   },
                   "required": [
@@ -101531,6 +101582,11 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                     }
                   },
                   "required": [
@@ -101654,6 +101710,11 @@
                         "message": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "code": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                         }
                       },
                       "required": [
@@ -101741,6 +101802,11 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                     }
                   },
                   "required": [
@@ -102254,6 +102320,11 @@
                     "error": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "errorCode": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9]+(?:[._][a-z0-9]+)*$"
                     }
                   },
                   "required": [

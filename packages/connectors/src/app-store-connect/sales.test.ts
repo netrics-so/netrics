@@ -873,19 +873,22 @@ describe("backfill", () => {
     // 12 calendar months, far below the engine's 100-page bound and within
     // a tenth of Apple's 3,500 requests per hour.
     expect(run.pages).toHaveLength(12);
-    expect(run.pages.slice(0, -1).map((page) => page.nextCursor)).toEqual([
-      "2025-11-01T00:00:00.000Z",
-      "2025-12-01T00:00:00.000Z",
-      "2026-01-01T00:00:00.000Z",
-      "2026-02-01T00:00:00.000Z",
-      "2026-03-01T00:00:00.000Z",
-      "2026-04-01T00:00:00.000Z",
-      "2026-05-01T00:00:00.000Z",
-      "2026-06-01T00:00:00.000Z",
-      "2026-07-01T00:00:00.000Z",
-      "2026-08-01T00:00:00.000Z",
-      "2026-09-01T00:00:00.000Z",
-    ]);
+    // Page cursors carry where the run started reading (#765).
+    expect(run.pages.slice(0, -1).map((page) => page.nextCursor)).toEqual(
+      [
+        "2025-11-01T00:00:00.000Z",
+        "2025-12-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.000Z",
+        "2026-02-01T00:00:00.000Z",
+        "2026-03-01T00:00:00.000Z",
+        "2026-04-01T00:00:00.000Z",
+        "2026-05-01T00:00:00.000Z",
+        "2026-06-01T00:00:00.000Z",
+        "2026-07-01T00:00:00.000Z",
+        "2026-08-01T00:00:00.000Z",
+        "2026-09-01T00:00:00.000Z",
+      ].map((at) => `${at}|2025-10-01T00:00:00.000Z`),
+    );
     const timestamps = run.observations.map(
       (observation) => observation.sourceTimestamp,
     );
@@ -1238,6 +1241,77 @@ describe("incremental syncs and the two meanings of 404", () => {
         "2026-09-30T00:00:00.000Z",
       ]),
     );
+  });
+
+  it("re-reads the lookback after resuming a checkpoint older than the window (#758)", async () => {
+    // A connection that never succeeded, whose backfill died after a page:
+    // the next incremental run gets the host's default window and the
+    // backfill's checkpoint (a bare instant before #765).
+    const result = await connector(AFTERNOON).sync(
+      CONTEXT,
+      request("2026-09-30T20:00:00.000Z", new Date(AFTERNOON).toISOString(), {
+        ...selection,
+        cursor: "2026-09-10T00:00:00.000Z",
+      }),
+      fake({ reports }).runtime,
+    );
+    expect(result.done).toBe(true);
+    expect(
+      result.observations.map((o) => o.sourceTimestamp).toSorted()[0],
+    ).toBe("2026-09-10T00:00:00.000Z");
+    // The next run starts the lookback days back, not at this window's
+    // `from` (30 September).
+    expect(result.nextFrom).toBe("2026-09-28T00:00:00.000Z");
+    expect(result.nextCursor).toBe("2026-09-28T00:00:00.000Z");
+  });
+
+  it("re-reads the lookback when a resumed run pages past a month start inside it (#765)", async () => {
+    // 3 October, after noon PT: 2 October is the newest published day.
+    const now = Date.parse("2026-10-03T20:00:00.000Z");
+    const window = (cursor: string) =>
+      request("2026-10-02T20:00:00.000Z", new Date(now).toISOString(), {
+        ...selection,
+        cursor,
+      });
+    // The final page starts on 1 October, inside the lookback days: 30
+    // September was read by the page before it.
+    for (const cursor of [
+      // A checkpoint from before #765, and one that carries its run start.
+      "2026-09-10T00:00:00.000Z",
+      "2026-09-10T00:00:00.000Z|2026-08-15T00:00:00.000Z",
+    ]) {
+      const run = await runAll(
+        (next) =>
+          connector(now).sync(
+            CONTEXT,
+            window(next ?? cursor),
+            fake({ reports }).runtime,
+          ),
+        cursor,
+      );
+      expect(run.pages.map((page) => page.done)).toEqual([false, true]);
+      expect(run.pages[0]!.nextCursor).toBe(
+        `2026-10-01T00:00:00.000Z|${cursor.split("|").at(-1)}`,
+      );
+      // 3 October − INCREMENTAL_LOOKBACK_DAYS, not the last page's start.
+      expect(run.pages[1]!.nextFrom).toBe("2026-09-30T00:00:00.000Z");
+      expect(run.pages[1]!.nextCursor).toBe("2026-09-30T00:00:00.000Z");
+    }
+    // The last page resumed alone by a later run keeps the floor …
+    const carried = await connector(now).sync(
+      CONTEXT,
+      window("2026-10-01T00:00:00.000Z|2026-09-10T00:00:00.000Z"),
+      fake({ reports }).runtime,
+    );
+    expect(carried.done).toBe(true);
+    expect(carried.nextFrom).toBe("2026-09-30T00:00:00.000Z");
+    // … which a bare checkpoint at the same position does not have.
+    const bare = await connector(now).sync(
+      CONTEXT,
+      window("2026-10-01T00:00:00.000Z"),
+      fake({ reports }).runtime,
+    );
+    expect(bare.nextFrom).toBe("2026-10-01T00:00:00.000Z");
   });
 
   it("does nothing for a window that holds no reporting day yet", async () => {

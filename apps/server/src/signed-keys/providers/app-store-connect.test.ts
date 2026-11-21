@@ -110,6 +110,8 @@ describe("App Store Connect validation probes", () => {
     const { asc, validate } = setup([{ ...member, key: p256KeyPair() }]);
     const result = await validate(member);
     expect(messageOf(result)).toBe(KEY_MISMATCH_MESSAGE);
+    // The refusal's reason code, by which clients translate it (#795).
+    expect(result).toMatchObject({ code: "app_store_connect.key_mismatch" });
     expect(asc.requests).toHaveLength(1);
 
     const revoked = team({ revoked: true });
@@ -122,6 +124,7 @@ describe("App Store Connect validation probes", () => {
     const member = team({ role: "developer" });
     const result = await setup([member]).validate(member);
     expect(messageOf(result)).toBe(ROLE_MESSAGE);
+    expect(result).toMatchObject({ code: "app_store_connect.role_missing" });
     expect(ROLE_MESSAGE).toMatch(/Sales or Finance role/);
   });
 

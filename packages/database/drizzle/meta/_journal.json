@@ -645,6 +645,20 @@
       "when": 1795272906041,
       "tag": "0091_custom_api_stream_records",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795293562307,
+      "tag": "0092_backfill_failed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1795302046644,
+      "tag": "0093_sync_run_error_code",
+      "breakpoints": true
     }
   ]
 }

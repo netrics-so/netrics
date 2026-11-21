@@ -260,11 +260,13 @@ describe("vercel connector", () => {
       from: "2024-10-15T08:00:00.000Z",
       to: "2024-12-31T12:00:00.000Z",
     });
+    // Page cursors carry where the run started reading (#765).
     expect(pages.map((page) => page.nextCursor)).toEqual([
-      "2024-11-01T00:00:00.000Z",
-      "2024-12-01T00:00:00.000Z",
+      "2024-11-01T00:00:00.000Z|2024-10-15T00:00:00.000Z",
+      "2024-12-01T00:00:00.000Z|2024-10-15T00:00:00.000Z",
       "2024-12-30T00:00:00.000Z",
     ]);
+    expect(pages.at(-1)!.nextFrom).toBe("2024-12-30T00:00:00.000Z");
     const days = new Set(
       observations
         .filter((o) => o.metricKey === "vercel.pageviews")
@@ -272,6 +274,65 @@ describe("vercel connector", () => {
     );
     expect(days.size).toBe(78); // 15 Oct … 31 Dec
     expect([...days].sort()[0]).toBe("2024-10-15T00:00:00.000Z");
+  });
+
+  it("re-reads the lookback after resuming a checkpoint older than the window (#758)", async () => {
+    // A connection that never succeeded, whose backfill died after a page:
+    // the next incremental run gets the host's default window and the
+    // backfill's checkpoint (a bare instant before #765).
+    const { pages, observations } = await syncAll(fake().runtime, {
+      mode: "incremental",
+      from: "2024-12-31T06:00:00.000Z",
+      to: "2024-12-31T12:00:00.000Z",
+      cursor: "2024-12-10T00:00:00.000Z",
+    });
+    expect(pages).toHaveLength(1);
+    const days = observations
+      .filter((o) => o.metricKey === "vercel.pageviews")
+      .map((o) => o.sourceTimestamp)
+      .sort();
+    expect(days[0]).toBe("2024-12-10T00:00:00.000Z");
+    // The next run starts the lookback day back, not at this window's
+    // `from`: 30 December was read while it could still change.
+    expect(pages[0]!.done).toBe(true);
+    expect(pages[0]!.nextFrom).toBe("2024-12-30T00:00:00.000Z");
+    expect(pages[0]!.nextCursor).toBe("2024-12-30T00:00:00.000Z");
+  });
+
+  it("re-reads the lookback when a resumed run pages past a month start inside it (#765)", async () => {
+    const window = {
+      mode: "incremental",
+      from: "2024-12-01T06:00:00.000Z",
+      to: "2024-12-01T12:00:00.000Z",
+    } as const;
+    // The final page starts on 1 December, inside the lookback day: 30
+    // November was read by the page before it.
+    for (const cursor of [
+      // A checkpoint from before #765, and one that carries its run start.
+      "2024-11-10T00:00:00.000Z",
+      "2024-11-10T00:00:00.000Z|2024-10-15T00:00:00.000Z",
+    ]) {
+      const { pages } = await syncAll(fake().runtime, { ...window, cursor });
+      expect(pages.map((page) => page.done)).toEqual([false, true]);
+      expect(pages[0]!.nextCursor).toBe(
+        `2024-12-01T00:00:00.000Z|${cursor.split("|").at(-1)}`,
+      );
+      expect(pages[1]!.nextFrom).toBe("2024-11-30T00:00:00.000Z");
+      expect(pages[1]!.nextCursor).toBe("2024-11-30T00:00:00.000Z");
+    }
+    // The last page resumed alone by a later run keeps the floor …
+    const carried = await syncAll(fake().runtime, {
+      ...window,
+      cursor: "2024-12-01T00:00:00.000Z|2024-11-10T00:00:00.000Z",
+    });
+    expect(carried.pages).toHaveLength(1);
+    expect(carried.pages[0]!.nextFrom).toBe("2024-11-30T00:00:00.000Z");
+    // … which a bare checkpoint at the same position does not have.
+    const bare = await syncAll(fake().runtime, {
+      ...window,
+      cursor: "2024-12-01T00:00:00.000Z",
+    });
+    expect(bare.pages[0]!.nextFrom).toBe("2024-12-01T00:00:00.000Z");
   });
 
   it("skips projects without Web Analytics and honours the selection", async () => {

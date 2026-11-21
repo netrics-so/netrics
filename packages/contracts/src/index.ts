@@ -664,10 +664,36 @@ export type PreviewConnectionRequest = z.infer<
   typeof previewConnectionRequestSchema
 >;
 
+/**
+ * A stable reason code next to an English message (#795, ADR 0016 section
+ * 5): lowercase words joined by "_" or ".", such as
+ * `apple_ads.invalid_client`. Clients show their own text for a code they
+ * know, in the viewer's language, and the message otherwise. The shape
+ * equals the connector SDK's `errorCodeSchema`.
+ */
+export const reasonCodeSchema = z
+  .string()
+  .max(64)
+  .regex(/^[a-z0-9]+(?:[._][a-z0-9]+)*$/);
+
 export const connectionCheckResultSchema = z.object({
   ok: z.boolean(),
   message: z.string().min(1).optional(),
+  /** The reason of a failed check, when it has a known one (#795). */
+  code: reasonCodeSchema.optional(),
 });
+
+/**
+ * A connection route's failure. `error` is a code, or for a refused
+ * credential check the provider's English message; `errorCode` is then its
+ * stable reason, when it has a known one (#795).
+ */
+export const connectionErrorResponseSchema = errorResponseSchema.extend({
+  errorCode: reasonCodeSchema.optional(),
+});
+export type ConnectionErrorResponse = z.infer<
+  typeof connectionErrorResponseSchema
+>;
 export type ConnectionCheckResult = z.infer<typeof connectionCheckResultSchema>;
 
 export const discoveredResourceSchema = z.object({
@@ -1121,6 +1147,12 @@ export const syncRunSchema = z.object({
     .enum(["auth", "transient", "contract", "budget", "rate_limited"])
     .nullable(),
   errorMessage: z.string().nullable(),
+  /**
+   * The stable reason of the failure, when it has a known one (#795):
+   * translate by it and fall back to `errorMessage`. Null for runs recorded
+   * before codes and for failures without a known reason.
+   */
+  errorCode: reasonCodeSchema.nullable(),
   observationsWritten: z.number().int().nonnegative(),
 });
 export type SyncRun = z.infer<typeof syncRunSchema>;
@@ -1146,9 +1178,15 @@ export const connectionHistorySchema = z.object({
   /** A backfill of the connection is waiting ("queued") or running. */
   backfill: z.enum(["idle", "queued", "running"]),
   /**
-   * Datasets no backfill has read yet at their current schema version:
-   * their history is incomplete until one has. Empty when complete or not
-   * known yet.
+   * The last backfill ended without reading its whole window (its retries
+   * used up, #787) and none waits or runs: the history is incomplete until
+   * one succeeds. Absent from servers before #787.
+   */
+  backfillFailed: z.boolean().optional(),
+  /**
+   * Datasets whose history is incomplete: no backfill has read them yet at
+   * their current schema version, or the last backfill failed
+   * (`backfillFailed`). Empty when complete or not known yet.
    */
   incompleteDatasets: z.array(
     z.object({ key: z.string().min(1), name: z.string().min(1) }),

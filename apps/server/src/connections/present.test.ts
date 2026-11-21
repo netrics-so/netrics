@@ -26,6 +26,7 @@ function row(overrides: Partial<ConnectionStateRow>): ConnectionStateRow {
     backfillRequestCount: 0,
     historyReloadRequestedAt: null,
     historyFrom: null,
+    backfillFailedAt: null,
     ...overrides,
   };
 }

@@ -395,6 +395,24 @@ const loggingConnector: Connector = {
  * Returns `opaqueNext` on a done result and records every request (#758):
  * what the host hands back as cursor and window.
  */
+/** Its credential check is refused with a reason code (#795). */
+const refusedCheckConnector: Connector = {
+  manifest: testManifest("refused-check", "refused.hits"),
+  async check() {
+    return {
+      ok: false,
+      message: "The key was revoked. Enter a new key.",
+      code: "refused_check.key_revoked",
+    };
+  },
+  async discover() {
+    return [];
+  },
+  async sync() {
+    return { observations: [], done: true };
+  },
+};
+
 let opaqueRequests: SyncRequest[] = [];
 let opaqueNext: Pick<SyncResult, "nextCursor" | "nextFrom"> = {};
 const opaqueCursorConnector: Connector = {
@@ -673,6 +691,7 @@ beforeAll(async () => {
   registry.register(leakyConnector);
   registry.register(loggingConnector);
   registry.register(opaqueCursorConnector);
+  registry.register(refusedCheckConnector);
   registry.register(probeConnector);
   registry.register(revisingConnector);
   registry.register(namingConnector);
@@ -743,6 +762,7 @@ describe("catalog sync", () => {
       "pager-large",
       "pager-resume",
       "probe",
+      "refused-check",
       "revising",
       "vercel",
       "wide-page",
@@ -876,6 +896,36 @@ describe("sync engine", () => {
     const state = await stateFor(workspaceA, connectionId);
     expect(state!.authState).toBe("auth_failed");
     expect(state!.historyFrom).toBeNull();
+    // ... and the failed backfill stays on record (#787).
+    expect(state!.backfillFailedAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps a failed backfill on record until a backfill succeeds (#787)", async () => {
+    const connectionId = await seedConnection(workspaceA, "demo");
+    // As a backfill that died with its retries used up left the connection.
+    const failedAt = new Date("2026-08-01T00:00:00Z");
+    await withWorkspace(appDb, { workspaceId: workspaceA }, (tx) =>
+      tx
+        .update(schema.connectionState)
+        .set({ historyFrom: null, backfillFailedAt: failedAt })
+        .where(eq(schema.connectionState.connectionId, connectionId)),
+    );
+    // Incremental syncs succeed from then on: the history stays unread.
+    const sync = await enqueue(workspaceA, connectionId, "connection.sync");
+    await waitFor(async () => (await jobRow(sync))?.status === "succeeded");
+    const after = await stateFor(workspaceA, connectionId);
+    expect(after!.lastSuccessAt).not.toBeNull();
+    expect(after!.backfillFailedAt).toEqual(failedAt);
+    // A backfill that reads the whole window clears it.
+    const backfill = await enqueue(
+      workspaceA,
+      connectionId,
+      "connection.backfill",
+    );
+    await waitFor(async () => (await jobRow(backfill))?.status === "succeeded");
+    const read = await stateFor(workspaceA, connectionId);
+    expect(read!.backfillFailedAt).toBeNull();
+    expect(read!.historyFrom).not.toBeNull();
   });
 
   it("keeps the read history when an incremental sync fails (#378)", async () => {
@@ -891,9 +941,10 @@ describe("sync engine", () => {
     );
     const jobId = await enqueue(workspaceA, connectionId, "connection.sync");
     await waitFor(async () => (await jobRow(jobId))?.status === "failed");
-    expect((await stateFor(workspaceA, connectionId))!.historyFrom).toEqual(
-      from,
-    );
+    const state = await stateFor(workspaceA, connectionId);
+    expect(state!.historyFrom).toEqual(from);
+    // Only a backfill's failure leaves the history unread (#787).
+    expect(state!.backfillFailedAt).toBeNull();
   });
 
   it("replaying the same backfill job writes zero new observations", async () => {
@@ -1028,6 +1079,22 @@ describe("sync engine", () => {
     const state = await stateFor(workspaceA, connectionId);
     expect(state!.authState).toBe("auth_failed");
     expect(state!.consecutiveFailures).toBe(1);
+  });
+
+  it("records the reason code of a refused credential check on the run (#795)", async () => {
+    const connectionId = await seedConnection(workspaceA, "refused-check");
+    const jobId = await enqueue(workspaceA, connectionId, "connection.sync");
+    await waitFor(async () => (await jobRow(jobId))?.status === "failed");
+    const runs = await syncRunsFor(workspaceA, connectionId);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      error_class: "auth",
+      error_message: "The key was revoked. Enter a new key.",
+      error_code: "refused_check.key_revoked",
+    });
+    expect((await stateFor(workspaceA, connectionId))!.authState).toBe(
+      "auth_failed",
+    );
   });
 
   it("provider outage: retryable job with backoff, outage state", async () => {

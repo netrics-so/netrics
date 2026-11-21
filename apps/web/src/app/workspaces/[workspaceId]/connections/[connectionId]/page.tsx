@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { can, localizedProviderMessage } from "@netrics/domain";
+import { can, localizedProviderFailure } from "@netrics/domain";
 
 import { HealthBadge, RateLimitText } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
@@ -10,6 +10,7 @@ import { ReconnectBanner } from "../reconnect-banner";
 import { StoreConnectionSettings } from "../store-connection-settings";
 import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
+import { historyNotice } from "./history-notice";
 import { HistoryReload } from "./history-reload";
 import { EditConnectionForm } from "./edit-connection-form";
 import { AppStoreAnalyticsPanel } from "./app-store-analytics-panel";
@@ -179,14 +180,15 @@ export default async function ConnectionDetailPage({
   const authFailed = connection.state.authState === "auth_failed";
   // A sync can only fail until the grant is reconnected (the API refuses it).
   const needsReconnect = connection.state.authState === "needs_reauthorization";
-  const recordedAuthMessage = syncRuns.find(
-    (run) => run.errorClass === "auth",
-  )?.errorMessage;
-  // A refusal the catalog knows reads in the viewer's language (#378);
-  // other provider words stay as they came.
+  const authRun = syncRuns.find((run) => run.errorClass === "auth");
+  const recordedAuthMessage = authRun?.errorMessage;
+  // A refusal with a reason code the catalog knows reads in the viewer's
+  // language (#795); other provider words stay as they came.
   const authMessage = recordedAuthMessage
-    ? (localizedProviderMessage(recordedAuthMessage, locale) ??
-      recordedAuthMessage)
+    ? (localizedProviderFailure(
+        { code: authRun?.errorCode, message: recordedAuthMessage },
+        locale,
+      ) ?? recordedAuthMessage)
     : undefined;
   const oauth = connection.oauth;
   const searchConsole = connection.connectorId === SEARCH_CONSOLE_CONNECTOR_ID;
@@ -205,10 +207,6 @@ export default async function ConnectionDetailPage({
   const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
   // The provider's request limit holds (#781): syncing continues after it.
   const rateLimitedUntil = connection.state.rateLimitedUntil ?? null;
-  // History status (#617): a backfill waits or runs, or datasets that no
-  // backfill has read yet (added by a connector update) hold partial history.
-  const historyLoading =
-    !connection.setupPending && history.backfill !== "idle";
   const incompleteNames = listNames(
     history.incompleteDatasets.map((dataset) => dataset.name),
     locale,
@@ -218,6 +216,11 @@ export default async function ConnectionDetailPage({
     history.supportsBackfill &&
     !connection.setupPending &&
     !needsReconnect;
+  // History status (#617, #787): see historyNotice.
+  const historyNote = historyNotice(history, {
+    setupPending: connection.setupPending,
+    canReload: canReloadHistory,
+  });
 
   return (
     <>
@@ -313,15 +316,9 @@ export default async function ConnectionDetailPage({
         />
       ) : null}
 
-      {historyLoading ? (
+      {historyNote ? (
         <div className="notice page-alert" role="status">
-          {historyT("loading")}
-        </div>
-      ) : history.incompleteDatasets.length > 0 ? (
-        <div className="notice page-alert" role="status">
-          {canReloadHistory
-            ? historyT("incomplete", { datasets: incompleteNames })
-            : historyT("incompleteReadOnly", { datasets: incompleteNames })}
+          {historyT(historyNote, { datasets: incompleteNames })}
         </div>
       ) : null}
 

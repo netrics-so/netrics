@@ -211,6 +211,12 @@ reverse because the catalogs are ICU.
 - **API errors** stay codes (`{ error: "last_owner" }`); the web app
   translates codes. API responses never contain prose meant for users,
   except data the users wrote.
+- **Provider failures** (a refused key, a failed sync) are recorded as an
+  English message for logs and for clients that know no better, with a
+  stable reason code next to it where the reason is a known one (#795:
+  `sync_runs.error_code`, `errorCode` in the API). The web app translates
+  by the code. Runs recorded before codes are found by their exact English
+  text, as #378 did.
 - Logs, audit events and admin CLI output stay English.
 
 ### 6. Connectors and tvOS

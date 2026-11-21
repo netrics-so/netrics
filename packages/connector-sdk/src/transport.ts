@@ -1,6 +1,7 @@
 import { datasetPageSchema, DATASET_LIMITS } from "./datasets.js";
 import { z } from "zod";
 
+import { ERROR_CODE_MAX_LENGTH, ERROR_CODE_PATTERN } from "./errors.js";
 import { freshnessEntrySchema, FRESHNESS_LIMITS } from "./freshness.js";
 
 const opaqueRecordSchema = z.record(z.string(), z.unknown());
@@ -12,9 +13,21 @@ export const connectionContextSchema = z.object({
 });
 export type ConnectionContext = z.infer<typeof connectionContextSchema>;
 
+/** A reason code (SDK 0.2.18, #795): see ERROR_CODE_PATTERN. */
+export const errorCodeSchema = z
+  .string()
+  .max(ERROR_CODE_MAX_LENGTH)
+  .regex(ERROR_CODE_PATTERN);
+
 export const checkResultSchema = z.object({
   ok: z.boolean(),
   message: z.string().min(1).optional(),
+  /**
+   * Optional (SDK 0.2.18, #795): the stable reason of a failed check, next
+   * to its English message. Clients that know the code show their own text
+   * for it in the viewer's language; the message stays the fallback.
+   */
+  code: errorCodeSchema.optional(),
 });
 export type CheckResult = z.infer<typeof checkResultSchema>;
 

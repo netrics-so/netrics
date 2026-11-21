@@ -34,8 +34,12 @@ import { SALES_REPORT_VERSION } from "./sales-report.js";
 //   the key, role and vendor number were accepted, so it counts as success.
 //   The sync tells the two apart by `detail` (`salesNotFoundKind`).
 
-/** A probe's answer: a CheckResult whose failure always has a message. */
-export type ProbeResult = { ok: true } | { ok: false; message: string };
+/**
+ * A probe's answer: a CheckResult whose failure always has a message, and
+ * the reason code of a refusal with a fixed text (SDK 0.2.18, #795).
+ */
+export type ProbeResult =
+  { ok: true } | { ok: false; message: string; code?: string };
 
 export const KEY_MISMATCH_MESSAGE =
   "App Store Connect refused the key: the issuer ID, key ID and private key do not belong together, or the key was revoked. Check the three values, or create a new team key and upload it.";
@@ -45,6 +49,24 @@ export const ROLE_MESSAGE =
 
 export const AGREEMENTS_MESSAGE =
   "App Store Connect requires an agreement that is missing or has expired. The Account Holder must accept the latest agreements in App Store Connect (Business), then try again.";
+
+/** The reason codes of the fixed refusals (#795); never renamed. */
+export const KEY_MISMATCH_CODE = "app_store_connect.key_mismatch";
+export const ROLE_CODE = "app_store_connect.role_missing";
+export const AGREEMENTS_CODE = "app_store_connect.agreements_missing";
+
+const KEY_MISMATCH: ProbeResult = {
+  ok: false,
+  message: KEY_MISMATCH_MESSAGE,
+  code: KEY_MISMATCH_CODE,
+};
+
+/** A 403's refusal: a missing agreement, else a role that reads no sales. */
+function forbidden(body: AscErrorBody): ProbeResult {
+  return isAgreements(body)
+    ? { ok: false, message: AGREEMENTS_MESSAGE, code: AGREEMENTS_CODE }
+    : { ok: false, message: ROLE_MESSAGE, code: ROLE_CODE };
+}
 
 export function vendorNumberMessage(vendorNumber: string): string {
   return `App Store Connect does not know vendor number ${vendorNumber} for this key's team. Copy the vendor number from Payments and Financial Reports, under your legal entity name.`;
@@ -157,13 +179,10 @@ export async function probeApps(
   const body = ascErrorBody(response);
   throwIfRetryable(response.status, body);
   if (response.status === 401) {
-    return { ok: false, message: KEY_MISMATCH_MESSAGE };
+    return KEY_MISMATCH;
   }
   if (response.status === 403) {
-    return {
-      ok: false,
-      message: isAgreements(body) ? AGREEMENTS_MESSAGE : ROLE_MESSAGE,
-    };
+    return forbidden(body);
   }
   return {
     ok: false,
@@ -200,13 +219,10 @@ export async function probeSalesReport(
   const body = ascErrorBody(response);
   throwIfRetryable(response.status, body);
   if (response.status === 401) {
-    return { ok: false, message: KEY_MISMATCH_MESSAGE };
+    return KEY_MISMATCH;
   }
   if (response.status === 403) {
-    return {
-      ok: false,
-      message: isAgreements(body) ? AGREEMENTS_MESSAGE : ROLE_MESSAGE,
-    };
+    return forbidden(body);
   }
   if (isVendorError(body)) {
     return { ok: false, message: vendorNumberMessage(vendorNumber) };
