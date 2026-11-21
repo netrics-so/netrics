@@ -6,17 +6,15 @@ import { customApiDe } from "../apps/web/src/messages/custom-api/de.ts";
 import { customApiEn } from "../apps/web/src/messages/custom-api/en.ts";
 import { workspaceDe } from "../apps/web/src/messages/workspace/de.ts";
 import { workspaceEn } from "../apps/web/src/messages/workspace/en.ts";
+import { FIXTURE_OAUTH_CLIENT } from "../packages/connectors/src/custom-api/testing/fixture-server.ts";
 import { formatMessage } from "../packages/domain/src/i18n/message-format.ts";
 import { CUSTOM_API_ORIGIN } from "./support/custom-api-origin.ts";
 import { ORIGIN } from "./support/origin.ts";
 import type { Locale } from "./support/labels.ts";
 import { startWorkspace } from "./support/session.ts";
 
-/** The fixture server's OAuth client (FIXTURE_OAUTH_CLIENT). */
-const CLIENT = {
-  clientId: "fx-oauth-client",
-  clientSecret: "fx-oauth-client-secret-0001",
-};
+/** The fixture server's OAuth client. */
+const CLIENT = FIXTURE_OAUTH_CLIENT;
 
 const labels = (locale: Locale) =>
   ((locale === "de" ? customApiDe : customApiEn) as typeof customApiEn)

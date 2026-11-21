@@ -163,7 +163,7 @@ private func itemsWidget(_ payload: DeviceDashboardV2) throws -> (ItemsWidgetOpt
 @Suite struct ItemsLayoutTests {
     // Web: itemsGridLayout in apps/web/src/components/studio/items-widget.tsx.
     @Test func gridMatchesTheWeb() {
-        // 6 × 4 cells on 16:9: two columns of tiles at least 240 wide.
+        // 6 × 4 cells on 16:9: three columns of tiles at least 240 wide.
         #expect(
             ItemsLayout.grid(width: 900, height: 500, textHeight: 80, count: 6, items: 6)
                 == ItemsLayout.Grid(columns: 3, rows: 2, shown: 6))
@@ -210,8 +210,8 @@ private func itemsWidget(_ payload: DeviceDashboardV2) throws -> (ItemsWidgetOpt
         let widget = try #require(payload.slides.first?.widgets.first)
         #expect(WidgetDetail.available(widget))
         let now = try #require(ISODate.parse("2026-11-23T10:00:00.000Z"))
-        let detail = try #require(
-            WidgetDetail.make(widget, now: now, language: .en, timeZone: TimeZone(identifier: "UTC")!))
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        let detail = try #require(WidgetDetail.make(widget, now: now, language: .en, timeZone: utc))
         #expect(detail.title == "Latest orders")
         #expect(detail.text(.value) == "3 items")
         #expect(detail.items.map(\.label) == ["Shoe 3", "Shoe 2", "Shoe 1"])
@@ -302,6 +302,25 @@ private func itemsWidget(_ payload: DeviceDashboardV2) throws -> (ItemsWidgetOpt
         #expect(state.storedImages == [itemHashes[0], itemHashes[2]])
     }
 
+    @Test func itemImagesBeyondTheBudgetAreNeitherStoredNorKept() async throws {
+        // #830: item images count against the budget. Two of the three fit
+        // (12 bytes each); the third is never fetched and shows its placeholder.
+        let budget = itemBytes[0].count + itemBytes[1].count
+        let images = InMemoryImageCache()
+        // Stored by an earlier run (before #830): evicted once over budget.
+        images.store(itemBytes[2], sha256: itemHashes[2])
+        images.touch([itemHashes[2]], at: T0.addingTimeInterval(-60))
+        let h = Harness(
+            credentials: { credentialsFor("a", clock: $0) }, routes: { _ in Self.itemRoutes() }, images: images,
+            imageBudget: budget)
+        await h.start()
+        await h.advance(0)
+        await h.advance(60)
+        #expect(h.api.callsTo("GET /v1/device/images/\(itemIDs[2])").isEmpty)
+        #expect(await h.state.storedImages == [itemHashes[0], itemHashes[1]])
+        #expect(images.hashes == [itemHashes[0], itemHashes[1]])
+    }
+
     @Test func itemImagesSurviveEvictionWhileReferenced() async throws {
         let images = InMemoryImageCache()
         // An old, unreferenced image beyond the budget goes; the item images stay.
@@ -322,5 +341,65 @@ private func itemsWidget(_ payload: DeviceDashboardV2) throws -> (ItemsWidgetOpt
         for hash in itemHashes {
             #expect(images.contains(hash))
         }
+    }
+}
+
+@Suite struct ImageBudgetTests {
+    private let logoImageJSON = """
+        {"id": "\(logoID)", "sha256": "\(logoHash)", "contentType": "image/png", "width": 512, "height": 512,
+         "bytes": \(logoBytes.count), "url": "/v1/device/images/\(logoID)?v=\(logoHash)"}
+        """
+
+    private func payload(slides: String) -> DeviceDashboardV2 {
+        let items = itemImagesJSON.trimmingCharacters(in: .whitespacesAndNewlines).dropFirst().dropLast()
+        return v2Payload(slides: slides, images: "[\(logoImageJSON), \(items)]")
+    }
+
+    @Test func dashboardImagesAreAlwaysKept() {
+        // ADR 0015: the logo stays even when it alone is over budget.
+        let kept = ImageBudget.kept(payload(slides: itemsSlideJSON()), budget: 0)
+        #expect(kept == [logoHash])
+    }
+
+    @Test func newestItemsFillWhatTheBudgetLeaves() {
+        let full = ImageBudget.kept(payload(slides: itemsSlideJSON()), budget: ImageCacheLimits.budget)
+        #expect(full == Set([logoHash] + itemHashes))
+        let two = logoBytes.count + itemBytes[0].count + itemBytes[1].count
+        #expect(ImageBudget.kept(payload(slides: itemsSlideJSON()), budget: two) == [logoHash, itemHashes[0], itemHashes[1]])
+    }
+
+    @Test func eachWidgetGetsItsNewestItemFirst() {
+        // Widget A lists items 0 and 1, widget B (another slide) item 2: room
+        // for two keeps both newest items, 0 and 2.
+        let first = itemsSlideJSON(imageIds: [itemIDs[0], itemIDs[1]])
+        let second = itemsSlideJSON(imageIds: [itemIDs[2]]).replacingOccurrences(of: slideA, with: slideB)
+        let slides = "[\(first.trimmingCharacters(in: .whitespacesAndNewlines).dropFirst().dropLast()), "
+            + "\(second.trimmingCharacters(in: .whitespacesAndNewlines).dropFirst().dropLast())]"
+        let budget = logoBytes.count + itemBytes[0].count + itemBytes[2].count
+        #expect(ImageBudget.kept(payload(slides: slides), budget: budget) == [logoHash, itemHashes[0], itemHashes[2]])
+    }
+
+    @Test func aNewerImageIsNeverSkippedForAnOlderOne() {
+        // #830 review: item 0 (newest) is too large for what is left; the
+        // smaller items 1 and 2 would fit, but are older: none is kept.
+        let sizes = [1_000, 10, 10]
+        let images = itemIDs.indices.map { i in
+            """
+            {"id": "\(itemIDs[i])", "sha256": "\(itemHashes[i])", "contentType": "image/jpeg", "width": 800,
+             "height": 600, "bytes": \(sizes[i]), "url": "/v1/device/images/\(itemIDs[i])?v=\(itemHashes[i])"}
+            """
+        }
+        let payload = v2Payload(
+            slides: itemsSlideJSON(), images: "[\(logoImageJSON), \(images.joined(separator: ","))]")
+        #expect(ImageBudget.kept(payload, budget: logoBytes.count + 500) == [logoHash])
+        // With room for item 0, the next ones follow while they fit.
+        #expect(
+            ImageBudget.kept(payload, budget: logoBytes.count + 1_015) == [logoHash, itemHashes[0], itemHashes[1]])
+    }
+
+    @Test func itemsBeyondCountAreNotKept() {
+        let slides = itemsSlideJSON(
+            options: #"{"layout": "grid", "count": 1, "rotateSeconds": 8, "imageFit": "cover", "showTime": true}"#)
+        #expect(ImageBudget.kept(payload(slides: slides), budget: ImageCacheLimits.budget) == [logoHash, itemHashes[0]])
     }
 }

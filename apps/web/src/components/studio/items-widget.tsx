@@ -88,6 +88,26 @@ export function itemsGridLayout(input: {
   return { columns, rows, shown: Math.min(wanted, columns * rows) };
 }
 
+/**
+ * A tile's text height (units): the title, a subtitle row when one of the
+ * items that can be shown (the first `count`) has a subtitle, and the time.
+ * netrics TV decides the same way (`ItemsWidgetView.plan`).
+ */
+export function itemsTextHeight(
+  items: readonly Pick<ItemsWidgetItemView, "subtitle">[],
+  options: Pick<ItemsWidgetOptions, "count" | "showTime">,
+  sizes: { body: number; cell: number },
+): number {
+  const subtitles = items
+    .slice(0, options.count)
+    .some((item) => Boolean(item.subtitle));
+  return (
+    sizes.body * LINE_HEIGHT +
+    (subtitles ? sizes.cell * LINE_HEIGHT : 0) +
+    (options.showTime ? sizes.cell * LINE_HEIGHT : 0)
+  );
+}
+
 /** An item's time as shown: a date as the date, a timestamp relative. */
 export function itemTime(
   time: string | null,
@@ -261,10 +281,7 @@ export function ItemsWidgetView(props: {
     cell: scale.cell ?? STUDIO_TEXT_MINIMUMS.cell,
   };
   const label = labelLayout(props.label, box.width, scale);
-  const textHeight =
-    sizes.body * LINE_HEIGHT +
-    (props.items.some((item) => item.subtitle) ? sizes.cell * LINE_HEIGHT : 0) +
-    (props.options.showTime ? sizes.cell * LINE_HEIGHT : 0);
+  const textHeight = itemsTextHeight(props.items, props.options, sizes);
   const grid = itemsGridLayout({
     width: box.width,
     height: box.height - label.height - STACK_GAP,

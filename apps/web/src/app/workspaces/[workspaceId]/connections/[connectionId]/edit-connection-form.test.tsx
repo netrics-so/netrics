@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { ConnectionDetail } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
-import { EditConnectionForm } from "./edit-connection-form";
+import {
+  EditConnectionForm,
+  customApiConfigFields,
+  editConnectionRequest,
+} from "./edit-connection-form";
 import { renderI18n } from "@/lib/i18n/test-render";
 
 vi.mock("next/navigation", () => ({
@@ -11,11 +15,20 @@ vi.mock("next/navigation", () => ({
 }));
 
 // A custom API connection (#808) is not in the connector catalogue: its
-// form edits the name only; the login panel handles the login.
+// form edits the name and its pinned version's plain values (#830); the
+// login panel handles the login and the secret values.
 
 const W = "11111111-1111-4111-8111-111111111111";
 
-function connection(customApi: boolean): ConnectionDetail {
+const VARIABLES = [
+  { id: "account_id", label: "Account", secret: false },
+  { id: "tenant", label: "Tenant secret", secret: true },
+];
+
+function connection(
+  customApi: boolean,
+  config: Record<string, unknown> = {},
+): ConnectionDetail {
   return {
     id: "44444444-4444-4444-8444-444444444444",
     name: "OAuth shop",
@@ -37,7 +50,7 @@ function connection(customApi: boolean): ConnectionDetail {
           loginMissing: false,
         }
       : null,
-    config: {},
+    config,
     signedKey: null,
     createdAt: "2026-11-21T00:00:00.000Z",
     updatedAt: "2026-11-21T00:00:00.000Z",
@@ -69,6 +82,24 @@ describe.each<Locale>(["en", "de"])("EditConnectionForm (%s)", (locale) => {
     expect(html).not.toContain('id="edit-token"');
   });
 
+  it("edits the plain values of a custom API connection, never the secret ones", () => {
+    const html = renderI18n(
+      <EditConnectionForm
+        workspaceId={W}
+        connection={connection(true, { account_id: "acc-1" })}
+        connector={undefined}
+        customApiVariables={VARIABLES}
+      />,
+      locale,
+    );
+    expect(html).toContain('id="config-account_id"');
+    expect(html).toContain('value="acc-1"');
+    expect(html).toContain('maxLength="500"');
+    expect(html).toContain(">Account<");
+    expect(html).not.toContain("config-tenant");
+    expect(html).not.toContain("custom-api");
+  });
+
   it("still names a missing bundled connector", () => {
     const html = renderI18n(
       <EditConnectionForm
@@ -79,5 +110,68 @@ describe.each<Locale>(["en", "de"])("EditConnectionForm (%s)", (locale) => {
       locale,
     );
     expect(html).toContain("unknown-connector");
+  });
+});
+
+describe("editConnectionRequest (#830)", () => {
+  const fields = customApiConfigFields(VARIABLES);
+  const base = {
+    name: "OAuth shop",
+    fields,
+    token: "",
+    fixedConfig: false,
+  };
+
+  it("describes only the plain values, each required", () => {
+    expect(
+      fields.map((field) => [
+        field.key,
+        field.required,
+        field.minLength,
+        field.maxLength,
+      ]),
+    ).toEqual([["account_id", true, 1, 500]]);
+  });
+
+  it("sends a custom API connection's changed values", () => {
+    expect(
+      editConnectionRequest({
+        ...base,
+        connection: connection(true, { account_id: "acc-1" }),
+        configValues: { account_id: "acc-2" },
+      }),
+    ).toEqual({ config: { account_id: "acc-2" } });
+  });
+
+  it("sends no values with a name change when they are unchanged", () => {
+    expect(
+      editConnectionRequest({
+        ...base,
+        name: "Renamed",
+        connection: connection(true, { account_id: "acc-1" }),
+        configValues: { account_id: "acc-1" },
+      }),
+    ).toEqual({ name: "Renamed" });
+    // Without plain values (or the pinned version), only the name.
+    expect(
+      editConnectionRequest({
+        ...base,
+        fields: [],
+        name: "Renamed",
+        connection: connection(true),
+        configValues: {},
+      }),
+    ).toEqual({ name: "Renamed" });
+  });
+
+  it("keeps sending a catalogue connector's config as before", () => {
+    expect(
+      editConnectionRequest({
+        ...base,
+        fields: [],
+        connection: connection(false),
+        configValues: {},
+      }),
+    ).toEqual({ config: {} });
   });
 });

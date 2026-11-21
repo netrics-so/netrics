@@ -125,6 +125,8 @@ public actor DeviceClient {
     private let store: any CredentialStore
     private let cache: any DashboardCache
     private let images: any ImageCache
+    /** The image cache budget (`ImageCacheLimits.budget`; smaller in tests). */
+    private let imageBudget: Int
     private let appVersion: String
     private let now: @Sendable () -> Date
     /** Measures the screen for the heartbeat (#276); nil sends none. */
@@ -197,8 +199,10 @@ public actor DeviceClient {
         now: @escaping @Sendable () -> Date = { Date() },
         screen: (@Sendable () async -> DeviceScreenReport?)? = nil,
         platform: DevicePlatform = .tvos,
+        imageBudget: Int = ImageCacheLimits.budget,
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
+        self.imageBudget = imageBudget
         self.server = server
         self.transport = transport
         self.store = store
@@ -901,21 +905,26 @@ public actor DeviceClient {
 
     /**
      * Downloads the payload's images that are not stored yet, then marks
-     * them used and evicts unreferenced ones beyond the budget. A failed
-     * image is retried with the next poll; it never fails the dashboard.
+     * them used and evicts unkept ones beyond the budget. Latest-items
+     * images beyond what the budget leaves are not downloaded
+     * (`ImageBudget`). A failed image is retried with the next poll; it
+     * never fails the dashboard.
      */
     private func syncImages(_ payload: DashboardPayload, epoch at: Int) async {
         guard case .v2(let v2) = payload else { return }
-        let referenced = Set(v2.images.map(\.sha256))
-        for image in v2.images where !images.contains(image.sha256) {
+        let kept = ImageBudget.kept(v2, budget: imageBudget)
+        for image in v2.images where kept.contains(image.sha256) && !images.contains(image.sha256) {
             guard at == epoch, let data = await fetchImage(image) else { continue }
             images.store(data, sha256: image.sha256)
             guard at == epoch else { return }
             update { $0.storedImages.insert(image.sha256) }
         }
         guard at == epoch else { return }
-        images.touch(referenced, at: now())
-        images.evict(keeping: referenced, budget: ImageCacheLimits.budget)
+        images.touch(kept, at: now())
+        images.evict(keeping: kept, budget: imageBudget)
+        // An item image evicted over budget shows its placeholder.
+        let stored = storedImages(payload)
+        if stored != state.storedImages { update { $0.storedImages = stored } }
     }
 
     /** The image's URL on this server; nil for anything but a device image path. */

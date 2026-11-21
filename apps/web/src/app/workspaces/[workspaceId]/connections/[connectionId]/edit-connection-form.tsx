@@ -3,9 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 
-import type {
-  ConnectionDetail,
-  ConnectorCatalogEntry,
+import {
+  customApiConfigSchema,
+  type ConnectionDetail,
+  type ConnectorCatalogEntry,
+  type CustomApiVariable,
+  type UpdateConnectionRequest,
 } from "@netrics/contracts";
 
 import { ConfigFields } from "../config-fields";
@@ -15,6 +18,7 @@ import {
   coerceConfigValues,
   initialConfigValues,
   parseConfigSchema,
+  type ConfigField,
 } from "@/lib/config-schema";
 import { APPLE_ADS_CONNECTOR_ID, signedKeyStrategyOf } from "@/lib/signed-key";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -23,12 +27,58 @@ interface EditConnectionFormProps {
   workspaceId: string;
   connection: ConnectionDetail;
   connector: ConnectorCatalogEntry | undefined;
+  /** A custom API connection's pinned version's variables (#830). */
+  customApiVariables?: readonly CustomApiVariable[];
+}
+
+/**
+ * A custom API connection's config fields (#830): its pinned version's
+ * plain (non-secret) values, from the schema the API validates against.
+ */
+export function customApiConfigFields(
+  variables: readonly CustomApiVariable[],
+): ConfigField[] {
+  return parseConfigSchema(
+    customApiConfigSchema({ variables: [...variables] }),
+  );
+}
+
+/**
+ * What "Save changes" sends. A custom API connection sends its values only
+ * when they changed: a config change is checked against the API (with a
+ * fresh token for OAuth), which a name change should not need.
+ */
+export function editConnectionRequest(input: {
+  connection: ConnectionDetail;
+  name: string;
+  fields: ConfigField[];
+  configValues: Record<string, string>;
+  token: string;
+  fixedConfig: boolean;
+}): UpdateConnectionRequest {
+  const { connection } = input;
+  const customApi = connection.customApi != null;
+  const config = coerceConfigValues(input.fields, input.configValues);
+  const configChanged = input.fields.some(
+    (field) => config[field.key] !== connection.config[field.key],
+  );
+  const sendConfig =
+    !input.fixedConfig &&
+    (customApi ? input.fields.length > 0 && configChanged : true);
+  return {
+    ...(input.name.trim() !== connection.name
+      ? { name: input.name.trim() }
+      : {}),
+    ...(sendConfig ? { config } : {}),
+    ...(input.token !== "" ? { credentials: { token: input.token } } : {}),
+  };
 }
 
 export function EditConnectionForm({
   workspaceId,
   connection,
   connector,
+  customApiVariables,
 }: EditConnectionFormProps) {
   const locale = useLocale();
   const t = useT("connections.edit");
@@ -37,15 +87,17 @@ export function EditConnectionForm({
   // An Apple Ads connection's config is its ad account as Apple named it
   // (#375): shown on the page, chosen in the setup, never typed here.
   const fixedConfig = connection.connectorId === APPLE_ADS_CONNECTOR_ID;
-  // A custom API (#808): its values and login are changed by its own panels
-  // (definition updates, the login panel); only the name is edited here.
+  // A custom API (#808): its login is changed by the login panel; its
+  // name and plain values (#830) are edited here.
   const customApi = connection.customApi != null;
   const fields = useMemo(
     () =>
-      connector && !fixedConfig
-        ? parseConfigSchema(connector.configSchema)
-        : [],
-    [connector, fixedConfig],
+      customApi
+        ? customApiConfigFields(customApiVariables ?? [])
+        : connector && !fixedConfig
+          ? parseConfigSchema(connector.configSchema)
+          : [],
+    [connector, fixedConfig, customApi, customApiVariables],
   );
   const [name, setName] = useState(connection.name);
   const [configValues, setConfigValues] = useState<Record<string, string>>(() =>
@@ -75,13 +127,18 @@ export function EditConnectionForm({
     setNotice(null);
     setPending(true);
     try {
-      await updateConnection(workspaceId, connection.id, {
-        ...(name.trim() !== connection.name ? { name: name.trim() } : {}),
-        ...(fixedConfig || customApi
-          ? {}
-          : { config: coerceConfigValues(fields, configValues) }),
-        ...(token !== "" ? { credentials: { token } } : {}),
-      });
+      await updateConnection(
+        workspaceId,
+        connection.id,
+        editConnectionRequest({
+          connection,
+          name,
+          fields,
+          configValues,
+          token,
+          fixedConfig,
+        }),
+      );
       setToken("");
       setNotice(t("updated"));
       router.refresh();
@@ -117,7 +174,18 @@ export function EditConnectionForm({
           onChange={setToken}
         />
       ) : null}
-      {fixedConfig || customApi ? null : connector ? (
+      {customApi ? (
+        fields.length > 0 ? (
+          <ConfigFields
+            fields={fields}
+            values={configValues}
+            disabled={pending}
+            onChange={(key, value) =>
+              setConfigValues((current) => ({ ...current, [key]: value }))
+            }
+          />
+        ) : null
+      ) : fixedConfig ? null : connector ? (
         <ConfigFields
           fields={fields}
           values={configValues}

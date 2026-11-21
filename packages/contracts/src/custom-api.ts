@@ -28,6 +28,8 @@ export {
   customApiStreamSchema,
   customApiVariableSchema,
   customApiWindowSchema,
+  CUSTOM_API_VALUE_LENGTH,
+  customApiConfigSchema,
   formatDataPath,
   readStoredCustomApiDefinition,
   PAGE_PLACEHOLDERS,

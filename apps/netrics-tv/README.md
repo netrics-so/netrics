@@ -352,7 +352,12 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   token from their device URL (only `/v1/device/images/…` on the paired
   server), verified against their SHA-256 and stored by hash in
   `Caches/netrics/images` (in the App Group container). Beyond 50 MB, images the current payload does
-  not reference are evicted, least recently used first. They are decoded
+  not reference are evicted, least recently used first. Latest-items
+  images count against the 50 MB: the newest item of each widget first,
+  up to the first image that does not fit. Those beyond it are not
+  downloaded; one stored earlier still shows until it is evicted (once
+  the cache is over budget), otherwise the item shows the placeholder.
+  The dashboard's own images are always kept. They are decoded
   with ImageIO at the widget's pixel size.
 - **Latest items (#811).** The app asks for `features=measure_split,items`,
   so the server sends the latest-items widget instead of its text
