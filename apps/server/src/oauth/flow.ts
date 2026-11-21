@@ -593,7 +593,6 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
   // and kept across reauthorizations, so the grant-liveness refresh of the
   // shared-account rules is not needed (no other connection holds it).
 
-  /** The connection's provider and envelope, read in `tx`. */
   /** The token endpoint and client a code exchange is bound to (hashed). */
   function customExchangeBinding(custom: CustomOAuthResolution): string {
     return createHash("sha256")
@@ -610,6 +609,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
     return left.length === right.length && timingSafeEqual(left, right);
   }
 
+  /** The connection's provider and envelope, read in `tx`. */
   async function customOf(
     tx: Transaction,
     workspaceId: string,

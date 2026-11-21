@@ -50,6 +50,8 @@ export interface FixtureOAuthServer {
   revoked: string[];
   /** Each revocation request's token and token_type_hint. */
   revokeRequests: Array<{ token: string; hint: string | null }>;
+  /** Runs before a token request is answered (tests interleave work there). */
+  onToken: (() => Promise<void> | void) | null;
   /** Runs before a revocation is answered (tests interleave work there). */
   onRevoke: (() => Promise<void> | void) | null;
   /** The client secret the token endpoint accepts (rotate to "revoke" the client). */
@@ -306,6 +308,7 @@ export async function startCustomApiFixtureServer(
     revoked: [],
     revokeRequests: [],
     onRevoke: null,
+    onToken: null,
     clientSecret: FIXTURE_OAUTH_CLIENT.clientSecret,
     expiresIn: 3600,
     expireAccessTokens() {
@@ -414,84 +417,93 @@ export async function startCustomApiFixtureServer(
         void Promise.resolve(oauth.onRevoke?.()).finally(() => send(200, {}));
         return;
       }
-      const grantType = body.get("grant_type") ?? "";
-      const verifier = body.get("code_verifier");
-      const code = body.get("code");
-      const stored = code ? codes.get(code) : undefined;
-      oauth.tokenRequests.push({
-        grantType,
-        clientAuth,
-        codeVerifier: verifier,
-        codeChallenge: stored?.challenge ?? null,
-        scope: body.get("scope") ?? stored?.scope ?? null,
-      });
-      const tokenType = (): Record<string, string> => {
-        const type = query.get("tokentype");
-        return type === "none" ? {} : { token_type: type ?? "Bearer" };
-      };
-      const granted = (requested: string | null) => {
-        const scope = query.get("grantscope") ?? requested;
-        return scope && query.get("scopesep") === "comma"
-          ? scope.split(" ").join(",")
-          : scope;
-      };
-      const tokens = (scope: string | null, refresh: boolean) => {
-        const accessToken = issue("fx-access");
-        accessTokens.set(accessToken, Date.now() + oauth.expiresIn * 1000);
-        const refreshToken =
-          refresh && query.get("norefresh") !== "1"
-            ? issue("fx-refresh")
-            : null;
-        if (refreshToken) refreshTokens.set(refreshToken, scope);
-        return send(200, {
-          access_token: accessToken,
-          ...tokenType(),
-          expires_in: oauth.expiresIn,
-          ...(refreshToken ? { refresh_token: refreshToken } : {}),
-          ...(granted(scope) ? { scope: granted(scope) } : {}),
+      const respond = () => {
+        const grantType = body.get("grant_type") ?? "";
+        const verifier = body.get("code_verifier");
+        const code = body.get("code");
+        const stored = code ? codes.get(code) : undefined;
+        oauth.tokenRequests.push({
+          grantType,
+          clientAuth,
+          codeVerifier: verifier,
+          codeChallenge: stored?.challenge ?? null,
+          scope: body.get("scope") ?? stored?.scope ?? null,
         });
-      };
-      switch (grantType) {
-        case "client_credentials":
-          return tokens(body.get("scope"), false);
-        case "authorization_code": {
-          if (!code || !stored) return send(400, { error: "invalid_grant" });
-          codes.delete(code);
-          if (body.get("redirect_uri") !== stored.redirectUri)
-            return send(400, { error: "invalid_grant" });
-          if (stored.challenge) {
-            const expected = verifier
-              ? createHash("sha256").update(verifier).digest("base64url")
-              : null;
-            if (expected !== stored.challenge)
-              return send(400, { error: "invalid_grant" });
-          }
-          return tokens(stored.scope, true);
-        }
-        case "refresh_token": {
-          const token = body.get("refresh_token") ?? "";
-          if (!refreshTokens.has(token))
-            return send(400, { error: "invalid_grant" });
+        const tokenType = (): Record<string, string> => {
+          const type = query.get("tokentype");
+          return type === "none" ? {} : { token_type: type ?? "Bearer" };
+        };
+        const granted = (requested: string | null) => {
+          const scope = query.get("grantscope") ?? requested;
+          return scope && query.get("scopesep") === "comma"
+            ? scope.split(" ").join(",")
+            : scope;
+        };
+        const tokens = (scope: string | null, refresh: boolean) => {
           const accessToken = issue("fx-access");
           accessTokens.set(accessToken, Date.now() + oauth.expiresIn * 1000);
-          const scope = refreshTokens.get(token) ?? null;
-          let rotated: string | null = null;
-          if (query.get("rotate") === "1") {
-            refreshTokens.delete(token);
-            rotated = issue("fx-refresh");
-            refreshTokens.set(rotated, scope);
-          }
+          const refreshToken =
+            refresh && query.get("norefresh") !== "1"
+              ? issue("fx-refresh")
+              : null;
+          if (refreshToken) refreshTokens.set(refreshToken, scope);
           return send(200, {
             access_token: accessToken,
             ...tokenType(),
             expires_in: oauth.expiresIn,
-            ...(rotated ? { refresh_token: rotated } : {}),
+            ...(refreshToken ? { refresh_token: refreshToken } : {}),
             ...(granted(scope) ? { scope: granted(scope) } : {}),
           });
+        };
+        switch (grantType) {
+          case "client_credentials":
+            return tokens(body.get("scope"), false);
+          case "authorization_code": {
+            if (!code || !stored) return send(400, { error: "invalid_grant" });
+            codes.delete(code);
+            if (body.get("redirect_uri") !== stored.redirectUri)
+              return send(400, { error: "invalid_grant" });
+            if (stored.challenge) {
+              const expected = verifier
+                ? createHash("sha256").update(verifier).digest("base64url")
+                : null;
+              if (expected !== stored.challenge)
+                return send(400, { error: "invalid_grant" });
+            }
+            return tokens(stored.scope, true);
+          }
+          case "refresh_token": {
+            const token = body.get("refresh_token") ?? "";
+            if (!refreshTokens.has(token))
+              return send(400, { error: "invalid_grant" });
+            const accessToken = issue("fx-access");
+            accessTokens.set(accessToken, Date.now() + oauth.expiresIn * 1000);
+            const scope = refreshTokens.get(token) ?? null;
+            let rotated: string | null = null;
+            if (query.get("rotate") === "1") {
+              refreshTokens.delete(token);
+              rotated = issue("fx-refresh");
+              refreshTokens.set(rotated, scope);
+            }
+            return send(200, {
+              access_token: accessToken,
+              ...tokenType(),
+              expires_in: oauth.expiresIn,
+              ...(rotated ? { refresh_token: rotated } : {}),
+              ...(granted(scope) ? { scope: granted(scope) } : {}),
+            });
+          }
+          default:
+            return send(400, { error: "unsupported_grant_type" });
         }
-        default:
-          return send(400, { error: "unsupported_grant_type" });
+      };
+      // A test may hold the answer (the request is already recorded).
+      const hook = oauth.onToken;
+      if (hook) {
+        void Promise.resolve(hook()).finally(respond);
+        return;
       }
+      return respond();
     });
   };
 

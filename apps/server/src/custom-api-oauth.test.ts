@@ -1189,3 +1189,117 @@ describe("custom OAuth: fix round 1 (#823 review)", () => {
     expect((await state(id)).auth_state).toBe("ok");
   });
 });
+
+describe("custom OAuth: fix round 2 (#823 re-review)", () => {
+  const rotating = (auth: Record<string, unknown>) => ({
+    ...auth,
+    tokenUrl: `${fixture.origin}/oauth/token?rotate=1`,
+  });
+
+  /**
+   * A refresh whose token answer is held until the PATCH is waiting for
+   * the grant lock; then both finish.
+   */
+  async function raceRefresh(
+    id: string,
+    patch: () => Promise<InjectResponse>,
+  ): Promise<InjectResponse> {
+    await expire(id);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const tokenCalls = () =>
+      fixture.requests.filter((r) => r.path === "/oauth/token").length;
+    const before = tokenCalls();
+    fixture.oauth.onToken = () => held;
+    try {
+      const refreshing = tokens.getAccessToken(
+        { workspaceId, connectionId: id },
+        { requiredScopes: ["items.read"] },
+      );
+      while (tokenCalls() === before)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      const patching = patch();
+      // The PATCH reads, validates and then waits for the grant lock.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      fixture.oauth.onToken = null;
+      release();
+      const [refreshed, patched] = await Promise.all([refreshing, patching]);
+      expect(refreshed.ok).toBe(true);
+      return patched;
+    } finally {
+      fixture.oauth.onToken = null;
+    }
+  }
+
+  const lastRefreshToken = () =>
+    [...fixture.oauth.issued]
+      .reverse()
+      .find((v) => v.startsWith("fx-refresh-"))!;
+
+  it("keeps a rotation by a refresh that runs alongside a secret change", async () => {
+    const id = await connection(document("oauth_code", rotating));
+    await authorize(id);
+    const before = (await envelope(id)).refreshToken;
+    const patched = await raceRefresh(id, () =>
+      call("PATCH", ws(`/connections/${id}`), {
+        credentials: {
+          clientId: CLIENT_ID,
+          clientSecret: "rotated-client-secret-0004",
+        },
+      }),
+    );
+    expect(patched.statusCode, patched.body).toBe(200);
+    const stored = await envelope(id);
+    const rotated = lastRefreshToken();
+    expect(rotated).not.toBe(before);
+    // Neither the pre-rotation token nor the old secret came back.
+    expect(stored.refreshToken).toBe(rotated);
+    expect(stored.clientSecret).toBe("rotated-client-secret-0004");
+    fixture.oauth.clientSecret = "rotated-client-secret-0004";
+    await expire(id);
+    const next = await tokens.getAccessToken(
+      { workspaceId, connectionId: id },
+      { requiredScopes: ["items.read"] },
+    );
+    expect(next.ok).toBe(true);
+  });
+
+  it("revokes the rotated token when the client ID changes during a refresh", async () => {
+    const id = await connection(document("oauth_code", rotating));
+    await authorize(id);
+    const patched = await raceRefresh(id, () =>
+      call("PATCH", ws(`/connections/${id}`), {
+        credentials: {
+          clientId: "another-client",
+          clientSecret: "another-client-secret",
+        },
+      }),
+    );
+    expect(patched.statusCode, patched.body).toBe(200);
+    // The live grant is the rotated one: it is the one revoked.
+    expect(fixture.oauth.revoked.at(-1)).toBe(lastRefreshToken());
+    expect(await envelope(id)).toMatchObject({
+      clientId: "another-client",
+      refreshToken: null,
+    });
+    expect((await state(id)).auth_state).toBe("needs_reauthorization");
+  });
+
+  it("changes nothing when the rest of the PATCH is refused", async () => {
+    const id = await connection(document("oauth_code"));
+    await authorize(id);
+    const before = await envelope(id);
+    const revoked = fixture.oauth.revoked.length;
+    const refused = await call("PATCH", ws(`/connections/${id}`), {
+      credentials: {
+        clientId: "another-client",
+        clientSecret: "another-client-secret",
+      },
+      projectId: randomUUID(),
+    });
+    expect(refused.statusCode).toBe(404);
+    expect(await envelope(id)).toEqual(before);
+    expect((await state(id)).auth_state).toBe("ok");
+    expect(fixture.oauth.revoked.length).toBe(revoked);
+  });
+});

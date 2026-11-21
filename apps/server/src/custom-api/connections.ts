@@ -7,6 +7,8 @@
 
 import { randomUUID } from "node:crypto";
 
+import { and, eq } from "drizzle-orm";
+
 import type {
   ConnectionRetentionChoice,
   CreateCustomApiConnectionRequest,
@@ -32,8 +34,9 @@ import {
   findCustomApiDefinitionVersion,
   findProject,
   insertAuditEvent,
-  findConnectionOAuth,
   insertConnection,
+  lockConnectionOAuth,
+  schema,
   markNeedsReauthorization,
   resetConnectionAuth,
   updateConnection,
@@ -277,25 +280,41 @@ export function prepareCustomApiUpdate(input: {
 
 type ConnectionDetail = ReturnType<typeof presentConnectionDetail>;
 
+/** A validated client change, written inside the caller's transaction. */
+export interface CustomOAuthClientChange {
+  /**
+   * Call first in the transaction that commits the PATCH: takes the grant
+   * row lock (the one refresh holds) and the connection row lock, reads the
+   * envelope again and writes the change against that fresh state. The
+   * returned function runs after commit (best-effort revocation).
+   */
+  apply(tx: Transaction): Promise<() => Promise<void>>;
+}
+
 /**
  * A new client ID and/or secret for an active custom OAuth connection
  * (PATCH credentials, #805). The envelope is sealed again for the
- * definition's current hosts (which also repairs a host change).
+ * definition's current hosts (which also repairs a host change). Network
+ * work happens here, before any lock; the write happens in `apply`, in the
+ * PATCH's transaction, so the client change and the rest of the PATCH
+ * commit or fail together.
  *
  * - Client credentials: a token is requested with the new client first (a
  *   refused client or missing scopes changes nothing), the connector check
  *   runs with it, then the envelope and the grant are replaced and the
  *   connection is healthy again.
  * - Authorization code, same client ID and hosts (a rotated secret): the
- *   refresh token stays, providers keep grants across secret rotation; a
- *   connection that failed on the refused secret is healthy again.
- * - Authorization code, another client ID (or other hosts): the old grant
- *   cannot be used by the new client. It is revoked after commit (best
- *   effort, with the old client, only to the hosts it was entered for) and
- *   the connection needs reauthorization; it keeps its id, history and
- *   bindings, and signing in again restores it.
+ *   refresh token stays, as read under the lock (a rotation by a refresh
+ *   that ran meanwhile is kept); providers keep grants across secret
+ *   rotation. A connection that failed on the refused secret is healthy
+ *   again.
+ * - Authorization code, another client ID (or other hosts): the grant cannot
+ *   be used by the new client. The refresh token read under the lock is
+ *   revoked after commit (best effort, with the old client, only to the
+ *   hosts it was entered for) and the connection needs reauthorization; it
+ *   keeps its id, history and bindings, and signing in again restores it.
  */
-export async function changeCustomOAuthClient(input: {
+export async function prepareCustomOAuthClientChange(input: {
   db: Database;
   credentialKeyring: CredentialKeyring;
   oauthTokens: OAuthTokenService;
@@ -305,10 +324,11 @@ export async function changeCustomOAuthClient(input: {
   credentials: Record<string, unknown>;
   privateHosts: readonly string[];
   executeOptions?: ExecuteOptions;
-}): Promise<CustomApiConnectionResult<null>> {
+}): Promise<CustomApiConnectionResult<CustomOAuthClientChange>> {
   const { actor, existing, resolved, oauthTokens } = input;
   const connectionId = existing.row.id;
-  const binding = { workspaceId: actor.workspaceId, connectionId };
+  const { workspaceId } = actor;
+  const binding = { workspaceId, connectionId };
   const client = customOAuthClient(input.credentials);
   const definition = resolved.customApi?.definition;
   const environmentId = resolved.customApi?.pin.environmentId;
@@ -317,16 +337,15 @@ export async function changeCustomOAuthClient(input: {
   const hosts = customOAuthBinding(definition, environmentId);
   const resolver = oauthTokens.customOAuth;
   if (!hosts || !resolver) return fail(400, "connector_unavailable");
-  const inWorkspace = <T>(run: (tx: Transaction) => Promise<T>) =>
-    withWorkspace(
-      input.db,
-      { workspaceId: actor.workspaceId, userId: actor.callerId },
-      run,
-    );
-  const current = await inWorkspace((tx) => resolver.resolve(tx, binding));
-  if (!current) return fail(400, "custom_api_credentials_invalid");
+  const read = await withWorkspace(
+    input.db,
+    { workspaceId, userId: actor.callerId },
+    (tx) => resolver.resolve(tx, binding),
+  );
+  if (!read) return fail(400, "custom_api_credentials_invalid");
+  // Endpoints come from the pinned definition; only the client is new.
   const provider = {
-    ...current.provider,
+    ...read.provider,
     clientId: client.clientId,
     clientSecret: new Secret(client.clientSecret),
   };
@@ -338,7 +357,7 @@ export async function changeCustomOAuthClient(input: {
     );
   const audit = (tx: Transaction, change: string) =>
     insertAuditEvent(tx, {
-      workspaceId: actor.workspaceId,
+      workspaceId,
       actorUserId: actor.callerId,
       action: "connection.oauth_client_changed",
       target: connectionId,
@@ -350,9 +369,26 @@ export async function changeCustomOAuthClient(input: {
       },
     });
   const healthy = (tx: Transaction) =>
-    resetConnectionAuth(tx, actor.workspaceId, connectionId, {
+    resetConnectionAuth(tx, workspaceId, connectionId, {
       schedule: !existing.row.setupPending,
     });
+  /** The grant row lock (refresh's), then the connection row. */
+  const lock = async (tx: Transaction) => {
+    const locked = await lockConnectionOAuth(tx, workspaceId, connectionId);
+    await tx
+      .select({ id: schema.connections.id })
+      .from(schema.connections)
+      .where(
+        and(
+          eq(schema.connections.workspaceId, workspaceId),
+          eq(schema.connections.id, connectionId),
+        ),
+      )
+      .for("update");
+    const fresh = await resolver.resolve(tx, binding);
+    return { grant: locked?.oauth ?? null, fresh };
+  };
+  const nothing = async () => {};
 
   if (provider.grant === "client_credentials") {
     let token;
@@ -377,78 +413,89 @@ export async function changeCustomOAuthClient(input: {
       },
     );
     if (!check.ok) return fail(400, check.error);
-    return inWorkspace(async (tx) => {
-      const grant = await findConnectionOAuth(
-        tx,
-        actor.workspaceId,
-        connectionId,
-      );
-      await updateConnection(tx, actor.workspaceId, connectionId, {
-        credentialsEncrypted: seal(null),
-      });
-      await upsertConnectionOAuth(tx, {
-        workspaceId: actor.workspaceId,
-        connectionId,
-        provider: CUSTOM_OAUTH_PROVIDER_ID,
-        accountSub: grant?.accountSub ?? generateCustomAccountSub(),
-        accountEmail: null,
-        grantedScopes: scopes,
-        accessTokenEncrypted: Buffer.from(
-          encryptOAuthAccessToken(
-            token.accessToken,
-            input.credentialKeyring,
-            binding,
-          ),
-          "utf8",
-        ),
-        accessTokenExpiresAt: token.expiresAt,
-      });
-      await healthy(tx);
-      await audit(tx, "client");
-      return { ok: true as const, value: null };
-    });
+    return {
+      ok: true,
+      value: {
+        async apply(tx) {
+          // Under the lock: a token a refresh minted meanwhile with the old
+          // client is replaced by the new client's.
+          const { grant } = await lock(tx);
+          await updateConnection(tx, workspaceId, connectionId, {
+            credentialsEncrypted: seal(null),
+          });
+          await upsertConnectionOAuth(tx, {
+            workspaceId,
+            connectionId,
+            provider: CUSTOM_OAUTH_PROVIDER_ID,
+            accountSub: grant?.accountSub ?? generateCustomAccountSub(),
+            accountEmail: null,
+            grantedScopes: scopes,
+            accessTokenEncrypted: Buffer.from(
+              encryptOAuthAccessToken(
+                token.accessToken,
+                input.credentialKeyring,
+                binding,
+              ),
+              "utf8",
+            ),
+            accessTokenExpiresAt: token.expiresAt,
+          });
+          await healthy(tx);
+          await audit(tx, "client");
+          return nothing;
+        },
+      },
+    };
   }
 
-  const sameClient =
-    current.bindingHeld && current.credentials.clientId === client.clientId;
-  if (sameClient) {
-    await inWorkspace(async (tx) => {
-      await updateConnection(tx, actor.workspaceId, connectionId, {
-        credentialsEncrypted: seal(current.credentials.refreshToken),
-      });
-      // Repairs a refused secret; a grant that needs a new sign-in keeps
-      // needing it.
-      if (existing.state?.authState === "auth_failed") await healthy(tx);
-      await audit(tx, "secret");
-    });
-    return { ok: true, value: null };
-  }
-  const released = await inWorkspace(async (tx) => {
-    await updateConnection(tx, actor.workspaceId, connectionId, {
-      credentialsEncrypted: seal(null),
-    });
-    const grant = await findConnectionOAuth(
-      tx,
-      actor.workspaceId,
-      connectionId,
-    );
-    if (grant) {
-      await updateConnectionOAuthTokens(tx, actor.workspaceId, connectionId, {
-        accessTokenEncrypted: null,
-        accessTokenExpiresAt: null,
-      });
-      await markNeedsReauthorization(
-        tx,
-        actor.workspaceId,
-        connectionId,
-        "invalid_grant",
-      );
-    }
-    await audit(tx, "client");
-    return current.bindingHeld ? current.credentials.refreshToken : null;
-  });
-  if (released) await oauthTokens.revokeCustomGrant(current.provider, released);
-  return { ok: true, value: null };
+  return {
+    ok: true,
+    value: {
+      async apply(tx) {
+        const { grant, fresh } = await lock(tx);
+        if (!fresh) return nothing;
+        const sameClient =
+          fresh.bindingHeld && fresh.credentials.clientId === client.clientId;
+        if (sameClient) {
+          // The refresh token as it is now, rotated or not.
+          await updateConnection(tx, workspaceId, connectionId, {
+            credentialsEncrypted: seal(fresh.credentials.refreshToken),
+          });
+          // Repairs a refused secret; a grant that needs a new sign-in
+          // keeps needing it.
+          if (existing.state?.authState === "auth_failed") await healthy(tx);
+          await audit(tx, "secret");
+          return nothing;
+        }
+        await updateConnection(tx, workspaceId, connectionId, {
+          credentialsEncrypted: seal(null),
+        });
+        if (grant) {
+          await updateConnectionOAuthTokens(tx, workspaceId, connectionId, {
+            accessTokenEncrypted: null,
+            accessTokenExpiresAt: null,
+          });
+          await markNeedsReauthorization(
+            tx,
+            workspaceId,
+            connectionId,
+            "invalid_grant",
+          );
+        }
+        await audit(tx, "client");
+        // The refresh token read under the lock, never sent to hosts it
+        // was not entered for.
+        const released = fresh.bindingHeld
+          ? fresh.credentials.refreshToken
+          : null;
+        return released
+          ? async () => {
+              await oauthTokens.revokeCustomGrant(fresh.provider, released);
+            }
+          : nothing;
+      },
+    },
+  };
 }
 
 export function createCustomApiConnectionService(

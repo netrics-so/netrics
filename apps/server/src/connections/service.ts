@@ -153,9 +153,18 @@ import {
   type ResolvedConnector,
 } from "../custom-api/connectors.js";
 import {
-  changeCustomOAuthClient,
   prepareCustomApiUpdate,
+  prepareCustomOAuthClientChange,
+  type CustomOAuthClientChange,
 } from "../custom-api/connections.js";
+
+/** Ends a transaction with a refusal, rolling back what it wrote. */
+class RollBack<T> extends Error {
+  constructor(readonly result: T) {
+    super("rolled back");
+    this.name = "RollBack";
+  }
+}
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   applyFreshness,
@@ -2499,8 +2508,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         existing.oauth?.provider,
       );
       // A custom API's own OAuth client may be replaced on the same
-      // environment (#805): changeCustomOAuthClient re-seals it and keeps,
-      // renews or releases the grant.
+      // environment (#805): validated here (token request, check), written
+      // in this update's transaction (prepareCustomOAuthClientChange).
       const customClientChange =
         oauthProvider === CUSTOM_OAUTH_PROVIDER_ID &&
         body.credentials !== undefined &&
@@ -2518,8 +2527,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       ) {
         return fail(400, "oauth_authorization_required");
       }
+      let clientChange: CustomOAuthClientChange | null = null;
       if (customClientChange) {
-        const changed = await changeCustomOAuthClient({
+        const changed = await prepareCustomOAuthClientChange({
           db,
           credentialKeyring,
           oauthTokens,
@@ -2538,6 +2548,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             changed.error,
           );
         }
+        clientChange = changed.value;
         body = { ...body, credentials: undefined };
       }
       // Key replacement with a generated key pair (ADR 0020 §3): from here
@@ -2869,7 +2880,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           : {}),
       };
 
-      return inWorkspace(actor, async (tx) => {
+      const write = async (
+        tx: Transaction,
+      ): Promise<Result<ConnectionDetail>> => {
         const consumed = await consumePending(tx, actor, pending);
         if (!consumed.ok) {
           return consumed;
@@ -3120,7 +3133,28 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             actor.locale,
           ),
         );
-      });
+      };
+      if (!clientChange) {
+        return inWorkspace(actor, write);
+      }
+      // The client change and the rest of the update commit together: it
+      // takes its locks first in the transaction, and a later refusal
+      // rolls it back.
+      const change = clientChange;
+      let afterCommit: () => Promise<void> = async () => {};
+      try {
+        const result = await inWorkspace(actor, async (tx) => {
+          afterCommit = await change.apply(tx);
+          const written = await write(tx);
+          if (!written.ok) throw new RollBack(written);
+          return written;
+        });
+        await afterCommit();
+        return result;
+      } catch (error) {
+        if (error instanceof RollBack) return error.result;
+        throw error;
+      }
     },
 
     /**
