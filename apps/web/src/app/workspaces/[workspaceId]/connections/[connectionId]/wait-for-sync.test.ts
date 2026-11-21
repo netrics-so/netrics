@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { waitsForSync } from "./connection-refresh";
+import { waitsForSync } from "./wait-for-sync";
 
 // The connection page refreshes itself while it waits for a sync (#834):
 // a new custom API connection stayed "Pending" until a manual reload.
