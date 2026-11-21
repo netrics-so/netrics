@@ -56,6 +56,7 @@ for (const [network, prefix] of [
 for (const [network, prefix] of [
   ["::", 128],
   ["::1", 128],
+  ["::ffff:0:0:0", 96], // IPv4-translated (SIIT); not routed, refused whole
   ["64:ff9b::", 96], // NAT64
   ["64:ff9b:1::", 48], // NAT64 local use
   ["100::", 64],
@@ -131,6 +132,9 @@ function embeddedIpv4(bytes: Uint8Array): { exact?: string; via: string[] } {
       ? { via: [] }
       : { exact: ipv4At(bytes, 12), via: [] };
   }
+  if (zero(bytes, 0, 8) && bytes[8] === 0xff && bytes[9] === 0xff) {
+    return zero(bytes, 10, 12) ? { via: [ipv4At(bytes, 12)] } : { via: [] }; // IPv4-translated ::ffff:0:a.b.c.d
+  }
   const prefix32 = (bytes[0]! << 8) | bytes[1]!;
   if (prefix32 === 0x0064 && bytes[2] === 0xff && bytes[3] === 0x9b) {
     return { via: [ipv4At(bytes, 12)] }; // NAT64 64:ff9b::/96
@@ -154,6 +158,10 @@ export function isBlockedAddress(address: string): boolean {
     // address; NAT64, 6to4 and Teredo ranges are refused whole.
     const { exact } = embeddedIpv4(bytes);
     if (exact !== undefined) return blocked.check(exact, "ipv4");
+    // IETF-reserved ::/8 as a whole: nothing in it is routed globally
+    // (global unicast is 2000::/3). Checked by hand: an IPv6 range over
+    // ::ffff:0:0/96 in a BlockList also matches every IPv4 address.
+    if (bytes[0] === 0) return true;
     return blocked.check(address.replace(/%.*$/, ""), "ipv6");
   }
   return true;
@@ -203,6 +211,99 @@ export function parsePrivateHostEntries(entries: readonly string[]): string[] {
     result.push(entry);
   }
   return result;
+}
+
+/**
+ * Common public suffixes of more than one label, under which anyone can
+ * register a domain. Not the whole Public Suffix List (no dependency for a
+ * startup warning): the second-level suffixes most often seen.
+ */
+const MULTI_LABEL_PUBLIC_SUFFIXES = new Set([
+  "co.uk",
+  "org.uk",
+  "me.uk",
+  "ltd.uk",
+  "plc.uk",
+  "net.uk",
+  "ac.uk",
+  "gov.uk",
+  "com.au",
+  "net.au",
+  "org.au",
+  "edu.au",
+  "gov.au",
+  "id.au",
+  "co.nz",
+  "net.nz",
+  "org.nz",
+  "co.jp",
+  "ne.jp",
+  "or.jp",
+  "ac.jp",
+  "go.jp",
+  "co.kr",
+  "or.kr",
+  "ne.kr",
+  "com.br",
+  "net.br",
+  "org.br",
+  "com.cn",
+  "net.cn",
+  "org.cn",
+  "com.hk",
+  "com.tw",
+  "com.sg",
+  "com.my",
+  "com.ph",
+  "com.vn",
+  "co.in",
+  "net.in",
+  "org.in",
+  "co.id",
+  "co.th",
+  "com.mx",
+  "com.ar",
+  "com.co",
+  "com.pe",
+  "com.uy",
+  "com.ve",
+  "com.ec",
+  "co.za",
+  "com.ng",
+  "co.ke",
+  "com.eg",
+  "com.tr",
+  "com.ua",
+  "com.pl",
+  "co.il",
+  "github.io",
+  "herokuapp.com",
+  "vercel.app",
+  "netlify.app",
+  "pages.dev",
+  "workers.dev",
+  "azurewebsites.net",
+  "cloudfront.net",
+  "appspot.com",
+]);
+
+/**
+ * Valid entries that reach further than an operator likely means: a
+ * wildcard over a public suffix (`*.com`, `*.local`, `*.co.uk`,
+ * `*.github.io`) and `localhost` (or `*.localhost`). A listed name may
+ * resolve to any address except metadata ones, loopback included. The
+ * server warns about them at startup; they stay allowed, the setting is
+ * the operator's.
+ */
+export function broadPrivateHostEntries(entries: readonly string[]): string[] {
+  return entries.filter((entry) => {
+    const name = entry.trim().toLowerCase();
+    if (isIP(name) || name.includes("/")) return false;
+    if (name === "localhost" || name.endsWith(".localhost")) return true;
+    if (!name.startsWith("*.")) return false;
+    const suffix = name.slice(2);
+    return !suffix.includes(".") || MULTI_LABEL_PUBLIC_SUFFIXES.has(suffix);
+  });
 }
 
 export interface PrivateHostPolicy {

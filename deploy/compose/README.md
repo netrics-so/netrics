@@ -226,8 +226,10 @@ NETRICS_CUSTOM_API_PRIVATE_HOSTS=intranet.example,*.corp.example,10.20.0.0/16
 Entries are host names (`*.corp.example` matches its subdomains), IP
 addresses or CIDR ranges (at least `/8` for IPv4 and `/16` for IPv6); `*`,
 `0.0.0.0/0` and `::/0` are refused, and an invalid entry stops startup. A
-listed host may resolve to a private address; a definition still reaches
-only the hosts it declares. Cloud metadata and link-local addresses
+listed host may resolve to any private address, this machine included; a
+definition still reaches only the hosts it declares. List exact hosts: the
+`api` and `worker` log a warning at startup for broad entries such as
+`*.com` or `localhost`. Cloud metadata and link-local addresses
 (`169.254.0.0/16`, `fe80::/10` and the like) stay refused even when listed.
 The setting is off by default.
 

@@ -36,6 +36,7 @@ import {
 } from "@netrics/connectors/custom-api";
 import {
   countCustomApiConnections,
+  lockCustomApiLimit,
   DRAFT_CONNECTION_TTL_HOURS,
   enqueueJob,
   findConnection,
@@ -466,6 +467,7 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
           );
           if (!found) return fail(404, "custom_api_definition_not_found");
         }
+        await lockCustomApiLimit(tx, actor.workspaceId, "drafts");
         const [open] = await tx
           .select({ n: count() })
           .from(schema.connections)
@@ -701,6 +703,9 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
           if (envelope && typeof stored?.refreshToken === "string")
             envelope = { ...envelope, refreshToken: stored.refreshToken };
         }
+        // Same lock as a connection create: promotes and creates cannot
+        // pass the count together.
+        await lockCustomApiLimit(tx, actor.workspaceId, "connections");
         if (
           (await countCustomApiConnections(tx, actor.workspaceId)) >=
           deps.limits.maxConnections

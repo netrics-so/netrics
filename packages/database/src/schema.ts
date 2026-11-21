@@ -621,6 +621,13 @@ export const connectionState = pgTable(
     // auth state and consecutive failures stay as they were. Cleared by the
     // next successful run; a past value means nothing.
     rateLimitedUntil: timestamp("rate_limited_until", { withTimezone: true }),
+    // Builder drafts only (#828): a test request of the draft runs until
+    // then, in whichever API process took it; a second test of the same
+    // draft is refused meanwhile. Cleared when the test ends; a past value
+    // (a process that died mid-test) means nothing.
+    customApiTestUntil: timestamp("custom_api_test_until", {
+      withTimezone: true,
+    }),
     // The connector's datasets ({key: schema version}) that the last
     // succeeded backfill read over the whole window (#617). A dataset the
     // connector declares but this map lacks, or has at another version, was

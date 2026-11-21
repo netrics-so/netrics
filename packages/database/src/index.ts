@@ -460,6 +460,7 @@ export {
   findCustomApiDefinitionVersion,
   insertCustomApiDefinition,
   insertCustomApiDefinitionVersion,
+  lockCustomApiLimit,
   listCustomApiDefinitionConnections,
   listCustomApiDefinitionVersions,
   listCustomApiDefinitions,

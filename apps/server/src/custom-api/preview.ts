@@ -174,12 +174,14 @@ export function boundedPreview(
   let reserved = 0;
   const room = () => maxBytes - used - reserved;
 
-  const text = (value: string): string => {
-    const clean = redactText(value, secrets);
+  /** Redacted text cut to 2,000 characters; `length` is the original one. */
+  const shown = (clean: string, length: number): string => {
     if (clean.length <= limits.stringChars) return clean;
     omitted.strings += 1;
-    return `${clean.slice(0, limits.stringChars)}… (${value.length} characters)`;
+    return `${clean.slice(0, limits.stringChars)}… (${length} characters)`;
   };
+  const text = (value: string): string =>
+    shown(redactText(value, secrets), value.length);
 
   /** A string cut to at most `bytes` serialized, or undefined. */
   const cutToFit = (
@@ -206,8 +208,14 @@ export function boundedPreview(
     depth: number,
     prefix: number,
   ): JsonValue | undefined => {
+    /**
+     * `source`: for a string value, its redacted text and original length,
+     * so a cut by the budget is made from the text itself and its marker
+     * names the original length (not that of the 2,000-character cut).
+     */
     const scalar = (
       out: string | number | boolean | null,
+      source?: { clean: string; length: number },
     ): JsonValue | undefined => {
       const cost = prefix + bytesOf(out);
       if (cost <= room()) {
@@ -215,7 +223,11 @@ export function boundedPreview(
         return out;
       }
       if (typeof out !== "string") return undefined;
-      const cut = cutToFit(out, out.length, room() - prefix);
+      const cut = cutToFit(
+        source ? source.clean.slice(0, limits.stringChars) : out,
+        source ? source.length : out.length,
+        room() - prefix,
+      );
       if (cut === undefined) return undefined;
       omitted.bytes += 1;
       used += prefix + bytesOf(cut);
@@ -224,7 +236,13 @@ export function boundedPreview(
     if (value === null || typeof value === "boolean") return scalar(value);
     if (typeof value === "number")
       return scalar(Number.isFinite(value) ? value : null);
-    if (typeof value === "string") return scalar(text(value));
+    if (typeof value === "string") {
+      const clean = redactText(value, secrets);
+      return scalar(shown(clean, value.length), {
+        clean,
+        length: value.length,
+      });
+    }
     if (typeof value !== "object") return scalar(null);
     if (depth >= limits.depth) {
       const placed = scalar("… (nested deeper)");

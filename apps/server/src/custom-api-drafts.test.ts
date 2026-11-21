@@ -751,6 +751,18 @@ describe("custom API draft connections", () => {
     );
   });
 
+  it("limits open drafts under concurrent creates", async () => {
+    const workspace = await newWorkspace(owner, "Racing drafts");
+    const responses = await Promise.all(
+      Array.from({ length: 14 }, () =>
+        call("POST", drafts(workspace), owner, {}),
+      ),
+    );
+    const codes = responses.map((r) => r.statusCode);
+    expect(codes.filter((c) => c === 201)).toHaveLength(10);
+    expect(codes.filter((c) => c === 409)).toHaveLength(4);
+  });
+
   it("loads a draft's stored definition for the OAuth flow, and the pinned one after promotion", async () => {
     const id = await draftWithToken();
     const load = (workspace: string) =>
@@ -820,9 +832,14 @@ describe("custom API draft connections", () => {
     };
     const promoteIn = (id: string) =>
       call("POST", `${drafts(workspace)}/${id}/promote`, owner, body, target);
-    expect((await promoteIn(first.draft.id)).statusCode).toBe(200);
+    // Promoted together: only one passes the count.
+    const results = await Promise.all([
+      promoteIn(first.draft.id),
+      promoteIn(second.draft.id),
+    ]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
     expectError(
-      await promoteIn(second.draft.id),
+      results.find((r) => r.statusCode === 409)!,
       409,
       "custom_api_connection_limit",
     );

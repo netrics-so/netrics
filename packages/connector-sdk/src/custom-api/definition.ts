@@ -297,7 +297,12 @@ const imageHost = z
     message: 'Expected a lower-case host name or "*.example.com"',
   });
 
-/** Own-key record bounded in size; keys that could reach a prototype are refused. */
+/**
+ * Own-key record bounded in size; `constructor` and `prototype` keys are
+ * refused here. zod's record skips an own `__proto__` key (as `JSON.parse`
+ * creates it) without an issue; upgradeCustomApiDefinition refuses it on
+ * the raw input before parsing.
+ */
 function boundedRecord<V extends z.ZodType>(
   key: z.ZodString,
   value: V,
@@ -960,7 +965,26 @@ export interface CustomApiIssue {
 const ISSUE_CODES = new Set<string>(CUSTOM_API_ISSUE_CODES);
 export const CUSTOM_API_MAX_ISSUES = 20;
 
-/** First 20 issues; path joined with "." ("streams.0.fields.2.path"); zod built-ins get code "invalid". Never includes input values. */
+/** Longest key name an issue repeats; longer ones are cut with "…". */
+const ISSUE_KEY_LENGTH = 64;
+
+/** A key name from the input, cut and with control characters escaped. */
+function issueKey(key: PropertyKey): string {
+  const text = typeof key === "symbol" ? "symbol" : String(key);
+  const cut =
+    text.length > ISSUE_KEY_LENGTH
+      ? `${text.slice(0, ISSUE_KEY_LENGTH - 1)}…`
+      : text;
+  // JSON escaping, without the quotes: control characters, `"` and `\`.
+  return JSON.stringify(cut).slice(1, -1);
+}
+
+/**
+ * First 20 issues; path joined with "." ("streams.0.fields.2.path"); zod
+ * built-ins get code "invalid". Never includes input values. Key names from
+ * the input (record keys in a path, unknown properties) are cut to 64
+ * characters and escaped.
+ */
 export function customApiIssues(error: z.ZodError): CustomApiIssue[] {
   return error.issues.slice(0, CUSTOM_API_MAX_ISSUES).map((entry) => {
     const code =
@@ -970,13 +994,23 @@ export function customApiIssues(error: z.ZodError): CustomApiIssue[] {
         ? (entry.params.code as CustomApiIssueCode)
         : "invalid";
     return {
-      path: entry.path.map(String).join("."),
+      path: entry.path.map(issueKey).join("."),
       code,
-      // zod's built-in messages describe the expectation, never the input;
-      // custom messages here are fixed sentences.
-      message: entry.message,
+      // zod's built-in messages describe the expectation, never the input,
+      // except the unknown-key message, which repeats the keys whole; it is
+      // rebuilt with cut keys. Custom messages here are fixed sentences.
+      message:
+        entry.code === "unrecognized_keys"
+          ? unknownKeysMessage(entry.keys)
+          : entry.message,
     };
   });
+}
+
+function unknownKeysMessage(keys: readonly string[]): string {
+  const shown = keys.slice(0, 3).map((key) => `"${issueKey(key)}"`);
+  const more = keys.length > 3 ? ` and ${keys.length - 3} more` : "";
+  return `Unknown ${keys.length === 1 ? "property" : "properties"}: ${shown.join(", ")}${more}`;
 }
 
 // ------------------------------------------------------------------ upgrade
@@ -991,13 +1025,82 @@ const ERROR_MESSAGES: Record<CustomApiDefinitionErrorCode, string> = {
   invalid: "The custom API definition is invalid",
 };
 
+/** The one issue a whole-document error carries, so callers always mark something. */
+const DOCUMENT_ISSUES: Record<
+  Exclude<CustomApiDefinitionErrorCode, "invalid">,
+  CustomApiIssue
+> = {
+  not_an_object: {
+    path: "",
+    code: "invalid",
+    message: ERROR_MESSAGES.not_an_object,
+  },
+  unsupported_schema_version: {
+    path: "schemaVersion",
+    code: "invalid",
+    message: ERROR_MESSAGES.unsupported_schema_version,
+  },
+};
+
 export class CustomApiDefinitionError extends Error {
+  readonly issues: CustomApiIssue[];
   constructor(
     readonly code: CustomApiDefinitionErrorCode,
-    readonly issues: CustomApiIssue[],
+    issues: CustomApiIssue[],
   ) {
     super(ERROR_MESSAGES[code]);
     this.name = "CustomApiDefinitionError";
+    this.issues =
+      issues.length === 0 && code !== "invalid"
+        ? [{ ...DOCUMENT_ISSUES[code] }]
+        : issues;
+  }
+}
+
+/**
+ * Own `__proto__` keys anywhere in an input document (as `JSON.parse`
+ * creates them), as issues. zod's records skip such a key without a word;
+ * refusing it says so instead of dropping what the author wrote.
+ */
+function protoKeyIssues(raw: unknown): CustomApiIssue[] {
+  const issues: CustomApiIssue[] = [];
+  const stack: Array<{ value: unknown; path: string[] }> = [
+    { value: raw, path: [] },
+  ];
+  while (stack.length > 0 && issues.length < CUSTOM_API_MAX_ISSUES) {
+    const { value, path } = stack.pop()!;
+    if (value === null || typeof value !== "object") continue;
+    if (path.length > CUSTOM_API_LIMITS.jsonDepth) continue;
+    for (const key of Object.keys(value)) {
+      const at = [...path, key];
+      if (key === "__proto__")
+        issues.push({
+          path: at.map(issueKey).join("."),
+          code: "invalid",
+          message: "Reserved key",
+        });
+      else
+        stack.push({
+          value: (value as Record<string, unknown>)[key],
+          path: at,
+        });
+    }
+  }
+  return issues;
+}
+
+/**
+ * Compact JSON size of an input document, or Infinity when it does not
+ * serialize. Every property of the input survives the strict parse, so an
+ * input over the limit is over it after the parse too: checking it first
+ * spares parsing an oversized document.
+ */
+function inputBytes(raw: unknown): number {
+  try {
+    const text = JSON.stringify(raw);
+    return text === undefined ? 0 : utf8ByteLength(text);
+  } catch {
+    return Number.POSITIVE_INFINITY;
   }
 }
 
@@ -1041,6 +1144,18 @@ export function upgradeCustomApiDefinition(raw: unknown): CustomApiDefinition {
       throw new Error(`Custom API upgrade from version ${version} is broken`);
     doc = next;
   }
+  // Size first: the key walk below only ever sees a bounded document.
+  if (inputBytes(doc) > CUSTOM_API_LIMITS.documentBytes)
+    throw new CustomApiDefinitionError("invalid", [
+      {
+        path: "",
+        code: "document_too_large",
+        message: "The definition is too large",
+      },
+    ]);
+  const reserved = protoKeyIssues(doc);
+  if (reserved.length > 0)
+    throw new CustomApiDefinitionError("invalid", reserved);
   const parsed = customApiDefinitionSchema.safeParse(doc);
   if (!parsed.success)
     throw new CustomApiDefinitionError(

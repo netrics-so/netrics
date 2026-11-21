@@ -9,6 +9,7 @@ import {
   CustomApiConfigError,
   CustomApiResponseError,
   customApiSecretValues,
+  stripCustomApiSecrets,
   type CustomApiCredentials,
 } from "./index.js";
 import { b64, sdkFixture } from "./test-helpers.js";
@@ -202,6 +203,64 @@ describe("custom API requests", () => {
     expect(customApiSecretValues(definition, credentials)).toEqual(
       expect.arrayContaining(["s3cret-tenant", "t-s3cret-tenant"]),
     );
+  });
+
+  it("strips secret values from a next link, but not short ones", () => {
+    const definition: CustomApiDefinition = {
+      ...shop,
+      variables: [
+        ...shop.variables,
+        { id: "tenant_secret", label: "Tenant secret", secret: true },
+        { id: "short_secret", label: "Short secret", secret: true },
+      ],
+      auth: {
+        type: "bearer",
+        headerName: "Authorization",
+        prefix: "Bearer",
+        headers: {
+          "X-Tenant": "{{tenant_secret}}",
+          "X-Short": "{{short_secret}}",
+        },
+      },
+    };
+    const credentials = {
+      host,
+      token: FIXTURE_SECRETS.token,
+      variables: { tenant_secret: "s3cret-tenant", short_secret: "2024ab" },
+    };
+    // By value only from 8 characters: "2024ab" (6) stays.
+    expect(
+      stripCustomApiSecrets(
+        `https://${host}/v1/items?after=2024ab&echo=s3cret-tenant&page=1`,
+        definition,
+        credentials,
+      ),
+    ).toBe(`https://${host}/v1/items?after=2024ab&page=1`);
+  });
+
+  it("strips a parameter the stream fills from a secret variable, whatever its length", () => {
+    const definition: CustomApiDefinition = {
+      ...shop,
+      variables: [...shop.variables, { id: "pin", label: "PIN", secret: true }],
+      auth: { type: "api_key", placement: "query", name: "key" },
+    };
+    // Not a definition the schema accepts (a secret outside auth); the
+    // strip holds even for one that slipped through.
+    const stream = { request: { path: "/items", query: { pin: "{{pin}}" } } };
+    const credentials = {
+      host,
+      apiKey: "k1",
+      variables: { pin: "42" },
+    } as CustomApiCredentials;
+    expect(
+      stripCustomApiSecrets(
+        `https://${host}/v1/items?key=k1&pin=42&after=42`,
+        definition,
+        credentials,
+        {},
+        stream as never,
+      ),
+    ).toBe(`https://${host}/v1/items?after=42`);
   });
 
   it("lists derived secrets for redaction", () =>

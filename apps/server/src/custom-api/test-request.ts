@@ -41,6 +41,7 @@ import {
   findConnectionOAuth,
   withWorkspace,
   type Database,
+  type Transaction,
 } from "@netrics/database";
 
 import {
@@ -65,7 +66,11 @@ import {
   type JsonValue,
   type SecretSet,
 } from "./preview.js";
-import { takeCustomApiTestSlot } from "./test-rate.js";
+import {
+  releaseCustomApiTestLease,
+  takeCustomApiTestLease,
+  takeCustomApiTestSlot,
+} from "./test-rate.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -313,8 +318,6 @@ export function createCustomApiTestRequestService(
       };
     }
   }
-  /** One running test per draft (per API process). */
-  const running = new Set<string>();
 
   return {
     async run(
@@ -327,7 +330,7 @@ export function createCustomApiTestRequestService(
       const slot = await withWorkspace(
         deps.db,
         { workspaceId: actor.workspaceId, userId: actor.callerId },
-        (tx) => takeCustomApiTestSlot(tx, actor.workspaceId, now()),
+        (tx) => takeCustomApiTestSlot(tx, actor.workspaceId),
       );
       if (!slot.ok)
         return {
@@ -396,10 +399,19 @@ export function createCustomApiTestRequestService(
           "custom_api_secret_missing",
           "Enter the login details this API needs before testing.",
         );
-      if (running.has(draftId))
+      // One running test per draft, across API processes.
+      const inDraft = <T>(fn: (tx: Transaction) => Promise<T>) =>
+        withWorkspace(
+          deps.db,
+          { workspaceId: actor.workspaceId, userId: actor.callerId },
+          fn,
+        );
+      const lease = await inDraft((tx) =>
+        takeCustomApiTestLease(tx, actor.workspaceId, draftId),
+      );
+      if (lease === null)
         return { ok: false, status: 409, error: "custom_api_test_busy" };
 
-      running.add(draftId);
       try {
         const opened = await drafts.open(actor, draftId);
         if (!opened.ok) return opened;
@@ -560,7 +572,9 @@ export function createCustomApiTestRequestService(
           }),
         };
       } finally {
-        running.delete(draftId);
+        await inDraft((tx) =>
+          releaseCustomApiTestLease(tx, actor.workspaceId, draftId, lease),
+        );
       }
     },
   };

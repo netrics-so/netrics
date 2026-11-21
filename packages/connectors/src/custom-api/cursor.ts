@@ -15,11 +15,26 @@ export interface CustomApiCursorV1 {
   refreshKey: string;
   /** Dataset pages the refresh has emitted so far. */
   pageIndex: number;
+  /**
+   * Next-link pages the refresh has read, as short hashes of their URL
+   * without secrets and with sorted parameters (at most
+   * CUSTOM_API_SEEN_PAGES, newest last). A next link back to one of them
+   * is a cycle and ends the stream. Absent in cursors of earlier builds.
+   */
+  seen?: string[];
   /** Safety-limit counters of the run; `request` names the run's sync window. */
   run: { pages: number; records: number; startedAt: string; request: string };
 }
 
 const PREFIX = "cav1.";
+
+/** Pages a cursor remembers to detect a next-link cycle. */
+export const CUSTOM_API_SEEN_PAGES = 32;
+
+const seenList = (value: unknown): value is string[] =>
+  Array.isArray(value) &&
+  value.length <= CUSTOM_API_SEEN_PAGES &&
+  value.every((hash) => text(hash, 64));
 
 export function encodeCursor(cursor: CustomApiCursorV1): string {
   return (
@@ -80,7 +95,8 @@ export function decodeCursor(
     !count(run.records) ||
     !text(run.startedAt, 40) ||
     !Number.isFinite(Date.parse(run.startedAt)) ||
-    !text(run.request, 200)
+    !text(run.request, 200) ||
+    (cursor.seen !== undefined && !seenList(cursor.seen))
   )
     return null;
   return {
@@ -90,6 +106,7 @@ export function decodeCursor(
     page: cursor.page,
     refreshKey: cursor.refreshKey,
     pageIndex: cursor.pageIndex,
+    ...(cursor.seen !== undefined ? { seen: cursor.seen as string[] } : {}),
     run: {
       pages: run.pages,
       records: run.records,

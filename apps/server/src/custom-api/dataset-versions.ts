@@ -30,6 +30,9 @@ function streamSignature(
   );
   return canonicalJson({
     fields,
+    // In order: a record's key is built from its key fields in this order
+    // (datasetRecordKey), so a reordered key names every stored record
+    // differently and is a new dataset version.
     keyFields: stream.keyFields,
     mode: stream.mode,
     reportingField: stream.reportingField,
