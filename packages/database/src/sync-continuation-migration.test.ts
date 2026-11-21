@@ -40,7 +40,10 @@ it("preserves completed history while adding tenant-scoped continuation records"
   const before = await owner`select * from sync_runs order by id`;
   const jobsBefore = await owner`select * from jobs order by id`;
   await test.migrate();
-  expect(await owner`select * from sync_runs order by id`).toEqual(before);
+  // Later migrations only add to a run: its reason code (#795), null here.
+  expect(await owner`select * from sync_runs order by id`).toEqual(
+    before.map((run) => ({ ...run, error_code: null })),
+  );
   expect(await owner`select * from jobs order by id`).toEqual(jobsBefore);
   const db = createDatabase(test.appUrl);
   try {

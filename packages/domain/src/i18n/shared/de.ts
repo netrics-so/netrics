@@ -84,6 +84,18 @@ export const sharedDe: Catalog<SharedMessages> = {
       forbidden:
         "Apple Ads hat den Zugriff verweigert: Der API-Benutzer braucht in diesem Werbekonto eine API-Rolle, etwa API Account Read Only (in Apples Antworten API Read Only). Eine Rolle ohne API entzieht den API-Zugriff. Bitte einen Account Admin, die Rolle zu ändern, oder richte einen neuen Schlüssel ein.",
     },
+    appStoreConnect: {
+      unauthorized:
+        "App Store Connect hat den Schlüssel abgelehnt: Er wurde widerrufen, oder Issuer-ID, Schlüssel-ID und privater Schlüssel gehören nicht zusammen. Lad einen neuen App-Store-Connect-Schlüssel hoch.",
+      forbidden:
+        "App Store Connect hat den Zugriff verweigert: Die Rolle des Schlüssels wurde geändert, oder der Zugriff wurde entzogen. Dieser Schlüssel braucht die Rolle Sales oder Finance. Lad einen neuen App-Store-Connect-Schlüssel hoch.",
+      keyMismatch:
+        "App Store Connect hat den Schlüssel abgelehnt: Issuer-ID, Schlüssel-ID und privater Schlüssel gehören nicht zusammen, oder der Schlüssel wurde widerrufen. Prüf die drei Werte oder erstell einen neuen Team-Schlüssel und lad ihn hoch.",
+      roleMissing:
+        "Dieser Schlüssel kann keine Verkaufsberichte lesen. Er braucht die Rolle Sales oder Finance; Admin geht auch, gewährt aber mehr, als netrics braucht. Erstell einen Team-Schlüssel mit der Rolle Sales und lad ihn hoch.",
+      agreementsMissing:
+        "App Store Connect verlangt eine Vereinbarung, die fehlt oder abgelaufen ist. Der Account Holder muss die neuesten Vereinbarungen in App Store Connect (Business) akzeptieren. Versuch es danach erneut.",
+    },
     customApi: {
       unauthorized:
         "Die API hat die Zugangsdaten abgelehnt (HTTP 401). Gib für diese Verbindung einen neuen Schlüssel, ein neues Token oder Passwort ein oder verbinde sie neu.",

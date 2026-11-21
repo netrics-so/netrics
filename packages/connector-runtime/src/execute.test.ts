@@ -1,4 +1,8 @@
-import { RateLimitedError, sourceDatasetSchema } from "@netrics/connector-sdk";
+import {
+  ConnectorError,
+  RateLimitedError,
+  sourceDatasetSchema,
+} from "@netrics/connector-sdk";
 import type {
   CheckResult,
   ConnectionContext,
@@ -290,6 +294,148 @@ describe("executeSync", () => {
       /function at config\.db/,
     );
     expect(called).toBe(false);
+  });
+});
+
+describe("reason codes (SDK 0.2.18, #795)", () => {
+  const context: ConnectionContext = {
+    ...baseContext,
+    credentials: { token: "sk-live-9f8e7d6c" },
+  };
+
+  it("keeps a thrown ConnectorError's code, with the message redacted", async () => {
+    class QuotaError extends ConnectorError {
+      constructor() {
+        super("quota used up for sk-live-9f8e7d6c", "acme.quota_used_up");
+        this.name = "QuotaError";
+      }
+    }
+    const connector = connectorWith(demoManifest, () => {
+      throw new QuotaError();
+    });
+    const failure = await executeSync(connector, context, request).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ConnectorError);
+    expect(failure).not.toBeInstanceOf(ContractViolationError);
+    expect((failure as ConnectorError).code).toBe("acme.quota_used_up");
+    expect((failure as Error).name).toBe("QuotaError");
+    expect((failure as Error).message).toBe("quota used up for [redacted]");
+  });
+
+  it("gives a plain thrown error no code", async () => {
+    const connector = connectorWith(demoManifest, () => {
+      // Node's own error codes are not reason codes.
+      throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+    });
+    const failure = await executeSync(connector, context, request).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(ConnectorError);
+    expect(failure).not.toHaveProperty("code");
+  });
+
+  it("passes a failed check's code through, next to its redacted message", async () => {
+    const connector = connectorWith(demoManifest, undefined, () => ({
+      ok: false,
+      message: "token sk-live-9f8e7d6c was revoked",
+      code: "acme.key_revoked",
+    }));
+    await expect(executeCheck(connector, context)).resolves.toEqual({
+      ok: false,
+      message: "token [redacted] was revoked",
+      code: "acme.key_revoked",
+    });
+  });
+
+  // A code is well formed and still not trusted: a connector could build
+  // one from a credential ("acme." + a lowercase hex token). The message
+  // is redacted; such a code is dropped whole, never forwarded in part.
+  const hex = "9f8e7d6c5b4a39281706f5e4d3c2b1a0";
+  const hexContext: ConnectionContext = {
+    ...baseContext,
+    credentials: { token: hex, nested: { refresh: "ABCDEF0123456789" } },
+  };
+
+  it("drops a thrown error's code that holds a credential value", async () => {
+    for (const code of [
+      `acme.${hex}`,
+      `acme.${hex}.revoked`,
+      // The connector lowercased a credential to make it fit.
+      "acme.abcdef0123456789",
+    ]) {
+      class LeakyError extends ConnectorError {
+        constructor() {
+          super(`refused ${hex}`, code);
+          this.name = "LeakyError";
+        }
+      }
+      const connector = connectorWith(demoManifest, () => {
+        throw new LeakyError();
+      });
+      const failure = await executeSync(connector, hexContext, request).catch(
+        (error: unknown) => error,
+      );
+      expect(failure, code).toBeInstanceOf(Error);
+      expect(failure, code).not.toBeInstanceOf(ConnectorError);
+      expect(failure, code).not.toHaveProperty("code");
+      expect((failure as Error).name).toBe("LeakyError");
+      expect((failure as Error).message).toBe("refused [redacted]");
+      expect(JSON.stringify(failure)).not.toContain(hex);
+    }
+  });
+
+  it("drops a failed check's code that holds a credential value", async () => {
+    for (const code of [`acme.${hex}`, "acme.abcdef0123456789"]) {
+      const connector = connectorWith(demoManifest, undefined, () => ({
+        ok: false,
+        message: `token ${hex} was revoked`,
+        code,
+      }));
+      await expect(executeCheck(connector, hexContext), code).resolves.toEqual({
+        ok: false,
+        message: "token [redacted] was revoked",
+      });
+    }
+  });
+
+  it("drops a code that holds a derived secret of the call", async () => {
+    const minted = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+    const options = { redactValues: [minted] };
+    const thrown = await executeSync(
+      connectorWith(demoManifest, () => {
+        throw new ConnectorError("refused", `acme.${minted}`);
+      }),
+      baseContext,
+      request,
+      options,
+    ).catch((error: unknown) => error);
+    expect(thrown).not.toHaveProperty("code");
+    await expect(
+      executeCheck(
+        connectorWith(demoManifest, undefined, () => ({
+          ok: false,
+          message: "refused",
+          code: `acme.${minted}`,
+        })),
+        baseContext,
+        options,
+      ),
+    ).resolves.toEqual({ ok: false, message: "refused" });
+  });
+
+  it("refuses text in place of a code as a contract violation", async () => {
+    for (const code of ["The key was revoked", "KEY_REVOKED", "", "acme."]) {
+      const connector = connectorWith(demoManifest, undefined, () => ({
+        ok: false,
+        message: "revoked",
+        code,
+      }));
+      await expect(executeCheck(connector, context)).rejects.toBeInstanceOf(
+        ContractViolationError,
+      );
+    }
   });
 });
 

@@ -165,6 +165,7 @@ export function presentSyncRun(run: SyncRunRow) {
     finishedAt: run.finishedAt?.toISOString() ?? null,
     errorClass: run.errorClass,
     errorMessage: run.errorMessage,
+    errorCode: run.errorCode,
     observationsWritten: run.observationsWritten,
   };
 }

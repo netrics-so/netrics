@@ -12,16 +12,42 @@ import { I18nProvider } from "@/lib/i18n/client";
 
 const REFUSED = sharedEn.providerMessages.appleAds.invalidClient;
 
-function render(locale: Locale, errorMessage: string) {
+function render(
+  locale: Locale,
+  errorMessage: string,
+  errorCode: string | null = null,
+) {
   return renderToStaticMarkup(
     <I18nProvider locale={locale} messages={WEB_CATALOGS[locale]}>
-      <SyncRunError run={{ errorClass: "auth", errorMessage }} />
+      <SyncRunError run={{ errorClass: "auth", errorMessage, errorCode }} />
     </I18nProvider>,
   );
 }
 
+/** What a later server might record for the same refusal. */
+const REWORDED = "The provider did not accept this key. Set up a new one.";
+
 describe("sync run error", () => {
-  it("shows a refused Apple Ads key in German", () => {
+  it("shows a refused key by its reason code, whatever the English says (#795)", () => {
+    const appleAds = render("de", REWORDED, "apple_ads.invalid_client");
+    expect(appleAds).toContain(
+      "Anmeldung abgelehnt: Apple Ads hat den Schlüssel",
+    );
+    expect(appleAds).not.toContain("did not accept");
+    expect(appleAds).not.toContain('lang="en"');
+    const appStore = render("de", REWORDED, "app_store_connect.unauthorized");
+    expect(appStore).toContain(
+      "Anmeldung abgelehnt: App Store Connect hat den Schlüssel abgelehnt",
+    );
+    expect(appStore).not.toContain('lang="en"');
+  });
+
+  it("keeps the recorded words of a code it does not know", () => {
+    const html = render("de", REWORDED, "acme.key_revoked");
+    expect(html).toContain(`<span lang="en">${REWORDED}</span>`);
+  });
+
+  it("shows a refused Apple Ads key recorded before codes in German", () => {
     const html = render("de", REFUSED);
     expect(html).toContain("Anmeldung abgelehnt: Apple Ads hat den Schlüssel");
     expect(html).not.toContain("refused the key");

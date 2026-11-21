@@ -87,6 +87,15 @@ export interface SignedKeyProviderDefinition {
   readonly authFailure: {
     readonly unauthorized: string;
     readonly forbidden: string;
+    /**
+     * The stable reason codes of the two texts (#795), stored next to the
+     * message so clients translate by code. Without them the text is
+     * shown as it is.
+     */
+    readonly codes?: {
+      readonly unauthorized?: string;
+      readonly forbidden?: string;
+    };
   };
   /**
    * Optional further keys of the same connection (#190: App Store Connect's
@@ -122,6 +131,8 @@ export interface SignedKeyTokenExchange {
    * (key removed at the provider, or the IDs do not match the key).
    */
   readonly invalidClient: string;
+  /** The stable reason code of `invalidClient` (#795). */
+  readonly invalidClientCode?: string;
 }
 
 /**
@@ -195,6 +206,11 @@ export type SignedKeyProbeResult =
       ok: false;
       /** Shown to the user; credential values are redacted from it. */
       message: string;
+      /**
+       * The stable reason of the refusal, when it has a known one (#795):
+       * a fixed word, never a credential value or provider text.
+       */
+      code?: string;
       /** Nothing was decided about the key (e.g. a rate limit): try again. */
       retry?: true;
     };

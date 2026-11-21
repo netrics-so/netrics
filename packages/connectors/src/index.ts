@@ -1,4 +1,5 @@
 export {
+  AGREEMENTS_CODE,
   AGREEMENTS_MESSAGE,
   ANALYTICS_METRIC_KEYS,
   ANALYTICS_SEGMENT_HOSTS,
@@ -14,6 +15,7 @@ export {
   appStoreConnectManifest,
   createAppStoreConnectClient,
   createAppStoreConnectConnector,
+  KEY_MISMATCH_CODE,
   KEY_MISMATCH_MESSAGE,
   probeApps,
   probeCustomerReviews,
@@ -25,6 +27,7 @@ export {
   REVIEWS_PAUSED_MESSAGE,
   REVIEWS_ROLE_MESSAGE,
   reviewsProbeApp,
+  ROLE_CODE,
   ROLE_MESSAGE,
   vendorNumberMessage,
 } from "./app-store-connect/index.js";

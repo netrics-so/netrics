@@ -5,6 +5,7 @@ import {
   appStoreAnalyticsStatusResponseSchema,
   appStoreReviewsStatusResponseSchema,
   connectionDetailResponseSchema,
+  connectionErrorResponseSchema,
   connectionListResponseSchema,
   connectionPreviewResponseSchema,
   storedConnectionPreviewRequestSchema,
@@ -87,6 +88,17 @@ const reviewParamsSchema = z.object({
 /** Sends the failure and returns null, or returns the value. */
 function unwrap<T>(result: Result<T>, reply: FastifyReply): T | null {
   if (!result.ok) {
+    // A refused credential check carries its reason code (#795); routes
+    // that can answer one declare connectionErrorResponseSchema for 400.
+    if (result.errorCode) {
+      reply.code(result.status).send(
+        connectionErrorResponseSchema.parse({
+          error: result.error,
+          errorCode: result.errorCode,
+        }),
+      );
+      return null;
+    }
     sendError(reply, result.status, result.error);
     return null;
   }
@@ -135,6 +147,7 @@ export function registerConnectionRoutes(
             body: createConnectionRequestSchema,
             response: connectionResponseSchema,
             errors: [403, 404],
+            errorSchemas: { 400: connectionErrorResponseSchema },
           }),
         },
         async (request, reply) => {
@@ -172,6 +185,7 @@ export function registerConnectionRoutes(
             body: createConnectionsRequestSchema,
             response: connectionsResponseSchema,
             errors: [403, 404],
+            errorSchemas: { 400: connectionErrorResponseSchema },
           }),
         },
         async (request, reply) => {
@@ -210,6 +224,7 @@ export function registerConnectionRoutes(
             body: previewConnectionRequestSchema,
             response: connectionPreviewResponseSchema,
             errors: [403, 404],
+            errorSchemas: { 400: connectionErrorResponseSchema },
           }),
         },
         async (request, reply) => {
@@ -441,6 +456,7 @@ export function registerConnectionRoutes(
             body: storedConnectionPreviewRequestSchema,
             response: storedConnectionPreviewResponseSchema,
             errors: [400, 403, 404],
+            errorSchemas: { 400: connectionErrorResponseSchema },
           }),
         },
         async (request, reply) => {
@@ -479,6 +495,7 @@ export function registerConnectionRoutes(
             tags: ["connections"],
             response: connectionResourcesResponseSchema,
             errors: [400, 403, 404],
+            errorSchemas: { 400: connectionErrorResponseSchema },
           }),
         },
         async (request, reply) => {
@@ -522,6 +539,7 @@ export function registerConnectionRoutes(
             tags: ["connections"],
             response: sharedKeyResourcesResponseSchema,
             errors: [400, 403, 404],
+            errorSchemas: { 400: connectionErrorResponseSchema },
           }),
         },
         async (request, reply) => {
@@ -561,6 +579,7 @@ export function registerConnectionRoutes(
             body: createSharedKeyConnectionsRequestSchema,
             response: connectionsResponseSchema,
             errors: [400, 403, 404],
+            errorSchemas: { 400: connectionErrorResponseSchema },
           }),
         },
         async (request, reply) => {
@@ -734,6 +753,7 @@ export function registerConnectionRoutes(
             body: updateConnectionRequestSchema,
             response: connectionResponseSchema,
             errors: [403, 404],
+            errorSchemas: { 400: connectionErrorResponseSchema },
           }),
         },
         async (request, reply) => {

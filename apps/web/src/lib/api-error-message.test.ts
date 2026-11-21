@@ -65,6 +65,32 @@ describe("apiErrorMessage", () => {
     ).toBe("The token was rejected.");
   });
 
+  it("words a refused key by its reason code, whatever the English says (#795)", () => {
+    // The API's `error` is the English message; `errorCode` its reason.
+    const reworded = "The provider did not accept this key.";
+    expect(
+      apiErrorMessage(
+        new ApiError(400, reworded, { errorCode: "apple_ads.forbidden" }),
+        "de",
+      ),
+    ).toMatch(/^Apple Ads hat den Zugriff verweigert/);
+    expect(
+      apiErrorMessage(
+        new ApiError(400, reworded, {
+          errorCode: "app_store_connect.key_mismatch",
+        }),
+        "de",
+      ),
+    ).toMatch(/^App Store Connect hat den Schlüssel abgelehnt/);
+    // A code this build does not know: the message as it came.
+    expect(
+      apiErrorMessage(
+        new ApiError(400, reworded, { errorCode: "acme.key_revoked" }),
+        "de",
+      ),
+    ).toBe(reworded);
+  });
+
   it("words invalid input and other failures", () => {
     const zod = z.object({ name: z.string() }).safeParse({}).error;
     expect(apiErrorMessage(zod, "de")).toBe(

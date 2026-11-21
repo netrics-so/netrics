@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { can, localizedProviderMessage } from "@netrics/domain";
+import { can, localizedProviderFailure } from "@netrics/domain";
 
 import { HealthBadge, RateLimitText } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
@@ -180,14 +180,15 @@ export default async function ConnectionDetailPage({
   const authFailed = connection.state.authState === "auth_failed";
   // A sync can only fail until the grant is reconnected (the API refuses it).
   const needsReconnect = connection.state.authState === "needs_reauthorization";
-  const recordedAuthMessage = syncRuns.find(
-    (run) => run.errorClass === "auth",
-  )?.errorMessage;
-  // A refusal the catalog knows reads in the viewer's language (#378);
-  // other provider words stay as they came.
+  const authRun = syncRuns.find((run) => run.errorClass === "auth");
+  const recordedAuthMessage = authRun?.errorMessage;
+  // A refusal with a reason code the catalog knows reads in the viewer's
+  // language (#795); other provider words stay as they came.
   const authMessage = recordedAuthMessage
-    ? (localizedProviderMessage(recordedAuthMessage, locale) ??
-      recordedAuthMessage)
+    ? (localizedProviderFailure(
+        { code: authRun?.errorCode, message: recordedAuthMessage },
+        locale,
+      ) ?? recordedAuthMessage)
     : undefined;
   const oauth = connection.oauth;
   const searchConsole = connection.connectorId === SEARCH_CONSOLE_CONNECTOR_ID;

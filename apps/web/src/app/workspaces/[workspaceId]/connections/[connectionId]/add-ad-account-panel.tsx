@@ -12,6 +12,7 @@ import type {
 import { AdAccountOption } from "../new/apple-ads-setup";
 import {
   apiErrorMessage,
+  providerFailureMessage,
   createSharedKeyConnections,
   listSharedKeyResources,
 } from "@/lib/api";
@@ -75,7 +76,9 @@ export function AddAdAccountPanel({
       setListed(result);
       setSelected(new Set());
       if (!result.check.ok) {
-        setError(result.check.message ?? t("checkFailed"));
+        setError(
+          providerFailureMessage(result.check, locale) ?? t("checkFailed"),
+        );
       }
     } catch (cause) {
       setListed(null);

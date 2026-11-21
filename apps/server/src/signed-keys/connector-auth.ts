@@ -28,11 +28,17 @@ import {
  */
 export class SignedKeyRejectedError extends Error {
   readonly status: 401 | 403;
+  /**
+   * The stable reason of the refusal (#795), stored next to the message
+   * so clients translate by it; undefined for a provider that names none.
+   */
+  readonly code: string | undefined;
 
-  constructor(status: 401 | 403, message: string) {
+  constructor(status: 401 | 403, message: string, code?: string) {
     super(message);
     this.name = "SignedKeyRejectedError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -69,7 +75,7 @@ async function acquire(key: SignedKey, cache: SignedKeyTokenCache | undefined) {
     return await key.acquireTokens(cache);
   } catch (error) {
     if (error instanceof SignedKeyExchangeError && error.kind === "rejected") {
-      throw new SignedKeyRejectedError(401, error.message);
+      throw new SignedKeyRejectedError(401, error.message, error.code);
     }
     throw error;
   }
@@ -93,6 +99,9 @@ export async function callWithSignedKey<T>(
       status === 401
         ? key.provider.authFailure.unauthorized
         : key.provider.authFailure.forbidden,
+      status === 401
+        ? key.provider.authFailure.codes?.unauthorized
+        : key.provider.authFailure.codes?.forbidden,
     );
   for (let attempt = 0; ; attempt += 1) {
     let refused: 401 | 403 | null = null;
