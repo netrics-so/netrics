@@ -324,6 +324,15 @@ describe("custom-api on the sync engine", () => {
         await run("connection.backfill", connectionId, { pagesPerRun: 1 }),
       ).toBeUndefined();
       expect(await summary(connectionId)).toEqual(all);
+      // The last job read only the empty page: its time is still the
+      // summary's, so the card's "… ago" is the run's (#834 re-review 2).
+      const [times] = await owner<{ checked: Date; started: Date }[]>`
+        select
+          (select checked_at from custom_api_stream_records
+            where connection_id = ${connectionId}) as checked,
+          (select max(started_at) from sync_runs
+            where connection_id = ${connectionId}) as started`;
+      expect(times!.checked).toEqual(times!.started);
       // A new sync starts over.
       expect(await run("connection.sync", connectionId)).toBeUndefined();
       expect(await summary(connectionId)).toEqual(all);

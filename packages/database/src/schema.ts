@@ -1180,7 +1180,7 @@ export const customApiStreamImages = pgTable(
 );
 
 /**
- * The last sync's records per stream of a custom API connection (#834
+ * The last run's records per stream of a custom API connection (#834
  * review): how many records were skipped and, by field path, which
  * non-empty field was empty or could not be read. Paths only, never values;
  * at most CUSTOM_API_SKIPPED_FIELDS paths.

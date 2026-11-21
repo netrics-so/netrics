@@ -920,11 +920,14 @@ async function runSync(
   /**
    * Writes the skipped records counted since the last commit, in the
    * transaction that commits their pages (#834 re-review): every page
-   * checkpoint, a continuation, a rate limit and the run's end. A job that
-   * is no continuation replaces the summary with its first write; every
-   * other write adds to it, so a continued or rate-limited run counts every
-   * page once, and a retried attempt (read again from the start) too. Call skipsCommitted() once
-   * the transaction committed.
+   * checkpoint, a continuation, a rate limit and the run's end. The summary
+   * is the last run's, a failed one included, as far as that run committed
+   * pages. A job that is no continuation replaces it with its first write;
+   * every other write adds to it, so a continued or rate-limited run counts
+   * every page once, and a retried attempt (read again from the start)
+   * too. Every write moves each stream's checkedAt to this job, also for a
+   * stream without new skips. Call skipsCommitted() once the transaction
+   * committed.
    */
   let skipsWritten = false;
   // Only a continuation keeps its window, and the custom API connector
@@ -936,7 +939,6 @@ async function runSync(
     const add = skipsWritten || !startsOver;
     for (const streamKey of customApiStreams.keys()) {
       const total = recordSkips.get(streamKey);
-      if (add && !total) continue;
       await recordStreamRecords(tx, {
         workspaceId,
         connectionId,

@@ -3602,7 +3602,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 export type ConnectionService = ReturnType<typeof createConnectionService>;
 
 /**
- * The last sync's skipped records per stream of a custom API connection
+ * The last run's skipped records per stream of a custom API connection
  * (#834 review), with the stream names and field paths of its pinned
  * definition: a path the definition no longer has is left out.
  * Undefined for bundled connectors.

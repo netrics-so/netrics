@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import * as schema from "./schema.js";
 import type { Transaction } from "./context.js";
 
-// The last sync's skipped records per stream of a custom API connection
+// The last run's skipped records per stream of a custom API connection, a
+// failed run included as far as it committed pages
 // (#834 review, migration 0091): a count and the fields that skipped them,
 // by path. Paths and counts only, never values.
 
@@ -84,7 +85,7 @@ export async function recordStreamRecords(
     });
 }
 
-/** The last sync's summary of each stream of the connection, by stream key. */
+/** The last run's summary of each stream of the connection, by stream key. */
 export async function listStreamRecords(
   tx: Transaction,
   workspaceId: string,

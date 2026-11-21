@@ -1221,7 +1221,7 @@ export const connectionItemImagesSchema = z.object({
 export type ConnectionItemImages = z.infer<typeof connectionItemImagesSchema>;
 
 /**
- * The last sync's skipped records of one stream of a custom API connection
+ * The last run's skipped records of one stream of a custom API connection
  * (#834 review): how many records were skipped, and by field path how
  * many of them a field that may not be empty skipped (most first, at most
  * 5). Paths and counts only, never values.
@@ -1258,7 +1258,7 @@ export const connectionDetailResponseSchema = z.object({
    */
   itemImages: z.array(connectionItemImagesSchema).optional(),
   /**
-   * Custom API connections only: the last sync's skipped records per
+   * Custom API connections only: the last run's skipped records per
    * stream (#834 review), by stream key; empty before the first sync.
    */
   recordSkips: z.array(connectionRecordSkipsSchema).optional(),

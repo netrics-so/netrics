@@ -1,6 +1,6 @@
 // The per-stream record summary of a custom API sync (#834 review): the
 // connector reports skipped records on runtime.log, with the fields that
-// skipped them by path; the host keeps the last sync's summary per stream
+// skipped them by path; the host keeps the last run's summary per stream
 // (custom_api_stream_records) for the connection page. Paths and counts
 // only, never values.
 

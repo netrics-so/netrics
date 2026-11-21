@@ -7,7 +7,8 @@ import { relativeTime } from "@/lib/relative-time";
 
 /**
  * A custom API connection's skipped records (#834 review): per stream, how
- * many records the last sync skipped and which field that may not be empty
+ * many records the last sync skipped (a failed one too, as far as it
+ * committed pages) and which field that may not be empty
  * was empty or unreadable in them (paths only, never values). Nothing
  * before the first sync.
  */
