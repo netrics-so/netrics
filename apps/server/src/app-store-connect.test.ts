@@ -476,6 +476,48 @@ describe("App Store Connect connections", () => {
     ).toBe(404);
   });
 
+  it("renames a connection whose stored storefront has padding (#830)", async () => {
+    // Before length checks a stored " US" was accepted (the connector
+    // trims it); saving such a connection must keep working.
+    const [before] = await admin<
+      { name: string; config: Record<string, unknown> }[]
+    >`select name, config from connections where id = ${ids.a}`;
+    const padded = { ...before!.config, ratingStorefront: " US" };
+    await admin`update connections set config = ${admin.json(padded as never)}
+      where id = ${ids.a}`;
+    try {
+      const renamed = await call("PATCH", `/connections/${ids.a}`, {
+        name: "Team A renamed",
+        config: {
+          vendorNumber: TEAM_A.vendorNumbers[0],
+          ratingStorefront: " US",
+        },
+      });
+      expect(renamed.statusCode, renamed.body).toBe(200);
+      const nameOnly = await call("PATCH", `/connections/${ids.a}`, {
+        name: "Team A renamed again",
+      });
+      expect(nameOnly.statusCode, nameOnly.body).toBe(200);
+      const [after] = await admin<
+        { name: string; config: Record<string, unknown> }[]
+      >`select name, config from connections where id = ${ids.a}`;
+      expect(after!.name).toBe("Team A renamed again");
+      expect(after!.config.ratingStorefront).toBe(" US");
+      // Still two letters at most, padding aside.
+      const long = await call("PATCH", `/connections/${ids.a}`, {
+        config: {
+          vendorNumber: TEAM_A.vendorNumbers[0],
+          ratingStorefront: "USA",
+        },
+      });
+      expect(long.statusCode).toBe(400);
+    } finally {
+      await admin`update connections
+        set name = ${before!.name}, config = ${admin.json(before!.config as never)}
+        where id = ${ids.a}`;
+    }
+  });
+
   it("changes the app scope using the stored key, preserving history and rejecting foreign app IDs", async () => {
     const before =
       await admin`select config from connections where id = ${ids.a}`;

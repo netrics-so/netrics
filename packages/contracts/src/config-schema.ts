@@ -209,8 +209,11 @@ export function validateConnectionConfig(
         message: `${key} must be at most ${property.maximum}`,
       };
     }
-    // Lengths in characters (code points), as JSON Schema counts them.
-    const length = typeof value === "string" ? [...value].length : undefined;
+    // Lengths in characters (code points), as JSON Schema counts them, of
+    // the value as connectors read it: trimmed (e.g. a stored " US"
+    // storefront). The value is stored as sent.
+    const length =
+      typeof value === "string" ? [...value.trim()].length : undefined;
     if (
       length !== undefined &&
       typeof property.minLength === "number" &&
