@@ -145,6 +145,19 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     custom_api_destination_blocked:
       "netrics kann diese Adresse nicht erreichen.",
     custom_api_timeout: "Die API hat zu lange für die Antwort gebraucht.",
+    // Versionen, Aktualisierungen, Export und Import (#808).
+    custom_api_version_unchanged:
+      "Diese Version hat denselben Inhalt wie die aktuelle.",
+    custom_api_version_not_found: "Diese Version gibt es nicht.",
+    custom_api_update_stale:
+      "Die Verbindung wurde inzwischen geändert. Sieh dir die Aktualisierung noch einmal an.",
+    custom_api_update_blocked: "Kläre zuerst, was die Aktualisierung braucht.",
+    custom_api_update_none: "Diese Verbindung nutzt schon die neueste Version.",
+    custom_api_import_invalid:
+      "Diese Datei ist keine gültige Definition einer eigenen API.",
+    custom_api_import_newer:
+      "Diese Datei stammt aus einer neueren netrics-Version. Aktualisiere netrics zuerst.",
+    custom_api_import_too_large: "Die Datei ist größer als 512 KB.",
     custom_api_records_not_array: "Das ist keine Liste von Einträgen.",
     custom_api_http_error:
       "Die API hat mit einem Fehler geantwortet. Prüf den Anfragepfad und die Werte.",

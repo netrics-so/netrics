@@ -21,9 +21,12 @@ import { ConnectionProject } from "./connection-project";
 import { ConnectionFreshness } from "./connection-freshness";
 import { ConnectionItemImages } from "./connection-item-images";
 import { SyncRunError } from "./sync-run-error";
+import { CustomApiConnectionLogin } from "@/components/custom-api/connection-login";
+import { CustomApiUpdateBanner } from "@/components/custom-api/connection-update-review";
 import {
   getConnection,
   getConnectionRetention,
+  getCustomApiDefinitionVersion,
   getWorkspace,
   listConnectors,
   listObservations,
@@ -136,6 +139,17 @@ export default async function ConnectionDetailPage({
         : [],
     ),
   );
+  // A custom API connection (#808): its pinned version's login method and
+  // secret values for the login panel, and the offered update.
+  const customApi = connection.customApi;
+  const pinnedVersion = customApi
+    ? await getCustomApiDefinitionVersion(
+        forwarded,
+        workspaceId,
+        customApi.definitionId,
+        customApi.version,
+      )
+    : null;
   const connector = connectors.find((c) => c.id === connection.connectorId);
   const canUpdate = can(role, "connections:update");
   const authFailed = connection.state.authState === "auth_failed";
@@ -232,13 +246,34 @@ export default async function ConnectionDetailPage({
           returnPath={returnPath}
         />
       ) : (
-        <ReconnectBanner
+        // A custom API's OAuth sign-in lives in its login panel.
+        !customApi && (
+          <ReconnectBanner
+            workspaceId={workspaceId}
+            connection={connection}
+            canUpdate={canUpdate}
+            returnPath={returnPath}
+          />
+        )
+      )}
+
+      {customApi?.updateAvailable ? (
+        <CustomApiUpdateBanner
+          workspaceId={workspaceId}
+          connectionId={connection.id}
+          name={pinnedVersion?.document.name ?? connection.name}
+          version={customApi.currentVersion}
+          canUpdate={canUpdate}
+        />
+      ) : null}
+      {customApi && pinnedVersion && canUpdate ? (
+        <CustomApiConnectionLogin
           workspaceId={workspaceId}
           connection={connection}
-          canUpdate={canUpdate}
-          returnPath={returnPath}
+          method={pinnedVersion.document.auth.type}
+          variables={pinnedVersion.document.variables}
         />
-      )}
+      ) : null}
 
       {historyLoading ? (
         <div className="notice page-alert" role="status">
@@ -284,7 +319,9 @@ export default async function ConnectionDetailPage({
               )
             ) : canUpdate ? (
               <>
-                <a href="#edit-connection">{t("enterToken")}</a>{" "}
+                <a href={customApi ? "#custom-api-login" : "#edit-connection"}>
+                  {t("enterToken")}
+                </a>{" "}
                 {t("enterTokenDetail")}
               </>
             ) : (

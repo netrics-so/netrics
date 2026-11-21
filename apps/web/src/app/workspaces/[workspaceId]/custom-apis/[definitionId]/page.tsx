@@ -7,9 +7,14 @@ import { can } from "@netrics/domain";
 import "@/app/styles/custom-api.css";
 import "@/app/styles/data.css";
 import { CustomApiBuilder } from "@/components/custom-api/builder";
+import { DefinitionConnections } from "@/components/custom-api/definition-connections";
+import { ExportDefinitionButton } from "@/components/custom-api/export-definition";
+import { VersionHistory } from "@/components/custom-api/version-history";
 import { BuilderOAuthOutcome } from "@/components/custom-api/oauth-outcome";
 import {
   getCustomApiDefinition,
+  listCustomApiDefinitionConnections,
+  listCustomApiVersions,
   listProjects,
   listWorkspaces,
 } from "@/lib/api";
@@ -51,6 +56,11 @@ export default async function CustomApiPage({
     listProjects(forwarded, workspaceId),
   ]);
   if (!response) notFound();
+  // History and connections (#808).
+  const [history, { connections }] = await Promise.all([
+    listCustomApiVersions(forwarded, workspaceId, definitionId),
+    listCustomApiDefinitionConnections(forwarded, workspaceId, definitionId),
+  ]);
   const { definition } = response;
   const canEdit =
     can(membership.role, "connections:update") &&
@@ -73,20 +83,42 @@ export default async function CustomApiPage({
             {t("list.version", { version: definition.currentVersion })}
           </p>
         </div>
-        {can(membership.role, "connections:create") &&
-        definition.archivedAt === null ? (
-          <div className="page-actions">
+        <div className="page-actions">
+          <ExportDefinitionButton
+            workspaceId={workspaceId}
+            definitionId={definition.id}
+          />
+          {can(membership.role, "connections:create") &&
+          definition.archivedAt === null ? (
             <Link
               className="button"
               href={`/workspaces/${workspaceId}/custom-apis/${definition.id}/connect`}
             >
               {t("list.connect")}
             </Link>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </header>
       <BuilderOAuthOutcome outcome={parseOAuthOutcome(query.oauth)} />
+      <div className="custom-api-definition-panels">
+        <VersionHistory
+          // A restore makes a new version: the list starts over.
+          key={definition.currentVersion}
+          workspaceId={workspaceId}
+          definitionId={definition.id}
+          currentVersion={definition.currentVersion}
+          canRestore={canEdit}
+          initial={history}
+        />
+        <DefinitionConnections
+          workspaceId={workspaceId}
+          connections={connections}
+          canUpdate={can(membership.role, "connections:update")}
+        />
+      </div>
       <CustomApiBuilder
+        // A restored version reloads the builder on its document.
+        key={definition.currentVersion}
         workspaceId={workspaceId}
         definition={definition}
         canEdit={canEdit}

@@ -6,7 +6,12 @@ import { can } from "@netrics/domain";
 
 import "@/app/styles/custom-api.css";
 import { CustomApiDefinitionList } from "@/components/custom-api/definition-list";
-import { listCustomApiDefinitions, listWorkspaces } from "@/lib/api";
+import { ImportDefinition } from "@/components/custom-api/import-definition";
+import {
+  listCustomApiDefinitions,
+  listProjects,
+  listWorkspaces,
+} from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 
@@ -29,10 +34,10 @@ export default async function CustomApisPage({
   const { workspaces } = await listWorkspaces(forwarded);
   const membership = workspaces.find((w) => w.id === workspaceId);
   if (!membership) notFound();
-  const { definitions } = await listCustomApiDefinitions(
-    forwarded,
-    workspaceId,
-  );
+  const [{ definitions }, { projects }] = await Promise.all([
+    listCustomApiDefinitions(forwarded, workspaceId),
+    listProjects(forwarded, workspaceId),
+  ]);
   const canCreate = can(membership.role, "connections:create");
   return (
     <div className="area-page custom-api-page">
@@ -60,6 +65,14 @@ export default async function CustomApisPage({
           canEdit={can(membership.role, "connections:update")}
         />
       </div>
+      {canCreate ? (
+        <ImportDefinition
+          workspaceId={workspaceId}
+          projects={projects
+            .filter((project) => project.archivedAt === null)
+            .map(({ id, name }) => ({ id, name }))}
+        />
+      ) : null}
     </div>
   );
 }
