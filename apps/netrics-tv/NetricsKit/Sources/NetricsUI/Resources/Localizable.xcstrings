@@ -461,6 +461,23 @@
         }
       }
     },
+    "Latest items": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest items"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neueste Einträge"
+          }
+        }
+      }
+    },
     "Leave demo": {
       "extractionState": "manual",
       "localizations": {
@@ -559,6 +576,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Noch kein Dashboard zugewiesen"
+          }
+        }
+      }
+    },
+    "No image": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No image"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Bild"
+          }
+        }
+      }
+    },
+    "No items yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No items yet"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Einträge"
           }
         }
       }

@@ -178,7 +178,7 @@ func v3Response(version: String = "v3-1") -> HTTPResponse {
         await h.start()
         await h.advance(60)
         let requests = h.api.callsTo("GET /v1/device/dashboard")
-        #expect(requests.map(\.query) == ["schema=3&features=measure_split", "schema=3&features=measure_split"])
+        #expect(requests.map(\.query) == ["schema=3&features=measure_split,items", "schema=3&features=measure_split,items"])
         #expect(requests[1].header("if-none-match") == "\"v3-1\"")
         let state = await h.state
         #expect(state.payload?.schema == 3)
@@ -194,7 +194,7 @@ func v3Response(version: String = "v3-1") -> HTTPResponse {
         }
         await h.start()
         await h.advance(0)
-        #expect(h.api.callsTo("GET /v1/device/dashboard").map(\.query) == ["schema=2&features=measure_split"])
+        #expect(h.api.callsTo("GET /v1/device/dashboard").map(\.query) == ["schema=2&features=measure_split,items"])
     }
 
     @Test func dropsTheSchema2ETagWhenMovingTo3() async throws {
@@ -211,7 +211,7 @@ func v3Response(version: String = "v3-1") -> HTTPResponse {
         await h.start()
         await h.advance(60)
         let requests = h.api.callsTo("GET /v1/device/dashboard")
-        #expect(requests[0].query == "schema=3&features=measure_split")
+        #expect(requests[0].query == "schema=3&features=measure_split,items")
         #expect(requests[0].header("if-none-match") == nil)
         #expect(requests[1].header("if-none-match") == "\"v3-1\"")
         let saved = try #require(h.cache.load())
@@ -229,7 +229,7 @@ func v3Response(version: String = "v3-1") -> HTTPResponse {
         await h.start()
         await h.advance(60)
         let requests = h.api.callsTo("GET /v1/device/dashboard")
-        #expect(requests.map(\.query) == ["schema=3&features=measure_split", "schema=2&features=measure_split"])
+        #expect(requests.map(\.query) == ["schema=3&features=measure_split,items", "schema=2&features=measure_split,items"])
         #expect(requests[1].header("if-none-match") == "\"v2-1\"")
         #expect(await h.state.payload?.schema == 2)
     }

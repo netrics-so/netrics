@@ -142,7 +142,7 @@ final class Harness {
     let clock: ManualClock
     let api: FakeAPI
     let store: InMemoryCredentialStore
-    let cache: InMemoryDashboardCache
+    let cache: any DashboardCache
     let client: DeviceClient
     /** When the client's next step is due; nil once it stopped. */
     private var nextStepAt: Date?
@@ -151,14 +151,15 @@ final class Harness {
         credentials: ((ManualClock) -> DeviceCredentials)? = nil,
         cached: CachedDashboard? = nil,
         routes: (ManualClock) -> [String: Handler],
-        images: InMemoryImageCache = InMemoryImageCache(),
+        images: any ImageCache = InMemoryImageCache(),
+        dashboardCache: (any DashboardCache)? = nil,
         screen: (@Sendable () async -> DeviceScreenReport?)? = nil
     ) {
         let clock = ManualClock()
         self.clock = clock
         api = FakeAPI(clock: clock, routes: routes(clock))
         store = InMemoryCredentialStore(server: testServer, credentials: credentials?(clock))
-        cache = InMemoryDashboardCache(cached)
+        cache = dashboardCache ?? InMemoryDashboardCache(cached)
         client = DeviceClient(
             server: testServer, transport: api, store: store, cache: cache, images: images,
             appVersion: "1.2.3", now: { clock.now }, screen: screen)

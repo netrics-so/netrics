@@ -23,6 +23,11 @@ struct ScrollCardView: View {
     let viewportHeight: Double
     let env: WidgetEnv
     let image: StoredImage?
+    /** Any of the payload's stored images by id: a latest-items widget's item images. */
+    var images: (String?) -> StoredImage? = { _ in nil }
+
+    /** When the card appeared: a latest-items rotation starts with it. */
+    @State private var appearedAt = Date()
 
     var body: some View {
         // Footers ("updated 2 min. ago"), clocks and countdowns are worded anew every minute;
@@ -90,6 +95,12 @@ struct ScrollCardView: View {
                 viewportHeight: viewportHeight, env: env
             )
             .scrollCard(env, padding: EdgeInsets(all: ScrollGeometry.imagePadding))
+        case .items(let options, let data):
+            ScrollItemsCard(
+                label: itemsLabel(widget.label, env.language), options: options, data: data,
+                width: width - 2 * ScrollGeometry.cardPadding, env: env, image: images, slideStartedAt: appearedAt
+            )
+            .scrollCard(env)
         case .unsupported:
             // A type this build does not know (a newer server): an empty card keeps its place.
             Color.clear.frame(height: env.pt(ScrollGeometry.TypeSize.valueMax))
@@ -1009,5 +1020,42 @@ struct ScrollImageCard: View {
             )
             .padding(8)
         }
+    }
+}
+
+// MARK: Latest items
+
+/**
+ * A latest-items card (#811): the screen widget laid out as a half-wide
+ * slide widget (web: `SCROLL_ITEMS_PLACEMENT`, 6 × 4 cells on 16:9),
+ * whatever its placement on the slide, scaled to the card's width.
+ */
+struct ScrollItemsCard: View {
+    static let placement = StudioPlacement(x: 0, y: 0, w: 6, h: 4)
+
+    let label: String
+    let options: ItemsWidgetOptions
+    let data: ItemsWidgetData
+    /** The card's content width in points. */
+    let width: Double
+    let env: WidgetEnv
+    let image: (String?) -> StoredImage?
+    let slideStartedAt: Date
+
+    var body: some View {
+        let rect = StudioLayout.widgetRect(Self.placement, canvas: StudioLayout.referenceCanvas, showHeader: false)
+        let box = (
+            width: rect.width - 2 * StudioLayout.widgetPadding, height: rect.height - 2 * StudioLayout.widgetPadding
+        )
+        // The widget's units scaled so its content box is the card's width.
+        let unit = box.width > 0 ? CGFloat(width / box.width) : env.u
+        let scaled = WidgetEnv(
+            u: unit, colors: env.colors, showHeader: false, timeZone: env.timeZone, displayScale: env.displayScale,
+            language: env.language)
+        ItemsWidgetView(
+            label: label, options: options, data: data, env: scaled,
+            placement: ScreenPlacement(cells: Self.placement), image: image, slideStartedAt: slideStartedAt
+        )
+        .frame(width: CGFloat(width), height: CGFloat(box.height) * unit)
     }
 }
