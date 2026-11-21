@@ -350,6 +350,133 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       leave:
         "Baukasten verlassen? Deine Testanmeldung wird nach 24 Stunden gelöscht.",
     },
+    history: {
+      restoreHeader: "Version wiederherstellen",
+      title: "Versionen",
+      byAt: "Version {version} · {author} · {time}",
+      unknownAuthor: "Jemand, der nicht mehr da ist",
+      current: "Aktuell",
+      sameAs: "Gleich wie Version {version}",
+      summary:
+        "{streams, plural, one {# Datensatz} other {# Datensätze}}, {fields, plural, one {# Feld} other {# Felder}}",
+      view: "Ansehen",
+      hide: "Ausblenden",
+      restore: "Diese Version wiederherstellen",
+      restoreConfirm:
+        "Version {version} wiederherstellen? Dabei entsteht eine neue Version. Verbindungen behalten ihre Version, bis du sie aktualisierst.",
+      restored:
+        "Version {version} ist als Version {current} wiederhergestellt.",
+      newer: "Neuere Versionen",
+      older: "Ältere Versionen",
+      loading: "Versionen werden geladen …",
+      retry: "Erneut versuchen",
+    },
+    export: {
+      button: "Exportieren",
+      help: "Die Datei enthält nur die Definition, keine Anmeldungen und keine Verbindungswerte.",
+    },
+    import: {
+      title: "Eigene API importieren",
+      button: "Importieren",
+      choose: "Definitionsdatei auswählen",
+      name: "Name (optional)",
+      project: "Projekt",
+      noProject: "Kein Projekt",
+      tooLarge: "Die Datei ist größer als 512 KB.",
+      notJson: "Diese Datei ist kein JSON.",
+      invalid: "Diese Datei ist keine gültige Definition einer eigenen API:",
+      importing: "Wird importiert …",
+    },
+    connections: {
+      title: "Verbindungen",
+      empty: "Noch keine Verbindung nutzt diese eigene API.",
+      version: "Version {version}",
+      updateAvailable: "Aktualisierung verfügbar",
+      review: "Aktualisierung ansehen",
+    },
+    update: {
+      title: "{name} aktualisieren",
+      banner:
+        "Eine neuere Version von {name} ist verfügbar (Version {version}).",
+      review: "Aktualisierung ansehen",
+      fromTo: "Von Version {from} auf Version {to}",
+      changesTitle: "Was sich ändert",
+      noChanges: "Für die Daten dieser Verbindung ändert sich nichts.",
+      general: "Anmeldung und Einstellungen",
+      changes: {
+        stream_added:
+          "{stream} ist neu. Der Verlauf wird bei der nächsten Synchronisierung gelesen.",
+        stream_removed:
+          "{stream} wird nicht mehr aktualisiert. Die Daten bleiben.",
+        field_added: "Das Feld {field} in {stream} ist neu.",
+        field_removed:
+          "Das Feld {field} in {stream} wird nicht mehr gelesen. Frühere Werte bleiben.",
+        field_changed: "Das Feld {field} in {stream} ändert sich: {aspects}.",
+        request_changed: "{stream} wird mit einer geänderten Anfrage gelesen.",
+        pagination_changed: "{stream} blättert anders.",
+        window_changed: "{stream} liest einen geänderten Zeitraum.",
+        mode_changed: "{stream} speichert seine Zeilen anders.",
+        environment_added: "Die Umgebung {environment} ist neu.",
+        environment_removed: "Die Umgebung {environment} fällt weg.",
+        environment_url_changed:
+          "Die Umgebung {environment} hat eine neue Adresse.",
+        auth_changed: "Die Anmeldeeinstellungen ändern sich.",
+        variable_added: "Der Verbindungswert {variable} ist neu.",
+        variable_removed:
+          "Der Verbindungswert {variable} wird nicht mehr genutzt.",
+        schedule_changed: "Das Aktualisierungsintervall ändert sich.",
+      },
+      aspects: {
+        type: "Typ",
+        path: "Pfad",
+        role: "Rolle",
+        format: "Format",
+        unit: "Einheit",
+        classification: "Einstufung",
+      },
+      needs: {
+        title: "Vor der Aktualisierung",
+        environment_removed:
+          "Die Umgebung {environment} gibt es nicht mehr. Wähle eine andere.",
+        variable_required: "Gib einen Wert für {variable} ein.",
+      },
+      login: {
+        kept: "Die gespeicherte Anmeldung bleibt.",
+        hosts_changed:
+          "Diese Version sendet die Anmeldung an andere Adressen. Deine gespeicherte Anmeldung wird dort nicht gesendet: Du musst die Anmeldung neu eingeben.",
+        auth_changed:
+          "Diese Version nutzt eine andere Anmeldemethode. Du musst die Anmeldung neu eingeben.",
+        oauthHosts:
+          "Diese Version nutzt andere Adressen. Die Anmeldung wird nicht übernommen: Gib den Client nach der Aktualisierung neu ein und melde dich neu an.",
+        oauthMethod:
+          "Diese Version nutzt eine andere Anmeldemethode. Gib die Anmeldung neu ein und melde dich nach der Aktualisierung an.",
+        enterNow: "Du kannst die neue Anmeldung gleich eingeben (optional):",
+      },
+      environment: "Umgebung",
+      apply: "Verbindung aktualisieren",
+      applying: "Wird aktualisiert …",
+      stale:
+        "Die Verbindung wurde inzwischen geändert. Sieh dir die Aktualisierung noch einmal an.",
+      done: "Die Verbindung nutzt jetzt Version {version}.",
+      back: "Zurück zur Verbindung",
+    },
+    connectionLogin: {
+      enterAgain: "Gib die Anmeldung im Bereich „Anmeldung“ neu ein.",
+      title: "Anmeldung",
+      missing:
+        "Diese Verbindung hat keine Anmeldung für ihre aktuelle Version. Gib sie neu ein, damit die Synchronisierung weiterläuft.",
+      replace: "Anmeldung ersetzen",
+      save: "Anmeldung speichern",
+      saving: "Wird gespeichert …",
+      saved: "Die Anmeldung ist gespeichert.",
+      client: "OAuth-Client",
+      clientHelp:
+        "Gib die Client-ID und das Client-Secret deiner OAuth-App ein. Eine neue Client-ID braucht eine neue Anmeldung.",
+      saveClient: "Client speichern",
+      signInNeeded:
+        "Melde dich mit deinem Konto an, damit netrics die Daten lesen kann.",
+      signIn: "Anmelden",
+    },
     issues: {
       nameRequired: "Gib einen Namen ein.",
       baseUrlHttps: "Die Basis-URL beginnt mit https:// und nennt einen Host.",

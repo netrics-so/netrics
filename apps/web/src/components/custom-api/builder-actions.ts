@@ -151,6 +151,45 @@ export async function enterStep(
 }
 
 /**
+ * The Login warnings after a draft update that may have carried typed
+ * secrets: the inputs are cleared only once sent, and a send that also
+ * lost stored secrets (another host or method, with only part of the login
+ * typed again) keeps the warning: the lost secret was not replaced.
+ */
+export function afterSecretsSent(
+  result: { sent: boolean; secretsLost: boolean },
+  wasLost: boolean,
+): { clearInputs: boolean; secretsLost: boolean } {
+  return {
+    clearInputs: result.sent,
+    secretsLost: result.secretsLost || (!result.sent && wasLost),
+  };
+}
+
+/**
+ * Moving to a step as the builder does it: enterStep, then the Login
+ * warning and the typed inputs after the answer (afterSecretsSent).
+ */
+export async function moveToStep(
+  api: BuilderClient,
+  input: Parameters<typeof enterStep>[1],
+  wasLost: boolean,
+): Promise<
+  Awaited<ReturnType<typeof enterStep>> & {
+    clearInputs: boolean;
+    warning: boolean;
+  }
+> {
+  const entered = await enterStep(api, input);
+  const after = afterSecretsSent(entered, wasLost);
+  return {
+    ...entered,
+    clearInputs: after.clearInputs,
+    warning: after.secretsLost,
+  };
+}
+
+/**
  * The typed secrets the definition still declares (its credentials and
  * secret variables), without empty ones; null when there are none. A value
  * typed for a variable since unticked, renamed or removed is never sent:

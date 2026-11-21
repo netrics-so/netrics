@@ -3,10 +3,18 @@ import { projectQueryString } from "./project-scope";
 import { ZodError, type ZodType, type z } from "zod";
 
 import {
+  customApiDefinitionConnectionsResponseSchema,
   customApiDefinitionListResponseSchema,
   customApiDefinitionResponseSchema,
+  customApiUpdatePlanResponseSchema,
+  customApiVersionHistorySchema,
+  customApiVersionResponseSchema,
+  type CustomApiDefinitionConnectionsResponse,
   type CustomApiDefinitionListResponse,
   type CustomApiDefinitionResponse,
+  type CustomApiUpdatePlan,
+  type CustomApiVersionHistory,
+  type CustomApiVersionResponse,
   IMAGE_NAME_HEADER,
   storeTemplateApplyRequestSchema,
   storeTemplateCopyRequestSchema,
@@ -498,6 +506,66 @@ export async function getCustomApiDefinition(
     return null;
   }
   return parseResponse(customApiDefinitionResponseSchema, response);
+}
+
+/** One version of a definition; null on 404. */
+export async function getCustomApiDefinitionVersion(
+  forwarded: Headers,
+  workspaceId: string,
+  definitionId: string,
+  version: number,
+): Promise<CustomApiVersionResponse | null> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/custom-api/definitions/${definitionId}/versions/${version}`,
+    { headers: forwarded },
+  );
+  if (response.status === 404 || response.status === 409) {
+    return null;
+  }
+  return parseResponse(customApiVersionResponseSchema, response);
+}
+
+/** The first page of a definition's versions (#808). */
+export async function listCustomApiVersions(
+  forwarded: Headers,
+  workspaceId: string,
+  definitionId: string,
+): Promise<CustomApiVersionHistory> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/custom-api/definitions/${definitionId}/versions`,
+    { headers: forwarded },
+  );
+  return parseResponse(customApiVersionHistorySchema, response);
+}
+
+/** The connections of a definition with their update state (#808). */
+export async function listCustomApiDefinitionConnections(
+  forwarded: Headers,
+  workspaceId: string,
+  definitionId: string,
+): Promise<CustomApiDefinitionConnectionsResponse> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/custom-api/definitions/${definitionId}/connections`,
+    { headers: forwarded },
+  );
+  return parseResponse(customApiDefinitionConnectionsResponseSchema, response);
+}
+
+/** A connection's offered definition update; null when there is none. */
+export async function getCustomApiConnectionUpdate(
+  forwarded: Headers,
+  workspaceId: string,
+  connectionId: string,
+): Promise<CustomApiUpdatePlan | null> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}/custom-api-update`,
+    { headers: forwarded },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return (await parseResponse(customApiUpdatePlanResponseSchema, response))
+    .plan;
 }
 
 /** Returns null on 404 (gone or from another workspace). */

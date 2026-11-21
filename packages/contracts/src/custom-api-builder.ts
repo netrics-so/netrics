@@ -12,6 +12,8 @@ import {
   customApiVariableSchema,
 } from "@netrics/connector-sdk/custom-api";
 
+import { customApiDocumentResponseSchema } from "./custom-api.js";
+
 // The custom API builder (milestone 13, #806): a draft connection holds the
 // builder's secrets on the server while the definition is not saved yet; a
 // test request runs one stream of the unsaved definition against it. No
@@ -214,3 +216,252 @@ export const customApiTestResponseSchema = z.object({
   draft: customApiDraftSchema,
 });
 export type CustomApiTestResponse = z.infer<typeof customApiTestResponseSchema>;
+
+// ------------------------------------------------- history and rollback (#808)
+
+export const customApiVersionHistorySchema = z.object({
+  versions: z
+    .array(
+      z.object({
+        id: z.uuid(),
+        version: z.number().int(),
+        createdAt: z.iso.datetime(),
+        /** Null: the author's account was deleted. */
+        author: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+        current: z.boolean(),
+        /** An earlier version with an identical document (restores show this). */
+        sameAs: z.number().int().nullable(),
+        summary: z.object({
+          streams: z.number().int(),
+          fields: z.number().int(),
+          environments: z.number().int(),
+        }),
+      }),
+    )
+    .max(20),
+  /** Pass as `before` for the next older page; null on the last page. */
+  nextBefore: z.number().int().nullable(),
+});
+export type CustomApiVersionHistory = z.infer<
+  typeof customApiVersionHistorySchema
+>;
+
+export const customApiVersionHistoryQuerySchema = z.object({
+  before: z.coerce.number().int().positive().optional(),
+});
+
+export const customApiVersionResponseSchema = z.object({
+  version: z.number().int().positive(),
+  document: customApiDocumentResponseSchema,
+});
+export type CustomApiVersionResponse = z.infer<
+  typeof customApiVersionResponseSchema
+>;
+
+/** baseVersion: the current version the restore was decided on (stale check). */
+export const restoreCustomApiVersionRequestSchema = z.strictObject({
+  baseVersion: z.number().int().positive(),
+});
+export type RestoreCustomApiVersionRequest = z.infer<
+  typeof restoreCustomApiVersionRequestSchema
+>;
+
+// ------------------------------------------------ connection updates (#808)
+
+export const customApiChangeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.enum(["stream_added", "stream_removed"]),
+    stream: z.string(),
+  }),
+  z.object({
+    kind: z.enum(["field_added", "field_removed"]),
+    stream: z.string(),
+    field: z.string(),
+  }),
+  z.object({
+    kind: z.literal("field_changed"),
+    stream: z.string(),
+    field: z.string(),
+    changes: z.array(
+      z.enum(["type", "path", "role", "format", "unit", "classification"]),
+    ),
+  }),
+  z.object({
+    kind: z.enum([
+      "request_changed",
+      "pagination_changed",
+      "window_changed",
+      "mode_changed",
+    ]),
+    stream: z.string(),
+  }),
+  z.object({
+    kind: z.enum([
+      "environment_added",
+      "environment_removed",
+      "environment_url_changed",
+    ]),
+    environment: z.string(),
+  }),
+  z.object({ kind: z.literal("auth_changed") }),
+  z.object({
+    kind: z.enum(["variable_added", "variable_removed"]),
+    variable: z.string(),
+  }),
+  z.object({ kind: z.literal("schedule_changed") }),
+]);
+export type CustomApiChange = z.infer<typeof customApiChangeSchema>;
+
+/** What the apply request must resolve before the update can run. */
+export const customApiUpdateBlockerSchema = z.discriminatedUnion("code", [
+  /** The connection's environment is gone: choose another (environmentId). */
+  z.object({ code: z.literal("environment_removed"), environment: z.string() }),
+  /** A new connection variable: supply a value (variables, or secrets when secret). */
+  z.object({
+    code: z.literal("variable_required"),
+    variable: z.string(),
+    secret: z.boolean(),
+  }),
+]);
+export type CustomApiUpdateBlocker = z.infer<
+  typeof customApiUpdateBlockerSchema
+>;
+
+/**
+ * Whether the stored login carries over. Secrets and tokens are bound to
+ * the hosts they were entered for: when the new version sends them to
+ * other hosts, or uses another login method, the update drops them and
+ * the connection needs its login again (custom OAuth: the client, then a
+ * sign-in). The apply may carry the new login for the methods without
+ * OAuth (`secrets`).
+ */
+export const customApiUpdateLoginSchema = z.object({
+  carriesOver: z.boolean(),
+  reason: z.enum(["hosts_changed", "auth_changed"]).nullable(),
+  /** The new version's login method. */
+  method: z.enum([
+    "none",
+    "api_key",
+    "bearer",
+    "basic",
+    "oauth_client_credentials",
+    "oauth_authorization_code",
+  ]),
+});
+export type CustomApiUpdateLogin = z.infer<typeof customApiUpdateLoginSchema>;
+
+export const customApiUpdatePlanSchema = z.object({
+  connectionId: z.uuid(),
+  definitionId: z.uuid(),
+  /** The connection's environment the plan was computed for. */
+  environmentId: z.string(),
+  fromVersion: z.object({ id: z.uuid(), version: z.number().int() }),
+  toVersion: z.object({ id: z.uuid(), version: z.number().int() }),
+  changes: z.array(customApiChangeSchema),
+  blockers: z.array(customApiUpdateBlockerSchema),
+  login: customApiUpdateLoginSchema,
+  /** The pinned version id the plan was made from; send it back with the apply. */
+  basis: z.uuid(),
+});
+export type CustomApiUpdatePlan = z.infer<typeof customApiUpdatePlanSchema>;
+
+export const customApiUpdatePlanResponseSchema = z.object({
+  plan: customApiUpdatePlanSchema,
+});
+export type CustomApiUpdatePlanResponse = z.infer<
+  typeof customApiUpdatePlanResponseSchema
+>;
+
+export const customApiUpdateQuerySchema = z.object({
+  /** Plan for another environment of the new version. */
+  environmentId: z.string().min(1).max(64).optional(),
+});
+
+export const customApiUpdateApplyRequestSchema = z.strictObject({
+  basis: z.uuid(),
+  toVersionId: z.uuid(),
+  environmentId: z.string().min(1).max(64).optional(),
+  variables: z.record(z.string(), z.string().max(1000)).optional(),
+  // The login method's credentials and/or secret variable values. As on a
+  // draft, the Basic username and the OAuth client ID may be short; every
+  // other value has at least 4 characters.
+  secrets: z
+    .record(z.string(), z.string().min(1).max(8192))
+    .superRefine((secrets, ctx) => {
+      for (const [name, value] of Object.entries(secrets))
+        if (!NON_SECRET_CREDENTIALS.has(name) && value.length < 4)
+          ctx.addIssue({
+            code: "custom",
+            path: [name],
+            message: "A secret has at least 4 characters",
+          });
+    })
+    .optional(),
+});
+export type CustomApiUpdateApplyRequest = z.infer<
+  typeof customApiUpdateApplyRequestSchema
+>;
+
+/** 409 custom_api_update_stale carries the fresh plan; 400 custom_api_update_blocked the blockers. */
+export const customApiUpdateErrorResponseSchema = z.object({
+  error: z.string(),
+  plan: customApiUpdatePlanSchema.optional(),
+  blockers: z.array(customApiUpdateBlockerSchema).optional(),
+});
+export type CustomApiUpdateErrorResponse = z.infer<
+  typeof customApiUpdateErrorResponseSchema
+>;
+
+export const customApiDefinitionConnectionsResponseSchema = z.object({
+  connections: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      environmentId: z.string(),
+      version: z.number().int().positive(),
+      updateAvailable: z.boolean(),
+    }),
+  ),
+});
+export type CustomApiDefinitionConnectionsResponse = z.infer<
+  typeof customApiDefinitionConnectionsResponseSchema
+>;
+
+// --------------------------------------------------- export and import (#808)
+
+export const CUSTOM_API_EXPORT_FORMAT = "netrics.custom-api-definition";
+
+/** Uploaded definition files at most this large (the import route's body limit). */
+export const CUSTOM_API_IMPORT_MAX_BYTES = 512 * 1024;
+
+/**
+ * An exported definition: the document only, with its schema version. No
+ * credentials, connection values, connection or workspace ids.
+ */
+export const customApiExportSchema = z.strictObject({
+  format: z.literal(CUSTOM_API_EXPORT_FORMAT),
+  schemaVersion: z.number().int().positive(),
+  exportedAt: z.iso.datetime(),
+  definition: z
+    .unknown()
+    .describe(
+      "The definition document; validated by upgradeCustomApiDefinition and customApiDefinitionSchema on import",
+    ),
+});
+export type CustomApiExport = z.infer<typeof customApiExportSchema>;
+
+export const customApiExportQuerySchema = z.object({
+  /** Default: the current version. */
+  version: z.coerce.number().int().positive().optional(),
+});
+
+export const importCustomApiDefinitionRequestSchema = z.strictObject({
+  file: z
+    .unknown()
+    .describe("The exported file's JSON (customApiExportSchema)"),
+  name: z.string().trim().min(1).max(100).optional(),
+  projectId: z.uuid().nullable().default(null),
+});
+export type ImportCustomApiDefinitionRequest = z.input<
+  typeof importCustomApiDefinitionRequestSchema
+>;

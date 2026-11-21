@@ -33,6 +33,11 @@ export interface ConnectionCustomApi {
   definitionId: string;
   versionId: string;
   version: number;
+  /**
+   * The definition's current version (an update is offered when newer);
+   * set on every pin read from the database.
+   */
+  currentVersion?: number;
   environmentId: string;
   document: unknown;
   datasetVersions: Record<string, number>;
@@ -55,6 +60,12 @@ export const customApiPinColumns = {
   definitionId: schema.customApiDefinitionVersions.definitionId,
   versionId: schema.customApiDefinitionVersions.id,
   version: schema.customApiDefinitionVersions.version,
+  currentVersion: sql<number | null>`(
+    select d.current_version from custom_api_definitions d
+    where d.id = ${schema.customApiDefinitionVersions.definitionId}
+      and d.workspace_id = ${schema.customApiDefinitionVersions.workspaceId})`.mapWith(
+    Number,
+  ),
   document: schema.customApiDefinitionVersions.document,
   datasetVersions: schema.customApiDefinitionVersions.datasetVersions,
 };
@@ -74,6 +85,7 @@ type PinColumns = {
   definitionId: string | null;
   versionId: string | null;
   version: number | null;
+  currentVersion: number | null;
   document: unknown;
   datasetVersions: unknown;
 } | null;
@@ -95,6 +107,7 @@ export function connectionCustomApi(
     definitionId: pin.definitionId,
     versionId: pin.versionId,
     version: pin.version,
+    currentVersion: pin.currentVersion ?? pin.version,
     environmentId,
     document: pin.document,
     datasetVersions: (pin.datasetVersions ?? {}) as Record<string, number>,

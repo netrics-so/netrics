@@ -344,6 +344,7 @@ export type {
 } from "./freshness.js";
 export {
   consumeOAuthAuthorization,
+  deleteConnectionOAuth,
   findConnectionOAuth,
   insertOAuthAuthorization,
   lockConnectionOAuth,
@@ -459,6 +460,8 @@ export {
   findCustomApiDefinitionVersion,
   insertCustomApiDefinition,
   insertCustomApiDefinitionVersion,
+  listCustomApiDefinitionConnections,
+  listCustomApiDefinitionVersions,
   listCustomApiDefinitions,
   updateCustomApiDefinition,
 } from "./custom-api.js";
@@ -468,7 +471,9 @@ export {
   pruneDraftConnections,
 } from "./draft-connections.js";
 export type {
+  CustomApiDefinitionConnectionRow,
   CustomApiDefinitionRow,
+  CustomApiDefinitionVersionEntry,
   CustomApiDefinitionVersionRow,
   CustomApiDefinitionWithVersion,
   NewCustomApiDefinition,

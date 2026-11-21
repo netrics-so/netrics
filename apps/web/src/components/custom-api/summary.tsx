@@ -10,7 +10,7 @@ import { typeOf } from "./field-mapping";
 export function CustomApiSummary({
   definition,
 }: {
-  definition: CustomApiDefinitionResponse["definition"];
+  definition: Pick<CustomApiDefinitionResponse["definition"], "document">;
 }) {
   const t = useT("customApi");
   const document = definition.document;

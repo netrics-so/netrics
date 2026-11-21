@@ -1,4 +1,15 @@
-import { and, asc, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  sql,
+} from "drizzle-orm";
 
 import type { Transaction } from "./context.js";
 import { projectFilterSql, type ProjectFilter } from "./project-filter.js";
@@ -340,4 +351,112 @@ export async function countCustomApiConnections(
       ),
     );
   return Number(row?.count ?? 0);
+}
+
+/** One entry of a definition's version history (#808). */
+export interface CustomApiDefinitionVersionEntry {
+  id: string;
+  version: number;
+  document: unknown;
+  createdAt: Date;
+  /** Null when the author's account is gone. */
+  author: { id: string; name: string } | null;
+  /** The nearest earlier version with the identical document, if any. */
+  sameAs: number | null;
+}
+
+/**
+ * Up to `limit` versions, newest first, older than `before` when given.
+ * sameAs compares the stored canonical hashes with every older version.
+ * users has no RLS (installation-level), so joining it is tenant-safe: the
+ * versions are filtered by workspace.
+ */
+export async function listCustomApiDefinitionVersions(
+  tx: Transaction,
+  workspaceId: string,
+  definitionId: string,
+  options: { before?: number; limit: number },
+): Promise<CustomApiDefinitionVersionEntry[]> {
+  const rows = await tx
+    .select({
+      id: versions.id,
+      version: versions.version,
+      document: versions.document,
+      createdAt: versions.createdAt,
+      authorId: schema.users.id,
+      authorName: schema.users.displayName,
+      sameAs: sql<number | null>`(
+        select max(older.version) from custom_api_definition_versions older
+        where older.workspace_id = ${versions.workspaceId}
+          and older.definition_id = ${versions.definitionId}
+          and older.document_sha256 = ${versions.documentSha256}
+          and older.version < ${versions.version})`,
+    })
+    .from(versions)
+    .leftJoin(schema.users, eq(schema.users.id, versions.createdBy))
+    .where(
+      and(
+        eq(versions.workspaceId, workspaceId),
+        eq(versions.definitionId, definitionId),
+        options.before !== undefined
+          ? lt(versions.version, options.before)
+          : undefined,
+      ),
+    )
+    .orderBy(desc(versions.version))
+    .limit(options.limit);
+  return rows.map((row) => ({
+    id: row.id,
+    version: row.version,
+    document: row.document,
+    createdAt: row.createdAt,
+    author:
+      row.authorId !== null && row.authorName !== null
+        ? { id: row.authorId, name: row.authorName }
+        : null,
+    sameAs: row.sameAs === null ? null : Number(row.sameAs),
+  }));
+}
+
+export interface CustomApiDefinitionConnectionRow {
+  id: string;
+  name: string;
+  environmentId: string;
+  version: number;
+}
+
+/** The workspace's connections pinned to any version of the definition (drafts aside). */
+export async function listCustomApiDefinitionConnections(
+  tx: Transaction,
+  workspaceId: string,
+  definitionId: string,
+): Promise<CustomApiDefinitionConnectionRow[]> {
+  const rows = await tx
+    .select({
+      id: connections.id,
+      name: connections.name,
+      environmentId: connections.customApiEnvironmentId,
+      version: versions.version,
+    })
+    .from(connections)
+    .innerJoin(
+      versions,
+      and(
+        eq(versions.id, connections.customApiDefinitionVersionId),
+        eq(versions.workspaceId, connections.workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(connections.workspaceId, workspaceId),
+        eq(versions.workspaceId, workspaceId),
+        eq(versions.definitionId, definitionId),
+        ne(connections.status, "draft"),
+      ),
+    )
+    .orderBy(asc(sql`lower(${connections.name})`), asc(connections.createdAt));
+  return rows.map((row) => ({
+    ...row,
+    environmentId: row.environmentId ?? "",
+  }));
 }

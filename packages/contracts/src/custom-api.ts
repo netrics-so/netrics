@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { customApiDefinitionSchema } from "@netrics/connector-sdk/custom-api";
+import { customApiStoredDefinitionSchema } from "@netrics/connector-sdk/custom-api";
 
 import { connectionRetentionChoiceSchema } from "./connection-retention.js";
 import { projectFilterQuerySchema } from "./project-filter.js";
@@ -24,10 +24,12 @@ export {
   customApiPagePlaceholders,
   customApiPaginationSchema,
   customApiReservedVariableId,
+  customApiStoredDefinitionSchema,
   customApiStreamSchema,
   customApiVariableSchema,
   customApiWindowSchema,
   formatDataPath,
+  readStoredCustomApiDefinition,
   PAGE_PLACEHOLDERS,
   parseDataPath,
   parsePlaceholders,
@@ -76,10 +78,18 @@ export type CustomApiDefinitionListResponse = z.infer<
   typeof customApiDefinitionListResponseSchema
 >;
 
+/**
+ * A stored definition document in a response, one OpenAPI component.
+ * Stored versions read back with their shape only: a version a later,
+ * stricter rule rejects stays readable (readStoredCustomApiDefinition).
+ */
+export const customApiDocumentResponseSchema =
+  customApiStoredDefinitionSchema.meta({ id: "CustomApiDefinition" });
+
 export const customApiDefinitionResponseSchema = z.object({
   definition: customApiDefinitionSummarySchema.extend({
     // One OpenAPI component instead of a copy per route.
-    document: customApiDefinitionSchema.meta({ id: "CustomApiDefinition" }),
+    document: customApiDocumentResponseSchema,
     datasetVersions: z.record(z.string(), z.number().int().positive()),
   }),
 });
@@ -189,6 +199,16 @@ export const connectionCustomApiViewSchema = z.object({
   version: z.number().int().positive(),
   environmentId: z.string(),
   environmentName: z.string(),
+  /** The definition's current version (#808). */
+  currentVersion: z.number().int().positive(),
+  /** A newer version exists; it is offered, never applied by itself. */
+  updateAvailable: z.boolean(),
+  /**
+   * The login method needs secrets and none are stored, for example after
+   * an update to a version that sends them to other hosts: the login has
+   * to be entered again (custom OAuth: the client, then a sign-in).
+   */
+  loginMissing: z.boolean(),
 });
 export type ConnectionCustomApiView = z.infer<
   typeof connectionCustomApiViewSchema

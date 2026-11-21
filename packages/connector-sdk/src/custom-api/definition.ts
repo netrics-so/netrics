@@ -940,6 +940,15 @@ function checkDocument(doc: CustomApiDefinition, ctx: z.RefinementCtx): void {
 export const customApiDefinitionSchema =
   documentSchema.superRefine(checkDocument);
 
+/**
+ * The document's shape without the cross-field rules (placeholders,
+ * references, reserved names, size). Only for reading back a stored
+ * version that a later, stricter rule rejects: it stays readable (history,
+ * export, the API response) while saving, restoring and importing it
+ * answer the issues. Never use it to accept input.
+ */
+export const customApiStoredDefinitionSchema = documentSchema;
+
 // ------------------------------------------------------------------- issues
 
 export interface CustomApiIssue {
@@ -1039,4 +1048,37 @@ export function upgradeCustomApiDefinition(raw: unknown): CustomApiDefinition {
       customApiIssues(parsed.error),
     );
   return parsed.data;
+}
+
+/**
+ * Reads a stored version back. Stored documents passed validation when
+ * they were saved; a later, stricter rule (a reserved name, a new
+ * placeholder check) may reject one now. Such a document still reads
+ * (upgraded, with its shape checked), so history, export and the API keep
+ * working, while saving, restoring and importing it answer the issues.
+ * Throws CustomApiDefinitionError only when even the shape does not hold.
+ */
+export function readStoredCustomApiDefinition(
+  raw: unknown,
+): CustomApiDefinition {
+  try {
+    return upgradeCustomApiDefinition(raw);
+  } catch (error) {
+    if (
+      !(error instanceof CustomApiDefinitionError) ||
+      error.code !== "invalid"
+    )
+      throw error;
+    // The upgrade ran; only the current schema refused. Upgrade again
+    // without the cross-field rules.
+    let doc = raw as Record<string, unknown>;
+    while (
+      typeof doc.schemaVersion === "number" &&
+      doc.schemaVersion < CUSTOM_API_SCHEMA_VERSION
+    )
+      doc = CUSTOM_API_UPGRADES[doc.schemaVersion]!(doc);
+    const shape = customApiStoredDefinitionSchema.safeParse(doc);
+    if (!shape.success) throw error;
+    return shape.data;
+  }
 }

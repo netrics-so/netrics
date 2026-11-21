@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  CUSTOM_API_LIMITS,
   CustomApiDefinitionError,
+  readStoredCustomApiDefinition,
   upgradeCustomApiDefinition,
   type CreateCustomApiDefinitionRequest,
   type CreateCustomApiDefinitionVersionRequest,
@@ -91,8 +93,9 @@ function present(
     definition: {
       ...summary(found.definition, found.connectionCount),
       // Stored documents passed validation when they were saved; reading
-      // them through the upgrade keeps older schema versions readable.
-      document: upgradeCustomApiDefinition(found.version.document),
+      // them through the upgrade keeps older schema versions readable, and
+      // one a later, stricter rule rejects still reads (#808).
+      document: readStoredCustomApiDefinition(found.version.document),
       datasetVersions: found.version.datasetVersions as Record<string, number>,
     },
   };
@@ -197,12 +200,19 @@ export function createCustomApiService(deps: {
     create(
       actor: Actor,
       body: CreateCustomApiDefinitionRequest,
+      options: {
+        /**
+         * Import (#808): the definition's name, made unique in the
+         * workspace (" (2)", " (3)", …) inside the creating transaction.
+         */
+        importName?: string;
+      } = {},
     ): Promise<CustomApiResult<CustomApiDefinitionResponse>> {
       const valid = validate(body.document, deps.limits);
       if (!valid.ok) {
         return Promise.resolve(valid);
       }
-      const { document } = valid;
+      let { document } = valid;
       return inWorkspace(actor, async (tx) => {
         if (body.projectId !== undefined) {
           const refused = await checkProject(
@@ -220,6 +230,17 @@ export function createCustomApiService(deps: {
         if (count >= deps.limits.maxDefinitions) {
           return fail(409, "custom_api_definition_limit");
         }
+        if (options.importName !== undefined) {
+          const taken = (
+            await listCustomApiDefinitions(tx, actor.workspaceId, {
+              includeArchived: false,
+            })
+          ).map((row) => row.definition.name);
+          document = {
+            ...document,
+            name: uniqueDefinitionName(options.importName, taken),
+          };
+        }
         const created = await insertCustomApiDefinition(tx, actor.workspaceId, {
           id: randomUUID(),
           projectId: body.projectId ?? null,
@@ -233,7 +254,10 @@ export function createCustomApiService(deps: {
         await insertAuditEvent(tx, {
           workspaceId: actor.workspaceId,
           actorUserId: actor.callerId,
-          action: "custom_api_definition.created",
+          action:
+            options.importName !== undefined
+              ? "custom_api_definition.imported"
+              : "custom_api_definition.created",
           target: created.definition.id,
           metadata: { name: created.definition.name, version: 1 },
         });
@@ -245,6 +269,14 @@ export function createCustomApiService(deps: {
       actor: Actor,
       definitionId: string,
       body: CreateCustomApiDefinitionVersionRequest,
+      options: {
+        /**
+         * Restore (#808): the version whose document this is. Refused with
+         * custom_api_version_unchanged when it equals the current one;
+         * audited as custom_api_definition.restored.
+         */
+        restoredFrom?: number;
+      } = {},
     ): Promise<CustomApiResult<CustomApiDefinitionResponse>> {
       const valid = validate(body.document, deps.limits);
       if (!valid.ok) {
@@ -268,9 +300,15 @@ export function createCustomApiService(deps: {
           if (current.definition.currentVersion !== body.baseVersion) {
             return fail(409, "custom_api_definition_stale");
           }
+          if (
+            options.restoredFrom !== undefined &&
+            canonicalSha256(document) === current.version.documentSha256
+          ) {
+            return fail(409, "custom_api_version_unchanged");
+          }
           const datasetVersions = customApiDatasetVersions(
             {
-              document: upgradeCustomApiDefinition(current.version.document),
+              document: readStoredCustomApiDefinition(current.version.document),
               datasetVersions: current.version.datasetVersions as Record<
                 string,
                 number
@@ -310,9 +348,19 @@ export function createCustomApiService(deps: {
           await insertAuditEvent(tx, {
             workspaceId: actor.workspaceId,
             actorUserId: actor.callerId,
-            action: "custom_api_definition.version_created",
+            action:
+              options.restoredFrom !== undefined
+                ? "custom_api_definition.restored"
+                : "custom_api_definition.version_created",
             target: definitionId,
-            metadata: { version: created.version.version },
+            metadata:
+              options.restoredFrom !== undefined
+                ? {
+                    definitionId,
+                    fromVersion: options.restoredFrom,
+                    newVersion: created.version.version,
+                  }
+                : { version: created.version.version },
           });
           return { ok: true, value: present(created) };
         },
@@ -414,6 +462,23 @@ export function createCustomApiService(deps: {
       });
     },
   };
+}
+
+/**
+ * `name`, or the first of "name (2)", "name (3)", … that no definition in
+ * `taken` uses (case-insensitive), within the name length.
+ */
+export function uniqueDefinitionName(
+  name: string,
+  taken: readonly string[],
+): string {
+  const used = new Set(taken.map((entry) => entry.toLowerCase()));
+  if (!used.has(name.toLowerCase())) return name;
+  for (let n = 2; ; n++) {
+    const suffix = ` (${n})`;
+    const candidate = `${name.slice(0, CUSTOM_API_LIMITS.nameLength - suffix.length).trimEnd()}${suffix}`;
+    if (!used.has(candidate.toLowerCase())) return candidate;
+  }
 }
 
 class ArchivedMeanwhile extends Error {

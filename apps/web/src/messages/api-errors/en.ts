@@ -140,6 +140,19 @@ export const apiErrorsEn = {
       "The API refused the login. Check the key or token.",
     custom_api_destination_blocked: "netrics can't reach this address.",
     custom_api_timeout: "The API took too long to answer.",
+    // Versions, connection updates, export and import (#808).
+    custom_api_version_unchanged:
+      "This version has the same content as the current one.",
+    custom_api_version_not_found: "This version doesn't exist.",
+    custom_api_update_stale:
+      "The connection changed meanwhile. Review the update again.",
+    custom_api_update_blocked: "Resolve what the update needs first.",
+    custom_api_update_none: "This connection already uses the newest version.",
+    custom_api_import_invalid:
+      "This file is not a valid custom API definition.",
+    custom_api_import_newer:
+      "This file is from a newer netrics. Update netrics first.",
+    custom_api_import_too_large: "The file is larger than 512 KB.",
     custom_api_records_not_array: "This is not a list of records.",
     custom_api_http_error:
       "The API answered with an error. Check the request path and the values.",

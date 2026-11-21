@@ -2,7 +2,22 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
+  connectionResponseSchema,
   createCustomApiDraftRequestSchema,
+  CUSTOM_API_IMPORT_MAX_BYTES,
+  customApiDefinitionConnectionsResponseSchema,
+  customApiDefinitionResponseSchema,
+  customApiExportQuerySchema,
+  customApiExportSchema,
+  customApiUpdateApplyRequestSchema,
+  customApiUpdateErrorResponseSchema,
+  customApiUpdatePlanResponseSchema,
+  customApiUpdateQuerySchema,
+  customApiVersionHistoryQuerySchema,
+  customApiVersionHistorySchema,
+  customApiVersionResponseSchema,
+  importCustomApiDefinitionRequestSchema,
+  restoreCustomApiVersionRequestSchema,
   customApiDraftResponseSchema,
   customApiErrorResponseSchema,
   customApiTestRequestSchema,
@@ -11,7 +26,10 @@ import {
   promoteCustomApiDraftResponseSchema,
   updateCustomApiDraftRequestSchema,
 } from "@netrics/contracts";
-import type { ExecuteOptions } from "@netrics/connector-runtime";
+import type {
+  ConnectorRegistry,
+  ExecuteOptions,
+} from "@netrics/connector-runtime";
 import type { Database } from "@netrics/database";
 import { can, type WorkspaceAction } from "@netrics/domain";
 
@@ -22,6 +40,10 @@ import {
   type DraftResult,
 } from "../custom-api/drafts.js";
 import { createCustomApiTestRequestService } from "../custom-api/test-request.js";
+import { createCustomApiConnectionUpdateService } from "../custom-api/connection-updates.js";
+import type { CustomApiResult } from "../custom-api/service.js";
+import { createCustomApiTransferService } from "../custom-api/transfer.js";
+import { createCustomApiVersionService } from "../custom-api/versions.js";
 import type { CustomApiInstanceConfig } from "../env.js";
 import type { OAuthTokenService } from "../oauth/tokens.js";
 import {
@@ -34,8 +56,9 @@ import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
 
 // HTTP layer of the custom API builder (milestone 13, #806): draft
-// connections that hold the builder's secrets on the server. Every route
-// needs connections:create.
+// connections that hold the builder's secrets on the server (every draft
+// route needs connections:create); and (#808) version history, restore,
+// connection updates, export and import of saved definitions.
 
 export interface CustomApiBuilderRouteDeps {
   authService: AuthService;
@@ -50,6 +73,31 @@ export interface CustomApiBuilderRouteDeps {
   now?: () => Date;
   /** Custom OAuth tokens and revocation of OAuth drafts (#805). */
   oauthTokens?: OAuthTokenService;
+  /** Connection responses of connection updates (#808). */
+  registry: ConnectorRegistry;
+}
+
+const definitionParamsSchema = z.object({ definitionId: z.uuid() });
+const versionParamsSchema = z.object({
+  definitionId: z.uuid(),
+  version: z.coerce.number().int().positive(),
+});
+const connectionParamsSchema = z.object({ connectionId: z.uuid() });
+const DEFINITIONS = "/workspaces/:workspaceId/custom-api/definitions";
+const UPDATE =
+  "/workspaces/:workspaceId/connections/:connectionId/custom-api-update";
+
+const updateErrors = {
+  400: customApiUpdateErrorResponseSchema,
+  404: customApiUpdateErrorResponseSchema,
+  409: customApiUpdateErrorResponseSchema,
+};
+
+function answer<T>(result: CustomApiResult<T>, reply: FastifyReply): T | null {
+  if (result.ok) return result.value;
+  const { ok: _ok, status, ...body } = result;
+  void reply.code(status).send(customApiErrorResponseSchema.parse(body));
+  return null;
 }
 
 /** A test request carries one unsaved definition. */
@@ -81,6 +129,23 @@ export function registerCustomApiBuilderRoutes(
   const requireSession = createRequireSession(deps.authService);
   const drafts = createCustomApiDraftService(deps);
   const tests = createCustomApiTestRequestService(deps);
+  const versions = createCustomApiVersionService(deps);
+  const transfer = createCustomApiTransferService(deps);
+  const updates = createCustomApiConnectionUpdateService(deps);
+
+  function params<T>(
+    schema: z.ZodType<T>,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    notFound: string,
+  ): T | null {
+    const parsed = schema.safeParse(request.params);
+    if (!parsed.success) {
+      sendError(reply, 404, notFound);
+      return null;
+    }
+    return parsed.data;
+  }
 
   async function authorize(
     request: FastifyRequest,
@@ -253,6 +318,320 @@ export function registerCustomApiBuilderRoutes(
           return reply
             .code(result.status)
             .send(customApiErrorResponseSchema.parse({ error: result.error }));
+        },
+      );
+
+      // ------------------------------------------ history and restore (#808)
+
+      scope.get(
+        `${DEFINITIONS}/:definitionId/versions`,
+        {
+          schema: routeSchema({
+            summary:
+              "A custom API definition's versions, newest first, 20 per page (before= pages to older ones), with author, time and the earlier version each is identical to",
+            tags: TAGS,
+            querystring: customApiVersionHistoryQuerySchema,
+            response: customApiVersionHistorySchema,
+            errors: [403, 404],
+            errorSchemas: customApiErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:view");
+          const id =
+            access &&
+            params(
+              definitionParamsSchema,
+              request,
+              reply,
+              "custom_api_definition_not_found",
+            );
+          if (!access || !id) return;
+          const query = customApiVersionHistoryQuerySchema.safeParse(
+            request.query,
+          );
+          if (!query.success) return sendError(reply, 400, "invalid_request");
+          const page = answer(
+            await versions.listVersions(
+              access,
+              id.definitionId,
+              query.data.before,
+            ),
+            reply,
+          );
+          if (!page) return;
+          return customApiVersionHistorySchema.parse(page);
+        },
+      );
+
+      scope.get(
+        `${DEFINITIONS}/:definitionId/versions/:version`,
+        {
+          schema: routeSchema({
+            summary: "One version of a custom API definition",
+            tags: TAGS,
+            response: customApiVersionResponseSchema,
+            errors: [403, 404, 409],
+            errorSchemas: customApiErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:view");
+          const at =
+            access &&
+            params(
+              versionParamsSchema,
+              request,
+              reply,
+              "custom_api_version_not_found",
+            );
+          if (!access || !at) return;
+          const found = answer(
+            await versions.getVersion(access, at.definitionId, at.version),
+            reply,
+          );
+          if (!found) return;
+          return customApiVersionResponseSchema.parse(found);
+        },
+      );
+
+      scope.post(
+        `${DEFINITIONS}/:definitionId/versions/:version/restore`,
+        {
+          schema: routeSchema({
+            summary:
+              "Restore a version: saves its document as a new version (409 custom_api_version_unchanged when it is the current content, custom_api_definition_stale when baseVersion is not current). Connections keep their version until they are updated",
+            tags: TAGS,
+            body: restoreCustomApiVersionRequestSchema,
+            response: customApiDefinitionResponseSchema,
+            responseStatus: 201,
+            errors: [403, 404, 409],
+            errorSchemas: customApiErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:update");
+          const at =
+            access &&
+            params(
+              versionParamsSchema,
+              request,
+              reply,
+              "custom_api_version_not_found",
+            );
+          if (!access || !at) return;
+          const body = parseBody(
+            restoreCustomApiVersionRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) return;
+          const restored = answer(
+            await versions.restore(access, at.definitionId, at.version, body),
+            reply,
+          );
+          if (!restored) return;
+          return reply
+            .code(201)
+            .send(customApiDefinitionResponseSchema.parse(restored));
+        },
+      );
+
+      // ------------------------------------------- export and import (#808)
+
+      scope.get(
+        `${DEFINITIONS}/:definitionId/export`,
+        {
+          schema: routeSchema({
+            summary:
+              "Download a custom API definition as a file (the current version, or version=): the document with its schema version, no logins and no connection values",
+            tags: TAGS,
+            querystring: customApiExportQuerySchema,
+            response: customApiExportSchema,
+            errors: [403, 404, 409],
+            errorSchemas: customApiErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:view");
+          const id =
+            access &&
+            params(
+              definitionParamsSchema,
+              request,
+              reply,
+              "custom_api_definition_not_found",
+            );
+          if (!access || !id) return;
+          const query = customApiExportQuerySchema.safeParse(request.query);
+          if (!query.success) return sendError(reply, 400, "invalid_request");
+          const exported = answer(
+            await transfer.export(access, id.definitionId, query.data.version),
+            reply,
+          );
+          if (!exported) return;
+          void reply
+            .header(
+              "content-disposition",
+              `attachment; filename="${exported.filename}"`,
+            )
+            .header("cache-control", "no-store");
+          return customApiExportSchema.parse(exported.file);
+        },
+      );
+
+      scope.post(
+        `${DEFINITIONS}/import`,
+        {
+          bodyLimit: CUSTOM_API_IMPORT_MAX_BYTES + 1024,
+          schema: routeSchema({
+            summary:
+              'Import an exported custom API definition as a new definition (version 1). Older schema versions are upgraded; 400 custom_api_import_invalid lists up to 20 issues, custom_api_import_newer refuses files from a newer netrics. A name already used gets " (2)", " (3)"…',
+            tags: TAGS,
+            body: importCustomApiDefinitionRequestSchema,
+            response: customApiDefinitionResponseSchema,
+            responseStatus: 201,
+            errors: [403, 404, 409, 413],
+            errorSchemas: customApiErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:create");
+          if (!access) return;
+          const body = parseBody(
+            importCustomApiDefinitionRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) return;
+          if (
+            Buffer.byteLength(JSON.stringify(body.file ?? null)) >
+            CUSTOM_API_IMPORT_MAX_BYTES
+          )
+            return sendError(reply, 413, "custom_api_import_too_large");
+          const created = answer(await transfer.import(access, body), reply);
+          if (!created) return;
+          return reply
+            .code(201)
+            .send(customApiDefinitionResponseSchema.parse(created));
+        },
+      );
+
+      // ------------------------------------------- connection updates (#808)
+
+      scope.get(
+        `${DEFINITIONS}/:definitionId/connections`,
+        {
+          schema: routeSchema({
+            summary:
+              "The connections of a custom API definition, with their pinned version and whether a newer one is available",
+            tags: TAGS,
+            response: customApiDefinitionConnectionsResponseSchema,
+            errors: [403, 404],
+            errorSchemas: customApiErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:view");
+          const id =
+            access &&
+            params(
+              definitionParamsSchema,
+              request,
+              reply,
+              "custom_api_definition_not_found",
+            );
+          if (!access || !id) return;
+          const list = answer(
+            await updates.listDefinitionConnections(access, id.definitionId),
+            reply,
+          );
+          if (!list) return;
+          return customApiDefinitionConnectionsResponseSchema.parse(list);
+        },
+      );
+
+      scope.get(
+        UPDATE,
+        {
+          schema: routeSchema({
+            summary:
+              "The definition update offered to a custom API connection: what changes, what must be decided, and whether the login carries over (404 custom_api_update_none when the connection runs the current version)",
+            tags: TAGS,
+            querystring: customApiUpdateQuerySchema,
+            response: customApiUpdatePlanResponseSchema,
+            errors: [403, 404, 409],
+            errorSchemas: updateErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:view");
+          const id =
+            access &&
+            params(
+              connectionParamsSchema,
+              request,
+              reply,
+              "connection_not_found",
+            );
+          if (!access || !id) return;
+          const query = customApiUpdateQuerySchema.safeParse(request.query);
+          if (!query.success) return sendError(reply, 400, "invalid_request");
+          const result = await updates.plan(
+            access,
+            id.connectionId,
+            query.data.environmentId,
+          );
+          if (!result.ok) {
+            const { ok: _ok, status, ...body } = result;
+            return reply
+              .code(status)
+              .send(customApiUpdateErrorResponseSchema.parse(body));
+          }
+          return customApiUpdatePlanResponseSchema.parse({
+            plan: result.value,
+          });
+        },
+      );
+
+      scope.post(
+        UPDATE,
+        {
+          schema: routeSchema({
+            summary:
+              "Update a custom API connection to the definition's current version. basis is the pinned version id the plan was made from (409 custom_api_update_stale with the fresh plan otherwise); 400 custom_api_update_blocked lists what is unresolved. A login bound to other hosts, or of another method, is dropped: the connection then needs its login again",
+            tags: TAGS,
+            body: customApiUpdateApplyRequestSchema,
+            response: connectionResponseSchema,
+            errors: [403, 404, 409],
+            errorSchemas: updateErrors,
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:update");
+          const id =
+            access &&
+            params(
+              connectionParamsSchema,
+              request,
+              reply,
+              "connection_not_found",
+            );
+          if (!access || !id) return;
+          const body = parseBody(
+            customApiUpdateApplyRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) return;
+          const result = await updates.apply(access, id.connectionId, body);
+          if (!result.ok) {
+            const { ok: _ok, status, ...rest } = result;
+            return reply
+              .code(status)
+              .send(customApiUpdateErrorResponseSchema.parse(rest));
+          }
+          return connectionResponseSchema.parse({ connection: result.value });
         },
       );
 

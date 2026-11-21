@@ -7,6 +7,7 @@ import {
   CUSTOM_API_UPGRADES,
   CustomApiDefinitionError,
   customApiDefinitionSchema,
+  readStoredCustomApiDefinition,
   upgradeCustomApiDefinition,
 } from "./definition.js";
 
@@ -79,5 +80,32 @@ describe("upgradeCustomApiDefinition", () => {
     const before = JSON.stringify(raw);
     upgradeCustomApiDefinition(raw);
     expect(JSON.stringify(raw)).toBe(before);
+  });
+});
+
+describe("readStoredCustomApiDefinition", () => {
+  it("reads a stored document a later rule rejects", () => {
+    // Saved before secret variables could not be named like a credential.
+    const stored = {
+      ...fixture("v1-shop"),
+      variables: [{ id: "token", label: "Token", secret: true }],
+    };
+    expect(() => upgradeCustomApiDefinition(stored)).toThrow(
+      CustomApiDefinitionError,
+    );
+    const read = readStoredCustomApiDefinition(stored);
+    expect(read.variables).toEqual([
+      { id: "token", label: "Token", secret: true },
+    ]);
+    expect(read.defaults.timeZone).toBe("UTC");
+  });
+
+  it("still refuses a document without the shape", () => {
+    expect(() =>
+      readStoredCustomApiDefinition({ ...fixture("v1-shop"), streams: 3 }),
+    ).toThrow(CustomApiDefinitionError);
+    expect(() => readStoredCustomApiDefinition({ schemaVersion: 9 })).toThrow(
+      expect.objectContaining({ code: "unsupported_schema_version" }),
+    );
   });
 });

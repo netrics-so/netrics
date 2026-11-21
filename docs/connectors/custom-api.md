@@ -96,6 +96,55 @@ most 10 drafts are open per workspace.
   to the same hosts. An OAuth draft keeps its grant; an authorization-code
   draft must have signed in first (`400 custom_api_secret_missing`).
 
+## Versions, updates, export and import
+
+- **History.** `GET …/definitions/:id/versions?before=` lists versions
+  newest first, 20 per page, with author, time and `sameAs` (the nearest
+  earlier version with the identical document, by the stored canonical
+  hash). `GET …/versions/:version` reads one. Viewers may read both.
+- **Restore.** `POST …/versions/:version/restore { baseVersion }` saves the
+  old document as a new version (versions are immutable), through the same
+  save path: validation, dataset versions, limits, the stale check (409
+  `custom_api_definition_stale`). Restoring the current content answers 409
+  `custom_api_version_unchanged`; a stored version that today's rules
+  reject answers its issues. Connections keep their version.
+- **Stored versions stay readable.** A version that a later, stricter rule
+  rejects (for example a reserved secret variable name) still reads in the
+  definition, history and export (`readStoredCustomApiDefinition`: upgrade,
+  then the shape without cross-field rules); saving, restoring and
+  importing it answer the issues.
+- **Connection updates.** A connection pins a version; a newer one is
+  offered (`connection.customApi.updateAvailable`), never applied by
+  itself. `GET /connections/:id/custom-api-update` answers the plan: the
+  changes per stream, the blockers (an environment that is gone, a new
+  connection value) and whether the login carries over. `POST` applies it
+  with `basis` (the pinned version id) and `toVersionId`; a stale basis
+  answers 409 `custom_api_update_stale` with the fresh plan, an unresolved
+  blocker 400 `custom_api_update_blocked`. Data of removed streams and
+  fields stays. The refresh interval changes only when the definition's
+  changed.
+- **The login and other hosts.** Secrets and tokens are bound to the hosts
+  they were entered for. An update to a version that sends them to other
+  hosts (environment host with port, token or revoke host), or that uses
+  another login method, drops them: an OAuth grant is deleted and its
+  refresh token revoked at the hosts it came from (best effort), the
+  connection is `auth_failed` with `customApi.loginMissing`. The apply may
+  carry the new login for the methods without OAuth (`secrets`); custom
+  OAuth enters the client again on the connection page (PATCH
+  `credentials: { clientId, clientSecret }`), then signs in. Same hosts and
+  method: everything carries over.
+- **Export.** `GET …/definitions/:id/export?version=` downloads
+  `{ format: "netrics.custom-api-definition", schemaVersion, exportedAt,
+definition }` as `<name>.netrics-api.json` (`cache-control: no-store`):
+  the document only, no login, connection value, connection or workspace
+  id.
+- **Import.** `POST …/definitions/import { file, name?, projectId }`
+  (at most 512 KiB, `connections:create`) runs the save's upgrade and
+  validation (strict: unknown keys such as `credentials` are refused) and
+  creates a new definition at version 1; a name in use gets " (2)",
+  " (3)"…. `custom_api_import_invalid` lists up to 20 issues without
+  values; `custom_api_import_newer` refuses files of a newer schema.
+
 ## OAuth
 
 Custom APIs use the user's own OAuth app: netrics cannot register apps for

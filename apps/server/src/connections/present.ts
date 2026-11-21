@@ -22,6 +22,7 @@ import type {
   SyncRunRow,
 } from "@netrics/database";
 
+import { customApiNeedsNoSecrets } from "../custom-api/connections.js";
 import { connectorFor } from "../custom-api/connectors.js";
 import {
   relevantFreshnessRows,
@@ -78,11 +79,22 @@ function presentCustomApi(
   const environment = resolved?.customApi?.definition.environments.find(
     (entry) => entry.id === pinned.environmentId,
   );
+  const definition = resolved?.customApi?.definition;
+  const currentVersion = pinned.currentVersion ?? pinned.version;
   return {
     definitionId: pinned.definitionId,
     version: pinned.version,
     environmentId: pinned.environmentId,
     environmentName: environment?.name ?? pinned.environmentId,
+    currentVersion,
+    // Offered, never applied by itself (#808).
+    updateAvailable: currentVersion > pinned.version,
+    // A login method with secrets but none stored: an update dropped them
+    // (other hosts or another method), so the login is entered again.
+    loginMissing:
+      definition !== undefined &&
+      !customApiNeedsNoSecrets(definition) &&
+      loaded.row.credentialsEncrypted == null,
   };
 }
 

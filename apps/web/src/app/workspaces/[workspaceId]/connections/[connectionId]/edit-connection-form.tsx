@@ -37,6 +37,9 @@ export function EditConnectionForm({
   // An Apple Ads connection's config is its ad account as Apple named it
   // (#375): shown on the page, chosen in the setup, never typed here.
   const fixedConfig = connection.connectorId === APPLE_ADS_CONNECTOR_ID;
+  // A custom API (#808): its values and login are changed by its own panels
+  // (definition updates, the login panel); only the name is edited here.
+  const customApi = connection.customApi != null;
   const fields = useMemo(
     () =>
       connector && !fixedConfig
@@ -60,6 +63,7 @@ export function EditConnectionForm({
   // at the provider, never by pasting a token (ADR 0012).
   // A signed key (ADR 0014) is replaced in its own panel, never here.
   const wantsToken =
+    !customApi &&
     connection.oauth === null &&
     signedKeyStrategyOf(connector) === null &&
     (tokenStrategy !== undefined || connection.hasCredentials);
@@ -73,7 +77,7 @@ export function EditConnectionForm({
     try {
       await updateConnection(workspaceId, connection.id, {
         ...(name.trim() !== connection.name ? { name: name.trim() } : {}),
-        ...(fixedConfig
+        ...(fixedConfig || customApi
           ? {}
           : { config: coerceConfigValues(fields, configValues) }),
         ...(token !== "" ? { credentials: { token } } : {}),
@@ -113,7 +117,7 @@ export function EditConnectionForm({
           onChange={setToken}
         />
       ) : null}
-      {fixedConfig ? null : connector ? (
+      {fixedConfig || customApi ? null : connector ? (
         <ConfigFields
           fields={fields}
           values={configValues}

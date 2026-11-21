@@ -154,6 +154,7 @@ import {
 } from "../custom-api/connectors.js";
 import {
   prepareCustomApiUpdate,
+  CustomOAuthClientChangeRefused,
   prepareCustomOAuthClientChange,
   type CustomOAuthClientChange,
 } from "../custom-api/connections.js";
@@ -3153,6 +3154,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return result;
       } catch (error) {
         if (error instanceof RollBack) return error.result;
+        if (error instanceof CustomOAuthClientChangeRefused)
+          return fail(400, error.code);
         throw error;
       }
     },
