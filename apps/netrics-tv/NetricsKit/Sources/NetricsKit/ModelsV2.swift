@@ -1186,6 +1186,8 @@ public enum WidgetContent: Sendable, Equatable {
     case clock(ClockWidgetOptions)
     case countdown(CountdownWidgetOptions)
     case gauge(GaugeWidgetOptions, GaugeWidgetData)
+    /** The newest items of a model (#810): their image ids are among the payload's images, else nil. */
+    case items(ItemsWidgetOptions, ItemsWidgetData)
     /** A type this build does not know, or fields it cannot read. */
     case unsupported
 }
@@ -1300,6 +1302,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
         case "gauge":
             guard let data = c.lenient(GaugeWidgetData.self, .data) else { return .unsupported }
             return .gauge(c.lenient(GaugeWidgetOptions.self, .options) ?? .init(), data)
+        case "items":
+            guard let data = c.lenient(ItemsWidgetData.self, .data) else { return .unsupported }
+            return .items(c.lenient(ItemsWidgetOptions.self, .options) ?? .init(), data)
         default:
             return .unsupported
         }
@@ -1340,6 +1345,9 @@ public struct DeviceWidget: Codable, Sendable, Equatable, Identifiable {
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .gauge(let options, let data):
+            try c.encode(options, forKey: .options)
+            try c.encode(data, forKey: .data)
+        case .items(let options, let data):
             try c.encode(options, forKey: .options)
             try c.encode(data, forKey: .data)
         case .review(let imageId, let options, let data):
@@ -1708,6 +1716,19 @@ public struct DeviceDashboardV2: Codable, Sendable, Equatable {
             return slide
         }
         images = c.lossyArray(DeviceImage.self, .images)
+        // An item image the payload does not list (pruned, or a damaged
+        // entry) is no image: the item shows its placeholder.
+        let known = Set(images.map(\.id))
+        slides = slides.map { slide in
+            var slide = slide
+            slide.widgets = slide.widgets.map { widget in
+                guard case .items(let options, let data) = widget.content else { return widget }
+                var widget = widget
+                widget.content = .items(options, data.keepingImages(known))
+                return widget
+            }
+            return slide
+        }
     }
 
     /** The language of the labels; English when the server sent none. */

@@ -99,7 +99,7 @@ struct WidgetView: View {
                 placement: placement, env: env
             )
             .surface(env)
-        case .unsupported:
+        case .items, .unsupported:
             // A type this build does not know (a newer server), or one it
             // cannot read: its cell stays, empty and themed.
             Color.clear.surface(env)

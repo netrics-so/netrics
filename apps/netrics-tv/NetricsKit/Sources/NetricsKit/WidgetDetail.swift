@@ -79,7 +79,7 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
     /** Whether a widget has a detail sheet: the widgets with numbers. */
     public static func available(_ widget: DeviceWidget) -> Bool {
         switch widget.content {
-        case .metric, .line, .bar, .table, .status, .compare, .gauge, .review, .measure: return true
+        case .metric, .line, .bar, .table, .status, .compare, .gauge, .review, .measure, .items: return true
         case .image, .text, .clock, .countdown, .unsupported: return false
         }
     }
@@ -290,6 +290,18 @@ public struct WidgetDetail: Sendable, Equatable, Identifiable {
             return detail(
                 [valueRow] + source(data.status, updatedAt: data.updatedAt, freshness: data.freshness, conversion: nil),
                 text: text.flatMap { $0.isEmpty ? nil : $0 }, fallbackTitle: widget.type)
+        case .items(_, let data):
+            // Each item's title, its time and subtitle under it (#811).
+            let items = data.items.map { item in
+                Item(
+                    label: item.title ?? "—",
+                    value: ItemsText.time(item.time, now: now, language: language, timeZone: timeZone) ?? "",
+                    lines: item.subtitle.map { [Item.Line(text: $0, warning: false)] } ?? [])
+            }
+            let freshness = data.freshness.map { updated(nil, freshness: $0, status: data.status) }
+            return detail(
+                [Row(.value, ItemsText.count(data.items.count, language: language)), freshness], items: items,
+                fallbackTitle: KitStrings.text(.latestItems, language))
         case .image, .text, .clock, .countdown, .unsupported:
             return nil
         }

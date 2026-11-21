@@ -184,7 +184,7 @@ import Testing
         await h.start()
         await h.advance(0)
         let request = try #require(h.api.callsTo("GET /v1/device/dashboard").first)
-        #expect(request.query == "schema=2&features=measure_split")
+        #expect(request.query == "schema=2&features=measure_split,items")
         let state = await h.state
         #expect(state.dashboardV2?.version == "v2-1")
         #expect(state.dashboard == nil)
@@ -249,7 +249,7 @@ import Testing
         await h.start()
         await h.advance(0)
         let request = try #require(h.api.callsTo("GET /v1/device/dashboard").first)
-        #expect(request.query == "schema=2&features=measure_split")
+        #expect(request.query == "schema=2&features=measure_split,items")
         #expect(request.header("if-none-match") == "\"v2-1\"")
         #expect(await h.state.dashboardV2?.version == "v2-1")
     }
@@ -268,7 +268,7 @@ import Testing
         let requests = h.api.callsTo("GET /v1/device/dashboard")
         #expect(requests.count == 2)
         // The schema 1 ETag is not offered for schema 2 …
-        #expect(requests[0].query == "schema=2&features=measure_split")
+        #expect(requests[0].query == "schema=2&features=measure_split,items")
         #expect(requests[0].header("if-none-match") == nil)
         // … and the schema 2 one is used from then on.
         #expect(requests[1].header("if-none-match") == "\"v2-1\"")
@@ -285,7 +285,7 @@ import Testing
         await h.start()
         await h.advance(60)
         let requests = h.api.callsTo("GET /v1/device/dashboard")
-        #expect(requests.map(\.query) == ["schema=2&features=measure_split", nil])
+        #expect(requests.map(\.query) == ["schema=2&features=measure_split,items", nil])
         #expect(requests[1].header("if-none-match") == "\"v1\"")
         #expect(await h.state.dashboard?.version == "v1")
     }

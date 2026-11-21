@@ -90,7 +90,7 @@ struct ScrollCardView: View {
                 viewportHeight: viewportHeight, env: env
             )
             .scrollCard(env, padding: EdgeInsets(all: ScrollGeometry.imagePadding))
-        case .unsupported:
+        case .items, .unsupported:
             // A type this build does not know (a newer server): an empty card keeps its place.
             Color.clear.frame(height: env.pt(ScrollGeometry.TypeSize.valueMax))
                 .scrollCard(env)
