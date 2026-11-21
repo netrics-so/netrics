@@ -18,6 +18,7 @@ function row(overrides: Partial<ConnectionStateRow>): ConnectionStateRow {
     authReason: null,
     consecutiveFailures: 0,
     rateLimitedUntil: null,
+    customApiTestUntil: null,
     backfilledDatasets: null,
     backfillJobDatasets: null,
     backfillRequestedDatasets: null,

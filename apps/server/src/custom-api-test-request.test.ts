@@ -232,6 +232,7 @@ afterAll(async () => {
 beforeEach(async () => {
   // A fresh rate window for every case, and room below the draft limit.
   clock += 61_000;
+  await admin`delete from custom_api_test_rate`;
   await admin`delete from connections where status = 'draft'`;
   fixture.reset();
 });
@@ -567,7 +568,10 @@ describe("the test request rate limit", () => {
     }
     const requests = fixture.requests.length;
     expect(requests).toBe(30);
-    clock += 10_000;
+    // The window runs on the database clock: 10 s into it.
+    await admin`update custom_api_test_rate
+      set window_start = now() - interval '10 seconds'
+      where workspace_id = ${workspace}`;
     const limited = await testRequest(first, { definition }, workspace);
     expect(limited.statusCode).toBe(429);
     expect(limited.json()).toEqual({ error: "custom_api_test_rate_limited" });
@@ -579,19 +583,83 @@ describe("the test request rate limit", () => {
     // Another workspace has its own budget.
     const other = await newDraft(null, definition);
     expect((await testRequest(other, { definition })).statusCode).toBe(200);
-    clock += 51_000;
+    await admin`update custom_api_test_rate
+      set window_start = now() - interval '61 seconds'
+      where workspace_id = ${workspace}`;
     expect(
       (await testRequest(first, { definition }, workspace)).statusCode,
     ).toBe(200);
   });
 
+  it("runs one test per draft across API processes", async () => {
+    const workspace = await newWorkspace("Busy draft");
+    const definition = draftDefinition({
+      path: "/stats",
+      auth: { type: "none" },
+      pagination: { type: "none" },
+      records: "",
+      fields: [
+        { id: "visitors", name: "V", path: "visitors", type: "integer" },
+      ],
+    });
+    const draft = await newDraft(null, definition, workspace);
+    const lease = () => admin`
+      select custom_api_test_until from connection_state
+      where connection_id = ${draft}`;
+    // Another API process is testing this draft.
+    await admin`update connection_state
+      set custom_api_test_until = now() + interval '1 minute'
+      where connection_id = ${draft}`;
+    fixture.reset();
+    const busy = await testRequest(draft, { definition }, workspace);
+    expect(busy.statusCode).toBe(409);
+    expect(busy.json()).toEqual({ error: "custom_api_test_busy" });
+    expect(fixture.requests).toHaveLength(0);
+    // Its lease ran out (the process died): the next test runs and ends
+    // its own lease.
+    await admin`update connection_state
+      set custom_api_test_until = now() - interval '1 second'
+      where connection_id = ${draft}`;
+    expect(
+      (await testRequest(draft, { definition }, workspace)).statusCode,
+    ).toBe(200);
+    expect((await lease())[0]!.custom_api_test_until).toBeNull();
+  });
+
+  it("keeps the window on the database clock, not the API's", async () => {
+    const workspace = await newWorkspace("Skewed clock");
+    const definition = draftDefinition({
+      path: "/stats",
+      auth: { type: "none" },
+      pagination: { type: "none" },
+      records: "",
+      fields: [
+        { id: "visitors", name: "V", path: "visitors", type: "integer" },
+      ],
+    });
+    const draft = await newDraft(null, definition, workspace);
+    // This API process runs an hour ahead.
+    const saved = clock;
+    clock = Date.now() + 3_600_000;
+    try {
+      expect(
+        (await testRequest(draft, { definition }, workspace)).statusCode,
+      ).toBe(200);
+    } finally {
+      clock = saved;
+    }
+    const [row] = await admin`
+      select abs(extract(epoch from window_start - now())) as skew
+      from custom_api_test_rate where workspace_id = ${workspace}`;
+    expect(Number(row!.skew)).toBeLessThan(30);
+  });
+
   it("counts the rate limit atomically under concurrent tests", async () => {
     const workspace = await newWorkspace("Concurrent tests");
-    const at = new Date(clock);
     const results = await Promise.all(
       Array.from({ length: 40 }, () =>
         withWorkspace(db, { workspaceId: workspace }, (tx) =>
-          takeCustomApiTestSlot(tx, workspace, at),
+          takeCustomApiTestSlot(tx, workspace),
         ),
       ),
     );

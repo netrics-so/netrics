@@ -109,6 +109,16 @@ describe("boundedPreview", () => {
     expect(out.truncated).toBe(true);
   });
 
+  it("names the original length when the budget cuts a long string further", () => {
+    const out = boundedPreview({ long: "x".repeat(10_000) }, none, 600);
+    const long = (out.body as { long: string }).long;
+    expect(long).toMatch(/^x+… \(10000 characters\)$/);
+    expect(long.match(/…/g)).toHaveLength(1);
+    expect(Buffer.byteLength(JSON.stringify(out.body))).toBeLessThanOrEqual(
+      600,
+    );
+  });
+
   it("cuts arrays once the serialized budget is used and says how many items are left out", () => {
     const row = { text: "y".repeat(1_900), more: "z".repeat(1_900) };
     const out = boundedPreview(
