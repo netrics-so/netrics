@@ -32,6 +32,7 @@ import {
   receiveEmptySourceDataset,
   intersectDatasetVersions,
   queueDatasetBackfill,
+  recordStreamRecords,
   DatasetStoreError,
   DatasetStageUnavailableError,
   resolveDataPolicy,
@@ -52,7 +53,13 @@ import {
 } from "@netrics/contracts";
 
 import {
+  CUSTOM_API_SKIPPED_FIELDS,
+  CUSTOM_API_SKIPPED_LOG,
+  readSkippedLogFields,
+} from "@netrics/connector-sdk/custom-api";
+import {
   CUSTOM_API_AUTH_ERROR,
+  CUSTOM_API_CONNECTOR_ID,
   CUSTOM_API_LIMIT_ERROR,
 } from "@netrics/connectors/custom-api";
 
@@ -848,12 +855,67 @@ async function runSync(
   // Connector log lines (SDK 0.2.14, #638), already sanitized by the
   // runtime, attributed to this connection, run (jobId) and attempt.
   const connectorLog = log.child({ source: "connector" });
+  // A custom API's skipped records of this job, per stream (#834 review):
+  // its "records skipped" lines, kept for the connection page. Only
+  // streams of the pinned definition and paths of their fields count.
+  const customApiStreams = new Map(
+    (registered.customApi?.definition.streams ?? []).map((stream) => [
+      stream.key,
+      new Set(stream.fields.map((field) => field.path)),
+    ]),
+  );
+  const recordSkips = new Map<
+    string,
+    { skipped: number; byPath: Map<string, number> }
+  >();
+  const countSkips = (
+    connectorId: string,
+    message: string,
+    fields: Readonly<Record<string, unknown>>,
+  ) => {
+    if (
+      connectorId !== CUSTOM_API_CONNECTOR_ID ||
+      message !== CUSTOM_API_SKIPPED_LOG ||
+      typeof fields.stream !== "string"
+    )
+      return;
+    const paths = customApiStreams.get(fields.stream);
+    const read = readSkippedLogFields(fields);
+    if (!paths || !read) return;
+    const total = recordSkips.get(fields.stream) ?? {
+      skipped: 0,
+      byPath: new Map<string, number>(),
+    };
+    total.skipped += read.skipped;
+    for (const [path, count] of read.byPath)
+      if (paths.has(path))
+        total.byPath.set(path, (total.byPath.get(path) ?? 0) + count);
+    recordSkips.set(fields.stream, total);
+  };
+  /** Writes this job's skipped records per stream; a continued run adds up. */
+  const saveRecordSkips = async (tx: Transaction) => {
+    for (const streamKey of customApiStreams.keys()) {
+      const total = recordSkips.get(streamKey);
+      await recordStreamRecords(tx, {
+        workspaceId,
+        connectionId,
+        streamKey,
+        checkedAt: now,
+        skipped: total?.skipped ?? 0,
+        skippedFields: Object.fromEntries(total?.byPath ?? []),
+        add: continuation !== undefined,
+        maxFields: CUSTOM_API_SKIPPED_FIELDS,
+      });
+    }
+  };
   const executeOptions: ExecuteOptions = callOptionsFor(
     registered,
     {
       ...deps.executeOptions,
-      log: ({ level, connector: connectorId, message, fields }) =>
-        connectorLog[level]({ connector: connectorId, fields }, message),
+      log: ({ level, connector: connectorId, message, fields }) => {
+        countSkips(connectorId, message, fields);
+        connectorLog[level]({ connector: connectorId, fields }, message);
+      },
     },
     {
       credentials,
@@ -1200,6 +1262,7 @@ async function runSync(
               finishedAt: new Date(),
               observationsWritten: progress.observationsWritten,
             });
+            await saveRecordSkips(tx);
           });
           throw new ContinueJobError({
             syncWindow: { mode, from: iso(window.from), to: iso(window.to) },
@@ -1354,6 +1417,7 @@ async function runSync(
         finishedAt: new Date(),
         observationsWritten,
       });
+      await saveRecordSkips(tx);
     });
   } catch (error) {
     if (error instanceof ContinueJobError) throw error;

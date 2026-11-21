@@ -4,6 +4,7 @@ import type {
   AppStoreAnalyticsStatusResponse,
   AppStoreReviewsStatusResponse,
   ConnectionItemImages,
+  ConnectionRecordSkips,
   ConnectionPreviewResponse,
   ConnectionResourcesResponse,
   ConnectionSignedKeyView,
@@ -77,6 +78,7 @@ import {
   listObservations as listObservationRows,
   listConnectionFreshness,
   listStreamImages,
+  listStreamRecords,
   listRecentSyncRuns,
   releaseOAuthGrant,
   latestBackfillFailed,
@@ -2382,6 +2384,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.workspaceId,
           loaded,
         );
+        const recordSkips = await connectionRecordSkips(
+          tx,
+          actor.workspaceId,
+          loaded,
+        );
         return {
           ...loaded,
           syncRuns,
@@ -2390,6 +2397,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           incomplete,
           freshness,
           itemImages,
+          recordSkips,
         };
       });
       if (!found) {
@@ -2411,6 +2419,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.locale,
         ),
         ...(found.itemImages ? { itemImages: found.itemImages } : {}),
+        ...(found.recordSkips ? { recordSkips: found.recordSkips } : {}),
       });
     },
 
@@ -3591,6 +3600,56 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 }
 
 export type ConnectionService = ReturnType<typeof createConnectionService>;
+
+/**
+ * The last sync's skipped records per stream of a custom API connection
+ * (#834 review), with the stream names and field paths of its pinned
+ * definition: a path the definition no longer has is left out.
+ * Undefined for bundled connectors.
+ */
+async function connectionRecordSkips(
+  tx: Transaction,
+  workspaceId: string,
+  loaded: ConnectionWithState,
+): Promise<ConnectionRecordSkips[] | undefined> {
+  if (!loaded.customApi) return undefined;
+  let streams: Map<string, { name: string; paths: Set<string> }>;
+  try {
+    const definition = upgradeCustomApiDefinition(loaded.customApi.document);
+    streams = new Map(
+      definition.streams.map((stream) => [
+        stream.key,
+        {
+          name: stream.name,
+          paths: new Set(stream.fields.map((field) => field.path)),
+        },
+      ]),
+    );
+  } catch {
+    return undefined;
+  }
+  const rows = await listStreamRecords(tx, workspaceId, loaded.row.id);
+  return rows.flatMap((row) => {
+    const stream = streams.get(row.streamKey);
+    if (!stream) return [];
+    return [
+      {
+        streamKey: row.streamKey,
+        streamName: stream.name || row.streamKey,
+        checkedAt: row.checkedAt.toISOString(),
+        skipped: row.skipped,
+        skippedFields: Object.entries(row.skippedFields)
+          .filter(
+            ([path, count]) =>
+              stream.paths.has(path) && Number.isInteger(count) && count > 0,
+          )
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .slice(0, 5)
+          .map(([path, count]) => ({ path, count })),
+      },
+    ];
+  });
+}
 
 /**
  * The last image step per image stream of a custom API connection (#809),

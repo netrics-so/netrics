@@ -1179,6 +1179,40 @@ export const customApiStreamImages = pgTable(
   ],
 );
 
+/**
+ * The last sync's records per stream of a custom API connection (#834
+ * review): how many records were skipped and, by field path, which
+ * non-empty field was empty or could not be read. Paths only, never values;
+ * at most CUSTOM_API_SKIPPED_FIELDS paths.
+ */
+export const customApiStreamRecords = pgTable(
+  "custom_api_stream_records",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    streamKey: text("stream_key").notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+    skipped: integer("skipped").notNull(),
+    skippedFields: jsonb("skipped_fields")
+      .$type<Record<string, number>>()
+      .notNull()
+      .default({}),
+  },
+  (table) => [
+    primaryKey({
+      name: "custom_api_stream_records_pk",
+      columns: [table.connectionId, table.streamKey],
+    }),
+    foreignKey({
+      name: "custom_api_stream_records_connection_fk",
+      columns: [table.connectionId, table.workspaceId],
+      foreignColumns: [connections.id, connections.workspaceId],
+    }).onDelete("cascade"),
+    index("custom_api_stream_records_workspace_idx").on(table.workspaceId),
+    check("custom_api_stream_records_counts_valid", sql`${table.skipped} >= 0`),
+  ],
+);
+
 export const dashboards = pgTable(
   "dashboards",
   {

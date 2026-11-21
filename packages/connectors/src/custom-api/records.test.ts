@@ -127,6 +127,8 @@ describe("custom API records", () => {
     };
     const page = mapRecords(badValuesStream, FIXTURE_BAD_VALUES, "UTC");
     expect(page.skipped).toBe(1);
+    // Which field skipped the record, by id (#834 review).
+    expect(page.skippedFields).toEqual({ id: 1 });
     expect(page.nulled).toEqual({ orders: 2 });
     expect(page.rows).toEqual([
       { id: 1, orders: 3 },
@@ -159,6 +161,7 @@ describe("custom API records", () => {
     );
     expect(page.rows).toHaveLength(1);
     expect(page.skipped).toBe(1);
+    expect(page.skippedFields).toEqual({ currency: 1 });
   });
 
   it("detects nesting deeper than 64 without recursion", () => {

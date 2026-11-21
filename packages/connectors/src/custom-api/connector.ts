@@ -20,6 +20,8 @@ import {
 } from "@netrics/connector-sdk";
 import {
   CUSTOM_API_LIMITS,
+  CUSTOM_API_SKIPPED_LOG,
+  skippedLogFields,
   type CustomApiDefinition,
   type CustomApiStream,
 } from "@netrics/connector-sdk/custom-api";
@@ -310,17 +312,29 @@ export function createCustomApiConnector(
     const body = readJson(response);
     const raws = selectRecords(body, stream.records);
     const mapped = mapRecords(stream, raws, timeZone);
-    const skippedFields = Object.entries(mapped.nulled);
-    if (mapped.skipped > 0 || skippedFields.length > 0)
-      runtime.log?.warn("records skipped", {
+    const nulledFields = Object.entries(mapped.nulled);
+    if (mapped.skipped > 0 || nulledFields.length > 0) {
+      // The host keeps the skipped records per stream by field path
+      // (#834 review); nulled values stay for the operator's log.
+      const paths = new Map(stream.fields.map((f) => [f.id, f.path]));
+      runtime.log?.warn(CUSTOM_API_SKIPPED_LOG, {
         stream: stream.key,
-        skipped: mapped.skipped,
+        ...skippedLogFields(
+          mapped.skipped,
+          new Map(
+            Object.entries(mapped.skippedFields).map(([id, count]) => [
+              paths.get(id) ?? id,
+              count,
+            ]),
+          ),
+        ),
         ...Object.fromEntries(
-          skippedFields
-            .slice(0, 15)
+          nulledFields
+            .slice(0, 8)
             .map(([field, count]) => [`nulled.${field}`, count]),
         ),
       });
+    }
 
     let rows = mapped.rows;
     let window: DatasetPage["window"];

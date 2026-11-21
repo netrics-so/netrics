@@ -273,6 +273,11 @@ export {
 } from "./custom-api-images.js";
 export type { ItemImageRef, StreamImagesRecord } from "./custom-api-images.js";
 export {
+  listStreamRecords,
+  recordStreamRecords,
+  type StreamRecordsSummary,
+} from "./custom-api-records.js";
+export {
   BREAKDOWN_TIMEOUT_MS,
   findConnectionMetric,
   listWorkspaceMetrics,

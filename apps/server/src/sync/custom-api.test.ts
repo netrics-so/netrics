@@ -259,6 +259,24 @@ describe("custom-api on the sync engine", () => {
     );
   });
 
+  it("keeps the last sync's skipped records per stream, by field path (#834 review)", async () => {
+    const connectionId = await connect(definition("bad_values"), null);
+    expect(await run("connection.backfill", connectionId)).toBeUndefined();
+    expect(await lastRun(connectionId)).toMatchObject({ status: "succeeded" });
+    const summary = async () =>
+      owner<{ stream_key: string; skipped: number; skipped_fields: unknown }[]>`
+        select stream_key, skipped, skipped_fields
+        from custom_api_stream_records where connection_id = ${connectionId}`;
+    expect(await summary()).toEqual([
+      { stream_key: "values", skipped: 1, skipped_fields: { id: 1 } },
+    ]);
+    // The next sync replaces it, not adds to it.
+    expect(await run("connection.sync", connectionId)).toBeUndefined();
+    expect(await summary()).toEqual([
+      { stream_key: "values", skipped: 1, skipped_fields: { id: 1 } },
+    ]);
+  });
+
   it("marks the connection auth_failed with the 401 message", async () => {
     const connectionId = await connect(definition("api_key_header"), {
       apiKey: "wrong-key-1234",

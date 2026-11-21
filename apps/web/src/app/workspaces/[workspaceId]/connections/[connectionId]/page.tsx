@@ -20,6 +20,7 @@ import { RetentionSettings } from "./retention-settings";
 import { ConnectionProject } from "./connection-project";
 import { ConnectionFreshness } from "./connection-freshness";
 import { ConnectionItemImages } from "./connection-item-images";
+import { ConnectionRecordSkips } from "./connection-record-skips";
 import { SyncRunError } from "./sync-run-error";
 import { ConnectionRefresh } from "./connection-refresh";
 import { waitsForSync } from "./wait-for-sync";
@@ -472,6 +473,9 @@ export default async function ConnectionDetailPage({
         resourceNames={resourceNames}
       />
 
+      {detail.recordSkips ? (
+        <ConnectionRecordSkips streams={detail.recordSkips} />
+      ) : null}
       {detail.itemImages ? (
         <ConnectionItemImages streams={detail.itemImages} />
       ) : null}

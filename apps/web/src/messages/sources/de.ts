@@ -74,6 +74,15 @@ export const sourcesDe: Catalog<typeof sourcesEn> = {
       buildName: "Eigene API bauen",
       connectExistingName: "Vorhandene eigene API verbinden",
     },
+    recordSkips: {
+      title: "Übersprungene Einträge",
+      summary:
+        "{stream}: {count, plural, one {# Eintrag} other {# Einträge}} bei der letzten Synchronisierung übersprungen · {time}",
+      none: "{stream}: keine Einträge bei der letzten Synchronisierung übersprungen · {time}",
+      field:
+        "{path} war in {count, plural, one {# Eintrag} other {# Einträgen}} leer oder nicht lesbar",
+      help: "Ein Feld, das nicht leer sein darf, überspringt den ganzen Eintrag. Damit diese Einträge bleiben, lass das Feld in einer neuen Version der eigenen API leer sein.",
+    },
     itemImages: {
       title: "Bilder",
       summary:
