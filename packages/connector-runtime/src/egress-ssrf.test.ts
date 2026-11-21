@@ -65,10 +65,17 @@ describe("isBlockedAddress (SSRF)", () => {
     "fec0::1",
     "ff02::1",
   ])("blocks %s", (a) => expect(isBlockedAddress(a)).toBe(true));
-  it.each(["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "::ffff:1.1.1.1"])(
-    "allows public %s",
-    (a) => expect(isBlockedAddress(a)).toBe(false),
-  );
+  it.each([
+    "1.1.1.1",
+    "8.8.8.8",
+    "2606:4700:4700::1111",
+    "2a00:1450:4001::200e",
+    "100:0:0:1::1",
+    // Mapped and compatible forms of a public address stay that address.
+    "::ffff:1.1.1.1",
+    "::ffff:101:101",
+    "::101:101",
+  ])("allows public %s", (a) => expect(isBlockedAddress(a)).toBe(false));
 });
 
 describe("tunnelled and legacy IPv6 forms (each named, so a regression points at the form)", () => {
@@ -88,6 +95,12 @@ describe("tunnelled and legacy IPv6 forms (each named, so a regression points at
       "::ffff:0:101:101",
     ],
     ["IPv4-translated dotted", "::ffff:0:10.0.0.1"],
+    ["reserved ::/8 outside the /96 ranges", "::ffff:1:7f00:1"],
+    ["reserved ::/8, public-looking tail", "::1:0:0:101:101"],
+    [
+      "reserved ::/8, top of the range",
+      "ff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+    ],
   ])("blocks %s (%s)", (_name, a) => expect(isBlockedAddress(a)).toBe(true));
 });
 

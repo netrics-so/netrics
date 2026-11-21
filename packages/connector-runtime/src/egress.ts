@@ -158,6 +158,10 @@ export function isBlockedAddress(address: string): boolean {
     // address; NAT64, 6to4 and Teredo ranges are refused whole.
     const { exact } = embeddedIpv4(bytes);
     if (exact !== undefined) return blocked.check(exact, "ipv4");
+    // IETF-reserved ::/8 as a whole: nothing in it is routed globally
+    // (global unicast is 2000::/3). Checked by hand: an IPv6 range over
+    // ::ffff:0:0/96 in a BlockList also matches every IPv4 address.
+    if (bytes[0] === 0) return true;
     return blocked.check(address.replace(/%.*$/, ""), "ipv6");
   }
   return true;
