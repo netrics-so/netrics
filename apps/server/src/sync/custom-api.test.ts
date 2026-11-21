@@ -341,6 +341,10 @@ describe("custom-api on the sync engine", () => {
       expect(await summary(connectionId)).toEqual([
         { skipped: 1, skipped_fields: { id: 1 } },
       ]);
+      // The provider's reset has passed.
+      await owner`
+        update connection_state set rate_limited_until = null
+        where connection_id = ${connectionId}`;
       expect(
         await attempt("connection.backfill", connectionId, {
           id: jobId,
@@ -351,7 +355,7 @@ describe("custom-api on the sync engine", () => {
       expect(await summary(connectionId)).toEqual(all);
     });
 
-    it("adds the pages of a retried attempt that resumes its checkpoint", async () => {
+    it("counts a retried attempt once: it reads the stream again from the start", async () => {
       const connectionId = await connect(definition("bad_pages"), null);
       fixture.failPageOnce(2, 503);
       const jobId = randomUUID();
