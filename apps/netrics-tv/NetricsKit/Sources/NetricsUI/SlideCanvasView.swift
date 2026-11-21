@@ -143,7 +143,9 @@ public struct SlideCanvasView: View {
                 if let widget = widgets[cell.id] {
                     let placed = geometry.place(cell.cells)
                     let rect = placed.rect
-                    WidgetView(widget: widget, placement: placed.placement, env: env, image: imageForWidget(widget))
+                    WidgetView(
+                        widget: widget, placement: placed.placement, env: env, image: imageForWidget(widget),
+                        images: imageFile)
                         .frame(width: CGFloat(rect.width), height: CGFloat(rect.height))
                         .touch(widget, interaction, language: payload.language)
                         .position(x: CGFloat(rect.x + rect.width / 2), y: CGFloat(rect.y + rect.height / 2))
@@ -193,7 +195,10 @@ struct StoredImage {
         return StoredImage(url: url, image: image)
     }
 
-    /** A widget's image: an image widget's, or a latest review's app icon (ADR 0019 section 12). */
+    /**
+     * A widget's image: an image widget's, or a latest review's app icon (ADR 0019 section 12).
+     * A latest-items widget's images are looked up per item with `find`.
+     */
     static func forWidget(
         _ widget: DeviceWidget, payload: DeviceDashboardV2, state: DeviceState, images: FileImageCache
     ) -> StoredImage?

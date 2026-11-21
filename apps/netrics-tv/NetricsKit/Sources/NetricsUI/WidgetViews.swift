@@ -17,6 +17,11 @@ struct WidgetView: View {
     let placement: ScreenPlacement
     let env: WidgetEnv
     let image: StoredImage?
+    /** Any of the payload's stored images by id: a latest-items widget's item images. */
+    var images: (String?) -> StoredImage? = { _ in nil }
+
+    /** When the widget appeared: a latest-items rotation starts with the slide. */
+    @State private var appearedAt = Date()
 
     var body: some View {
         switch widget.content {
@@ -99,12 +104,25 @@ struct WidgetView: View {
                 placement: placement, env: env
             )
             .surface(env)
-        case .items, .unsupported:
+        case .items(let options, let data):
+            ItemsWidgetView(
+                label: itemsLabel(widget.label, env.language), options: options, data: data, env: env,
+                placement: placement, image: images, slideStartedAt: appearedAt
+            )
+            .surface(env, state: SurfaceState(data.status))
+        case .unsupported:
             // A type this build does not know (a newer server), or one it
             // cannot read: its cell stays, empty and themed.
             Color.clear.surface(env)
         }
     }
+}
+
+/** A latest-items widget's label: its own, else "Latest items". */
+@MainActor
+func itemsLabel(_ label: String?, _ language: ScreenLanguage) -> String {
+    let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? L10n.tr("Latest items", language) : trimmed
 }
 
 /** A title or resource line at its fitted size, at most two lines. */

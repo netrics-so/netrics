@@ -224,7 +224,7 @@ public struct ScrollDashboardView: View {
     {
         ScrollCardView(
             widget: widget, width: ScrollGeometry.itemWidth(layout, span: item.span), rem: Double(rem),
-            viewportHeight: viewportHeight, env: env, image: imageForWidget(widget)
+            viewportHeight: viewportHeight, env: env, image: imageForWidget(widget), images: imageFile
         )
         .touch(widget, interaction, language: payload.language)
     }

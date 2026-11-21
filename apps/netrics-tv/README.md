@@ -354,6 +354,17 @@ The details are in "How it works" below; the wall and desk setup of an iPad
   `Caches/netrics/images` (in the App Group container). Beyond 50 MB, images the current payload does
   not reference are evicted, least recently used first. They are decoded
   with ImageIO at the widget's pixel size.
+- **Latest items (#811).** The app asks for `features=measure_split,items`,
+  so the server sends the latest-items widget instead of its text
+  placeholder. It shows the newest records of a model as a grid (as many
+  readable tiles as fit, never more than the widget's count; extra items
+  are left out, not shrunk) or one at a time, cross-faded every
+  `rotateSeconds` from the slide's start (no animation with Reduce
+  Motion). Item images are among the payload's `images`, so the image
+  cache above keeps them for offline playback. An item without a stored
+  image, one the payload does not list, or one the server answered with
+  404 (a race with the payload; retried with the next poll) shows a
+  themed placeholder, never an error. The detail sheet lists the titles.
 - **Heartbeat.** Every 5 minutes: app version ("tvos", "ios" or "ipados"
   and the version, shown as tvOS, iOS and iPadOS in the web's device list),
   uptime, the last error and the screen: on Apple TV the points after the
