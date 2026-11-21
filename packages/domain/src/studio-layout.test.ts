@@ -128,6 +128,7 @@ describe("placement rules", () => {
       gauge: { w: 3, h: 3 },
       review: { w: 4, h: 3 },
       measure: { w: 4, h: 3 },
+      items: { w: 3, h: 3 },
     });
     expect(meetsMinimumSize("metric", { x: 0, y: 0, w: 3, h: 2 })).toBe(true);
     expect(meetsMinimumSize("metric", { x: 0, y: 0, w: 2, h: 4 })).toBe(false);
