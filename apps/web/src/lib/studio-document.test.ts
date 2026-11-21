@@ -23,6 +23,7 @@ import {
   type StudioAction,
   type StudioState,
 } from "./studio-document";
+import { draftProductKey, loadDraftProductApps } from "./studio-product-apps";
 
 const ID = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -494,6 +495,77 @@ describe("a slide's scope and logo (#707)", () => {
     expect(
       documentProblems(other.draft, "en").map((problem) => problem.message),
     ).toEqual([expect.stringContaining("another app than the one")]);
+  });
+
+  it("lets a first App filter added in the draft scope a slide to a linked product (#777)", async () => {
+    // The dashboard was opened without shared filters, so it came without
+    // products. The editor adds the App filter and scopes the slide to a
+    // linked product; the metric widget excludes nothing.
+    const product = {
+      app: { kind: "values" as const, values: ["product:p"] },
+    };
+    const opened = initialStudioState(dashboard(), "en");
+    expect(draftProductKey(opened.draft.settings.dataFilters)).toBe("");
+    const edited = run(
+      opened,
+      { type: "updateSettings", patch: { dataFilters: [appFilter] } },
+      { type: "updateSlide", slideId: ID(2), patch: { scope: product } },
+    );
+    // The draft's filters map to a model now: its products are asked for,
+    // by the models' ids, as the server resolves them on save.
+    expect(draftProductKey(edited.draft.settings.dataFilters)).toBe(ID(70));
+    const asked: string[][] = [];
+    const apps = await loadDraftProductApps(
+      "workspace",
+      edited.draft.settings.dataFilters,
+      async (_workspaceId, modelIds) => {
+        asked.push(modelIds);
+        return { productApps: { "product:p": [`${ID(9)}:123`] } };
+      },
+    );
+    expect(asked).toEqual([[ID(70)]]);
+    // With them the widget follows the product: nothing blocks the save,
+    // and the scope is sent as chosen.
+    expect(documentProblems(edited.draft, "en", apps)).toEqual([]);
+    expect(toReplaceRequest(edited).slides![0]).toMatchObject({
+      scope: product,
+    });
+    // Before (the opened dashboard's products, none): "not applicable".
+    expect(
+      documentProblems(edited.draft, "en", {}).map(
+        (problem) => problem.message,
+      ),
+    ).toEqual([expect.stringContaining("map the App filter to this model")]);
+    // While they load, or when loading failed, the server decides.
+    expect(documentProblems(edited.draft, "en", null)).toEqual([]);
+    const failed = await loadDraftProductApps(
+      "workspace",
+      edited.draft.settings.dataFilters,
+      async () => {
+        throw new Error("offline");
+      },
+    );
+    expect(failed).toBeNull();
+    // A product without an app of the widget's connection is refused, as
+    // the server refuses it.
+    expect(
+      documentProblems(edited.draft, "en", {
+        "product:p": [`${ID(8)}:com.example`],
+      }),
+    ).toHaveLength(1);
+    // Unknown products never excuse a slide scoped to an app or unscoped.
+    const unscoped = run(edited, {
+      type: "updateSlide",
+      slideId: ID(2),
+      patch: { scope: {} },
+    });
+    expect(documentProblems(unscoped.draft, "en", null)).toHaveLength(1);
+    // Without mapped filters nothing is asked.
+    expect(
+      await loadDraftProductApps("workspace", [], async () => {
+        throw new Error("not asked");
+      }),
+    ).toEqual({});
   });
 
   it("drops a slide's scope of a removed or changed filter", () => {

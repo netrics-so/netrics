@@ -43,6 +43,7 @@ import {
   type MeasureWidgetBinding,
   type SlideFilterScope,
   followsSlideScopeResource,
+  type ProductApps,
   slideScopeResource,
   RESOURCE_DIMENSION,
 } from "@netrics/domain";
@@ -62,7 +63,10 @@ import {
   DataServiceError,
 } from "../data/service.js";
 import {
+  mappedProductApps,
   sourceFreshnessDependencies,
+  type ScopeMappingCache,
+  type ScopeRead,
   type FreshnessReader,
   type WidgetFreshnessResult,
 } from "./freshness.js";
@@ -70,6 +74,9 @@ import { queryDashboardItems } from "./items.js";
 import {
   modelSourceConnections,
   modelSourceDatasets,
+  publishedReleases,
+  releasesSourceDatasets,
+  type ModelRelease,
   type ModelSourceDatasets,
 } from "./model-sources.js";
 
@@ -425,15 +432,112 @@ export function slideScopeOf(slide: {
 }
 
 /**
+ * What product scopes are resolved with, the same wherever a dashboard is
+ * read, saved or sent to a screen: the deployment's data policy
+ * (NETRICS_DATA_POLICY; the workspace's own overrides are resolved on
+ * top) and its clock. Absent: the built-in defaults and the system clock.
+ */
+export interface ProductScopeInputs {
+  policy?: DataPolicy | undefined;
+  now?: (() => Date) | undefined;
+}
+
+/** The models a dashboard's shared filters map to, each once. */
+export function mappedModelIds(
+  filters: readonly DashboardDataFilter[],
+): string[] {
+  return [
+    ...new Set(
+      filters.flatMap((filter) =>
+        filter.mappings.map((mapping) => mapping.modelId),
+      ),
+    ),
+  ];
+}
+
+/**
+ * The member apps of the linked products a dashboard's slide scopes can
+ * name (#777), for connection widgets, which have no model of their own:
+ * a `product:<id>` is a value of a shared filter, so it is resolved through
+ * the models the dashboard's filters map to (`modelIds`), exactly as a
+ * measure widget's freshness resolves it (mappedProductApps: the
+ * store-template install's mapping table among a model's datasets).
+ * Another install's mapping, which none of these models reads, never
+ * counts. The releases and their preparations are each one query, or
+ * none with `releases`, which a shown dashboard has read already (#835).
+ * `only` narrows it to those products; without any to resolve nothing is
+ * read. A model or mapping that cannot be read resolves nothing (the
+ * widgets then show every app, as without the scope), and the
+ * transaction's statement timeout is left as it was.
+ *
+ * The one entry point of the dashboard read, save validation, the
+ * Studio's route and the device payload: each passes the deployment's
+ * policy and clock (`ProductScopeInputs`), so a mapping one of them cannot
+ * read under the configured limits is one none of them resolves.
+ */
+export async function dashboardProductApps(
+  tx: Transaction,
+  workspaceId: string,
+  modelIds: readonly string[],
+  inputs: ProductScopeInputs,
+  options: {
+    /** Only these products; none: nothing is read. */
+    only?: ReadonlySet<string>;
+    /** The models' published releases, when read already (#835). */
+    releases?: ReadonlyMap<string, ModelRelease>;
+    /** The mapping tables the response has read (a device payload). */
+    cache?: ScopeMappingCache;
+  } = {},
+): Promise<Map<string, string[]>> {
+  const { only, releases } = options;
+  const read: ScopeRead = {
+    now: inputs.now?.() ?? new Date(),
+    ...(inputs.policy ? { defaults: inputs.policy } : {}),
+    ...(options.cache ? { cache: options.cache } : {}),
+  };
+  if (!modelIds.length || only?.size === 0) return new Map();
+  try {
+    return await tx.transaction(async (savepoint) => {
+      const found =
+        releases ?? (await publishedReleases(savepoint, workspaceId, modelIds));
+      const ids = await releasesSourceDatasets(
+        savepoint,
+        workspaceId,
+        modelIds.flatMap((id) => {
+          const release = found.get(id);
+          return release ? [release] : [];
+        }),
+      );
+      const [{ timeout } = { timeout: "0" }] = await savepoint.execute<{
+        timeout: string;
+      }>(sql`select current_setting('statement_timeout') as timeout`);
+      const apps = await mappedProductApps(savepoint, workspaceId, ids, read);
+      await savepoint.execute(
+        sql`select set_config('statement_timeout', ${timeout}, true)`,
+      );
+      return new Map(
+        [...apps].filter(([product]) => !only || only.has(product)),
+      );
+    });
+  } catch {
+    return new Map();
+  }
+}
+
+/**
  * A slide's widgets as screens read them (#707): a metric, line, bar, table
  * or review widget that follows the slide's scope reads the resource the
- * scope names (slideScopeResource). Others, and widgets whose scope would
+ * scope names (slideScopeResource), a linked product's member app of its
+ * connection through `apps` (#777). Others, and widgets whose scope would
  * conflict with their own resource (refused on save), are unchanged.
  */
-export function slideScopedWidgets(slide: {
-  scope?: unknown;
-  widgets: readonly DashboardWidgetRow[];
-}): DashboardWidgetRow[] {
+export function slideScopedWidgets(
+  slide: {
+    scope?: unknown;
+    widgets: readonly DashboardWidgetRow[];
+  },
+  apps?: ProductApps,
+): DashboardWidgetRow[] {
   const scope = slideScopeOf(slide);
   if (!Object.keys(scope).length) return [...slide.widgets];
   return slide.widgets.map((widget) => {
@@ -445,6 +549,7 @@ export function slideScopedWidgets(slide: {
       widget.connectionId,
       exclusionsSchema.safeParse(widget.filterExclusions).data ?? [],
       dimensions[RESOURCE_DIMENSION],
+      apps,
     );
     return scoped.resource !== undefined && !scoped.conflict
       ? {
@@ -519,6 +624,7 @@ export async function queryDashboardMeasure(
             deviceScope,
             { now, defaults, cache: freshnessReader.scopeMappings },
             input.binding.filter,
+            { filters, values },
           ),
         );
       const { policy } = await resolveDataPolicy(

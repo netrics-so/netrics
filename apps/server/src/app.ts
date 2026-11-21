@@ -213,6 +213,8 @@ export async function buildApp(
       credentialKeyring,
       oauthProviders,
       logger: app.log,
+      policy: config.dataPolicy,
+      ...(deps.now ? { now: deps.now } : {}),
     }),
   });
   registerAdminRoutes(app, { authService, db });
@@ -374,6 +376,8 @@ export async function buildApp(
     oauthProviders,
     oauthTokens,
     quota: config.imageQuota,
+    policy: config.dataPolicy,
+    ...(deps.now ? { now: deps.now } : {}),
     ...(deps.signedKeys ? { signedKeys: deps.signedKeys } : {}),
   });
   registerOAuthRoutes(app, {

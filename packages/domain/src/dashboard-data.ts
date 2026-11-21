@@ -245,9 +245,11 @@ const RESOURCE_KEY =
  * table, latest review) follows its slide's scope (#707). Such widgets
  * cannot apply model filters; they follow a scoped filter only through
  * their `resource` dimension, when the widget does not exclude the filter
- * and its values all name connection resources (connectionResourceKey),
- * exactly one of them of the widget's connection. Values that name other
- * connections' resources are rows that connection cannot have.
+ * and its values all name apps, exactly one of them of the widget's
+ * connection. A value names apps as a connection resource
+ * (connectionResourceKey) or, through `apps`, as a linked product
+ * (`product:<id>`, #777) that stands for its member apps. Values that name
+ * other connections' resources are rows that connection cannot have.
  *
  * `follows` lists the filters the widget follows that way, so they need no
  * exclusion; `resource` is the resource they pick, or undefined when none
@@ -264,6 +266,8 @@ export function slideScopeResource(
   connectionId: string,
   exclusions: readonly DashboardFilterExclusion[],
   ownResource?: string,
+  /** App keys (connectionResourceKey) per value that names a product. */
+  apps: ProductApps = NO_PRODUCT_APPS,
 ): { follows: string[]; resource?: string; conflict: boolean } {
   const follows: string[] = [],
     picked = new Set<string>();
@@ -273,16 +277,18 @@ export function slideScopeResource(
       exclusions.some((exclusion) => exclusion.filterId === filterId)
     )
       continue;
-    const keys = value.values.map((raw) =>
-      typeof raw === "string" ? RESOURCE_KEY.exec(raw) : null,
-    );
-    if (!keys.length || keys.some((key) => key === null)) continue;
-    const own = keys.filter(
-      (key) => key![1]!.toLowerCase() === connectionId.toLowerCase(),
-    );
-    if (own.length !== 1) continue;
+    const named = value.values.map((raw) => namedApps(raw, apps));
+    if (!named.length || named.some((keys) => keys === null || !keys.length))
+      continue;
+    const own = new Set<string>();
+    for (const key of named.flat()) {
+      const [, connection, resource] = RESOURCE_KEY.exec(key!)!;
+      if (connection!.toLowerCase() === connectionId.toLowerCase())
+        own.add(resource!);
+    }
+    if (own.size !== 1) continue;
     follows.push(filterId);
-    picked.add(own[0]![2]!);
+    picked.add([...own][0]!);
   }
   const [resource] = picked;
   return {
@@ -294,6 +300,30 @@ export function slideScopeResource(
         ownResource !== undefined &&
         ownResource !== resource),
   };
+}
+
+/**
+ * The member apps of each linked product a scope value can name, as app
+ * keys (connectionResourceKey): a map, or the record an API response
+ * carries.
+ */
+export type ProductApps =
+  | ReadonlyMap<string, readonly string[]>
+  | Readonly<Record<string, readonly string[]>>;
+
+const NO_PRODUCT_APPS: ProductApps = new Map();
+
+/** The app keys a scope value names; null when it names no app. */
+function namedApps(raw: unknown, apps: ProductApps): string[] | null {
+  if (typeof raw !== "string") return null;
+  if (RESOURCE_KEY.test(raw)) return [raw];
+  const keys: readonly string[] | undefined =
+    apps instanceof Map
+      ? (apps as ReadonlyMap<string, readonly string[]>).get(raw)
+      : Object.hasOwn(apps, raw)
+        ? (apps as Readonly<Record<string, readonly string[]>>)[raw]
+        : undefined;
+  return keys?.filter((key) => RESOURCE_KEY.test(key)) ?? null;
 }
 
 /**
@@ -317,7 +347,7 @@ export function scopedFreshnessResources(
   connectionId: string,
   exclusions: readonly DashboardFilterExclusion[],
   /** App keys (connectionResourceKey) per value that names a product. */
-  apps: ReadonlyMap<string, readonly string[]> = new Map(),
+  apps: ProductApps = NO_PRODUCT_APPS,
 ): string[] | undefined {
   let picked: Set<string> | undefined;
   for (const [filterId, value] of Object.entries(scope)) {
@@ -327,13 +357,7 @@ export function scopedFreshnessResources(
       exclusions.some((exclusion) => exclusion.filterId === filterId)
     )
       continue;
-    const named = value.values.map((raw) =>
-      typeof raw !== "string"
-        ? null
-        : RESOURCE_KEY.test(raw)
-          ? [raw]
-          : apps.get(raw)?.filter((key) => RESOURCE_KEY.test(key)) || null,
-    );
+    const named = value.values.map((raw) => namedApps(raw, apps));
     if (named.some((keys) => keys === null || !keys.length)) continue;
     const own = new Set<string>();
     for (const key of named.flat()) {

@@ -3,11 +3,16 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 
 import {
+  dashboardProductApps,
+  type ProductScopeInputs,
+  mappedModelIds,
   publishedModel,
   slideScopeOf,
   validateDashboardMeasure,
   safeDataError,
 } from "./data.js";
+import { scopeProducts } from "./freshness.js";
+import { publishedReleases } from "./model-sources.js";
 import {
   barWidgetOptionsSchema,
   dashboardDataFiltersSchema,
@@ -113,6 +118,7 @@ import {
 import {
   dashboardFormatWarnings,
   loadReadabilityInputs,
+  readabilityModelIds,
 } from "./readability.js";
 import {
   findAllResourcesNames,
@@ -246,6 +252,8 @@ export async function presentDashboard(
   workspaceId: string,
   dashboard: Dashboard,
   locale: Locale = DEFAULT_LOCALE,
+  /** The deployment's policy and clock: product scopes (#777). */
+  inputs: ProductScopeInputs,
 ): Promise<DashboardView> {
   const data = dashboard.slides.flatMap((slide) =>
     slide.widgets.filter(isDataRow),
@@ -258,6 +266,30 @@ export async function presentDashboard(
   // A latest review names its app (ADR 0019 section 12).
   const reviews = dashboard.slides.flatMap((slide) =>
     slide.widgets.filter(isReviewRow),
+  );
+  // The linked products the slides' scopes name, with their member apps
+  // (#777): connection widgets follow such a scope through them. Resolved
+  // through the models the dashboard's own filters map to, whose releases
+  // are read with the readability checks' in one query (#835).
+  const products = scopeProducts(
+    dashboard.slides.map((slide) => slideScopeOf(slide)),
+  );
+  const scopeModels = products.size
+    ? mappedModelIds(
+        dashboardDataFiltersSchema.safeParse(dashboard.dataFilters ?? [])
+          .data ?? [],
+      )
+    : [];
+  const releases = await publishedReleases(tx, workspaceId, [
+    ...readabilityModelIds(dashboard),
+    ...scopeModels,
+  ]);
+  const productApps = await dashboardProductApps(
+    tx,
+    workspaceId,
+    scopeModels,
+    inputs,
+    { only: products, releases },
   );
   const names = await findResourceNames(
     tx,
@@ -333,6 +365,7 @@ export async function presentDashboard(
         allResourcesName,
       });
     },
+    releases,
   );
   const warnings = dashboardFormatWarnings(dashboard, readability);
   const present = (widget: DashboardWidgetRow): DashboardWidget => {
@@ -465,6 +498,9 @@ export async function presentDashboard(
     settings: settingsOf(dashboard),
     primaryFormat: dashboard.primaryFormat as ScreenFormatKey,
     archivedAt: dashboard.archivedAt?.toISOString() ?? null,
+    ...(productApps.size
+      ? { productApps: presentProductApps(productApps) }
+      : {}),
     slides: dashboard.slides.map((slide) => ({
       id: slide.id,
       position: slide.position,
@@ -508,6 +544,17 @@ export async function presentDashboard(
         };
       }),
   };
+}
+
+/** Products and their apps as responses carry them, in a stable order. */
+export function presentProductApps(
+  apps: ReadonlyMap<string, readonly string[]>,
+): Record<string, string[]> {
+  return Object.fromEntries(
+    [...apps]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([product, keys]) => [product, [...keys].sort()]),
+  );
 }
 
 interface Binding {
@@ -1254,7 +1301,9 @@ async function validateDataBindings(
   workspaceId: string,
   slides: readonly SlideInput[],
   filters: import("@netrics/domain").DashboardDataFilter[],
-  stored: Dashboard | null = null,
+  stored: Dashboard | null,
+  /** The deployment's policy and clock: product scopes (#777). */
+  inputs: ProductScopeInputs,
 ): Promise<Result<null>> {
   try {
     const ids = new Set(filters.map((filter) => filter.id));
@@ -1329,6 +1378,15 @@ async function validateDataBindings(
       if (!scope.success) return fail(400, "slide_scope_value_invalid");
       validateSlideFilterScope(filters, scope.data);
     }
+    // A slide scoped to a linked product: connection widgets follow it
+    // through the product's app of their connection (#777).
+    const productApps = await dashboardProductApps(
+      tx,
+      workspaceId,
+      mappedModelIds(filters),
+      inputs,
+      { only: scopeProducts(slides.map((slide) => slideScopeOf(slide))) },
+    );
     for (const { widget, scope } of slides.flatMap((slide) =>
       slide.widgets.map((widget) => ({ widget, scope: slideScopeOf(slide) })),
     )) {
@@ -1427,6 +1485,7 @@ async function validateDataBindings(
                 widget.connectionId,
                 exclusions,
                 widget.dimensions[RESOURCE_DIMENSION],
+                productApps,
               )
             : { follows: [], conflict: false };
         if (scoped.conflict) return fail(400, "slide_scope_resource_conflict");
@@ -1588,6 +1647,8 @@ export async function createUpdatedDashboardCopy(
     merged: NormalizedDashboard; // merged items, refs unsymbolized
     widgetKeys: Record<string, string>;
   },
+  /** The deployment's policy and clock: product scopes (#777). */
+  inputs: ProductScopeInputs,
 ): Promise<
   Result<{ dashboard: DashboardView; widgetKeys: Record<string, string> }>
 > {
@@ -1714,6 +1775,8 @@ export async function createUpdatedDashboardCopy(
     workspaceId,
     slides,
     dataFilters.data,
+    null,
+    inputs,
   );
   if (!bindings.ok) return bindings;
   const themeId = (settings.themeId as string | undefined) ?? null;
@@ -1772,7 +1835,13 @@ export async function createUpdatedDashboardCopy(
     });
   });
   return ok({
-    dashboard: await presentDashboard(tx, workspaceId, copy, actor.locale),
+    dashboard: await presentDashboard(
+      tx,
+      workspaceId,
+      copy,
+      actor.locale,
+      inputs,
+    ),
     widgetKeys: copyKeys,
   });
 }
@@ -1790,7 +1859,13 @@ function counts(dashboard: Dashboard) {
 
 export function createDashboardService(deps: {
   db: Pick<Database, "transaction">;
+  /** The deployment's data policy (NETRICS_DATA_POLICY). */
+  policy?: ProductScopeInputs["policy"];
+  now?: ProductScopeInputs["now"];
 }) {
+  // What product scopes resolve with (#777), as the Studio's route and
+  // the device payload resolve them.
+  const inputs: ProductScopeInputs = { policy: deps.policy, now: deps.now };
   const inWorkspace = <T>(actor: Actor, run: (tx: Transaction) => Promise<T>) =>
     withWorkspace(
       deps.db,
@@ -1847,6 +1922,7 @@ export function createDashboardService(deps: {
                 actor.workspaceId,
                 dashboard,
                 actor.locale,
+                inputs,
               ),
             )
           : fail<DashboardView>(404, NOT_FOUND);
@@ -1876,6 +1952,8 @@ export function createDashboardService(deps: {
           actor.workspaceId,
           slides.value,
           body.settings?.dataFilters ?? [],
+          null,
+          inputs,
         );
         if (!bindings.ok) return bindings;
         const { rest, theme: themeRequest } = splitSettings(body.settings);
@@ -1922,6 +2000,7 @@ export function createDashboardService(deps: {
             actor.workspaceId,
             dashboard,
             actor.locale,
+            inputs,
           ),
         );
       });
@@ -1991,6 +2070,7 @@ export function createDashboardService(deps: {
           body.settings?.dataFilters ??
             dashboardDataFiltersSchema.parse(current.dataFilters),
           current,
+          inputs,
         );
         if (!bindings.ok) return bindings;
         const { rest, theme: themeRequest } = splitSettings(body.settings);
@@ -2065,6 +2145,7 @@ export function createDashboardService(deps: {
             actor.workspaceId,
             result.dashboard,
             actor.locale,
+            inputs,
           ),
         );
       });
@@ -2113,7 +2194,13 @@ export function createDashboardService(deps: {
           metadata: { name, sourceId: dashboardId },
         });
         return ok(
-          await presentDashboard(tx, actor.workspaceId, copy, actor.locale),
+          await presentDashboard(
+            tx,
+            actor.workspaceId,
+            copy,
+            actor.locale,
+            inputs,
+          ),
         );
       });
     },

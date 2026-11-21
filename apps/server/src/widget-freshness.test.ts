@@ -20,6 +20,7 @@ import {
 import {
   DEFAULT_DATA_POLICY,
   type DashboardDataFilter,
+  type DashboardFilterValue,
   type SlideFilterScope,
 } from "@netrics/domain";
 
@@ -840,6 +841,8 @@ describe("app slide freshness (#767)", () => {
       // Google Play's rating report: an older day and no next time.
       [store.play, "app-1", "2026-11-11", null],
       [store.play, "app-2", "2026-11-13", at(6 * HOUR)],
+      // An app whose Google Play twin has no rows yet (#776).
+      [store.apple, "app-3", "2026-11-15", at(9 * HOUR)],
     ] as const;
     for (const [connectionId, resource, dataThrough, nextExpectedAt] of rows)
       await freshness(connectionId, "analytics", {
@@ -873,6 +876,11 @@ describe("app slide freshness (#767)", () => {
           values: { app_key: `${store.apple}:app-2`, product_id: "product:p" },
         },
         { values: { app_key: `${store.play}:app-2`, product_id: "product:p" } },
+        // Linked too, but Google Play has not reported app-3 yet (#776).
+        {
+          values: { app_key: `${store.apple}:app-3`, product_id: "product:q" },
+        },
+        { values: { app_key: `${store.play}:app-3`, product_id: "product:q" } },
       ],
     });
     const views = (connectionId: string) =>
@@ -1357,6 +1365,177 @@ describe("app slide freshness (#767)", () => {
     );
     expect(reader.scopeMappings.isMapping.size).toBe(0);
     expect(reader.scopeMappings.products.size).toBe(0);
+  });
+
+  it("counts a product's app without rows as no data yet (#776)", async () => {
+    // The App Store app is through 2026-11-15; its Google Play twin was
+    // just added and has no row. The product is not shown that fresh.
+    const data = await measure(app("product:q"));
+    expect(data.freshness).toEqual({
+      kind: "periodic",
+      stream: "Analytics",
+      fetchedAt: at(-5 * MINUTE).toISOString(),
+      nextCheckAt: at(2 * HOUR).toISOString(),
+    });
+    // No row is overdue: the missing app is no warning of its own.
+    expect(data.status).not.toBe("stale");
+    // Both of a product's apps with rows: unchanged.
+    expect((await measure(app("product:p"))).freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+    });
+    // An app without rows alone has no freshness, as before.
+    expect(
+      (await measure(app(`${store.play}:app-3`))).freshness,
+    ).toBeUndefined();
+  });
+
+  it("applies the viewer's app choice and the dashboard's fixed app (#776)", async () => {
+    const read = (
+      filter: DashboardDataFilter,
+      values: Record<string, DashboardFilterValue>,
+      exclusions: { filterId: string; reason: string }[] = [],
+    ) =>
+      withWorkspace(db, { workspaceId }, (tx) =>
+        queryDashboardMeasure(
+          tx,
+          workspaceId,
+          {
+            id: "77777777-7777-4777-8777-777777777777",
+            binding: {
+              modelId: storeModelId,
+              measureIds: ["views"],
+              groupBy: ["app"],
+              exclusions,
+            },
+            options: { view: "table", limit: 20 },
+          },
+          [filter],
+          values,
+          NOW,
+          DEFAULT_DATA_POLICY,
+          "en",
+          {},
+          {},
+          createFreshnessReader(workspaceId, manifests),
+        ),
+      );
+    const only = (...values: string[]) => ({
+      kind: "values" as const,
+      values,
+    });
+    // A signed-in viewer picks the App Store app: its rows, its freshness
+    // (before: every app's, 2026-11-11).
+    const chosen = await read(appFilter, {
+      app: only(`${store.apple}:app-1`),
+    });
+    expect(shown(chosen)).toEqual([`${store.apple}:app-1`]);
+    expect(chosen.freshness).toMatchObject({
+      dataThrough: "2026-11-15",
+      nextExpectedAt: at(8 * HOUR).toISOString(),
+    });
+    // The filter's default counts where the viewer chose nothing.
+    const preset = await read(
+      { ...appFilter, defaultValue: only(`${store.apple}:app-1`) },
+      {},
+    );
+    expect(preset.freshness).toMatchObject({ dataThrough: "2026-11-15" });
+    // A dashboard fixed to the linked product: its two apps.
+    const fixed = await read(
+      { ...appFilter, fixedValue: only("product:p") },
+      {},
+    );
+    expect(shown(fixed)).toEqual(["product:p"]);
+    expect(fixed.freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+      nextExpectedAt: at(6 * HOUR).toISOString(),
+    });
+    // Fixed and chosen leave the apps both pick.
+    const both = await read(
+      { ...appFilter, fixedValue: only("product:p") },
+      { app: only(`${store.apple}:app-2`, `${store.apple}:app-1`) },
+    );
+    expect(both.freshness).toMatchObject({ dataThrough: "2026-11-14" });
+    // A widget that excludes the filter ignores the choice, as its rows do.
+    const excluded = await read(
+      appFilter,
+      { app: only(`${store.apple}:app-1`) },
+      [{ filterId: "app", reason: "All apps" }],
+    );
+    expect(excluded.freshness).toMatchObject({ dataThrough: "2026-11-11" });
+  });
+
+  it("falls back to every app when the mapping table cannot be read (#776)", async () => {
+    // A row limit below the mapping's rows: the read fails with another
+    // code than "gone", and freshness must not fail the widget.
+    const found = await withWorkspace(db, { workspaceId }, async (tx) => {
+      const result = await createFreshnessReader(workspaceId, manifests).read(
+        tx,
+        await modelFreshnessDependencies(
+          tx,
+          workspaceId,
+          {
+            bindings: {
+              [`observation:${store.apple}:${metricIds["fresh.views"]}`]: [],
+              [`observation:${store.play}:${metricIds["fresh.views"]}`]: [],
+              [mappingDatasetId]: [],
+            },
+            dependencies: {},
+          },
+          app("product:p"),
+          [],
+          {},
+          { now: NOW, defaults: { ...DEFAULT_DATA_POLICY, queryRows: 1 } },
+        ),
+      );
+      // The widget's transaction is still usable.
+      await tx.execute(sql`select 1`);
+      return result;
+    });
+    expect(found.freshness).toMatchObject({ dataThrough: "2026-11-11" });
+    expect(found.freshness).not.toHaveProperty("nextExpectedAt");
+  });
+
+  it("gives a connection widget its product's app on a product slide (#777)", async () => {
+    const dashboard = await dashboardWith("Product slide");
+    await owner`update dashboards set data_filters = ${owner.json([appFilter] as never)}
+      where id = ${dashboard}`;
+    const scoped = await slideOf(dashboard, 0, app("product:p"));
+    await widget(
+      dashboard,
+      scoped,
+      metricWidget(store.play!, "fresh.views", "Play views", { y: 0 }),
+    );
+    await widget(
+      dashboard,
+      scoped,
+      metricWidget(store.apple!, "fresh.views", "App Store views", { y: 1 }),
+    );
+    // A widget that excludes the filter keeps every app.
+    await widget(
+      dashboard,
+      scoped,
+      metricWidget(store.play!, "fresh.views", "Every Play app", {
+        y: 2,
+        filter_exclusions: owner.json([
+          { filterId: "app", reason: "All apps" },
+        ]),
+      }),
+    );
+    const payload = await v2(dashboard);
+    // Google Play's app-2, not its least fresh app (2026-11-11).
+    expect(dataOf(payload, "Play views").freshness).toMatchObject({
+      dataThrough: "2026-11-13",
+      nextExpectedAt: at(6 * HOUR).toISOString(),
+    });
+    expect(dataOf(payload, "Play views")).toMatchObject({ value: 7 });
+    expect(dataOf(payload, "App Store views").freshness).toMatchObject({
+      dataThrough: "2026-11-14",
+      nextExpectedAt: at(7 * HOUR).toISOString(),
+    });
+    expect(dataOf(payload, "Every Play app").freshness).toMatchObject({
+      dataThrough: "2026-11-11",
+    });
+    expect(dataOf(payload, "Every Play app")).toMatchObject({ value: 14 });
   });
 
   it("gives a screen the slide's freshness (device payload)", async () => {

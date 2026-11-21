@@ -9,6 +9,7 @@ import {
   followsSlideScopeResource,
   RESOURCE_DIMENSION,
   slideScopeResource,
+  type ProductApps,
   textWidgetFit,
   type Locale,
   type SlideFilterScope,
@@ -116,11 +117,14 @@ export function slideBackground(
 /**
  * How a widget follows its slide's scope through its resource (#707): a
  * metric, line, bar, table or review widget whose filters the slide scopes
- * to its connection's app. Null for every other widget.
+ * to its connection's app, or to a linked product with one app of its
+ * connection (`apps`, the dashboard's `productApps`, #777). Null for every
+ * other widget.
  */
 export function slideScopeFollow(
   widget: StudioWidget,
   scope: SlideFilterScope,
+  apps?: ProductApps,
 ): ReturnType<typeof slideScopeResource> | null {
   if (
     !followsSlideScopeResource(widget.type) ||
@@ -133,6 +137,7 @@ export function slideScopeFollow(
     widget.connectionId,
     widget.filterExclusions ?? [],
     widget.dimensions[RESOURCE_DIMENSION],
+    apps,
   );
 }
 
@@ -143,13 +148,13 @@ export function slideScopeFollow(
  */
 export function scopedSlide<
   S extends { scope?: SlideFilterScope; widgets: readonly StudioWidget[] },
->(slide: S): S {
+>(slide: S, apps?: ProductApps): S {
   const scope = slide.scope ?? {};
   if (!Object.keys(scope).length) return slide;
   return {
     ...slide,
     widgets: slide.widgets.map((widget) => {
-      const follow = slideScopeFollow(widget, scope);
+      const follow = slideScopeFollow(widget, scope, apps);
       return follow?.resource !== undefined &&
         !follow.conflict &&
         "dimensions" in widget
@@ -269,6 +274,11 @@ export interface StudioEnv {
   metrics: ReadonlyMap<string, WorkspaceMetric>;
   connections: Readonly<Record<string, StudioConnection>>;
   images: StudioImages;
+  /**
+   * The dashboard's linked products with their member apps (#777): widgets
+   * on a slide scoped to a product read its app of their connection.
+   */
+  productApps?: ProductApps | undefined;
 }
 
 export function metricKeyOf(widget: {
