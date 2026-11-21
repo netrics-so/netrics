@@ -5,7 +5,10 @@
 A user can turn a suitable JSON HTTP API into a private, scheduled metric source
 through the UI without executing custom code.
 
-Status: design approved 2026-11-20 and moved ahead of milestone 12. Detailed
+Status: done 2026-11-21. The exit gate (#812) passed on hosted and self-hosted,
+including offline playback on a paired Apple TV; fixes for what it found are in
+#836 and #837. Follow-ups: time grain for timestamp group-by (#838), deleting a
+workspace (#839). Design approved 2026-11-20 and moved ahead of milestone 12. Detailed
 design: [custom API connector design](../superpowers/specs/2026-11-20-custom-api-connector-design.md);
 plans: [overview](../superpowers/plans/2026-11-20-m13-overview.md). Scope
 added with the owner: named environments per definition, OAuth client
