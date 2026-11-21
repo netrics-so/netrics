@@ -12,7 +12,7 @@
 
 import { oauthCallbackResponseSchema } from "@netrics/contracts";
 
-import { apiFetch } from "./api-fetch";
+import { apiFetch, forwardedHeaders } from "./api-fetch";
 
 const PROVIDER = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -43,21 +43,17 @@ function queryValues(url: URL): Record<string, string> {
 }
 
 /**
- * The headers of the call to the API: the session cookie, nothing else
- * (apiFetch adds the client address). The browser's own headers are not
+ * The headers of the call to the API: what every server-side call forwards
+ * (forwardedHeaders: the session cookie and Accept-Language), nothing else
+ * (apiFetch adds the client address). The browser's other headers are not
  * forwarded: it
  * arrives from the provider's site (Sec-Fetch-Site: cross-site), and the
  * state, bound to the user who started the flow, is what protects this call.
  */
 export function callbackHeaders(incoming: Headers): Headers {
-  const headers = new Headers({
-    "content-type": "application/json",
-    accept: "application/json",
-  });
-  const cookie = incoming.get("cookie");
-  if (cookie) {
-    headers.set("cookie", cookie);
-  }
+  const headers = forwardedHeaders(incoming);
+  headers.set("content-type", "application/json");
+  headers.set("accept", "application/json");
   return headers;
 }
 

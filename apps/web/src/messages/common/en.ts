@@ -7,6 +7,8 @@ export const commonEn = {
     save: "Save",
     saving: "Saving…",
     cancel: "Cancel",
+    leave: "Leave",
+    stay: "Stay",
     close: "Close",
     back: "Back",
     continue: "Continue",

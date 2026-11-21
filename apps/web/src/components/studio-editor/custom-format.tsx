@@ -9,6 +9,7 @@ import type {
   ThemeTokens,
 } from "@netrics/domain";
 
+import { useConfirmation } from "@/components/confirm-dialog";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { pageLabel } from "@/lib/screen-view";
 import {
@@ -64,6 +65,8 @@ export function MakePrimaryButton({
   onMoveOverflow?: () => void;
 }) {
   const t = useT("studio.formats");
+  const common = useT("common");
+  const confirmation = useConfirmation();
   const locale = useLocale();
   const nameOf = useTargetName();
   const [explain, setExplain] = useState(false);
@@ -75,16 +78,18 @@ export function MakePrimaryButton({
         type="button"
         disabled={disabled}
         aria-expanded={blockers.length > 0 ? explain : undefined}
-        onClick={() => {
+        onClick={async () => {
           if (blockers.length > 0) {
             setExplain(true);
             return;
           }
-          if (
-            window.confirm(t("makePrimaryConfirm", { name, ratio, primary }))
-          ) {
-            onMake();
-          }
+          const confirmed = await confirmation.ask({
+            title: t("makePrimaryConfirm", { name, ratio }),
+            text: t("makePrimaryConfirmText", { ratio, primary }),
+            confirm: t("makePrimary", { ratio }),
+            cancel: common("cancel"),
+          });
+          if (confirmed) onMake();
         }}
       >
         {t("makePrimary", { ratio })}
@@ -123,6 +128,7 @@ export function MakePrimaryButton({
           ) : null}
         </div>
       ) : null}
+      {confirmation.dialog}
     </>
   );
 }
@@ -168,6 +174,8 @@ export function CustomFormatEditor({
   incoming?: CanvasOutline | null;
 }) {
   const t = useT("studio.formats");
+  const common = useT("common");
+  const confirmation = useConfirmation();
   const locale = useLocale();
   const pageTabs = useRef<Array<HTMLButtonElement | null>>([]);
   const custom = customLayoutOf(slide, primaryFormat, format);
@@ -285,8 +293,14 @@ export function CustomFormatEditor({
         <div className="format-layout-actions">
           <button
             type="button"
-            onClick={() => {
-              if (window.confirm(t("backToAutoConfirm", { ratio }))) {
+            onClick={async () => {
+              const confirmed = await confirmation.ask({
+                title: t("backToAutoConfirm", { ratio }),
+                text: t("backToAutoConfirmText", { ratio }),
+                confirm: t("backToAuto"),
+                cancel: common("cancel"),
+              });
+              if (confirmed) {
                 dispatch({ type: "resetFormat", slideId: slide.id, format });
               }
             }}
@@ -437,6 +451,7 @@ export function CustomFormatEditor({
           dispatch({ type: "selectWidget", widgetId });
         }}
       />
+      {confirmation.dialog}
     </div>
   );
 }
