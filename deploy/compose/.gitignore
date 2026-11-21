@@ -1,2 +1,5 @@
 .env
 backups/
+# Your own CA certificates (README, "Custom APIs on your own network").
+certs/*
+!certs/.gitkeep

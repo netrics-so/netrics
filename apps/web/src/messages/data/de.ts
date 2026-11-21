@@ -328,6 +328,9 @@ export const dataDe: Catalog<typeof dataEn> = {
     preparationAdoptionHint:
       "Veröffentlichte Modelle behalten ihre gewählte Aufbereitungsversion. Nach dem Veröffentlichen dieser Änderungen prüfst und veröffentlichst du die aktualisierten Eingaben in jedem Modell, das sie übernehmen soll.",
     republish: "Aktualisierte Eingaben veröffentlichen",
+    previewBeforePublish:
+      "Veröffentlicht wird nur, was eine Vorschau geprüft hat: Zeige zuerst die Vorschau des aktuellen Entwurfs.",
+    previewNow: "Vorschau zeigen",
     unit: "Einheit",
     unitHint:
       "Optionale Einheit, zum Beispiel visits oder currency. Verwende für Geldbeträge eine Währungsspalte.",

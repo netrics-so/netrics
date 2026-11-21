@@ -233,6 +233,25 @@ definition still reaches only the hosts it declares. List exact hosts: the
 (`169.254.0.0/16`, `fe80::/10` and the like) stay refused even when listed.
 The setting is off by default.
 
+If such a service uses a certificate from your own (private) certificate
+authority, netrics refuses the connection until it trusts that authority. Put
+the authority's certificate (PEM; several may follow each other in one file)
+into `certs/` next to `compose.yml`, point `NODE_EXTRA_CA_CERTS` at it in
+`.env` and restart the `api` and `worker`:
+
+```dotenv
+NODE_EXTRA_CA_CERTS=/etc/netrics/certs/internal-ca.pem
+```
+
+`./certs` is mounted read-only at `/etc/netrics/certs` in both; the folder
+must be readable and searchable by everyone (`chmod 755 certs`, which
+`install.sh` sets; after an upgrade with a strict umask set it yourself) and
+the file readable by everyone (`chmod 644`), as the containers do not run as
+your user. The public certificate authorities stay trusted; the extra ones
+are added to them. A file that is missing or unreadable adds nothing and
+only logs a warning (`Ignoring extra certs from ...`) at the first TLS
+connection.
+
 ### Data volume and retention
 
 `NETRICS_DATA_POLICY` in `.env` configures data storage, retention and execution

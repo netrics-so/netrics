@@ -104,6 +104,10 @@ umask 077
 # Backups hold all data: only this user may read them (compose.yml, backup).
 mkdir -p backups
 chmod 700 backups
+# Extra certificate authorities to trust (README, "Custom APIs on your own
+# network"); compose.yml mounts it into the api and the worker.
+mkdir -p certs
+chmod 755 certs
 
 cat > .env <<ENV
 # netrics self-hosted configuration, generated $(date -u +%Y-%m-%dT%H:%M:%SZ).
@@ -151,6 +155,11 @@ NETRICS_SIGNUP=closed
 # Preview connectors (not final yet) to turn on, comma-separated; currently
 # none.
 # NETRICS_PREVIEW_CONNECTORS=
+
+# Custom APIs on your own network (README): hosts they may reach, and a CA
+# certificate in ./certs to trust for them.
+# NETRICS_CUSTOM_API_PRIVATE_HOSTS=intranet.example
+# NODE_EXTRA_CA_CERTS=/etc/netrics/certs/internal-ca.pem
 ENV
 chmod 600 .env
 

@@ -184,6 +184,9 @@ export const dashboardMeasureMetadataSchema = z.object({
       /** The value is a change ratio, (current − previous) / |previous|;
        * clients show it as a percentage. */
       percentChange: z.literal(true).optional(),
+      /** The unit its values carry (#835), as cells do; absent: none or
+       * unknown. The Studio's readability check counts its words. */
+      unit: z.string().optional(),
     }),
   ),
   dimensions: z.array(

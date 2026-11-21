@@ -26,6 +26,8 @@ import {
   kioskRefreshCycle,
   kioskShown,
   payloadRotation,
+  KioskOfflineBadge,
+  pollShowsOffline,
 } from "./kiosk-view";
 
 // The kiosk in the workspace's screen language (ADR 0016, #256): labels
@@ -524,5 +526,114 @@ describe("kiosk wording for wall screens (#649)", () => {
     // Before the first answer there is no time to show.
     const never = { ...paired(slides("en"), true), updatedAt: null };
     expect(render(never)).not.toContain("last update");
+  });
+});
+
+describe("offline badge without the header (#835)", () => {
+  const minute = 60_000;
+  it("follows tvOS's rule: a failed poll, or none confirmed for two refreshes", () => {
+    const now = Date.parse("2026-11-21T12:00:00Z");
+    const at = (ago: number) => ({ updatedAt: now - ago, offline: false });
+    expect(pollShowsOffline({ ...at(0), offline: true }, 60, now)).toBe(true);
+    expect(pollShowsOffline(at(2 * minute), 60, now)).toBe(false);
+    expect(pollShowsOffline(at(2 * minute + 1000), 60, now)).toBe(true);
+    expect(pollShowsOffline({ updatedAt: null, offline: false }, 60, now)).toBe(
+      false,
+    );
+  });
+
+  const headless = (updatedAt: number, offline: boolean, locale = "en") => {
+    const payload = slides(locale);
+    payload.dashboard!.showHeader = false;
+    return render({ ...paired(payload, offline), updatedAt });
+  };
+  const badge = (state: KioskState, locale: Locale) =>
+    renderToStaticMarkup(
+      <I18nProvider locale={locale} messages={WEB_CATALOGS[locale]}>
+        <ViewerTimeZoneProvider zone={VIEWER_ZONE}>
+          <KioskOfflineBadge state={state} />
+        </ViewerTimeZoneProvider>
+      </I18nProvider>,
+    );
+  it("is a muted badge in the corner, in English and German", () => {
+    const state = { ...paired(slides("en")), updatedAt: Date.now() - minute };
+    const en = badge(state, "en");
+    expect(en).toContain('class="studio-slide-corner"');
+    expect(en).toContain("kiosk-offline--badge");
+    expect(en).toContain("Offline — last update");
+    expect(badge(state, "de")).toContain("Offline – letzte Aktualisierung");
+  });
+  // Measured, as a screen is once it has drawn.
+  const measured = (state: KioskState) =>
+    renderToStaticMarkup(
+      <I18nProvider locale="en" messages={WEB_CATALOGS.en}>
+        <ViewerTimeZoneProvider zone={VIEWER_ZONE}>
+          <KioskScreen state={state} screen={{ width: 1920, height: 1080 }} />
+        </ViewerTimeZoneProvider>
+      </I18nProvider>,
+    );
+  const withoutHeader = (updatedAt: number, offline: boolean) => {
+    const payload = slides("en");
+    payload.dashboard!.showHeader = false;
+    return { ...paired(payload, offline), updatedAt };
+  };
+  it("shows the badge on a measured screen once the poll is stale or failing", () => {
+    expect(measured(withoutHeader(Date.now() - 10 * minute, false))).toContain(
+      "studio-slide-corner",
+    );
+    expect(measured(withoutHeader(Date.now(), true))).toContain(
+      "studio-slide-corner",
+    );
+  });
+  it("shows no badge while the poll is healthy", () => {
+    expect(measured(withoutHeader(Date.now(), false))).not.toContain(
+      "studio-slide-corner",
+    );
+  });
+  it("shows no badge with the header: the header says it", () => {
+    const html = measured({
+      ...paired(slides("en")),
+      updatedAt: Date.now() - 10 * minute,
+    });
+    expect(html).not.toContain("studio-slide-corner");
+    expect(html).toContain("studio-offline");
+  });
+  it("is not drawn before the screen is measured (no unit size yet)", () => {
+    // Server render and the first paint: no measured canvas, no badge,
+    // however offline the screen is.
+    expect(headless(Date.now() - 10 * minute, true)).not.toContain(
+      "studio-slide-corner",
+    );
+  });
+  it("is not shown at start for a cached dashboard's old time", () => {
+    const now = Date.parse("2026-11-21T12:00:00Z");
+    const cached = { updatedAt: now - 60 * minute, offline: false };
+    expect(
+      pollShowsOffline({ ...cached, pollingSince: now - 5_000 }, 60, now),
+    ).toBe(false);
+    expect(
+      pollShowsOffline(
+        { ...cached, pollingSince: now - 2 * minute - 1000 },
+        60,
+        now,
+      ),
+    ).toBe(true);
+    // A failing poll says so at once.
+    expect(
+      pollShowsOffline(
+        { ...cached, offline: true, pollingSince: now },
+        60,
+        now,
+      ),
+    ).toBe(true);
+  });
+  it("puts the header's marker by the same rule", () => {
+    const stale = render({
+      ...paired(slides("en")),
+      updatedAt: Date.now() - 10 * minute,
+    });
+    expect(stale).toContain("studio-offline");
+    const healthy = render({ ...paired(slides("en")), updatedAt: Date.now() });
+    expect(healthy).not.toContain("studio-offline");
   });
 });

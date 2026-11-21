@@ -19,7 +19,10 @@ import { QrCode } from "@/components/qr-code";
 import { DeviceScrollWidget } from "@/components/scroll/device-scroll-widget";
 import { ScrollView } from "@/components/scroll/scroll-view";
 import { DeviceWidgetView } from "@/components/studio/device-widget";
-import { SlidePlayer } from "@/components/studio/slide-player";
+import {
+  SlideCornerBadge,
+  SlidePlayer,
+} from "@/components/studio/slide-player";
 import { TileNotice, TileView } from "@/components/tile-view";
 import { TvFrame, clockTime, useClock, useIdle } from "@/components/tv-frame";
 import { WEB_CATALOGS } from "@/lib/i18n/catalogs";
@@ -34,6 +37,7 @@ import {
   type KioskState,
 } from "@/lib/kiosk-client";
 import { browserImageCache } from "@/lib/kiosk-image-cache";
+import type { ScreenSize } from "@/lib/screen-view";
 import { themeStyle } from "@/lib/studio-theme";
 import { pairingAddress } from "@/lib/pairing-address";
 import type { RefreshCycle } from "@/lib/refresh-countdown";
@@ -124,7 +128,14 @@ export function KioskView({ appVersion }: { appVersion: string }) {
 }
 
 /** What the kiosk shows for its state, in the screen's language. */
-export function KioskScreen({ state }: { state: KioskState }) {
+export function KioskScreen({
+  state,
+  screen = null,
+}: {
+  state: KioskState;
+  /** The screen size assumed until measured (server render, tests). */
+  screen?: ScreenSize | null;
+}) {
   const t = useT("screen.kiosk");
   if (state.phase === "pairing") {
     return <PairingScreen state={state} />;
@@ -149,6 +160,7 @@ export function KioskScreen({ state }: { state: KioskState }) {
             state={state}
             payload={payload}
             dashboard={payload.dashboard}
+            screen={screen}
           />
         ) : payload.dashboard && isTilesDashboard(payload) ? (
           <KioskDashboard state={state} dashboard={payload} />
@@ -229,16 +241,74 @@ function PairingScreen({ state }: { state: KioskState }) {
   );
 }
 
+/** Refreshes without a confirmed poll before a screen says it is offline. */
+export const POLL_STALE_AFTER = 2;
+
+/**
+ * Whether a screen says it is offline (#739, #835), as tvOS's
+ * `PollHealth.showsOffline`: the last poll failed, or none has confirmed
+ * the dashboard for more than two refreshes (a poll that stopped without
+ * failing), counted from the last confirmation or, when later, from when
+ * this run started polling (a cached dashboard is not offline at start).
+ */
+export function pollShowsOffline(
+  state: Pick<KioskState, "updatedAt" | "offline" | "pollingSince">,
+  refreshAfterSec: number,
+  now: number,
+): boolean {
+  if (state.offline) return true;
+  if (state.updatedAt === null) return false;
+  const seconds =
+    refreshAfterSec > 0 ? refreshAfterSec : DEVICE_REFRESH_AFTER_SECONDS;
+  const since = Math.max(state.updatedAt, state.pollingSince ?? 0);
+  return now - since > POLL_STALE_AFTER * seconds * 1000;
+}
+
+/** Now, every `everyMs`: for checks whose answer changes with time alone. */
+function useTicking(everyMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(timer);
+  }, [everyMs]);
+  return now;
+}
+
+/**
+ * The offline badge of a dashboard without its header (#835): the marker
+ * in a muted badge in the top corner of the canvas padding.
+ */
+export function KioskOfflineBadge({ state }: { state: KioskState }) {
+  return (
+    <SlideCornerBadge>
+      <OfflineMarker
+        state={state}
+        shown
+        className="kiosk-offline kiosk-offline--badge"
+      />
+    </SlideCornerBadge>
+  );
+}
+
 /** The offline note; its last update in the viewer's zone (#736). */
-function OfflineMarker({ state }: { state: KioskState }) {
+function OfflineMarker({
+  state,
+  shown = state.offline,
+  className = "kiosk-offline",
+}: {
+  state: KioskState;
+  /** Whether to show it; the last poll's failure unless the caller knows more. */
+  shown?: boolean;
+  className?: string;
+}) {
   const t = useT("screen.kiosk");
   const locale = useLocale();
   const viewerZone = useViewerTimeZone();
-  if (!state.offline) {
+  if (!shown) {
     return null;
   }
   return (
-    <span className="kiosk-offline" role="status" title={state.lastError ?? ""}>
+    <span className={className} role="status" title={state.lastError ?? ""}>
       {state.updatedAt
         ? t("offlineSince", {
             time: clockTime(state.updatedAt, viewerZone, locale),
@@ -283,6 +353,7 @@ export function kioskRefreshCycle(
   state: Pick<KioskState, "updatedAt" | "offline">,
   payload: { refreshAfterSec: number },
 ): RefreshCycle | null {
+  // `offline` as shown (pollShowsOffline), as tvOS's RefreshCountdown.
   if (state.updatedAt === null || state.offline) return null;
   const seconds =
     payload.refreshAfterSec > 0
@@ -304,10 +375,12 @@ function KioskSlides({
   state,
   payload,
   dashboard,
+  screen,
 }: {
   state: KioskState;
   payload: SlidesPayload;
   dashboard: NonNullable<SlidesPayload["dashboard"]>;
+  screen: ScreenSize | null;
 }) {
   const idle = useIdle();
   const t = useT("screen.kiosk");
@@ -321,6 +394,10 @@ function KioskSlides({
     images: state.images,
   };
   const formats = isFormatsDashboard(payload) ? payload : null;
+  // Offline by tvOS's rule (#739, #835), checked again as time passes: in
+  // the header, or without it in a muted badge in the canvas's corner.
+  const now = useTicking(10_000);
+  const offline = pollShowsOffline(state, payload.refreshAfterSec, now);
   return (
     <div
       className={idle ? "slide-screen slide-screen--idle" : "slide-screen"}
@@ -336,25 +413,25 @@ function KioskSlides({
         header={{
           name: dashboard.name,
           logoImageId: dashboard.logo?.imageId ?? null,
-          offline: dashboard.showHeader && state.offline,
+          offline: dashboard.showHeader && offline,
           offlineSince:
             state.updatedAt === null
               ? null
               : clockTime(state.updatedAt, viewerZone, locale),
-          refresh: kioskRefreshCycle(state, payload),
+          refresh: kioskRefreshCycle({ ...state, offline }, payload),
         }}
+        screen={screen}
+        corner={
+          offline && !dashboard.showHeader ? (
+            <KioskOfflineBadge state={state} />
+          ) : null
+        }
         images={state.images}
         renderWidget={(widget) => (
           <DeviceWidgetView widget={widget} env={env} />
         )}
         empty={<p className="kiosk-text slide-screen-empty">{t("noSlides")}</p>}
       />
-      {/* With the header the marker is in it; without, in the corner. */}
-      {state.offline && !dashboard.showHeader ? (
-        <div className="slide-screen-status">
-          <OfflineMarker state={state} />
-        </div>
-      ) : null}
     </div>
   );
 }

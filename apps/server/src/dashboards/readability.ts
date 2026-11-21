@@ -4,6 +4,7 @@ import {
   countdownWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
+  semanticModelDefinitionSchema,
   tableWidgetOptionsSchema,
   textWidgetOptionsSchema,
   type FormatWarning,
@@ -25,10 +26,12 @@ import {
   effectiveFontScale,
   isDataWidgetType,
   isScreenFormat,
+  measureSampleSuffix,
   slideFormatWarnings,
   sourcesLabel,
   zonedInstant,
   type CustomLayout,
+  type DataField,
   type Locale,
   type ReadabilityWidget,
   type ScreenFormat,
@@ -36,6 +39,7 @@ import {
 } from "@netrics/domain";
 
 import { resolveThemeTokens } from "../themes/service.js";
+import { measureUnits } from "./data.js";
 
 /**
  * Readability per format for the dashboard API (ADR 0017 section 6, #280):
@@ -74,6 +78,11 @@ export interface ReadabilityInputs {
    * measures' names in its model's published release; null when unknown.
    */
   columnsOf?(widget: DashboardWidgetRow): string[] | null;
+  /**
+   * What follows a measure value view's values for its first measure's
+   * unit (`measureUnitSuffix`, #835); unknown: "".
+   */
+  valueSuffixOf?(widget: DashboardWidgetRow): string;
 }
 
 export async function loadReadabilityInputs(
@@ -109,28 +118,31 @@ export async function loadReadabilityInputs(
   const goalNames = new Map(
     [...goals.values()].map((goal) => [goal.id, goal.name]),
   );
-  // A measure table's column heads, from its models' published releases
-  // (one query, only with measure tables).
-  const modelIds = [
-    ...new Set(
-      dashboard.slides.flatMap((slide) =>
-        slide.widgets.flatMap((widget) =>
-          widget.type === "measure" &&
-          widget.modelId !== null &&
-          measureWidgetOptionsSchema.safeParse(widget.options).data?.view ===
-            "table"
-            ? [widget.modelId]
-            : [],
-        ),
-      ),
-    ),
-  ];
+  // The models of measure tables (their column heads, #768) and of value
+  // views with a grouping (their units, #835): each published release read
+  // once, in one query, and each model's units probed once.
+  const tableModels = new Set<string>(),
+    splitModels = new Set<string>();
+  for (const slide of dashboard.slides)
+    for (const widget of slide.widgets) {
+      if (widget.type !== "measure" || widget.modelId === null) continue;
+      const view = measureWidgetOptionsSchema.safeParse(widget.options).data
+        ?.view;
+      const groups =
+        measureWidgetBindingSchema.safeParse(widget.modelBinding).data?.groupBy
+          .length ?? 0;
+      if (view === "table") tableModels.add(widget.modelId);
+      if (view === "value" && groups > 0) splitModels.add(widget.modelId);
+    }
+  const modelIds = [...new Set([...tableModels, ...splitModels])];
   const modelNames = new Map<string, Map<string, string>>();
+  const units = new Map<string, Map<string, string | undefined>>();
   if (modelIds.length)
     for (const row of await tx
       .select({
         id: schema.dataModels.id,
         definition: schema.dataModelReleases.definition,
+        bindings: schema.dataModelReleases.schemaBindings,
       })
       .from(schema.dataModels)
       .innerJoin(
@@ -163,6 +175,18 @@ export async function loadReadabilityInputs(
           ].map((entry) => [entry.id, entry.name]),
         ),
       );
+      if (splitModels.has(row.id)) {
+        const parsed = semanticModelDefinitionSchema.safeParse(row.definition);
+        // A release that no longer parses: the check counts no unit.
+        if (parsed.success)
+          units.set(
+            row.id,
+            measureUnits(
+              parsed.data,
+              row.bindings as Record<string, DataField[]>,
+            ),
+          );
+      }
     }
   const tokens = await resolveThemeTokens(tx, workspaceId, dashboard);
   let logoAspect: number | null = null;
@@ -240,6 +264,16 @@ export async function loadReadabilityInputs(
         (id) => labels?.[id] ?? names.get(id) ?? id,
       );
     },
+    valueSuffixOf(widget) {
+      const binding = measureWidgetBindingSchema.safeParse(
+        widget.modelBinding,
+      ).data;
+      const unit =
+        widget.modelId && binding
+          ? units.get(widget.modelId)?.get(binding.measureIds[0]!)
+          : undefined;
+      return measureSampleSuffix(unit, locale);
+    },
     labelOf(widget) {
       // A latest review has no metric (ADR 0019 section 12).
       if (widget.type === "review") {
@@ -307,6 +341,7 @@ export function dashboardFormatWarnings(
           // A value view with a grouping: a total with its split (#784).
           splitLines:
             options?.view === "value" && groups > 0 ? options.limit : null,
+          valueSuffix: inputs.valueSuffixOf?.(widget) ?? "",
           columns: inputs.columnsOf?.(widget) ?? null,
         };
       }

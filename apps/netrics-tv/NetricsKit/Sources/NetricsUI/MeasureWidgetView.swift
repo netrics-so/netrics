@@ -92,7 +92,9 @@ struct MeasureWidgetView: View {
                 splitView
             } else if options.view == "value" {
                 Text(
-                    measureIds.first.map { data.text(rows.first?.measures[$0], measure: $0, language: env.language) } ?? "—"
+                    measureIds.first.map {
+                        data.text(rows.first?.measures[$0], measure: $0, language: env.language, single: true)
+                    } ?? "—"
                 )
                 .font(font(84, .semibold)).monospacedDigit().minimumScaleFactor(0.4).lineLimit(2)
                 .frame(maxWidth: .infinity, maxHeight: scroll ? nil : .infinity, alignment: .leading)
@@ -330,7 +332,9 @@ struct MeasureWidgetView: View {
                 }
                 context.stroke(path, with: .color(env.colors.accent), lineWidth: env.pt(3))
             }.frame(width: env.pt(500), height: env.pt(180))
-            table(rows)
+            // On a slide the chart alone; the point table only in a scroll card (#835).
+            let shown = MeasureLineChart.tableRows(placed: placement != nil, scroll: scroll, count: rows.count)
+            if shown > 0 { table(Array(rows.prefix(shown))) }
         }
     }
 }

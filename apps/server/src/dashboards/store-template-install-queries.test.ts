@@ -16,6 +16,9 @@ import {
   TEST_DATABASE_SETUP_TIMEOUT_MS,
   type TestDatabase,
 } from "../test-db.js";
+import { findDashboard, withWorkspace } from "@netrics/database";
+
+import { presentDashboard } from "./service.js";
 import { createStoreTemplateService } from "./store-template-service.js";
 
 /**
@@ -102,6 +105,53 @@ describe("store-template install statements (#668)", () => {
       expect(reads(sent, "data_preparation_versions")).toBeLessThanOrEqual(
         records!.preparations,
       );
+    }
+  }, 120_000);
+
+  it("reads each published model once when a dashboard is shown (#835)", async () => {
+    // The App portfolio has measure tables and value views split by store
+    // over the same models: their column heads and units come from one
+    // read of the published releases, and each model's units from one
+    // probe, however many widgets and measures.
+    const target = await workspace("Shown");
+    await createStoreTemplateService({ db, registry }).install(
+      { workspaceId: target.id, callerId: userId, locale: "en" },
+      {
+        requestId: randomUUID(),
+        name: "App portfolio",
+        connections: target.connections,
+        groups: [],
+      },
+    );
+    // Beside each measure table, the same model as a value view split by
+    // the table's first grouping (#784): its units are read too.
+    const tables = await owner<{ id: string }[]>`
+      insert into dashboard_widgets (slide_id, dashboard_id, workspace_id, type,
+        x, y, w, h, title, model_id, model_binding, options)
+      select slide_id, dashboard_id, workspace_id, type, x, y, w, h, title,
+        model_id, model_binding, jsonb_build_object('view', 'value', 'limit', 2)
+      from dashboard_widgets
+      where workspace_id = ${target.id} and type = 'measure'
+        and options->>'view' = 'table'
+        and jsonb_array_length(model_binding->'groupBy') > 0
+      returning id`;
+    expect(tables.length).toBeGreaterThan(0);
+    const dashboards = await owner<{ id: string }[]>`
+      select id from dashboards where workspace_id = ${target.id}`;
+    expect(dashboards.length).toBeGreaterThan(0);
+    for (const { id } of dashboards) {
+      statements.length = 0;
+      await withWorkspace(db, { workspaceId: target.id }, async (tx) => {
+        const dashboard = (await findDashboard(tx, target.id, id))!;
+        await presentDashboard(tx, target.id, dashboard, "en");
+      });
+      // Joined from the models: any statement that reads a release.
+      const releaseReads = statements.filter(
+        (statement) =>
+          statement.startsWith("select") &&
+          statement.includes('"data_model_releases"'),
+      ).length;
+      expect(releaseReads).toBeLessThanOrEqual(1);
     }
   }, 120_000);
 });

@@ -191,8 +191,8 @@ public enum ItemsLayout {
 public enum ItemsText {
     /**
      * An item's time as shown: a calendar day as the date ("Nov 20, 2026"),
-     * a timestamp relative to `now` ("2 hours ago"); text that is neither as
-     * stored. Web: `itemTime`.
+     * a timestamp relative to `now` ("2 hr. ago", "yesterday"); text that is
+     * neither as stored. Web: `itemTime`.
      */
     public static func time(_ time: String?, now: Date, language: ScreenLanguage, timeZone: TimeZone = .current)
         -> String?
@@ -201,9 +201,45 @@ public enum ItemsText {
         if time.wholeMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}/) != nil {
             return DataFormat.date(time, type: "date", language: language, timeZone: timeZone) ?? time
         }
-        guard ISODate.parse(time) != nil else { return time }
-        return RelativeTime.describe(time, now: now, language: language)
+        guard let date = ISODate.parse(time) else { return time }
+        return relative(date, now: now, language: language)
     }
+
+    /**
+     * A time relative to `now` as the web words an item's (#835):
+     * `relativeTimeIn(…, "short")`, Intl.RelativeTimeFormat with numeric
+     * "auto". The unit is the web's (seconds under 45 are "now", then
+     * minutes, hours, days), and named days read "yesterday", "gestern",
+     * "vorgestern" where the web says so instead of "1 day ago".
+     */
+    static func relative(_ date: Date, now: Date, language: ScreenLanguage) -> String {
+        let delta = Int(date.timeIntervalSince(now).rounded(.toNearestOrAwayFromZero))
+        let absolute = abs(delta)
+        let sign = delta < 0 ? -1 : 1
+        func count(_ size: Int) -> Int { sign * Int((Double(absolute) / Double(size)).rounded(.toNearestOrAwayFromZero)) }
+        var components = DateComponents()
+        if absolute < 45 {
+            components.second = 0
+        } else if absolute < 3600 {
+            components.minute = count(60)
+        } else if absolute < 86_400 {
+            components.hour = count(3600)
+        } else {
+            components.day = count(86_400)
+        }
+        return (relativeFormatters[language] ?? relativeFormatters[.en]!).localizedString(from: components)
+    }
+
+    /// One formatter per language, made once (formatting is thread-safe).
+    nonisolated(unsafe) private static let relativeFormatters: [ScreenLanguage: RelativeDateTimeFormatter] =
+        Dictionary(
+            uniqueKeysWithValues: ScreenLanguage.allCases.map { language in
+                let formatter = RelativeDateTimeFormatter()
+                formatter.locale = language.locale
+                formatter.dateTimeStyle = .named
+                formatter.unitsStyle = .short
+                return (language, formatter)
+            })
 
     /** "3 items", "1 Eintrag". */
     public static func count(_ count: Int, language: ScreenLanguage) -> String {

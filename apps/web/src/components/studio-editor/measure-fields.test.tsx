@@ -5,6 +5,8 @@ import type {
 } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
 import {
+  LINE_VIEW_LIMIT,
+  limitForView,
   MeasureFields,
   optionsForModel,
   valueViewMeasureId,
@@ -121,5 +123,17 @@ describe("switching the model (#784)", () => {
         },
       ).view,
     ).toBe("table");
+  });
+});
+
+describe("a line chart's maximum rows (#835)", () => {
+  it("shows a year of points when switched to with the default untouched", () => {
+    expect(limitForView("line", 20)).toBe(LINE_VIEW_LIMIT);
+    expect(LINE_VIEW_LIMIT).toBeGreaterThanOrEqual(365);
+    // A chosen limit stays.
+    expect(limitForView("line", 31)).toBe(31);
+    // Leaving the line chart restores the default it set.
+    expect(limitForView("bar", LINE_VIEW_LIMIT)).toBe(20);
+    expect(limitForView("table", 50)).toBe(50);
   });
 });

@@ -209,6 +209,7 @@ export function AddWidgetMenu({
           locale,
           goals,
           reviewConnectionIds,
+          filters: document.settings.dataFilters ?? [],
         });
         const reason =
           "reason" in made

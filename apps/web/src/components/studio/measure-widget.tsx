@@ -26,6 +26,8 @@ import {
   displayMeasureAmount,
   formatDataDate,
   MEASURE_UNIT_FRACTION_DIGITS,
+  MEASURE_VALUE_FRACTION_DIGITS,
+  measureUnitSuffix,
   roundDecimalText,
   measureInteractionDimension,
   measureInteractionSelected,
@@ -62,6 +64,12 @@ export function formatMeasureCell(
   unit: string | undefined,
   /** The viewer's zone (#749), for timestamps; days are never converted. */
   timeZone: string,
+  /**
+   * A single value (the value view, its total and split lines): at most
+   * MEASURE_VALUE_FRACTION_DIGITS where the unit sets no precision and it
+   * is no amount of money (#835). Tables and charts keep every digit.
+   */
+  single = false,
 ): string {
   value = displayMeasureAmount(value, unit, currency);
   if (value === null || value === undefined) return "—";
@@ -69,8 +77,11 @@ export function formatMeasureCell(
   // Days and timestamps as people read them; the viewer's time zone for times.
   const date = formatDataDate(value, type, locale, timeZone);
   if (date !== null) return date;
-  // A unit with a display precision (ratings) is rounded; the value stays exact.
-  const fractionDigits = unit ? MEASURE_UNIT_FRACTION_DIGITS[unit] : undefined;
+  // A unit with a display precision (ratings) is rounded, and so is a single
+  // value without one; the value stays exact.
+  const fractionDigits =
+    (unit ? MEASURE_UNIT_FRACTION_DIGITS[unit] : undefined) ??
+    (single && !currency ? MEASURE_VALUE_FRACTION_DIGITS : undefined);
   // Decimal strings must never pass through Number, including beyond IEEE-754 precision.
   let text: string;
   if (
@@ -103,13 +114,10 @@ export function formatMeasureCell(
             maximumFractionDigits: fractionDigits ?? 18,
           }).format(value)
         : String(value);
+  // Its currency, or its unit's word (#835): "%", "★", "downloads", "°C".
   return currency
     ? `${text} ${currency}`
-    : unit === "percent"
-      ? `${text}%`
-      : unit === "stars"
-        ? `${text} ★`
-        : text;
+    : text + measureUnitSuffix(unit, locale);
 }
 /** Source states that are the measure widget's warnings (precedence 1). */
 const FAILING_SOURCES = new Set([
@@ -239,6 +247,7 @@ export function MeasureWidgetView({
     type: string,
     currency?: string,
     unit?: string,
+    single = false,
   ) =>
     formatMeasureCell(
       value,
@@ -249,14 +258,18 @@ export function MeasureWidgetView({
       t("false"),
       unit,
       timeZone,
+      single,
     );
   const percentChange = new Set(
     data?.metadata?.measures
       .filter((measure) => measure.percentChange)
       .map((measure) => measure.id) ?? [],
   );
-  /** A measure cell as shown; percent changes read as signed percentages. */
-  const cellText = (id: string, cell: ModelCell | undefined) =>
+  /**
+   * A measure cell as shown; percent changes read as signed percentages.
+   * `single`: the value view's value, total or split line (#835).
+   */
+  const cellText = (id: string, cell: ModelCell | undefined, single = false) =>
     percentChange.has(id)
       ? formatPercentChange(cell?.value, locale)
       : format(
@@ -264,6 +277,7 @@ export function MeasureWidgetView({
           cell?.type ?? "decimal",
           cell?.currency,
           cell?.unit,
+          single,
         );
   /** A dimension value as a filter button when the widget declares it. */
   const choice = (dimensionId: string, value: unknown, text: string) =>
@@ -480,7 +494,7 @@ export function MeasureWidgetView({
   const splitTotal = data?.totals?.length
     ? measureSplitTotalText(
         data.totals.map((cell) =>
-          format(cell.value, cell.type, cell.currency, cell.unit),
+          format(cell.value, cell.type, cell.currency, cell.unit, true),
         ),
       )
     : null;
@@ -503,6 +517,7 @@ export function MeasureWidgetView({
             cellText(
               widget.binding.measureIds[0]!,
               row.measures[widget.binding.measureIds[0]!],
+              true,
             ),
           ] as [string, string],
       )
@@ -605,7 +620,7 @@ export function MeasureWidgetView({
         </>
       ) : widget.options.view === "value" ? (
         <p className="sw-measure-value">
-          {cellText(widget.binding.measureIds[0]!, cell)}
+          {cellText(widget.binding.measureIds[0]!, cell, true)}
         </p>
       ) : rows.length === 0 ? (
         <p>{viewer ? t("dashboard.viewer.noData") : t("noRows")}</p>
@@ -678,7 +693,16 @@ export function MeasureWidgetView({
               ) : null,
             )}
           </svg>
-          <ol>
+          {/* On a slide the tile has no room for every point's value, and a
+              screen cannot scroll: the list stays for screen readers only
+              (#835). tvOS draws no point table there at all
+              (MeasureLineChart.tableRows). Without a slide (scroll cards),
+              or where its values set a filter, it shows. */}
+          <ol
+            className={
+              placement && !interaction ? "visually-hidden" : undefined
+            }
+          >
             {chartRows.map(({ dimension, cell }, index) => (
               <li key={index}>
                 <span>

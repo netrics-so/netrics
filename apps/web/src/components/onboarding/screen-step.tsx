@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { useT } from "@/lib/i18n/client";
+import { connectTvHref } from "@/lib/device-platform";
 
 /**
  * Step 3, "Show it on a screen" (#308): how pairing works, then "Connect a
@@ -72,7 +73,10 @@ export function ScreenStep({
             {t("openDashboard")}
           </Link>
           {canManageDevices ? (
-            <Link href="/devices/approve" className="button primary">
+            <Link
+              href={connectTvHref(workspaceId, dashboardId)}
+              className="button primary"
+            >
               {t("connectTv")}
             </Link>
           ) : null}

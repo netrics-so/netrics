@@ -258,6 +258,30 @@ describe("formatWarnings", () => {
     });
   });
 
+  it("rows_cut: a total with its split counts its unit's words (#835)", () => {
+    const split = (valueSuffix: string, w: number): ReadabilityWidget => ({
+      id: "s",
+      type: "measure",
+      x: 0,
+      y: 0,
+      w,
+      h: 4,
+      label: "Installs per impression",
+      rows: null,
+      splitLines: 2,
+      valueSuffix,
+    });
+    const cut = (suffix: string, w: number) =>
+      formatWarnings(slide([split(suffix, w)]), "16x9", context).length > 0;
+    // Some width fits the bare samples but not with a long unit after
+    // every value: the check counts the unit, as screens draw it.
+    const widths = [3, 4, 5, 6, 7, 8];
+    const differs = widths.filter(
+      (w) => !cut("", w) && cut(" Installationen/Impressionen", w),
+    );
+    expect(differs.length).toBeGreaterThan(0);
+  });
+
   it("rows_cut: a measure table's narrow columns wrap their heads and rows (#768)", () => {
     const measure = (columns: string[] | null): ReadabilityWidget => ({
       id: "m",

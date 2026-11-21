@@ -394,6 +394,12 @@ export interface ReadabilityWidget extends LayoutWidget {
    */
   splitLines?: number | null;
   /**
+   * Measure value views: what follows each value for its measure's unit
+   * (`measureUnitSuffix`, " downloads", " Installationen/Impressionen"),
+   * counted in the sample values (#835); none: "".
+   */
+  valueSuffix?: string | null;
+  /**
    * Measure tables: the column heads as screens show them (the grouped
    * dimensions' names, then the measures'); unknown: one line each.
    */
@@ -572,8 +578,12 @@ export function formatWarnings(
         width: box.width,
         height: box.height,
         fontScale: context.fontScale,
-        total: MEASURE_SPLIT_SAMPLES.total,
-        lines: Array.from({ length: lines }, () => MEASURE_SPLIT_SAMPLES.line),
+        // The sample values with the measure's unit (#835).
+        total: MEASURE_SPLIT_SAMPLES.total + (widget.valueSuffix ?? ""),
+        lines: Array.from({ length: lines }, (): [string, string] => [
+          MEASURE_SPLIT_SAMPLES.line[0],
+          MEASURE_SPLIT_SAMPLES.line[1] + (widget.valueSuffix ?? ""),
+        ]),
         footer: MEASURE_SPLIT_SAMPLES.footer,
       });
       if (!fit.fits)

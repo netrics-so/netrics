@@ -6,6 +6,7 @@ import type { Device } from "@netrics/contracts";
 
 import { apiErrorMessage, updateDevice } from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n/client";
+import { connectTvHref } from "@/lib/device-platform";
 
 /** The TVs whose assignment changes: newly checked or unchecked. */
 export function assignmentChanges(
@@ -112,7 +113,8 @@ export function AssignTvs({
         {unsaved ? <p className="notice">{t("unsaved")}</p> : null}
         {devices.length === 0 ? (
           <p className="muted">
-            {t("none")} <a href="/devices/approve">{t("connect")}</a>
+            {t("none")}{" "}
+            <a href={connectTvHref(workspaceId, dashboardId)}>{t("connect")}</a>
           </p>
         ) : (
           <ul className="assign-list">

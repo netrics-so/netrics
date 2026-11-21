@@ -243,6 +243,11 @@ export interface DraftReadabilityContext {
    * (#768), as the server reads them; unknown: null.
    */
   columnsOf?(widget: DashboardWidget): string[] | null;
+  /**
+   * What follows a measure widget's values for its first measure's unit
+   * (`measureUnitSuffix`, #835), as the server reads it; unknown: "".
+   */
+  valueSuffixOf?(widget: DashboardWidget): string;
 }
 
 /** A slide of the draft, with the custom layouts stored for it. */
@@ -277,6 +282,7 @@ function readabilityWidget(
           ? widget.options.limit
           : null,
       columns: context.columnsOf?.(widget) ?? null,
+      valueSuffix: context.valueSuffixOf?.(widget) ?? "",
     };
   }
   if (widget.type === "status") {

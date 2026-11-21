@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { apiErrorMessage, approveDevice, lookupPairing } from "@/lib/api";
-import { completePairingCode } from "@/lib/device-platform";
+import {
+  completePairingCode,
+  initialPairingTarget,
+} from "@/lib/device-platform";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 /** The format of a pairing code, as the TV shows it. */
@@ -18,20 +21,29 @@ export interface ApprovableWorkspace {
 interface ApproveDeviceFormProps {
   initialCode: string;
   workspaces: ApprovableWorkspace[];
+  /** The workspace and dashboard "Connect a TV" was opened from (#835). */
+  initialWorkspaceId?: string | undefined;
+  initialDashboardId?: string | undefined;
 }
 
 export function ApproveDeviceForm({
   initialCode,
   workspaces,
+  initialWorkspaceId,
+  initialDashboardId,
 }: ApproveDeviceFormProps) {
   const locale = useLocale();
   const t = useT("deviceApproval");
   const [code, setCode] = useState(initialCode);
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]!.id);
-  const workspace = workspaces.find((w) => w.id === workspaceId)!;
-  const [dashboardId, setDashboardId] = useState(
-    workspace.dashboards[0]?.id ?? "",
+  const [initial] = useState(() =>
+    initialPairingTarget(workspaces, {
+      workspaceId: initialWorkspaceId,
+      dashboardId: initialDashboardId,
+    }),
   );
+  const [workspaceId, setWorkspaceId] = useState(initial.workspaceId);
+  const workspace = workspaces.find((w) => w.id === workspaceId)!;
+  const [dashboardId, setDashboardId] = useState(initial.dashboardId);
   // Apple TV until the code's device says otherwise (#406); apps before
   // it report no platform.
   const [name, setName] = useState(() => t("names.tvos"));

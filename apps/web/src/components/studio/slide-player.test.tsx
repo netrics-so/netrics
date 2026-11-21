@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { DeviceSlide, DeviceWidget } from "@netrics/contracts";
-import { BUILTIN_THEMES, headerFit, type ThemeTokens } from "@netrics/domain";
+import {
+  BUILTIN_THEMES,
+  headerFit,
+  screenFrame,
+  STUDIO_SPACING,
+  type ThemeTokens,
+} from "@netrics/domain";
 
 import { RotatedScreen } from "@/components/screen-rotation";
 import { renderI18n } from "@/lib/i18n/test-render";
@@ -15,7 +21,7 @@ import {
   SlideCanvas,
   type SlideHeaderInfo,
 } from "./slide-canvas";
-import { SlidePlayer } from "./slide-player";
+import { CORNER_BADGE, SlideCornerBadge, SlidePlayer } from "./slide-player";
 
 const ID = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -853,5 +859,83 @@ describe("data states (ADR 0018 section 5, #311)", () => {
     expect(markup).toContain(">1,234</p>");
     expect(markup).toContain('<p class="sw-notice"');
     expect(markup).toContain("Source unreachable");
+  });
+});
+
+describe("the corner badge never covers a widget (#835)", () => {
+  // Every format, on landscape and portrait screens (letterboxed or
+  // pillarboxed where they differ): the badge, placed from the screen's top
+  // right in units, ends above the widget grid, in its canvas padding.
+  const screens = [
+    { width: 1920, height: 1080 },
+    { width: 1080, height: 1920 },
+    { width: 1440, height: 1080 },
+    { width: 1080, height: 1440 },
+    { width: 2560, height: 1080 },
+    { width: 1366, height: 1024 },
+  ];
+  const height = CORNER_BADGE.line + 2 * CORNER_BADGE.padY;
+  it("fits the 32-unit padding", () => {
+    expect(CORNER_BADGE.top + height).toBeLessThanOrEqual(
+      STUDIO_SPACING.padding,
+    );
+  });
+  it.each(["16x9", "9x16", "4x3", "3x4", "21x9"] as const)(
+    "ends above the grid in %s",
+    (format) => {
+      for (const screen of screens) {
+        const frame = screenFrame(screen, format, false);
+        const bottom = (CORNER_BADGE.top + height) * frame.unit;
+        expect(bottom, JSON.stringify(screen)).toBeLessThanOrEqual(
+          frame.grid.y + 0.001,
+        );
+        // Its right edge keeps the padding from the screen's edge, so it
+        // is never right of the grid either.
+        expect(
+          screen.width - STUDIO_SPACING.padding * frame.unit,
+        ).toBeGreaterThanOrEqual(frame.grid.x + frame.grid.width - 0.001);
+      }
+    },
+  );
+  it("is drawn in units, top right", () => {
+    const html = renderI18n(<SlideCornerBadge>Offline</SlideCornerBadge>);
+    expect(html).toContain('class="studio-slide-corner"');
+    expect(html).toContain("top:calc(var(--u) * 1)");
+    expect(html).toContain("right:calc(var(--u) * 32)");
+    expect(html).toContain("height:calc(var(--u) * 30)");
+    expect(html).toContain("font-size:calc(var(--u) * 20)");
+  });
+});
+
+describe("the corner badge waits for a measured canvas (#835)", () => {
+  const slide = {
+    id: ID(1),
+    name: null,
+    durationSec: 20,
+    enabled: true,
+    widgets: [],
+  } as never;
+  const player = (screen: ScreenSize | null) =>
+    renderI18n(
+      <SlidePlayer
+        slides={[slide]}
+        autoAdvance={false}
+        transition="none"
+        tokens={tokens}
+        showHeader={false}
+        header={{ name: "Lobby", logoImageId: null }}
+        images={new Map()}
+        renderWidget={() => null}
+        screen={screen}
+        corner={<SlideCornerBadge>Offline</SlideCornerBadge>}
+      />,
+    );
+  it("is drawn once the canvas has a size", () => {
+    expect(player({ width: 1920, height: 1080 })).toContain(
+      "studio-slide-corner",
+    );
+  });
+  it("is not drawn before, when its unit is a guess", () => {
+    expect(player(null)).not.toContain("studio-slide-corner");
   });
 });

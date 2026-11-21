@@ -98,7 +98,7 @@ export function ItemsFields({
             const next = candidates.find(
               (model) => model.modelId === event.target.value,
             );
-            const binding = next ? itemsBindingFor(next) : null;
+            const binding = next ? itemsBindingFor(next, filters) : null;
             if (binding)
               dispatch({
                 type: "updateWidget",

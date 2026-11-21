@@ -233,7 +233,9 @@ describe("screen step", () => {
     );
     expect(html).toContain("Show it on a screen");
     expect(html).toContain('href="/kiosk">app.example.com/kiosk</a>');
-    expect(html).toContain('href="/devices/approve"');
+    expect(html).toContain(
+      'href="/devices/approve?workspace=w&amp;dashboard=d"',
+    );
     expect(html).toContain('href="/workspaces/w/dashboards/d"');
     expect(html).toContain('href="/workspaces/w/welcome"');
     expect(html).toContain("Open my dashboard");

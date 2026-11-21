@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 import type { DashboardWidgetData } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
@@ -865,5 +867,145 @@ describe("a total with its split, and freshness per source (#784)", () => {
     // A narrow tile puts each store on its own line: two freshness lines.
     const narrow = table(data(), 3);
     expect(narrow.match(/sw-measure-freshness/g)?.length).toBe(2);
+  });
+});
+
+describe("line chart point list on a slide (#835)", () => {
+  const data = {
+    widgetId: "w",
+    metadata: {
+      modelId: "m",
+      modelName: "Weather",
+      measures: [{ id: "temp", name: "Max temperature" }],
+      dimensions: [{ id: "day", name: "Day", type: "date" }],
+    },
+    result: {
+      rows: [
+        {
+          dimensions: { day: "2026-11-01" },
+          measures: { temp: { value: 8, type: "integer", status: "ok" } },
+        },
+        {
+          dimensions: { day: "2026-11-02" },
+          measures: { temp: { value: 9, type: "integer", status: "ok" } },
+        },
+      ],
+      totalRows: 2,
+      warnings: [],
+      operations: 1,
+      provenance: [],
+      appliedFilter: null,
+      groupBy: ["day"],
+    },
+    exclusions: [],
+  } as unknown as DashboardWidgetData;
+  const line = (placed: boolean) =>
+    renderI18n(
+      <MeasureWidgetView
+        widget={{
+          title: "Max temperature",
+          options: { view: "line", limit: 365 },
+          binding: { measureIds: ["temp"], groupBy: ["day"] },
+        }}
+        data={data}
+        {...(placed
+          ? { placement: { x: 0, y: 0, w: 6, h: 3 }, showHeader: true }
+          : {})}
+      />,
+    );
+
+  it("keeps the values for screen readers only, so no clipped row shows", () => {
+    const placed = line(true);
+    expect(placed).toContain('<ol class="visually-hidden">');
+    expect(placed).toContain("Nov 1, 2026");
+    // A scroll card grows with its content and shows the list.
+    expect(line(false)).toContain("<ol>");
+  });
+});
+
+describe("measure cell vectors, shared with tvOS (#619, #835)", () => {
+  const vectors = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../../../../packages/domain/test-vectors/measure-cells.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ) as {
+    cases: Array<{
+      value: unknown;
+      type: string;
+      unit?: string;
+      currency?: string;
+      single: boolean;
+      en: string;
+      de: string;
+    }>;
+  };
+  it.each(vectors.cases)("$value $type $unit single=$single", (c) => {
+    for (const locale of ["en", "de"] as const)
+      expect(
+        formatMeasureCell(
+          c.value,
+          c.type,
+          c.currency,
+          locale,
+          "True",
+          "False",
+          c.unit,
+          "UTC",
+          c.single,
+        ),
+      ).toBe(c[locale]);
+  });
+});
+
+describe("a value view shows its unit, rounded (#835)", () => {
+  it("rounds the single value and names the unit; a table keeps every digit", () => {
+    const data = {
+      widgetId: "w",
+      metadata: {
+        modelId: "m",
+        modelName: "Weather",
+        measures: [{ id: "temp", name: "Average temperature" }],
+        dimensions: [],
+      },
+      result: {
+        rows: [
+          {
+            dimensions: {},
+            measures: {
+              temp: {
+                value: "9.448387096774193",
+                type: "decimal",
+                unit: "°C",
+                status: "ok",
+              },
+            },
+          },
+        ],
+        totalRows: 1,
+        warnings: [],
+        operations: 1,
+        provenance: [],
+        appliedFilter: null,
+        groupBy: [],
+      },
+      exclusions: [],
+    } as unknown as DashboardWidgetData;
+    const view = (v: "value" | "table") =>
+      renderI18n(
+        <MeasureWidgetView
+          widget={{
+            title: "Temperature",
+            options: { view: v, limit: 20 },
+            binding: { measureIds: ["temp"], groupBy: [] },
+          }}
+          data={data}
+        />,
+      );
+    expect(view("value")).toContain(">9.45 °C</p>");
+    expect(view("table")).toContain("9.448387096774193 °C");
   });
 });

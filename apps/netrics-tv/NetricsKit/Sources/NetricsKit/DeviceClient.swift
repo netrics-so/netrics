@@ -59,6 +59,11 @@ public struct DeviceState: Sendable, Equatable {
     public var storedImages: Set<String> = []
     /** When the API last confirmed the dashboard (200 or 304). */
     public var updatedAt: Date?
+    /**
+     * When this run started polling (#835): a dashboard from the cache with
+     * an old `updatedAt` is not "offline" before this run had its chance.
+     */
+    public var pollingSince: Date?
     /** The latest request failed; the screen shows the last known state. */
     public var offline = false
     public var lastError: String?
@@ -242,6 +247,7 @@ public actor DeviceClient {
         next.payload = cached?.payload
         next.storedImages = storedImages(cached?.payload)
         next.updatedAt = cached?.updatedAt
+        next.pollingSince = startedAt
         next.offline = false
         next.lastError = nil
         next.device = store.loadDevice()

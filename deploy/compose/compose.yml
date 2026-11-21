@@ -82,6 +82,11 @@ services:
       # network (README, "Custom APIs on your own network"); unset: none.
       # Set the same on the worker.
       NETRICS_CUSTOM_API_PRIVATE_HOSTS: ${NETRICS_CUSTOM_API_PRIVATE_HOSTS:-}
+      # Self-hosting only: a PEM file in ./certs with extra certificate
+      # authorities to trust, e.g. your network's own CA (README, "Custom APIs
+      # on your own network"); unset: the public ones only. Set the same on
+      # the worker.
+      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
       NETRICS_DATA_POLICY: ${NETRICS_DATA_POLICY:-}
       # Where TVs send people to approve a pairing code; default
       # <NETRICS_PUBLIC_URL>/devices/approve.
@@ -95,6 +100,8 @@ services:
       # same on migrate and the worker.
       NETRICS_PREVIEW_CONNECTORS: ${NETRICS_PREVIEW_CONNECTORS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./certs:/etc/netrics/certs:ro
 
   worker:
     <<: *server
@@ -112,11 +119,15 @@ services:
       NETRICS_PREVIEW_CONNECTORS: ${NETRICS_PREVIEW_CONNECTORS:-}
       # The worker runs custom API syncs, so it reads the same private hosts.
       NETRICS_CUSTOM_API_PRIVATE_HOSTS: ${NETRICS_CUSTOM_API_PRIVATE_HOSTS:-}
+      # ... and trusts the same extra certificate authorities.
+      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
       # The worker copies custom API item images after a sync, within their
       # own quota (README, "Images").
       NETRICS_CUSTOM_API_IMAGE_QUOTA_COUNT: ${NETRICS_CUSTOM_API_IMAGE_QUOTA_COUNT:-500}
       NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB: ${NETRICS_CUSTOM_API_IMAGE_QUOTA_MIB:-200}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./certs:/etc/netrics/certs:ro
 
   scheduler:
     <<: *server

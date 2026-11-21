@@ -48,7 +48,7 @@ public struct DashboardView: View {
             TimelineView(.periodic(from: .distantPast, by: SlideHeaderView.healthCheck)) { context in
                 if PollHealth.showsOffline(
                     offline: state.offline, updatedAt: state.updatedAt,
-                    refreshAfterSec: dashboard.refreshAfterSec, now: context.date)
+                    refreshAfterSec: dashboard.refreshAfterSec, now: context.date, since: state.pollingSince)
                 {
                     Text(TVTime.offlineMarker(updatedAt: state.updatedAt, language: language))
                         .font(.system(size: height * 0.018))

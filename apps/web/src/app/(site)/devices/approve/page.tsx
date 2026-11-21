@@ -8,6 +8,7 @@ import { ApproveDeviceForm, type ApprovableWorkspace } from "./approve-form";
 import { listDashboards, listProjects, listWorkspaces } from "@/lib/api";
 import { forwardedHeaders } from "@/lib/api-fetch";
 import { getT } from "@/lib/i18n/server";
+import { approveQuery } from "@/lib/device-platform";
 import { pickableDashboards } from "@/lib/project-pickers";
 import { projectScope } from "@/lib/project-scope";
 import { getSessionUser } from "@/lib/session";
@@ -21,7 +22,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 interface ApproveDevicePageProps {
-  searchParams: Promise<{ code?: string | string[] }>;
+  searchParams: Promise<{
+    code?: string | string[];
+    workspace?: string | string[];
+    dashboard?: string | string[];
+  }>;
 }
 
 /**
@@ -32,9 +37,12 @@ interface ApproveDevicePageProps {
 export default async function ApproveDevicePage({
   searchParams,
 }: ApproveDevicePageProps) {
-  const raw = (await searchParams).code;
-  const code = typeof raw === "string" ? raw.slice(0, 20) : "";
-  const here = `/devices/approve${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+  const {
+    code,
+    workspace: wantedWorkspace,
+    dashboard: wantedDashboard,
+    here,
+  } = approveQuery(await searchParams);
 
   const forwarded = forwardedHeaders(await headers());
   const user = await getSessionUser(forwarded);
@@ -81,7 +89,12 @@ export default async function ApproveDevicePage({
         </div>
       ) : (
         <div className="card">
-          <ApproveDeviceForm initialCode={code} workspaces={approvable} />
+          <ApproveDeviceForm
+            initialCode={code}
+            workspaces={approvable}
+            initialWorkspaceId={wantedWorkspace || undefined}
+            initialDashboardId={wantedDashboard || undefined}
+          />
         </div>
       )}
     </>

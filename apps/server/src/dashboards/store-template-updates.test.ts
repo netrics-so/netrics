@@ -2911,6 +2911,9 @@ describe(
             status: "fulfilled",
             value: { ok: false, status: 404, error: "dashboard_not_found" },
           });
+          // The screen started unassigned and stays so: nothing it showed
+          // was taken away.
+          expect((await deviceRow(screen)).dashboard_id).toBeNull();
           copyId = replaced.value.dashboards[0]!.copyId!;
         } else {
           // The assignment went first: the copy is in use and stays.
@@ -2921,7 +2924,6 @@ describe(
           expect((await deviceRow(screen)).dashboard_id).toBe(copyId);
           await owner`update devices set revoked_at=now() where id=${screen}`;
         }
-        expect((await deviceRow(screen)).dashboard_id).not.toBeNull();
       }
     });
 

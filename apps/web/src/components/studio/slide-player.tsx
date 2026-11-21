@@ -100,6 +100,39 @@ const FOOTER_TEXT = STUDIO_TEXT_MINIMUMS.any;
 const FOOTER_BAR = 4.5;
 const FOOTER_GAP = 3;
 
+/**
+ * The corner badge's box in units (#835), as tvOS's OfflineCornerBadge:
+ * 20 units of text on a 24-unit line, 3 units above and below, 1 unit from
+ * the top, so it stays inside the 32-unit canvas padding and never covers a
+ * widget; as far from the right edge as the padding.
+ */
+export const CORNER_BADGE = {
+  top: 1,
+  text: 20,
+  line: 24,
+  padY: 3,
+  padX: 10,
+} as const;
+
+/** A small, muted badge in the top-right corner of the canvas padding. */
+export function SlideCornerBadge({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="studio-slide-corner"
+      style={{
+        top: u(CORNER_BADGE.top),
+        right: u(STUDIO_SPACING.padding),
+        height: u(CORNER_BADGE.line + 2 * CORNER_BADGE.padY),
+        padding: `${u(CORNER_BADGE.padY)} ${u(CORNER_BADGE.padX)}`,
+        fontSize: u(CORNER_BADGE.text),
+        lineHeight: u(CORNER_BADGE.line),
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** "Sales 2/2" for a page of a slide on several pages; null without name. */
 function entryName<W extends CanvasWidget, S extends PlayerSlide<W>>(
   entry: PlayerEntry<W, S>,
@@ -213,6 +246,11 @@ export interface SlidePlayerControls {
 }
 
 export interface SlidePlayerProps<W extends CanvasWidget> {
+  /**
+   * Drawn in the top-right corner of the canvas padding of the slide on
+   * screen (#835): the kiosk's offline badge when the header is off.
+   */
+  corner?: ReactNode;
   /** The slides to rotate through, in order (enabled slides only). */
   slides: readonly PlayerSlide<W>[];
   /** False: show only the first slide. */
@@ -276,6 +314,7 @@ export function SlidePlayer<W extends CanvasWidget>({
   primaryFormat = "16x9",
   format: forcedFormat,
   screen: assumedScreen = null,
+  corner = null,
 }: SlidePlayerProps<W>) {
   const t = useT("dashboard");
   const root = useRef<HTMLDivElement>(null);
@@ -387,6 +426,7 @@ export function SlidePlayer<W extends CanvasWidget>({
                   placements={entry.placements}
                   screen={screen}
                   fill
+                  corner={active ? corner : null}
                   footer={
                     active && showFooter ? (
                       <SlideFooter

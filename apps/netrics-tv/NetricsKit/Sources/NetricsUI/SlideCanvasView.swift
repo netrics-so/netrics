@@ -151,6 +151,13 @@ public struct SlideCanvasView: View {
                         .position(x: CGFloat(rect.x + rect.width / 2), y: CGFloat(rect.y + rect.height / 2))
                 }
             }
+            if geometry.frame.header == nil {
+                // No header to carry the offline marker: a muted badge in
+                // the top corner, in the canvas padding (#835).
+                OfflineCornerBadge(state: state, refreshAfterSec: payload.refreshAfterSec, env: env)
+                    .frame(width: width, height: height, alignment: .topTrailing)
+                    .allowsHitTesting(false)
+            }
             if let footer {
                 // In the canvas's bottom padding (32 units): the grid is unchanged.
                 let canvas = geometry.frame.canvas
@@ -213,6 +220,34 @@ struct StoredImage {
     }
 }
 
+/** "⚠ Offline — last update 14:05" in a corner of a slide without its header (#835). */
+struct OfflineCornerBadge: View {
+    let state: DeviceState
+    let refreshAfterSec: Int
+    let env: WidgetEnv
+
+    var body: some View {
+        // Re-checked as time passes, as the header's marker (#739).
+        TimelineView(.periodic(from: .distantPast, by: SlideHeaderView.healthCheck)) { context in
+            if let text = PollHealth.cornerBadge(
+                showHeader: false, offline: state.offline, updatedAt: state.updatedAt,
+                refreshAfterSec: refreshAfterSec, now: context.date, timeZone: TVTime.viewerZone(),
+                language: env.language, since: state.pollingSince)
+            {
+                Text(verbatim: "⚠ \(text)")
+                    .font(env.font(20))
+                    .foregroundStyle(env.colors.muted)
+                    .lineLimit(1)
+                    .padding(.horizontal, env.pt(10))
+                    .padding(.vertical, env.pt(3))
+                    .background(Capsule().fill(env.colors.background.opacity(0.7)))
+                    .padding(.top, env.pt(1))
+                    .padding(.trailing, env.pt(StudioLayout.padding))
+            }
+        }
+    }
+}
+
 /**
  * Logo, dashboard and slide name, page, offline marker and clock (ADR
  * 0015, section 1). The format's header rule (`headerFit`, ADR 0017
@@ -247,7 +282,8 @@ struct SlideHeaderView: View {
         let colors = env.colors
         let name = payload.dashboard?.name ?? ""
         let offline = PollHealth.showsOffline(
-            offline: state.offline, updatedAt: state.updatedAt, refreshAfterSec: payload.refreshAfterSec, now: now)
+            offline: state.offline, updatedAt: state.updatedAt, refreshAfterSec: payload.refreshAfterSec, now: now,
+            since: state.pollingSince)
         let logoAspect = logo.flatMap {
             $0.image.height > 0 ? Double($0.image.width) / Double($0.image.height) : nil
         }
@@ -264,7 +300,8 @@ struct SlideHeaderView: View {
         let slideName = slide.name.flatMap { $0.isEmpty || !fit.showSlideName ? nil : $0 }
         // "next refresh in 42 s" where there is room (ADR 0018 section 5).
         let cycle = RefreshCountdown.cycle(
-            updatedAt: state.updatedAt, offline: state.offline, refreshAfterSec: payload.refreshAfterSec, now: now)
+            updatedAt: state.updatedAt, offline: state.offline, refreshAfterSec: payload.refreshAfterSec, now: now,
+            pollingSince: state.pollingSince)
         let showCountdown =
             cycle != nil
             && RefreshCountdown.fits(

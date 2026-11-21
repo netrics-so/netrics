@@ -21,6 +21,7 @@ import { pickableDashboards } from "@/lib/project-pickers";
 import { projectScope, type ProjectScope } from "@/lib/project-scope";
 import type { ScreenCounts, ScreenPreview } from "@/lib/screens";
 import { useViewerTimeZone } from "@/lib/viewer-time-zone";
+import { connectTvHref } from "@/lib/device-platform";
 
 /**
  * One screen as the page shows it; texts are worded on the server, dates
@@ -55,6 +56,44 @@ export interface ScreenItem {
 export type ScreensViewMode = "cards" | "table";
 
 type ScreenState = "online" | "offline" | "away" | "revoked";
+
+/**
+ * The screens with those revoked on this page marked so (#835), until the
+ * reloaded data says the same: not online, `revoked` worded `justNow`.
+ */
+export function withRevoked(
+  screens: ScreenItem[],
+  revokedHere: ReadonlyMap<string, string>,
+  justNow: string,
+): ScreenItem[] {
+  if (revokedHere.size === 0) return screens;
+  return screens.map((screen) => {
+    const revokedAt = revokedHere.get(screen.device.id);
+    if (revokedAt === undefined || screen.revoked !== null) return screen;
+    return {
+      ...screen,
+      device: { ...screen.device, revokedAt },
+      online: false,
+      revoked: justNow,
+    };
+  });
+}
+
+/** The page's counts with the screens revoked here taken out (#835). */
+export function countsWithRevoked(
+  counts: ScreenCounts,
+  screens: readonly ScreenItem[],
+  revokedHere: ReadonlyMap<string, string>,
+): ScreenCounts {
+  let { total, online, revoked } = counts;
+  for (const screen of screens) {
+    if (!revokedHere.has(screen.device.id) || screen.revoked !== null) continue;
+    total -= 1;
+    revoked += 1;
+    if (screen.online) online -= 1;
+  }
+  return { total, online, revoked };
+}
 
 /** "5 minutes ago", or "Opened 5 minutes ago" for an iPad or iPhone. */
 function seenText(
@@ -101,8 +140,8 @@ interface ScreensViewProps {
  */
 export function ScreensView({
   workspaceId,
-  screens,
-  counts,
+  screens: given,
+  counts: countsGiven,
   dashboards,
   projects = [],
   activeProjectId = null,
@@ -116,8 +155,6 @@ export function ScreensView({
   const panelRef = useRef<HTMLElement>(null);
   const [view, setView] = useState<ScreensViewMode>(initialView);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelected);
-  const selected =
-    screens.find((screen) => screen.device.id === selectedId) ?? null;
 
   // On phones the details open below the list: bring them into view.
   useEffect(() => {
@@ -132,6 +169,17 @@ export function ScreensView({
 
   const toggle = (id: string) =>
     setSelectedId((current) => (current === id ? null : id));
+
+  // Screens revoked here, shown revoked at once (#835): the page's data
+  // reloads after the API confirms, and until then the card and the panel
+  // said "Online".
+  const [revokedHere, setRevokedHere] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+  const screens = withRevoked(given, revokedHere, t("revokedJustNow"));
+  const selected =
+    screens.find((screen) => screen.device.id === selectedId) ?? null;
+  const counts = countsWithRevoked(countsGiven, given, revokedHere);
 
   const active = screens.filter((screen) => screen.revoked === null);
   const revoked = screens.filter((screen) => screen.revoked !== null);
@@ -172,7 +220,7 @@ export function ScreensView({
             </div>
           ) : null}
           {canManage ? (
-            <Link href="/devices/approve" className="button primary">
+            <Link href={connectTvHref(workspaceId)} className="button primary">
               {t("connectTv")}
             </Link>
           ) : null}
@@ -184,7 +232,7 @@ export function ScreensView({
           <h2>{t("emptyTitle")}</h2>
           <p>{canManage ? t("emptyBody") : t("emptyViewer")}</p>
           {canManage ? (
-            <Link href="/devices/approve" className="button primary">
+            <Link href={connectTvHref(workspaceId)} className="button primary">
               {t("connectTv")}
             </Link>
           ) : null}
@@ -233,6 +281,11 @@ export function ScreensView({
               scope={projectScope(activeProjectId, projects)}
               canManage={canManage}
               onClose={() => setSelectedId(null)}
+              onRevoked={(revokedAt) =>
+                setRevokedHere((current) =>
+                  new Map(current).set(selected.device.id, revokedAt),
+                )
+              }
             />
           ) : null}
         </div>
@@ -431,6 +484,7 @@ interface ScreenPanelProps {
   scope: ProjectScope;
   canManage: boolean;
   onClose: () => void;
+  onRevoked?: (revokedAt: string) => void;
 }
 
 /** A screen's health and settings; Escape closes it. */
@@ -443,6 +497,7 @@ function ScreenPanel({
   scope,
   canManage,
   onClose,
+  onRevoked,
 }: ScreenPanelProps) {
   const t = useT("screens");
   const locale = useLocale();
@@ -543,6 +598,7 @@ function ScreenPanel({
             workspaceId={workspaceId}
             device={{ ...device, scoped: device.scope !== null }}
             appleTv={screen.appleTv}
+            {...(onRevoked ? { onRevoked } : {})}
             dashboards={pickableDashboards(
               dashboards.map((dashboard) => ({
                 ...dashboard,

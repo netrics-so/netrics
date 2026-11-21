@@ -52,6 +52,25 @@ export function optionsForModel<
   };
 }
 
+/** A new measure widget's "Maximum rows" (the options schema's default). */
+const DEFAULT_MEASURE_LIMIT = 20;
+/**
+ * A line chart's "Maximum rows" when the view switches to it with the
+ * default untouched: a year of days, so a daily series is not cut to its
+ * last 20 points without anyone choosing that (#835).
+ */
+export const LINE_VIEW_LIMIT = 365;
+/** The "Maximum rows" a view switch leaves; only an untouched default moves. */
+export function limitForView(
+  view: Extract<DashboardWidget, { type: "measure" }>["options"]["view"],
+  limit: number,
+): number {
+  if (view === "line" && limit === DEFAULT_MEASURE_LIMIT)
+    return LINE_VIEW_LIMIT;
+  if (view !== "line" && limit === LINE_VIEW_LIMIT)
+    return DEFAULT_MEASURE_LIMIT;
+  return limit;
+}
 export function valueViewMeasureId(
   model: CatalogModel | undefined,
   measureIds: string[],
@@ -165,6 +184,7 @@ export function MeasureFields({
         options: measureOptionsForBinding(binding, {
           ...widget.options,
           view,
+          limit: limitForView(view, widget.options.limit),
         }),
       },
     });
