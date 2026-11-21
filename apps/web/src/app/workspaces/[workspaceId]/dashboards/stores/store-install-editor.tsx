@@ -42,7 +42,10 @@ export function StoreInstallEditor({
     [applying, setApplying] = useState(false),
     [scopeUnsaved, setScopeUnsaved] = useState(false),
     [identityUnsaved, setIdentityUnsaved] = useState(false);
-  useLeaveGuard(scopeUnsaved || identityUnsaved, t("unsaved"));
+  const leaveDialog = useLeaveGuard(
+    scopeUnsaved || identityUnsaved,
+    t("unsaved"),
+  );
   return (
     <>
       <StoreTemplateForm
@@ -67,6 +70,7 @@ export function StoreInstallEditor({
           <StoreProductIdentityUnavailable error={products.error} />
         )}
       </div>
+      {leaveDialog}
     </>
   );
 }

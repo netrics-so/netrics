@@ -13,6 +13,7 @@ function browserRequest(query: string, headers: Record<string, string> = {}) {
     {
       headers: {
         cookie: "better-auth.session_token=abc",
+        "accept-language": "de-DE,de;q=0.9",
         "sec-fetch-site": "cross-site",
         referer: "https://accounts.google.com/",
         "x-forwarded-for": "198.51.100.7",
@@ -66,13 +67,14 @@ describe("relayOAuthCallback", () => {
       state: "s-123",
       code: "c-456",
     });
-    // Only the cookie and the client address cross; the browser's
-    // cross-site fetch metadata and referer do not.
+    // Only the cookie, the language and the client address cross; the
+    // browser's cross-site fetch metadata and referer do not.
     const headers = Object.fromEntries(new Headers(init?.headers));
     expect(headers).toEqual({
       "content-type": "application/json",
       accept: "application/json",
       cookie: "better-auth.session_token=abc",
+      "accept-language": "de-DE,de;q=0.9",
       "x-forwarded-for": "198.51.100.7",
       "x-real-ip": "198.51.100.7",
     });

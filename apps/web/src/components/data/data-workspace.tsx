@@ -282,7 +282,7 @@ export function DataWorkspace({
         {deleting === id ? t("delete.deleting") : t("delete.action")}
       </button>
     ) : null;
-  useLeaveGuard(dirty, t("unsaved"));
+  const leaveDialog = useLeaveGuard(dirty, t("unsaved"));
   const referenceAbort = useRef<AbortController | null>(null);
   const [referenceLoading, setReferenceLoading] = useState<{
     loaded: number;
@@ -335,16 +335,23 @@ export function DataWorkspace({
       alive = false;
     };
   }, [workspaceId, selected, editor, t, previewRevision]);
-  function leave(next: () => void) {
-    if (!dirty || window.confirm(t("unsaved"))) {
-      setDirty(false);
-      setError(null);
-      setDeleteResult(null);
-      next();
-    }
+  async function leave(next: () => void) {
+    const confirmed =
+      !dirty ||
+      (await confirmation.ask({
+        title: t("unsaved"),
+        confirm: t("discard"),
+        cancel: t("stay"),
+        destructive: true,
+      }));
+    if (!confirmed) return;
+    setDirty(false);
+    setError(null);
+    setDeleteResult(null);
+    next();
   }
   function open(value: Omit<Editor, "key"> | Editor) {
-    leave(() => setEditor({ ...value, key: newDataId() } as Editor));
+    void leave(() => setEditor({ ...value, key: newDataId() } as Editor));
   }
   async function refresh() {
     try {
@@ -399,7 +406,7 @@ export function DataWorkspace({
     models: data.models.length,
   };
   const close = () =>
-    leave(() => {
+    void leave(() => {
       setEditor(null);
       void refresh();
     });
@@ -465,6 +472,7 @@ export function DataWorkspace({
         );
       })}
       {confirmation.dialog}
+      {leaveDialog}
       {deleteResult?.kind === "deleted" ||
       deleteResult?.kind === "alreadyDeleted" ? (
         <p className="notice" role="status">
@@ -488,7 +496,7 @@ export function DataWorkspace({
             key={key}
             aria-current={section === key ? "page" : undefined}
             onClick={() =>
-              leave(() => {
+              void leave(() => {
                 setSection(key);
                 setEditor(null);
               })

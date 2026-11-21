@@ -55,7 +55,7 @@ export function StoreConnectionSettings({
   const [pending, setPending] = useState<"check" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  useLeaveGuard(dirty, t("unsaved"));
+  const leaveDialog = useLeaveGuard(dirty, t("unsaved"));
   const [notice, setNotice] = useState<string | null>(null);
   function change(key: string, value: string) {
     setDirty(true);
@@ -207,6 +207,7 @@ export function StoreConnectionSettings({
           {error}
         </p>
       ) : null}
+      {leaveDialog}
     </form>
   );
 }

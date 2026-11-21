@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import postgres from "postgres";
+import { commonDe } from "../apps/web/src/messages/common/de.ts";
+import { commonEn } from "../apps/web/src/messages/common/en.ts";
 import { dashboardsDe } from "../apps/web/src/messages/dashboards/de.ts";
 import { dashboardsEn } from "../apps/web/src/messages/dashboards/en.ts";
 import type { Locale } from "./support/labels.ts";
@@ -311,12 +313,16 @@ test("leaving with unsaved scope and identity asks once", async ({
     await sql.end({ timeout: 5 });
   }
 
-  // The guard asks with the browser's confirm, as on every editor page.
-  const asked: string[] = [];
+  // The guard asks in the app's own dialog, as on every editor page, and
+  // never with the browser's (#798).
+  const common = (locale === "de" ? commonDe : commonEn)
+    .common as typeof commonEn.common;
+  const native: string[] = [];
   page.on("dialog", (dialog) => {
-    asked.push(dialog.type());
-    void dialog.accept();
+    native.push(dialog.type());
+    void dialog.dismiss();
   });
+  const question = page.getByRole("dialog", { name: s.unsaved });
   const leave = async (change: { scope: boolean; identity: boolean }) => {
     await page.goto(
       `/workspaces/${workspaceId}/dashboards/stores?install=${requestId}`,
@@ -328,14 +334,33 @@ test("leaving with unsaved scope and identity asks once", async ({
     if (change.identity) await pricing.selectOption("free");
     if (change.scope)
       await page.getByRole("checkbox", { name: /Second Play/ }).check();
-    asked.length = 0;
-    await page.getByRole("link", { name: s.editMappingLink }).click();
+    const link = page.getByRole("link", { name: s.editMappingLink });
+    await link.click();
+    if (change.scope || change.identity) {
+      // One question, on Stay: staying keeps the page and its changes.
+      await expect(question).toHaveCount(1);
+      const stay = question.getByRole("button", {
+        name: common.stay,
+        exact: true,
+      });
+      await expect(stay).toBeFocused();
+      await stay.click();
+      await expect(question).toHaveCount(0);
+      await expect(page).toHaveURL(/install=/);
+      await link.click();
+      await expect(question).toHaveCount(1);
+      await question
+        .getByRole("button", { name: common.leave, exact: true })
+        .click();
+    }
+    // Without changes nothing asks: the link leaves at once.
     await expect(page).toHaveURL(`/workspaces/${workspaceId}/data`);
-    return [...asked];
+    await expect(question).toHaveCount(0);
   };
 
-  expect(await leave({ scope: false, identity: false })).toEqual([]);
-  expect(await leave({ scope: false, identity: true })).toEqual(["confirm"]);
-  expect(await leave({ scope: true, identity: false })).toEqual(["confirm"]);
-  expect(await leave({ scope: true, identity: true })).toEqual(["confirm"]);
+  await leave({ scope: false, identity: false });
+  await leave({ scope: false, identity: true });
+  await leave({ scope: true, identity: false });
+  await leave({ scope: true, identity: true });
+  expect(native).toEqual([]);
 });
