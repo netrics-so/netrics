@@ -10,7 +10,10 @@ import {
   comparisonLabel,
   itemsNeedNewerAppText,
   itemsWidgetLabel,
+  localizedProviderFailure,
   localizedProviderMessage,
+  PROVIDER_MESSAGE_CODES,
+  providerMessageForCode,
   othersLabel,
   periodLabel,
   sharedDe,
@@ -119,6 +122,63 @@ describe("provider messages (#378)", () => {
 
   it("leaves any other text to the caller", () => {
     expect(localizedProviderMessage("Apple Ads answered 500")).toBeNull();
+  });
+});
+
+describe("provider reason codes (#795)", () => {
+  it("shows a refused key by its code, whatever the recorded English says", () => {
+    // The server's wording changed since the row was written: the code
+    // still finds the text, where the exact-text match no longer does.
+    const reworded = "Apple Ads did not accept this key. Set up a new one.";
+    expect(localizedProviderMessage(reworded, "de")).toBeNull();
+    expect(
+      localizedProviderFailure(
+        { code: "apple_ads.invalid_client", message: reworded },
+        "de",
+      ),
+    ).toBe(sharedDe.providerMessages.appleAds.invalidClient);
+    expect(
+      localizedProviderFailure(
+        { code: "app_store_connect.unauthorized", message: reworded },
+        "de",
+      ),
+    ).toBe(sharedDe.providerMessages.appStoreConnect.unauthorized);
+    expect(providerMessageForCode("app_store_connect.forbidden", "de")).toMatch(
+      /^App Store Connect hat den Zugriff verweigert/,
+    );
+  });
+
+  it("has an English and a German text for every code", () => {
+    for (const code of Object.keys(PROVIDER_MESSAGE_CODES)) {
+      const english = providerMessageForCode(code, "en");
+      const german = providerMessageForCode(code, "de");
+      expect(english, code).toEqual(expect.any(String));
+      expect(german, code).toEqual(expect.any(String));
+      expect(german, code).not.toBe(english);
+    }
+  });
+
+  it("finds a row recorded before codes by its exact English text", () => {
+    const english = sharedEn.providerMessages.appleAds.forbidden;
+    for (const code of [null, undefined]) {
+      expect(localizedProviderFailure({ code, message: english }, "de")).toBe(
+        sharedDe.providerMessages.appleAds.forbidden,
+      );
+    }
+  });
+
+  it("leaves an unknown code and unknown text to the caller", () => {
+    expect(providerMessageForCode("acme.quota_used_up", "de")).toBeNull();
+    // Not a code of the map, although the map object has the property.
+    expect(providerMessageForCode("constructor", "de")).toBeNull();
+    expect(providerMessageForCode(null)).toBeNull();
+    expect(
+      localizedProviderFailure(
+        { code: "acme.quota_used_up", message: "Acme answered 500" },
+        "de",
+      ),
+    ).toBeNull();
+    expect(localizedProviderFailure({ code: null, message: null })).toBeNull();
   });
 });
 

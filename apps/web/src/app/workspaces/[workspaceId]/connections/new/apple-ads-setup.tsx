@@ -8,11 +8,11 @@ import type {
   ConnectorCatalogEntry,
   SignedKeyPairResponse,
 } from "@netrics/contracts";
-import { localizedProviderMessage } from "@netrics/domain";
 
 import { SignedKeyFields } from "../signed-key-fields";
 import {
   apiErrorMessage,
+  providerFailureMessage,
   createConnections,
   previewConnection,
 } from "@/lib/api";
@@ -141,10 +141,7 @@ export function AppleAdsSetup({
       setPreview(result);
       if (!result.check.ok) {
         showFailure(
-          result.check.message
-            ? (localizedProviderMessage(result.check.message, locale) ??
-                result.check.message)
-            : t("checkFailed"),
+          providerFailureMessage(result.check, locale) ?? t("checkFailed"),
         );
         return;
       }

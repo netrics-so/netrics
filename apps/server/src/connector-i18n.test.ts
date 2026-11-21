@@ -11,9 +11,23 @@ import {
   workspaceListResponseSchema,
   workspaceMetricListResponseSchema,
 } from "@netrics/contracts";
-import { demoManifest, vercelManifest } from "@netrics/connectors";
+import {
+  AGREEMENTS_CODE,
+  AGREEMENTS_MESSAGE,
+  demoManifest,
+  KEY_MISMATCH_CODE,
+  KEY_MISMATCH_MESSAGE,
+  ROLE_CODE,
+  ROLE_MESSAGE,
+  vercelManifest,
+} from "@netrics/connectors";
 import { CUSTOM_API_MESSAGES } from "@netrics/connectors/custom-api";
-import { localizedProviderMessage, sharedEn } from "@netrics/domain";
+import {
+  localizedProviderMessage,
+  PROVIDER_MESSAGE_CODES,
+  providerMessageForCode,
+  sharedEn,
+} from "@netrics/domain";
 import {
   createDatabase,
   createRawSqlClient,
@@ -24,6 +38,10 @@ import {
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { loadConfig } from "./env.js";
+import {
+  appleAdsProvider,
+  appStoreConnectProvider,
+} from "./signed-keys/providers/index.js";
 import {
   createTestDatabase,
   TEST_DATABASE_SETUP_TIMEOUT_MS,
@@ -332,6 +350,41 @@ describe("the instance default language", () => {
     expect(await demoName()).toBe("Demo-Connector");
     await call(world, cookie, "PATCH", "/v1/me", { locale: "en" });
     expect(await demoName()).toBe("Demo Connector");
+  });
+});
+
+describe("provider reason codes (#795)", () => {
+  // Every code this server records is one the catalog words in English
+  // and German: a new refusal with a code and no text fails here.
+  const recorded: Array<[code: string | undefined, english: string]> = [
+    [
+      appleAdsProvider.exchange!.invalidClientCode,
+      appleAdsProvider.exchange!.invalidClient,
+    ],
+    ...[appleAdsProvider, appStoreConnectProvider].flatMap(
+      ({ authFailure }): Array<[string | undefined, string]> => [
+        [authFailure.codes?.unauthorized, authFailure.unauthorized],
+        [authFailure.codes?.forbidden, authFailure.forbidden],
+      ],
+    ),
+    [KEY_MISMATCH_CODE, KEY_MISMATCH_MESSAGE],
+    [ROLE_CODE, ROLE_MESSAGE],
+    [AGREEMENTS_CODE, AGREEMENTS_MESSAGE],
+  ];
+
+  it("are worded by the catalog in English and German", () => {
+    expect(recorded).toHaveLength(8);
+    for (const [code, english] of recorded) {
+      expect(code, english).toEqual(expect.any(String));
+      expect(providerMessageForCode(code, "en"), code).toBe(english);
+      const german = providerMessageForCode(code, "de");
+      expect(german, code).toEqual(expect.any(String));
+      expect(german, code).not.toBe(english);
+    }
+    expect(new Set(recorded.map(([code]) => code)).size).toBe(8);
+    expect(recorded.map(([code]) => code).sort()).toEqual(
+      Object.keys(PROVIDER_MESSAGE_CODES).sort(),
+    );
   });
 });
 

@@ -225,14 +225,28 @@ export interface Actor {
 }
 
 export type Result<T> =
-  { ok: true; value: T } | { ok: false; status: 400 | 404; error: string };
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      status: 400 | 404;
+      error: string;
+      /**
+       * The stable reason of a refused credential check, when `error` is
+       * its English message and the reason is a known one (#795).
+       */
+      errorCode?: string;
+    };
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value };
 }
 
-function fail<T>(status: 400 | 404, error: string): Result<T> {
-  return { ok: false, status, error };
+function fail<T>(
+  status: 400 | 404,
+  error: string,
+  errorCode?: string,
+): Result<T> {
+  return { ok: false, status, error, ...(errorCode ? { errorCode } : {}) };
 }
 
 /** A "Reload history" result: also busy (409) and rate limited (429). */
@@ -339,7 +353,7 @@ export async function checkCredentials(
     );
     return check.ok
       ? ok(true)
-      : fail(400, check.message ?? "credential check failed");
+      : fail(400, check.message ?? "credential check failed", check.code);
   } catch (error) {
     // Thrown checks signal a provider-side failure (outage, rate limit); the
     // message is redacted at the runtime boundary already.
@@ -376,7 +390,7 @@ async function checkSignedKey(
     });
     return check.ok
       ? ok(true)
-      : fail(400, check.message ?? "credential check failed");
+      : fail(400, check.message ?? "credential check failed", check.code);
   } catch (error) {
     return signedKeyCallFailure(error);
   }
@@ -393,12 +407,9 @@ function signedKeyCallFailure<T>(error: unknown): Result<T> {
       "The provider's sign-in service could not be reached. Try again in a few minutes.",
     );
   }
-  return fail(
-    400,
-    error instanceof SignedKeyRejectedError
-      ? error.message
-      : safeMessage(error),
-  );
+  return error instanceof SignedKeyRejectedError
+    ? fail(400, error.message, error.code)
+    : fail(400, safeMessage(error));
 }
 
 /** Which key a signed-key view names: provider and non-secret fields. */
@@ -753,7 +764,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       });
       return check.ok
         ? ok(true)
-        : fail(400, check.message ?? "credential check failed");
+        : fail(400, check.message ?? "credential check failed", check.code);
     } catch (error) {
       // OAuthTokenError and connector failures carry redacted messages.
       return oauthCallFailure(error);
@@ -1020,7 +1031,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         options,
       );
       if (!key.ok) {
-        return fail(400, key.message);
+        return fail(400, key.message, key.code);
       }
       const check = await checkSignedKey(
         registry,
@@ -1105,7 +1116,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       return null;
     }
     const key = signedKeys.parse(provider, credentials);
-    return key.ok ? ok(key.value) : fail(400, key.message);
+    return key.ok ? ok(key.value) : fail(400, key.message, key.code);
   }
 
   /** The decrypted credentials envelope of a connection, or a 400. */
@@ -1184,7 +1195,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     }
     const stored = signedKeys.parse(provider, envelope.value);
     if (!stored.ok) {
-      return fail(400, stored.message);
+      return fail(400, stored.message, stored.code);
     }
     const config = existing.row.config as Record<string, unknown>;
     let key = stored.value;
@@ -1203,12 +1214,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
       const additional = signedKeys.parseAdditional(key, id, raw);
       if (!additional.ok) {
-        return fail(400, additional.message);
+        return fail(400, additional.message, additional.code);
       }
       key = key.withAdditional(id, additional.value);
       const probed = await signedKeys.probeAdditional(key, id, config);
       if (!probed.ok) {
-        return fail(400, probed.message);
+        return fail(400, probed.message, probed.code);
       }
       changes.push({ key: id, change: had ? "replaced" : "added" });
     }
@@ -1285,7 +1296,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   ): Promise<Result<ConnectionPreviewResponse>> {
     const key = await signedKeys.validate(provider, credentials, config);
     if (!key.ok) {
-      return fail(400, key.message);
+      return fail(400, key.message, key.code);
     }
     const context = { connectionId: "preview", config };
     try {
@@ -2768,6 +2779,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             return fail(
               400,
               preview.value.check.message ?? "credential check failed",
+              preview.value.check.code,
             );
           const allowed = new Set([
             ...preview.value.resources.map((resource) => resource.id),

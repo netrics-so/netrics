@@ -326,7 +326,11 @@ describe("check: key, role and vendor number", () => {
       {},
       context(undefined, { accessToken: "not-a-token-of-this-team" }),
     );
-    expect(result).toEqual({ ok: false, message: KEY_MISMATCH_MESSAGE });
+    expect(result).toEqual({
+      ok: false,
+      message: KEY_MISMATCH_MESSAGE,
+      code: "app_store_connect.key_mismatch",
+    });
     expect(requests).toHaveLength(1);
   });
 
@@ -334,7 +338,11 @@ describe("check: key, role and vendor number", () => {
     const { result } = await check({
       teams: [{ ...TEAM_A, role: "developer" }],
     });
-    expect(result).toEqual({ ok: false, message: ROLE_MESSAGE });
+    expect(result).toEqual({
+      ok: false,
+      message: ROLE_MESSAGE,
+      code: "app_store_connect.role_missing",
+    });
     expect(ROLE_MESSAGE).toMatch(/Sales or Finance role/);
     expect(ROLE_MESSAGE).toMatch(/Admin also works, but grants more/);
   });
@@ -343,7 +351,11 @@ describe("check: key, role and vendor number", () => {
     const { result } = await check({
       teams: [{ ...TEAM_A, agreementsMissing: true }],
     });
-    expect(result).toEqual({ ok: false, message: AGREEMENTS_MESSAGE });
+    expect(result).toEqual({
+      ok: false,
+      message: AGREEMENTS_MESSAGE,
+      code: "app_store_connect.agreements_missing",
+    });
   });
 
   it("a vendor number of another team is reported as a wrong vendor number", async () => {

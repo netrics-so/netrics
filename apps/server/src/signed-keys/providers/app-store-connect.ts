@@ -9,6 +9,8 @@ import {
   reviewsProbeApp,
 } from "@netrics/connectors";
 
+import { sharedEn } from "@netrics/domain";
+
 import type {
   SignedKeyAdditionalKey,
   SignedKeyField,
@@ -209,10 +211,14 @@ export const appStoreConnectProvider: SignedKeyProviderDefinition = {
   },
   probes: appStoreConnectProbes,
   additionalKeys: [appStoreConnectReviewsKey],
+  // The English texts come from the shared catalog; each is recorded with
+  // its reason code (#795), by which clients show it in their language.
   authFailure: {
-    unauthorized:
-      "App Store Connect refused the key: it was revoked, or the issuer ID, key ID and private key do not belong together. Upload a new App Store Connect key.",
-    forbidden:
-      "App Store Connect refused access: the key's role was changed or access was removed. This key needs the Sales or Finance role. Upload a new App Store Connect key.",
+    unauthorized: sharedEn.providerMessages.appStoreConnect.unauthorized,
+    forbidden: sharedEn.providerMessages.appStoreConnect.forbidden,
+    codes: {
+      unauthorized: "app_store_connect.unauthorized",
+      forbidden: "app_store_connect.forbidden",
+    },
   },
 };
