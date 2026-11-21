@@ -342,13 +342,16 @@ export async function prepareCustomOAuthClientChange(input: {
     { workspaceId, userId: actor.callerId },
     (tx) => resolver.resolve(tx, binding),
   );
-  if (!read) return fail(400, "custom_api_credentials_invalid");
-  // Endpoints come from the pinned definition; only the client is new.
-  const provider = {
-    ...read.provider,
-    clientId: client.clientId,
-    clientSecret: new Secret(client.clientSecret),
-  };
+  // Endpoints come from the pinned definition; only the client is new. A
+  // connection whose login an update dropped (#808) has no envelope: the
+  // provider comes from the definition alone.
+  const provider = read
+    ? {
+        ...read.provider,
+        clientId: client.clientId,
+        clientSecret: new Secret(client.clientSecret),
+      }
+    : resolver.providerFor(definition, client);
   const seal = (refreshToken: string | null) =>
     sealCustomOAuthCredentials(
       { ...hosts, ...client, refreshToken },
@@ -453,9 +456,10 @@ export async function prepareCustomOAuthClientChange(input: {
     value: {
       async apply(tx) {
         const { grant, fresh } = await lock(tx);
-        if (!fresh) return nothing;
         const sameClient =
-          fresh.bindingHeld && fresh.credentials.clientId === client.clientId;
+          fresh !== null &&
+          fresh.bindingHeld &&
+          fresh.credentials.clientId === client.clientId;
         if (sameClient) {
           // The refresh token as it is now, rotated or not.
           await updateConnection(tx, workspaceId, connectionId, {
@@ -470,11 +474,13 @@ export async function prepareCustomOAuthClientChange(input: {
         await updateConnection(tx, workspaceId, connectionId, {
           credentialsEncrypted: seal(null),
         });
-        if (grant) {
-          await updateConnectionOAuthTokens(tx, workspaceId, connectionId, {
-            accessTokenEncrypted: null,
-            accessTokenExpiresAt: null,
-          });
+        if (grant || !fresh) {
+          if (grant)
+            await updateConnectionOAuthTokens(tx, workspaceId, connectionId, {
+              accessTokenEncrypted: null,
+              accessTokenExpiresAt: null,
+            });
+          // A grant, or no client before (a dropped login): sign in next.
           await markNeedsReauthorization(
             tx,
             workspaceId,
@@ -485,10 +491,9 @@ export async function prepareCustomOAuthClientChange(input: {
         await audit(tx, "client");
         // The refresh token read under the lock, never sent to hosts it
         // was not entered for.
-        const released = fresh.bindingHeld
-          ? fresh.credentials.refreshToken
-          : null;
-        return released
+        const released =
+          fresh?.bindingHeld === true ? fresh.credentials.refreshToken : null;
+        return fresh && released
           ? async () => {
               await oauthTokens.revokeCustomGrant(fresh.provider, released);
             }

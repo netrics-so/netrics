@@ -163,6 +163,14 @@ export interface CustomOAuthResolver {
     tx: Transaction,
     binding: CredentialBinding,
   ): Promise<CustomOAuthResolution | null>;
+  /**
+   * The provider of a definition's OAuth login with a client, without an
+   * envelope (a connection whose login was dropped, #808).
+   */
+  providerFor(
+    definition: Parameters<typeof customOAuthProvider>[0],
+    client: { clientId: string; clientSecret: string },
+  ): CustomOAuthProvider;
   /** The guarded fetch for one custom provider's token and revoke calls. */
   fetch(
     provider: CustomOAuthProvider,
@@ -218,6 +226,9 @@ export function createCustomOAuthResolver(deps: {
             customOAuthBinding(loaded.definition, loaded.environmentId),
           ),
       };
+    },
+    providerFor(definition, client) {
+      return customOAuthProvider(definition, client, deps.webOrigin);
     },
     fetch(provider, timeoutMs) {
       return (url, init) =>

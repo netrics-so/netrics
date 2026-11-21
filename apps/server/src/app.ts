@@ -305,6 +305,7 @@ export async function buildApp(
   registerCustomApiBuilderRoutes(app, {
     authService,
     db,
+    registry,
     limits: config.customApi,
     credentialKeyring,
     oauthTokens,

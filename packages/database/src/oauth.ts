@@ -178,6 +178,25 @@ export async function findConnectionOAuth(
 }
 
 /**
+ * Drops a connection's grant (account, cached access token). The caller
+ * handles the refresh token in the credential envelope.
+ */
+export async function deleteConnectionOAuth(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+): Promise<void> {
+  await tx
+    .delete(schema.connectionOAuth)
+    .where(
+      and(
+        eq(schema.connectionOAuth.workspaceId, workspaceId),
+        eq(schema.connectionOAuth.connectionId, connectionId),
+      ),
+    );
+}
+
+/**
  * The token service's view of a grant, locked for update (ADR 0012:
  * refresh is serialized per connection). A concurrent caller waits here
  * until the holder commits and then reads the refreshed token. Also returns
