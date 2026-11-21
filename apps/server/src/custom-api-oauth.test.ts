@@ -1362,6 +1362,38 @@ describe("custom OAuth: a client change racing a refusal (#825)", () => {
     expect((await envelope(id)).clientSecret).toBe(secret);
   });
 
+  it("does not count a skipped refusal as a failure of the connection", async () => {
+    const id = await connection(document("oauth_client_credentials"));
+    await expire(id);
+    const secret = "rotated-client-secret-0829";
+    fixture.oauth.clientSecret = secret;
+    let patched: InjectResponse | null = null;
+    const racing: OAuthTokenService = {
+      ...tokens,
+      async getAccessToken(binding, options) {
+        try {
+          return await tokens.getAccessToken(binding, options);
+        } catch (error) {
+          patched ??= await call("PATCH", ws(`/connections/${id}`), {
+            credentials: { clientId: CLIENT_ID, clientSecret: secret },
+          });
+          throw error;
+        }
+      },
+    };
+    await runJob("connection.sync", id, racing);
+    expect(patched!.statusCode, patched!.body).toBe(200);
+    // Still recorded as a failed run, but no outage of the source.
+    const [run] = await admin<{ status: string }[]>`
+      select status from sync_runs where connection_id = ${id}
+      order by started_at desc limit 1`;
+    expect(run!.status).toBe("failed");
+    const [row] = await admin<{ consecutive_failures: number }[]>`
+      select consecutive_failures from connection_state
+      where connection_id = ${id}`;
+    expect(row!.consecutive_failures).toBe(0);
+  });
+
   it("still records a refusal of the client that is stored", async () => {
     const id = await connection(document("oauth_client_credentials"));
     await expire(id);
@@ -1419,7 +1451,7 @@ describe("custom OAuth: a client change racing a refusal (#825)", () => {
       config: {},
     });
     expect(refused.statusCode).toBe(400);
-    expect(refused.json().error).toBe("invalid_request");
+    expect(refused.json().error).toBe("custom_api_client_change_with_config");
     expect(await envelope(id)).toEqual(before);
   });
 });

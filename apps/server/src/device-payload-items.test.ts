@@ -338,6 +338,57 @@ describe("the device image route's cost and edges (#810)", () => {
     expect(calls).toEqual([]);
   });
 
+  it("reuses an answer with a permanently broken items widget within the TTL", async () => {
+    const widget = (titleDimensionId: string, x: number) => ({
+      type: "items",
+      x,
+      y: 0,
+      w: 6,
+      h: 4,
+      binding: {
+        modelId: f.modelId,
+        imageDimensionId: "photo",
+        titleDimensionId,
+        timeDimensionId: "taken_at",
+      },
+      options: { count: 3 },
+    });
+    const created = await f.call("POST", "/dashboards", {
+      name: "One broken items widget",
+      slides: [{ widgets: [widget("title", 0), widget("title", 6)] }],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const dashboard = dashboardResponseSchema.parse(created.json()).dashboard;
+    // The second widget names a dimension its model no longer has: it
+    // fails on every query, not now and then.
+    await f.admin`update dashboard_widgets
+      set model_binding = jsonb_set(model_binding, '{titleDimensionId}',
+        '"no_such_dimension"')
+      where id = ${dashboard.slides[0]!.widgets[1]!.id}`;
+    const screen = await f.pairScreen(dashboard.id);
+    const clock = { at: 1_000 };
+    const calls: string[] = [];
+    const service = createDeviceImageService({
+      db: f.db,
+      itemImages: createDeviceItemImages({
+        ttlMs: 10_000,
+        clock: () => clock.at,
+        compute: (...args) => {
+          calls.push(args[2].id);
+          return deviceItemImageIds(...args);
+        },
+      }),
+    });
+    const principal = {
+      workspaceId: f.workspaceId,
+      deviceId: screen.deviceId,
+    };
+    expect((await service.read(principal, imageF, undefined)).ok).toBe(true);
+    clock.at += 1;
+    expect((await service.read(principal, imageE, undefined)).ok).toBe(true);
+    expect(calls).toEqual([screen.deviceId]);
+  });
+
   it("serves nothing for an items widget on a disabled slide", async () => {
     const created = await f.call("POST", "/dashboards", {
       name: "Disabled items",

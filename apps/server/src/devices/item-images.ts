@@ -14,13 +14,23 @@ import { storedScope } from "./service.js";
 const NONE: ReadonlySet<string> = new Set();
 
 /**
+ * What an items query that failed on the database answers (safeDataError):
+ * a statement timeout, a serialization failure, a lost connection. Every
+ * other error code is the widget's own and fails the same way next time.
+ */
+const TRANSIENT_ITEMS_ERROR = "data_storage_failed";
+
+/**
  * The item image ids a device's current payload references (#810): the
  * same items queries as its payload (its dashboard's enabled slides, its
  * fixed scope, the slides' scopes, the filters' saved values, `now`), and
  * their stored images. Empty when the dashboard has no latest-items widget.
  * The device image route serves a `custom_api` image only when it is one of
- * these. `complete` is false when an items query failed (a timeout, a
- * serialization failure): its images are missing from `ids`.
+ * these. `complete` is false when an items query failed transiently (a
+ * timeout, a serialization failure: `data_storage_failed`), so its images
+ * may be missing from `ids`. A widget that fails for good (a deleted
+ * source, a binding its model no longer matches) has no images to miss:
+ * the answer is complete.
  */
 export async function deviceItemImageIds(
   tx: Transaction,
@@ -53,7 +63,9 @@ export async function deviceItemImageIds(
         data.items.flatMap((item) => (item.image ? [item.image.id] : [])),
       ),
     ),
-    complete: [...items.values()].every((data) => data.error === null),
+    complete: [...items.values()].every(
+      (data) => data.error !== TRANSIENT_ITEMS_ERROR,
+    ),
   };
 }
 
@@ -83,8 +95,10 @@ export type DeviceItemImages = (
  * dashboard and that dashboard's version and the device's scope, so an edit
  * or a reassignment is seen at once; new records are seen after the TTL.
  * A revoked or unassigned device is never memoized and gets none. An
- * answer with a failed items query is not memoized either (#829): a
- * transient failure must not hide the device's images for the whole TTL.
+ * answer with a transiently failed items query is not memoized either
+ * (#829): it must not hide the device's images for the whole TTL. A
+ * permanently broken widget is memoized like any other answer, so it does
+ * not rerun the queries on every image request.
  */
 export function createDeviceItemImages(
   options: DeviceItemImagesOptions = {},

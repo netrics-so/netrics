@@ -140,7 +140,6 @@ export function customOAuthFailureMessage(error: unknown): string | null {
   }
 }
 
-/** One custom OAuth connection's provider and envelope (#805). */
 /**
  * A digest of a stored credentials envelope (its ciphertext): tells two
  * envelopes apart without carrying either around.
@@ -154,6 +153,7 @@ interface SeenEnvelope {
   envelopeDigest: string | null;
 }
 
+/** One custom OAuth connection's provider and envelope (#805). */
 export interface CustomOAuthResolution {
   provider: CustomOAuthProvider;
   credentials: CustomOAuthCredentials;

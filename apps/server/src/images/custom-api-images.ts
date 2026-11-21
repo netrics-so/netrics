@@ -244,39 +244,58 @@ export async function ingestCustomApiImages(
       // starts after that; the images not handled count as fetch_failed,
       // and a handler still running afterwards counts nothing.
       const finished = new Set<number>();
-      const storing = new Set<Promise<boolean>>();
+      /** Each running store together with its count (see `storeAndCount`). */
+      const storing = new Set<Promise<void>>();
       let closing = false;
       let closed = false;
-      const handle = async (result: ItemImageFetch, index: number) => {
-        let counted: () => void;
-        if (!result.ok) {
-          const reason = result.reason;
-          counted = () => skip(reason);
-        } else {
-          const image = validate(result);
-          if (!image.ok) {
-            const reason = image.reason;
-            counted = () => skip(reason);
-          } else if (closing) {
-            return;
-          } else {
-            const pending = store(image, hashes.get(result.url)!);
-            storing.add(pending);
-            try {
-              const stored = await pending;
-              counted = stored
-                ? () => (outcome.stored += 1)
-                : () => skip("quota_exceeded");
-            } catch {
-              counted = () => skip("fetch_failed");
-            } finally {
-              storing.delete(pending);
-            }
-          }
-        }
+      const count = (index: number, counted: () => void) => {
         if (closed) return;
         finished.add(index);
         counted();
+      };
+      /**
+       * Stores one image and counts it, as one promise: the cut-off awaits
+       * exactly these promises before it sets `closed`, so a store that was
+       * running is counted once, by itself, whatever order the promise
+       * reactions run in.
+       */
+      const storeAndCount = async (
+        image: Extract<ReturnType<typeof validate>, { ok: true }>,
+        url: string,
+        index: number,
+      ) => {
+        let counted: () => void;
+        try {
+          const stored = await store(image, hashes.get(url)!);
+          counted = stored
+            ? () => (outcome.stored += 1)
+            : () => skip("quota_exceeded");
+        } catch {
+          counted = () => skip("fetch_failed");
+        }
+        count(index, counted);
+      };
+      const handle = async (result: ItemImageFetch, index: number) => {
+        if (!result.ok) {
+          const reason = result.reason;
+          count(index, () => skip(reason));
+          return;
+        }
+        const image = validate(result);
+        if (!image.ok) {
+          const reason = image.reason;
+          count(index, () => skip(reason));
+          return;
+        }
+        // After the cut-off nothing is stored: it counts as fetch_failed.
+        if (closing) return;
+        const running = storeAndCount(image, result.url, index);
+        storing.add(running);
+        try {
+          await running;
+        } finally {
+          storing.delete(running);
+        }
       };
 
       const remaining = deadline - clock();

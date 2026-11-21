@@ -726,7 +726,10 @@ export function registerConnectionRoutes(
         "/workspaces/:workspaceId/connections/:connectionId",
         {
           schema: routeSchema({
-            summary: "Update a connection",
+            summary:
+              "Update a connection (400 custom_api_client_change_with_config " +
+              "when a custom API's new OAuth client comes with a config " +
+              "change: save them one after the other)",
             tags: ["connections"],
             body: updateConnectionRequestSchema,
             response: connectionResponseSchema,

@@ -614,22 +614,28 @@ async function runSync(
           // history start is claimed until one succeeds (#378).
           ...(mode === "backfill" ? { historyFrom: null } : {}),
         };
-        await tx
-          .insert(schema.connectionState)
-          .values({
-            connectionId,
-            workspaceId,
-            pollIntervalSeconds,
-            consecutiveFailures: 1,
-            ...statePatch,
-          })
-          .onConflictDoUpdate({
-            target: schema.connectionState.connectionId,
-            set: {
-              ...statePatch,
+        // A refusal of a replaced client is no failure of the connection
+        // as it is now: its failure count stays as the change left it, so
+        // the source does not read as an outage (#829).
+        const failures = replaced
+          ? {}
+          : {
               consecutiveFailures: sql`${schema.connectionState.consecutiveFailures} + 1`,
-            },
-          });
+            };
+        if (Object.keys(statePatch).length + Object.keys(failures).length > 0)
+          await tx
+            .insert(schema.connectionState)
+            .values({
+              connectionId,
+              workspaceId,
+              pollIntervalSeconds,
+              consecutiveFailures: replaced ? 0 : 1,
+              ...statePatch,
+            })
+            .onConflictDoUpdate({
+              target: schema.connectionState.connectionId,
+              set: { ...statePatch, ...failures },
+            });
       });
     } catch (recordingError) {
       log.error(

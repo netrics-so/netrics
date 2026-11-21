@@ -2054,6 +2054,25 @@ describe("device request limit (#829)", () => {
     ).toBe(401);
   });
 
+  it("tracks at most maxEntries devices, dropping the least recently used", () => {
+    const limiter = createDeviceRateLimiter(
+      { capacity: 2, refillPerSecond: 0.001 },
+      { clock: () => 0, maxEntries: 2 },
+    );
+    // a uses up its requests; b keeps one.
+    expect(limiter("a").ok).toBe(true);
+    expect(limiter("a").ok).toBe(true);
+    expect(limiter("a").ok).toBe(false);
+    expect(limiter("b").ok).toBe(true);
+    // A third device pushes out the least recently used one: a.
+    expect(limiter("c").ok).toBe(true);
+    expect(limiter("a").ok).toBe(true);
+    // a came back and pushed out b, which starts over with two requests.
+    expect(limiter("b").ok).toBe(true);
+    expect(limiter("b").ok).toBe(true);
+    expect(limiter("b").ok).toBe(false);
+  });
+
   it("never limits a screen at the default, even loading a full image quota at once", () => {
     let at = 0;
     const limiter = createDeviceRateLimiter(DEVICE_RATE_LIMIT, {

@@ -2563,7 +2563,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       // the new client replaces (#825): the two are saved one after the
       // other.
       if (customClientChange && body.config !== undefined) {
-        return fail(400, "invalid_request");
+        return fail(400, "custom_api_client_change_with_config");
       }
       let clientChange: CustomOAuthClientChange | null = null;
       if (customClientChange) {
