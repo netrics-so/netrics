@@ -29,6 +29,7 @@ import { useLocale, useT } from "@/lib/i18n/client";
 import { viewerTimeZone } from "@/lib/viewer-time-zone";
 
 import {
+  afterSecretsSent,
   builderErrorMessage,
   defaultClient,
   draftReady,
@@ -269,12 +270,11 @@ export function CustomApiBuilder({
         secrets: secretInputs,
       });
       if (entered.draftId) rememberDraft(entered.draftId);
-      if (entered.secretsLost) setSecretsLost(true);
-      if (entered.sent) {
-        // Typed replacements were stored with the move.
-        setSecretInputs({});
-        setSecretsLost(false);
-      }
+      // Typed replacements were stored with the move; a loss in the same
+      // update still warns.
+      const after = afterSecretsSent(entered, secretsLost);
+      if (after.clearInputs) setSecretInputs({});
+      setSecretsLost(after.secretsLost);
       setState(entered.state);
       setStep(target);
     } catch (cause) {
@@ -330,11 +330,9 @@ export function CustomApiBuilder({
         secretInputs,
       );
       setState(result.state);
-      if (result.sent) {
-        setSecretInputs({});
-        setSecretsLost(false);
-      }
-      if (result.secretsLost) setSecretsLost(true);
+      const after = afterSecretsSent(result, secretsLost);
+      if (after.clearInputs) setSecretInputs({});
+      setSecretsLost(after.secretsLost);
       setTestedFields(JSON.stringify(result.state.stream.fields));
       setPagingTest(pages > 1 ? result.state.lastTest : null);
     } catch (cause) {

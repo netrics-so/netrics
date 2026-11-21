@@ -8,6 +8,7 @@ import type { Locale } from "@netrics/domain";
 
 import { CustomApiBuilder } from "./builder";
 import {
+  afterSecretsSent,
   builderErrorMessage,
   enterStep,
   runTest,
@@ -478,5 +479,32 @@ describe("custom API builder review fixes", () => {
       await runTest(plain.api, W, D, withSecretVariable(), 1);
       expect(plain.calls).toEqual(["testDraft"]);
     });
+  });
+});
+
+describe("the login warning after a host change (#808 follow-up)", () => {
+  it("keeps warning when a partial re-entry is sent with the loss", () => {
+    // The host moved and only one of two secrets was typed again: the
+    // update stores it and reports the loss in the same answer.
+    expect(afterSecretsSent({ sent: true, secretsLost: true }, false)).toEqual({
+      clearInputs: true,
+      secretsLost: true,
+    });
+  });
+
+  it("clears the warning once the typed login is stored", () => {
+    expect(afterSecretsSent({ sent: true, secretsLost: false }, true)).toEqual({
+      clearInputs: true,
+      secretsLost: false,
+    });
+  });
+
+  it("keeps the inputs and the warning when nothing was sent", () => {
+    expect(afterSecretsSent({ sent: false, secretsLost: false }, true)).toEqual(
+      {
+        clearInputs: false,
+        secretsLost: true,
+      },
+    );
   });
 });
