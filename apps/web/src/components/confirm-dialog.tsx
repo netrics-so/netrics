@@ -63,9 +63,24 @@ export function useConfirmation() {
 }
 
 /**
+ * Keeps a keyboard or clipboard event inside the dialog. A modal dialog
+ * makes the page behind it inert for the pointer and the focus, but its
+ * own events still bubble: without this, a page's shortcuts (the Studio's
+ * Ctrl/Cmd+S, undo, widget paste) would act behind an open question. The
+ * dialog's own handlers have run by then, and Escape, Enter and Tab are
+ * the browser's doing, not a listener's.
+ */
+function contain(event: { stopPropagation(): void; nativeEvent: Event }) {
+  event.stopPropagation();
+  // React listens on the root; listeners added there after it, too.
+  event.nativeEvent.stopImmediatePropagation();
+}
+
+/**
  * A modal question with confirm and cancel, like the publish dialog. The
  * browser's modal dialog keeps the focus inside and answers Escape with
- * cancel; the focus returns to where it was when the dialog goes.
+ * cancel; the focus returns to where it was when the dialog goes. While it
+ * is open, the page's keyboard shortcuts rest.
  */
 export function ConfirmDialog({
   question,
@@ -110,6 +125,11 @@ export function ConfirmDialog({
       className="studio-dialog confirm-dialog"
       aria-labelledby={titleId}
       aria-describedby={question.text ? textId : undefined}
+      onKeyDown={contain}
+      onKeyUp={contain}
+      onCopy={contain}
+      onCut={contain}
+      onPaste={contain}
       onCancel={(event) => {
         event.preventDefault();
         onCancel();

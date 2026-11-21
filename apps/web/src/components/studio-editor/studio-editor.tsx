@@ -19,6 +19,7 @@ import {
   useId,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from "react";
 
@@ -276,6 +277,7 @@ export function StudioEditor({
   );
   const dirty = isDirty(state) || pendingFormulaIds.length > 0;
   const leaveDialog = useLeaveGuard(dirty);
+  const heading = useRef<HTMLHeadingElement>(null);
   const confirmation = useConfirmation();
 
   const { draft } = state;
@@ -778,7 +780,9 @@ export function StudioEditor({
                 {t("dashboards")}
               </Link>
             </nav>
-            <h1>{draft.name.trim() || t("untitled")}</h1>
+            <h1 ref={heading} tabIndex={-1}>
+              {draft.name.trim() || t("untitled")}
+            </h1>
             <span
               className={
                 dirty ? "studio-state studio-state--dirty" : "studio-state"
@@ -832,6 +836,9 @@ export function StudioEditor({
                     setFormulaDrafts({});
                     setError(null);
                     setShowProblems(false);
+                    // This button is disabled now: the focus goes to the
+                    // heading instead of being lost.
+                    setTimeout(() => heading.current?.focus(), 0);
                   }
                 }}
                 disabled={!dirty || saving}
