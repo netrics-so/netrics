@@ -104,10 +104,22 @@ function caused<T extends Error>(
   return false;
 }
 
+/**
+ * Why a destination is blocked (#834): on an instance with a private-host
+ * allowance (self-host), the allowance is named, since an allowed private
+ * host is not "public" yet reachable.
+ */
+export function blockedMessage(privateHosts: readonly string[]): string {
+  return privateHosts.length
+    ? "netrics may not reach this address. Custom APIs must be public https hosts or private hosts on this instance's allowance (NETRICS_CUSTOM_API_PRIVATE_HOSTS)."
+    : "netrics may not reach this address. Custom APIs must be public https hosts.";
+}
+
 function errorOf(
   error: unknown,
   firstBody: unknown,
   records: string,
+  privateHosts: readonly string[],
 ): { code: string; message: string } {
   if (error instanceof CustomApiAuthError)
     return { code: "custom_api_auth_rejected", message: error.message };
@@ -136,8 +148,7 @@ function errorOf(
   if (caused(error, EgressDeniedError))
     return {
       code: "custom_api_destination_blocked",
-      message:
-        "netrics may not reach this address. Custom APIs must be public https hosts.",
+      message: blockedMessage(privateHosts),
     };
   return {
     code: "custom_api_test_failed",
@@ -302,8 +313,10 @@ export function createCustomApiTestRequestService(
         return {
           ok: false,
           code: "custom_api_destination_blocked",
-          message:
-            "netrics may not reach this address. Custom APIs must be public https hosts.",
+          message: blockedMessage(
+            customApiEgress(deps.privateHosts, deps.executeOptions?.egress)
+              .allowPrivateHosts ?? [],
+          ),
         };
       return {
         ok: false,
@@ -471,6 +484,7 @@ export function createCustomApiTestRequestService(
               : error,
             traces[0]?.body,
             definition.stream.records,
+            egress.allowPrivateHosts ?? [],
           );
         } finally {
           clearTimeout(timer);
