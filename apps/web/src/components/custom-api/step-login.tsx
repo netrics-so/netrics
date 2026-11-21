@@ -246,6 +246,9 @@ export function StepLogin({
       auth.type === "oauth_authorization_code" ? (
         <OAuthSettings auth={auth} setAuth={setAuth} />
       ) : null}
+      {auth.type === "oauth_authorization_code" && credentialsStored ? (
+        <p className="help custom-api-warning">{t("oauthChangeWarning")}</p>
+      ) : null}
 
       {entries.length ? (
         <>

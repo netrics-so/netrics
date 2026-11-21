@@ -96,6 +96,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       signIn: "Anmelden",
       signInFirst:
         "Speichere Client-ID und Client-Secret und melde dich dann an.",
+      oauthChangeWarning:
+        "Wenn du die URLs, die Client-ID oder das Client-Secret änderst, endet die Anmeldung. Du meldest dich dann erneut an.",
     },
     request: {
       path: "Pfad",
@@ -302,6 +304,22 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         changed: "Zuletzt geändert",
       },
       version: "v{version}",
+    },
+    oauth: {
+      connected: "Angemeldet. Du kannst jetzt eine Testanfrage senden.",
+      reauthorized:
+        "Erneut angemeldet. Du kannst jetzt eine Testanfrage senden.",
+      denied:
+        "Die Anmeldung wurde beim Anbieter abgebrochen. Melde dich erneut an.",
+      invalid_state:
+        "Die Anmeldung hat zu lange gedauert oder wurde woanders gestartet. Melde dich erneut an.",
+      forbidden: "Mit deiner Rolle kannst du diese eigene API nicht anmelden.",
+      scope_missing:
+        "Der Anbieter hat nicht alle Scopes gewährt, die die API braucht. Melde dich erneut an und erlaube alle.",
+      account_mismatch:
+        "Du hast dich mit einem anderen Konto angemeldet als zuvor. Melde dich mit demselben Konto an.",
+      failed:
+        "Die Anmeldung hat nicht funktioniert. Prüfe Token-URL, Client-ID und Client-Secret und melde dich erneut an.",
     },
     connect: {
       title: "{name} verbinden",

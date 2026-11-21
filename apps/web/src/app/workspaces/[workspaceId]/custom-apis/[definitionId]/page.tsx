@@ -4,10 +4,10 @@ import { notFound } from "next/navigation";
 
 import { can } from "@netrics/domain";
 
-import { OAuthOutcomeBanner } from "../../connections/oauth-outcome";
 import "@/app/styles/custom-api.css";
 import "@/app/styles/data.css";
 import { CustomApiBuilder } from "@/components/custom-api/builder";
+import { BuilderOAuthOutcome } from "@/components/custom-api/oauth-outcome";
 import {
   getCustomApiDefinition,
   listProjects,
@@ -85,7 +85,7 @@ export default async function CustomApiPage({
           </div>
         ) : null}
       </header>
-      <OAuthOutcomeBanner outcome={parseOAuthOutcome(query.oauth)} />
+      <BuilderOAuthOutcome outcome={parseOAuthOutcome(query.oauth)} />
       <CustomApiBuilder
         workspaceId={workspaceId}
         definition={definition}

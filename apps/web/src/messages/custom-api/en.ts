@@ -95,6 +95,8 @@ export const customApiEn = {
       copied: "Copied",
       signIn: "Sign in",
       signInFirst: "Save the client ID and secret, then sign in.",
+      oauthChangeWarning:
+        "Changing the URLs, the client ID or the client secret ends the sign-in. You then sign in again.",
     },
     request: {
       path: "Path",
@@ -296,6 +298,20 @@ export const customApiEn = {
         changed: "Last changed",
       },
       version: "v{version}",
+    },
+    oauth: {
+      connected: "Signed in. You can send a test request now.",
+      reauthorized: "Signed in again. You can send a test request now.",
+      denied: "The sign-in was cancelled at the provider. Sign in again.",
+      invalid_state:
+        "The sign-in took too long or was started elsewhere. Sign in again.",
+      forbidden: "Your role can't sign in this custom API.",
+      scope_missing:
+        "The provider didn't grant every scope the API needs. Sign in again and allow all of them.",
+      account_mismatch:
+        "You signed in with another account than before. Sign in with the same account.",
+      failed:
+        "The sign-in didn't work. Check the token URL, the client ID and the client secret, then sign in again.",
     },
     connect: {
       title: "Connect {name}",

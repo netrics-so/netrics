@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { CustomApiAuth, CustomApiDraft } from "@netrics/contracts";
+import {
+  oauthCallbackOutcomeSchema,
+  type CustomApiAuth,
+  type CustomApiDraft,
+} from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
 import { CustomApiBuilder } from "./builder";
 import { enterStep, syncDraft, type BuilderClient } from "./builder-actions";
 import { StepBasics } from "./step-basics";
 import { defaultAuth, OAuthSignIn, StepLogin } from "./step-login";
+import { BuilderOAuthOutcome } from "./oauth-outcome";
 import { D, DRAFT, W } from "./test-fixtures";
 import { startCustomOAuth } from "@/lib/custom-api";
 import {
@@ -317,6 +322,37 @@ describe("custom API builder: Basics and Login", () => {
         connectorId: "custom-api",
         connectionId: D,
       });
+    },
+  );
+
+  it.each(LOCALES)(
+    "says how the draft's sign-in ended, for every outcome (%s)",
+    (locale) => {
+      const seen = new Set<string>();
+      for (const outcome of oauthCallbackOutcomeSchema.options) {
+        const html = renderI18n(
+          <BuilderOAuthOutcome outcome={outcome} />,
+          locale,
+        );
+        const ok = outcome === "connected" || outcome === "reauthorized";
+        expect(html).toContain(ok ? 'role="status"' : 'role="alert"');
+        seen.add(html);
+      }
+      expect(seen.size).toBe(oauthCallbackOutcomeSchema.options.length);
+      expect(renderI18n(<BuilderOAuthOutcome outcome={null} />, locale)).toBe(
+        "",
+      );
+      // Before a change that ends the sign-in, Login says so.
+      const html = renderLogin(locale, {
+        ...basics(),
+        auth: defaultAuth("oauth_authorization_code"),
+        secretsSet: ["clientId", "clientSecret"],
+      });
+      expect(html).toContain(
+        locale === "en"
+          ? "Changing the URLs, the client ID or the client secret ends the sign-in."
+          : "Wenn du die URLs, die Client-ID oder das Client-Secret änderst, endet die Anmeldung.",
+      );
     },
   );
 
