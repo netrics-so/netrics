@@ -550,6 +550,8 @@ describe("the custom API test request", () => {
 });
 
 describe("the test request rate limit", () => {
+  // 31 sequential test requests, each with its rate and lease round trips:
+  // a 20 s timeout leaves room for a machine running every suite at once.
   it("allows 30 test requests per workspace per minute and answers the 31st with 429 and Retry-After, without a request", async () => {
     const workspace = await newWorkspace("Rate limited");
     const definition = draftDefinition({
@@ -594,7 +596,7 @@ describe("the test request rate limit", () => {
     expect(
       (await testRequest(first, { definition }, workspace)).statusCode,
     ).toBe(200);
-  });
+  }, 20_000);
 
   it("runs one test per draft across API processes", async () => {
     const workspace = await newWorkspace("Busy draft");
