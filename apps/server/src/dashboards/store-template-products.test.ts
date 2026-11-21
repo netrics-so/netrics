@@ -295,6 +295,43 @@ describe("store product identity", { timeout: 20_000 }, () => {
     expect(await owner`select * from data_template_products`).toHaveLength(0);
   });
 
+  it("offers a selected project no sync has named yet, by its ID (#782)", async () => {
+    await owner`update connections
+      set config = ${owner.json({ resourceSelection: ["prj_site", "prj_new"] })}
+      where id = ${vercelId}`;
+    try {
+      const read = await products().read(actor(), requestId);
+      expect(read.websites[0]!.projects).toEqual([
+        { id: "prj_site", name: "example.com" },
+        { id: "prj_new", name: "prj_new" },
+      ]);
+      const linked = await products().update(actor(), requestId, {
+        products: [
+          {
+            productId: beta,
+            pricing: "auto",
+            website: { connectionId: vercelId, projectId: "prj_new" },
+          },
+        ],
+      });
+      expect(
+        linked.products.find((product) => product.website)?.website,
+      ).toMatchObject({ connectionId: vercelId, projectId: "prj_new" });
+      await products().update(actor(), requestId, {
+        products: [
+          {
+            productId: beta,
+            pricing: "auto",
+            website: null,
+          },
+        ],
+      });
+    } finally {
+      await owner`update connections set config = '{}'::jsonb
+        where id = ${vercelId}`;
+    }
+  });
+
   it("lets the owner override auto, and back", async () => {
     const changed = await products().update(actor(), requestId, {
       products: [

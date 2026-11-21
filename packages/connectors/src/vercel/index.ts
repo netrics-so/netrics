@@ -205,6 +205,8 @@ export const vercelManifest: ConnectorManifest = {
   backfillDays: 366,
   outboundDomains: ["api.vercel.com"],
   resourceNoun: { singular: "project", plural: "projects" },
+  // The synced projects can be changed after connecting (#782).
+  supportsResourceSelection: true,
   translations: { de: vercelDe },
   rateLimit: { maxRequests: 400, windowSeconds: 60 },
   // When the numbers arrive (ADR 0025): Vercel counts live, so every

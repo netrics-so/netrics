@@ -24,6 +24,17 @@ see.
 4. Click **Create**, copy the token and paste it into netrics. Vercel shows
    it only once.
 
+## Change which projects are synced
+
+On the connection's page, **Edit connection → Synced projects** lists the
+projects the token can see (those with Web Analytics enabled) and lets you
+choose all current and future projects, or a selection.
+
+- A project you remove is no longer synced and is no longer offered in
+  pickers. The data it already collected is kept.
+- A project you add gets its history with the next import, which reads the
+  connection's history again.
+
 A Vercel token grants the same access you have within its scope. netrics
 only reads the project list and Web Analytics with it. The token is stored
 encrypted (AES-GCM, bound to the connection) and is never shown or logged.
@@ -79,7 +90,7 @@ until the day ends.
 | "Vercel rejected the access token"                     | The token expired or was revoked. Create a new one and paste it into **Edit connection**. |
 | "The token cannot see any projects"                    | Give the token the project's or team's scope.                                             |
 | "Web Analytics is not enabled for …"                   | Enable Web Analytics in the project's **Analytics** tab in Vercel.                        |
-| "The token no longer has access to … projects"         | Use a token that covers them, or remove them from the connection.                         |
+| "The token no longer has access to … projects"         | Use a token that covers them, or remove them under **Synced projects**.                   |
 | "Vercel limit reached, continuing at …"                | Nothing: syncing continues after Vercel's reset.                                          |
 | "Vercel's API rate limit is used up" / "not answering" | Nothing: netrics retries automatically.                                                   |
 

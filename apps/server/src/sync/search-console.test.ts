@@ -470,17 +470,19 @@ describe("Google Search Console in the sync engine", () => {
     syncPages.length = 0;
     expect((await runJob(connectionId)).status).toBe("succeeded");
 
-    // check (sites + property probe), one sync page and the first discover
-    // of the property names (#194), all with one token
+    // check (sites + property probe), the first discover of the property
+    // names (#194; before the pages on a first run, #782) and one sync
+    // page, all with one token
     for (const credentials of received) {
       expect(Object.keys(credentials)).toEqual(["accessToken"]);
     }
     expect(apiCalls.map((call) => call.status)).toEqual([200, 200, 200, 200]);
     expect(syncPages).toEqual(["2026-10-06..2026-10-07"]);
-    expect(apiCalls.at(-1)).toMatchObject({
+    expect(apiCalls[2]).toMatchObject({
       method: "GET",
       path: "/webmasters/v3/sites",
     });
+    expect(apiCalls.at(-1)).toMatchObject({ method: "POST" });
     expect(apiCalls[0]).toMatchObject({
       method: "GET",
       path: "/webmasters/v3/sites",

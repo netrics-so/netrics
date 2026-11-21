@@ -37,6 +37,9 @@ function labelsResourceDimension(connectorId: ReturnType<typeof sql>) {
   )`;
 }
 
+/** `discovered_at` of names no daily discovery has confirmed yet. */
+const NEVER_DISCOVERED = new Date(0);
+
 export interface DiscoveredResourceName {
   id: string;
   name: string;
@@ -48,6 +51,11 @@ export interface DiscoveredResourceName {
  * unless discover only repeated the ID; resources missing from this discovery keep their last name, since their
  * observations stay. A row is keyed by its kind too (#394): an app, a
  * campaign and an ad group with one provider ID keep their own names.
+ *
+ * `provisional` (#782) records names learned outside the sync engine's
+ * daily discovery (before the first sync finishes, or when the selection
+ * changes): they do not count as that discovery, so the engine's next
+ * successful run still refreshes names and icons.
  */
 export async function upsertConnectionResources(
   tx: Transaction,
@@ -56,6 +64,7 @@ export async function upsertConnectionResources(
     connectionId: string;
     resources: readonly DiscoveredResourceName[];
     now: Date;
+    provisional?: boolean;
   },
 ): Promise<void> {
   // One row per kind and id: a statement may not update the same key twice.
@@ -81,7 +90,7 @@ export async function upsertConnectionResources(
           resourceId: resource.id,
           name: resource.name,
           kind: resource.kind,
-          discoveredAt: input.now,
+          discoveredAt: input.provisional ? NEVER_DISCOVERED : input.now,
         })),
       )
       .onConflictDoUpdate({
@@ -94,13 +103,18 @@ export async function upsertConnectionResources(
           // A discover that could only report the ID (#623: Google Play
           // without the Reporting API) keeps the name an earlier one stored.
           name: sql`case when excluded.name = excluded.resource_id then connection_resources.name else excluded.name end`,
-          discoveredAt: sql`excluded.discovered_at`,
+          discoveredAt: input.provisional
+            ? sql`connection_resources.discovered_at`
+            : sql`excluded.discovered_at`,
         },
       });
   }
 }
 
-/** When the connection's resource names were last discovered, if ever. */
+/**
+ * When the connection's resource names were last discovered, if ever.
+ * Provisional names alone answer the epoch: known, but due for discovery.
+ */
 export async function connectionResourcesDiscoveredAt(
   tx: Transaction,
   workspaceId: string,

@@ -6,19 +6,25 @@ import { useT } from "@/lib/i18n/client";
 
 const PAGE_SIZE = 50;
 
-/** null follows all current and future apps; an empty list collects none. */
+/**
+ * null follows all current and future apps; an empty list collects none.
+ * `texts` names the resources: apps, or the projects of a website
+ * connection (#782).
+ */
 export function AppPicker({
   resources,
   value,
   onChange,
   disabled = false,
+  texts = "connections.apps",
 }: {
   resources: DiscoveredResource[];
   value: string[] | null;
   onChange: (value: string[] | null) => void;
   disabled?: boolean;
+  texts?: "connections.apps" | "connections.projects";
 }) {
-  const t = useT("connections.apps");
+  const t = useT(texts);
   const id = useId();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);

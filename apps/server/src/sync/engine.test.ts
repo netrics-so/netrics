@@ -280,6 +280,7 @@ const probeConnector: Connector = {
 let namingDiscovers = 0;
 let namingName = "Wurfel";
 let namingFails = false;
+let namingSyncFails = false;
 const namingConnector: Connector = {
   manifest: testManifest("naming", "naming.downloads"),
   async check() {
@@ -296,6 +297,9 @@ const namingConnector: Connector = {
     ];
   },
   async sync() {
+    if (namingSyncFails) {
+      throw new Error("provider cannot answer right now");
+    }
     return {
       observations: [
         {
@@ -1925,6 +1929,40 @@ describe("resource names (#194)", () => {
       id: "app-1",
       name: "Wurfel 2",
     });
+  });
+
+  it("are known before the first sync succeeds (#782), and discovered once it does", async () => {
+    const connectionId = await seedConnection(workspaceA, "naming");
+    const start = new Date("2026-09-21T08:00:00Z");
+    namingDiscovers = 0;
+    namingName = "Wurfel";
+    namingSyncFails = true;
+    try {
+      await expect(syncAt(connectionId, start)).rejects.toThrow();
+      expect(await names(connectionId)).toEqual([
+        { id: "app-1", name: "Wurfel" },
+        { id: "app-2", name: "Dicey" },
+      ]);
+      expect(namingDiscovers).toBe(1);
+      // The next failing attempt has the names: no second listing.
+      await expect(
+        syncAt(connectionId, new Date(start.getTime() + 60_000)),
+      ).rejects.toThrow();
+      expect(namingDiscovers).toBe(1);
+    } finally {
+      namingSyncFails = false;
+    }
+    // The first run that succeeds still makes the daily discovery.
+    namingName = "Wurfel 2";
+    await syncAt(connectionId, new Date(start.getTime() + 120_000));
+    expect(namingDiscovers).toBe(2);
+    expect((await names(connectionId))[0]).toEqual({
+      id: "app-1",
+      name: "Wurfel 2",
+    });
+    // And then at most daily, as before.
+    await syncAt(connectionId, new Date(start.getTime() + 180_000));
+    expect(namingDiscovers).toBe(2);
   });
 
   it("never fail the sync when discover fails", async () => {

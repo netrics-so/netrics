@@ -68,6 +68,7 @@ import {
   finishConnectionSetup,
   findProject,
   findResourceNames,
+  upsertConnectionResources,
   lockHistoryReload,
   lockWorkspaceBackfills,
   markHistoryReloadRequested,
@@ -861,11 +862,17 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     );
   }
 
-  /** Check a draft configuration using stored credentials, without importing. */
+  /**
+   * Check a draft configuration using stored credentials, without importing.
+   * `candidateSelection` is a selection about to be saved (#782): the check
+   * sees it, as it does when a connection is created with one, so a
+   * connector can refuse a resource it could not sync.
+   */
   async function previewStoredConnection(
     actor: Actor,
     connectionId: string,
     input: StoredConnectionPreviewRequest,
+    candidateSelection?: readonly string[],
   ): Promise<Result<StoredConnectionPreviewResponse>> {
     const existing = await inWorkspace(actor, (tx) =>
       findConnection(tx, actor.workspaceId, connectionId),
@@ -884,7 +891,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         connectionId,
         (connector, context, options) =>
           executeCheck(connector, context, options),
-        validated.value,
+        candidateSelection
+          ? { ...validated.value, resourceSelection: [...candidateSelection] }
+          : validated.value,
         (result) => !result.ok,
       );
       if (!checked.ok) return checked;
@@ -2750,6 +2759,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
       }
 
+      /** What the account lists, when a new selection was checked against it. */
+      let selectable: StoredConnectionPreviewResponse["resources"] = [];
       if (body.resources !== undefined) {
         if (!registered.manifest.supportsResourceSelection)
           return fail(
@@ -2771,9 +2782,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           body.resources === null ? null : [...new Set(body.resources)].sort();
         if (selection?.length) {
           const { resourceSelection: _selection, ...candidate } = nextConfig;
-          const preview = await previewStoredConnection(actor, connectionId, {
-            config: candidate,
-          });
+          const preview = await previewStoredConnection(
+            actor,
+            connectionId,
+            { config: candidate },
+            selection,
+          );
           if (!preview.ok) return preview;
           if (!preview.value.check.ok)
             return fail(
@@ -2790,6 +2804,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               400,
               "Choose apps returned by this account. Refresh the app list and try again.",
             );
+          selectable = preview.value.resources;
         }
         if (selection === null) delete nextConfig.resourceSelection;
         else nextConfig.resourceSelection = selection;
@@ -2998,6 +3013,22 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         );
         if (!row) {
           return fail(404, NOT_FOUND);
+        }
+        // The names of what was just listed (#782): a newly selected
+        // resource is named in pickers and tables before its first sync.
+        // Provisional: the sync engine's daily discovery stays due.
+        if (selectable.length > 0) {
+          await upsertConnectionResources(tx, {
+            workspaceId: actor.workspaceId,
+            connectionId,
+            resources: selectable.map(({ id, name, kind }) => ({
+              id,
+              name,
+              kind,
+            })),
+            now: new Date(),
+            provisional: true,
+          });
         }
         // Review text is kept only while a reviews key is stored (ADR 0019
         // §11): removing it, or a main key of another team dropping it,

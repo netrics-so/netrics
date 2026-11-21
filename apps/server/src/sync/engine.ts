@@ -1112,6 +1112,37 @@ async function runSync(
     throw new TerminalJobError(safeMessage(error));
   }
 
+  // Step 2b (#782): a connection that has no resource names yet (its first
+  // run) learns them before the pages are read, so pickers and tables can
+  // name its resources while a long first backfill runs or waits for a
+  // provider limit. Provisional and best effort: step 4 still refreshes
+  // names (and icons) after the first run that succeeds, with this list
+  // when that is this run.
+  let namedBeforeSync: Awaited<ReturnType<typeof executeDiscover>> | null =
+    null;
+  try {
+    const discoveredAt = await withWorkspace(appDb, { workspaceId }, (tx) =>
+      connectionResourcesDiscoveredAt(tx, workspaceId, connectionId),
+    );
+    if (!discoveredAt) {
+      const resources = await callConnector((callContext, options) =>
+        executeDiscover(connector, callContext, options),
+      );
+      await withWorkspace(appDb, { workspaceId }, (tx) =>
+        upsertConnectionResources(tx, {
+          workspaceId,
+          connectionId,
+          resources,
+          now,
+          provisional: true,
+        }),
+      );
+      namedBeforeSync = resources;
+    }
+  } catch (error) {
+    log.warn({ err: safeMessage(error) }, "resource names not discovered");
+  }
+
   // Step 3: fetch pages from the provider OUTSIDE any transaction (no
   // database connection waits on external I/O), bounded by the configured sync page budget, and
   // commit each one as it arrives (see the run's doc comment).
@@ -1594,9 +1625,11 @@ async function runSync(
       !discoveredAt ||
       now.getTime() - discoveredAt.getTime() >= RESOURCE_NAMES_REFRESH_MS
     ) {
-      const resources = await callConnector((callContext, options) =>
-        executeDiscover(connector, callContext, options),
-      );
+      const resources =
+        namedBeforeSync ??
+        (await callConnector((callContext, options) =>
+          executeDiscover(connector, callContext, options),
+        ));
       await withWorkspace(appDb, { workspaceId }, (tx) =>
         upsertConnectionResources(tx, {
           workspaceId,

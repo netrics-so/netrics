@@ -545,14 +545,23 @@ export async function readStoreProducts(
   };
 }
 
-/** The workspace's Vercel connections and all their (selected) projects. */
+/**
+ * The workspace's Vercel connections and all their (selected) projects.
+ * A selected project no discovery has named yet (#782: the first sync is
+ * still running, or waits for the provider's limit) is offered by its ID,
+ * so apps can be linked before any sync has succeeded.
+ */
 async function websiteChoices(
   tx: Transaction,
   workspaceId: string,
   queryRows: number | null,
 ) {
   const vercel = await tx
-    .select({ id: schema.connections.id, name: schema.connections.name })
+    .select({
+      id: schema.connections.id,
+      name: schema.connections.name,
+      config: schema.connections.config,
+    })
     .from(schema.connections)
     .where(
       and(
@@ -568,20 +577,30 @@ async function websiteChoices(
     vercel.map((connection) => connection.id),
     queryRows,
   );
-  return vercel.map((connection) => ({
-    connectionId: connection.id,
-    name: connection.name,
-    projects: [
-      ...new Map(
-        projects
-          .filter((project) => project.connectionId === connection.id)
-          .map((project) => [
-            project.resourceId,
-            { id: project.resourceId, name: project.name },
-          ]),
-      ).values(),
-    ],
-  }));
+  return vercel.map((connection) => {
+    const named = new Map(
+      projects
+        .filter((project) => project.connectionId === connection.id)
+        .map((project) => [
+          project.resourceId,
+          { id: project.resourceId, name: project.name },
+        ]),
+    );
+    const selection = (connection.config as Record<string, unknown>)
+      .resourceSelection;
+    const unnamed = (Array.isArray(selection) ? selection : [])
+      .filter(
+        (id): id is string =>
+          typeof id === "string" && id !== "" && !named.has(id),
+      )
+      .sort()
+      .map((id) => ({ id, name: id }));
+    return {
+      connectionId: connection.id,
+      name: connection.name,
+      projects: [...named.values(), ...unnamed],
+    };
+  });
 }
 
 export function createStoreProductService(deps: {

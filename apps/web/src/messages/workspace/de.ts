@@ -261,6 +261,43 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       saved:
         "Gespeichert. Der Import der ausgewählten Daten ist eingeplant; bisherige Daten bleiben erhalten.",
     },
+    projects: {
+      heading: "Synchronisierte Projekte",
+      intro:
+        "Wähle, welche Projekte diese Verbindung synchronisiert. Ein entferntes Projekt wird nicht mehr synchronisiert und in Auswahllisten nicht mehr angeboten; bereits importierte Daten bleiben erhalten. Ein neu ausgewähltes Projekt erhält seinen Verlauf mit dem nächsten Import.",
+      unsaved: "Deine Projektauswahl ist nicht gespeichert. Seite verlassen?",
+      title: "Projekte für die Synchronisierung",
+      all: "Alle aktuellen und zukünftigen Projekte",
+      allHelp:
+        "Neue Projekte, die dieses Token sehen kann, werden automatisch einbezogen.",
+      choose: "Projekte auswählen",
+      search: "Projekte nach Name oder ID suchen",
+      selectResults: "Suchergebnisse auswählen ({count})",
+      clear: "Auswahl leeren",
+      selected:
+        "{count, plural, one {# Projekt ausgewählt} other {# Projekte ausgewählt}}",
+      unlisted: "Derzeit nicht aufgelistet",
+      unlistedHelp:
+        "Das Token listet diese ausgewählten Projekte nicht auf, oder Web Analytics ist für sie nicht aktiviert. Entferne sie aus der Auswahl oder stelle den Zugriff in Vercel wieder her. Bereits importierte Daten bleiben erhalten.",
+      empty:
+        "Keine Projekte mit Web Analytics gefunden. Prüfe den Scope des Tokens.",
+      noResults: "Keine passenden Projekte.",
+      noneHelp:
+        "Keine Projekte ausgewählt: Es wird nichts Neues synchronisiert. Bereits importierte Daten bleiben verfügbar.",
+      pages: "Seiten der Projektliste",
+      previous: "Zurück",
+      next: "Weiter",
+      page: "Seite {page} von {pages}",
+      withoutAnalytics:
+        "{count, plural, one {# Projekt wird} other {# Projekte werden}} nicht aufgelistet, weil Web Analytics dafür in Vercel nicht aktiviert ist.",
+      check: "Projektauswahl ändern",
+      checking: "Projekte werden geladen…",
+      accessFailed: "Die Projektliste konnte nicht geladen werden.",
+      save: "Projektauswahl speichern",
+      cancel: "Abbrechen",
+      saved:
+        "Gespeichert. Der Import der ausgewählten Projekte ist eingeplant; bereits importierte Daten bleiben erhalten.",
+    },
     newPage: {
       pageTitle: "Verbindung hinzufügen · netrics",
       title: "Verbindung hinzufügen",
