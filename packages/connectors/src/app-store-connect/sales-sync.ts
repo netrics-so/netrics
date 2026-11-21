@@ -11,6 +11,7 @@ import {
   addCalendarDays,
   zonedInstant,
 } from "../freshness.js";
+import { pageCursor, readPageCursor } from "../page-cursor.js";
 
 import {
   AppStoreConnectApiError,
@@ -350,9 +351,18 @@ async function readSalesPage(
 
   const fromMs = Date.parse(request.from);
   const toMs = Date.parse(request.to);
+  const resumed = readPageCursor(request.cursor);
   const startMs = Math.max(
-    startOfUtcDay(request.cursor ? Date.parse(request.cursor) : fromMs),
+    startOfUtcDay(resumed.at ? Date.parse(resumed.at) : fromMs),
     oldestMs,
+  );
+  // Where this run started reading: the first page's start, carried in the
+  // page cursors. A later page starts at a month boundary, and a checkpoint
+  // may come back in a later run with a later window (#765).
+  const runStartMs = Math.min(
+    startOfUtcDay(fromMs),
+    startMs,
+    resumed.runStartMs ?? startMs,
   );
   // Days before `to`, never after yesterday (PT).
   const endMs = Math.min(startOfUtcDay(toMs - 1) + DAY_MS, newestMs + DAY_MS);
@@ -363,7 +373,7 @@ async function readSalesPage(
     stamp(
       Math.max(
         resolvedEndMs - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-        Math.min(startOfUtcDay(fromMs), startMs),
+        runStartMs,
       ),
     );
 
@@ -639,7 +649,11 @@ async function readSalesPage(
   }
 
   if (pendingMs === undefined && monthEnd < endMs) {
-    return { observations, nextCursor: stamp(monthEnd), done: false };
+    return {
+      observations,
+      nextCursor: pageCursor(monthEnd, runStartMs),
+      done: false,
+    };
   }
   // Freshness (ADR 0025): the newest day before the first pending one, once
   // this page read up to the newest day that can be published (a window

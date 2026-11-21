@@ -13,6 +13,7 @@ import type {
 import { z } from "zod";
 
 import { boundFreshness } from "../freshness.js";
+import { pageCursor, readPageCursor } from "../page-cursor.js";
 
 import {
   VercelApiError,
@@ -460,8 +461,17 @@ export function createVercelConnector(
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
       const get = client(context, runtime);
       const toMs = Date.parse(request.to);
+      const resumed = readPageCursor(request.cursor);
       const startMs = startOfUtcDay(
-        request.cursor ? Date.parse(request.cursor) : Date.parse(request.from),
+        Date.parse(resumed.at ?? request.from),
+      );
+      // Where this run started reading: the first page's start, carried in
+      // the page cursors. A later page starts at a month boundary, and a
+      // checkpoint may come back in a later run with a later window (#765).
+      const runStartMs = Math.min(
+        Date.parse(request.from),
+        startMs,
+        resumed.runStartMs ?? startMs,
       );
       // Where the next incremental sync starts: recent days keep changing.
       // Never later than where this run started reading (a checkpoint before
@@ -469,7 +479,7 @@ export function createVercelConnector(
       const resumeAt = new Date(
         Math.max(
           startOfUtcDay(toMs) - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-          Math.min(Date.parse(request.from), startMs),
+          runStartMs,
         ),
       ).toISOString();
       if (startMs >= toMs) {
@@ -608,7 +618,7 @@ export function createVercelConnector(
       if (next < toMs) {
         return {
           observations,
-          nextCursor: new Date(next).toISOString(),
+          nextCursor: pageCursor(next, runStartMs),
           done: false,
         };
       }

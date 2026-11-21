@@ -521,10 +521,11 @@ describe("search console connector", () => {
     });
     // Page cursors carry the newest final day read so far (ADR 0025).
     expect(pages.map((page) => [page.nextCursor, page.done])).toEqual([
-      ["2023-12-25T00:00:00.000Z|2023-12-24", false],
-      ["2024-01-01T00:00:00.000Z|2023-12-31", false],
-      ["2024-01-08T00:00:00.000Z|2024-01-07", false],
-      ["2024-01-15T00:00:00.000Z|2024-01-14", false],
+      // … and where the run started reading (#765).
+      ["2023-12-25T00:00:00.000Z|2023-12-24|2023-12-20T00:00:00.000Z", false],
+      ["2024-01-01T00:00:00.000Z|2023-12-31|2023-12-20T00:00:00.000Z", false],
+      ["2024-01-08T00:00:00.000Z|2024-01-07|2023-12-20T00:00:00.000Z", false],
+      ["2024-01-15T00:00:00.000Z|2024-01-14|2023-12-20T00:00:00.000Z", false],
       // 20 January − INCREMENTAL_LOOKBACK_DAYS
       ["2024-01-15T00:00:00.000Z", true],
     ]);
@@ -554,6 +555,67 @@ describe("search console connector", () => {
     expect(last.done).toBe(true);
     expect(last.nextFrom).toBe("2024-01-15T00:00:00.000Z");
     expect(last.nextCursor).toBe("2024-01-15T00:00:00.000Z");
+  });
+
+  it("re-reads the lookback when a resumed run pages past a week boundary inside it (#765)", async () => {
+    // The checkpoint of a dead backfill, resumed by an incremental run. The
+    // final page starts on Monday 15 January, inside the lookback days: the
+    // days before it were read by an earlier page of this run, possibly
+    // before they were final.
+    const resume = async (cursor: string) => {
+      const { pages } = await syncAll(fake().runtime, {
+        mode: "incremental",
+        from: "2024-01-16T12:00:00.000Z",
+        to: "2024-01-17T12:00:00.000Z",
+        cursor,
+      });
+      expect(pages.map((page) => page.done)).toEqual([false, false, true]);
+      return pages;
+    };
+    const pages = await resume("2024-01-01T00:00:00.000Z");
+    // Every page cursor carries the start of the run.
+    expect(pages.slice(0, -1).map((page) => page.nextCursor)).toEqual([
+      "2024-01-08T00:00:00.000Z|2024-01-07|2024-01-01T00:00:00.000Z",
+      "2024-01-15T00:00:00.000Z|2024-01-14|2024-01-01T00:00:00.000Z",
+    ]);
+    // 17 January − INCREMENTAL_LOOKBACK_DAYS, not the last page's start.
+    expect(pages.at(-1)!.nextFrom).toBe("2024-01-12T00:00:00.000Z");
+    expect(pages.at(-1)!.nextCursor).toBe("2024-01-12T00:00:00.000Z");
+
+    // A checkpoint written before #765 ("<instant>|<final day>") still
+    // reads: the run starts at that page.
+    const older = await resume("2024-01-01T00:00:00.000Z|2023-12-31");
+    expect(older.at(-1)!.nextFrom).toBe("2024-01-12T00:00:00.000Z");
+    expect(older.at(-1)!.freshness).toEqual(pages.at(-1)!.freshness);
+  });
+
+  it("floors the lookback at the run start a checkpoint carries, across runs (#765)", async () => {
+    // The last page of a run that started on 1 January, resumed alone by a
+    // later run: its own start (Monday 15 January) is inside the lookback.
+    const { pages } = await syncAll(fake().runtime, {
+      mode: "incremental",
+      from: "2024-01-16T12:00:00.000Z",
+      to: "2024-01-17T12:00:00.000Z",
+      cursor: "2024-01-15T00:00:00.000Z|2024-01-14|2024-01-01T00:00:00.000Z",
+    });
+    expect(pages).toHaveLength(1);
+    expect(pages[0]!.nextFrom).toBe("2024-01-12T00:00:00.000Z");
+    // The same page from before #765 knows no earlier start.
+    const older = await syncAll(fake().runtime, {
+      mode: "incremental",
+      from: "2024-01-16T12:00:00.000Z",
+      to: "2024-01-17T12:00:00.000Z",
+      cursor: "2024-01-15T00:00:00.000Z|2024-01-14",
+    });
+    expect(older.pages[0]!.nextFrom).toBe("2024-01-15T00:00:00.000Z");
+    // A run start that does not parse is ignored, not an error.
+    const broken = await syncAll(fake().runtime, {
+      mode: "incremental",
+      from: "2024-01-16T12:00:00.000Z",
+      to: "2024-01-17T12:00:00.000Z",
+      cursor: "2024-01-15T00:00:00.000Z||nonsense",
+    });
+    expect(broken.pages[0]!.nextFrom).toBe("2024-01-15T00:00:00.000Z");
   });
 
   it("picks up days once Google finalizes them, keeping earlier values", async () => {
