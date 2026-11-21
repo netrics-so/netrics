@@ -1778,6 +1778,58 @@ describe("chart queries (#218)", () => {
       });
     });
 
+    it("ranks only the groups asked for; Others is the rest of those (#787)", async () => {
+      const only = async (groups: string[]) =>
+        metricBreakdownResponseSchema.parse(
+          (
+            await breakdown({
+              metricKey: "chart.downloads",
+              groupBy: "resource",
+              limit: 3,
+              withPrevious: true,
+              groups,
+            })
+          ).json(),
+        );
+      // Not the connection's largest app, and nothing of the apps left out.
+      const two = await only(["app-3", "app-2"]);
+      expect(
+        two.groups.map((group) => [
+          group.key,
+          group.value,
+          group.previousValue,
+        ]),
+      ).toEqual([
+        ["app-2", 25, 9],
+        ["app-3", 12, null],
+      ]);
+      expect(two.others).toBeNull();
+      // More than the limit: the rest of the groups asked for.
+      const all = await breakdown({
+        metricKey: "chart.downloads",
+        groupBy: "resource",
+        limit: 10,
+      });
+      const keys = metricBreakdownResponseSchema
+        .parse(all.json())
+        .groups.map((group) => group.key);
+      expect(keys).toHaveLength(5);
+      const four = await only(keys.filter((key) => key !== "app-1"));
+      expect(four.groups.map((group) => group.key)).toEqual(keys.slice(1, 4));
+      expect(four.others).toMatchObject({ groups: 1 });
+      // An unknown value lists nothing; none at all is refused.
+      expect((await only(["nope"])).groups).toEqual([]);
+      expect(
+        (
+          await breakdown({
+            metricKey: "chart.downloads",
+            groupBy: "resource",
+            groups: [],
+          })
+        ).statusCode,
+      ).toBe(400);
+    });
+
     it("adds each ranked group's previous window for a table (withPrevious)", async () => {
       const response = await breakdown({
         metricKey: "chart.downloads",

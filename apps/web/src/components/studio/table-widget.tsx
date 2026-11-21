@@ -236,7 +236,10 @@ export function useLiveTable(
       ? {
           unit,
           better: data.metric.better,
-          columns: { label: data.groupByName, value: data.metric.name },
+          columns: {
+            label: data.groupByName,
+            value: widget.options.valueLabel ?? data.metric.name,
+          },
           rows: data.groups.map((group) => ({
             label: group.label,
             value: group.value,

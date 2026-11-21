@@ -17,6 +17,7 @@ import {
   type ThemeTokens,
 } from "@netrics/domain";
 
+import { useConfirmation } from "@/components/confirm-dialog";
 import { ThemePreview } from "@/components/theme-preview";
 import { apiErrorMessage, deleteTheme, updateTheme } from "@/lib/api";
 import type { WebTranslator } from "@/lib/i18n/catalogs";
@@ -72,6 +73,7 @@ export function ThemeEditor({
   const t = useT("themes.editor");
   const tokenText = useT("themes.tokens");
   const common = useT("common");
+  const confirmation = useConfirmation();
   const router = useRouter();
   const [name, setName] = useState(theme.name);
   const [tokens, setTokens] = useState<ThemeTokens>(
@@ -134,9 +136,13 @@ export function ThemeEditor({
   }
 
   async function onDelete() {
-    if (!window.confirm(t("confirmDelete", { name: theme.name }))) {
-      return;
-    }
+    const confirmed = await confirmation.ask({
+      title: t("confirmDelete", { name: theme.name }),
+      confirm: common("delete"),
+      cancel: common("cancel"),
+      destructive: true,
+    });
+    if (!confirmed) return;
     setError(null);
     setPending(true);
     try {
@@ -297,6 +303,7 @@ export function ThemeEditor({
           ) : null}
         </div>
       </div>
+      {confirmation.dialog}
     </form>
   );
 }

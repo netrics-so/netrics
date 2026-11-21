@@ -74,7 +74,7 @@ export function StoreProductIdentity({
   const changed = [...choices.keys()],
     busy = !!pending || locked;
   const unsaved = changed.length > 0;
-  useLeaveGuard(!onUnsaved && unsaved, t("unsaved"));
+  const leaveDialog = useLeaveGuard(!onUnsaved && unsaved, t("unsaved"));
   useEffect(() => {
     onUnsaved?.(unsaved);
   }, [unsaved, onUnsaved]);
@@ -346,6 +346,7 @@ export function StoreProductIdentity({
           {error}
         </p>
       ) : null}
+      {leaveDialog}
     </section>
   );
 }

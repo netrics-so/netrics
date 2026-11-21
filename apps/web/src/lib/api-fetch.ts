@@ -169,6 +169,15 @@ export function forwardedHeaders(incoming: Headers): Headers {
 }
 
 /**
+ * Whether the forwarded headers carry a cookie whose name contains `name`
+ * (the session cookie, with or without its `__Secure-` prefix): lets a
+ * caller skip a call that would only answer 401. The value is not read.
+ */
+export function forwardsCookie(forwarded: Headers, name: string): boolean {
+  return forwarded.get("cookie")?.includes(name) ?? false;
+}
+
+/**
  * The API URL of `path`, an absolute path on the API ("/v1/me?x=1"). A
  * scheme-relative or absolute URL is refused, so no caller can send these
  * headers to another host.

@@ -395,6 +395,23 @@ beforeAll(async () => {
     ...downloads(),
     options: { groupBy: "resource", limit: 3, showChange: false },
   });
+  // Limited to two of the apps, under its own value head (#787).
+  await insertWidget(id(9, 103), id(9, 100), TABLES, {
+    type: "table",
+    x: 6,
+    y: 4,
+    w: 4,
+    h: 4,
+    title: "Two apps",
+    ...downloads(),
+    options: {
+      groupBy: "resource",
+      limit: 3,
+      showOthers: true,
+      groupKeys: ["app-3", "app-2"],
+      valueLabel: "7-day total",
+    },
+  });
 
   // Compare widgets (ADR 0019 section 10): a share, a ratio, a second
   // source that synced longer ago, and a denominator without data.
@@ -1167,6 +1184,28 @@ describe("device payload schema 2", () => {
       [null, null],
       [null, null],
     ]);
+  });
+
+  it("limits a table to its groupKeys and heads its values with valueLabel (#787)", async () => {
+    const payload = deviceDashboardV2ResponseSchema.parse(await v2(TABLES));
+    const [all, , limited] = widgetsOf(payload);
+    if (all?.type !== "table" || limited?.type !== "table") {
+      throw new Error("expected tables");
+    }
+    // The other tables list every app under the metric's name.
+    expect(all.data.rows.map((row) => row.key)).toContain("app-1");
+    expect(all.data.columns.value).toBe("Downloads");
+    expect(all.options).not.toHaveProperty("groupKeys");
+    // This one lists its two apps, largest first: not the connection's
+    // largest app, and no "Others" of apps it leaves out.
+    expect(limited.data.rows.map((row) => row.key)).toEqual(["app-2", "app-3"]);
+    expect(limited.data.others).toBeNull();
+    expect(limited.data.columns).toEqual({
+      label: all.data.columns.label,
+      value: "7-day total",
+    });
+    const same = (key: string) => all.data.rows.find((row) => row.key === key);
+    for (const row of limited.data.rows) expect(row).toEqual(same(row.key));
   });
 
   it("carries a compare widget's operands and ratio (ADR 0019 §10)", async () => {

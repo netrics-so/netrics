@@ -20,6 +20,7 @@ import {
   fetchResourceIcon,
   listResourceIcons,
 } from "@/lib/api";
+import { useConfirmation } from "@/components/confirm-dialog";
 import { webTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
 
@@ -352,6 +353,7 @@ export function ImageLibrary({
 }) {
   const t = useT("studio.images");
   const common = useT("common");
+  const confirmation = useConfirmation();
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   if (images.length === 0) return null;
@@ -379,8 +381,14 @@ export function ImageLibrary({
                 disabled={used || busy !== null}
                 title={used ? t("usedByDashboard") : undefined}
                 aria-label={t("deleteNamed", { name })}
-                onClick={() => {
-                  if (!window.confirm(t("deleteConfirm", { name }))) return;
+                onClick={async () => {
+                  const confirmed = await confirmation.ask({
+                    title: t("deleteConfirm", { name }),
+                    confirm: common("delete"),
+                    cancel: common("cancel"),
+                    destructive: true,
+                  });
+                  if (!confirmed) return;
                   setBusy(image.id);
                   setProblem(null);
                   void onDelete(image.id)
@@ -399,6 +407,7 @@ export function ImageLibrary({
           {problem}
         </p>
       ) : null}
+      {confirmation.dialog}
     </details>
   );
 }

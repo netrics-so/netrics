@@ -4,7 +4,7 @@ import { cache } from "react";
 import type { MeResponse } from "@netrics/contracts";
 
 import { getMe } from "./api";
-import { forwardedHeaders } from "./api-fetch";
+import { forwardedHeaders, forwardsCookie } from "./api-fetch";
 
 /**
  * The signed-in user and memberships for this request, or null; one
@@ -13,7 +13,7 @@ import { forwardedHeaders } from "./api-fetch";
  */
 export const getCurrentMe = cache(async (): Promise<MeResponse | null> => {
   const forwarded = forwardedHeaders(await headers());
-  if (!forwarded.get("cookie")?.includes("better-auth.session_token")) {
+  if (!forwardsCookie(forwarded, "better-auth.session_token")) {
     return null;
   }
   try {

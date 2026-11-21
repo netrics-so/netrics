@@ -247,6 +247,37 @@ describe("metric choices", () => {
     });
   });
 
+  it("drops a table's groupKeys and valueLabel with what they were set for (#787)", () => {
+    const table = {
+      ...metricWidget,
+      type: "table",
+      dimensions: {},
+      options: {
+        groupBy: "resource",
+        limit: 3,
+        showChange: true,
+        showOthers: false,
+        groupKeys: ["prj_1", "prj_2"],
+        valueLabel: "30-day total",
+      },
+    } as Extract<DataWidget, { type: "table" }>;
+    const plain = {
+      groupBy: "resource",
+      limit: 3,
+      showChange: true,
+      showOthers: false,
+    };
+    // Another metric: neither the values nor the head fit it.
+    expect(bindMetricPatch(table, visitors)!.options).toEqual(plain);
+    // Another grouping: the values were the old dimension's; the head
+    // still describes the metric.
+    expect(groupByPatch(table, "territory").options).toEqual({
+      ...plain,
+      groupBy: "territory",
+      valueLabel: "30-day total",
+    });
+  });
+
   it("shows one resource, or all of them named as such", () => {
     expect(
       resourcePatch(metricWidget, { id: "app-2", name: "Paperstand" }, null),
