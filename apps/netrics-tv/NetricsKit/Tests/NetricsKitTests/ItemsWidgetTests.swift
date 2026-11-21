@@ -187,8 +187,18 @@ private func itemsWidget(_ payload: DeviceDashboardV2) throws -> (ItemsWidgetOpt
     @Test func itemTimeIsADateOrRelative() throws {
         let now = try #require(ISODate.parse("2026-11-21T10:00:00.000Z"))
         let utc = try #require(TimeZone(identifier: "UTC"))
-        #expect(ItemsText.time("2026-11-21T08:00:00.000Z", now: now, language: .en, timeZone: utc) == "2 hours ago")
-        #expect(ItemsText.time("2026-11-21T08:00:00.000Z", now: now, language: .de, timeZone: utc) == "vor 2 Stunden")
+        // As the web words it (Intl.RelativeTimeFormat, short, numeric "auto").
+        #expect(ItemsText.time("2026-11-21T08:00:00.000Z", now: now, language: .en, timeZone: utc) == "2 hr. ago")
+        #expect(ItemsText.time("2026-11-21T08:00:00.000Z", now: now, language: .de, timeZone: utc) == "vor 2 Std.")
+        #expect(ItemsText.time("2026-11-21T09:55:00.000Z", now: now, language: .en, timeZone: utc) == "5 min. ago")
+        #expect(ItemsText.time("2026-11-21T09:59:30.000Z", now: now, language: .en, timeZone: utc) == "now")
+        #expect(ItemsText.time("2026-11-21T09:59:30.000Z", now: now, language: .de, timeZone: utc) == "jetzt")
+        // A day ago is "yesterday", as on the web, not "1 day ago" (#835).
+        #expect(ItemsText.time("2026-11-20T09:00:00.000Z", now: now, language: .en, timeZone: utc) == "yesterday")
+        #expect(ItemsText.time("2026-11-20T09:00:00.000Z", now: now, language: .de, timeZone: utc) == "gestern")
+        #expect(ItemsText.time("2026-11-19T09:00:00.000Z", now: now, language: .en, timeZone: utc) == "2 days ago")
+        #expect(ItemsText.time("2026-11-19T09:00:00.000Z", now: now, language: .de, timeZone: utc) == "vorgestern")
+        #expect(ItemsText.time("2026-10-12T10:00:00.000Z", now: now, language: .de, timeZone: utc) == "vor 40 Tagen")
         #expect(ItemsText.time("2026-11-20", now: now, language: .en, timeZone: utc) == "Nov 20, 2026")
         #expect(ItemsText.time(nil, now: now, language: .en, timeZone: utc) == nil)
         #expect(ItemsText.time("", now: now, language: .en, timeZone: utc) == nil)
@@ -215,7 +225,7 @@ private func itemsWidget(_ payload: DeviceDashboardV2) throws -> (ItemsWidgetOpt
         #expect(detail.title == "Latest orders")
         #expect(detail.text(.value) == "3 items")
         #expect(detail.items.map(\.label) == ["Shoe 3", "Shoe 2", "Shoe 1"])
-        #expect(detail.items[0].value == "2 hours ago")
+        #expect(detail.items[0].value == "2 hr. ago")
         #expect(detail.items[0].lines == [WidgetDetail.Item.Line(text: "Red", warning: false)])
         #expect(detail.text(.updated) != nil)
 
