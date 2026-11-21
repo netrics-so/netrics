@@ -7,6 +7,11 @@ import {
 } from "@netrics/contracts";
 
 import {
+  deviceItemImageIds,
+  createDeviceItemImages,
+} from "./devices/item-images.js";
+import { createDeviceImageService } from "./images/service.js";
+import {
   createItemsFixture,
   photoUrl,
   type ItemsFixture,
@@ -20,6 +25,7 @@ import {
 let f: ItemsFixture;
 let imageF: string, imageE: string, imageX: string, foreignImage: string;
 let itemsWidgetId: string;
+let dashboardId: string;
 /** Unscoped and red-team screens on the items dashboard; one elsewhere. */
 let all: { token: string; deviceId: string };
 let red: { token: string; deviceId: string };
@@ -124,6 +130,7 @@ beforeAll(async () => {
   expect(saved.statusCode, saved.body).toBe(200);
   const dashboard = dashboardResponseSchema.parse(saved.json()).dashboard;
   itemsWidgetId = dashboard.slides[0]!.widgets[0]!.id;
+  dashboardId = dashboard.id;
   const plain = await f.call("POST", "/dashboards", {
     name: "Plain",
     slides: [{ widgets: [{ type: "clock", x: 0, y: 0, w: 2, h: 1 }] }],
@@ -241,7 +248,109 @@ describe("latest items on screens (#810)", () => {
     });
     expect(second.statusCode).toBe(304);
   });
+});
 
+describe("the device image route's cost and edges (#810)", () => {
+  const counted = (clock: { at: number }) => {
+    const calls: string[] = [];
+    const service = createDeviceImageService({
+      db: f.db,
+      itemImages: createDeviceItemImages({
+        ttlMs: 10_000,
+        clock: () => clock.at,
+        compute: (...args) => {
+          calls.push(args[2].id);
+          return deviceItemImageIds(...args);
+        },
+      }),
+    });
+    return { service, calls };
+  };
+  const principal = () => ({
+    workspaceId: f.workspaceId,
+    deviceId: all.deviceId,
+  });
+
+  it("runs no items query for a wrong version", async () => {
+    const { service, calls } = counted({ at: 0 });
+    const wrong = await service.read(principal(), imageF, "0".repeat(64));
+    expect(wrong).toMatchObject({ ok: false, status: 404 });
+    expect(calls).toEqual([]);
+  });
+
+  it("reuses one device's answer within the TTL", async () => {
+    const clock = { at: 1_000 };
+    const { service, calls } = counted(clock);
+    expect((await service.read(principal(), imageF, undefined)).ok).toBe(true);
+    clock.at += 9_999;
+    expect((await service.read(principal(), imageE, undefined)).ok).toBe(true);
+    expect(calls).toEqual([all.deviceId]);
+    clock.at += 1;
+    expect((await service.read(principal(), imageF, undefined)).ok).toBe(true);
+    expect(calls).toEqual([all.deviceId, all.deviceId]);
+  });
+
+  it("refuses an unassigned device and a revoked one", async () => {
+    const unassigned = await f.pairScreen(null);
+    expect((await deviceImage(unassigned.token, imageF)).statusCode).toBe(404);
+    const revoked = await f.pairScreen(dashboardId);
+    expect((await deviceImage(revoked.token, imageF)).statusCode).toBe(200);
+    await f.admin`update devices set revoked_at = now()
+      where id = ${revoked.deviceId}`;
+    // Refused like an unknown image: the revoked device's answer is none.
+    expect((await deviceImage(revoked.token, imageF)).statusCode).toBe(404);
+    // The service answers none for it either, without a query.
+    const { service, calls } = counted({ at: 0 });
+    expect(
+      await service.read(
+        { workspaceId: f.workspaceId, deviceId: revoked.deviceId },
+        imageF,
+        undefined,
+      ),
+    ).toMatchObject({ ok: false, status: 404 });
+    expect(calls).toEqual([]);
+  });
+
+  it("serves nothing for an items widget on a disabled slide", async () => {
+    const created = await f.call("POST", "/dashboards", {
+      name: "Disabled items",
+      slides: [
+        { widgets: [{ type: "clock", x: 0, y: 0, w: 2, h: 1 }] },
+        {
+          enabled: false,
+          widgets: [
+            {
+              type: "items",
+              x: 0,
+              y: 0,
+              w: 6,
+              h: 4,
+              binding: {
+                modelId: f.modelId,
+                imageDimensionId: "photo",
+                titleDimensionId: "title",
+                timeDimensionId: "taken_at",
+              },
+              options: { count: 3 },
+            },
+          ],
+        },
+      ],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const screen = await f.pairScreen(
+      dashboardResponseSchema.parse(created.json()).dashboard.id,
+    );
+    const body = await payload(screen.token, "?schema=3&features=items");
+    expect(
+      body.slides.flatMap((slide) => slide.widgets.map((w) => w.type)),
+    ).not.toContain("items");
+    expect((await deviceImage(screen.token, imageF)).statusCode).toBe(404);
+  });
+});
+
+// Last: these change the photos and the stored images.
+describe("item images that leave the payload (#810)", () => {
   it("stops serving an item image once it leaves the device's payload", async () => {
     // Three newer photos push e and f out of the newest three.
     await f.writePhotos(
@@ -259,5 +368,25 @@ describe("latest items on screens (#810)", () => {
     ]);
     expect((await deviceImage(all.token, imageE)).statusCode).toBe(404);
     expect((await deviceImage(all.token, imageF)).statusCode).toBe(404);
+  });
+
+  it("shows a pruned lookup's item without an image and 404s it", async () => {
+    const imageG = await f.storeImage(photoUrl("g"));
+    const served = await payload(all.token, "?schema=3&features=items");
+    expect(itemsOf(served).data!.items[2]).toMatchObject({
+      title: "g",
+      imageId: imageG.id,
+    });
+    expect((await deviceImage(all.token, imageG.id)).statusCode).toBe(200);
+    // The prune deletes lookups first; the image row may stay a while.
+    await f.admin`delete from custom_api_item_images
+      where image_id = ${imageG.id}`;
+    const pruned = await payload(all.token, "?schema=3&features=items");
+    expect(itemsOf(pruned).data!.items[2]).toMatchObject({
+      title: "g",
+      imageId: null,
+    });
+    expect(pruned.images.map((image) => image.id)).not.toContain(imageG.id);
+    expect((await deviceImage(all.token, imageG.id)).statusCode).toBe(404);
   });
 });

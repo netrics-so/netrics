@@ -88,6 +88,8 @@ export interface AppDeps {
   logger?: FastifyBaseLogger;
   /** Reuse of computed device payloads (default 30 s); tests pass 0. */
   devicePayloadCacheMs?: number;
+  /** How long a device's item image ids are reused (#810); tests set 0. */
+  deviceItemImagesMs?: number;
   /** The newest store template; tests pass other versions. */
   storeTemplate?: StoreTemplateDefinition;
   /** Tests only: options for connector calls of the API (e.g. local egress). */
@@ -307,6 +309,9 @@ export async function buildApp(
     quota: config.imageQuota,
     dataPolicy: config.dataPolicy,
     ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.deviceItemImagesMs !== undefined
+      ? { itemImagesMs: deps.deviceItemImagesMs }
+      : {}),
   });
   registerDeviceRoutes(app, {
     dataPolicy: config.dataPolicy,

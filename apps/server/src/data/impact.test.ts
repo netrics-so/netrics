@@ -218,6 +218,38 @@ describe("collectDataImpact", () => {
     expect(impact.screens.map((s) => s.id)).toEqual([LOBBY]);
   });
 
+  it("lists a latest items widget for its model, never for a measure (#810)", () => {
+    const W4 = "00000000-0000-4000-8000-000000000034";
+    const withItems: ImpactGraph = {
+      ...graph,
+      widgets: [
+        ...graph.widgets,
+        {
+          id: W4,
+          dashboardId: D3,
+          type: "items",
+          title: "Photos",
+          modelId: M2,
+          measureIds: [],
+        },
+      ],
+    };
+    const model = collectDataImpact(withItems, { kind: "model", id: M2 });
+    expect(model.dashboards.find((d) => d.id === D3)!.widgets).toContainEqual({
+      id: W4,
+      type: "items",
+      title: "Photos",
+    });
+    const measure = collectDataImpact(withItems, {
+      kind: "measure",
+      id: M2,
+      measureIds: ["orders"],
+    });
+    expect(
+      measure.dashboards.flatMap((d) => d.widgets.map((w) => w.id)),
+    ).not.toContain(W4);
+  });
+
   it("lists a dashboard bound only through a filter mapping for a model target", () => {
     const impact = collectDataImpact(graph, { kind: "model", id: M1 });
     expect(impact.dashboards.find((d) => d.id === D2)).toEqual({

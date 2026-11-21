@@ -244,3 +244,29 @@ describe("latest items widget (#810)", () => {
     ).toBeUndefined();
   });
 });
+
+describe("impact of a model used by latest items widgets (#810)", () => {
+  it("lists their dashboards and screens for the model", async () => {
+    const model = await f.publishModel("Impact photos");
+    const dashboard = await saved([
+      itemsWidget({ title: "Gallery", binding: binding({ modelId: model }) }),
+    ]);
+    await f.pairScreen(dashboard.id);
+    const response = await f.call("GET", `/data/models/${model}/impact`);
+    expect(response.statusCode, response.body).toBe(200);
+    const impact = response.json() as {
+      dashboards: Array<{
+        id: string;
+        widgets: Array<{ type: string; title: string | null }>;
+      }>;
+      screens: Array<{ name: string }>;
+    };
+    expect(impact.dashboards).toEqual([
+      expect.objectContaining({
+        id: dashboard.id,
+        widgets: [expect.objectContaining({ type: "items", title: "Gallery" })],
+      }),
+    ]);
+    expect(impact.screens).toHaveLength(1);
+  });
+});

@@ -35,6 +35,7 @@ import {
   type DataField,
   type DataPolicy,
   type DashboardDataFilter,
+  type DashboardFilterExclusion,
   type DashboardFilterValue,
   type DeviceFilterScope,
   type MeasureWidgetBinding,
@@ -228,6 +229,60 @@ async function modelSourceHealth(
     };
   });
 }
+/**
+ * A model-bound widget's filter mappings against its published model's
+ * dimensions: a filter mapped to a dimension of another type than the
+ * filter's is refused (`dashboard_filter_type_changed`). Measure and
+ * latest-items widgets (#810) share it.
+ */
+export function checkFilterMappings(
+  filters: readonly DashboardDataFilter[],
+  modelId: string,
+  dimensions: ReadonlyArray<{ id: string; type: string }>,
+): void {
+  for (const filter of filters) {
+    const mapping = filter.mappings.find(
+      (mapping) => mapping.modelId === modelId,
+    );
+    if (
+      mapping &&
+      dimensions.find((dimension) => dimension.id === mapping.dimensionId)
+        ?.type !== filter.type
+    )
+      throw new DataServiceError("dashboard_filter_type_changed");
+  }
+}
+
+/**
+ * The exclusions a model-bound widget lists: those that leave out a filter
+ * with a choice (its value or default, its fixed value, or the slide's
+ * scope). Measure and latest-items widgets (#810) share it.
+ */
+export function activeExclusions(
+  filters: readonly DashboardDataFilter[],
+  values: Readonly<Record<string, DashboardFilterValue>>,
+  slideScope: SlideFilterScope,
+  exclusions: readonly DashboardFilterExclusion[],
+): DashboardFilterExclusion[] {
+  return exclusions.filter((exclusion) => {
+    const filter = filters.find((filter) => filter.id === exclusion.filterId);
+    if (!filter) return false;
+    const value = Object.hasOwn(values, filter.id)
+      ? values[filter.id]
+      : filter.defaultValue;
+    const slide = Object.hasOwn(slideScope, filter.id)
+      ? slideScope[filter.id]
+      : undefined;
+    return [value, filter.fixedValue, slide].some(
+      (value) =>
+        value &&
+        (value.kind === "values"
+          ? value.values.length > 0
+          : value.from !== null || value.to !== null),
+    );
+  });
+}
+
 /** A measure widget's options, as stored (view, limit, a table's order). */
 type MeasureWidgetOptions = z.output<typeof measureWidgetOptionsSchema>;
 export async function validateDashboardMeasure(
@@ -254,18 +309,7 @@ export async function validateDashboardMeasure(
     )
   )
     throw new DataServiceError("dashboard_measure_period_unsupported");
-  for (const filter of filters) {
-    const mapping = filter.mappings.find(
-      (mapping) => mapping.modelId === binding.modelId,
-    );
-    if (
-      mapping &&
-      model.metadata.dimensions.find(
-        (dimension) => dimension.id === mapping.dimensionId,
-      )?.type !== filter.type
-    )
-      throw new DataServiceError("dashboard_filter_type_changed");
-  }
+  checkFilterMappings(filters, binding.modelId, model.metadata.dimensions);
   // Windows read one date range. A list filter on their date can select
   // several dates or "no date", which no window can read, so refuse it here
   // rather than on every viewer's query. Range filters always give a range;
@@ -395,23 +439,12 @@ export async function queryDashboardMeasure(
 ): Promise<DashboardWidgetData> {
   let sourceHealth: DashboardWidgetData["sourceHealth"];
   let fresh: WidgetFreshnessResult = { overdue: false };
-  const exclusions = input.binding.exclusions.filter((exclusion) => {
-    const filter = filters.find((filter) => filter.id === exclusion.filterId);
-    if (!filter) return false;
-    const value = Object.hasOwn(values, filter.id)
-      ? values[filter.id]
-      : filter.defaultValue;
-    const slide = Object.hasOwn(slideScope, filter.id)
-      ? slideScope[filter.id]
-      : undefined;
-    return [value, filter.fixedValue, slide].some(
-      (value) =>
-        value &&
-        (value.kind === "values"
-          ? value.values.length > 0
-          : value.from !== null || value.to !== null),
-    );
-  });
+  const exclusions = activeExclusions(
+    filters,
+    values,
+    slideScope,
+    input.binding.exclusions,
+  );
   try {
     return await tx.transaction(async (savepoint) => {
       const metadata = await validateDashboardMeasure(

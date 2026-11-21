@@ -23,7 +23,12 @@ import {
 } from "@netrics/database";
 import { DataServiceError, queryDataModel } from "../data/service.js";
 import { itemImageUrlHash } from "../images/custom-api-images.js";
-import { publishedModel, safeDataError } from "./data.js";
+import {
+  activeExclusions,
+  checkFilterMappings,
+  publishedModel,
+  safeDataError,
+} from "./data.js";
 import {
   sourceFreshnessDependencies,
   type FreshnessReader,
@@ -64,18 +69,7 @@ export async function validateDashboardItems(
   const time = dimension(binding.timeDimensionId);
   if (time.type !== "date" && time.type !== "timestamp")
     throw new DataServiceError("items_time_dimension_invalid");
-  for (const filter of filters) {
-    const mapping = filter.mappings.find(
-      (mapping) => mapping.modelId === binding.modelId,
-    );
-    if (
-      mapping &&
-      model.metadata.dimensions.find(
-        (dimension) => dimension.id === mapping.dimensionId,
-      )?.type !== filter.type
-    )
-      throw new DataServiceError("dashboard_filter_type_changed");
-  }
+  checkFilterMappings(filters, binding.modelId, model.metadata.dimensions);
   // The shape and filter paths against the published schema, without rows.
   const { model: definition, query } = itemsModelQuery(
     model.definition,
@@ -134,25 +128,12 @@ export async function queryDashboardItems(
   freshnessReader?: FreshnessReader,
 ): Promise<ItemsWidgetData> {
   let fresh: WidgetFreshnessResult = { overdue: false };
-  // The exclusions that leave out a filter with a choice, as a measure
-  // widget lists them.
-  const exclusions = input.binding.exclusions.filter((exclusion) => {
-    const filter = filters.find((filter) => filter.id === exclusion.filterId);
-    if (!filter) return false;
-    const value = Object.hasOwn(values, filter.id)
-      ? values[filter.id]
-      : filter.defaultValue;
-    const slide = Object.hasOwn(slideScope, filter.id)
-      ? slideScope[filter.id]
-      : undefined;
-    return [value, filter.fixedValue, slide].some(
-      (value) =>
-        value &&
-        (value.kind === "values"
-          ? value.values.length > 0
-          : value.from !== null || value.to !== null),
-    );
-  });
+  const exclusions = activeExclusions(
+    filters,
+    values,
+    slideScope,
+    input.binding.exclusions,
+  );
   try {
     return await tx.transaction(async (savepoint) => {
       const release = await validateDashboardItems(

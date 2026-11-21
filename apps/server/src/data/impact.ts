@@ -2,6 +2,7 @@ import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import {
   compareMeasureBindingSchema,
   dashboardDataFiltersSchema,
+  itemsWidgetBindingSchema,
   measureWidgetBindingSchema,
   preparationGraphSchema,
   semanticModelDefinitionSchema,
@@ -333,6 +334,11 @@ function pins(dependencies: unknown): Record<string, number> {
 
 /** The measure ids a model-bound widget reads; null when its binding is unreadable. */
 function widgetMeasures(type: string, binding: unknown): string[] | null {
+  // A latest-items widget (#810) reads the model's dimensions and rows, no
+  // measure: listed for its model and what the model reads, never for a
+  // measure target.
+  if (type === "items")
+    return itemsWidgetBindingSchema.safeParse(binding).success ? [] : null;
   if (type === "compare") {
     const parsed = compareMeasureBindingSchema.safeParse(binding);
     return parsed.success ? Object.values(parsed.data.measureIds) : null;

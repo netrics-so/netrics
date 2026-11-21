@@ -104,6 +104,8 @@ export async function createItemsFixture(label: string): Promise<ItemsFixture> {
     }),
     checkDb: async () => true,
     now: () => ITEMS_NOW,
+    // Every request sees the current payload (the memo has its own tests).
+    deviceItemImagesMs: 0,
   });
   const signUp = async (email: string) => {
     const response = await app.inject({
