@@ -9,6 +9,8 @@ import {
   customApiDefinitionSchema,
   customApiIssues,
   customApiStreamSchema,
+  CustomApiDefinitionError,
+  upgradeCustomApiDefinition,
   type CustomApiDefinition,
 } from "./definition.js";
 
@@ -849,21 +851,53 @@ describe("customApiDefinitionSchema", () => {
     ).toBe(true);
   });
 
-  it.each(["headers", "query"] as const)(
-    "refuses a __proto__ key in request %s with an issue",
-    (where) => {
-      const input = doc(() => {});
-      input.streams[0].request[where] = JSON.parse(
-        '{"__proto__":{"polluted":"yes"},"Accept":"x"}',
-      );
-      expect(issuesOf(input)).toContainEqual({
-        path: `streams.0.request.${where}.__proto__`,
-        code: "invalid",
-        message: "Reserved key",
-      });
-      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-    },
-  );
+  it.each<[string, (d: Doc, value: unknown) => void, string]>([
+    [
+      "request headers",
+      (d, value) => (d.streams[0].request.headers = value),
+      "streams.0.request.headers.__proto__",
+    ],
+    [
+      "request query",
+      (d, value) => (d.streams[0].request.query = value),
+      "streams.0.request.query.__proto__",
+    ],
+    [
+      "auth headers",
+      (d, value) =>
+        (d.auth = {
+          type: "bearer",
+          headerName: "Authorization",
+          headers: value,
+        }),
+      "auth.headers.__proto__",
+    ],
+    [
+      "authorize parameters",
+      (d, value) =>
+        (d.auth = {
+          type: "oauth_authorization_code",
+          authorizeUrl: "https://auth.example.com/authorize",
+          tokenUrl: "https://auth.example.com/token",
+          authorizeParams: value,
+        }),
+      "auth.authorizeParams.__proto__",
+    ],
+  ])("refuses a __proto__ key in %s with an issue", (_name, put, path) => {
+    const input = doc((d) =>
+      put(d, JSON.parse('{"__proto__":{"polluted":"yes"},"Accept":"x"}')),
+    );
+    try {
+      upgradeCustomApiDefinition(input);
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(CustomApiDefinitionError);
+      expect((error as CustomApiDefinitionError).issues).toEqual([
+        { path, code: "invalid", message: "Reserved key" },
+      ]);
+    }
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
 
   it("refuses constructor and prototype keys in records", () => {
     for (const key of ["constructor", "prototype"]) {

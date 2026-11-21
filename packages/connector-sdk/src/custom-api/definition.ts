@@ -298,41 +298,24 @@ const imageHost = z
   });
 
 /**
- * Own-key record bounded in size; keys that could reach a prototype are
- * refused with an issue. zod's record skips an own `__proto__` key (as
- * `JSON.parse` creates it) without a word, so the raw keys are checked
- * before the record parses.
+ * Own-key record bounded in size; `constructor` and `prototype` keys are
+ * refused here. zod's record skips an own `__proto__` key (as `JSON.parse`
+ * creates it) without an issue; upgradeCustomApiDefinition refuses it on
+ * the raw input before parsing.
  */
 function boundedRecord<V extends z.ZodType>(
   key: z.ZodString,
   value: V,
   max: number,
 ) {
-  // A preprocess (not a refined z.unknown()) keeps the record's shape in
-  // the OpenAPI document: an input-side transform is described by its
-  // output schema.
-  return z.preprocess(
-    (raw, ctx) => {
-      if (raw !== null && typeof raw === "object" && !Array.isArray(raw))
-        for (const k of Object.keys(raw))
-          if (UNSAFE_KEYS.has(k))
-            ctx.addIssue({
-              code: "custom",
-              path: [k],
-              message: "Reserved key",
-              input: raw,
-            });
-      return raw;
-    },
-    z
-      .record(
-        key.refine((k) => !UNSAFE_KEYS.has(k), { message: "Reserved key" }),
-        value,
-      )
-      .refine((record) => Object.keys(record).length <= max, {
-        message: `At most ${max} entries`,
-      }),
-  );
+  return z
+    .record(
+      key.refine((k) => !UNSAFE_KEYS.has(k), { message: "Reserved key" }),
+      value,
+    )
+    .refine((record) => Object.keys(record).length <= max, {
+      message: `At most ${max} entries`,
+    });
 }
 
 /** Header map: RFC 7230 token names, none of the forbidden headers. */
@@ -1075,6 +1058,38 @@ export class CustomApiDefinitionError extends Error {
 }
 
 /**
+ * Own `__proto__` keys anywhere in an input document (as `JSON.parse`
+ * creates them), as issues. zod's records skip such a key without a word;
+ * refusing it says so instead of dropping what the author wrote.
+ */
+function protoKeyIssues(raw: unknown): CustomApiIssue[] {
+  const issues: CustomApiIssue[] = [];
+  const stack: Array<{ value: unknown; path: string[] }> = [
+    { value: raw, path: [] },
+  ];
+  while (stack.length > 0 && issues.length < CUSTOM_API_MAX_ISSUES) {
+    const { value, path } = stack.pop()!;
+    if (value === null || typeof value !== "object") continue;
+    if (path.length > CUSTOM_API_LIMITS.jsonDepth) continue;
+    for (const key of Object.keys(value)) {
+      const at = [...path, key];
+      if (key === "__proto__")
+        issues.push({
+          path: at.map(issueKey).join("."),
+          code: "invalid",
+          message: "Reserved key",
+        });
+      else
+        stack.push({
+          value: (value as Record<string, unknown>)[key],
+          path: at,
+        });
+    }
+  }
+  return issues;
+}
+
+/**
  * Compact JSON size of an input document, or Infinity when it does not
  * serialize. Every property of the input survives the strict parse, so an
  * input over the limit is over it after the parse too: checking it first
@@ -1129,6 +1144,9 @@ export function upgradeCustomApiDefinition(raw: unknown): CustomApiDefinition {
       throw new Error(`Custom API upgrade from version ${version} is broken`);
     doc = next;
   }
+  const reserved = protoKeyIssues(doc);
+  if (reserved.length > 0)
+    throw new CustomApiDefinitionError("invalid", reserved);
   if (inputBytes(doc) > CUSTOM_API_LIMITS.documentBytes)
     throw new CustomApiDefinitionError("invalid", [
       {
