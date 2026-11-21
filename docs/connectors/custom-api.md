@@ -92,7 +92,9 @@ HTTP basic (`clientAuth`). Details: ADR 0027, section 6.
 - **Client credentials**: creating a connection requests a token first; a
   refused client ID or secret is refused and nothing is stored. Tokens are
   requested again when they expire; when the token endpoint refuses the
-  client later, the connection needs new credentials (`auth_failed`).
+  client later, the connection needs new credentials (`auth_failed`): send
+  them with `PATCH /connections/:id` `{ credentials: { clientId,
+clientSecret } }`.
 - **Authorization code**: creating a connection stores the client and waits
   for the sign-in (setup pending, not synced). Start it with
   `POST /v1/workspaces/:workspaceId/oauth/authorizations`
@@ -102,6 +104,12 @@ HTTP basic (`clientAuth`). Details: ADR 0027, section 6.
   first sign-in starts the connection's backfill; later ones renew the
   grant. Access tokens are refreshed with the stored refresh token; a
   refused refresh asks for a new sign-in.
+- **Changing the client** of an authorization-code connection: a new
+  secret for the same client ID keeps the sign-in; a new client ID asks for
+  a new sign-in (the old grant is revoked).
+- **Hosts**: the client and tokens are only sent to the hosts they were
+  entered for. When the definition's API, token or revoke host changes,
+  enter the client again.
 - **Deleting** a connection or draft revokes the refresh token at the
   definition's revoke URL (best effort). Without a revoke URL the answer
   points at the provider so you can remove access there. Expired drafts are

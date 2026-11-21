@@ -31,12 +31,17 @@ import {
   type CredentialBinding,
   type CredentialKeyring,
 } from "../credentials.js";
+import { CUSTOM_API_MESSAGES } from "@netrics/connectors/custom-api";
+
 import { customApiEgress } from "../custom-api/connectors.js";
 import { loadConnectionCustomApiDefinition } from "../custom-api/load-definition.js";
 import { clientForm, type OAuthHttpFactory } from "./client.js";
 import type { ConfiguredOAuthProvider, OAuthProviders } from "./config.js";
 import {
   CUSTOM_OAUTH_PROVIDER_ID,
+  customGrantedScopes,
+  customOAuthBinding,
+  customOAuthBindingHolds,
   customOAuthProvider,
   generateCustomAccountSub,
   isCustomOAuthAuth,
@@ -83,21 +88,47 @@ const DEFAULT_EXPIRES_IN_SECONDS = 3600;
 export class OAuthTokenError extends Error {
   readonly kind: "transient" | "configuration";
   /**
-   * A custom API's token endpoint refused the user's client ID or secret
-   * (#805): the connection needs new client credentials (auth_failed),
-   * not an operator.
+   * Custom APIs (#805) only, all needing the user (auth_failed), not an
+   * operator: the token endpoint refused the client ID or secret
+   * (client_refused) or did not grant the definition's scopes to a
+   * client-credentials client (scope_refused); or the definition now names
+   * other hosts than the client and tokens were entered for
+   * (binding_changed), so nothing was sent.
    */
-  readonly clientRefused: boolean;
+  readonly reason:
+    "client_refused" | "scope_refused" | "binding_changed" | null;
 
   constructor(
     kind: "transient" | "configuration",
     message: string,
-    options: { clientRefused?: boolean } = {},
+    options: {
+      reason?: "client_refused" | "scope_refused" | "binding_changed";
+    } = {},
   ) {
     super(message);
     this.name = "OAuthTokenError";
     this.kind = kind;
-    this.clientRefused = options.clientRefused ?? false;
+    this.reason = options.reason ?? null;
+  }
+}
+
+/**
+ * The connector message (translated by text) for a custom OAuth failure the
+ * user has to act on, or null. Each names an action that works: entering the
+ * client ID and secret again (PATCH credentials) re-seals the envelope for
+ * the current hosts.
+ */
+export function customOAuthFailureMessage(error: unknown): string | null {
+  if (!(error instanceof OAuthTokenError)) return null;
+  switch (error.reason) {
+    case "client_refused":
+      return CUSTOM_API_MESSAGES.tokenRefused;
+    case "scope_refused":
+      return CUSTOM_API_MESSAGES.scopeRefused;
+    case "binding_changed":
+      return CUSTOM_API_MESSAGES.hostChanged;
+    default:
+      return null;
   }
 }
 
@@ -107,6 +138,12 @@ export interface CustomOAuthResolution {
   credentials: CustomOAuthCredentials;
   /** A builder draft (never scheduled). */
   draft: boolean;
+  /**
+   * Whether the envelope was entered for the definition's current hosts
+   * (environment host with port, token and revoke hosts). When not, nothing
+   * may be sent with it: no client secret, no token.
+   */
+  bindingHeld: boolean;
 }
 
 /**
@@ -174,6 +211,12 @@ export function createCustomOAuthResolver(deps: {
         ),
         credentials,
         draft: loaded.draft,
+        bindingHeld:
+          loaded.environmentId !== null &&
+          customOAuthBindingHolds(
+            credentials,
+            customOAuthBinding(loaded.definition, loaded.environmentId),
+          ),
       };
     },
     fetch(provider, timeoutMs) {
@@ -424,8 +467,10 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
           typeof parsed.expires_in === "number" && parsed.expires_in > 0
             ? parsed.expires_in
             : DEFAULT_EXPIRES_IN_SECONDS,
-        scopes:
-          typeof parsed.scope === "string"
+        // Custom providers may separate scopes with commas (GitHub, Slack).
+        scopes: custom
+          ? customGrantedScopes(parsed.scope)
+          : typeof parsed.scope === "string"
             ? parsed.scope.split(" ").filter(Boolean)
             : null,
         refreshToken:
@@ -452,7 +497,45 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     throw new OAuthTokenError(
       refused ? "configuration" : "transient",
       `oauth token refresh failed: provider answered ${response.status} (${code})`,
-      { clientRefused: refused && custom !== null },
+      refused && custom !== null ? { reason: "client_refused" } : {},
+    );
+  }
+
+  /**
+   * A custom OAuth connection's provider and envelope, only when the
+   * envelope was entered for the definition's current hosts: otherwise
+   * nothing may be sent (binding_changed).
+   */
+  async function usableCustom(
+    tx: Transaction,
+    binding: CredentialBinding,
+  ): Promise<CustomOAuthResolution> {
+    const custom = await deps.customOAuth?.resolve(tx, binding);
+    if (!custom) {
+      throw new OAuthTokenError(
+        "configuration",
+        "custom oauth connection has no usable definition or client credentials",
+      );
+    }
+    if (!custom.bindingHeld) {
+      throw new OAuthTokenError(
+        "configuration",
+        "custom oauth credentials were entered for other hosts; nothing was sent",
+        { reason: "binding_changed" },
+      );
+    }
+    return custom;
+  }
+
+  /**
+   * A client-credentials client without the definition's scopes cannot be
+   * reauthorized: it needs other client credentials (auth_failed).
+   */
+  function scopeRefused(): OAuthTokenError {
+    return new OAuthTokenError(
+      "configuration",
+      "oauth client credentials token lacks required scopes",
+      { reason: "scope_refused" },
     );
   }
 
@@ -467,13 +550,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     custom: CustomOAuthResolution | null;
   }> {
     if (locked.oauth.provider === CUSTOM_OAUTH_PROVIDER_ID) {
-      const custom = await deps.customOAuth?.resolve(tx, binding);
-      if (!custom) {
-        throw new OAuthTokenError(
-          "configuration",
-          "custom oauth connection has no usable definition or client credentials",
-        );
-      }
+      const custom = await usableCustom(tx, binding);
       return {
         provider: custom.provider,
         refreshToken: custom.credentials.refreshToken,
@@ -528,11 +605,15 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
       if (token) return { ok: true, accessToken: token, refreshed: false };
       return null;
     }
-    const custom = await deps.customOAuth.resolve(tx, binding);
-    if (!custom || custom.provider.grant !== "client_credentials") return null;
+    const resolved = await deps.customOAuth.resolve(tx, binding);
+    if (!resolved || resolved.provider.grant !== "client_credentials")
+      return null;
+    const custom = await usableCustom(tx, binding);
     const outcome = await refreshAtProvider(custom.provider, null);
     if (!outcome.ok) return outcome;
     const grantedScopes = outcome.scopes ?? [...custom.provider.scopes];
+    // Nothing is stored for a client without the scopes (auth_failed).
+    if (!covers(grantedScopes, options.requiredScopes)) throw scopeRefused();
     await upsertConnectionOAuth(tx, {
       workspaceId,
       connectionId,
@@ -552,15 +633,6 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
       { connectionId, provider: CUSTOM_OAUTH_PROVIDER_ID },
       "oauth client credentials token issued",
     );
-    if (!covers(grantedScopes, options.requiredScopes)) {
-      await markNeedsReauthorization(
-        tx,
-        workspaceId,
-        connectionId,
-        "scope_missing",
-      );
-      return { ok: false, reason: "scope_missing" };
-    }
     return { ok: true, accessToken: outcome.accessToken, refreshed: true };
   }
 
@@ -583,7 +655,14 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
           // A custom client-credentials connection mints its first token.
           return deps.customOAuth ? { stale: true as const } : null;
         }
+        // A custom grant is used only with the hosts it was entered for.
+        const custom =
+          row.provider === CUSTOM_OAUTH_PROVIDER_ID
+            ? await usableCustom(tx, binding)
+            : null;
         if (!covers(row.grantedScopes, options.requiredScopes)) {
+          if (custom?.provider.grant === "client_credentials")
+            throw scopeRefused();
           await markNeedsReauthorization(
             tx,
             workspaceId,
@@ -646,6 +725,14 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
           return { ok: false as const, reason: "invalid_grant" as const };
         }
         const grantedScopes = outcome.scopes ?? locked.oauth.grantedScopes;
+        if (
+          custom?.provider.grant === "client_credentials" &&
+          !covers(
+            outcome.scopes ?? [...custom.provider.scopes],
+            options.requiredScopes,
+          )
+        )
+          throw scopeRefused();
         await updateConnectionOAuthTokens(tx, workspaceId, connectionId, {
           accessTokenEncrypted: Buffer.from(
             encryptOAuthAccessToken(outcome.accessToken, keyring, binding),
@@ -737,7 +824,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     /**
      * One client_credentials token for a custom provider that has no
      * connection yet (creating a connection, #805). Throws OAuthTokenError
-     * (clientRefused when the endpoint refused the client).
+     * (reason client_refused when the endpoint refused the client).
      */
     async requestClientCredentialsToken(provider: CustomOAuthProvider) {
       const outcome = await refreshAtProvider(provider, null);
@@ -745,7 +832,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
         throw new OAuthTokenError(
           "configuration",
           "oauth token request refused",
-          { clientRefused: true },
+          { reason: "client_refused" },
         );
       }
       return {
@@ -763,6 +850,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     async revokeCustomGrant(
       provider: CustomOAuthProvider,
       token: string,
+      tokenTypeHint: "refresh_token" | "access_token" = "refresh_token",
     ): Promise<boolean> {
       const endpoint = provider.definition.revocationEndpoint;
       if (!endpoint) return false;
@@ -771,7 +859,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
           endpoint,
           clientForm(provider, {
             token,
-            token_type_hint: "refresh_token",
+            token_type_hint: tokenTypeHint,
           }),
           revokeTimeoutMs,
         );

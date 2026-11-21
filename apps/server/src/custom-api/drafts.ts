@@ -9,7 +9,7 @@
 // Storage: config = { draft: DraftState }; secrets in credentials_encrypted
 // in the shape C stores for the auth type, so promotion keeps the envelope:
 // { host, …authSecrets, variables } for none/API key/bearer/basic and
-// { host, clientId, clientSecret, refreshToken: null } for the OAuth types.
+// { host, hosts, clientId, clientSecret, refreshToken } for the OAuth types.
 
 import { randomUUID } from "node:crypto";
 
@@ -211,7 +211,7 @@ export function envelopeSecrets(
 /**
  * The envelope a draft stores for these secrets, in the shape a connection
  * keeps: C-G3's customApiEnvelope for none/API key/bearer/basic, C-G4's
- * `{ host, clientId, clientSecret, refreshToken: null }` for OAuth.
+ * `{ host, hosts, clientId, clientSecret, refreshToken: null }` for OAuth.
  * Undefined while the set is incomplete for the login method; null when
  * the method needs nothing stored.
  */
@@ -234,8 +234,8 @@ export function draftEnvelope(
   if (isCustomApiOAuth(definition.auth)) {
     if (names.some((name) => !Object.hasOwn(credentials, name)))
       return undefined;
-    const { host } = draftBinding(definition, environmentId);
-    return { host, ...credentials, refreshToken: null };
+    const { host, hosts } = draftBinding(definition, environmentId);
+    return { host, hosts, ...credentials, refreshToken: null };
   }
   return customApiEnvelope(
     definition,
@@ -262,14 +262,14 @@ export function draftStoredEnvelope(
 ): Record<string, unknown> | null {
   const complete = draftEnvelope(definition, environmentId, secrets);
   if (complete !== undefined) return complete;
-  const { host } = draftBinding(definition, environmentId);
+  const { host, hosts } = draftBinding(definition, environmentId);
   const credentials = Object.fromEntries(
     customApiCredentialNames(definition.auth).flatMap((name) =>
       Object.hasOwn(secrets, name) ? [[name, secrets[name]!]] : [],
     ),
   );
   if (isCustomApiOAuth(definition.auth))
-    return { host, ...credentials, refreshToken: null };
+    return { host, hosts, ...credentials, refreshToken: null };
   const ids = secretVariableIds(definition);
   const variables = Object.fromEntries(
     ids.flatMap((id) =>
@@ -395,7 +395,8 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
     if (!resolved) return null;
     return {
       provider: resolved.provider,
-      token: resolved.credentials.refreshToken,
+      // Never sent to hosts it was not entered for.
+      token: resolved.bindingHeld ? resolved.credentials.refreshToken : null,
     };
   }
 
@@ -555,8 +556,11 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
           : null;
         // An OAuth grant (#805) stays with the same hosts, login method and
         // client; anything else drops it, revoked after commit.
-        const clientChanged = ["clientId", "clientSecret"].some((name) =>
-          Object.hasOwn(given, name),
+        // A value sent again unchanged (the builder echoing the client
+        // ID) is no change.
+        const clientChanged = ["clientId", "clientSecret"].some(
+          (name) =>
+            Object.hasOwn(given, name) && given[name] !== stored?.[name],
         );
         const refreshToken =
           typeof stored?.refreshToken === "string" ? stored.refreshToken : null;

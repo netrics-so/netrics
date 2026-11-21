@@ -53,7 +53,10 @@ export function createDraftExpiredHandler(deps: {
       return { resolved: resolved ?? null };
     });
     if (!seen) return;
-    const token = seen.resolved?.credentials.refreshToken ?? null;
+    // Never sent to hosts it was not entered for.
+    const token = seen.resolved?.bindingHeld
+      ? seen.resolved.credentials.refreshToken
+      : null;
     const revoked =
       seen.resolved && token && deps.oauthTokens
         ? await deps.oauthTokens.revokeCustomGrant(
@@ -61,8 +64,8 @@ export function createDraftExpiredHandler(deps: {
             token,
           )
         : false;
-    const deleted = await withWorkspace(appDb, { workspaceId }, (tx) =>
-      tx
+    const deleted = await withWorkspace(appDb, { workspaceId }, async (tx) => {
+      const rows = await tx
         .delete(schema.connections)
         .where(
           and(
@@ -73,8 +76,20 @@ export function createDraftExpiredHandler(deps: {
             lt(schema.connections.updatedAt, cutoff),
           ),
         )
-        .returning({ id: schema.connections.id }),
-    );
+        .returning({ id: schema.connections.id });
+      // Touched during the cleanup: the draft stays, its revoked grant
+      // goes, so the builder asks for a new sign-in.
+      if (rows.length === 0 && seen.resolved)
+        await tx
+          .delete(schema.connectionOAuth)
+          .where(
+            and(
+              eq(schema.connectionOAuth.workspaceId, workspaceId),
+              eq(schema.connectionOAuth.connectionId, draftId),
+            ),
+          );
+      return rows;
+    });
     logger.info(
       { draftId, revoked, deleted: deleted.length > 0 },
       "expired custom API draft cleaned up",

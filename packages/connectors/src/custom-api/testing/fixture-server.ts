@@ -48,6 +48,10 @@ export interface FixtureOAuthServer {
   }>;
   /** Each revocation request's token. */
   revoked: string[];
+  /** Each revocation request's token and token_type_hint. */
+  revokeRequests: Array<{ token: string; hint: string | null }>;
+  /** Runs before a revocation is answered (tests interleave work there). */
+  onRevoke: (() => Promise<void> | void) | null;
   /** The client secret the token endpoint accepts (rotate to "revoke" the client). */
   clientSecret: string;
   /** Lifetime of new access tokens. */
@@ -294,11 +298,14 @@ export async function startCustomApiFixtureServer(
   >();
   /** Access token → expiry (ms). */
   const accessTokens = new Map<string, number>();
-  const refreshTokens = new Set<string>();
+  /** Refresh token → the scope it was granted. */
+  const refreshTokens = new Map<string, string | null>();
   const oauth: FixtureOAuthServer = {
     issued: [],
     tokenRequests: [],
     revoked: [],
+    revokeRequests: [],
+    onRevoke: null,
     clientSecret: FIXTURE_OAUTH_CLIENT.clientSecret,
     expiresIn: 3600,
     expireAccessTokens() {
@@ -317,7 +324,10 @@ export async function startCustomApiFixtureServer(
   /**
    * /oauth/authorize, /oauth/token, /oauth/revoke and /oauth/api/items.
    * Token URL query options: `rotate=1` rotates refresh tokens,
-   * `norefresh=1` issues none.
+   * `norefresh=1` issues none, `scopesep=comma` lists granted scopes with
+   * commas (GitHub, Slack), `tokentype=<type>` answers that token_type
+   * (`none` omits it; Slack answers "bot"), `grantscope=<scope>` grants
+   * that scope whatever was asked for.
    */
   const handleOAuth = (
     request: IncomingMessage,
@@ -395,9 +405,14 @@ export async function startCustomApiFixtureServer(
       if (url.pathname === "/oauth/revoke") {
         const token = body.get("token") ?? "";
         oauth.revoked.push(token);
+        oauth.revokeRequests.push({
+          token,
+          hint: body.get("token_type_hint"),
+        });
         refreshTokens.delete(token);
         accessTokens.delete(token);
-        return send(200, {});
+        void Promise.resolve(oauth.onRevoke?.()).finally(() => send(200, {}));
+        return;
       }
       const grantType = body.get("grant_type") ?? "";
       const verifier = body.get("code_verifier");
@@ -410,6 +425,16 @@ export async function startCustomApiFixtureServer(
         codeChallenge: stored?.challenge ?? null,
         scope: body.get("scope") ?? stored?.scope ?? null,
       });
+      const tokenType = (): Record<string, string> => {
+        const type = query.get("tokentype");
+        return type === "none" ? {} : { token_type: type ?? "Bearer" };
+      };
+      const granted = (requested: string | null) => {
+        const scope = query.get("grantscope") ?? requested;
+        return scope && query.get("scopesep") === "comma"
+          ? scope.split(" ").join(",")
+          : scope;
+      };
       const tokens = (scope: string | null, refresh: boolean) => {
         const accessToken = issue("fx-access");
         accessTokens.set(accessToken, Date.now() + oauth.expiresIn * 1000);
@@ -417,13 +442,13 @@ export async function startCustomApiFixtureServer(
           refresh && query.get("norefresh") !== "1"
             ? issue("fx-refresh")
             : null;
-        if (refreshToken) refreshTokens.add(refreshToken);
+        if (refreshToken) refreshTokens.set(refreshToken, scope);
         return send(200, {
           access_token: accessToken,
-          token_type: "Bearer",
+          ...tokenType(),
           expires_in: oauth.expiresIn,
           ...(refreshToken ? { refresh_token: refreshToken } : {}),
-          ...(scope ? { scope } : {}),
+          ...(granted(scope) ? { scope: granted(scope) } : {}),
         });
       };
       switch (grantType) {
@@ -449,17 +474,19 @@ export async function startCustomApiFixtureServer(
             return send(400, { error: "invalid_grant" });
           const accessToken = issue("fx-access");
           accessTokens.set(accessToken, Date.now() + oauth.expiresIn * 1000);
+          const scope = refreshTokens.get(token) ?? null;
           let rotated: string | null = null;
           if (query.get("rotate") === "1") {
             refreshTokens.delete(token);
             rotated = issue("fx-refresh");
-            refreshTokens.add(rotated);
+            refreshTokens.set(rotated, scope);
           }
           return send(200, {
             access_token: accessToken,
-            token_type: "Bearer",
+            ...tokenType(),
             expires_in: oauth.expiresIn,
             ...(rotated ? { refresh_token: rotated } : {}),
+            ...(granted(scope) ? { scope: granted(scope) } : {}),
           });
         }
         default:

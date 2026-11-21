@@ -32,10 +32,16 @@ import {
   findCustomApiDefinitionVersion,
   findProject,
   insertAuditEvent,
+  findConnectionOAuth,
   insertConnection,
+  markNeedsReauthorization,
+  resetConnectionAuth,
+  updateConnection,
+  updateConnectionOAuthTokens,
   upsertConnectionOAuth,
   withWorkspace,
   type ConnectionWithState,
+  type Transaction,
   type CustomApiDefinitionVersionRow,
   type Database,
 } from "@netrics/database";
@@ -53,14 +59,19 @@ import {
   type CredentialKeyring,
 } from "../credentials.js";
 import type { CustomApiInstanceConfig } from "../env.js";
+import { Secret } from "../secret.js";
 import {
   CUSTOM_OAUTH_PROVIDER_ID,
+  customOAuthBinding,
   customOAuthProvider,
   generateCustomAccountSub,
   isCustomOAuthAuth,
   sealCustomOAuthCredentials,
 } from "../oauth/providers/custom.js";
-import { OAuthTokenError, type OAuthTokenService } from "../oauth/tokens.js";
+import {
+  customOAuthFailureMessage,
+  type OAuthTokenService,
+} from "../oauth/tokens.js";
 import { connectorFor, type ResolvedConnector } from "./connectors.js";
 
 export type CustomApiConnectionResult<T> =
@@ -116,8 +127,8 @@ export function customOAuthClient(
  * message, translated by text), a blocked destination, or no token.
  */
 export function customOAuthTokenFailure(error: unknown): string {
-  if (error instanceof OAuthTokenError && error.clientRefused)
-    return CUSTOM_API_MESSAGES.tokenRefused;
+  const refused = customOAuthFailureMessage(error);
+  if (refused) return refused;
   if (error instanceof Error && /EgressDenied/.test(error.message))
     return "custom_api_destination_blocked";
   return "custom_api_token_failed";
@@ -266,6 +277,180 @@ export function prepareCustomApiUpdate(input: {
 
 type ConnectionDetail = ReturnType<typeof presentConnectionDetail>;
 
+/**
+ * A new client ID and/or secret for an active custom OAuth connection
+ * (PATCH credentials, #805). The envelope is sealed again for the
+ * definition's current hosts (which also repairs a host change).
+ *
+ * - Client credentials: a token is requested with the new client first (a
+ *   refused client or missing scopes changes nothing), the connector check
+ *   runs with it, then the envelope and the grant are replaced and the
+ *   connection is healthy again.
+ * - Authorization code, same client ID and hosts (a rotated secret): the
+ *   refresh token stays, providers keep grants across secret rotation; a
+ *   connection that failed on the refused secret is healthy again.
+ * - Authorization code, another client ID (or other hosts): the old grant
+ *   cannot be used by the new client. It is revoked after commit (best
+ *   effort, with the old client, only to the hosts it was entered for) and
+ *   the connection needs reauthorization; it keeps its id, history and
+ *   bindings, and signing in again restores it.
+ */
+export async function changeCustomOAuthClient(input: {
+  db: Database;
+  credentialKeyring: CredentialKeyring;
+  oauthTokens: OAuthTokenService;
+  actor: { workspaceId: string; callerId: string };
+  existing: ConnectionWithState;
+  resolved: ResolvedConnector;
+  credentials: Record<string, unknown>;
+  privateHosts: readonly string[];
+  executeOptions?: ExecuteOptions;
+}): Promise<CustomApiConnectionResult<null>> {
+  const { actor, existing, resolved, oauthTokens } = input;
+  const connectionId = existing.row.id;
+  const binding = { workspaceId: actor.workspaceId, connectionId };
+  const client = customOAuthClient(input.credentials);
+  const definition = resolved.customApi?.definition;
+  const environmentId = resolved.customApi?.pin.environmentId;
+  if (!client || !definition || !environmentId)
+    return fail(400, "custom_api_credentials_invalid");
+  const hosts = customOAuthBinding(definition, environmentId);
+  const resolver = oauthTokens.customOAuth;
+  if (!hosts || !resolver) return fail(400, "connector_unavailable");
+  const inWorkspace = <T>(run: (tx: Transaction) => Promise<T>) =>
+    withWorkspace(
+      input.db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      run,
+    );
+  const current = await inWorkspace((tx) => resolver.resolve(tx, binding));
+  if (!current) return fail(400, "custom_api_credentials_invalid");
+  const provider = {
+    ...current.provider,
+    clientId: client.clientId,
+    clientSecret: new Secret(client.clientSecret),
+  };
+  const seal = (refreshToken: string | null) =>
+    sealCustomOAuthCredentials(
+      { ...hosts, ...client, refreshToken },
+      input.credentialKeyring,
+      binding,
+    );
+  const audit = (tx: Transaction, change: string) =>
+    insertAuditEvent(tx, {
+      workspaceId: actor.workspaceId,
+      actorUserId: actor.callerId,
+      action: "connection.oauth_client_changed",
+      target: connectionId,
+      metadata: {
+        connectorId: CUSTOM_API_CONNECTOR_ID,
+        provider: CUSTOM_OAUTH_PROVIDER_ID,
+        grant: provider.grant,
+        change,
+      },
+    });
+  const healthy = (tx: Transaction) =>
+    resetConnectionAuth(tx, actor.workspaceId, connectionId, {
+      schedule: !existing.row.setupPending,
+    });
+
+  if (provider.grant === "client_credentials") {
+    let token;
+    try {
+      token = await oauthTokens.requestClientCredentialsToken(provider);
+    } catch (error) {
+      return fail(400, customOAuthTokenFailure(error));
+    }
+    const scopes = token.scopes ?? [...provider.scopes];
+    if (provider.scopes.some((scope) => !scopes.includes(scope)))
+      return fail(400, CUSTOM_API_MESSAGES.scopeRefused);
+    const check = await checkCredentials(
+      resolved,
+      connectionId,
+      existing.row.config as Record<string, unknown>,
+      { accessToken: token.accessToken },
+      {
+        ...(input.executeOptions
+          ? { executeOptions: input.executeOptions }
+          : {}),
+        privateHosts: input.privateHosts,
+      },
+    );
+    if (!check.ok) return fail(400, check.error);
+    return inWorkspace(async (tx) => {
+      const grant = await findConnectionOAuth(
+        tx,
+        actor.workspaceId,
+        connectionId,
+      );
+      await updateConnection(tx, actor.workspaceId, connectionId, {
+        credentialsEncrypted: seal(null),
+      });
+      await upsertConnectionOAuth(tx, {
+        workspaceId: actor.workspaceId,
+        connectionId,
+        provider: CUSTOM_OAUTH_PROVIDER_ID,
+        accountSub: grant?.accountSub ?? generateCustomAccountSub(),
+        accountEmail: null,
+        grantedScopes: scopes,
+        accessTokenEncrypted: Buffer.from(
+          encryptOAuthAccessToken(
+            token.accessToken,
+            input.credentialKeyring,
+            binding,
+          ),
+          "utf8",
+        ),
+        accessTokenExpiresAt: token.expiresAt,
+      });
+      await healthy(tx);
+      await audit(tx, "client");
+      return { ok: true as const, value: null };
+    });
+  }
+
+  const sameClient =
+    current.bindingHeld && current.credentials.clientId === client.clientId;
+  if (sameClient) {
+    await inWorkspace(async (tx) => {
+      await updateConnection(tx, actor.workspaceId, connectionId, {
+        credentialsEncrypted: seal(current.credentials.refreshToken),
+      });
+      // Repairs a refused secret; a grant that needs a new sign-in keeps
+      // needing it.
+      if (existing.state?.authState === "auth_failed") await healthy(tx);
+      await audit(tx, "secret");
+    });
+    return { ok: true, value: null };
+  }
+  const released = await inWorkspace(async (tx) => {
+    await updateConnection(tx, actor.workspaceId, connectionId, {
+      credentialsEncrypted: seal(null),
+    });
+    const grant = await findConnectionOAuth(
+      tx,
+      actor.workspaceId,
+      connectionId,
+    );
+    if (grant) {
+      await updateConnectionOAuthTokens(tx, actor.workspaceId, connectionId, {
+        accessTokenEncrypted: null,
+        accessTokenExpiresAt: null,
+      });
+      await markNeedsReauthorization(
+        tx,
+        actor.workspaceId,
+        connectionId,
+        "invalid_grant",
+      );
+    }
+    await audit(tx, "client");
+    return current.bindingHeld ? current.credentials.refreshToken : null;
+  });
+  if (released) await oauthTokens.revokeCustomGrant(current.provider, released);
+  return { ok: true, value: null };
+}
+
 export function createCustomApiConnectionService(
   deps: CustomApiConnectionDeps,
 ) {
@@ -350,9 +535,7 @@ export function createCustomApiConnectionService(
       !retentionNamesDatasets(resolved.manifest, body.retention)
     )
       return fail(400, "retention_dataset_unknown");
-    const environment = definition.environments.find(
-      (entry) => entry.id === body.environmentId,
-    )!;
+    const hosts = customOAuthBinding(definition, body.environmentId)!;
     if (
       (await inWorkspace(actor, (tx) =>
         countCustomApiConnections(tx, actor.workspaceId),
@@ -396,10 +579,13 @@ export function createCustomApiConnectionService(
         },
       );
       if (!check.ok) return fail(400, check.error);
+      const scopes = token.scopes ?? [...provider.scopes];
+      if (provider.scopes.some((scope) => !scopes.includes(scope)))
+        return fail(400, CUSTOM_API_MESSAGES.scopeRefused);
       grant = {
         accessToken: token.accessToken,
         expiresAt: token.expiresAt,
-        scopes: token.scopes ?? [...provider.scopes],
+        scopes,
       };
     }
 
@@ -430,11 +616,7 @@ export function createCustomApiConnectionService(
         name: body.name,
         config,
         credentialsEncrypted: sealCustomOAuthCredentials(
-          {
-            host: customApiEnvironmentHost(environment),
-            ...client,
-            refreshToken: null,
-          },
+          { ...hosts, ...client, refreshToken: null },
           deps.credentialKeyring,
           binding,
         ),

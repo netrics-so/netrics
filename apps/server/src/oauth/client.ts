@@ -9,6 +9,7 @@ import type {
 import { Secret } from "../secret.js";
 import type { ConfiguredOAuthProvider } from "./config.js";
 import type { OAuthProviderDefinition } from "./providers/index.js";
+import { CUSTOM_OAUTH_PROVIDER_ID } from "./providers/custom.js";
 
 // The host side of the authorization-code flow (ADR 0012): authorization
 // URL, code exchange, ID token checks and revocation. The HTTP client is a
@@ -225,7 +226,13 @@ export async function exchangeCode(
       ? (body[key] as string)
       : null;
   const accessToken = text("access_token");
-  if (!accessToken || (text("token_type") ?? "").toLowerCase() !== "bearer") {
+  // A custom API's provider (#805) may omit token_type or name another one
+  // (Slack: "bot"); netrics sends its token as a bearer token regardless.
+  const custom = provider.definition.id === CUSTOM_OAUTH_PROVIDER_ID;
+  if (
+    !accessToken ||
+    (!custom && (text("token_type") ?? "").toLowerCase() !== "bearer")
+  ) {
     throw new OAuthError("token_exchange", "invalid_response");
   }
   const expiresIn =
@@ -242,7 +249,10 @@ export async function exchangeCode(
     accessTokenExpiresAt: new Date(
       (input.now ?? new Date()).getTime() + expiresIn * 1000,
     ),
-    scopes: scope ? scope.split(/\s+/).filter((entry) => entry !== "") : null,
+    // Custom providers may separate scopes with commas (GitHub, Slack).
+    scopes: scope
+      ? scope.split(custom ? /[\s,]+/ : /\s+/).filter((entry) => entry !== "")
+      : null,
   };
 }
 

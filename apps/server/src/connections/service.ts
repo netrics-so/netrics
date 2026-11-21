@@ -152,7 +152,10 @@ import {
   connectorFor,
   type ResolvedConnector,
 } from "../custom-api/connectors.js";
-import { prepareCustomApiUpdate } from "../custom-api/connections.js";
+import {
+  changeCustomOAuthClient,
+  prepareCustomApiUpdate,
+} from "../custom-api/connections.js";
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   applyFreshness,
@@ -1441,7 +1444,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               connectionId,
             });
             custom = resolved?.provider ?? null;
-            refreshToken = resolved?.credentials.refreshToken ?? null;
+            // Never sent to hosts it was not entered for.
+            refreshToken = resolved?.bindingHeld
+              ? resolved.credentials.refreshToken
+              : null;
           } else {
             try {
               refreshToken = loaded.row.credentialsEncrypted
@@ -2492,8 +2498,18 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         registered,
         existing.oauth?.provider,
       );
+      // A custom API's own OAuth client may be replaced on the same
+      // environment (#805): changeCustomOAuthClient re-seals it and keeps,
+      // renews or releases the grant.
+      const customClientChange =
+        oauthProvider === CUSTOM_OAUTH_PROVIDER_ID &&
+        body.credentials !== undefined &&
+        body.pendingKeyId === undefined &&
+        body.customApiEnvironmentId === undefined &&
+        body.secretVariables === undefined;
       if (
         oauthProvider &&
+        !customClientChange &&
         (body.credentials !== undefined ||
           body.pendingKeyId !== undefined ||
           (oauthProvider === CUSTOM_OAUTH_PROVIDER_ID &&
@@ -2501,6 +2517,28 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               body.secretVariables !== undefined)))
       ) {
         return fail(400, "oauth_authorization_required");
+      }
+      if (customClientChange) {
+        const changed = await changeCustomOAuthClient({
+          db,
+          credentialKeyring,
+          oauthTokens,
+          actor,
+          existing,
+          resolved: registered,
+          credentials: body.credentials!,
+          privateHosts: callOptions.privateHosts,
+          ...(deps.executeOptions
+            ? { executeOptions: deps.executeOptions }
+            : {}),
+        });
+        if (!changed.ok) {
+          return fail(
+            changed.status === 409 ? 400 : changed.status,
+            changed.error,
+          );
+        }
+        body = { ...body, credentials: undefined };
       }
       // Key replacement with a generated key pair (ADR 0020 §3): from here
       // on it is a key upload like any other; the pending row goes in the

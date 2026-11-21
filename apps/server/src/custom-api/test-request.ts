@@ -55,7 +55,7 @@ import {
 } from "./drafts.js";
 import { customApiEgress } from "./connectors.js";
 import { isCustomOAuthAuth } from "../oauth/providers/custom.js";
-import { OAuthTokenError } from "../oauth/tokens.js";
+import { customOAuthFailureMessage } from "../oauth/tokens.js";
 import {
   boundedPreview,
   CUSTOM_API_TEST_LIMITS,
@@ -291,11 +291,12 @@ export function createCustomApiTestRequestService(
             : "The sign-in is no longer valid. Sign in with your account again.",
       };
     } catch (error) {
-      if (error instanceof OAuthTokenError && error.clientRefused)
+      const refused = customOAuthFailureMessage(error);
+      if (refused)
         return {
           ok: false,
           code: "custom_api_auth_rejected",
-          message: CUSTOM_API_MESSAGES.tokenRefused,
+          message: refused,
         };
       if (error instanceof Error && /EgressDenied/.test(error.message))
         return {

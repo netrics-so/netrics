@@ -54,7 +54,6 @@ import {
 import {
   CUSTOM_API_AUTH_ERROR,
   CUSTOM_API_LIMIT_ERROR,
-  CUSTOM_API_MESSAGES,
 } from "@netrics/connectors/custom-api";
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
@@ -75,7 +74,11 @@ import {
   connectionOAuthProvider,
   requiredOAuthScopes,
 } from "../oauth/connector-auth.js";
-import { OAuthTokenError, type OAuthTokenService } from "../oauth/tokens.js";
+import {
+  customOAuthFailureMessage,
+  OAuthTokenError,
+  type OAuthTokenService,
+} from "../oauth/tokens.js";
 import {
   callWithSignedKey,
   SignedKeyRejectedError,
@@ -896,10 +899,11 @@ async function runSync(
       return new TerminalJobError(error.message);
     }
     if (error instanceof OAuthTokenError) {
-      if (error.clientRefused) {
-        // A custom API's token endpoint refused the user's client ID or
-        // secret: only new client credentials help (auth_failed).
-        const refused = new Error(CUSTOM_API_MESSAGES.tokenRefused);
+      const custom = customOAuthFailureMessage(error);
+      if (custom) {
+        // A custom API's client was refused, lacks scopes, or was entered
+        // for other hosts: only new client credentials help (auth_failed).
+        const refused = new Error(custom);
         await recordFailure("auth", refused);
         return new TerminalJobError(refused.message);
       }

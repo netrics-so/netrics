@@ -150,6 +150,8 @@ export const sharedEn = {
         "The run stopped after 30 minutes, the longest one run takes. The data so far is kept; the next run continues.",
       tokenRefused:
         "The token endpoint refused the client ID or client secret. Check both values and enter them again.",
+      scopeRefused:
+        "The token endpoint did not grant every scope this API needs. Check the client's permissions at the provider, then enter the client ID and secret again.",
     },
   },
 } as const;

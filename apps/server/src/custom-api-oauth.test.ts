@@ -424,6 +424,7 @@ describe("custom OAuth: client credentials", () => {
     expect(await grant(id)).toEqual(minted);
     expect(await envelope(id)).toEqual({
       host: `127.0.0.1:${fixture.port}`,
+      hosts: ["127.0.0.1"],
       clientId: CLIENT_ID,
       clientSecret: CLIENT_SECRET,
       refreshToken: null,
@@ -848,5 +849,343 @@ describe("custom OAuth: revocation", () => {
       expect(logs).not.toContain(secret);
       expect(answers).not.toContain(secret);
     }
+  });
+});
+
+describe("custom OAuth: fix round 1 (#823 review)", () => {
+  /** A second version of the connection's definition, pinned as B-G3 would. */
+  async function repin(connectionId: string, doc: CustomApiDefinition) {
+    const [pin] = await admin<{ definition_id: string }[]>`
+      select v.definition_id from connections c
+      join custom_api_definition_versions v
+        on v.id = c.custom_api_definition_version_id
+      where c.id = ${connectionId}`;
+    const definitionId = pin!.definition_id;
+    const [latest] = await admin<{ version: number }[]>`
+      select max(version)::int as version from custom_api_definition_versions
+      where definition_id = ${definitionId}`;
+    const created = await call(
+      "POST",
+      ws(`/custom-api/definitions/${definitionId}/versions`),
+      { baseVersion: latest!.version, document: doc },
+    );
+    expect(created.statusCode, created.body).toBe(201);
+    await admin`
+      update connections set custom_api_definition_version_id = (
+        select id from custom_api_definition_versions
+        where definition_id = ${definitionId}
+        order by version desc limit 1)
+      where id = ${connectionId}`;
+  }
+
+  const other = (url: string) => url.replace("127.0.0.1", "localhost");
+
+  it("sends nothing when a new version moves the token URL", async () => {
+    const doc = document("oauth_code");
+    const id = await connection(doc);
+    await authorize(id);
+    const refresh = (await envelope(id)).refreshToken;
+    await repin(
+      id,
+      document("oauth_code", (auth) => ({
+        ...auth,
+        tokenUrl: other(auth.tokenUrl as string),
+      })),
+    );
+    await expire(id);
+    fixture.reset();
+    const tokenRequests = fixture.oauth.tokenRequests.length;
+    await expect(
+      tokens.getAccessToken(
+        { workspaceId, connectionId: id },
+        { requiredScopes: ["items.read"] },
+      ),
+    ).rejects.toMatchObject({ reason: "binding_changed" });
+    await runJob("connection.sync", id);
+    expect(fixture.requests).toHaveLength(0);
+    expect(fixture.oauth.tokenRequests.length).toBe(tokenRequests);
+    expect((await state(id)).auth_state).toBe("auth_failed");
+    const [run] = await admin<{ error_message: string | null }[]>`
+      select error_message from sync_runs where connection_id = ${id}
+      order by started_at desc limit 1`;
+    expect(run!.error_message).toBe(CUSTOM_API_MESSAGES.hostChanged);
+    // Delete sends the old refresh token nowhere either.
+    const deleted = await call("DELETE", ws(`/connections/${id}`));
+    expect(
+      deleteConnectionResponseSchema.parse(deleted.json()).revocation,
+    ).toMatchObject({ status: "failed" });
+    expect(fixture.oauth.revoked).not.toContain(refresh);
+    expect(fixture.requests).toHaveLength(0);
+  });
+
+  it("sends no cached token to a new API host", async () => {
+    const id = await connection(document("oauth_client_credentials"));
+    const moved = document("oauth_client_credentials");
+    await repin(id, {
+      ...moved,
+      environments: moved.environments.map((environment) => ({
+        ...environment,
+        baseUrl: other(environment.baseUrl),
+      })),
+    });
+    fixture.reset();
+    await expect(
+      tokens.getAccessToken(
+        { workspaceId, connectionId: id },
+        { requiredScopes: ["items.read"] },
+      ),
+    ).rejects.toMatchObject({ reason: "binding_changed" });
+    await runJob("connection.sync", id);
+    expect(fixture.requests).toHaveLength(0);
+    expect((await state(id)).auth_state).toBe("auth_failed");
+  });
+
+  it("accepts comma-separated scopes and a non-bearer or missing token_type", async () => {
+    const twoScopes = (query: string) => (auth: Record<string, unknown>) => ({
+      ...auth,
+      scopes: ["items.read", "items.write"],
+      tokenUrl: `${fixture.origin}/oauth/token?${query}`,
+    });
+    // GitHub-style scopes and Slack's "bot" at sign-in and refresh.
+    const code = await connection(
+      document("oauth_code", twoScopes("scopesep=comma&tokentype=bot")),
+    );
+    const { callback } = await authorize(code);
+    expect(callback.outcome).toBe("connected");
+    expect((await grant(code))!.granted_scopes).toEqual([
+      "items.read",
+      "items.write",
+    ]);
+    await expire(code);
+    const refreshed = await tokens.getAccessToken(
+      { workspaceId, connectionId: code },
+      { requiredScopes: ["items.read", "items.write"] },
+    );
+    expect(refreshed.ok).toBe(true);
+    // No token_type at all, for client credentials.
+    const client = await connection(
+      document(
+        "oauth_client_credentials",
+        twoScopes("scopesep=comma&tokentype=none"),
+      ),
+    );
+    expect((await grant(client))!.granted_scopes).toEqual([
+      "items.read",
+      "items.write",
+    ]);
+    await expire(client);
+    const minted = await tokens.getAccessToken(
+      { workspaceId, connectionId: client },
+      { requiredScopes: ["items.read", "items.write"] },
+    );
+    expect(minted.ok).toBe(true);
+  });
+
+  it("replaces a client-credentials client and mints with the new one", async () => {
+    const id = await connection(document("oauth_client_credentials"));
+    // The provider rotated the secret: the next run fails.
+    fixture.oauth.clientSecret = "rotated-client-secret-0002";
+    await expire(id);
+    await runJob("connection.sync", id);
+    expect((await state(id)).auth_state).toBe("auth_failed");
+    const sub = (await grant(id))!.account_sub;
+    const patch = (clientSecret: string) =>
+      call("PATCH", ws(`/connections/${id}`), {
+        credentials: { clientId: CLIENT_ID, clientSecret },
+      });
+    const wrong = await patch("still-the-wrong-secret");
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json().error).toBe(CUSTOM_API_MESSAGES.tokenRefused);
+    expect((await envelope(id)).clientSecret).toBe(CLIENT_SECRET);
+    const before = fixture.oauth.tokenRequests.length;
+    const changed = await patch("rotated-client-secret-0002");
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect(fixture.oauth.tokenRequests.length - before).toBe(1);
+    expect((await envelope(id)).clientSecret).toBe(
+      "rotated-client-secret-0002",
+    );
+    expect(await state(id)).toMatchObject({ auth_state: "ok" });
+    const after = await grant(id);
+    expect(after!.account_sub).toBe(sub);
+    expect(after!.access_token_expires_at!.getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+    expect(changed.body).not.toContain("rotated-client-secret-0002");
+  });
+
+  it("keeps the grant when an authorization-code client's secret rotates", async () => {
+    const id = await connection(document("oauth_code"));
+    await authorize(id);
+    const refresh = (await envelope(id)).refreshToken;
+    fixture.oauth.clientSecret = "rotated-client-secret-0003";
+    const changed = await call("PATCH", ws(`/connections/${id}`), {
+      credentials: {
+        clientId: CLIENT_ID,
+        clientSecret: "rotated-client-secret-0003",
+      },
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
+    const stored = await envelope(id);
+    expect(stored.refreshToken).toBe(refresh);
+    expect(stored.clientSecret).toBe("rotated-client-secret-0003");
+    await expire(id);
+    const token = await tokens.getAccessToken(
+      { workspaceId, connectionId: id },
+      { requiredScopes: ["items.read"] },
+    );
+    expect(token.ok).toBe(true);
+    expect((await state(id)).auth_state).toBe("ok");
+  });
+
+  it("asks for a new sign-in when an authorization-code client ID changes, and revokes the old grant", async () => {
+    const id = await connection(document("oauth_code"));
+    await authorize(id);
+    const sub = (await grant(id))!.account_sub;
+    const refresh = (await envelope(id)).refreshToken as string;
+    const changed = await call("PATCH", ws(`/connections/${id}`), {
+      credentials: {
+        clientId: "another-client",
+        clientSecret: "another-client-secret",
+      },
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect(fixture.oauth.revokeRequests.at(-1)).toEqual({
+      token: refresh,
+      hint: "refresh_token",
+    });
+    expect(await state(id)).toMatchObject({
+      auth_state: "needs_reauthorization",
+      auth_reason: "invalid_grant",
+    });
+    expect(await envelope(id)).toMatchObject({
+      clientId: "another-client",
+      refreshToken: null,
+    });
+    // Same connection: signing in again reauthorizes it, same account.
+    const started = startOAuthAuthorizationResponseSchema.parse(
+      (await start(id)).json(),
+    );
+    expect(started.purpose).toBe("reauthorize");
+    expect(
+      new URL(started.authorizationUrl).searchParams.get("client_id"),
+    ).toBe("another-client");
+    expect((await grant(id))!.account_sub).toBe(sub);
+  });
+
+  it("keeps a draft's grant when the builder sends the unchanged client again", async () => {
+    const doc = document("oauth_code");
+    const id = await newDraft(doc);
+    await authorize(id);
+    const put = (secrets: Record<string, string>) =>
+      call("PUT", ws(`/custom-api/drafts/${id}`), {
+        definition: draftDefinition(doc),
+        environmentId: "production",
+        secrets,
+      });
+    expect(
+      (await put({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET }))
+        .statusCode,
+    ).toBe(200);
+    expect(await grant(id)).not.toBeNull();
+    expect(typeof (await envelope(id)).refreshToken).toBe("string");
+    expect(
+      (await put({ clientSecret: "changed-client-secret" })).statusCode,
+    ).toBe(200);
+    expect(await grant(id)).toBeNull();
+  });
+
+  it("refuses a code exchange when the client changed after the sign-in started", async () => {
+    const id = await connection(document("oauth_code"));
+    const started = startOAuthAuthorizationResponseSchema.parse(
+      (await start(id)).json(),
+    );
+    const consent = new URL(
+      (await fixtureGet(started.authorizationUrl)).location,
+    );
+    const changed = await call("PATCH", ws(`/connections/${id}`), {
+      credentials: {
+        clientId: "another-client",
+        clientSecret: "another-client-secret",
+      },
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
+    const before = fixture.oauth.tokenRequests.length;
+    const callback = oauthCallbackResponseSchema.parse(
+      (
+        await call("POST", "/v1/oauth/custom/callback", {
+          state: consent.searchParams.get("state"),
+          code: consent.searchParams.get("code"),
+        })
+      ).json(),
+    );
+    expect(callback.outcome).toBe("failed");
+    expect(fixture.oauth.tokenRequests.length).toBe(before);
+    expect(await grant(id)).toBeNull();
+  });
+
+  it("drops a draft's revoked grant when the draft is touched during its cleanup", async () => {
+    const doc = document("oauth_code");
+    const id = await newDraft(doc);
+    await authorize(id);
+    const refresh = (await envelope(id)).refreshToken as string;
+    await admin`
+      update connections set updated_at = now() - interval '25 hours'
+      where id = ${id}`;
+    // The builder touches the draft while the provider answers the revoke.
+    fixture.oauth.onRevoke = async () => {
+      await admin`update connections set updated_at = now() where id = ${id}`;
+    };
+    try {
+      await runJob("custom_api.draft_expired", id);
+    } finally {
+      fixture.oauth.onRevoke = null;
+    }
+    expect(fixture.oauth.revoked).toContain(refresh);
+    const [kept] = await admin<{ n: number }[]>`
+      select count(*)::int as n from connections where id = ${id}`;
+    expect(kept!.n).toBe(1);
+    expect(await grant(id)).toBeNull();
+  });
+
+  it("revokes with the hint of the token it sends", async () => {
+    // A grant without the definition's scopes and without a refresh token
+    // is revoked by its access token.
+    const id = await connection(
+      document("oauth_code", (auth) => ({
+        ...auth,
+        tokenUrl: `${fixture.origin}/oauth/token?norefresh=1&grantscope=other`,
+      })),
+    );
+    const { callback } = await authorize(id);
+    expect(callback.outcome).toBe("scope_missing");
+    const last = fixture.oauth.revokeRequests.at(-1)!;
+    expect(last.hint).toBe("access_token");
+    expect(last.token.startsWith("fx-access-")).toBe(true);
+  });
+
+  it("never asks a client-credentials connection to reauthorize for missing scopes", async () => {
+    const grantsOther = (auth: Record<string, unknown>) => ({
+      ...auth,
+      tokenUrl: `${fixture.origin}/oauth/token?grantscope=other`,
+    });
+    const definition = await createDefinition(
+      document("oauth_client_credentials", grantsOther),
+    );
+    const refused = await connect(definition.id);
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().error).toBe(CUSTOM_API_MESSAGES.scopeRefused);
+    // A draft's first token (mintFirst) is not stored and asks for the
+    // client again, not for a sign-in.
+    const doc = document("oauth_client_credentials", grantsOther);
+    const id = await newDraft(doc);
+    const tested = customApiTestResponseSchema.parse(
+      (await testDraft(id, doc)).json(),
+    );
+    expect(tested.error).toEqual({
+      code: "custom_api_auth_rejected",
+      message: CUSTOM_API_MESSAGES.scopeRefused,
+    });
+    expect(await grant(id)).toBeNull();
+    expect((await state(id)).auth_state).toBe("ok");
   });
 });

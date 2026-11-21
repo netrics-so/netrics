@@ -112,13 +112,29 @@ builder says so.
   self-host private hosts. The browser, not the server, visits the
   authorize URL.
 - **Client ID and secret live in the envelope**, next to the refresh token:
-  `{ host, clientId, clientSecret, refreshToken }`, bound to the connection
-  like every envelope. The access token is cached in `connection_oauth` as
+  `{ host, hosts, clientId, clientSecret, refreshToken }`, bound to the
+  connection like every envelope. `host` and `hosts` record the API host
+  (with port) and every credential host (API, token and revoke hosts) they
+  were entered for. Every use checks them against the connection's current
+  definition: when a later version (or a draft edit) names other hosts,
+  nothing is sent, not the client secret, a refresh token or a cached
+  access token; the connection is `auth_failed` ("…entered for another API
+  host…") until the client is entered again, which seals it for the new
+  hosts. The access token is cached in `connection_oauth` as
   for Google. A draft's secrets follow the draft rule: they and the grant
   carry over while the hosts (environment, token, revoke), the login method
   and the client stay the same; any change drops the grant (revoked at the
-  provider when it had a refresh token). An active connection's client and
-  environment cannot change without a new connection.
+  provider when it had a refresh token). An active connection keeps its
+  environment, but its client can be replaced (PATCH `credentials:
+{ clientId, clientSecret }`): client credentials request a token with the
+  new client first and keep the old one when it is refused; an
+  authorization-code secret rotation with the same client ID keeps the
+  refresh token (providers keep grants across secret rotation); a new
+  client ID revokes the old grant (best effort) and asks for a new sign-in
+  (`needs_reauthorization`), keeping the connection's id, history and
+  bindings. A sign-in is bound to the token endpoint and client ID it
+  started with (a hash in the state row's otherwise unused nonce); a code
+  is never exchanged with another client.
 - **Client credentials.** A connection requests a token at creation (a
   refused client is refused with "The token endpoint refused the client ID
   or client secret…", and nothing is stored), runs the connector check with
@@ -126,7 +142,14 @@ builder says so.
   token on its first test request. An expired token is replaced by a new
   `client_credentials` request under the grant's row lock; a token endpoint
   that refuses the client marks the connection `auth_failed` with that
-  message, since only new client credentials help.
+  message, since only new client credentials help. A client-credentials
+  token without the definition's scopes is refused the same way ("…did not
+  grant every scope…"), never as a reauthorization, which such a client
+  cannot do.
+- **Provider tolerance.** Custom providers vary: granted scopes are split on
+  spaces and commas (GitHub, Slack), and a missing or non-bearer
+  `token_type` (Slack: `bot`) is accepted, since netrics always sends the
+  token as a bearer token. Google keeps the strict checks.
 - **Authorization code and the `authorize` purpose.** The connection (or
   draft) exists before its first grant because it holds the client
   credentials, which neither `connect` (no connection yet) nor

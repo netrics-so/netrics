@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import type { CustomApiAuth } from "@netrics/connector-sdk/custom-api";
+import type {
+  CustomApiAuth,
+  CustomApiEnvironment,
+} from "@netrics/connector-sdk/custom-api";
+import {
+  customApiCredentialHosts,
+  customApiEnvironmentHost,
+} from "@netrics/connectors/custom-api";
 
 import {
   decryptCredentials,
@@ -25,6 +32,12 @@ export const CUSTOM_OAUTH_PROVIDER_ID = "custom";
 export interface CustomOAuthCredentials {
   /** The environment host the envelope is bound to (C-G3). */
   host: string;
+  /**
+   * Every host the client and tokens may go to (customApiCredentialHosts:
+   * the API host, then the token and revoke hosts) when they were entered.
+   * Nothing is sent when the current definition names other hosts.
+   */
+  hosts: string[];
   clientId: string;
   clientSecret: string;
   /** Authorization code only; null before the first grant or without one. */
@@ -38,6 +51,7 @@ export function sealCustomOAuthCredentials(
 ): Buffer {
   const envelope: CustomOAuthCredentials = {
     host: value.host,
+    hosts: [...value.hosts],
     clientId: value.clientId,
     clientSecret: value.clientSecret,
     refreshToken: value.refreshToken,
@@ -68,6 +82,11 @@ export function openCustomOAuthCredentials(
   }
   return {
     host: parsed.host,
+    hosts: Array.isArray(parsed.hosts)
+      ? parsed.hosts.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
+      : [],
     clientId: parsed.clientId,
     clientSecret: parsed.clientSecret,
     refreshToken:
@@ -95,6 +114,50 @@ export function isCustomOAuthAuth(
     auth.type === "oauth_client_credentials" ||
     auth.type === "oauth_authorization_code"
   );
+}
+
+/**
+ * The binding of a custom OAuth envelope for a definition's environment:
+ * the environment host with its port and the credential hosts.
+ */
+export function customOAuthBinding(
+  definition: {
+    environments: CustomApiEnvironment[];
+    auth: CustomApiAuth;
+  },
+  environmentId: string,
+): Pick<CustomOAuthCredentials, "host" | "hosts"> | null {
+  const environment = definition.environments.find(
+    (entry) => entry.id === environmentId,
+  );
+  if (!environment) return null;
+  return {
+    host: customApiEnvironmentHost(environment),
+    hosts: customApiCredentialHosts(definition, environmentId),
+  };
+}
+
+/** Whether an envelope may be used with the definition's current hosts. */
+export function customOAuthBindingHolds(
+  credentials: Pick<CustomOAuthCredentials, "host" | "hosts">,
+  current: Pick<CustomOAuthCredentials, "host" | "hosts"> | null,
+): boolean {
+  if (!current || credentials.host !== current.host) return false;
+  const stored = new Set(credentials.hosts);
+  return (
+    stored.size === current.hosts.length &&
+    current.hosts.every((host) => stored.has(host))
+  );
+}
+
+/**
+ * Granted scopes as a custom provider reports them: separated by spaces
+ * (RFC 6749) or commas (GitHub, Slack). Null without a scope field.
+ */
+export function customGrantedScopes(scope: unknown): string[] | null {
+  return typeof scope === "string"
+    ? scope.split(/[\s,]+/).filter((entry) => entry !== "")
+    : null;
 }
 
 function hostname(url: string): string {

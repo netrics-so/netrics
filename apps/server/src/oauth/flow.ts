@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { CUSTOM_API_CONNECTOR_ID } from "@netrics/connectors/custom-api";
 import type { FastifyBaseLogger } from "fastify";
@@ -594,6 +594,22 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
   // shared-account rules is not needed (no other connection holds it).
 
   /** The connection's provider and envelope, read in `tx`. */
+  /** The token endpoint and client a code exchange is bound to (hashed). */
+  function customExchangeBinding(custom: CustomOAuthResolution): string {
+    return createHash("sha256")
+      .update(
+        `${custom.provider.definition.tokenEndpoint}\n${custom.credentials.clientId}`,
+        "utf8",
+      )
+      .digest("base64url");
+  }
+
+  function equalStrings(a: string, b: string): boolean {
+    const left = Buffer.from(a, "utf8");
+    const right = Buffer.from(b, "utf8");
+    return left.length === right.length && timingSafeEqual(left, right);
+  }
+
   async function customOf(
     tx: Transaction,
     workspaceId: string,
@@ -624,7 +640,9 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       return { ok: false, status: 400, error: "invalid_request" };
     }
     const state = randomToken();
-    const nonce = randomToken();
+    // Custom OAuth has no OpenID nonce: the column binds the code exchange
+    // to the token endpoint and client the sign-in starts with.
+    let nonce = randomToken();
     const codeVerifier = randomToken();
     const id = randomUUID();
     const expiresAt = new Date(now().getTime() + AUTHORIZATION_TTL_MS);
@@ -672,6 +690,16 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
             error: "custom_api_secret_missing",
           };
         }
+        // Entered for other hosts: the client ID and secret are needed
+        // again before anything is sent.
+        if (!custom.bindingHeld) {
+          return {
+            ok: false as const,
+            status: 400 as const,
+            error: "custom_api_credentials_host_changed",
+          };
+        }
+        nonce = customExchangeBinding(custom);
         const grant = await findConnectionOAuth(
           tx,
           actor.workspaceId,
@@ -772,6 +800,14 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
     if (!custom) {
       throw new FlowStop("failed", "connection_gone");
     }
+    // Only to the token endpoint and client the sign-in started with, and
+    // only with credentials entered for the current hosts.
+    if (
+      !custom.bindingHeld ||
+      !equalStrings(customExchangeBinding(custom), authorization.nonce)
+    ) {
+      throw new FlowStop("failed", "client_changed");
+    }
     const provider = custom.provider;
     const codeVerifier = decryptOAuthCodeVerifier(
       authorization.codeVerifierEncrypted.toString("utf8"),
@@ -790,6 +826,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       await tokens.revokeCustomGrant(
         provider,
         (issued.refreshToken ?? issued.accessToken).reveal(),
+        issued.refreshToken ? "refresh_token" : "access_token",
       );
       throw new FlowStop("scope_missing", "scope_missing");
     }
