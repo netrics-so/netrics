@@ -197,6 +197,25 @@ describe("diffCustomApiVersions", () => {
     ).toEqual([]);
   });
 
+  it("reports image hosts and a field's empty setting (#834)", () => {
+    const from = shop();
+    const to = change(from, (d) => {
+      d.images = { hosts: ["cdn.example.test"], newestItems: 12 };
+      const orders = d.streams[0]!.fields.find((f) => f.id === "orders")!;
+      orders.nullable = !orders.nullable;
+      orders.name = "Order count";
+    });
+    expect(diffCustomApiVersions(from, to, connection).changes).toEqual([
+      {
+        kind: "field_changed",
+        stream: "daily_stats",
+        field: "orders",
+        changes: ["nullable", "name"],
+      },
+      { kind: "images_changed" },
+    ]);
+  });
+
   it("reports nothing for identical documents", () => {
     expect(diffCustomApiVersions(shop(), shop(), connection)).toEqual({
       changes: [],

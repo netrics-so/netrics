@@ -17,13 +17,16 @@ import {
   customApiStreamSchema,
   customApiWindowSchema,
   PAGE_PLACEHOLDERS,
+  parseDataPath,
   parsePlaceholders,
+  readDataPath,
   WINDOW_PLACEHOLDERS,
   type CustomApiAuth,
   type CustomApiDefinition,
   type CustomApiDraftDefinition,
   type CustomApiField,
   type CustomApiFieldSuggestion,
+  type CustomApiImages,
   type CustomApiIssueCode,
   type CustomApiPagination,
   type CustomApiStream,
@@ -84,6 +87,11 @@ export interface BuilderState {
     window: CustomApiWindow;
   };
   defaults: { refreshMinutes: number; timeZone: string };
+  /**
+   * The hosts images may be copied from (#834); null: only the
+   * environment host, as a definition without an `images` block.
+   */
+  images: CustomApiImages | null;
   lastTest: CustomApiTestResponse | null;
   /** The user picked the key or time field: no more automatic defaults. */
   keyChosen: boolean;
@@ -137,6 +145,7 @@ export function emptyBuilderState(
       refreshMinutes: CUSTOM_API_LIMITS.refreshMinutesDefault,
       timeZone,
     },
+    images: null,
     lastTest: null,
     keyChosen: false,
   };
@@ -186,6 +195,9 @@ export function stateFromDefinition(
       window: stream.window,
     },
     defaults: { ...definition.defaults },
+    images: definition.images
+      ? { ...definition.images, hosts: [...definition.images.hosts] }
+      : null,
     lastTest: null,
     keyChosen: true,
   };
@@ -248,7 +260,7 @@ export function draftDefinitionOf(
   };
 }
 
-/** The definition to save; the other streams (and images) of `original` are kept. */
+/** The definition to save; the other streams of `original` are kept. */
 export function definitionOf(
   state: BuilderState,
   original?: CustomApiDefinition,
@@ -281,7 +293,7 @@ export function definitionOf(
     variables: variablesOf(state),
     auth: state.auth,
     defaults: { ...state.defaults },
-    ...(original?.images ? { images: original.images } : {}),
+    ...(state.images?.hosts.length ? { images: state.images } : {}),
     streams,
   };
 }
@@ -456,7 +468,12 @@ function withRequiredFields(state: BuilderState): BuilderState {
   };
 }
 
-/** Until the user picks them: the first time field reports, and keys the stream. */
+/**
+ * Until the user picks them: the first time field reports, and the first
+ * ticked field (a time field if one is ticked by then) keys the stream. A
+ * key that is still ticked stays (#834): ticking a time field later never
+ * moves it; the Response step offers the time field as key instead.
+ */
 function withKeyDefaults(state: BuilderState): BuilderState {
   if (state.keyChosen) return withRequiredFields(state);
   const time = state.stream.fields.find(isTime);
@@ -464,9 +481,27 @@ function withKeyDefaults(state: BuilderState): BuilderState {
     ...state,
     stream: { ...state.stream, reportingField: time?.id ?? null },
   };
-  next.stream.keyFields = defaultKeyFields(next);
+  const ids = new Set(next.stream.fields.map((f) => f.id));
+  if (!next.stream.keyFields.some((key) => ids.has(key)))
+    next.stream.keyFields = defaultKeyFields(next);
   return withRequiredFields(next);
 }
+
+/**
+ * The time field to offer as key: the stream reports by one, the key is
+ * another, non-time field the user did not pick. Null otherwise.
+ */
+export function suggestedTimeKey(state: BuilderState): CustomApiField | null {
+  if (state.keyChosen) return null;
+  const fields = state.stream.fields;
+  const time = fields.find(
+    (f) => f.id === state.stream.reportingField && isTime(f),
+  );
+  const key = fields.find((f) => f.id === state.stream.keyFields[0]);
+  return time && key && !isTime(key) ? time : null;
+}
+
+const NULLABLE_BY_DEFAULT = new Set<FieldType>(["string", "json"]);
 
 /** Ticks or unticks a field the test response suggested (by its path). */
 export function toggleField(
@@ -492,12 +527,16 @@ export function toggleField(
       },
     });
   }
+  const type = suggestion.role === "image" ? "string" : suggestion.type;
   const field: CustomApiField = {
     id: uniqueFieldId(suggestion.id, new Set(fields.map((f) => f.id))),
     name: suggestion.name,
     path: suggestion.path,
-    type: suggestion.role === "image" ? "string" : suggestion.type,
-    nullable: suggestion.nullable,
+    type,
+    // Text may be empty by default (#834): suggestions see only the first
+    // records, and a null in a field that may not be empty skips the
+    // whole record. Key and time fields are kept non-null below.
+    nullable: suggestion.nullable || NULLABLE_BY_DEFAULT.has(type),
     classification: "internal",
     ...(suggestion.format ? { format: suggestion.format } : {}),
     ...(suggestion.role === "image" ? { role: "image" as const } : {}),
@@ -737,26 +776,28 @@ export function stepIssues(
   options: { editing?: boolean } = {},
 ): string[] {
   const all = allStepIssues(state, step);
-  return options.editing ? all.filter((key) => !SECRET_HINTS.has(key)) : all;
+  return options.editing ? all.filter((key) => !EDIT_HINTS.has(key)) : all;
 }
 
 /**
- * Editing a saved definition needs no credentials: saving does not test.
- * There the missing-secret checks are hints, not gates.
+ * Editing a saved definition needs no credentials or test values: saving
+ * does not test. There those checks are hints, not gates, so every step
+ * can be opened directly (#834).
  */
-const SECRET_HINTS = new Set([
+const EDIT_HINTS = new Set([
   "issues.secretMissing",
   "issues.secretValueMissing",
+  "issues.variableValue",
 ]);
 
-/** The secret checks a step shows as hints while editing (they don't block). */
+/** The test-only checks a step shows as hints while editing (they don't block). */
 export function stepHints(
   state: BuilderState,
   step: BuilderStep,
   options: { editing?: boolean } = {},
 ): string[] {
   return options.editing
-    ? allStepIssues(state, step).filter((key) => SECRET_HINTS.has(key))
+    ? allStepIssues(state, step).filter((key) => EDIT_HINTS.has(key))
     : [];
 }
 
@@ -789,7 +830,8 @@ export function stepOfPath(path: string): BuilderStep {
   if (parts[0] === "name" || parts[0] === "environments") return "basics";
   if (parts[0] === "auth") return "login";
   if (parts[0] === "variables") return "request";
-  if (parts[0] === "defaults" || parts[0] === "images") return "review";
+  if (parts[0] === "images") return "response";
+  if (parts[0] === "defaults") return "review";
   if (parts[0] === "streams") {
     const property = parts[2];
     if (property === "request") return "request";
@@ -814,6 +856,64 @@ export function definitionIssues(
     code: issue.code,
     path: issue.path,
   }));
+}
+
+// ------------------------------------------------------------------- images
+
+/** The hosts of a stream's image fields in the last test's records (#834). */
+export function imageHostsSeen(state: BuilderState): string[] {
+  const test = state.lastTest;
+  const records = state.stream.records;
+  const paths = state.stream.fields
+    .filter((f) => f.role === "image")
+    .map((f) => f.path);
+  if (!test?.response || records === null || paths.length === 0) return [];
+  let list: unknown;
+  try {
+    list = readDataPath(test.response.body, parseDataPath(records));
+  } catch {
+    return [];
+  }
+  const items = Array.isArray(list) ? list : [list];
+  const hosts = new Set<string>();
+  for (const item of items)
+    for (const path of paths) {
+      let value: unknown;
+      try {
+        value = readDataPath(item, parseDataPath(path));
+      } catch {
+        continue;
+      }
+      if (typeof value !== "string") continue;
+      try {
+        const url = new URL(value);
+        if (url.protocol === "https:")
+          hosts.add(url.hostname.toLowerCase().replace(/\.$/, ""));
+      } catch {
+        // Not a URL: skipped when the connection syncs.
+      }
+    }
+  return [...hosts].slice(0, CUSTOM_API_LIMITS.imageHosts);
+}
+
+/** Sets the image hosts; an empty list goes back to the environment host only. */
+export function withImageHosts(
+  state: BuilderState,
+  hosts: readonly string[],
+): BuilderState {
+  const clean = [
+    ...new Set(hosts.map((host) => host.trim().toLowerCase()).filter(Boolean)),
+  ];
+  return {
+    ...state,
+    images: clean.length
+      ? {
+          hosts: clean,
+          newestItems:
+            state.images?.newestItems ?? CUSTOM_API_LIMITS.imageItemsDefault,
+        }
+      : null,
+  };
 }
 
 /** The hosts a saved definition may send requests (and the login) to. */

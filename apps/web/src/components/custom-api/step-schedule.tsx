@@ -127,6 +127,15 @@ export function StepSchedule({
             })}
           </p>
         ) : null}
+        {state.images?.hosts.length ? (
+          <p>
+            {t("imageHosts", {
+              hosts: new Intl.ListFormat(locale, {
+                type: "conjunction",
+              }).format(state.images.hosts),
+            })}
+          </p>
+        ) : null}
       </section>
       {issues.length ? (
         <div className="error" role="alert">

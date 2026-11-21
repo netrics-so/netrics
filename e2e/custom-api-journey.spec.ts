@@ -6,6 +6,8 @@ import { customApiDe } from "../apps/web/src/messages/custom-api/de.ts";
 import { customApiEn } from "../apps/web/src/messages/custom-api/en.ts";
 import { sourcesDe } from "../apps/web/src/messages/sources/de.ts";
 import { sourcesEn } from "../apps/web/src/messages/sources/en.ts";
+import { workspaceDe } from "../apps/web/src/messages/workspace/de.ts";
+import { workspaceEn } from "../apps/web/src/messages/workspace/en.ts";
 import { formatMessage } from "../packages/domain/src/i18n/message-format.ts";
 import { CUSTOM_API_ORIGIN } from "./support/custom-api-origin.ts";
 import { ORIGIN } from "./support/origin.ts";
@@ -18,6 +20,9 @@ const TOKEN = "fx-bearer-token-0001";
 const labels = (locale: Locale) =>
   ((locale === "de" ? customApiDe : customApiEn) as typeof customApiEn)
     .customApi;
+const detail = (locale: Locale) =>
+  ((locale === "de" ? workspaceDe : workspaceEn) as typeof workspaceEn)
+    .connections.detail;
 const sources = (locale: Locale) =>
   ((locale === "de" ? sourcesDe : sourcesEn) as typeof sourcesEn).sources;
 
@@ -162,6 +167,13 @@ test("a member builds, tests and connects a custom API", async ({
   await expect(
     page.getByRole("heading", { name: "Shop API", exact: false }).first(),
   ).toBeVisible();
+  // The connection shows its definition version and its data tables, not
+  // observations a custom API never writes (#834).
+  await expect(page.locator(".subtitle").first()).toContainText(/ v1 ·/);
+  await expect(
+    page.getByRole("heading", { name: detail(locale).dataTables }),
+  ).toBeVisible();
+  await expect(page.getByText(detail(locale).noObservations)).toHaveCount(0);
   await noToken(page);
 
   // Editing without the API's credentials: a schedule-only change saves a
@@ -324,9 +336,9 @@ test("a member versions, updates, exports and imports a custom API", async ({
   ).toBeVisible();
   await expect(page.getByText(c.update.login.kept)).toBeVisible();
   await page.getByRole("button", { name: c.update.apply }).click();
+  // The connection's page confirms the update (#834).
+  await expect(page).toHaveURL(new RegExp(`${connectionPage}\\?updated=2$`));
   await expect(page.getByText(t(c.update.done, { version: 2 }))).toBeVisible();
-  await page.getByRole("link", { name: c.update.back }).click();
-  await expect(page).toHaveURL(new RegExp(`${connectionPage}$`));
   await expect(page.getByRole("heading", { name: "Shop API" })).toBeVisible();
   await expect(page.locator(".custom-api-update-banner")).toHaveCount(0);
 

@@ -166,7 +166,9 @@ describe("source step", () => {
       <SourceStep workspaceId="w" connectors={all} hasDemo={false} />,
     );
     expect(html).toContain("Connect your first source");
-    expect(html.match(/class="source-choice"/g)).toHaveLength(4);
+    expect(html.match(/class="source-choice"/g)).toHaveLength(5);
+    // A custom API is offered too (#834).
+    expect(html).toContain("Your own JSON API, set up without code");
     expect(html).toContain("Explore with demo data");
     expect(html).toContain("Skip, use demo data");
     // The first available source is selected, and the explainer and the

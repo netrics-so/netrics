@@ -21,6 +21,7 @@ import { ConnectionProject } from "./connection-project";
 import { ConnectionFreshness } from "./connection-freshness";
 import { ConnectionItemImages } from "./connection-item-images";
 import { SyncRunError } from "./sync-run-error";
+import { ConnectionRefresh, waitsForSync } from "./connection-refresh";
 import { CustomApiConnectionLogin } from "@/components/custom-api/connection-login";
 import { CustomApiUpdateBanner } from "@/components/custom-api/connection-update-review";
 import {
@@ -34,6 +35,8 @@ import {
   listWorkspaceMetrics,
   listWorkspaces,
 } from "@/lib/api";
+import { connectorVersionLabel } from "@/lib/custom-api";
+import { getDataSources } from "@/lib/data-api";
 import { getLocale, getT } from "@/lib/i18n/server";
 import {
   parseOAuthOutcome,
@@ -81,6 +84,7 @@ export default async function ConnectionDetailPage({
   const retentionT = await getT("connections.retention");
   const historyT = await getT("connections.history");
   const loginT = await getT("customApi.connectionLogin");
+  const updateT = await getT("customApi.update");
 
   const [{ workspaces }, workspaceResult, detail] = await Promise.all([
     listWorkspaces(forwarded),
@@ -152,6 +156,20 @@ export default async function ConnectionDetailPage({
       )
     : null;
   const connector = connectors.find((c) => c.id === connection.connectorId);
+  // A custom API stores records in datasets, never observations (#834):
+  // its page lists the datasets with their rows instead.
+  const customApiDatasets =
+    customApi && can(role, "data:preview")
+      ? (await getDataSources(workspaceId, forwarded).catch(() => [])).filter(
+          (source) =>
+            source.connectionId === connectionId && source.kind === "source",
+        )
+      : [];
+  // Streams without a time window read everything: their runs have none.
+  const windowless =
+    pinnedVersion?.document.streams.every(
+      (stream) => stream.window.type === "none",
+    ) ?? false;
   const canUpdate = can(role, "connections:update");
   const authFailed = connection.state.authState === "auth_failed";
   // A sync can only fail until the grant is reconnected (the API refuses it).
@@ -198,9 +216,18 @@ export default async function ConnectionDetailPage({
 
   return (
     <>
+      <ConnectionRefresh
+        active={waitsForSync({
+          setupPending: connection.setupPending,
+          loginMissing: customApi?.loginMissing ?? false,
+          health: connection.state.health,
+          backfill: history.backfill,
+          runs: syncRuns,
+        })}
+      />
       <h1>{connection.name}</h1>
       <p className="subtitle">
-        {connection.connectorName} {connection.connectorVersion} ·{" "}
+        {connection.connectorName} {connectorVersionLabel(connection)} ·{" "}
         <HealthBadge
           health={connection.state.health}
           rateLimitedUntil={rateLimitedUntil}
@@ -215,6 +242,11 @@ export default async function ConnectionDetailPage({
         outcome={parseOAuthOutcome(query.oauth)}
         {...(oauth ? { provider: oauth.provider } : {})}
       />
+      {customApi && typeof query.updated === "string" ? (
+        <div className="notice page-alert" role="status">
+          {updateT("done", { version: customApi.version })}
+        </div>
+      ) : null}
       {query.setup === "finished" && !connection.setupPending ? (
         <div className="notice page-alert" role="status">
           {t("setupFinished")}
@@ -636,7 +668,7 @@ export default async function ConnectionDetailPage({
                 <th>{t("runs.status")}</th>
                 <th>{t("runs.mode")}</th>
                 <th>{t("runs.window")}</th>
-                <th>{t("runs.observations")}</th>
+                {customApi ? null : <th>{t("runs.observations")}</th>}
                 <th>{t("runs.attempt")}</th>
                 <th>{t("runs.error")}</th>
                 <th>{t("runs.started")}</th>
@@ -649,9 +681,11 @@ export default async function ConnectionDetailPage({
                   <td>{t(`runStatus.${run.status}`)}</td>
                   <td>{t(`runMode.${run.mode}`)}</td>
                   <td className="muted">
-                    {shortWindow(run.requestedFrom, run.requestedTo)}
+                    {windowless
+                      ? "—"
+                      : shortWindow(run.requestedFrom, run.requestedTo)}
                   </td>
-                  <td>{run.observationsWritten}</td>
+                  {customApi ? null : <td>{run.observationsWritten}</td>}
                   <td>{run.attempt}</td>
                   <td className="muted">
                     <SyncRunError run={run} />
@@ -669,14 +703,31 @@ export default async function ConnectionDetailPage({
         )}
       </div>
 
-      {(connector?.datasetsCount ?? 0) > 0 && can(role, "data:preview") ? (
+      {((connector?.datasetsCount ?? 0) > 0 || customApi) &&
+      can(role, "data:preview") ? (
         <div className="card">
           <h2>{t("dataTables")}</h2>
           <p className="muted">{t("dataTablesHelp")}</p>
+          {customApi ? (
+            customApiDatasets.length ? (
+              <ul>
+                {customApiDatasets.map((dataset) => (
+                  <li key={dataset.id}>
+                    {dataset.name}
+                    {dataset.rowCount !== null
+                      ? ` · ${t("datasetRows", { count: dataset.rowCount })}`
+                      : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">{t("noRecords")}</p>
+            )
+          ) : null}
           <Link href={`/workspaces/${workspaceId}/data`}>{t("openData")}</Link>
         </div>
       ) : null}
-      {connector?.metricsCount !== 0 ? (
+      {connector?.metricsCount !== 0 && !customApi ? (
         <div className="card">
           <h2>{t("latestObservations")}</h2>
           {observations.length === 0 ? (

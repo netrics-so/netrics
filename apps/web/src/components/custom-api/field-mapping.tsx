@@ -8,6 +8,7 @@ import type {
 import {
   chooseKey,
   setFieldType,
+  suggestedTimeKey,
   updateField,
   type FieldType,
 } from "@/lib/custom-api-builder";
@@ -52,6 +53,8 @@ export function FieldMapping({
     (f) => f.type === "date" || f.type === "timestamp",
   );
   if (fields.length === 0) return null;
+  const timeKey = suggestedTimeKey(state);
+  const keyName = fields.find((f) => f.id === key)?.name ?? "";
   return (
     <div className="custom-api-mapping">
       <div className="table-scroll">
@@ -241,6 +244,20 @@ export function FieldMapping({
           </tbody>
         </table>
       </div>
+      {timeKey ? (
+        <p className="help" role="status">
+          {t("timeKey", { key: keyName, time: timeKey.name })}{" "}
+          <button
+            type="button"
+            className="link-button"
+            onClick={() =>
+              update((current) => chooseKey(current, { keyField: timeKey.id }))
+            }
+          >
+            {t("useTimeKey", { time: timeKey.name })}
+          </button>
+        </p>
+      ) : null}
       <div className="field">
         <label htmlFor="custom-api-time-field">{t("timeField")}</label>
         <select

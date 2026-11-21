@@ -77281,7 +77281,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -77379,6 +77381,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -77645,7 +77662,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -77743,6 +77762,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -78101,7 +78135,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -78199,6 +78235,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -78515,7 +78566,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -78613,6 +78666,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -79353,7 +79421,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -79451,6 +79521,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -79809,7 +79894,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -79907,6 +79994,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
@@ -80223,7 +80325,9 @@
                                         "role",
                                         "format",
                                         "unit",
-                                        "classification"
+                                        "classification",
+                                        "nullable",
+                                        "name"
                                       ]
                                     }
                                   }
@@ -80321,6 +80425,21 @@
                                     "type": "string",
                                     "enum": [
                                       "schedule_changed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "images_changed"
                                     ]
                                   }
                                 },
