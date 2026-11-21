@@ -161,7 +161,7 @@ export function PreviewScreen({
         name={name}
         logoImageId={logoImageId(document.settings)}
         slides={document.slides.map((slide) =>
-          scopedSlide(slide, document.productApps),
+          scopedSlide(slide, env.productApps),
         )}
         tokens={tokens}
         images={env.images}
@@ -179,7 +179,7 @@ export function PreviewScreen({
   return (
     <SlideCanvas
       slide={{
-        ...scopedSlide(slide, context.document.productApps),
+        ...scopedSlide(slide, context.env.productApps),
         layouts: context.layouts.get(slide.id) ?? null,
       }}
       tokens={tokens}

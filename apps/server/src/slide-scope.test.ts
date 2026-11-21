@@ -553,6 +553,11 @@ describe("a slide scoped to a linked product (#777)", () => {
   // A second model over a store-template install's mapping table, which
   // links app-b into a product; the app filter maps to it as well.
   let productsModelId: string;
+  /** More members than any response bound used to allow (1,000). */
+  const big = () =>
+    Array.from({ length: 1001 }, (_, index) =>
+      connectionResourceKey(connectionId, `big-${index}`),
+    );
   const productFilter = () => ({
     ...appFilter(),
     mappings: [
@@ -592,11 +597,44 @@ describe("a slide scoped to a linked product (#777)", () => {
               product_id: "product:twins",
             },
           },
+          ...big().map((app_key) => ({
+            values: { app_key, product_id: "product:big" },
+          })),
         ],
       },
     });
     expect(mapping.statusCode, mapping.body).toBe(200);
     const datasetId = mapping.json().datasetId as string;
+    // Another install of the workspace reuses the product's id for app-a.
+    // None of this dashboard's models reads its mapping table.
+    const other = await call("POST", `${data}/manual`, {
+      cookie: owner,
+      payload: {
+        definition: {
+          key: "store_mapping_other",
+          name: "Other mapping",
+          version: 1,
+          mode: "snapshot",
+          grain: "One product per source app",
+          keyFields: ["app_key"],
+          retentionDays: null,
+          fields: ["app_key", "product_id"].map((id) => ({
+            id,
+            name: id,
+            type: "string",
+            nullable: false,
+            classification: "internal",
+          })),
+        },
+        records: [{ values: { app_key: APP_A(), product_id: "product:w" } }],
+      },
+    });
+    expect(other.statusCode, other.body).toBe(200);
+    await admin`
+      insert into data_template_installs (workspace_id, request_id,
+        request_hash, result)
+      values (${workspaceId}, gen_random_uuid(), ${"1".repeat(64)},
+        ${admin.json({ mappingDatasetId: other.json().datasetId as string })})`;
     const model = await call("POST", `${data}/models`, {
       cookie: owner,
       payload: {
@@ -655,11 +693,10 @@ describe("a slide scoped to a linked product (#777)", () => {
     );
     expect(created.statusCode, created.body).toBe(200);
     const dashboard = created.json().dashboard;
-    // Browsers resolve the same scope from the products' member apps.
-    expect(dashboard.productApps).toEqual({
-      "product:twins": [APP_A(), connectionResourceKey(connectionId, "app-c")],
-      "product:w": [APP_B()],
-    });
+    // Browsers resolve the same scope from the product's member apps:
+    // those of the dashboard's own models, not the other install's
+    // (app-a), and only the products its slides name.
+    expect(dashboard.productApps).toEqual({ "product:w": [APP_B()] });
     expect((await dashboardOf(dashboard.id)).productApps).toEqual(
       dashboard.productApps,
     );
@@ -706,12 +743,78 @@ describe("a slide scoped to a linked product (#777)", () => {
       );
   });
 
-  it("has no products on a dashboard without shared filters", async () => {
-    const created = await createDashboard([{ widgets: [] }], {
-      dataFilters: [],
+  it("has no products without a product scope or a mapping among the filters' models", async () => {
+    const unscoped = await createDashboard([{ widgets: [] }], {
+      dataFilters: [productFilter()],
     });
+    expect(unscoped.statusCode, unscoped.body).toBe(200);
+    expect(unscoped.json().dashboard).not.toHaveProperty("productApps");
+    // The app filter maps to the sales model only, which reads no mapping:
+    // the other install's products are not this dashboard's.
+    expectError(
+      await createDashboard([
+        { scope: only("product:w"), widgets: [downloads()] },
+      ]),
+      400,
+      "dashboard_filter_not_applicable",
+    );
+  });
+
+  it("reads a dashboard whose product has more than 1,000 apps", async () => {
+    const created = await createDashboard(
+      [
+        {
+          scope: only("product:big"),
+          // Many apps of the connection: no single one to follow.
+          widgets: [
+            downloads({
+              filterExclusions: [{ filterId: "app", reason: "All apps" }],
+            }),
+          ],
+        },
+      ],
+      { dataFilters: [productFilter()] },
+    );
     expect(created.statusCode, created.body).toBe(200);
-    expect(created.json().dashboard).not.toHaveProperty("productApps");
+    const stored = await dashboardOf(created.json().dashboard.id as string);
+    expect(stored.productApps["product:big"]).toHaveLength(1001);
+    // Without the exclusion the widget is refused, as browsers find too.
+    expectError(
+      await createDashboard(
+        [{ scope: only("product:big"), widgets: [downloads()] }],
+        { dataFilters: [productFilter()] },
+      ),
+      400,
+      "dashboard_filter_not_applicable",
+    );
+  });
+
+  it("gives the Studio a draft's products before it is saved", async () => {
+    const ask = (modelIds: string[], cookie = owner) =>
+      call("POST", `/v1/workspaces/${workspaceId}/dashboards/product-apps`, {
+        cookie,
+        payload: { modelIds },
+      });
+    const found = await ask([modelId, productsModelId]);
+    expect(found.statusCode, found.body).toBe(200);
+    const { productApps } = found.json() as {
+      productApps: Record<string, string[]>;
+    };
+    expect(Object.keys(productApps)).toEqual([
+      "product:big",
+      "product:twins",
+      "product:w",
+    ]);
+    expect(productApps["product:w"]).toEqual([APP_B()]);
+    // No mapping among the sales model's datasets, and no model at all.
+    expect((await ask([modelId])).json()).toEqual({ productApps: {} });
+    expect((await ask([])).json()).toEqual({ productApps: {} });
+    expect((await ask([crypto.randomUUID()])).json()).toEqual({
+      productApps: {},
+    });
+    // Another workspace's member cannot ask about this one's models.
+    expect((await ask([productsModelId], stranger)).statusCode).toBe(404);
+    expect((await ask(["nope"])).statusCode).toBe(400);
   });
 });
 

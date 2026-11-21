@@ -63,7 +63,6 @@ import {
   DataServiceError,
 } from "../data/service.js";
 import {
-  createScopeMappingCache,
   mappedProductApps,
   sourceFreshnessDependencies,
   type ScopeRead,
@@ -74,6 +73,9 @@ import { queryDashboardItems } from "./items.js";
 import {
   modelSourceConnections,
   modelSourceDatasets,
+  publishedReleases,
+  releasesSourceDatasets,
+  type ModelRelease,
   type ModelSourceDatasets,
 } from "./model-sources.js";
 
@@ -428,53 +430,59 @@ export function slideScopeOf(slide: {
   return slideFilterScopeSchema.safeParse(slide.scope ?? {}).data ?? {};
 }
 
+/** The models a dashboard's shared filters map to, each once. */
+export function mappedModelIds(
+  filters: readonly DashboardDataFilter[],
+): string[] {
+  return [
+    ...new Set(
+      filters.flatMap((filter) =>
+        filter.mappings.map((mapping) => mapping.modelId),
+      ),
+    ),
+  ];
+}
+
 /**
  * The member apps of the linked products a dashboard's slide scopes can
  * name (#777), for connection widgets, which have no model of their own:
- * a `product:<id>` is a value of a shared filter that maps to a model, and
- * is resolved as a measure widget's freshness resolves it
- * (mappedProductApps), through the mapping tables of the workspace's
- * store-template installs. No model release is read: showing a dashboard
- * keeps its statement budget (#835). `only` narrows it to those products;
- * without any to resolve, without mapped filters or without an install
- * nothing more is read. A mapping that cannot be read resolves nothing (the
+ * a `product:<id>` is a value of a shared filter, so it is resolved through
+ * the models the dashboard's filters map to (`modelIds`), exactly as a
+ * measure widget's freshness resolves it (mappedProductApps: the
+ * store-template install's mapping table among a model's datasets).
+ * Another install's mapping, which none of these models reads, never
+ * counts. The releases and their preparations are each one query, or
+ * none with `releases`, which a shown dashboard has read already (#835).
+ * `only` narrows it to those products; without any to resolve nothing is
+ * read. A model or mapping that cannot be read resolves nothing (the
  * widgets then show every app, as without the scope), and the
  * transaction's statement timeout is left as it was.
  */
 export async function dashboardProductApps(
   tx: Transaction,
   workspaceId: string,
-  filters: readonly DashboardDataFilter[],
+  modelIds: readonly string[],
   read: ScopeRead,
   only?: ReadonlySet<string>,
+  releases?: ReadonlyMap<string, ModelRelease>,
 ): Promise<Map<string, string[]>> {
-  if (!filters.some((filter) => filter.mappings.length) || only?.size === 0)
-    return new Map();
+  if (!modelIds.length || only?.size === 0) return new Map();
   try {
     return await tx.transaction(async (savepoint) => {
-      const ids = new Set(
-        (
-          await savepoint
-            .select({
-              mapping: sql<
-                string | null
-              >`${schema.dataTemplateInstalls.result}->>'mappingDatasetId'`,
-            })
-            .from(schema.dataTemplateInstalls)
-            .where(eq(schema.dataTemplateInstalls.workspaceId, workspaceId))
-        ).flatMap((install) => (install.mapping ? [install.mapping] : [])),
+      const found =
+        releases ?? (await publishedReleases(savepoint, workspaceId, modelIds));
+      const ids = await releasesSourceDatasets(
+        savepoint,
+        workspaceId,
+        modelIds.flatMap((id) => {
+          const release = found.get(id);
+          return release ? [release] : [];
+        }),
       );
-      if (!ids.size) return new Map<string, string[]>();
-      const cache = read.cache ?? createScopeMappingCache();
-      // Known to be mapping tables: not looked up again.
-      for (const id of ids) cache.isMapping.set(id, true);
       const [{ timeout } = { timeout: "0" }] = await savepoint.execute<{
         timeout: string;
       }>(sql`select current_setting('statement_timeout') as timeout`);
-      const apps = await mappedProductApps(savepoint, workspaceId, ids, {
-        ...read,
-        cache,
-      });
+      const apps = await mappedProductApps(savepoint, workspaceId, ids, read);
       await savepoint.execute(
         sql`select set_config('statement_timeout', ${timeout}, true)`,
       );

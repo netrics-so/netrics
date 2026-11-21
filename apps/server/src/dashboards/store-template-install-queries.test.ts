@@ -153,5 +153,35 @@ describe("store-template install statements (#668)", () => {
       ).length;
       expect(releaseReads).toBeLessThanOrEqual(1);
     }
+    // A slide scoped to a linked product (#777): its apps are resolved
+    // through the dashboard's models, whose releases the same read
+    // covers and whose preparations one more statement reads.
+    await owner`
+      update dashboard_slides set scope = ${owner.json({
+        app: { kind: "values", values: ["product:any"] },
+      })}
+      where workspace_id = ${target.id}
+        and dashboard_id in (
+          select id from dashboards
+          where workspace_id = ${target.id}
+            and jsonb_path_exists(data_filters, '$[*] ? (@.id == "app")'))`;
+    let scoped = 0;
+    for (const { id } of dashboards) {
+      statements.length = 0;
+      await withWorkspace(db, { workspaceId: target.id }, async (tx) => {
+        const dashboard = (await findDashboard(tx, target.id, id))!;
+        if (dashboard.slides.some((slide) => "app" in (slide.scope as object)))
+          scoped += 1;
+        await presentDashboard(tx, target.id, dashboard, "en");
+      });
+      const reading = (table: string) =>
+        statements.filter(
+          (statement) =>
+            statement.startsWith("select") && statement.includes(`"${table}"`),
+        ).length;
+      expect(reading("data_model_releases")).toBeLessThanOrEqual(1);
+      expect(reading("data_preparation_versions")).toBeLessThanOrEqual(1);
+    }
+    expect(scoped).toBeGreaterThan(0);
   }, 120_000);
 });

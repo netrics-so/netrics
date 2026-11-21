@@ -93,6 +93,7 @@ import {
   useWidgetClipboard,
 } from "./canvas-extras";
 import { EditorCanvas, type CanvasOutline } from "./editor-canvas";
+import { useDraftProductApps } from "./use-draft-product-apps";
 import { FormatAttention, formatRatio } from "./format-attention";
 import {
   FormatOverview,
@@ -288,9 +289,16 @@ export function StudioEditor({
     formatDispatch({ type: "slideChanged" });
   }, [slideId]);
   const widget = selectedWidget(state);
+  // The draft filters' linked products (#777); unknown while they load.
+  const products = useDraftProductApps(
+    workspaceId,
+    draft.settings.dataFilters,
+    state.version,
+    dashboard.productApps,
+  );
   const problems = useMemo(
-    () => documentProblems(draft, locale),
-    [draft, locale],
+    () => documentProblems(draft, locale, products.known),
+    [draft, locale, products.known],
   );
   const slidesWithProblems = useMemo(
     () => new Set(problems.flatMap((p) => (p.slideId ? [p.slideId] : []))),
@@ -387,7 +395,7 @@ export function StudioEditor({
       metrics: metricsById,
       connections,
       images: studioImages,
-      productApps: draft.productApps,
+      productApps: products.apps,
     }),
     [
       workspaceId,
@@ -395,7 +403,7 @@ export function StudioEditor({
       theme.tokens.fontScale,
       draft.settings.showHeader,
       draft.settings.dataFilters,
-      draft.productApps,
+      products.apps,
       filterValues,
       metricsById,
       connections,
@@ -1149,7 +1157,7 @@ export function StudioEditor({
                 currency={currency}
                 connections={connections}
                 {...(slide?.scope ? { slideScope: slide.scope } : {})}
-                productApps={draft.productApps}
+                productApps={products.apps}
                 dispatch={dispatch}
                 onUploadImage={onUploadImage}
                 onDeleteImage={onDeleteImage}

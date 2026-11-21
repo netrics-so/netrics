@@ -4,12 +4,14 @@ import { sql } from "drizzle-orm";
 
 import {
   dashboardProductApps,
+  mappedModelIds,
   publishedModel,
   slideScopeOf,
   validateDashboardMeasure,
   safeDataError,
 } from "./data.js";
 import { scopeProducts } from "./freshness.js";
+import { publishedReleases } from "./model-sources.js";
 import {
   barWidgetOptionsSchema,
   dashboardDataFiltersSchema,
@@ -115,6 +117,7 @@ import {
 import {
   dashboardFormatWarnings,
   loadReadabilityInputs,
+  readabilityModelIds,
 } from "./readability.js";
 import {
   findAllResourcesNames,
@@ -261,14 +264,30 @@ export async function presentDashboard(
   const reviews = dashboard.slides.flatMap((slide) =>
     slide.widgets.filter(isReviewRow),
   );
-  // The linked products a slide's scope can name, with their member apps
-  // (#777): connection widgets follow such a scope through them.
+  // The linked products the slides' scopes name, with their member apps
+  // (#777): connection widgets follow such a scope through them. Resolved
+  // through the models the dashboard's own filters map to, whose releases
+  // are read with the readability checks' in one query (#835).
+  const products = scopeProducts(
+    dashboard.slides.map((slide) => slideScopeOf(slide)),
+  );
+  const scopeModels = products.size
+    ? mappedModelIds(
+        dashboardDataFiltersSchema.safeParse(dashboard.dataFilters ?? [])
+          .data ?? [],
+      )
+    : [];
+  const releases = await publishedReleases(tx, workspaceId, [
+    ...readabilityModelIds(dashboard),
+    ...scopeModels,
+  ]);
   const productApps = await dashboardProductApps(
     tx,
     workspaceId,
-    dashboardDataFiltersSchema.safeParse(dashboard.dataFilters ?? []).data ??
-      [],
+    scopeModels,
     { now: new Date() },
+    products,
+    releases,
   );
   const names = await findResourceNames(
     tx,
@@ -344,6 +363,7 @@ export async function presentDashboard(
         allResourcesName,
       });
     },
+    releases,
   );
   const warnings = dashboardFormatWarnings(dashboard, readability);
   const present = (widget: DashboardWidgetRow): DashboardWidget => {
@@ -477,13 +497,7 @@ export async function presentDashboard(
     primaryFormat: dashboard.primaryFormat as ScreenFormatKey,
     archivedAt: dashboard.archivedAt?.toISOString() ?? null,
     ...(productApps.size
-      ? {
-          productApps: Object.fromEntries(
-            [...productApps]
-              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-              .map(([product, keys]) => [product, [...keys].sort()]),
-          ),
-        }
+      ? { productApps: presentProductApps(productApps) }
       : {}),
     slides: dashboard.slides.map((slide) => ({
       id: slide.id,
@@ -528,6 +542,17 @@ export async function presentDashboard(
         };
       }),
   };
+}
+
+/** Products and their apps as responses carry them, in a stable order. */
+export function presentProductApps(
+  apps: ReadonlyMap<string, readonly string[]>,
+): Record<string, string[]> {
+  return Object.fromEntries(
+    [...apps]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([product, keys]) => [product, [...keys].sort()]),
+  );
 }
 
 interface Binding {
@@ -1354,7 +1379,7 @@ async function validateDataBindings(
     const productApps = await dashboardProductApps(
       tx,
       workspaceId,
-      filters,
+      mappedModelIds(filters),
       { now: new Date() },
       scopeProducts(slides.map((slide) => slideScopeOf(slide))),
     );

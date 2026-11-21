@@ -286,8 +286,9 @@ it computes the widget's data:
   widget's resource scope or the slide scope (#707), else every selected
   resource. A slide scoped to a linked product (`product:<id>`) gives a
   widget that is not fixed to an app the product's app of its connection
-  (#777), resolved through the mapping tables of the workspace's
-  store-template installs, read as for measure widgets below.
+  (#777), resolved through the models the dashboard's shared filters map
+  to: the mapping tables among their datasets, read as for measure
+  widgets below. Another install's mapping never counts.
 - **Measure widgets**: the model's sources (ADR 0022). A source dataset
   binding resolves to `data_datasets (connection_id, key)` and so to the
   stream listing that dataset key; an `observation:<connection>:<metric>`

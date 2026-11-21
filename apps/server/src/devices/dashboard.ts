@@ -4,6 +4,7 @@ import {
 } from "../dashboards/compare-measure.js";
 import {
   dashboardProductApps,
+  mappedModelIds,
   queryDashboardMeasure,
   slideScopeOf,
   slideScopedWidgets,
@@ -1316,7 +1317,7 @@ export async function slideProductApps(
   return dashboardProductApps(
     tx,
     workspaceId,
-    filters,
+    mappedModelIds(filters),
     {
       now: options.now,
       ...(options.dataPolicy ? { defaults: options.dataPolicy } : {}),

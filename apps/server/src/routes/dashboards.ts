@@ -6,6 +6,8 @@ import {
   dashboardDataQuerySchema,
   dashboardDataResponseSchema,
   dashboardMeasurePreviewSchema,
+  dashboardProductAppsRequestSchema,
+  dashboardProductAppsResponseSchema,
   compareMeasureQuerySchema,
   compareMeasureReadingsResponseSchema,
   publishedModelCatalogSchema,
@@ -23,6 +25,7 @@ import {
 import {
   dashboardDimensionValues,
   queryDashboardData,
+  dashboardProductApps,
   queryDashboardMeasure,
   publishedModels,
   safeDataError,
@@ -42,7 +45,11 @@ import type { Database } from "@netrics/database";
 import { can, type WorkspaceAction } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
-import { createDashboardService, type Result } from "../dashboards/service.js";
+import {
+  createDashboardService,
+  presentProductApps,
+  type Result,
+} from "../dashboards/service.js";
 import {
   parseBody,
   resolveAccess,
@@ -179,6 +186,47 @@ export function registerDashboardRoutes(
             deps.db,
             { workspaceId: access.workspaceId, userId: access.callerId },
             (tx) => publishedModels(tx, access.workspaceId, filter.data),
+          );
+        },
+      );
+      scope.post(
+        "/workspaces/:workspaceId/dashboards/product-apps",
+        {
+          schema: routeSchema({
+            summary: "Resolve the linked products of models to their apps",
+            tags: ["dashboards"],
+            body: dashboardProductAppsRequestSchema,
+            response: dashboardProductAppsResponseSchema,
+            errors: [400, 403, 404],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "data:query");
+          if (!access) return;
+          const body = parseBody(
+            dashboardProductAppsRequestSchema,
+            request,
+            reply,
+          );
+          if (!body) return;
+          // What a save of a draft with these mapped models validates
+          // against (validateDataBindings): the Studio asks before saving.
+          return withWorkspace(
+            deps.db,
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            async (tx) => ({
+              productApps: presentProductApps(
+                await dashboardProductApps(
+                  tx,
+                  access.workspaceId,
+                  [...new Set(body.modelIds)],
+                  {
+                    now: deps.now?.() ?? new Date(),
+                    ...(deps.policy ? { defaults: deps.policy } : {}),
+                  },
+                ),
+              ),
+            }),
           );
         },
       );
