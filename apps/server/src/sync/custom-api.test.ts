@@ -4,6 +4,7 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ConnectorRegistry } from "@netrics/connector-runtime";
+import { DEFAULT_DATA_POLICY } from "@netrics/domain";
 import type { CustomApiDefinition } from "@netrics/connector-sdk/custom-api";
 import { CUSTOM_API_MESSAGES } from "@netrics/connectors/custom-api";
 import {
@@ -29,7 +30,11 @@ import {
 import { createCredentialKeyring, encryptCredentials } from "../credentials.js";
 import { canonicalSha256 } from "../custom-api/canonical-json.js";
 import { createDataService } from "../data/service.js";
-import { ContinueJobError, createJobHandlers } from "../jobs/handlers.js";
+import {
+  ContinueJobError,
+  createJobHandlers,
+  DeferJobError,
+} from "../jobs/handlers.js";
 import {
   createTestDatabase,
   type TestDatabase,
@@ -118,10 +123,16 @@ async function connect(
   return connectionId;
 }
 
-/** One job, continued (same job id and window) until it ends. */
-async function run(
+/** One attempt of a job; answers the error it ended with, if any. */
+async function attempt(
   kind: "connection.sync" | "connection.backfill",
   connectionId: string,
+  job: {
+    id: string;
+    attempts: number;
+    continuation?: Record<string, unknown> | undefined;
+    pagesPerRun?: number;
+  },
 ): Promise<unknown> {
   const handler = createJobHandlers({
     registry,
@@ -129,33 +140,56 @@ async function run(
     executeOptions: {
       egress: { tlsCa: fixture.ca!, allowPrivateHosts: ["127.0.0.1"] },
     },
+    ...(job.pagesPerRun
+      ? {
+          dataPolicy: {
+            ...DEFAULT_DATA_POLICY,
+            syncPagesPerRun: job.pagesPerRun,
+          },
+        }
+      : {}),
   })[kind]!;
+  try {
+    await handler({
+      job: {
+        id: job.id,
+        kind,
+        workspaceId,
+        connectionId,
+        attempts: job.attempts,
+        payload: {
+          workspace_id: workspaceId,
+          connection_id: connectionId,
+          ...(job.continuation ? { continuation: job.continuation } : {}),
+        },
+      } as unknown as Job,
+      appDb,
+      schedulerDb,
+      logger: pino({ level: "silent" }),
+    });
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+/** One job, continued (same job id and window) until it ends. */
+async function run(
+  kind: "connection.sync" | "connection.backfill",
+  connectionId: string,
+  options: { pagesPerRun?: number } = {},
+): Promise<unknown> {
   const jobId = randomUUID();
   let continuation: Record<string, unknown> | undefined;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try {
-      await handler({
-        job: {
-          id: jobId,
-          kind,
-          workspaceId,
-          connectionId,
-          attempts: attempt,
-          payload: {
-            workspace_id: workspaceId,
-            connection_id: connectionId,
-            ...(continuation ? { continuation } : {}),
-          },
-        } as unknown as Job,
-        appDb,
-        schedulerDb,
-        logger: pino({ level: "silent" }),
-      });
-      return undefined;
-    } catch (error) {
-      if (!(error instanceof ContinueJobError)) return error;
-      continuation = error.continuation;
-    }
+  for (let n = 0; n < 10; n++) {
+    const error = await attempt(kind, connectionId, {
+      id: jobId,
+      attempts: n,
+      continuation,
+      ...options,
+    });
+    if (!(error instanceof ContinueJobError)) return error;
+    continuation = error.continuation;
   }
   throw new Error("job did not end");
 }
@@ -275,6 +309,66 @@ describe("custom-api on the sync engine", () => {
     expect(await summary()).toEqual([
       { stream_key: "values", skipped: 1, skipped_fields: { id: 1 } },
     ]);
+  });
+
+  describe("skipped records over several pages (#834 re-review)", () => {
+    const summary = async (connectionId: string) =>
+      owner<{ skipped: number; skipped_fields: unknown }[]>`
+        select skipped, skipped_fields from custom_api_stream_records
+        where connection_id = ${connectionId}`;
+    const all = [{ skipped: 3, skipped_fields: { id: 3 } }];
+
+    it("adds up a run continued page by page", async () => {
+      const connectionId = await connect(definition("bad_pages"), null);
+      expect(
+        await run("connection.backfill", connectionId, { pagesPerRun: 1 }),
+      ).toBeUndefined();
+      expect(await summary(connectionId)).toEqual(all);
+      // A new sync starts over.
+      expect(await run("connection.sync", connectionId)).toBeUndefined();
+      expect(await summary(connectionId)).toEqual(all);
+    });
+
+    it("keeps the pages before a rate limit and adds the resumed rest", async () => {
+      const connectionId = await connect(definition("bad_pages"), null);
+      fixture.failPageOnce(2, 429);
+      const jobId = randomUUID();
+      const limited = await attempt("connection.backfill", connectionId, {
+        id: jobId,
+        attempts: 0,
+      });
+      expect(limited).toBeInstanceOf(DeferJobError);
+      expect(await summary(connectionId)).toEqual([
+        { skipped: 1, skipped_fields: { id: 1 } },
+      ]);
+      expect(
+        await attempt("connection.backfill", connectionId, {
+          id: jobId,
+          attempts: 1,
+          continuation: (limited as DeferJobError).continuation,
+        }),
+      ).toBeUndefined();
+      expect(await summary(connectionId)).toEqual(all);
+    });
+
+    it("adds the pages of a retried attempt that resumes its checkpoint", async () => {
+      const connectionId = await connect(definition("bad_pages"), null);
+      fixture.failPageOnce(2, 503);
+      const jobId = randomUUID();
+      expect(
+        await attempt("connection.backfill", connectionId, {
+          id: jobId,
+          attempts: 0,
+        }),
+      ).toBeInstanceOf(Error);
+      expect(
+        await attempt("connection.backfill", connectionId, {
+          id: jobId,
+          attempts: 1,
+        }),
+      ).toBeUndefined();
+      expect(await summary(connectionId)).toEqual(all);
+    });
   });
 
   it("marks the connection auth_failed with the 401 message", async () => {

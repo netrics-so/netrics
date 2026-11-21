@@ -98,6 +98,11 @@ export interface CustomApiFixtureServer {
   setImages(paths: readonly string[] | null): void;
   /** GET /photos: adds `?sig=<value>` to every photo URL; null removes it. */
   signUrls(value: string | null): void;
+  /**
+   * GET /edge/bad-pages: the next request for this page answers `status`
+   * once (429 with Retry-After: 1, or another error); null clears it.
+   */
+  failPageOnce(page: number | null, status?: number): void;
   /** The /oauth/* endpoints' state (#805). */
   oauth: FixtureOAuthServer;
   close(): Promise<void>;
@@ -311,6 +316,7 @@ export async function startCustomApiFixtureServer(
   let port = 0;
   let photoImages: readonly string[] | null = null;
   let photoSignature: string | null = null;
+  let failingPage: { page: number; status: number } | null = null;
   const codes = new Map<
     string,
     {
@@ -589,6 +595,23 @@ export async function startCustomApiFixtureServer(
         const start = (page - 1) * size;
         return send(200, {
           data: start < 0 ? [] : items.slice(start, start + size),
+        });
+      }
+      case "/edge/bad-pages": {
+        // Three full pages of two records, each with one record without an
+        // id (skipped by a definition whose id may not be empty), then an
+        // empty page (#834 re-review: skipped records over several pages).
+        const page = int("page", 1);
+        if (failingPage?.page === page) {
+          const { status } = failingPage;
+          failingPage = null;
+          return status === 429
+            ? send(429, { error: "slow down" }, { "retry-after": "1" })
+            : send(status, { error: "page failed" });
+        }
+        return send(200, {
+          data:
+            page >= 1 && page <= 3 ? [{ id: page * 2 - 1 }, { id: null }] : [],
         });
       }
       case "/items/offset": {
@@ -926,6 +949,9 @@ export async function startCustomApiFixtureServer(
     },
     signUrls(value) {
       photoSignature = value;
+    },
+    failPageOnce(page, status = 429) {
+      failingPage = page === null ? null : { page, status };
     },
     oauth,
     close() {

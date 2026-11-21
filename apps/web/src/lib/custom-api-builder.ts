@@ -460,7 +460,6 @@ export function defaultKeyFields(state: BuilderState): string[] {
   return fields[0] ? [fields[0].id] : [];
 }
 
-/** Key and time fields can't be empty: they are kept non-null. */
 /**
  * Key, time and currency fields can't be empty: they are kept non-null. A
  * text or JSON field that no longer has such a role may be empty again
@@ -525,8 +524,11 @@ function withKeyDefaults(state: BuilderState): BuilderState {
   return withRequiredFields(next);
 }
 
-/** Key names that identify a record: `id`, `user_id`, `orderId`, `uuid`, `slug`, `code`… */
-const ID_NAME = /(^|[_.-])(id|uuid|guid|key|slug|code)$/i;
+/**
+ * Key names that identify a record: `id`, `user_id`, `orderId`, `uuid`,
+ * `slug`… Not `code`: `country_code` names a category (#834 re-review).
+ */
+const ID_NAME = /(^|[_.-])(id|uuid|guid|key|slug)$/i;
 const ID_CAMEL = /[a-z0-9](Id|ID|Uuid|UUID|Key)$/;
 
 /** The key's last path key, lower-cased boundaries kept ("user.id" → "id"). */
@@ -538,7 +540,7 @@ function lastKeyOf(path: string): string {
 /**
  * Whether a field is a sensible key on its own (#834 review): text (not an
  * image), or any field whose name says it identifies the record (`id`,
- * `user_id`, `orderId`, `uuid`, `slug`, `code`). A count, an amount or a
+ * `user_id`, `orderId`, `uuid`, `slug`). A count, an amount, a code or a
  * yes/no is not: records with equal values would merge.
  */
 export function sensibleKey(field: CustomApiField): boolean {

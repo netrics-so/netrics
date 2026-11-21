@@ -705,6 +705,8 @@ async function runSync(
               consecutiveFailures: 0,
             },
           });
+        // The skipped records of the pages committed before the limit.
+        await saveRecordSkips(tx);
         await tx
           .update(schema.jobs)
           .set({
@@ -892,10 +894,22 @@ async function runSync(
         total.byPath.set(path, (total.byPath.get(path) ?? 0) + count);
     recordSkips.set(fields.stream, total);
   };
-  /** Writes this job's skipped records per stream; a continued run adds up. */
+  /**
+   * Writes the skipped records counted since the last commit, in the
+   * transaction that commits their pages (#834 re-review): every page
+   * checkpoint, a continuation, a rate limit and the run's end. A run that
+   * starts over (no checkpoint, no continuation) replaces the summary with
+   * its first write; every other write adds to it, so a continued, resumed
+   * or rate-limited run counts every page once. Call skipsCommitted() once
+   * the transaction committed.
+   */
+  let skipsWritten = false;
+  const startsOver = startCursor === null && continuation === undefined;
   const saveRecordSkips = async (tx: Transaction) => {
+    const add = skipsWritten || !startsOver;
     for (const streamKey of customApiStreams.keys()) {
       const total = recordSkips.get(streamKey);
+      if (add && !total) continue;
       await recordStreamRecords(tx, {
         workspaceId,
         connectionId,
@@ -903,10 +917,15 @@ async function runSync(
         checkedAt: now,
         skipped: total?.skipped ?? 0,
         skippedFields: Object.fromEntries(total?.byPath ?? []),
-        add: continuation !== undefined,
+        add,
         maxFields: CUSTOM_API_SKIPPED_FIELDS,
       });
     }
+  };
+  const skipsCommitted = () => {
+    if (customApiStreams.size === 0) return;
+    recordSkips.clear();
+    skipsWritten = true;
   };
   const executeOptions: ExecuteOptions = callOptionsFor(
     registered,
@@ -1334,8 +1353,10 @@ async function runSync(
               target: schema.connectionState.connectionId,
               set: { cursor: nextCursor, ...backfillMarker },
             });
+          await saveRecordSkips(tx);
           return count;
         });
+        skipsCommitted();
         progress.pagesCommitted += 1;
         progress.observationsWritten += written;
         progress.cursor = nextCursor;

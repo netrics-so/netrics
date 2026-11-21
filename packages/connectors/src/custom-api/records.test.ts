@@ -6,6 +6,7 @@ import {
   convertValue,
   jsonTooDeep,
   mapRecords,
+  skippedFieldPaths,
   selectRecords,
 } from "./index.js";
 import { FIXTURE_BAD_VALUES } from "./testing/index.js";
@@ -135,6 +136,21 @@ describe("custom API records", () => {
       { id: 2, orders: null },
       { id: 3, orders: null },
     ]);
+  });
+
+  it("sums the skips of two fields that read the same path (#834 re-review)", () => {
+    const stream = {
+      fields: [
+        field({ id: "as_text", path: "x", nullable: false }),
+        field({ id: "as_number", path: "x", type: "integer", nullable: false }),
+      ],
+      keyFields: ["as_text"],
+    };
+    const page = mapRecords(stream, [{ x: {} }, { x: "abc" }, { x: 2 }], "UTC");
+    expect(page.skippedFields).toEqual({ as_text: 1, as_number: 1 });
+    expect(skippedFieldPaths(stream.fields, page.skippedFields)).toEqual(
+      new Map([["x", 2]]),
+    );
   });
 
   it("skips a record whose money field has no ISO currency", () => {

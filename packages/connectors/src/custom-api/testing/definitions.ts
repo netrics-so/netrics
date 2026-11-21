@@ -34,6 +34,7 @@ export const FIXTURE_DEFINITION_NAMES = [
   "repeat_cursor",
   "endless",
   "bad_values",
+  "bad_pages",
   "not_json",
   "deep",
   "rate_limited",
@@ -329,6 +330,12 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
         ...idOnly,
         { id: "orders", name: "Orders", path: "orders", type: "integer" },
       ]);
+      break;
+    case "bad_pages":
+      stream = {
+        ...simple("values", "/edge/bad-pages"),
+        pagination: { ...pageNumber, size: 2 },
+      };
       break;
     case "not_json":
       stream = simple("items", "/edge/not-json");

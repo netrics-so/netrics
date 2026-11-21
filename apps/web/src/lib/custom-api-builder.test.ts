@@ -304,6 +304,11 @@ describe("custom API builder state", () => {
       field: "price",
       time: "created_at",
     });
+    // A code names a category, not a record (#834 re-review).
+    expect(keyHint(withKey(suggestion("country_code", "integer")))).toEqual({
+      field: "country_code",
+      time: "created_at",
+    });
     expect(keyHint(withKey(suggestion("active", "boolean")))).toEqual({
       field: "active",
       time: "created_at",

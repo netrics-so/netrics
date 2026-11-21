@@ -47,7 +47,12 @@ import {
 } from "./manifest.js";
 import { CUSTOM_API_MESSAGES } from "./messages.js";
 import { nextPage, pageParams, type PageState } from "./pagination.js";
-import { jsonTooDeep, mapRecords, selectRecords } from "./records.js";
+import {
+  jsonTooDeep,
+  mapRecords,
+  selectRecords,
+  skippedFieldPaths,
+} from "./records.js";
 import {
   buildRequest,
   stripCustomApiSecrets,
@@ -316,17 +321,11 @@ export function createCustomApiConnector(
     if (mapped.skipped > 0 || nulledFields.length > 0) {
       // The host keeps the skipped records per stream by field path
       // (#834 review); nulled values stay for the operator's log.
-      const paths = new Map(stream.fields.map((f) => [f.id, f.path]));
       runtime.log?.warn(CUSTOM_API_SKIPPED_LOG, {
         stream: stream.key,
         ...skippedLogFields(
           mapped.skipped,
-          new Map(
-            Object.entries(mapped.skippedFields).map(([id, count]) => [
-              paths.get(id) ?? id,
-              count,
-            ]),
-          ),
+          skippedFieldPaths(stream.fields, mapped.skippedFields),
         ),
         ...Object.fromEntries(
           nulledFields

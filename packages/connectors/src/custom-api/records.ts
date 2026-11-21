@@ -392,3 +392,20 @@ export function jsonTooDeep(text: string): boolean {
   }
   return false;
 }
+
+/**
+ * A page's skipped records by field path (#834): two fields may read the
+ * same path (as text and as a number), so their counts add up.
+ */
+export function skippedFieldPaths(
+  fields: readonly Pick<CustomApiField, "id" | "path">[],
+  skippedFields: Readonly<Record<string, number>>,
+): Map<string, number> {
+  const paths = new Map(fields.map((field) => [field.id, field.path]));
+  const byPath = new Map<string, number>();
+  for (const [id, count] of Object.entries(skippedFields)) {
+    const path = paths.get(id) ?? id;
+    byPath.set(path, (byPath.get(path) ?? 0) + count);
+  }
+  return byPath;
+}
