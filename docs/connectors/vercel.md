@@ -34,6 +34,9 @@ choose all current and future projects, or a selection.
   pickers. The data it already collected is kept.
 - A project you add gets its history with the next import, which reads the
   connection's history again.
+- With no project selected, nothing new is collected. The connection stays
+  healthy as long as its token is valid, and its widgets show the last
+  values with the time they were last checked.
 
 A Vercel token grants the same access you have within its scope. netrics
 only reads the project list and Web Analytics with it. The token is stored

@@ -1115,7 +1115,8 @@ async function runSync(
   // Step 2b (#782): a connection that has no resource names yet (its first
   // run) learns them before the pages are read, so pickers and tables can
   // name its resources while a long first backfill runs or waits for a
-  // provider limit. Provisional and best effort: step 4 still refreshes
+  // provider limit. Provisional and best effort (except a provider limit
+  // with a known reset, which defers the run): step 4 still refreshes
   // names (and icons) after the first run that succeeds, with this list
   // when that is this run.
   let namedBeforeSync: Awaited<ReturnType<typeof executeDiscover>> | null =
@@ -1140,6 +1141,10 @@ async function runSync(
       namedBeforeSync = resources;
     }
   } catch (error) {
+    // The provider's limit is used up: nothing more is asked of it before
+    // the reset. The run waits, as it does when the check or a page meets
+    // the limit; the names are discovered when it resumes.
+    if (error instanceof RateLimitedError) throw await rateLimited(error);
     log.warn({ err: safeMessage(error) }, "resource names not discovered");
   }
 

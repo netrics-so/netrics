@@ -71,6 +71,8 @@ const manifest: ConnectorManifest = {
 
 /** While set, every request after the first backfill page meets the limit. */
 let limitedUntil: Date | null = null;
+/** While set, listing the resources meets the limit. */
+let discoverLimitedUntil: Date | null = null;
 /** The cursors the connector was asked for, per mode. */
 const requests: Array<{ mode: string; cursor: string | null }> = [];
 /** While set, a sync waits for it before it answers. */
@@ -82,6 +84,12 @@ const limitedConnector: Connector = {
     return { ok: true };
   },
   async discover() {
+    if (discoverLimitedUntil) {
+      throw new RateLimitedError(
+        "The provider's rate limit is used up (429).",
+        discoverLimitedUntil,
+      );
+    }
     return [];
   },
   async sync(_context: ConnectionContext, request: SyncRequest) {
@@ -251,6 +259,36 @@ afterAll(async () => {
 });
 
 describe("a provider rate limit with a known reset (#781)", () => {
+  it("defers a first run whose resource listing meets the limit, before any page is read (#782)", async () => {
+    requests.length = 0;
+    const connectionId = await seedConnection();
+    const retryAt = new Date(Date.now() + 60 * 60 * 1000);
+    discoverLimitedUntil = retryAt;
+    try {
+      const backfill = await enqueue(connectionId, "connection.backfill");
+      await waitFor(
+        async () =>
+          !["pending", "running"].includes((await job(backfill)).status),
+      );
+      const deferred = await job(backfill);
+      expect(deferred.status).toBe("continuing");
+      expect(deferred.attempts).toBe(0);
+      expect(deferred.run_at.getTime()).toBeGreaterThanOrEqual(
+        retryAt.getTime(),
+      );
+      const state = await stateOf(connectionId);
+      expect(state.rateLimitedUntil?.getTime()).toBe(deferred.run_at.getTime());
+      expect(state.authState).toBe("ok");
+      // No page request went to the provider before its reset.
+      expect(requests).toEqual([]);
+      expect(
+        (await runsOf(connectionId)).map((run) => run.error_class),
+      ).toEqual(["rate_limited"]);
+    } finally {
+      discoverLimitedUntil = null;
+    }
+  });
+
   it("defers the backfill and the incremental sync to the reset, without a failure or an outage", async () => {
     requests.length = 0;
     // As in production: earlier 429s left an outage and ten failures.

@@ -97,7 +97,7 @@ const vercelDe: ManifestTranslation = {
 
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
-  version: "0.1.3",
+  version: "0.1.4",
   sdkVersion: "^0.2.13",
   category: "web",
   brandColor: "#000000",
@@ -278,10 +278,14 @@ function teamIdOf(context: ConnectionContext): string | undefined {
   return typeof teamId === "string" && teamId !== "" ? teamId : undefined;
 }
 
+/**
+ * The stored project selection. Undefined when none is stored (connections
+ * from before selections existed, and "all projects"): every project is
+ * collected. An explicit empty selection collects nothing (#782).
+ */
 function selectionOf(context: ConnectionContext): string[] | undefined {
   const selection = context.config.resourceSelection;
   return Array.isArray(selection) &&
-    selection.length > 0 &&
     selection.every((id) => typeof id === "string")
     ? (selection as string[])
     : undefined;
@@ -408,6 +412,12 @@ export function createVercelConnector(
         }
         throw error;
       }
+      const selection = selectionOf(context);
+      // Nothing is collected (#782): the token was accepted, and no
+      // project is asked for anything, so none can be missing.
+      if (selection?.length === 0) {
+        return { ok: true };
+      }
       if (projects.length === 0) {
         return {
           ok: false,
@@ -415,7 +425,6 @@ export function createVercelConnector(
             "The token cannot see any projects. Create it with the team (or project) that owns the site as its scope.",
         };
       }
-      const selection = selectionOf(context);
       if (selection) {
         const byId = new Map(projects.map((project) => [project.id, project]));
         const missing = selection.filter((id) => !byId.has(id));
@@ -482,7 +491,9 @@ export function createVercelConnector(
           runStartMs,
         ),
       ).toISOString();
-      if (startMs >= toMs) {
+      // An empty window, or an explicit empty selection (#782): nothing is
+      // read, and nothing is reported as checked.
+      if (startMs >= toMs || request.resources?.length === 0) {
         return {
           observations: [],
           nextCursor: resumeAt,

@@ -588,6 +588,32 @@ describe("vercel connector check", () => {
     expect(empty.message).toMatch(/cannot see any projects/);
   });
 
+  it("an explicit empty selection collects nothing: the check validates the token only (#782)", async () => {
+    const paused = context({ config: { resourceSelection: [] } });
+    // No project with Web Analytics is left, or none at all: nothing is
+    // asked of them, so the connection stays healthy.
+    for (const projects of [[FAKE_PROJECTS[2]!], []]) {
+      expect(
+        await connector().check(paused, fake({ projects }).runtime),
+      ).toEqual({ ok: true });
+    }
+    // The token itself is still checked.
+    const revoked = await connector().check(
+      paused,
+      fake({ token: "another-token" }).runtime,
+    );
+    expect(revoked.ok).toBe(false);
+    expect(revoked.message).toMatch(/rejected the access token/);
+    // A connection from before selections has no selection stored: it
+    // collects every project, and is refused when none has Web Analytics.
+    const legacy = await connector().check(
+      context({ config: {} }),
+      fake({ projects: [FAKE_PROJECTS[2]!] }).runtime,
+    );
+    expect(legacy.ok).toBe(false);
+    expect(legacy.message).toMatch(/Web Analytics enabled/);
+  });
+
   it("throws (retryable) on an outage instead of blaming the token", async () => {
     const down = fake({
       failures: Array.from({ length: 4 }, () => ({ status: 503 })),
@@ -638,6 +664,31 @@ describe("vercel freshness", () => {
       resources: ["prj_alpha", "prj_beta"],
     });
     expect(read.pages.at(-1)!.freshness).toEqual([{ stream: TRAFFIC_STREAM }]);
+  });
+
+  it("an explicit empty selection reads nothing and reports nothing as checked (#782)", async () => {
+    const window = {
+      mode: "backfill" as const,
+      from: "2024-10-15T00:00:00.000Z",
+      to: `${TODAY}T12:00:00.000Z`,
+    };
+    const provider = fake();
+    const paused = await syncAll(provider.runtime, {
+      ...window,
+      resources: [],
+    });
+    expect(paused.pages).toHaveLength(1);
+    expect(paused.pages[0]!.done).toBe(true);
+    expect(paused.observations).toEqual([]);
+    expect(paused.pages[0]!.freshness).toBeUndefined();
+    expect(provider.requests).toEqual([]);
+    // Without a selection (connections from before selections existed)
+    // every project with Web Analytics is read, as before.
+    const all = await syncAll(fake().runtime, window);
+    expect(new Set(all.observations.map((o) => o.dimensions.resource))).toEqual(
+      new Set(["prj_alpha", "prj_beta"]),
+    );
+    expect(all.pages.at(-1)!.freshness).toEqual([{ stream: TRAFFIC_STREAM }]);
   });
 
   it("declares every metric in one continuous stream", () => {
