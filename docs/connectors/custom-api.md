@@ -8,11 +8,11 @@ optional time window. Every stream becomes a typed source dataset (dataset
 contract v1, [ADR 0026](../decisions/0026-dataset-contract-v1.md)) like the
 datasets of bundled connectors. Design: [ADR 0027](../decisions/0027-custom-api-connector.md).
 
-> Status: milestone 13. Definitions, their versions and connections with the
-> login methods none, API key, bearer token and HTTP basic work through the
-> API, and the images of image streams are copied after each sync. OAuth
-> (client credentials, authorization code), the builder UI and the latest
-> items widget follow.
+> Status: milestone 13. Definitions, their versions and connections with
+> every login method (none, API key, bearer token, HTTP basic, OAuth client
+> credentials and OAuth authorization code) work through the API, and the
+> images of image streams are copied after each sync. The builder UI and the
+> latest items widget follow.
 
 ## Definitions and connections
 
@@ -76,13 +76,43 @@ most 10 drafts are open per workspace.
   request.
 - `POST …/drafts/:draftId/promote` turns the draft into a connection of a
   saved definition version, keeping its secrets when that version sends them
-  to the same hosts.
+  to the same hosts. An OAuth draft keeps its grant; an authorization-code
+  draft must have signed in first (`400 custom_api_secret_missing`).
+
+## OAuth
+
+Custom APIs use the user's own OAuth app: netrics cannot register apps for
+APIs it does not know. Register one at your provider with the redirect URI
+from `GET /v1/workspaces/:workspaceId/custom-api/oauth`
+(`<WEB_ORIGIN>/oauth/custom/callback`). The client ID and secret are stored
+in the connection's (or draft's) encrypted credentials, never returned, and
+sent only to the definition's token and revoke URLs, in the form body or as
+HTTP basic (`clientAuth`). Details: ADR 0027, section 6.
+
+- **Client credentials**: creating a connection requests a token first; a
+  refused client ID or secret is refused and nothing is stored. Tokens are
+  requested again when they expire; when the token endpoint refuses the
+  client later, the connection needs new credentials (`auth_failed`).
+- **Authorization code**: creating a connection stores the client and waits
+  for the sign-in (setup pending, not synced). Start it with
+  `POST /v1/workspaces/:workspaceId/oauth/authorizations`
+  `{ connectorId: "custom-api", connectionId }` (a draft's id works too);
+  the browser returns to the connection, or for a draft to the builder with
+  `?draft=<id>`. PKCE (S256) is on unless the definition turns it off. The
+  first sign-in starts the connection's backfill; later ones renew the
+  grant. Access tokens are refreshed with the stored refresh token; a
+  refused refresh asks for a new sign-in.
+- **Deleting** a connection or draft revokes the refresh token at the
+  definition's revoke URL (best effort). Without a revoke URL the answer
+  points at the provider so you can remove access there. Expired drafts are
+  revoked before they are deleted.
 
 ## What is supported
 
 - **Login**: none; API key in a header or query parameter; bearer token
   (header name and prefix configurable, default `Authorization: Bearer`);
-  HTTP basic. A `401` or `403` marks the connection "needs attention" with a
+  HTTP basic; OAuth client credentials and authorization code (see OAuth).
+  A `401` or `403` marks the connection "needs attention" with a
   message that says what to do. A `429` with `Retry-After` waits until then; a
   `429` without it is retried with the usual backoff.
 - **Pagination**: none; page number; offset and limit; cursor from a body

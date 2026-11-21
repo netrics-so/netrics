@@ -2,8 +2,8 @@
 
 Status: accepted (2026-11-20; [#804](https://github.com/netrics-so/netrics/issues/804),
 milestone 13). Builds on ADR 0022 (typed datasets), ADR 0026 (dataset
-contract v1) and the egress hardening of #814. The OAuth section follows with
-custom OAuth (milestone 13, group C-G4).
+contract v1) and the egress hardening of #814. Section 6 (custom OAuth) was
+added with [#805](https://github.com/netrics-so/netrics/issues/805).
 
 ## Context
 
@@ -89,6 +89,69 @@ parameter or any other secret value; auth is applied again per request. `401`/`4
 throw `CustomApiAuthError` (error class `auth`, the connection needs
 attention); a `429` with `Retry-After` is a `RateLimitedError`. The engine
 recognises the custom errors by name, which the runtime's redaction keeps.
+
+### 6. Custom OAuth
+
+ADR 0012 treats OAuth providers as trusted host code: endpoints in the
+server, the client ID and secret in instance configuration, and on the
+hosted service an OAuth app that netrics owns. That rule cannot apply to a
+custom API: netrics cannot own apps for APIs it does not know. The user
+registers their own OAuth app at their provider and enters its redirect URI
+(`<WEB_ORIGIN>/oauth/custom/callback`, `GET …/custom-api/oauth`), and the
+builder says so.
+
+- **Endpoints are connection data.** Custom OAuth reuses ADR 0012's tables,
+  token service and callback route under the provider id `custom`. The
+  provider is built per call from the connection's definition, read through
+  `loadConnectionCustomApiDefinition` (the pinned version, or a builder
+  draft's unsaved one), and from its envelope: authorize, token and revoke
+  URL, scopes, PKCE (S256, on by default), extra authorize parameters (never
+  templated) and the client authentication (form body or HTTP basic). The
+  URLs are https and canonical (C-G1); token and revoke calls go through the
+  custom API egress to those hosts only, with no redirect, and with the
+  self-host private hosts. The browser, not the server, visits the
+  authorize URL.
+- **Client ID and secret live in the envelope**, next to the refresh token:
+  `{ host, clientId, clientSecret, refreshToken }`, bound to the connection
+  like every envelope. The access token is cached in `connection_oauth` as
+  for Google. A draft's secrets follow the draft rule: they and the grant
+  carry over while the hosts (environment, token, revoke), the login method
+  and the client stay the same; any change drops the grant (revoked at the
+  provider when it had a refresh token). An active connection's client and
+  environment cannot change without a new connection.
+- **Client credentials.** A connection requests a token at creation (a
+  refused client is refused with "The token endpoint refused the client ID
+  or client secret…", and nothing is stored), runs the connector check with
+  it and stores the grant with the connection. A draft mints its first
+  token on its first test request. An expired token is replaced by a new
+  `client_credentials` request under the grant's row lock; a token endpoint
+  that refuses the client marks the connection `auth_failed` with that
+  message, since only new client credentials help.
+- **Authorization code and the `authorize` purpose.** The connection (or
+  draft) exists before its first grant because it holds the client
+  credentials, which neither `connect` (no connection yet) nor
+  `reauthorize` (a grant exists) describes: `oauth_authorizations.purpose`
+  gains `authorize` (migration 0089). The callback reads the connection's
+  current definition and envelope again, exchanges the code (with the PKCE
+  verifier when PKCE is on), and stores the grant; an active connection then
+  finishes its setup and starts its backfill in the same transaction, a
+  draft stores the grant only and the browser returns to the builder
+  (`?draft=<id>`). A grant without a refresh token ends with its access
+  token (`needs_reauthorization`, `invalid_grant`).
+- **The account id is generated** (`custom:<uuid>`): a custom provider has
+  no OpenID account endpoint in general. No ID token is verified and no
+  nonce is sent; the account is unique to the grant and kept across
+  reauthorizations, so ADR 0012's shared-grant rules never find another
+  holder and the grant-liveness refresh is not needed.
+- **Revocation.** Deleting a connection revokes its refresh token at the
+  definition's revoke URL after commit (RFC 7009, best effort); without a
+  revoke URL nothing is sent and the answer points at the authorize URL's
+  origin. A client-credentials grant has nothing to revoke. A builder draft
+  is revoked before it is deleted; an expired draft with a grant is left to
+  a worker job (`custom_api.draft_expired`, queued by the scheduler) that
+  revokes and then deletes it, because the scheduler holds no credential
+  keyring. The plain prune removes such a draft only when it is twice as
+  old.
 
 ## Consequences
 
