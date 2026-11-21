@@ -6,7 +6,7 @@ import { useState } from "react";
 import type { CustomApiDefinitionResponse } from "@netrics/contracts";
 
 import { ProjectSelect } from "@/components/project-select";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage, updateConnection } from "@/lib/api";
 import { connectDefinition, startCustomOAuth } from "@/lib/custom-api";
 import { credentialNames } from "@/lib/custom-api-builder";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -18,6 +18,7 @@ type Definition = CustomApiDefinitionResponse["definition"];
 export type ConnectClient = {
   connectDefinition: typeof connectDefinition;
   startCustomOAuth: typeof startCustomOAuth;
+  updateConnection: typeof updateConnection;
 };
 
 /** What "Connect" sends: values split into plain, secret and the login's credentials. */
@@ -75,7 +76,22 @@ export async function connectAndSignIn(
   },
 ): Promise<{ connectionId: string; authorizationUrl: string | null }> {
   let connectionId = input.connectionId;
-  if (connectionId === null) {
+  if (connectionId !== null) {
+    // A retry: the connection takes the form as it is now.
+    const { body } = input;
+    await api.updateConnection(input.workspaceId, connectionId, {
+      name: body.name,
+      config: body.variables,
+      customApiEnvironmentId: body.environmentId,
+      projectId: body.projectId ?? null,
+      ...(Object.keys(body.credentials).length
+        ? { credentials: body.credentials }
+        : {}),
+      ...(Object.keys(body.secretVariables).length
+        ? { secretVariables: body.secretVariables }
+        : {}),
+    });
+  } else {
     const { connection } = await api.connectDefinition(
       input.workspaceId,
       input.definitionId,
@@ -101,7 +117,7 @@ export function ConnectDefinition({
   workspaceId,
   definition,
   projects,
-  api = { connectDefinition, startCustomOAuth },
+  api = { connectDefinition, startCustomOAuth, updateConnection },
 }: {
   workspaceId: string;
   definition: Definition;

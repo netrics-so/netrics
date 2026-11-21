@@ -11,6 +11,7 @@ import { API, API_PORT, ORIGIN, WEB_PORT } from "./e2e/support/origin.ts";
 // trust it and may reach 127.0.0.1: a reused local `pnpm dev` API needs
 // the same two variables, NETRICS_CUSTOM_API_PRIVATE_HOSTS=127.0.0.1 and
 // NODE_EXTRA_CA_CERTS=node_modules/.cache/netrics-e2e/custom-api-tls/cert.pem.
+// The certificate is made again before it expires; restart such an API then.
 ensureCustomApiCertificate();
 
 /**

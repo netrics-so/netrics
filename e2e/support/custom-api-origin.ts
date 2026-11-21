@@ -45,6 +45,11 @@ function certificateValid(): boolean {
  */
 export function ensureCustomApiCertificate(): void {
   if (certificateValid()) return;
+  console.warn(
+    `Made a new custom API test certificate (${CUSTOM_API_TLS.cert}). ` +
+      "A running dev API (pnpm dev) still trusts the old one: restart it " +
+      "with NODE_EXTRA_CA_CERTS set to this file.",
+  );
   mkdirSync(dir, { recursive: true });
   execFileSync("openssl", [
     "req",

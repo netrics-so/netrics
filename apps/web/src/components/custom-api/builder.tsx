@@ -38,9 +38,9 @@ import {
   saveAndConnect,
   startSignIn,
   syncDraft,
+  typedSecretsFor,
   type BuilderClient,
 } from "./builder-actions";
-import { enteredSecrets } from "./step-login";
 import { StepBasics } from "./step-basics";
 import { StepLogin } from "./step-login";
 import { StepPaging } from "./step-paging";
@@ -209,6 +209,20 @@ export function CustomApiBuilder({
     return () => window.removeEventListener("beforeunload", leave);
   }, [draftId, t]);
 
+  // A typed value whose name the definition no longer declares (a variable
+  // unticked as secret, renamed or removed) is dropped, never sent.
+  const declared = requiredSecrets(state).join("\n");
+  useEffect(() => {
+    const names = new Set(declared.split("\n"));
+    setSecretInputs((current) => {
+      const stale = Object.keys(current).filter((name) => !names.has(name));
+      if (stale.length === 0) return current;
+      const next = { ...current };
+      for (const name of stale) delete next[name];
+      return next;
+    });
+  }, [declared]);
+
   if (!canEdit && definition)
     return <CustomApiSummary definition={definition} />;
 
@@ -245,7 +259,6 @@ export function CustomApiBuilder({
     setError(null);
     setPending("draft");
     try {
-      const typed = enteredSecrets(secretInputs);
       const entered = await enterStep(api, {
         workspaceId,
         draftId,
@@ -253,14 +266,14 @@ export function CustomApiBuilder({
         state,
         target,
         createDraft: !editing,
-        secrets: typed,
+        secrets: secretInputs,
       });
       if (entered.draftId) rememberDraft(entered.draftId);
       if (entered.secretsLost) setSecretsLost(true);
-      if (typed) {
-        // Typed replacements were saved with the move.
+      if (entered.sent) {
+        // Typed replacements were stored with the move.
         setSecretInputs({});
-        if (entered.draftId) setSecretsLost(false);
+        setSecretsLost(false);
       }
       setState(entered.state);
       setStep(target);
@@ -308,8 +321,19 @@ export function CustomApiBuilder({
     try {
       const id = await ensureDraft(api, workspaceId, draftId, definition?.id);
       rememberDraft(id);
-      const result = await runTest(api, workspaceId, id, from, pages);
+      const result = await runTest(
+        api,
+        workspaceId,
+        id,
+        from,
+        pages,
+        secretInputs,
+      );
       setState(result.state);
+      if (result.sent) {
+        setSecretInputs({});
+        setSecretsLost(false);
+      }
       if (result.secretsLost) setSecretsLost(true);
       setTestedFields(JSON.stringify(result.state.stream.fields));
       setPagingTest(pages > 1 ? result.state.lastTest : null);
@@ -407,7 +431,9 @@ export function CustomApiBuilder({
 
   const index = BUILDER_STEPS.indexOf(step);
   // Secrets typed for every missing name are saved by Continue.
-  const typed = new Set(Object.keys(enteredSecrets(secretInputs) ?? {}));
+  const typed = new Set(
+    Object.keys(typedSecretsFor(state, secretInputs) ?? {}),
+  );
   const missing = requiredSecrets(state).filter(
     (name) => !state.secretsSet.includes(name),
   );

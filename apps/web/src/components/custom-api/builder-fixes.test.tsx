@@ -10,8 +10,10 @@ import { CustomApiBuilder } from "./builder";
 import {
   builderErrorMessage,
   enterStep,
+  runTest,
   saveAndConnect,
   startSignIn,
+  typedSecretsFor,
   type BuilderClient,
 } from "./builder-actions";
 import { connectAndSignIn } from "./connect-definition";
@@ -279,7 +281,12 @@ describe("custom API builder review fixes", () => {
       .mockResolvedValueOnce({
         authorizationUrl: "https://auth.example.test/a",
       });
-    const api = { connectDefinition, startCustomOAuth } as never;
+    const updateConnection = vi.fn(async () => ({ connection: { id: D } }));
+    const api = {
+      connectDefinition,
+      startCustomOAuth,
+      updateConnection,
+    } as never;
     let created: string | null = null;
     const input = {
       workspaceId: W,
@@ -298,15 +305,30 @@ describe("custom API builder review fixes", () => {
       connectAndSignIn(api, { ...input, connectionId: null }),
     ).rejects.toBeInstanceOf(CustomApiRequestError);
     expect(created).toBe(D);
+    // The user changed the form before retrying: the connection takes it.
     const retry = await connectAndSignIn(api, {
       ...input,
       connectionId: created,
+      body: {
+        ...input.body,
+        name: "Shop EU",
+        environmentId: "staging",
+        variables: { account_id: "42" },
+        credentials: { clientId: "c2", clientSecret: "secret-2" },
+      },
     });
     expect(retry).toEqual({
       connectionId: D,
       authorizationUrl: "https://auth.example.test/a",
     });
     expect(connectDefinition).toHaveBeenCalledTimes(1);
+    expect(updateConnection).toHaveBeenCalledWith(W, D, {
+      name: "Shop EU",
+      config: { account_id: "42" },
+      customApiEnvironmentId: "staging",
+      projectId: null,
+      credentials: { clientId: "c2", clientSecret: "secret-2" },
+    });
   });
 
   it.each(LOCALES)(
@@ -360,4 +382,101 @@ describe("custom API builder review fixes", () => {
       );
     },
   );
+
+  describe("typed secrets the definition no longer declares (re-review #824)", () => {
+    const withSecretVariable = (): BuilderState => ({
+      ...ready(),
+      secretsSet: ["token"],
+      variables: [
+        { id: "signing_key", label: "Signing key", secret: true, value: "" },
+      ],
+    });
+    const typed = { signing_key: "sk-typed-0001", token: "new-token-0001" };
+
+    it.each<[string, (state: BuilderState) => BuilderState]>([
+      [
+        "unticked as secret",
+        (state) => ({
+          ...state,
+          variables: state.variables.map((v) => ({
+            ...v,
+            secret: false,
+            value: "x",
+          })),
+        }),
+      ],
+      [
+        "renamed",
+        (state) => ({
+          ...state,
+          variables: state.variables.map((v) => ({
+            ...v,
+            id: "signature",
+            label: "Signature",
+          })),
+        }),
+      ],
+      ["removed", (state) => ({ ...state, variables: [] })],
+    ])("sends no value for a variable %s", async (_case, change) => {
+      const state = change(withSecretVariable());
+      expect(typedSecretsFor(state, typed)).toEqual({
+        token: "new-token-0001",
+      });
+      const { api, raw } = client({ secretsSet: ["token"] });
+      const moved = await enterStep(api, {
+        workspaceId: W,
+        draftId: D,
+        state,
+        target: "response",
+        secrets: typed,
+      });
+      expect(moved.sent).toBe(true);
+      const body = (
+        raw.updateDraft.mock.calls[0] as unknown as [
+          string,
+          string,
+          { secrets: unknown },
+        ]
+      )[2];
+      expect(body.secrets).toEqual({ token: "new-token-0001" });
+    });
+
+    it("keeps typed secrets when nothing was stored", async () => {
+      const { api, calls } = client();
+      // The definition can't be stored yet (no base URL): nothing is sent.
+      const moved = await enterStep(api, {
+        workspaceId: W,
+        draftId: D,
+        state: {
+          ...withSecretVariable(),
+          environments: [{ id: "production", name: "P", baseUrl: "" }],
+        },
+        target: "request",
+        secrets: typed,
+      });
+      expect(moved.sent).toBe(false);
+      expect(calls).toEqual([]);
+    });
+
+    it("stores typed secrets before a test request", async () => {
+      const { api, calls, raw } = client({
+        secretsSet: ["signing_key", "token"],
+      });
+      const tested = await runTest(api, W, D, withSecretVariable(), 1, typed);
+      expect(calls).toEqual(["updateDraft", "testDraft"]);
+      const body = (
+        raw.updateDraft.mock.calls[0] as unknown as [
+          string,
+          string,
+          { secrets: unknown },
+        ]
+      )[2];
+      expect(body.secrets).toEqual(typed);
+      expect(tested.sent).toBe(true);
+      // Without typed secrets the test goes straight out.
+      const plain = client();
+      await runTest(plain.api, W, D, withSecretVariable(), 1);
+      expect(plain.calls).toEqual(["testDraft"]);
+    });
+  });
 });

@@ -20,6 +20,7 @@ import {
   BUILDER_STEPS,
   definitionOf,
   draftDefinitionOf,
+  requiredSecrets,
   type BuilderState,
   type BuilderStep,
 } from "@/lib/custom-api-builder";
@@ -120,9 +121,11 @@ export async function enterStep(
   draftId: string | null;
   state: BuilderState;
   secretsLost: boolean;
+  /** The typed secrets were stored (only then may the inputs be cleared). */
+  sent: boolean;
 }> {
   let draftId = input.draftId;
-  const secrets = input.secrets ?? null;
+  const secrets = typedSecretsFor(input.state, input.secrets ?? {});
   if (
     !draftId &&
     ((input.createDraft !== false &&
@@ -136,7 +139,7 @@ export async function enterStep(
       input.definitionId,
     );
   if (!draftId || !draftReady(input.state))
-    return { draftId, state: input.state, secretsLost: false };
+    return { draftId, state: input.state, secretsLost: false, sent: false };
   const synced = await syncDraft(
     api,
     input.workspaceId,
@@ -144,7 +147,24 @@ export async function enterStep(
     input.state,
     secrets ?? undefined,
   );
-  return { draftId, ...synced };
+  return { draftId, ...synced, sent: secrets !== null };
+}
+
+/**
+ * The typed secrets the definition still declares (its credentials and
+ * secret variables), without empty ones; null when there are none. A value
+ * typed for a variable since unticked, renamed or removed is never sent:
+ * the draft would refuse it (custom_api_secret_unknown).
+ */
+export function typedSecretsFor(
+  state: BuilderState,
+  values: Readonly<Record<string, string>>,
+): Record<string, string> | null {
+  const declared = new Set(requiredSecrets(state));
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(values))
+    if (declared.has(name) && value !== "") out[name] = value;
+  return Object.keys(out).length ? out : null;
 }
 
 /**
@@ -194,7 +214,14 @@ export async function runTest(
   draftId: string,
   state: BuilderState,
   pages: number,
-): Promise<{ state: BuilderState; secretsLost: boolean }> {
+  /** Typed, not yet saved secrets: stored on the draft before the test. */
+  typed: Readonly<Record<string, string>> = {},
+): Promise<{ state: BuilderState; secretsLost: boolean; sent: boolean }> {
+  const secrets = typedSecretsFor(state, typed);
+  if (secrets) {
+    const synced = await syncDraft(api, workspaceId, draftId, state, secrets);
+    state = synced.state;
+  }
   const result = await api.testDraft(workspaceId, draftId, {
     definition: draftDefinitionOf(state),
     environmentId: state.environmentId,
@@ -205,6 +232,7 @@ export async function runTest(
   return {
     state: { ...applied.state, lastTest: result },
     secretsLost: applied.secretsLost,
+    sent: secrets !== null,
   };
 }
 
