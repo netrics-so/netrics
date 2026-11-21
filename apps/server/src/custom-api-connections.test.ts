@@ -350,7 +350,7 @@ describe("connections from a custom API definition", () => {
     );
   });
 
-  it("refuses OAuth definitions until custom OAuth exists", async () => {
+  it("refuses an OAuth client the token endpoint does not accept (#805)", async () => {
     const base = fixtureDefinition("pages", fixture.origin);
     const definition = await createDefinition({
       ...base,
@@ -368,7 +368,7 @@ describe("connections from a custom API definition", () => {
         credentials: { clientId: "c", clientSecret: "s" },
       }),
       400,
-      "custom_api_oauth_unavailable",
+      "The token endpoint refused the client ID or client secret. Check both values and enter them again.",
     );
   });
 

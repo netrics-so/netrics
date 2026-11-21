@@ -69808,6 +69808,93 @@
         }
       }
     },
+    "/v1/workspaces/{workspaceId}/custom-api/oauth": {
+      "get": {
+        "summary": "The OAuth redirect URI to register for a custom API's own OAuth app",
+        "tags": [
+          "custom-api"
+        ],
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redirectUri": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "redirectUri"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session or token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "No valid session or token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role does not allow this action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Role does not allow this action"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/workspaces/{workspaceId}/custom-api/definitions": {
       "get": {
         "summary": "List the workspace's custom API definitions (archived ones with includeArchived=true)",
@@ -102390,7 +102477,8 @@
                       "type": "string",
                       "enum": [
                         "connect",
-                        "reauthorize"
+                        "reauthorize",
+                        "authorize"
                       ]
                     },
                     "expiresAt": {

@@ -120,8 +120,8 @@ export const apiErrorsEn = {
       "Changing the environment needs the credentials again.",
     custom_api_connection_limit:
       "This workspace has reached its limit of custom API connections.",
-    custom_api_oauth_unavailable:
-      "OAuth login for custom APIs is not available yet.",
+    custom_api_token_failed:
+      "The token endpoint did not answer with a token. Check the token URL and try again.",
     custom_api_draft_not_found:
       "This test connection has expired. Start the login again.",
     custom_api_draft_limit:

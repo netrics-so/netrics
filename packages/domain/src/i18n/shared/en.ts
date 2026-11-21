@@ -148,6 +148,8 @@ export const sharedEn = {
         "The run stopped after 100,000 records, the most one run reads. The data so far is kept; the next run continues.",
       durationLimit:
         "The run stopped after 30 minutes, the longest one run takes. The data so far is kept; the next run continues.",
+      tokenRefused:
+        "The token endpoint refused the client ID or client secret. Check both values and enter them again.",
     },
   },
 } as const;

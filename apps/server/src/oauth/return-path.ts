@@ -11,7 +11,19 @@ const RETURN_ROUTES: readonly RegExp[] = [
   new RegExp(`^/workspaces/(${UUID})$`),
   new RegExp(`^/workspaces/(${UUID})/connections/new$`),
   new RegExp(`^/workspaces/(${UUID})/connections/${UUID}$`),
+  // The custom API builder (#805): a draft's sign-in returns to it.
+  new RegExp(`^/workspaces/(${UUID})/custom-apis/new$`),
+  new RegExp(`^/workspaces/(${UUID})/custom-apis/${UUID}$`),
 ];
+
+const BUILDER_ROUTE = new RegExp(
+  `^/workspaces/${UUID}/custom-apis/(?:new|${UUID})$`,
+);
+
+/** Whether `path` is a custom API builder page (it reopens a draft). */
+export function isBuilderReturnPath(path: string): boolean {
+  return BUILDER_ROUTE.test(path);
+}
 
 /** Whether `path` is an allowed return path for this workspace. */
 export function isAllowedReturnPath(

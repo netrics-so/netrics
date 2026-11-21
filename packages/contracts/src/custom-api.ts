@@ -145,7 +145,10 @@ export const createCustomApiConnectionRequestSchema = z.object({
   secretVariables: z
     .record(z.string(), z.string().min(1).max(2_000))
     .default({}),
-  /** apiKey | token | username + password (input only). */
+  /**
+   * apiKey | token | username + password | clientId + clientSecret for the
+   * OAuth logins (input only).
+   */
   credentials: z.record(z.string(), z.string().min(1).max(4_096)).default({}),
   projectId: z.uuid().optional(),
   /** Overrides the definition's refresh interval, never below the instance minimum. */
@@ -154,6 +157,18 @@ export const createCustomApiConnectionRequestSchema = z.object({
 });
 export type CreateCustomApiConnectionRequest = z.infer<
   typeof createCustomApiConnectionRequestSchema
+>;
+
+/**
+ * The custom OAuth setup (#805): the redirect URI (`<WEB_ORIGIN>/oauth/
+ * custom/callback`) a user registers at their own OAuth app. netrics cannot
+ * own apps for APIs it does not know.
+ */
+export const customApiOAuthInfoResponseSchema = z.object({
+  redirectUri: z.url(),
+});
+export type CustomApiOAuthInfoResponse = z.infer<
+  typeof customApiOAuthInfoResponseSchema
 >;
 
 /** What a custom-api connection runs; null on bundled connectors. */

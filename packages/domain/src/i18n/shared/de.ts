@@ -103,6 +103,8 @@ export const sharedDe: Catalog<SharedMessages> = {
         "Der Lauf wurde nach 100.000 Datensätzen beendet, so viele liest ein Lauf höchstens. Die bisherigen Daten bleiben erhalten; der nächste Lauf macht weiter.",
       durationLimit:
         "Der Lauf wurde nach 30 Minuten beendet, so lange dauert ein Lauf höchstens. Die bisherigen Daten bleiben erhalten; der nächste Lauf macht weiter.",
+      tokenRefused:
+        "Der Token-Endpunkt hat Client-ID oder Client-Secret abgelehnt. Prüf beide Werte und gib sie erneut ein.",
     },
   },
 };

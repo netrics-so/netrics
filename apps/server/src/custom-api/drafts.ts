@@ -38,6 +38,7 @@ import {
   DRAFT_CONNECTION_TTL_HOURS,
   enqueueJob,
   findConnection,
+  findConnectionOAuth,
   findCustomApiDefinition,
   findCustomApiDefinitionVersion,
   findProject,
@@ -56,6 +57,8 @@ import {
   type CredentialKeyring,
 } from "../credentials.js";
 import type { CustomApiInstanceConfig } from "../env.js";
+import type { CustomOAuthProvider } from "../oauth/providers/custom.js";
+import type { OAuthTokenService } from "../oauth/tokens.js";
 import { customApiEnvelope } from "./connections.js";
 
 /** Open drafts per workspace. */
@@ -327,6 +330,11 @@ export interface CustomApiDraftDeps {
   limits: CustomApiInstanceConfig;
   /** Clock for the draft's updated_at (tests pin it). */
   now?: () => Date;
+  /**
+   * Custom OAuth (#805): revokes a draft's grant before the draft or the
+   * grant goes. Without it grants are dropped without revocation.
+   */
+  oauthTokens?: OAuthTokenService;
 }
 
 export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
@@ -366,6 +374,52 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
         { workspaceId: actor.workspaceId, connectionId: row.id },
       ),
     ) as Record<string, unknown>;
+  }
+
+  /**
+   * The draft's OAuth grant, if it has one: its provider (from the draft's
+   * stored definition and envelope) and the token to revoke. Read before
+   * the grant or the draft goes.
+   */
+  async function grantOf(
+    tx: Transaction,
+    actor: DraftActor,
+    draftId: string,
+  ): Promise<{ provider: CustomOAuthProvider; token: string | null } | null> {
+    const grant = await findConnectionOAuth(tx, actor.workspaceId, draftId);
+    if (!grant) return null;
+    const resolved = await deps.oauthTokens?.customOAuth?.resolve(tx, {
+      workspaceId: actor.workspaceId,
+      connectionId: draftId,
+    });
+    if (!resolved) return null;
+    return {
+      provider: resolved.provider,
+      token: resolved.credentials.refreshToken,
+    };
+  }
+
+  /** Revokes a dropped grant: best effort, never throws, logs no secret. */
+  async function revoke(
+    grant: { provider: CustomOAuthProvider; token: string | null } | null,
+  ): Promise<void> {
+    if (!grant?.token || !deps.oauthTokens) return;
+    await deps.oauthTokens.revokeCustomGrant(grant.provider, grant.token);
+  }
+
+  async function dropGrant(
+    tx: Transaction,
+    actor: DraftActor,
+    draftId: string,
+  ): Promise<void> {
+    await tx
+      .delete(schema.connectionOAuth)
+      .where(
+        and(
+          eq(schema.connectionOAuth.workspaceId, actor.workspaceId),
+          eq(schema.connectionOAuth.connectionId, draftId),
+        ),
+      );
   }
 
   async function write(
@@ -451,7 +505,8 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
       body: UpdateCustomApiDraftRequest,
     ): Promise<DraftResult<CustomApiDraft>> {
       const definition = customApiDraftDefinitionSchema.parse(body.definition);
-      return inWorkspace(actor, async (tx) => {
+      let dropped: Awaited<ReturnType<typeof grantOf>> = null;
+      const result = await inWorkspace(actor, async (tx) => {
         const row = await findDraft(tx, actor.workspaceId, draftId);
         if (!row) return fail(404, "custom_api_draft_not_found");
         const state = readState(row);
@@ -480,12 +535,12 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
         // Stored secrets carry over only to the same hosts and the same
         // login method (as a connection's environment change, C-G3);
         // names the definition no longer declares are forgotten.
-        const carried =
+        const holds =
           draftBindingHolds(state, binding) &&
           (state.definition === null ||
-            state.definition.auth.type === definition.auth.type)
-            ? envelopeSecrets(open(actor, row))
-            : {};
+            state.definition.auth.type === definition.auth.type);
+        const stored = holds ? open(actor, row) : null;
+        const carried = envelopeSecrets(stored);
         const merged: Record<string, string> = {};
         for (const [name, value] of Object.entries(carried))
           if (declared.has(name)) merged[name] = value;
@@ -495,9 +550,22 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
           else merged[name] = value;
         }
         const names = Object.keys(merged).sort();
-        const envelope = names.length
+        let envelope = names.length
           ? draftStoredEnvelope(definition, body.environmentId, merged)
           : null;
+        // An OAuth grant (#805) stays with the same hosts, login method and
+        // client; anything else drops it, revoked after commit.
+        const clientChanged = ["clientId", "clientSecret"].some((name) =>
+          Object.hasOwn(given, name),
+        );
+        const refreshToken =
+          typeof stored?.refreshToken === "string" ? stored.refreshToken : null;
+        if (!holds || clientChanged || !isCustomApiOAuth(definition.auth)) {
+          dropped = await grantOf(tx, actor, draftId);
+          await dropGrant(tx, actor, draftId);
+        } else if (envelope && refreshToken) {
+          envelope = { ...envelope, refreshToken };
+        }
         next.secretNames = envelope ? names : [];
         next.credentialHosts = envelope ? binding.hosts : [];
         next.secretHost = envelope ? binding.host : null;
@@ -506,6 +574,8 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
         if (!written) return fail(404, "custom_api_draft_not_found");
         return ok(view(written, next));
       });
+      if (result.ok) await revoke(dropped);
+      return result;
     },
 
     /** DELETE …/drafts/:draftId */
@@ -513,6 +583,13 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
       actor: DraftActor,
       draftId: string,
     ): Promise<DraftResult<null>> {
+      // An OAuth grant is revoked first (best effort), then the draft goes.
+      const grant = await inWorkspace(actor, async (tx) =>
+        (await findDraft(tx, actor.workspaceId, draftId))
+          ? grantOf(tx, actor, draftId)
+          : null,
+      );
+      await revoke(grant);
       return inWorkspace(actor, async (tx) => {
         const deleted = await tx
           .delete(schema.connections)
@@ -582,18 +659,36 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
           !sameSet(storedSecretVariables, secretIds)
         )
           return fail(400, "custom_api_variables_invalid");
-        if (isCustomApiOAuth(definition.auth))
-          return fail(400, "custom_api_oauth_unavailable");
         if (!draftBindingHolds(state, draftBinding(definition, environmentId)))
           return fail(409, "custom_api_credentials_host_changed");
         // Built again for the saved version, as a connection stores it.
-        const envelope = draftEnvelope(
+        const stored = open(actor, row);
+        let envelope = draftEnvelope(
           definition,
           environmentId,
-          envelopeSecrets(open(actor, row)),
+          envelopeSecrets(stored),
         );
         if (envelope === undefined)
           return fail(400, "custom_api_credentials_invalid");
+        if (isCustomApiOAuth(definition.auth)) {
+          // The grant (#805) stays with the connection: same login method,
+          // and an authorization-code draft must have signed in.
+          const grant = await findConnectionOAuth(
+            tx,
+            actor.workspaceId,
+            draftId,
+          );
+          if (
+            grant &&
+            state.definition !== null &&
+            state.definition.auth.type !== definition.auth.type
+          )
+            return fail(400, "custom_api_credentials_invalid");
+          if (definition.auth.type === "oauth_authorization_code" && !grant)
+            return fail(400, "custom_api_secret_missing");
+          if (envelope && typeof stored?.refreshToken === "string")
+            envelope = { ...envelope, refreshToken: stored.refreshToken };
+        }
         if (
           (await countCustomApiConnections(tx, actor.workspaceId)) >=
           deps.limits.maxConnections

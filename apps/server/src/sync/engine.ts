@@ -54,6 +54,7 @@ import {
 import {
   CUSTOM_API_AUTH_ERROR,
   CUSTOM_API_LIMIT_ERROR,
+  CUSTOM_API_MESSAGES,
 } from "@netrics/connectors/custom-api";
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
@@ -71,7 +72,8 @@ import {
 import {
   callWithAccessToken,
   NeedsReauthorizationError,
-  oauthStrategyFor,
+  connectionOAuthProvider,
+  requiredOAuthScopes,
 } from "../oauth/connector-auth.js";
 import { OAuthTokenError, type OAuthTokenService } from "../oauth/tokens.js";
 import {
@@ -730,10 +732,16 @@ async function runSync(
 
   // OAuth connections (ADR 0012): the connector receives a short-lived
   // access token per call; the refresh token never leaves the host.
-  const oauthProvider = connection.oauthProvider;
-  const oauthStrategy = oauthProvider
-    ? oauthStrategyFor(manifest, oauthProvider)
+  // Custom APIs (#805) with an OAuth login always go through the token
+  // service, under provider "custom", even before their first grant.
+  const oauthProvider = connectionOAuthProvider(
+    registered,
+    connection.oauthProvider,
+  );
+  const oauthScopes = oauthProvider
+    ? requiredOAuthScopes(registered, oauthProvider)
     : undefined;
+  const oauthStrategy = oauthScopes ? { scopes: oauthScopes } : undefined;
   if (oauthProvider && !oauthStrategy) {
     const error = new Error(
       `contract: connector "${manifest.id}" has no oauth2 strategy for provider "${oauthProvider}"`,
@@ -846,7 +854,17 @@ async function runSync(
             call: (oauthCredentials, options) =>
               call(
                 { ...context, credentials: { ...oauthCredentials } },
-                options,
+                registered.customApi
+                  ? {
+                      ...options,
+                      // The minted token is a secret of this call too.
+                      redactValues: [
+                        ...(options.redactValues ?? []),
+                        oauthCredentials.accessToken,
+                        `Bearer ${oauthCredentials.accessToken}`,
+                      ],
+                    }
+                  : options,
               ),
             ...(rejected ? { rejected } : {}),
           })
@@ -878,6 +896,13 @@ async function runSync(
       return new TerminalJobError(error.message);
     }
     if (error instanceof OAuthTokenError) {
+      if (error.clientRefused) {
+        // A custom API's token endpoint refused the user's client ID or
+        // secret: only new client credentials help (auth_failed).
+        const refused = new Error(CUSTOM_API_MESSAGES.tokenRefused);
+        await recordFailure("auth", refused);
+        return new TerminalJobError(refused.message);
+      }
       if (error.kind === "configuration") {
         await recordFailure("contract", error);
         return new NonRetryableJobError(safeMessage(error));

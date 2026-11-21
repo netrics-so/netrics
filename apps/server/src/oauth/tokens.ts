@@ -7,15 +7,20 @@ import type {
   ConnectorResponse,
 } from "@netrics/connector-sdk";
 import {
+  findConnection,
   findConnectionOAuth,
   lockConnectionOAuth,
   markNeedsReauthorization,
+  schema,
   updateConnectionOAuthTokens,
+  upsertConnectionOAuth,
   withWorkspace,
   type ConnectionOAuthRow,
   type Database,
   type OAuthAuthReason,
+  type Transaction,
 } from "@netrics/database";
+import { and, eq } from "drizzle-orm";
 import type { Logger } from "pino";
 
 import {
@@ -26,8 +31,20 @@ import {
   type CredentialBinding,
   type CredentialKeyring,
 } from "../credentials.js";
-import type { OAuthHttpFactory } from "./client.js";
+import { customApiEgress } from "../custom-api/connectors.js";
+import { loadConnectionCustomApiDefinition } from "../custom-api/load-definition.js";
+import { clientForm, type OAuthHttpFactory } from "./client.js";
 import type { ConfiguredOAuthProvider, OAuthProviders } from "./config.js";
+import {
+  CUSTOM_OAUTH_PROVIDER_ID,
+  customOAuthProvider,
+  generateCustomAccountSub,
+  isCustomOAuthAuth,
+  openCustomOAuthCredentials,
+  sealCustomOAuthCredentials,
+  type CustomOAuthCredentials,
+  type CustomOAuthProvider,
+} from "./providers/custom.js";
 
 // The host-side token lifecycle of OAuth connections (ADR 0012). Connector
 // code only ever receives a short-lived access token; the refresh token and
@@ -65,12 +82,113 @@ const DEFAULT_EXPIRES_IN_SECONDS = 3600;
  */
 export class OAuthTokenError extends Error {
   readonly kind: "transient" | "configuration";
+  /**
+   * A custom API's token endpoint refused the user's client ID or secret
+   * (#805): the connection needs new client credentials (auth_failed),
+   * not an operator.
+   */
+  readonly clientRefused: boolean;
 
-  constructor(kind: "transient" | "configuration", message: string) {
+  constructor(
+    kind: "transient" | "configuration",
+    message: string,
+    options: { clientRefused?: boolean } = {},
+  ) {
     super(message);
     this.name = "OAuthTokenError";
     this.kind = kind;
+    this.clientRefused = options.clientRefused ?? false;
   }
+}
+
+/** One custom OAuth connection's provider and envelope (#805). */
+export interface CustomOAuthResolution {
+  provider: CustomOAuthProvider;
+  credentials: CustomOAuthCredentials;
+  /** A builder draft (never scheduled). */
+  draft: boolean;
+}
+
+/**
+ * Custom OAuth (milestone 13, #805): the provider of a custom-api connection
+ * comes from its definition (pinned or draft, through
+ * loadConnectionCustomApiDefinition) and its envelope, and its token calls go
+ * through the custom API egress (same-host redirects, self-host private
+ * hosts) to the token and revoke hosts only.
+ */
+export interface CustomOAuthResolver {
+  /**
+   * Reads the connection's definition and envelope inside `tx`; null when
+   * the connection is not a custom OAuth connection or its envelope does
+   * not hold client credentials.
+   */
+  resolve(
+    tx: Transaction,
+    binding: CredentialBinding,
+  ): Promise<CustomOAuthResolution | null>;
+  /** The guarded fetch for one custom provider's token and revoke calls. */
+  fetch(
+    provider: CustomOAuthProvider,
+    timeoutMs: number,
+  ): (url: string, init: ConnectorFetchInit) => Promise<ConnectorResponse>;
+}
+
+export function createCustomOAuthResolver(deps: {
+  credentialKeyring: CredentialKeyring;
+  webOrigin: string;
+  /** Self-host only (NETRICS_CUSTOM_API_PRIVATE_HOSTS). */
+  privateHosts?: readonly string[];
+  /** Tests only: reach the local fixture (tlsCa, allowPrivateHosts, …). */
+  egress?: Partial<EgressOptions>;
+}): CustomOAuthResolver {
+  return {
+    async resolve(tx, binding) {
+      const loaded = await loadConnectionCustomApiDefinition(
+        tx,
+        binding.workspaceId,
+        binding.connectionId,
+      );
+      if (!loaded || !isCustomOAuthAuth(loaded.definition.auth)) return null;
+      const found = await findConnection(
+        tx,
+        binding.workspaceId,
+        binding.connectionId,
+        { includeDrafts: true },
+      );
+      if (!found?.row.credentialsEncrypted) return null;
+      let credentials: CustomOAuthCredentials;
+      try {
+        credentials = openCustomOAuthCredentials(
+          found.row.credentialsEncrypted,
+          deps.credentialKeyring,
+          binding,
+        );
+      } catch {
+        return null;
+      }
+      return {
+        provider: customOAuthProvider(
+          loaded.definition,
+          credentials,
+          deps.webOrigin,
+        ),
+        credentials,
+        draft: loaded.draft,
+      };
+    },
+    fetch(provider, timeoutMs) {
+      return (url, init) =>
+        createEgressFetch({
+          ...customApiEgress(deps.privateHosts ?? [], deps.egress),
+          allowedDomains: provider.definition.serverDomains,
+          signal: AbortSignal.timeout(timeoutMs),
+          // Token and revoke calls follow no redirect at all.
+          maxRedirects: 0,
+          maxResponseBytes: 64 * 1024,
+          requestTimeoutMs: timeoutMs,
+        })(url, init);
+    },
+  };
 }
 
 /**
@@ -154,6 +272,8 @@ export interface OAuthTokenServiceDeps {
     EgressOptions,
     "lookup" | "allowPrivateAddresses" | "allowInsecureHttp"
   >;
+  /** Custom OAuth of custom API connections (#805); none without it. */
+  customOAuth?: CustomOAuthResolver;
 }
 
 /** An OAuth `error` code, or a placeholder for anything else. */
@@ -165,6 +285,12 @@ function errorCode(body: unknown): string {
   return typeof code === "string" && /^[a-z_]{1,64}$/.test(code)
     ? code
     : "unknown_error";
+}
+
+function isCustom(
+  provider: ConfiguredOAuthProvider,
+): provider is CustomOAuthProvider {
+  return provider.definition.id === CUSTOM_OAUTH_PROVIDER_ID;
 }
 
 function covers(granted: readonly string[], required: readonly string[]) {
@@ -183,6 +309,11 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     const injected = deps.http?.(provider.definition);
     if (injected) {
       return (url, init) => injected(url, init);
+    }
+    const custom = deps.customOAuth;
+    if (custom && isCustom(provider)) {
+      return (url, init, timeoutMs) =>
+        custom.fetch(provider, timeoutMs)(url, init);
     }
     return (url, init, timeoutMs) =>
       createEgressFetch({
@@ -231,27 +362,36 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
       }
     | { ok: false; reason: "invalid_grant" };
 
+  /**
+   * A new access token at the provider's token endpoint: a refresh_token
+   * grant, or for a custom client-credentials provider a new
+   * client_credentials grant with the definition's scopes.
+   */
   async function refreshAtProvider(
     provider: ConfiguredOAuthProvider,
-    refreshToken: string,
+    refreshToken: string | null,
   ): Promise<RefreshOutcome> {
+    const custom = isCustom(provider) ? provider : null;
+    const clientCredentials = custom?.grant === "client_credentials";
+    if (!clientCredentials && !refreshToken) {
+      // A custom grant without a refresh token ends with its access token.
+      return { ok: false, reason: "invalid_grant" };
+    }
     let response: ConnectorResponse;
     try {
       response = await providerFetch(provider)(
         provider.definition.tokenEndpoint,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/x-www-form-urlencoded",
-            accept: "application/json",
-          },
-          body: new URLSearchParams({
-            grant_type: "refresh_token",
-            refresh_token: refreshToken,
-            client_id: provider.clientId,
-            client_secret: provider.clientSecret.reveal(),
-          }).toString(),
-        },
+        clientForm(
+          provider,
+          clientCredentials
+            ? {
+                grant_type: "client_credentials",
+                ...(custom!.scopes.length
+                  ? { scope: custom!.scopes.join(" ") }
+                  : {}),
+              }
+            : { grant_type: "refresh_token", refresh_token: refreshToken! },
+        ),
         refreshTimeoutMs,
       );
     } catch (error) {
@@ -289,25 +429,139 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
             ? parsed.scope.split(" ").filter(Boolean)
             : null,
         refreshToken:
-          typeof parsed.refresh_token === "string" && parsed.refresh_token
+          !clientCredentials &&
+          typeof parsed.refresh_token === "string" &&
+          parsed.refresh_token
             ? parsed.refresh_token
             : null,
       };
     }
     const code = errorCode(body);
-    if (code === "invalid_grant") {
+    if (code === "invalid_grant" && !clientCredentials) {
       return { ok: false, reason: "invalid_grant" };
     }
-    // invalid_client / unauthorized_client: the instance's OAuth app is
-    // misconfigured (secret rotated, client deleted), not the user's grant.
-    const kind =
-      code === "invalid_client" || code === "unauthorized_client"
-        ? "configuration"
-        : "transient";
+    // invalid_client / unauthorized_client: the OAuth app is misconfigured
+    // (secret rotated, client deleted), not the user's grant. For a custom
+    // API that app is the user's: a refused client needs new credentials.
+    const refused =
+      code === "invalid_client" ||
+      code === "unauthorized_client" ||
+      (custom !== null &&
+        (response.status === 401 ||
+          (clientCredentials && code === "invalid_grant")));
     throw new OAuthTokenError(
-      kind,
+      refused ? "configuration" : "transient",
       `oauth token refresh failed: provider answered ${response.status} (${code})`,
+      { clientRefused: refused && custom !== null },
     );
+  }
+
+  /** The provider and refresh token of a locked grant. */
+  async function grantOf(
+    tx: Transaction,
+    binding: CredentialBinding,
+    locked: { oauth: ConnectionOAuthRow; credentialsEncrypted: Buffer | null },
+  ): Promise<{
+    provider: ConfiguredOAuthProvider;
+    refreshToken: string | null;
+    custom: CustomOAuthResolution | null;
+  }> {
+    if (locked.oauth.provider === CUSTOM_OAUTH_PROVIDER_ID) {
+      const custom = await deps.customOAuth?.resolve(tx, binding);
+      if (!custom) {
+        throw new OAuthTokenError(
+          "configuration",
+          "custom oauth connection has no usable definition or client credentials",
+        );
+      }
+      return {
+        provider: custom.provider,
+        refreshToken: custom.credentials.refreshToken,
+        custom,
+      };
+    }
+    const provider = configured(locked.oauth.provider);
+    if (!locked.credentialsEncrypted) {
+      throw new OAuthTokenError(
+        "configuration",
+        "oauth connection has no refresh token; reauthorize the connection",
+      );
+    }
+    return {
+      provider,
+      refreshToken: openOAuthCredentials(
+        locked.credentialsEncrypted,
+        keyring,
+        binding,
+      ),
+      custom: null,
+    };
+  }
+
+  /**
+   * The first token of a custom client-credentials connection (#805): with
+   * the connection row locked, so concurrent callers mint once, a new
+   * connection_oauth row with a generated account. Null when the
+   * connection is not a client-credentials custom OAuth connection.
+   */
+  async function mintFirst(
+    tx: Transaction,
+    binding: CredentialBinding,
+    options: GetAccessTokenOptions,
+  ): Promise<AccessTokenResult | null> {
+    const { workspaceId, connectionId } = binding;
+    if (!deps.customOAuth) return null;
+    await tx
+      .select({ id: schema.connections.id })
+      .from(schema.connections)
+      .where(
+        and(
+          eq(schema.connections.workspaceId, workspaceId),
+          eq(schema.connections.id, connectionId),
+        ),
+      )
+      .for("update");
+    const row = await findConnectionOAuth(tx, workspaceId, connectionId);
+    if (row) {
+      // Minted by a caller this one waited for.
+      const token = cached(row, binding);
+      if (token) return { ok: true, accessToken: token, refreshed: false };
+      return null;
+    }
+    const custom = await deps.customOAuth.resolve(tx, binding);
+    if (!custom || custom.provider.grant !== "client_credentials") return null;
+    const outcome = await refreshAtProvider(custom.provider, null);
+    if (!outcome.ok) return outcome;
+    const grantedScopes = outcome.scopes ?? [...custom.provider.scopes];
+    await upsertConnectionOAuth(tx, {
+      workspaceId,
+      connectionId,
+      provider: CUSTOM_OAUTH_PROVIDER_ID,
+      accountSub: generateCustomAccountSub(),
+      accountEmail: null,
+      grantedScopes,
+      accessTokenEncrypted: Buffer.from(
+        encryptOAuthAccessToken(outcome.accessToken, keyring, binding),
+        "utf8",
+      ),
+      accessTokenExpiresAt: new Date(
+        now().getTime() + outcome.expiresInSeconds * 1000,
+      ),
+    });
+    deps.logger?.info(
+      { connectionId, provider: CUSTOM_OAUTH_PROVIDER_ID },
+      "oauth client credentials token issued",
+    );
+    if (!covers(grantedScopes, options.requiredScopes)) {
+      await markNeedsReauthorization(
+        tx,
+        workspaceId,
+        connectionId,
+        "scope_missing",
+      );
+      return { ok: false, reason: "scope_missing" };
+    }
+    return { ok: true, accessToken: outcome.accessToken, refreshed: true };
   }
 
   return {
@@ -326,7 +580,8 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
       const fast = await withWorkspace(db, { workspaceId }, async (tx) => {
         const row = await findConnectionOAuth(tx, workspaceId, connectionId);
         if (!row) {
-          return null;
+          // A custom client-credentials connection mints its first token.
+          return deps.customOAuth ? { stale: true as const } : null;
         }
         if (!covers(row.grantedScopes, options.requiredScopes)) {
           await markNeedsReauthorization(
@@ -355,6 +610,8 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
       return withWorkspace(db, { workspaceId }, async (tx) => {
         const locked = await lockConnectionOAuth(tx, workspaceId, connectionId);
         if (!locked) {
+          const minted = await mintFirst(tx, binding, options);
+          if (minted) return minted;
           throw new OAuthTokenError(
             "configuration",
             "connection has no oauth grant",
@@ -365,17 +622,10 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
         if (token) {
           return { ok: true as const, accessToken: token, refreshed: false };
         }
-        const provider = configured(locked.oauth.provider);
-        if (!locked.credentialsEncrypted) {
-          throw new OAuthTokenError(
-            "configuration",
-            "oauth connection has no refresh token; reauthorize the connection",
-          );
-        }
-        const refreshToken = openOAuthCredentials(
-          locked.credentialsEncrypted,
-          keyring,
+        const { provider, refreshToken, custom } = await grantOf(
+          tx,
           binding,
+          locked,
         );
         const outcome = await refreshAtProvider(provider, refreshToken);
         if (!outcome.ok) {
@@ -407,11 +657,20 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
           ...(outcome.scopes ? { grantedScopes: outcome.scopes } : {}),
           ...(outcome.refreshToken
             ? {
-                credentialsEncrypted: sealOAuthCredentials(
-                  outcome.refreshToken,
-                  keyring,
-                  binding,
-                ),
+                credentialsEncrypted: custom
+                  ? sealCustomOAuthCredentials(
+                      {
+                        ...custom.credentials,
+                        refreshToken: outcome.refreshToken,
+                      },
+                      keyring,
+                      binding,
+                    )
+                  : sealOAuthCredentials(
+                      outcome.refreshToken,
+                      keyring,
+                      binding,
+                    ),
               }
             : {}),
         });
@@ -474,6 +733,70 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
         }
       });
     },
+
+    /**
+     * One client_credentials token for a custom provider that has no
+     * connection yet (creating a connection, #805). Throws OAuthTokenError
+     * (clientRefused when the endpoint refused the client).
+     */
+    async requestClientCredentialsToken(provider: CustomOAuthProvider) {
+      const outcome = await refreshAtProvider(provider, null);
+      if (!outcome.ok) {
+        throw new OAuthTokenError(
+          "configuration",
+          "oauth token request refused",
+          { clientRefused: true },
+        );
+      }
+      return {
+        accessToken: outcome.accessToken,
+        expiresAt: new Date(now().getTime() + outcome.expiresInSeconds * 1000),
+        scopes: outcome.scopes,
+      };
+    },
+
+    /**
+     * Revokes a custom grant's token at the definition's revoke URL (RFC
+     * 7009, client authenticated per clientAuth): best effort, short
+     * timeout, never throws. False without a revoke URL (nothing is sent).
+     */
+    async revokeCustomGrant(
+      provider: CustomOAuthProvider,
+      token: string,
+    ): Promise<boolean> {
+      const endpoint = provider.definition.revocationEndpoint;
+      if (!endpoint) return false;
+      try {
+        const response = await providerFetch(provider)(
+          endpoint,
+          clientForm(provider, {
+            token,
+            token_type_hint: "refresh_token",
+          }),
+          revokeTimeoutMs,
+        );
+        if (response.status !== 200) {
+          deps.logger?.warn(
+            { provider: CUSTOM_OAUTH_PROVIDER_ID, status: response.status },
+            "oauth revocation refused by the provider",
+          );
+          return false;
+        }
+        return true;
+      } catch (error) {
+        deps.logger?.warn(
+          {
+            provider: CUSTOM_OAUTH_PROVIDER_ID,
+            err: error instanceof Error ? error.name : "Error",
+          },
+          "oauth revocation failed",
+        );
+        return false;
+      }
+    },
+
+    /** Custom OAuth of custom API connections (#805); undefined without it. */
+    customOAuth: deps.customOAuth,
 
     /**
      * Revokes a grant at the provider: best effort, short timeout, never

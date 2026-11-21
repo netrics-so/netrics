@@ -21,6 +21,7 @@ import {
 } from "@netrics/connector-sdk/custom-api";
 import {
   CUSTOM_API_CONNECTOR_ID,
+  CUSTOM_API_MESSAGES,
   customApiCredentialsSchema,
   customApiEnvironmentHost,
 } from "@netrics/connectors/custom-api";
@@ -32,6 +33,7 @@ import {
   findProject,
   insertAuditEvent,
   insertConnection,
+  upsertConnectionOAuth,
   withWorkspace,
   type ConnectionWithState,
   type CustomApiDefinitionVersionRow,
@@ -45,8 +47,20 @@ import {
 } from "../connections/service.js";
 import { presentConnectionDetail } from "../connections/present.js";
 import { retentionNamesDatasets } from "../connections/retention.js";
-import { encryptCredentials, type CredentialKeyring } from "../credentials.js";
+import {
+  encryptCredentials,
+  encryptOAuthAccessToken,
+  type CredentialKeyring,
+} from "../credentials.js";
 import type { CustomApiInstanceConfig } from "../env.js";
+import {
+  CUSTOM_OAUTH_PROVIDER_ID,
+  customOAuthProvider,
+  generateCustomAccountSub,
+  isCustomOAuthAuth,
+  sealCustomOAuthCredentials,
+} from "../oauth/providers/custom.js";
+import { OAuthTokenError, type OAuthTokenService } from "../oauth/tokens.js";
 import { connectorFor, type ResolvedConnector } from "./connectors.js";
 
 export type CustomApiConnectionResult<T> =
@@ -69,6 +83,44 @@ export interface CustomApiConnectionDeps {
   privateHosts: readonly string[];
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
+  /** Custom OAuth (#805): client-credentials tokens. */
+  oauthTokens?: OAuthTokenService;
+  /** WEB_ORIGIN: the custom OAuth redirect URI. */
+  webOrigin?: string;
+}
+
+/**
+ * The client ID and secret of an OAuth login, exactly those two non-empty
+ * strings; null otherwise.
+ */
+export function customOAuthClient(
+  credentials: Record<string, unknown>,
+): { clientId: string; clientSecret: string } | null {
+  const { clientId, clientSecret, ...rest } = credentials;
+  if (
+    Object.keys(rest).length > 0 ||
+    typeof clientId !== "string" ||
+    typeof clientSecret !== "string" ||
+    !clientId ||
+    !clientSecret ||
+    clientId.length > 4_096 ||
+    clientSecret.length > 4_096
+  )
+    return null;
+  return { clientId, clientSecret };
+}
+
+/**
+ * Why a token request for a new connection failed, as an error the web app
+ * can show: the token endpoint's refusal of the client (the connector
+ * message, translated by text), a blocked destination, or no token.
+ */
+export function customOAuthTokenFailure(error: unknown): string {
+  if (error instanceof OAuthTokenError && error.clientRefused)
+    return CUSTOM_API_MESSAGES.tokenRefused;
+  if (error instanceof Error && /EgressDenied/.test(error.message))
+    return "custom_api_destination_blocked";
+  return "custom_api_token_failed";
 }
 
 /** Exactly the ids, as a set comparison. */
@@ -260,6 +312,206 @@ export function createCustomApiConnectionService(
     });
   }
 
+  /**
+   * A connection with an OAuth login (#805). Its envelope holds the client
+   * ID and secret (custom OAuth envelope). Client credentials: a token is
+   * requested at the token URL first (a refused client stores nothing),
+   * the connector check runs with it, and the grant is stored with the
+   * connection. Authorization code: the connection waits for its first
+   * grant (setup pending, not scheduled, no check) until the user signs in
+   * through the OAuth start with purpose authorize.
+   */
+  async function createOAuthConnection(
+    actor: ConnectionActor & { locale?: Locale },
+    definitionId: string,
+    body: CreateCustomApiConnectionRequest,
+    definition: CustomApiDefinition,
+    version: CustomApiDefinitionVersionRow,
+  ): Promise<CustomApiConnectionResult<ConnectionDetail>> {
+    if (Object.keys(body.secretVariables).length > 0)
+      return fail(400, "custom_api_variables_invalid");
+    const client = customOAuthClient(body.credentials);
+    if (!client) return fail(400, "custom_api_credentials_invalid");
+    const pinned = {
+      definitionId,
+      versionId: version.id,
+      version: version.version,
+      environmentId: body.environmentId,
+      document: version.document,
+      datasetVersions: version.datasetVersions as Record<string, number>,
+    };
+    const resolved = connectorFor(deps.registry, {
+      row: { connectorId: CUSTOM_API_CONNECTOR_ID },
+      customApi: pinned,
+    });
+    if (!resolved) return fail(400, "custom_api_definition_invalid");
+    if (
+      body.retention &&
+      !retentionNamesDatasets(resolved.manifest, body.retention)
+    )
+      return fail(400, "retention_dataset_unknown");
+    const environment = definition.environments.find(
+      (entry) => entry.id === body.environmentId,
+    )!;
+    if (
+      (await inWorkspace(actor, (tx) =>
+        countCustomApiConnections(tx, actor.workspaceId),
+      )) >= deps.limits.maxConnections
+    )
+      return fail(409, "custom_api_connection_limit");
+    if (!deps.oauthTokens || !deps.webOrigin)
+      return fail(400, "connector_unavailable");
+    const provider = customOAuthProvider(
+      { name: body.name, auth: definition.auth },
+      client,
+      deps.webOrigin,
+    );
+    const connectionId = randomUUID();
+    const config: Record<string, unknown> = { ...body.variables };
+    const binding = { workspaceId: actor.workspaceId, connectionId };
+
+    let grant: {
+      accessToken: string;
+      expiresAt: Date;
+      scopes: string[];
+    } | null = null;
+    if (provider.grant === "client_credentials") {
+      let token;
+      try {
+        token = await deps.oauthTokens.requestClientCredentialsToken(provider);
+      } catch (error) {
+        return fail(400, customOAuthTokenFailure(error));
+      }
+      const credentials = { accessToken: token.accessToken };
+      const check = await checkCredentials(
+        resolved,
+        connectionId,
+        config,
+        credentials,
+        {
+          ...(deps.executeOptions
+            ? { executeOptions: deps.executeOptions }
+            : {}),
+          privateHosts: deps.privateHosts,
+        },
+      );
+      if (!check.ok) return fail(400, check.error);
+      grant = {
+        accessToken: token.accessToken,
+        expiresAt: token.expiresAt,
+        scopes: token.scopes ?? [...provider.scopes],
+      };
+    }
+
+    const refreshMinutes = Math.max(
+      body.refreshMinutes ?? definition.defaults.refreshMinutes,
+      deps.limits.minRefreshMinutes,
+    );
+    const retention: ConnectionRetentionChoice | undefined = body.retention;
+    return inWorkspace(actor, async (tx) => {
+      if (body.projectId) {
+        const project = await findProject(
+          tx,
+          actor.workspaceId,
+          body.projectId,
+        );
+        if (!project || project.archivedAt !== null)
+          return fail(404, "project_not_found");
+      }
+      if (
+        (await countCustomApiConnections(tx, actor.workspaceId)) >=
+        deps.limits.maxConnections
+      )
+        return fail(409, "custom_api_connection_limit");
+      const created = await insertConnection(tx, {
+        id: connectionId,
+        workspaceId: actor.workspaceId,
+        connectorId: CUSTOM_API_CONNECTOR_ID,
+        name: body.name,
+        config,
+        credentialsEncrypted: sealCustomOAuthCredentials(
+          {
+            host: customApiEnvironmentHost(environment),
+            ...client,
+            refreshToken: null,
+          },
+          deps.credentialKeyring,
+          binding,
+        ),
+        projectId: body.projectId ?? null,
+        pollIntervalSeconds: refreshMinutes * 60,
+        // Authorization code: not scheduled before the first grant.
+        setupPending: grant === null,
+        customApi: {
+          definitionVersionId: version.id,
+          environmentId: body.environmentId,
+        },
+        ...(retention
+          ? { retention: { choice: retention, chosenBy: actor.callerId } }
+          : {}),
+      });
+      let oauth = null;
+      if (grant) {
+        oauth = await upsertConnectionOAuth(tx, {
+          workspaceId: actor.workspaceId,
+          connectionId,
+          provider: CUSTOM_OAUTH_PROVIDER_ID,
+          accountSub: generateCustomAccountSub(),
+          accountEmail: null,
+          grantedScopes: grant.scopes,
+          accessTokenEncrypted: Buffer.from(
+            encryptOAuthAccessToken(
+              grant.accessToken,
+              deps.credentialKeyring,
+              binding,
+            ),
+            "utf8",
+          ),
+          accessTokenExpiresAt: grant.expiresAt,
+        });
+        await enqueueJob(tx, {
+          kind: "connection.backfill",
+          workspaceId: actor.workspaceId,
+          connectionId,
+          idempotencyKey: `backfill:${connectionId}`,
+        });
+      }
+      await insertAuditEvent(tx, {
+        workspaceId: actor.workspaceId,
+        actorUserId: actor.callerId,
+        action: "connection.created",
+        target: connectionId,
+        metadata: {
+          name: body.name,
+          connectorId: CUSTOM_API_CONNECTOR_ID,
+          definitionId,
+          version: version.version,
+          environmentId: body.environmentId,
+          oauth: provider.grant,
+          ...(retention ? { retention } : {}),
+        },
+      });
+      return {
+        ok: true,
+        value: presentConnectionDetail(
+          deps.registry,
+          oauth
+            ? {
+                ...created,
+                oauth: {
+                  provider: oauth.provider,
+                  accountEmail: null,
+                  grantedScopes: oauth.grantedScopes,
+                },
+              }
+            : created,
+          null,
+          actor.locale,
+        ),
+      };
+    });
+  }
+
   return {
     /** POST …/custom-api/definitions/:definitionId/connections */
     async create(
@@ -291,11 +543,14 @@ export function createCustomApiConnectionService(
         )
       )
         return fail(400, "custom_api_variables_invalid");
-      if (
-        definition.auth.type === "oauth_client_credentials" ||
-        definition.auth.type === "oauth_authorization_code"
-      )
-        return fail(400, "custom_api_oauth_unavailable");
+      if (isCustomOAuthAuth(definition.auth))
+        return createOAuthConnection(
+          actor,
+          definitionId,
+          body,
+          definition,
+          version,
+        );
       const envelope = customApiEnvelope(
         definition,
         body.environmentId,

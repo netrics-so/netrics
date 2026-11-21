@@ -37,7 +37,11 @@ import {
   type CustomApiPageTrace,
   type CustomApiTestStop,
 } from "@netrics/connectors/custom-api";
-import { withWorkspace, type Database } from "@netrics/database";
+import {
+  findConnectionOAuth,
+  withWorkspace,
+  type Database,
+} from "@netrics/database";
 
 import {
   createCustomApiDraftService,
@@ -50,6 +54,8 @@ import {
   type DraftResult,
 } from "./drafts.js";
 import { customApiEgress } from "./connectors.js";
+import { isCustomOAuthAuth } from "../oauth/providers/custom.js";
+import { OAuthTokenError } from "../oauth/tokens.js";
 import {
   boundedPreview,
   CUSTOM_API_TEST_LIMITS,
@@ -239,6 +245,73 @@ export function createCustomApiTestRequestService(
 ) {
   const drafts = createCustomApiDraftService(deps);
   const now = deps.now ?? (() => new Date());
+
+  /** An OAuth draft's access token, or the reason there is none. */
+  async function oauthToken(
+    actor: DraftActor,
+    draftId: string,
+    definition: CustomApiDraftDefinition,
+  ): Promise<
+    | { ok: true; accessToken: string }
+    | { ok: false; code: string; message: string }
+  > {
+    const auth = definition.auth;
+    const tokens = deps.oauthTokens;
+    if (!tokens?.customOAuth || !isCustomOAuthAuth(auth))
+      return {
+        ok: false,
+        code: "custom_api_test_failed",
+        message: "OAuth is not available on this server.",
+      };
+    if (auth.type === "oauth_authorization_code") {
+      const grant = await withWorkspace(
+        deps.db,
+        { workspaceId: actor.workspaceId, userId: actor.callerId },
+        (tx) => findConnectionOAuth(tx, actor.workspaceId, draftId),
+      );
+      if (!grant)
+        return {
+          ok: false,
+          code: "custom_api_secret_missing",
+          message: "Sign in with your account before testing.",
+        };
+    }
+    try {
+      const token = await tokens.getAccessToken(
+        { workspaceId: actor.workspaceId, connectionId: draftId },
+        { requiredScopes: auth.scopes },
+      );
+      if (token.ok) return { ok: true, accessToken: token.accessToken };
+      return {
+        ok: false,
+        code: "custom_api_auth_rejected",
+        message:
+          token.reason === "scope_missing"
+            ? "The sign-in did not grant every scope this API needs. Sign in again."
+            : "The sign-in is no longer valid. Sign in with your account again.",
+      };
+    } catch (error) {
+      if (error instanceof OAuthTokenError && error.clientRefused)
+        return {
+          ok: false,
+          code: "custom_api_auth_rejected",
+          message: CUSTOM_API_MESSAGES.tokenRefused,
+        };
+      if (error instanceof Error && /EgressDenied/.test(error.message))
+        return {
+          ok: false,
+          code: "custom_api_destination_blocked",
+          message:
+            "netrics may not reach this address. Custom APIs must be public https hosts.",
+        };
+      return {
+        ok: false,
+        code: "custom_api_token_failed",
+        message:
+          "The token endpoint did not answer with a token. Check the token URL.",
+      };
+    }
+  }
   /** One running test per draft (per API process). */
   const running = new Set<string>();
 
@@ -313,11 +386,6 @@ export function createCustomApiTestRequestService(
           draft,
         },
       });
-      if (isCustomApiOAuth(definition.auth))
-        return empty(
-          "custom_api_oauth_unavailable",
-          "OAuth login for custom APIs is not available yet.",
-        );
       const required = [
         ...customApiCredentialNames(definition.auth),
         ...definition.variables.filter((v) => v.secret).map((v) => v.id),
@@ -338,10 +406,18 @@ export function createCustomApiTestRequestService(
           (e) => e.id === body.environmentId,
         )!;
         const envelope = opened.value.credentials ?? {};
-        const credentials = {
+        let credentials = {
           host: customApiEnvironmentHost(environment),
           ...envelope,
         } as CustomApiCredentials;
+        if (isCustomApiOAuth(definition.auth)) {
+          // OAuth drafts (#805): a token from the token service, minted on
+          // first use (client credentials) or refreshed from the draft's
+          // grant (authorization code); the connector sees only that.
+          const token = await oauthToken(actor, draftId, definition);
+          if (!token.ok) return empty(token.code, token.message);
+          credentials = { accessToken: token.accessToken };
+        }
         const secretVariables =
           envelope.variables && typeof envelope.variables === "object"
             ? (envelope.variables as Record<string, string>)
