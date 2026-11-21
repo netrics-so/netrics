@@ -7,7 +7,7 @@ import type {
 import type { Locale } from "@netrics/domain";
 
 import { AppPicker } from "./app-picker";
-import { ProjectSelection } from "./project-selection";
+import { ProjectSelection, pickerState } from "./project-selection";
 import { renderI18n } from "@/lib/i18n/test-render";
 
 vi.mock("next/navigation", () => ({
@@ -45,6 +45,55 @@ describe("project selection (#782)", () => {
     expect(de).toContain("Synchronisierte Projekte");
     expect(de).toContain("bereits importierte Daten bleiben erhalten");
     expect(de).toContain("Projektauswahl ändern");
+  });
+
+  it("a refused check still opens the picker, so failing projects can be removed", () => {
+    // Web Analytics was turned off on the last enabled project: Vercel's
+    // check refuses, and the stored selection must stay reachable.
+    const refused = pickerState({
+      check: { ok: false, message: "None of the projects has Web Analytics." },
+      resources: [],
+      selection: ["prj_a"],
+    });
+    expect(refused).toEqual({
+      resources: [],
+      hidden: 0,
+      selection: ["prj_a"],
+      refusal: "None of the projects has Web Analytics.",
+    });
+    // The picker lists the stored project as not listed, to be unticked.
+    const html = renderI18n(
+      <AppPicker
+        texts="connections.projects"
+        resources={refused.resources}
+        value={refused.selection}
+        onChange={() => {}}
+      />,
+      "en",
+    );
+    expect(html).toContain("prj_a");
+    expect(html).toContain("Not currently listed");
+    expect(html).toContain("Clear selection");
+  });
+
+  it("a selected project without Web Analytics stays removable, others are not offered", () => {
+    const state = pickerState({
+      check: { ok: true },
+      resources: [
+        { id: "prj_a", name: "alpha-site", kind: "project" },
+        {
+          id: "prj_g",
+          name: "gamma-docs",
+          kind: "project",
+          metadata: { webAnalytics: false },
+        },
+      ],
+      selection: ["prj_a", "prj_g"],
+    });
+    expect(state.refusal).toBeNull();
+    expect(state.resources.map((resource) => resource.id)).toEqual(["prj_a"]);
+    expect(state.hidden).toBe(1);
+    expect(state.selection).toEqual(["prj_a", "prj_g"]);
   });
 
   it("the picker names projects, with their IDs beside the names", () => {

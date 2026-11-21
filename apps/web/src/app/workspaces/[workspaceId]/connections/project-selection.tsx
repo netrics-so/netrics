@@ -6,6 +6,7 @@ import type {
   ConnectionDetail,
   ConnectorCatalogEntry,
   DiscoveredResource,
+  StoredConnectionPreviewResponse,
 } from "@netrics/contracts";
 import { useLeaveGuard } from "@/components/studio-editor/use-leave-guard";
 import { AppPicker } from "./app-picker";
@@ -20,6 +21,30 @@ import { useLocale, useT } from "@/lib/i18n/client";
 /** A project the connector could not sync: Web Analytics is not enabled. */
 function withoutAnalytics(resource: DiscoveredResource): boolean {
   return resource.metadata?.webAnalytics === false;
+}
+
+/**
+ * What the picker shows for a loaded project list. A refused check (no
+ * project with Web Analytics is left, say) still opens the picker with the
+ * refusal: the stored selection can be reduced or cleared and saved, which
+ * is how the connection is repaired. Projects without Web Analytics are
+ * not offered; a selected one stays in the selection, as not listed, so it
+ * can be removed.
+ */
+export function pickerState(result: StoredConnectionPreviewResponse): {
+  resources: DiscoveredResource[];
+  hidden: number;
+  selection: string[] | null;
+  refusal: string | null;
+} {
+  return {
+    resources: result.resources.filter(
+      (resource) => !withoutAnalytics(resource),
+    ),
+    hidden: result.resources.filter(withoutAnalytics).length,
+    selection: result.selection,
+    refusal: result.check.ok ? null : (result.check.message ?? ""),
+  };
 }
 
 /**
@@ -47,6 +72,7 @@ export function ProjectSelection({
   );
   const [resources, setResources] = useState<DiscoveredResource[] | null>(null);
   const [hidden, setHidden] = useState(0);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [selection, setSelection] = useState<string[] | null>(null);
   const [pending, setPending] = useState<"load" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,15 +95,13 @@ export function ProjectSelection({
           ),
         ),
       });
-      if (!result.check.ok) {
-        setError(result.check.message ?? t("accessFailed"));
-        return;
-      }
-      setHidden(result.resources.filter(withoutAnalytics).length);
-      setResources(
-        result.resources.filter((resource) => !withoutAnalytics(resource)),
+      const state = pickerState(result);
+      setHidden(state.hidden);
+      setResources(state.resources);
+      setSelection(state.selection);
+      setRefusal(
+        state.refusal === null ? null : state.refusal || t("accessFailed"),
       );
-      setSelection(result.selection);
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
     } finally {
@@ -96,6 +120,7 @@ export function ProjectSelection({
       });
       setDirty(false);
       setResources(null);
+      setRefusal(null);
       setNotice(t("saved"));
       router.refresh();
     } catch (cause) {
@@ -123,6 +148,12 @@ export function ProjectSelection({
         </>
       ) : (
         <>
+          {refusal !== null ? (
+            <div className="error" role="alert">
+              <p>{refusal}</p>
+              <p>{t("refusedHelp")}</p>
+            </div>
+          ) : null}
           <AppPicker
             texts="connections.projects"
             resources={resources}
@@ -149,6 +180,7 @@ export function ProjectSelection({
               disabled={pending !== null}
               onClick={() => {
                 setResources(null);
+                setRefusal(null);
                 setDirty(false);
                 setError(null);
               }}

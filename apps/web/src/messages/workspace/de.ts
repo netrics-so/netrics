@@ -293,6 +293,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       check: "Projektauswahl ändern",
       checking: "Projekte werden geladen…",
       accessFailed: "Die Projektliste konnte nicht geladen werden.",
+      refusedHelp:
+        "Du kannst unten weiterhin Projekte aus der Auswahl entfernen und speichern.",
       save: "Projektauswahl speichern",
       cancel: "Abbrechen",
       saved:

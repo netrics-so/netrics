@@ -292,6 +292,55 @@ describe("Vercel project selection after connecting (#782)", () => {
     expect(await storedSelection()).toEqual(["prj_alpha"]);
   });
 
+  it("repairs a selection whose project lost Web Analytics: without it saves, with it is refused", async () => {
+    // Web Analytics is turned off on a synced project after connecting.
+    await select(["prj_alpha", "prj_beta"]);
+    const beta = PROJECTS.find((project) => project.id === "prj_beta")!;
+    beta.analytics = false;
+    try {
+      // The list is still served, with the stored selection to edit.
+      const listed = storedConnectionPreviewResponseSchema.parse(
+        (
+          await call("POST", `${connectionUrl()}/preview`, { config: {} })
+        ).json(),
+      );
+      expect(listed.check.ok).toBe(true);
+      expect(listed.selection).toEqual(["prj_alpha", "prj_beta"]);
+      expect(listed.resources.map((resource) => resource.id)).toContain(
+        "prj_beta",
+      );
+      // The check on save sees the NEW selection, not the stored one.
+      const kept = await select(["prj_alpha", "prj_beta"]);
+      expect(kept.statusCode).toBe(400);
+      expect(kept.body).toContain("Web Analytics is not enabled");
+      const repaired = await select(["prj_alpha"]);
+      expect(repaired.statusCode, repaired.body).toBe(200);
+      expect(await storedSelection()).toEqual(["prj_alpha"]);
+    } finally {
+      beta.analytics = true;
+    }
+  });
+
+  it("with no analytics project left the check refuses, and the selection can still be cleared", async () => {
+    const enabled = PROJECTS.filter((project) => project.analytics);
+    for (const project of enabled) project.analytics = false;
+    try {
+      const listed = storedConnectionPreviewResponseSchema.parse(
+        (
+          await call("POST", `${connectionUrl()}/preview`, { config: {} })
+        ).json(),
+      );
+      expect(listed.check.ok).toBe(false);
+      expect(listed.selection).toEqual(["prj_alpha"]);
+      const cleared = await select([]);
+      expect(cleared.statusCode, cleared.body).toBe(200);
+      expect(await storedSelection()).toEqual([]);
+    } finally {
+      for (const project of enabled) project.analytics = true;
+    }
+    expect((await select(["prj_alpha"])).statusCode).toBe(200);
+  });
+
   it("is closed to other workspaces", async () => {
     const other = workspaceListResponseSchema.parse(
       (await call("GET", "/v1/workspaces", undefined, outsider)).json(),

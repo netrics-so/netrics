@@ -158,3 +158,54 @@ test("a Vercel connection names its projects and changes which are synced", asyn
   // The removed project's values are still there.
   await expect(rows.filter({ hasText: "17" })).toBeVisible();
 });
+
+test("a refused check still lets the selection be reduced and saved", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = messages(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  const connectionId = await seedConnection(workspaceId);
+  const path = `/v1/workspaces/${workspaceId}/connections/${connectionId}`;
+  const refusal = "None of the projects this token can see has Web Analytics.";
+
+  const saved: unknown[] = [];
+  // Web Analytics was turned off everywhere: the check refuses.
+  await page.route(`**${path}/preview`, (route) =>
+    route.fulfill({
+      json: {
+        check: { ok: false, message: refusal },
+        resources: [],
+        selection: ["prj_alpha", "prj_beta"],
+      },
+    }),
+  );
+  await page.route(`**${path}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    const body = route.request().postDataJSON() as { resources: string[] };
+    saved.push(body);
+    const current = await page.request.get(path);
+    await saveSelection(connectionId, body.resources);
+    return route.fulfill({ json: await current.json() });
+  });
+
+  await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
+  const panel = page.locator("#project-selection");
+  await panel.getByRole("button", { name: t.projects.check }).click();
+
+  // The refusal, and the stored selection to repair below it.
+  await expect(panel.getByRole("alert")).toContainText(refusal);
+  await expect(panel.getByRole("alert")).toContainText(t.projects.refusedHelp);
+  const beta = panel.getByRole("checkbox", { name: /prj_beta/ });
+  await expect(beta).toBeChecked();
+  await expect(
+    panel.getByRole("checkbox", { name: /prj_alpha/ }),
+  ).toBeChecked();
+
+  // A project that is not listed leaves the list once it is unticked.
+  await beta.click();
+  await expect(beta).toHaveCount(0);
+  await panel.getByRole("button", { name: t.projects.save }).click();
+  await expect(panel.getByText(t.projects.saved)).toBeVisible();
+  expect(saved).toEqual([{ resources: ["prj_alpha"] }]);
+});

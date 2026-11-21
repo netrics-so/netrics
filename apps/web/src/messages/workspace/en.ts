@@ -280,6 +280,8 @@ export const workspaceEn = {
       check: "Change project selection",
       checking: "Loading projects…",
       accessFailed: "The project list could not be loaded.",
+      refusedHelp:
+        "You can still remove projects from the selection below and save.",
       save: "Save project selection",
       cancel: "Cancel",
       saved:
