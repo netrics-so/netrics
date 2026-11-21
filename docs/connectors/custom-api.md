@@ -143,7 +143,13 @@ definition }` as `<name>.netrics-api.json` (`cache-control: no-store`):
   validation (strict: unknown keys such as `credentials` are refused) and
   creates a new definition at version 1; a name in use gets " (2)",
   " (3)"…. `custom_api_import_invalid` lists up to 20 issues without
-  values; `custom_api_import_newer` refuses files of a newer schema.
+  values (key names from the file cut to 64 characters and escaped);
+  `custom_api_import_newer` refuses files of a newer schema.
+- **`__proto__` keys.** A request body (save, import, draft, test) with a
+  `__proto__` key anywhere is refused by the HTTP layer before validation,
+  with a plain `400 { "error": "invalid_request" }`. A document that
+  reaches validation another way gets the issue `Reserved key` at that
+  key's path; the key is never dropped silently or stored.
 
 ## OAuth
 
