@@ -5466,8 +5466,9 @@ a.button.primary:hover {
   overflow: auto;
   min-height: 0;
 }
-/* Columns share the width evenly and cells wrap anywhere, so a row is as
-   tall as measureTableRowsShown estimates (#768). */
+/* Columns share the width evenly, or have the widths the fit gives them on
+   a slide (its <col>s: heads keep their words whole, #780), and cells wrap
+   anywhere, so a row is as tall as measureTableRowsShown estimates (#768). */
 .sw-measure-table {
   width: 100%;
   table-layout: fixed;

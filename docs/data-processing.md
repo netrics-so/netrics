@@ -897,6 +897,17 @@ result follows from the payload and the tile's size alone, so nothing is
 measured after drawing; scroll views, whose cards grow with their content,
 show every row.
 
+Column heads keep their words whole on web screens
+([#780](https://github.com/netrics-so/netrics/issues/780)): where a head
+has a word wider than an even share of the table ("Downloads" at font scale
+1.3 in a third of a screen) and every head's widest word fits side by side,
+that column is as wide as the word needs and the others share the rest
+(`measureTableColumnWidths`, the `wholeHeadWords` input of the fit). The
+rows are counted with those widths. Where the words cannot all fit, the
+shares stay even and a word breaks, as before; nothing is cut. netrics TV
+still draws even columns until it is ported; the test vectors for it are in
+`studio-layout.json` (`measureColumnWidths`, `measureRowsShownWholeHeads`).
+
 The readability check estimates the same layout with sample lines: fewer
 rows than the `limit` is `rows_cut` as info; not even one row (or no room
 for the footer) is `rows_cut` as attention.

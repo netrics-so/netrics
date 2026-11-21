@@ -9,6 +9,8 @@ import {
   limitForView,
   MeasureFields,
   optionsForModel,
+  groupByForView,
+  patchForView,
   valueViewMeasureId,
 } from "./measure-fields";
 
@@ -35,8 +37,9 @@ const models: PublishedModelCatalog["models"] = [
   },
 ];
 const widget = (
-  view: "value" | "table",
+  view: "value" | "table" | "bar" | "line",
   measureIds: string[],
+  groupBy: string[] = view === "table" ? ["day"] : [],
 ): Extract<DashboardWidget, { type: "measure" }> =>
   ({
     type: "measure",
@@ -49,19 +52,20 @@ const widget = (
     binding: {
       modelId: models[0]!.modelId,
       measureIds,
-      groupBy: view === "table" ? ["day"] : [],
+      groupBy,
       exclusions: [],
     },
     options: { view, limit: 20 },
   }) as Extract<DashboardWidget, { type: "measure" }>;
 const render = (
-  view: "value" | "table",
+  view: "value" | "table" | "bar" | "line",
   measureIds: string[],
   locale: "en" | "de" = "en",
+  groupBy?: string[],
 ) =>
   renderI18n(
     <MeasureFields
-      widget={widget(view, measureIds)}
+      widget={widget(view, measureIds, groupBy)}
       models={models}
       filters={[]}
       dispatch={() => {}}
@@ -97,6 +101,95 @@ describe("measure binding fields", () => {
     expect(valueViewMeasureId(models[0], ["daily", "revenue"])).toBe("daily");
     expect(valueViewMeasureId(models[0], ["revenue7", "byApp"])).toBe("byApp");
     expect(valueViewMeasureId(models[0], ["revenue7"])).toBe("revenue");
+  });
+});
+
+describe("a value view's grouping (#788)", () => {
+  const fieldset = (html: string, legend: string) =>
+    html.match(
+      new RegExp(`<fieldset[^>]*><legend>${legend}</legend>.*?</fieldset>`),
+    )?.[0] ?? "";
+
+  it("shows what a value view is split by, and offers every dimension", () => {
+    const html = render("value", ["revenue"], "en", ["app"]);
+    const split = fieldset(html, "Split by");
+    expect(radio(split, "App")).toContain('type="checkbox"');
+    expect(radio(split, "App")).toContain('checked=""');
+    expect(radio(split, "Day")).toContain('type="checkbox"');
+    expect(radio(split, "Day")).not.toContain('checked=""');
+    expect(split).toContain(
+      "Shows a line for each group, under their total where the measure adds up. Choose none for a single value.",
+    );
+    // Its lines are limited as a table's rows are.
+    expect(html).toContain("Maximum rows");
+    const german = render("value", ["revenue"], "de", ["app"]);
+    expect(fieldset(german, "Aufteilen nach")).toContain(
+      "Zeigt eine Zeile pro Gruppe, darüber die Summe, wenn sich die Kennzahl addieren lässt. Ohne Auswahl bleibt es ein einzelner Wert.",
+    );
+  });
+
+  it("offers the split for a plain value, which has no rows to limit", () => {
+    const html = render("value", ["revenue"]);
+    expect(radio(fieldset(html, "Split by"), "App")).not.toContain(
+      'checked=""',
+    );
+    expect(html).not.toContain("Maximum rows");
+  });
+
+  it("keeps tables and charts as they were", () => {
+    const table = fieldset(render("table", ["revenue"]), "Group by");
+    expect(radio(table, "Day")).toContain('type="checkbox"');
+    expect(table).not.toContain("Shows a line for each group");
+    const line = fieldset(
+      render("line", ["revenue"], "en", ["day"]),
+      "Group by",
+    );
+    expect(radio(line, "Day")).toContain('type="radio"');
+    // A line chart runs over dates only.
+    expect(line).not.toContain("App<");
+  });
+
+  it("keeps the grouping across view switches where the view can show it", () => {
+    expect(groupByForView("value", ["app", "day"], models[0])).toEqual([
+      "app",
+      "day",
+    ]);
+    expect(groupByForView("table", ["app"], models[0])).toEqual(["app"]);
+    expect(groupByForView("bar", ["app", "day"], models[0])).toEqual(["app"]);
+    expect(groupByForView("table", ["a", "b", "c", "d"], models[0])).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    // A plain value stays plain; a table or chart needs a grouping.
+    expect(groupByForView("value", [], models[0])).toEqual([]);
+    expect(groupByForView("table", [], models[0])).toEqual(["day"]);
+    expect(groupByForView("bar", [], models[0])).toEqual(["day"]);
+    expect(
+      groupByForView("line", [], {
+        ...models[0]!,
+        dimensions: [...models[0]!.dimensions].reverse(),
+      }),
+    ).toEqual(["day"]);
+  });
+
+  it("gives a template's split tile back after a switch to another view", () => {
+    // The total with a line per store (#784): two lines, its own period.
+    const split = widget("value", ["revenue"], ["app"]);
+    split.options = {
+      view: "value",
+      limit: 2,
+      period: "last_30_days",
+      labels: { app: "Store" },
+    };
+    for (const view of ["table", "bar", "line"] as const) {
+      const other = { ...split, ...patchForView(split, view, models[0]) };
+      expect(other.options.view).toBe(view);
+      expect(other.binding.groupBy).toEqual(["app"]);
+      const back = { ...other, ...patchForView(other, "value", models[0]) };
+      expect(back.binding).toEqual(split.binding);
+      expect(back.options).toEqual(split.options);
+    }
   });
 });
 

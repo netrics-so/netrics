@@ -97,6 +97,9 @@ export const dataDe: Catalog<typeof dataEn> = {
       view: "Darstellung",
       measures: "Kennzahlen",
       groupBy: "Gruppieren nach",
+      splitBy: "Aufteilen nach",
+      splitByHelp:
+        "Zeigt eine Zeile pro Gruppe, darüber die Summe, wenn sich die Kennzahl addieren lässt. Ohne Auswahl bleibt es ein einzelner Wert.",
       limit: "Maximale Zeilen",
       widgetFilter: "Zusätzlicher Widget-Filter",
       formulaPlaceholder: '[Land] = "DE"',

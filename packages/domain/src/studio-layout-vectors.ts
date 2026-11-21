@@ -25,6 +25,7 @@ import {
   isInsideGrid,
   labelFit,
   legacyGrid,
+  measureTableColumnWidths,
   measureTableLayout,
   measureTableRowsShown,
   freshnessLevelFit,
@@ -513,6 +514,7 @@ export function buildStudioLayoutVectors() {
       ["Weather Now", "Apple App Store", "340"],
     ],
   ];
+  const rowsWithHeads = measureRows[1]!;
   const measureRowsShown = measureBoxes.flatMap((box) =>
     FONT_SCALES.flatMap((fontScale) =>
       measureRows.flatMap((rows) =>
@@ -547,6 +549,58 @@ export function buildStudioLayoutVectors() {
             }),
           ),
         ),
+      ),
+    ),
+  );
+  // Column widths that keep the heads' words whole (#780): even shares,
+  // one or two columns widened, and heads that cannot all fit (even).
+  const measureColumnWidths = [300, 404, 560, 760, 1100, 1808].flatMap(
+    (width) =>
+      FONT_SCALES.flatMap((fontScale) =>
+        measureColumns.slice(1).flatMap((columns) =>
+          (
+            [
+              [1, "any"],
+              [2.8, "tv"],
+              [1, "web"],
+            ] as const
+          ).map(([pixel, font]) => {
+            const input = { width, fontScale, columns: columns!, pixel, font };
+            return { ...input, widths: measureTableColumnWidths(input) };
+          }),
+        ),
+      ),
+  );
+  // The rows shown with those widths (`wholeHeadWords`).
+  const measureRowsShownWholeHeads = measureBoxes.flatMap((box) =>
+    FONT_SCALES.flatMap((fontScale) =>
+      [rowsWithHeads.length, 40].flatMap((total) =>
+        (
+          [
+            [2.8, "tv"],
+            [1, "web"],
+          ] as const
+        ).map(([pixel, font]) => {
+          const input = {
+            label: "Downloads",
+            ...box,
+            fontScale,
+            columns: ["App", "Store", "Downloads"],
+            rows: rowsWithHeads,
+            total,
+            footer: [null],
+            pixel,
+            font,
+            wholeHeadWords: true,
+          };
+          return {
+            ...input,
+            ...measureTableRowsShown({
+              ...input,
+              rowsLine: (shown, all) => `Showing ${shown} of ${all} groups.`,
+            }),
+          };
+        }),
       ),
     ),
   );
@@ -1163,6 +1217,8 @@ export function buildStudioLayoutVectors() {
     tableChanges,
     measureLayouts,
     measureRowsShown,
+    measureColumnWidths,
+    measureRowsShownWholeHeads,
     freshnessLevelFits,
     measureSplitLayouts,
     measureGlyphs: {

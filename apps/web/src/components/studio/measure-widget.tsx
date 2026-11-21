@@ -552,6 +552,8 @@ export function MeasureWidgetView({
           // Web screens draw in IBM Plex Sans.
           font: "web",
           fontScale,
+          // Heads keep their words whole where the tile has the room (#780).
+          wholeHeadWords: true,
           columns: fields.map((field) => field.name),
           rows: cellTexts,
           total,
@@ -567,6 +569,9 @@ export function MeasureWidgetView({
   // Not even a row fits the tile (#768): the footer says "0 of N", and no
   // column heads are drawn to be cut off.
   const tableWithoutRoom = showsTable && fit.shown === 0;
+  // On a slide the fit sets the columns' widths (in units, as it counted
+  // the rows with); scroll cards keep the even shares of the stylesheet.
+  const columnWidths = "columnWidths" in fit ? fit.columnWidths : undefined;
   let continuing = false;
   const path = points
     .map((point) => {
@@ -628,6 +633,18 @@ export function MeasureWidgetView({
         unsafe ? (
         <div className="sw-measure-table-scroll">
           <table className="sw-measure-table">
+            {columnWidths ? (
+              <colgroup>
+                {columnWidths.map((width, column) => (
+                  <col
+                    key={fields[column]!.id}
+                    style={{
+                      width: `calc(var(--u, 1px) * ${width.toFixed(3)})`,
+                    }}
+                  />
+                ))}
+              </colgroup>
+            ) : null}
             <thead>
               <tr>
                 {fields.map((field) => (

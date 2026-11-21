@@ -47,12 +47,18 @@ const manropeExt = localFont({
   ],
 });
 
-/** Web TV rendering: IBM Plex Sans, variable 100–700 (not applied yet). */
+/**
+ * Web TV rendering: IBM Plex Sans, variable 100–700. `display: "block"`:
+ * screens fit their text with Plex's widths (measure tables, #780), so
+ * until the font is in, the text stays hidden for the browser's short
+ * block period instead of being drawn in a wider fallback that wraps.
+ */
 const plex = localFont({
   src: "./ibm-plex-sans/ibm-plex-sans-latin-wght-normal.woff2",
   weight: "100 700",
   style: "normal",
   variable: "--font-plex",
+  display: "block",
   adjustFontFallback: false,
   preload: false,
   declarations: [
@@ -69,6 +75,7 @@ const plexExt = localFont({
   weight: "100 700",
   style: "normal",
   variable: "--font-plex-ext",
+  display: "block",
   adjustFontFallback: false,
   preload: false,
   declarations: [

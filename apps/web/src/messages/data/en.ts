@@ -90,6 +90,9 @@ export const dataEn = {
       view: "Show as",
       measures: "Measures",
       groupBy: "Group by",
+      splitBy: "Split by",
+      splitByHelp:
+        "Shows a line for each group, under their total where the measure adds up. Choose none for a single value.",
       limit: "Maximum rows",
       widgetFilter: "Additional widget filter",
       formulaPlaceholder: '[Country] = "DE"',

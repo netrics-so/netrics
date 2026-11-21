@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { DashboardWidgetData } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
-import type { DashboardDataFilter } from "@netrics/domain";
+import {
+  measureTableColumnWidths,
+  type DashboardDataFilter,
+} from "@netrics/domain";
+import { contentBox } from "@/lib/studio-render";
 import type { StudioEnv } from "@/lib/studio-widgets";
 import {
   formatMeasureCell,
@@ -736,6 +740,90 @@ describe("a measure table fits its tile (#768)", () => {
 
   it("shows every row where cards grow with their content (scroll view)", () => {
     expect(shownRows(view(20))).toBe(20);
+  });
+});
+
+describe("a measure table keeps its heads' words whole (#780)", () => {
+  const data = {
+    widgetId: "00000000-0000-4000-8000-000000000001",
+    status: "ok",
+    error: null,
+    exclusions: [],
+    metadata: {
+      modelId: "00000000-0000-4000-8000-000000000002",
+      modelName: "Downloads",
+      measures: [{ id: "downloads", name: "Downloads" }],
+      dimensions: [
+        { id: "app", name: "App", type: "string" },
+        { id: "store", name: "Store", type: "string" },
+      ],
+    },
+    result: {
+      releaseId: null,
+      rows: [
+        {
+          dimensions: { app: "Focus", store: "App Store" },
+          measures: {
+            downloads: { value: 500, type: "integer", status: "ok" },
+          },
+        },
+      ],
+      totalRows: 1,
+      warnings: [],
+      operations: 1,
+      provenance: [],
+      appliedFilter: null,
+      groupBy: [],
+    },
+  } as unknown as DashboardWidgetData;
+  const view = (fontScale: number, placement?: { w: number; h: number }) =>
+    renderI18n(
+      <MeasureWidgetView
+        widget={{
+          title: "Downloads",
+          options: { view: "table", limit: 20 },
+          binding: { measureIds: ["downloads"], groupBy: ["app", "store"] },
+        }}
+        fontScale={fontScale}
+        data={data}
+        {...(placement
+          ? { placement: { x: 0, y: 0, ...placement }, showHeader: true }
+          : {})}
+      />,
+    );
+  const widths = (html: string) =>
+    [
+      ...html.matchAll(
+        /<col style="width:calc\(var\(--u, 1px\) \* ([\d.]+)\)"/g,
+      ),
+    ].map((match) => Number(match[1]));
+
+  it("widens the Downloads column in a third of a screen at font scale 1.3", () => {
+    // "Downloads" at 36.4 units is wider than a third of the tile.
+    const columns = widths(view(1.3, { w: 4, h: 4 }));
+    expect(columns).toHaveLength(3);
+    expect(columns[2]).toBeGreaterThan(columns[0]!);
+    expect(columns[0]).toBe(columns[1]);
+    // The widths the fit counted its rows with.
+    const box = contentBox({ x: 0, y: 0, w: 4, h: 4 }, true);
+    const fitted = measureTableColumnWidths({
+      width: box.width,
+      fontScale: 1.3,
+      columns: ["App", "Store", "Downloads"],
+      font: "web",
+    });
+    expect(columns).toEqual(fitted.map((width) => Number(width.toFixed(3))));
+    expect(fitted.reduce((a, b) => a + b, 0)).toBeCloseTo(box.width, 9);
+  });
+
+  it("shares the width evenly where the heads fit", () => {
+    const columns = widths(view(1, { w: 6, h: 4 }));
+    expect(columns).toHaveLength(3);
+    expect(new Set(columns).size).toBe(1);
+  });
+
+  it("leaves a card that grows with its content to the stylesheet", () => {
+    expect(view(1.3)).not.toContain("<col");
   });
 });
 

@@ -46,6 +46,9 @@ import {
   zoneLabel,
   zoneLabelSample,
   measureTableRowsShown,
+  measureTableColumnWidths,
+  measureTableLayout,
+  MEASURE_TABLE_METRICS,
 } from "./studio-layout.js";
 
 const HD = { width: 1920, height: 1080 };
@@ -900,6 +903,100 @@ describe("test vectors", () => {
       writeFileSync(path, text);
     }
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(JSON.parse(text));
+  });
+});
+
+describe("measureTableColumnWidths (#780)", () => {
+  const heads = ["App", "Store", "Downloads"];
+  const sum = (widths: number[]) => widths.reduce((a, b) => a + b, 0);
+  /** Lines of a head in its column, as the fit wraps it. */
+  const headLines = (head: string, width: number, fontScale: number) =>
+    wrappedLineCount(
+      head,
+      width - MEASURE_TABLE_METRICS.cellPadding - 1,
+      MEASURE_TABLE_METRICS.cell * fontScale,
+      "semibold",
+      (text, size, weight) => measureTextWidth(text, size, weight, "web"),
+    );
+
+  it("shares the width evenly where every head word fits", () => {
+    expect(
+      measureTableColumnWidths({ width: 900, columns: heads, font: "web" }),
+    ).toEqual([300, 300, 300]);
+    expect(measureTableColumnWidths({ width: 900, columns: [] })).toEqual([]);
+  });
+
+  it("widens a column whose head would break inside a word", () => {
+    // A third of a 16:9 screen at font scale 1.3: "Downloa / ds" in an
+    // even share.
+    const box = { width: 560, fontScale: 1.3, font: "web" as const };
+    expect(headLines("Downloads", 560 / 3, 1.3)).toBe(2);
+    const widths = measureTableColumnWidths({ ...box, columns: heads });
+    expect(widths[2]).toBeGreaterThan(560 / 3);
+    expect(widths[0]).toBe(widths[1]);
+    expect(sum(widths)).toBeCloseTo(560, 9);
+    heads.forEach((head, column) =>
+      expect(headLines(head, widths[column]!, 1.3)).toBe(1),
+    );
+    // Several words: each whole, on its own line where they do not share one.
+    const worded = measureTableColumnWidths({
+      ...box,
+      columns: ["App", "Store", "Downloads and installs"],
+    });
+    expect(worded).toEqual(widths);
+    expect(headLines("Downloads and installs", worded[2]!, 1.3)).toBe(3);
+  });
+
+  it("widens a second column the first one's room puts over its share", () => {
+    const columns = ["Bewertungsland", "Bewertung", "App", "Nr"];
+    const widths = measureTableColumnWidths({
+      width: 760,
+      fontScale: 1.3,
+      columns,
+      font: "web",
+    });
+    expect(widths[0]).toBeGreaterThan(190);
+    expect(widths[1]).toBeGreaterThan(widths[2]!);
+    expect(widths[2]).toBe(widths[3]);
+    expect(sum(widths)).toBeCloseTo(760, 9);
+    columns.forEach((head, column) =>
+      expect(headLines(head, widths[column]!, 1.3)).toBe(1),
+    );
+  });
+
+  it("keeps even shares where the heads' words cannot all fit", () => {
+    expect(
+      measureTableColumnWidths({
+        width: 300,
+        fontScale: 1.3,
+        columns: ["Bewertungsland", "Anzahl Bewertungen", "Downloads"],
+        font: "web",
+      }),
+    ).toEqual([100, 100, 100]);
+  });
+
+  it("is what the fit counts its rows with, only when asked", () => {
+    const input = {
+      label: "Downloads",
+      width: 560,
+      height: 414.2,
+      fontScale: 1.3,
+      font: "web" as const,
+      columns: heads,
+      rows: [["Focus", "Apple App Store", "500"]],
+      total: 1,
+      footer: [null],
+      rowsLine: (shown: number, total: number) => `${shown} of ${total}`,
+    };
+    expect(measureTableRowsShown(input)).not.toHaveProperty("columnWidths");
+    expect(
+      measureTableRowsShown({ ...input, wholeHeadWords: true }).columnWidths,
+    ).toEqual(measureTableColumnWidths(input));
+    // One head line instead of two: less fixed height.
+    expect(
+      measureTableLayout({ ...input, wholeHeadWords: true }).headLines,
+    ).toBe(1);
+    expect(measureTableLayout(input).headLines).toBe(2);
   });
 });
 
