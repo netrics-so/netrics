@@ -88,6 +88,13 @@ describe("fetchItemImages", () => {
   });
 
   it("does not follow a redirect to another host with credentials", async () => {
+    // This shows only that fetchItemImages itself follows nothing: the
+    // fixture runtime answers the 302 as it is (redirect: "manual"), a
+    // non-2xx fetch_failed. The redirect policy (same-host redirects, no
+    // credentials elsewhere) belongs to the egress guard and is covered by
+    // the server test on real egress (custom-api-images.test.ts, "sends
+    // credentials to the API host and never follows a redirect to another
+    // image host").
     const [result] = await fetchItemImages(
       input({
         images: { hosts: ["127.0.0.1", "localhost"], newestItems: 12 },

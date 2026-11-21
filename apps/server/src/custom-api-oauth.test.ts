@@ -66,6 +66,7 @@ let fixture: CustomApiFixtureServer;
 let app: FastifyInstance;
 let db: Database;
 let admin: Sql;
+let adminUrl: string;
 let owner: string;
 let editor: string;
 let workspaceId: string;
@@ -290,18 +291,22 @@ const expire = (connectionId: string) => admin`
   set access_token_expires_at = now() - interval '1 hour'
   where connection_id = ${connectionId}`;
 
-const jobHandlers = () =>
+const jobHandlers = (oauthTokens: OAuthTokenService = tokens) =>
   createJobHandlers({
     registry: new ConnectorRegistry(),
     credentialKeyring: keyring,
-    oauthTokens: tokens,
+    oauthTokens,
     executeOptions: {
       egress: { tlsCa: fixture.ca!, allowPrivateHosts: ["127.0.0.1"] },
     },
   });
 
-async function runJob(kind: string, connectionId: string) {
-  await jobHandlers()[kind]!({
+async function runJob(
+  kind: string,
+  connectionId: string,
+  oauthTokens: OAuthTokenService = tokens,
+) {
+  await jobHandlers(oauthTokens)[kind]!({
     job: {
       id: randomUUID(),
       kind,
@@ -361,6 +366,7 @@ beforeAll(async () => {
     }),
   });
   admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
+  adminUrl = testDb.adminUrl;
   owner = await signUp("custom-oauth-owner@example.com");
   editor = await signUp("custom-oauth-editor@example.com");
   const created = await app.inject({
@@ -764,6 +770,23 @@ describe("custom OAuth: revocation", () => {
       },
     });
     expect(fixture.oauth.revoked.length).toBe(revoked);
+    expect(fixture.requests).toHaveLength(0);
+  });
+
+  it("reports no revocation for a client-credentials connection whose definition no longer decodes", async () => {
+    const id = await connection(document("oauth_client_credentials"));
+    // The pinned document stops decoding (an upgrade bug, a bad restore).
+    await admin`
+      update custom_api_definition_versions
+      set document = jsonb_set(document, '{streams}', '"broken"'::jsonb)
+      where id = (select custom_api_definition_version_id from connections
+                  where id = ${id})`;
+    fixture.reset();
+    const deleted = await call("DELETE", ws(`/connections/${id}`));
+    expect(deleted.statusCode, deleted.body).toBe(200);
+    expect(deleteConnectionResponseSchema.parse(deleted.json())).toEqual({
+      revocation: null,
+    });
     expect(fixture.requests).toHaveLength(0);
   });
 
@@ -1301,5 +1324,102 @@ describe("custom OAuth: fix round 2 (#823 re-review)", () => {
     expect(await envelope(id)).toEqual(before);
     expect((await state(id)).auth_state).toBe("ok");
     expect(fixture.oauth.revoked.length).toBe(revoked);
+  });
+});
+
+describe("custom OAuth: a client change racing a refusal (#825)", () => {
+  it("keeps the new client healthy when the old one is refused during the PATCH", async () => {
+    const id = await connection(document("oauth_client_credentials"));
+    await expire(id);
+    // The provider now knows only the new secret.
+    const secret = "rotated-client-secret-0825";
+    fixture.oauth.clientSecret = secret;
+    let patched: InjectResponse | null = null;
+    // The worker's refresh is refused with the old client; before the
+    // engine records that, the user's PATCH with the new client commits.
+    const racing: OAuthTokenService = {
+      ...tokens,
+      async getAccessToken(binding, options) {
+        try {
+          return await tokens.getAccessToken(binding, options);
+        } catch (error) {
+          patched ??= await call("PATCH", ws(`/connections/${id}`), {
+            credentials: { clientId: CLIENT_ID, clientSecret: secret },
+          });
+          throw error;
+        }
+      },
+    };
+    await runJob("connection.sync", id, racing);
+    expect(patched).not.toBeNull();
+    expect(patched!.statusCode, patched!.body).toBe(200);
+    const [run] = await admin<{ error_message: string | null }[]>`
+      select error_message from sync_runs where connection_id = ${id}
+      order by started_at desc limit 1`;
+    expect(run!.error_message).toBe(CUSTOM_API_MESSAGES.tokenRefused);
+    // Not auth_failed: the refusal was of a client that is gone.
+    expect((await state(id)).auth_state).toBe("ok");
+    expect((await envelope(id)).clientSecret).toBe(secret);
+  });
+
+  it("still records a refusal of the client that is stored", async () => {
+    const id = await connection(document("oauth_client_credentials"));
+    await expire(id);
+    fixture.oauth.clientSecret = "rotated-client-secret-0826";
+    await runJob("connection.sync", id);
+    expect((await state(id)).auth_state).toBe("auth_failed");
+  });
+
+  it("repairs a secret refusal recorded after the PATCH was read", async () => {
+    const id = await connection(document("oauth_code"));
+    await authorize(id);
+    const other = createRawSqlClient(adminUrl, { max: 1 });
+    try {
+      let patching!: Promise<InjectResponse>;
+      await admin.begin(async (tx) => {
+        // Holds the grant lock, as a refresh does, and records the refusal
+        // that refresh would record; the PATCH has read the state before.
+        await tx`select 1 from connection_oauth
+          where connection_id = ${id} for update`;
+        await tx`update connection_state set auth_state = 'auth_failed'
+          where connection_id = ${id}`;
+        patching = call("PATCH", ws(`/connections/${id}`), {
+          credentials: {
+            clientId: CLIENT_ID,
+            clientSecret: "rotated-client-secret-0827",
+          },
+        });
+        for (let i = 0; i < 200; i += 1) {
+          const [waiting] = await other<{ n: number }[]>`
+            select count(*)::int as n from pg_stat_activity
+            where wait_event_type = 'Lock' and datname = current_database()`;
+          if (waiting!.n > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      });
+      const patched = await patching;
+      expect(patched.statusCode, patched.body).toBe(200);
+    } finally {
+      await other.end({ timeout: 5 });
+    }
+    expect((await state(id)).auth_state).toBe("ok");
+    expect((await envelope(id)).clientSecret).toBe(
+      "rotated-client-secret-0827",
+    );
+  });
+
+  it("refuses a config change together with a new client", async () => {
+    const id = await connection(document("oauth_client_credentials"));
+    const before = await envelope(id);
+    const refused = await call("PATCH", ws(`/connections/${id}`), {
+      credentials: {
+        clientId: CLIENT_ID,
+        clientSecret: "rotated-client-secret-0828",
+      },
+      config: {},
+    });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().error).toBe("invalid_request");
+    expect(await envelope(id)).toEqual(before);
   });
 });

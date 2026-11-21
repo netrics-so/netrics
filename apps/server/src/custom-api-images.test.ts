@@ -448,40 +448,40 @@ describe("custom API item images after a sync", () => {
   });
 });
 
-describe("item images: failures of one image, and the time budget", () => {
-  /** The image step alone, as the engine runs it, with a test clock. */
-  async function ingest(
-    connectionId: string,
-    options: { clock: () => number; budgetMs: number },
-  ) {
-    const connection = await withWorkspace(appDb, { workspaceId }, (tx) =>
-      findConnection(tx, workspaceId, connectionId),
-    );
-    const resolved = connectorFor(registry, connection!)!;
-    const context = { connectionId, config: {}, credentials: {} };
-    const callOptions = callOptionsFor(
-      resolved,
-      {
-        egress: {
-          tlsCa: fixture.ca!,
-          allowPrivateHosts: ["127.0.0.1", "localhost"],
-        },
+/** The image step alone, as the engine runs it, with a test clock. */
+async function ingest(
+  connectionId: string,
+  options: { clock: () => number; budgetMs: number },
+) {
+  const connection = await withWorkspace(appDb, { workspaceId }, (tx) =>
+    findConnection(tx, workspaceId, connectionId),
+  );
+  const resolved = connectorFor(registry, connection!)!;
+  const context = { connectionId, config: {}, credentials: {} };
+  const callOptions = callOptionsFor(
+    resolved,
+    {
+      egress: {
+        tlsCa: fixture.ca!,
+        allowPrivateHosts: ["127.0.0.1", "localhost"],
       },
-      { credentials: {}, privateHosts: [] },
-    );
-    return ingestCustomApiImages({
-      db: appDb,
-      workspaceId,
-      connectionId,
-      resolved,
-      run: (call) => call(context, callOptions),
-      quota: { maxCount: 500, maxBytes: 200 * 1_048_576 },
-      now: new Date(),
-      log: () => undefined,
-      ...options,
-    });
-  }
+    },
+    { credentials: {}, privateHosts: [] },
+  );
+  return ingestCustomApiImages({
+    db: appDb,
+    workspaceId,
+    connectionId,
+    resolved,
+    run: (call) => call(context, callOptions),
+    quota: { maxCount: 500, maxBytes: 200 * 1_048_576 },
+    now: new Date(),
+    log: () => undefined,
+    ...options,
+  });
+}
 
+describe("item images: failures of one image, and the time budget", () => {
   it("counts a database error on one image against that image only", async () => {
     const connectionId = await connect(definition("photos"));
     const failing = itemImageUrlHash(`${fixture.origin}/images/n/4.png`);
@@ -552,20 +552,72 @@ describe("item images: failures of one image, and the time budget", () => {
     fixture.setImages(["slow"]);
     await runSync(connectionId, { quota: { maxCount: 0, maxBytes: 0 } });
     fixture.reset();
-    // 200 ms left when the downloads start: the slow image is cut off by
-    // the budget, not by its 15 s request timeout.
+    // 2 s left when the downloads start (room for the two ordinary images
+    // on a slow runner): the slow image is cut off by the budget, not by
+    // its 15 s request timeout.
     let readings = 0;
     const started = Date.now();
     const outcomes = await ingest(connectionId, {
-      budgetMs: 200,
+      budgetMs: 2_000,
       clock: () => (readings++ === 0 ? started : Date.now()),
     });
-    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(Date.now() - started).toBeLessThan(10_000);
     expect(outcomes[0]).toMatchObject({
       stored: 2,
       skipped: 1,
       skippedReasons: { fetch_failed: 1 },
     });
+  });
+});
+
+describe("item images: a store running when the budget ends (#829)", () => {
+  it("awaits and counts it before the step goes on", async () => {
+    const connectionId = await connect(definition("photos"));
+    await runSync(connectionId, { quota: { maxCount: 0, maxBytes: 0 } });
+    fixture.reset();
+    // One image's store outlasts the budget: it is still committing when
+    // the downloads are cut off.
+    const slow = itemImageUrlHash(`${fixture.origin}/images/n/4.png`);
+    await owner.unsafe(`
+      create or replace function slow_one_item_image() returns trigger
+      language plpgsql as $$
+      begin
+        if new.url_sha256 = '${slow}' then
+          perform pg_sleep(4);
+        end if;
+        return new;
+      end $$`);
+    await owner.unsafe(`
+      create trigger slow_one_item_image before insert
+      on custom_api_item_images for each row
+      execute function slow_one_item_image()`);
+    let outcomes;
+    let stored: number;
+    try {
+      outcomes = await ingest(connectionId, {
+        budgetMs: 2_000,
+        clock: Date.now,
+      });
+      // Committed before the step returned, not behind the next stream.
+      const [row] = await owner<{ count: number }[]>`
+        select count(*)::int as count from custom_api_item_images
+        where workspace_id = ${workspaceId} and url_sha256 = ${slow}`;
+      stored = row!.count;
+    } finally {
+      await owner.unsafe(
+        "drop trigger slow_one_item_image on custom_api_item_images",
+      );
+    }
+    expect(stored).toBe(1);
+    expect(outcomes).toEqual([
+      {
+        streamKey: "photos",
+        stored: 3,
+        unchanged: 0,
+        skipped: 0,
+        skippedReasons: {},
+      },
+    ]);
   });
 });
 

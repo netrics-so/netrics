@@ -24,6 +24,7 @@ import {
 import { resolveAccess, sendError, type WorkspaceAccess } from "./access.js";
 import { matchesEtag } from "./devices.js";
 import { routeSchema } from "./openapi.js";
+import type { DeviceRateLimiter } from "./device-rate-limit.js";
 import { createRequireDevice } from "./principal.js";
 import { createRequireSession } from "./session.js";
 
@@ -40,6 +41,8 @@ export interface ImageRouteDeps {
   dataPolicy?: import("@netrics/domain").DataPolicy;
   /** How long a device's item image ids are reused (#810). */
   itemImagesMs?: number;
+  /** The device API's request limit, shared with the device routes (#829). */
+  deviceLimiter?: DeviceRateLimiter;
 }
 
 const imageParamsSchema = z.object({ imageId: z.uuid() });
@@ -141,7 +144,10 @@ export function registerImageRoutes(
       ? { itemImages: createDeviceItemImages({ ttlMs: deps.itemImagesMs }) }
       : {}),
   });
-  const requireDevice = createRequireDevice({ db: deps.db });
+  const requireDevice = createRequireDevice({
+    db: deps.db,
+    ...(deps.deviceLimiter ? { limiter: deps.deviceLimiter } : {}),
+  });
 
   async function authorize(
     request: FastifyRequest,

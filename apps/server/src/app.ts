@@ -51,6 +51,10 @@ import { createOAuthFlow } from "./oauth/flow.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerConnectionRoutes } from "./routes/connections.js";
 import { registerDashboardRoutes } from "./routes/dashboards.js";
+import {
+  createDeviceRateLimiter,
+  type DeviceRateLimit,
+} from "./routes/device-rate-limit.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
 import { registerImageRoutes } from "./routes/images.js";
 import { registerTemplateRoutes } from "./routes/templates.js";
@@ -92,6 +96,8 @@ export interface AppDeps {
   devicePayloadCacheMs?: number;
   /** How long a device's item image ids are reused (#810); tests set 0. */
   deviceItemImagesMs?: number;
+  /** The device API's request limit per device (#829); tests lower it. */
+  deviceRateLimit?: DeviceRateLimit;
   /** The newest store template; tests pass other versions. */
   storeTemplate?: StoreTemplateDefinition;
   /** Tests only: options for connector calls of the API (e.g. local egress). */
@@ -320,7 +326,10 @@ export async function buildApp(
     registry,
     ...(deps.now ? { now: deps.now } : {}),
   });
+  // One limit per device across the device and device image routes.
+  const deviceLimiter = createDeviceRateLimiter(deps.deviceRateLimit);
   registerImageRoutes(app, {
+    deviceLimiter,
     authService,
     db,
     quota: config.imageQuota,
@@ -331,6 +340,7 @@ export async function buildApp(
       : {}),
   });
   registerDeviceRoutes(app, {
+    deviceLimiter,
     dataPolicy: config.dataPolicy,
     authService,
     db,

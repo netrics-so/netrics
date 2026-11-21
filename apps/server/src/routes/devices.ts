@@ -40,6 +40,7 @@ import {
 } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import type { FreshnessManifests } from "../dashboards/freshness.js";
+import type { DeviceRateLimiter } from "./device-rate-limit.js";
 import { createRequireDevice } from "./principal.js";
 import { createRequireSession } from "./session.js";
 
@@ -61,6 +62,8 @@ export interface DeviceRouteDeps {
   credentialKeyring?: CredentialKeyring;
   /** The connector registry: widgets' freshness (ADR 0025). */
   registry?: FreshnessManifests;
+  /** The device API's request limit, shared with the image routes (#829). */
+  deviceLimiter?: DeviceRateLimiter;
 }
 
 const deviceParamsSchema = z.object({ deviceId: z.uuid() });
@@ -89,7 +92,10 @@ export function registerDeviceRoutes(
   deps: DeviceRouteDeps,
 ): void {
   const requireSession = createRequireSession(deps.authService);
-  const requireDevice = createRequireDevice({ db: deps.db });
+  const requireDevice = createRequireDevice({
+    db: deps.db,
+    ...(deps.deviceLimiter ? { limiter: deps.deviceLimiter } : {}),
+  });
   const devices = createDeviceService(deps);
 
   async function authorize(

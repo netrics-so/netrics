@@ -412,7 +412,8 @@ export async function prepareCustomOAuthClientChange(input: {
         "custom_api_credentials_host_changed",
       );
     const fresh = await resolver.resolve(tx, binding);
-    return { grant: locked?.oauth ?? null, fresh };
+    // The auth state as it is now, under the lock (#825).
+    return { grant: locked?.oauth ?? null, fresh, state: now?.state ?? null };
   };
   const nothing = async () => {};
 
@@ -478,7 +479,7 @@ export async function prepareCustomOAuthClientChange(input: {
     ok: true,
     value: {
       async apply(tx) {
-        const { grant, fresh } = await lock(tx);
+        const { grant, fresh, state } = await lock(tx);
         const sameClient =
           fresh !== null &&
           fresh.bindingHeld &&
@@ -488,9 +489,9 @@ export async function prepareCustomOAuthClientChange(input: {
           await updateConnection(tx, workspaceId, connectionId, {
             credentialsEncrypted: seal(fresh.credentials.refreshToken),
           });
-          // Repairs a refused secret; a grant that needs a new sign-in
-          // keeps needing it.
-          if (existing.state?.authState === "auth_failed") await healthy(tx);
+          // Repairs a refused secret, also one recorded after this PATCH
+          // was read; a grant that needs a new sign-in keeps needing it.
+          if (state?.authState === "auth_failed") await healthy(tx);
           await audit(tx, "secret");
           return nothing;
         }

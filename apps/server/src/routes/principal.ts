@@ -13,6 +13,7 @@ import type { InstallationScope } from "@netrics/domain";
 import type { AuthService, SessionIdentity } from "../auth/index.js";
 import { hashToken } from "../tokens.js";
 import { sendError } from "./access.js";
+import type { DeviceRateLimiter } from "./device-rate-limit.js";
 
 /** Who is calling (ADR 0009). */
 export type Principal =
@@ -105,9 +106,13 @@ declare module "fastify" {
 /**
  * onRequest guard for the device API (ADR 0011): a device access token
  * (scope device:read). Sessions, service tokens and refresh tokens are
- * refused with 401. Records the device's last contact.
+ * refused with 401. A device over its request limit (`limiter`, #829) gets
+ * 429 with Retry-After. Records the device's last contact.
  */
-export function createRequireDevice(options: { db: Database }) {
+export function createRequireDevice(options: {
+  db: Database;
+  limiter?: DeviceRateLimiter;
+}) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const match = BEARER.exec(request.headers.authorization ?? "");
     const token = match
@@ -121,6 +126,11 @@ export function createRequireDevice(options: { db: Database }) {
       !token.deviceId
     ) {
       return sendError(reply, 401, "unauthorized");
+    }
+    const limited = options.limiter?.(token.deviceId);
+    if (limited && !limited.ok) {
+      void reply.header("retry-after", String(limited.retryAfterSeconds));
+      return sendError(reply, 429, "too_many_requests");
     }
     request.principal = { kind: "device", token };
     request.device = {

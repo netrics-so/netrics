@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -36,6 +37,10 @@ import {
 import { STUDIO_MIN_WIDGET_SIZE, addDays, civilDate } from "@netrics/domain";
 
 import { buildApp } from "./app.js";
+import {
+  createDeviceRateLimiter,
+  DEVICE_RATE_LIMIT,
+} from "./routes/device-rate-limit.js";
 import { createDataService } from "./data/service.js";
 import { createAuthService } from "./auth/index.js";
 import {
@@ -54,6 +59,8 @@ import { hashToken } from "./tokens.js";
 type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 
 let app: FastifyInstance;
+/** The same server with a tiny device request limit (#829). */
+let limitedApp: FastifyInstance;
 let db: Database;
 let admin: Sql;
 let owner: string;
@@ -200,6 +207,13 @@ beforeAll(async () => {
     // Tests change data between reads; the memo has its own tests.
     devicePayloadCacheMs: 0,
   });
+  limitedApp = await buildApp(config, {
+    db,
+    authService,
+    checkDb: async () => true,
+    devicePayloadCacheMs: 0,
+    deviceRateLimit: { capacity: 3, refillPerSecond: 0.01 },
+  });
   admin = createRawSqlClient(testDb.adminUrl, { max: 1 });
   testAdminUrl = testDb.adminUrl;
   owner = await signUp("tv-owner@example.com");
@@ -224,6 +238,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
+  await limitedApp?.close();
   await db.$client.end({ timeout: 5 }).catch(() => undefined);
   await admin.end({ timeout: 5 }).catch(() => undefined);
 });
@@ -1996,5 +2011,67 @@ describe("device dashboard", () => {
       "unauthorized",
     );
     expectError(await getDashboard(accessToken), 401, "unauthorized");
+  });
+});
+
+describe("device request limit (#829)", () => {
+  const get = (token: string, url: string) =>
+    limitedApp.inject({
+      method: "GET",
+      url,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+  it("answers 429 with Retry-After once a device used up its requests, on every device route", async () => {
+    const first = await pair("Busy TV");
+    const second = await pair("Quiet TV");
+    expect((await get(first.accessToken, "/v1/device/me")).statusCode).toBe(
+      200,
+    );
+    expect(
+      (await get(first.accessToken, "/v1/device/dashboard")).statusCode,
+    ).toBe(200);
+    // The image routes count against the same limit (404: no such image).
+    expect(
+      (await get(first.accessToken, `/v1/device/images/${randomUUID()}`))
+        .statusCode,
+    ).toBe(404);
+    const limited = await get(first.accessToken, "/v1/device/me");
+    expectError(limited, 429, "too_many_requests");
+    expect(Number(limited.headers["retry-after"])).toBeGreaterThanOrEqual(1);
+    const image = await get(
+      first.accessToken,
+      `/v1/device/images/${randomUUID()}`,
+    );
+    expect(image.statusCode).toBe(429);
+    // Another device keeps its own requests.
+    expect((await get(second.accessToken, "/v1/device/me")).statusCode).toBe(
+      200,
+    );
+    // Without a valid token it stays 401, never 429.
+    expect(
+      (await get("nt_" + "x".repeat(40), "/v1/device/me")).statusCode,
+    ).toBe(401);
+  });
+
+  it("never limits a screen at the default, even loading a full image quota at once", () => {
+    let at = 0;
+    const limiter = createDeviceRateLimiter(DEVICE_RATE_LIMIT, {
+      clock: () => at,
+    });
+    // Every upload and item image of the default quotas, then a minute of
+    // payload polls and heartbeats.
+    for (let i = 0; i < 600; i += 1) expect(limiter("tv").ok).toBe(true);
+    for (let i = 0; i < 60; i += 1) {
+      at += 1_000;
+      expect(limiter("tv").ok).toBe(true);
+      expect(limiter("tv").ok).toBe(true);
+    }
+    // A replaying token holder is slowed to the refill rate.
+    let refused = 0;
+    for (let i = 0; i < 2_000; i += 1) if (!limiter("tv").ok) refused += 1;
+    expect(refused).toBeGreaterThan(0);
+    at += 1_000;
+    expect(limiter("tv").ok).toBe(true);
   });
 });

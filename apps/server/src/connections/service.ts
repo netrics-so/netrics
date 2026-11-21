@@ -627,6 +627,22 @@ function historyView(
   };
 }
 
+/**
+ * The auth type a stored custom API definition names, read without
+ * decoding the definition (one that no longer decodes, #829).
+ */
+function storedCustomAuthType(document: unknown): string | null {
+  const auth =
+    document && typeof document === "object"
+      ? (document as { auth?: unknown }).auth
+      : undefined;
+  const type =
+    auth && typeof auth === "object"
+      ? (auth as { type?: unknown }).type
+      : undefined;
+  return typeof type === "string" ? type : null;
+}
+
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db, registry, credentialKeyring, oauthProviders } = deps;
   /** Execute options of connector checks: test egress, custom API private hosts. */
@@ -1442,10 +1458,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           shared: boolean;
           /** A custom API's own OAuth app (#805), built before the delete. */
           custom: CustomOAuthProvider | null;
+          /** A custom client-credentials grant: no consent to withdraw. */
+          clientCredentials: boolean;
         } | null = null;
         if (grant) {
           let refreshToken: string | null;
           let custom: CustomOAuthProvider | null = null;
+          let clientCredentials = false;
           if (grant.provider === CUSTOM_OAUTH_PROVIDER_ID) {
             // Endpoints from the pinned definition, client and refresh
             // token from the custom envelope.
@@ -1454,6 +1473,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               connectionId,
             });
             custom = resolved?.provider ?? null;
+            // A definition that no longer decodes still names its grant
+            // type (#829).
+            clientCredentials = resolved
+              ? resolved.provider.grant === "client_credentials"
+              : storedCustomAuthType(loaded.customApi?.document) ===
+                "oauth_client_credentials";
             // Never sent to hosts it was not entered for.
             refreshToken = resolved?.bindingHeld
               ? resolved.credentials.refreshToken
@@ -1478,7 +1503,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             accountSub: grant.accountSub,
             connectionId,
           });
-          release = { provider: grant.provider, refreshToken, shared, custom };
+          release = {
+            provider: grant.provider,
+            refreshToken,
+            shared,
+            custom,
+            clientCredentials,
+          };
         }
         await deleteConnectionRow(tx, actor.workspaceId, connectionId);
         await insertAuditEvent(tx, {
@@ -1510,7 +1541,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     if (!release) {
       return ok({ revocation: null });
     }
-    if (release.custom?.grant === "client_credentials") {
+    if (release.clientCredentials) {
       // A client-credentials grant has no user consent to withdraw; its
       // cached token was deleted with the connection.
       return ok({ revocation: null });
@@ -2527,6 +2558,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               body.secretVariables !== undefined)))
       ) {
         return fail(400, "oauth_authorization_required");
+      }
+      // A config change is checked with the stored client's token, which
+      // the new client replaces (#825): the two are saved one after the
+      // other.
+      if (customClientChange && body.config !== undefined) {
+        return fail(400, "invalid_request");
       }
       let clientChange: CustomOAuthClientChange | null = null;
       if (customClientChange) {

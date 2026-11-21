@@ -238,10 +238,14 @@ export async function ingestCustomApiImages(
       const missing = urls.filter((url) => !known.has(hashes.get(url)!));
 
       // Each image is counted once, by the handler that finished it. When
-      // the call ends early (budget, a failed token refresh), the rest count
-      // as fetch_failed, and a handler still running afterwards counts
-      // nothing.
+      // the call ends early (budget, a failed token refresh), a store
+      // already running is awaited and counted (#829): it commits anyway,
+      // and the next stream starts only once its body is gone. No store
+      // starts after that; the images not handled count as fetch_failed,
+      // and a handler still running afterwards counts nothing.
       const finished = new Set<number>();
+      const storing = new Set<Promise<boolean>>();
+      let closing = false;
       let closed = false;
       const handle = async (result: ItemImageFetch, index: number) => {
         let counted: () => void;
@@ -253,14 +257,20 @@ export async function ingestCustomApiImages(
           if (!image.ok) {
             const reason = image.reason;
             counted = () => skip(reason);
+          } else if (closing) {
+            return;
           } else {
+            const pending = store(image, hashes.get(result.url)!);
+            storing.add(pending);
             try {
-              const stored = await store(image, hashes.get(result.url)!);
+              const stored = await pending;
               counted = stored
                 ? () => (outcome.stored += 1)
                 : () => skip("quota_exceeded");
             } catch {
               counted = () => skip("fetch_failed");
+            } finally {
+              storing.delete(pending);
             }
           }
         }
@@ -311,6 +321,8 @@ export async function ingestCustomApiImages(
           // not handled yet wait for the next run.
         }
       }
+      closing = true;
+      await Promise.allSettled([...storing]);
       closed = true;
       skip("fetch_failed", missing.length - finished.size);
     } catch (error) {

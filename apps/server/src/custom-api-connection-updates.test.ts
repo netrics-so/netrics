@@ -107,12 +107,19 @@ async function connect(
   definitionId: string,
   credentials: Record<string, string>,
   variables: Record<string, string> = {},
+  secretVariables: Record<string, string> = {},
 ) {
   const res = await t.call(
     "POST",
     ws(`/custom-api/definitions/${definitionId}/connections`),
     owner,
-    { name: "Shop", environmentId: "production", credentials, variables },
+    {
+      name: "Shop",
+      environmentId: "production",
+      credentials,
+      variables,
+      secretVariables,
+    },
   );
   expect(res.statusCode, res.body).toBe(201);
   return connectionResponseSchema.parse(res.json()).connection.id;
@@ -503,6 +510,39 @@ describe("custom API connection updates", () => {
     });
     expect(await auditLogin(id)).toBe("replaced");
     expect(a.requests.length).toBeGreaterThan(0);
+  });
+
+  it("audits secret variable values sent on the same hosts as replaced and is healthy again", async () => {
+    const keyed: CustomApiDefinition = {
+      ...doc("api_key_header"),
+      variables: [{ id: "tenant", label: "Tenant secret", secret: true }],
+      auth: {
+        type: "api_key",
+        placement: "header",
+        name: "X-Api-Key",
+        headers: { "X-Tenant": "{{tenant}}" },
+      },
+    };
+    const definition = await define(keyed);
+    const id = await connect(
+      definition.id,
+      LOGINS.api_key_header,
+      {},
+      { tenant: "tenant-secret-0001" },
+    );
+    // The provider refused the old tenant secret.
+    await t.admin`update connection_state set auth_state = 'auth_failed'
+      where connection_id = ${id}`;
+    await save(definition.id, withField(keyed));
+    await applied(id, await plan(id), {
+      secrets: { tenant: "tenant-secret-0002" },
+    });
+    expect(await envelope(id)).toMatchObject({
+      apiKey: FIXTURE_SECRETS.apiKey,
+      variables: { tenant: "tenant-secret-0002" },
+    });
+    expect(await auditLogin(id)).toBe("replaced");
+    expect((await authState(id)).auth_state).toBe("ok");
   });
 
   it("is healthy again on a version without a login", async () => {

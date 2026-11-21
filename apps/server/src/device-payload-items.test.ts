@@ -271,6 +271,32 @@ describe("the device image route's cost and edges (#810)", () => {
     deviceId: all.deviceId,
   });
 
+  it("does not reuse an answer whose items query failed", async () => {
+    const clock = { at: 1_000 };
+    const calls: string[] = [];
+    const service = createDeviceImageService({
+      db: f.db,
+      itemImages: createDeviceItemImages({
+        ttlMs: 10_000,
+        clock: () => clock.at,
+        compute: (...args) => {
+          calls.push(args[2].id);
+          // The first items query fails as a timeout would: no images.
+          return calls.length === 1
+            ? Promise.resolve({ ids: new Set<string>(), complete: false })
+            : deviceItemImageIds(...args);
+        },
+      }),
+    });
+    expect(await service.read(principal(), imageF, undefined)).toMatchObject({
+      ok: false,
+      status: 404,
+    });
+    clock.at += 1;
+    expect((await service.read(principal(), imageF, undefined)).ok).toBe(true);
+    expect(calls).toEqual([all.deviceId, all.deviceId]);
+  });
+
   it("runs no items query for a wrong version", async () => {
     const { service, calls } = counted({ at: 0 });
     const wrong = await service.read(principal(), imageF, "0".repeat(64));
@@ -295,11 +321,12 @@ describe("the device image route's cost and edges (#810)", () => {
     expect((await deviceImage(unassigned.token, imageF)).statusCode).toBe(404);
     const revoked = await f.pairScreen(dashboardId);
     expect((await deviceImage(revoked.token, imageF)).statusCode).toBe(200);
-    await f.admin`update devices set revoked_at = now()
-      where id = ${revoked.deviceId}`;
-    // Refused like an unknown image: the revoked device's answer is none.
-    expect((await deviceImage(revoked.token, imageF)).statusCode).toBe(404);
-    // The service answers none for it either, without a query.
+    // Revoked as the owner does it: its tokens go with it.
+    const revoke = await f.call("POST", `/devices/${revoked.deviceId}/revoke`);
+    expect(revoke.statusCode, revoke.body).toBe(200);
+    expect((await deviceImage(revoked.token, imageF)).statusCode).toBe(401);
+    // Defence in depth: the service answers none for a revoked device
+    // even without the token check, and runs no query.
     const { service, calls } = counted({ at: 0 });
     expect(
       await service.read(

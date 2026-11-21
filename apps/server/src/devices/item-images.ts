@@ -19,7 +19,8 @@ const NONE: ReadonlySet<string> = new Set();
  * fixed scope, the slides' scopes, the filters' saved values, `now`), and
  * their stored images. Empty when the dashboard has no latest-items widget.
  * The device image route serves a `custom_api` image only when it is one of
- * these.
+ * these. `complete` is false when an items query failed (a timeout, a
+ * serialization failure): its images are missing from `ids`.
  */
 export async function deviceItemImageIds(
   tx: Transaction,
@@ -27,15 +28,16 @@ export async function deviceItemImageIds(
   device: DeviceRow,
   now: Date,
   dataPolicy?: DataPolicy,
-): Promise<ReadonlySet<string>> {
-  if (device.revokedAt || !device.dashboardId) return NONE;
+): Promise<{ ids: ReadonlySet<string>; complete: boolean }> {
+  const none = { ids: NONE, complete: true };
+  if (device.revokedAt || !device.dashboardId) return none;
   const dashboard = await findDashboard(tx, workspaceId, device.dashboardId);
   if (
     !dashboard?.slides.some((slide) =>
       slide.widgets.some((widget) => widget.type === "items"),
     )
   )
-    return NONE;
+    return none;
   const filters = dashboardDataFiltersSchema.parse(dashboard.dataFilters ?? []);
   const scope = storedScope(device);
   const items = await deviceItemsWidgets(
@@ -45,11 +47,14 @@ export async function deviceItemImageIds(
     filters,
     { now, scope, ...(dataPolicy ? { dataPolicy } : {}) },
   );
-  return new Set(
-    [...items.values()].flatMap((data) =>
-      data.items.flatMap((item) => (item.image ? [item.image.id] : [])),
+  return {
+    ids: new Set(
+      [...items.values()].flatMap((data) =>
+        data.items.flatMap((item) => (item.image ? [item.image.id] : [])),
+      ),
     ),
-  );
+    complete: [...items.values()].every((data) => data.error === null),
+  };
 }
 
 export interface DeviceItemImagesOptions {
@@ -77,7 +82,9 @@ export type DeviceItemImages = (
  * rerun every items query of its dashboard. Keyed by the device, its
  * dashboard and that dashboard's version and the device's scope, so an edit
  * or a reassignment is seen at once; new records are seen after the TTL.
- * A revoked or unassigned device is never memoized and gets none.
+ * A revoked or unassigned device is never memoized and gets none. An
+ * answer with a failed items query is not memoized either (#829): a
+ * transient failure must not hide the device's images for the whole TTL.
  */
 export function createDeviceItemImages(
   options: DeviceItemImagesOptions = {},
@@ -105,8 +112,15 @@ export function createDeviceItemImages(
     const at = clock();
     const hit = memo.get(key);
     if (hit && at - hit.at < ttlMs) return hit.ids;
-    const ids = await compute(tx, workspaceId, device, now, dataPolicy);
+    const { ids, complete } = await compute(
+      tx,
+      workspaceId,
+      device,
+      now,
+      dataPolicy,
+    );
     memo.delete(key);
+    if (!complete) return ids;
     memo.set(key, { at, ids });
     // Oldest first: a Map keeps insertion order.
     for (const [old, entry] of memo)
