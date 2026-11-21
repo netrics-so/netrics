@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import {
+  CUSTOM_API_LIMITS,
   parseDataPath,
   readDataPath,
   suggestCustomApiFieldType,
@@ -111,6 +112,9 @@ export function ImageHosts({
   const blocked = seen.filter((host) =>
     current.length ? !hostAllowed(host, current) : host !== apiHostname,
   );
+  // Allowing goes past the limit: the user removes hosts first.
+  const room =
+    CUSTOM_API_LIMITS.imageHosts - (current.length ? current.length : 0);
   const commit = (next: string[]) =>
     update((current) => withImageHosts(current, next));
   return (
@@ -132,14 +136,18 @@ export function ImageHosts({
       {blocked.length ? (
         <p className="notice" role="status">
           {t("seen", { hosts: list(blocked) })}{" "}
-          <button
-            type="button"
-            onClick={() =>
-              commit(current.length ? [...current, ...blocked] : seen)
-            }
-          >
-            {t("allow", { hosts: list(blocked) })}
-          </button>
+          {room >= blocked.length ? (
+            <button
+              type="button"
+              onClick={() =>
+                commit(current.length ? [...current, ...blocked] : seen)
+              }
+            >
+              {t("allow", { hosts: list(blocked) })}
+            </button>
+          ) : (
+            t("limit", { max: CUSTOM_API_LIMITS.imageHosts })
+          )}
         </p>
       ) : null}
     </div>

@@ -1059,6 +1059,17 @@ export function createDataLoader(
   /** Sources whose connection's history is incomplete (#635). */
   const historyIncompleteSources = new Set<string>(seed?.historyIncomplete);
   const policy = options.policy ?? { ...DEFAULT_DATA_POLICY };
+  /**
+   * The workspace's custom API connection names, read once per loader and
+   * only for a dataset that has a connection (#834 review).
+   */
+  let customApiNames: Promise<Map<string, string>> | undefined;
+  const customApiNamesFor = (dataset: {
+    connectionId: string | null;
+  }): Promise<ReadonlyMap<string, string>> =>
+    dataset.connectionId === null
+      ? Promise.resolve(new Map())
+      : (customApiNames ??= customApiConnectionNames(tx, workspaceId));
   const budget = new ProcessingBudget(policy.queryOperations, {
     rows: policy.queryRows,
     outputBytes: policy.queryOutputBytes,
@@ -1392,14 +1403,7 @@ export function createDataLoader(
         bindings[id] = pending.fields;
         views.set(id, {
           id,
-          name: sourceName(
-            dataset,
-            await customApiConnectionNames(
-              tx,
-              workspaceId,
-              dataset.connectionId,
-            ),
-          ),
+          name: sourceName(dataset, await customApiNamesFor(dataset)),
           kind: dataset.kind as "source" | "manual",
           fields: pending.fields,
           generationId: null,
@@ -1487,10 +1491,7 @@ export function createDataLoader(
       generations[id] = generation.id;
       views.set(id, {
         id,
-        name: sourceName(
-          dataset,
-          await customApiConnectionNames(tx, workspaceId, dataset.connectionId),
-        ),
+        name: sourceName(dataset, await customApiNamesFor(dataset)),
         kind: dataset.kind as "source" | "manual",
         fields: result.fields,
         generationId: generation.id,
@@ -1712,18 +1713,37 @@ export function createDataService(
       target,
       metadata,
     });
-  const listSources = (actor: DataActor, filter: ProjectFilter = {}) =>
+  /**
+   * The workspace's datasets, preparations and resource lists. With
+   * `connectionId` (a connection's page, #834 review): only that
+   * connection's datasets, nothing else.
+   */
+  const listSources = (
+    actor: DataActor,
+    filter: ProjectFilter = {},
+    options: { connectionId?: string } = {},
+  ) =>
     run(actor, async (tx, now) => {
       const items: SourceView[] = [];
       const roots = await tx
         .select()
         .from(schema.dataDatasets)
-        .where(eq(schema.dataDatasets.workspaceId, actor.workspaceId))
+        .where(
+          and(
+            eq(schema.dataDatasets.workspaceId, actor.workspaceId),
+            ...(options.connectionId
+              ? [eq(schema.dataDatasets.connectionId, options.connectionId)]
+              : []),
+          ),
+        )
         .orderBy(asc(schema.dataDatasets.createdAt));
-      const customApiNames = await customApiConnectionNames(
-        tx,
-        actor.workspaceId,
-      );
+      const customApiNames = roots.some((d) => d.connectionId !== null)
+        ? await customApiConnectionNames(
+            tx,
+            actor.workspaceId,
+            options.connectionId,
+          )
+        : new Map<string, string>();
       for (const d of roots) {
         const [generation] = await tx
           .select()
@@ -1770,6 +1790,7 @@ export function createDataService(
           connectionId: d.connectionId,
         });
       }
+      if (options.connectionId) return { sources: items };
       // Listing counts resource names instead of loading them, so one
       // oversized catalog is flagged rather than failing the whole picker.
       const namedConnections = await tx

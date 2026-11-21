@@ -17,7 +17,8 @@ import {
   setFieldType,
   stateFromDefinition,
   stepIssues,
-  suggestedTimeKey,
+  keyHint,
+  setNullable,
   toggleField,
   withRequest,
   type BuilderState,
@@ -260,7 +261,8 @@ describe("custom API builder state", () => {
     let state = pickRecords(basics(), "data");
     state = toggleField(state, suggestion("orders", "integer"), true);
     expect(state.stream.keyFields).toEqual(["orders"]);
-    expect(suggestedTimeKey(state)).toBeNull();
+    // A count as key merges records with equal counts: a warning.
+    expect(keyHint(state)).toEqual({ field: "orders", time: null });
     state = toggleField(
       state,
       suggestion("date", "date", { nullable: true }),
@@ -270,9 +272,9 @@ describe("custom API builder state", () => {
       keyFields: ["orders"],
       reportingField: "date",
     });
-    expect(suggestedTimeKey(state)?.id).toBe("date");
+    expect(keyHint(state)).toEqual({ field: "orders", time: "date" });
     state = chooseKey(state, { keyField: "date" });
-    expect(suggestedTimeKey(state)).toBeNull();
+    expect(keyHint(state)).toBeNull();
     state = toggleField(state, suggestion("revenue.amount", "decimal"), true);
     expect(state.stream).toMatchObject({
       keyFields: ["date"],
@@ -286,6 +288,56 @@ describe("custom API builder state", () => {
     const ready = withRequest(state, { path: "/builder/stats" });
     expect(definitionIssues(ready)).toEqual([]);
     expect(draftDefinitionOf(ready).stream.keyFields).toEqual(["date"]);
+  });
+
+  it("leaves a sensible kept key alone: text or an id-like number (#834 review)", () => {
+    const withKey = (key: ReturnType<typeof suggestion>) =>
+      toggleField(
+        toggleField(pickRecords(basics(), "data"), key, true),
+        suggestion("created_at", "timestamp"),
+        true,
+      );
+    expect(keyHint(withKey(suggestion("short_id", "string")))).toBeNull();
+    expect(keyHint(withKey(suggestion("user.id", "integer")))).toBeNull();
+    expect(keyHint(withKey(suggestion("orderId", "integer")))).toBeNull();
+    expect(keyHint(withKey(suggestion("price", "number")))).toEqual({
+      field: "price",
+      time: "created_at",
+    });
+    expect(keyHint(withKey(suggestion("active", "boolean")))).toEqual({
+      field: "active",
+      time: "created_at",
+    });
+  });
+
+  it("lets a text field be empty again once it is no longer the key (#834 review)", () => {
+    let state = pickRecords(basics(), "data");
+    state = toggleField(state, suggestion("title", "string"), true);
+    state = toggleField(state, suggestion("slug", "string"), true);
+    state = toggleField(state, suggestion("created_at", "timestamp"), true);
+    const nullable = (id: string) =>
+      state.stream.fields.find((f) => f.id === id)?.nullable;
+    expect(state.stream.keyFields).toEqual(["title"]);
+    expect(nullable("title")).toBe(false);
+    state = chooseKey(state, { keyField: "slug" });
+    expect(nullable("title")).toBe(true);
+    expect(nullable("slug")).toBe(false);
+    // Set by hand: kept when the field leaves the key.
+    state = setNullable(state, "slug", false);
+    state = chooseKey(state, { keyField: "title" });
+    expect(nullable("slug")).toBe(false);
+    expect(nullable("title")).toBe(false);
+    // The time field too: a text field that stops being one goes back.
+    expect(nullable("created_at")).toBe(false);
+  });
+
+  it("keeps a saved definition's empty settings while editing (#834 review)", () => {
+    const state = chooseKey(stateFromDefinition(SHOP), {
+      keyField: "orders",
+    });
+    expect(state.stream.fields.find((f) => f.id === "day")?.nullable).toBe(
+      false,
+    );
   });
 
   it("makes environment ids from names", () => {

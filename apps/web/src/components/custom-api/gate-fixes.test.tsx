@@ -168,6 +168,40 @@ describe("builder gate fixes (#834)", () => {
     });
   });
 
+  it("keeps only the host of pasted URLs and caps image hosts at 10 (#834 review)", () => {
+    const state = stateFromDefinition(IMAGES);
+    expect(
+      withImageHosts(state, [
+        "https://CDN.Example.test/images/a.png?x=1",
+        "cdn2.example.test.",
+        "cdn3.example.test:443/path",
+        "*.Media.example.test",
+        "cdn.example.test",
+      ]).images?.hosts,
+    ).toEqual([
+      "cdn.example.test",
+      "cdn2.example.test",
+      "cdn3.example.test",
+      "*.media.example.test",
+    ]);
+    const many = Array.from({ length: 12 }, (_, i) => `cdn${i}.example.test`);
+    expect(withImageHosts(state, many).images?.hosts).toHaveLength(10);
+    const full = withImageHosts(state, many.slice(0, 10));
+    const seen = withTest(full, {
+      results: [{ id: "a", url: "https://other.example.test/a.png" }],
+    });
+    for (const locale of LOCALES) {
+      const html = renderI18n(
+        <ImageHosts state={seen} update={noop} />,
+        locale,
+      );
+      expect(html).not.toContain("</button>");
+      expect(html).toContain(
+        locale === "en" ? "at most 10 image hosts" : "höchstens 10 Bild-Hosts",
+      );
+    }
+  });
+
   it("offers the image hosts seen in the test and names them in the review", () => {
     const state = withTest(stateFromDefinition(IMAGES), {
       results: [
@@ -203,49 +237,62 @@ describe("builder gate fixes (#834)", () => {
     );
   });
 
-  it("offers a time field as key instead of moving the key", () => {
-    let state: BuilderState = {
-      ...emptyBuilderState("en", "UTC"),
-      name: "Images",
-      environments: [
-        {
-          id: "production",
-          name: "Production",
-          baseUrl: "https://api.example.test",
-        },
-      ],
+  it("warns about a number key and offers the time field, but keeps a text key quiet", () => {
+    const field = (
+      path: string,
+      name: string,
+      type: "string" | "number" | "timestamp",
+    ) => ({
+      path,
+      id: path,
+      name,
+      type,
+      nullable: false,
+      samples: [],
+      ...(type === "timestamp" ? { format: "iso" as const } : {}),
+    });
+    const ticked = (first: ReturnType<typeof field>) => {
+      let state: BuilderState = {
+        ...emptyBuilderState("en", "UTC"),
+        name: "Images",
+        environments: [
+          {
+            id: "production",
+            name: "Production",
+            baseUrl: "https://api.example.test",
+          },
+        ],
+      };
+      state = pickRecords(withRequest(state, { path: "/images" }), "results");
+      state = toggleField(state, first, true);
+      return toggleField(
+        state,
+        field("created_at", "Created", "timestamp"),
+        true,
+      );
     };
-    state = pickRecords(withRequest(state, { path: "/images" }), "results");
-    state = toggleField(
-      state,
-      {
-        path: "short_id",
-        id: "short_id",
-        name: "Short ID",
-        type: "string",
-        nullable: false,
-        samples: [],
-      },
-      true,
-    );
-    state = toggleField(
-      state,
-      {
-        path: "created_at",
-        id: "created_at",
-        name: "Created",
-        type: "timestamp",
-        format: "iso",
-        nullable: false,
-        samples: [],
-      },
-      true,
-    );
-    expect(state.stream.keyFields).toEqual(["short_id"]);
-    const html = renderI18n(
-      <FieldMapping state={state} update={noop} suggestions={[]} />,
-    );
-    expect(html).toContain("Use Created as key");
+    const text = ticked(field("short_id", "Short ID", "string"));
+    expect(text.stream.keyFields).toEqual(["short_id"]);
+    expect(
+      renderI18n(<FieldMapping state={text} update={noop} suggestions={[]} />),
+    ).not.toContain("as key");
+    const number = ticked(field("score", "Score", "number"));
+    expect(number.stream.keyFields).toEqual(["score"]);
+    for (const locale of LOCALES) {
+      const html = renderI18n(
+        <FieldMapping state={number} update={noop} suggestions={[]} />,
+        locale,
+      );
+      expect(html).toContain('class="notice warning"');
+      expect(html).toContain(
+        locale === "en"
+          ? "Records with the same Score merge into one"
+          : "Einträge mit demselben Wert in Score werden zu einem",
+      );
+      expect(html).toContain(
+        locale === "en" ? "Use Created as key" : "Created als Schlüssel nehmen",
+      );
+    }
   });
 
   it("labels a custom API connection with its definition version", () => {

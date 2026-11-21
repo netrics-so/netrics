@@ -7,8 +7,9 @@ import type {
 
 import {
   chooseKey,
+  keyHint,
   setFieldType,
-  suggestedTimeKey,
+  setNullable,
   updateField,
   type FieldType,
 } from "@/lib/custom-api-builder";
@@ -53,8 +54,9 @@ export function FieldMapping({
     (f) => f.type === "date" || f.type === "timestamp",
   );
   if (fields.length === 0) return null;
-  const timeKey = suggestedTimeKey(state);
-  const keyName = fields.find((f) => f.id === key)?.name ?? "";
+  const hint = keyHint(state);
+  const nameOf = (id: string | null) =>
+    fields.find((f) => f.id === id)?.name ?? "";
   return (
     <div className="custom-api-mapping">
       <div className="table-scroll">
@@ -175,9 +177,7 @@ export function FieldMapping({
                       disabled={key === field.id}
                       onChange={(event) =>
                         update((current) =>
-                          updateField(current, field.id, {
-                            nullable: event.target.checked,
-                          }),
+                          setNullable(current, field.id, event.target.checked),
                         )
                       }
                     />
@@ -244,18 +244,25 @@ export function FieldMapping({
           </tbody>
         </table>
       </div>
-      {timeKey ? (
-        <p className="help" role="status">
-          {t("timeKey", { key: keyName, time: timeKey.name })}{" "}
-          <button
-            type="button"
-            className="link-button"
-            onClick={() =>
-              update((current) => chooseKey(current, { keyField: timeKey.id }))
-            }
-          >
-            {t("useTimeKey", { time: timeKey.name })}
-          </button>
+      {hint ? (
+        <p className="notice warning" role="status">
+          {t("keyWarning", { key: nameOf(hint.field) })}
+          {hint.time ? (
+            <>
+              {" "}
+              <button
+                type="button"
+                className="link-button"
+                onClick={() =>
+                  update((current) =>
+                    chooseKey(current, { keyField: hint.time }),
+                  )
+                }
+              >
+                {t("useTimeKey", { time: nameOf(hint.time) })}
+              </button>
+            </>
+          ) : null}
         </p>
       ) : null}
       <div className="field">

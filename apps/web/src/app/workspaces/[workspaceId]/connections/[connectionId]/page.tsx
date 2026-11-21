@@ -37,7 +37,7 @@ import {
   listWorkspaces,
 } from "@/lib/api";
 import { connectorVersionLabel } from "@/lib/custom-api";
-import { getDataSources } from "@/lib/data-api";
+import { getConnectionDataSources } from "@/lib/data-api";
 import { getLocale, getT } from "@/lib/i18n/server";
 import {
   parseOAuthOutcome,
@@ -161,10 +161,13 @@ export default async function ConnectionDetailPage({
   // its page lists the datasets with their rows instead.
   const customApiDatasets =
     customApi && can(role, "data:preview")
-      ? (await getDataSources(workspaceId, forwarded).catch(() => [])).filter(
-          (source) =>
-            source.connectionId === connectionId && source.kind === "source",
-        )
+      ? (
+          await getConnectionDataSources(
+            workspaceId,
+            connectionId,
+            forwarded,
+          ).catch(() => [])
+        ).filter((source) => source.kind === "source")
       : [];
   // Streams without a time window read everything: their runs have none.
   const windowless =

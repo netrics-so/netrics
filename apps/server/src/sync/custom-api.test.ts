@@ -243,6 +243,20 @@ describe("custom-api on the sync engine", () => {
     ).toBe(
       `${definition("pages").name} · ${definition("pages").streams[0]!.name}`,
     );
+    // The connection page lists its own datasets only (#834 review).
+    const other = await connect(definition("pages"), null, { items: 3 });
+    expect(await run("connection.backfill", other)).toBeUndefined();
+    const own = await createDataService(appDb).listSources(
+      { workspaceId, callerId: user!.id },
+      {},
+      { connectionId },
+    );
+    expect(own.sources.map((source) => source.connectionId)).toEqual([
+      connectionId,
+    ]);
+    expect(own.sources[0]!.name).toBe(
+      sources.find((source) => source.connectionId === connectionId)?.name,
+    );
   });
 
   it("marks the connection auth_failed with the 401 message", async () => {

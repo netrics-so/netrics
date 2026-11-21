@@ -170,8 +170,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       keyField: "Schlüsselfeld",
       timeField: "Zeitfeld",
       noTimeField: "Keins",
-      timeKey:
-        "Der Schlüssel ist {key}: Einträge mit demselben Wert in {key} ersetzen einander. Wenn es einen Eintrag pro {time} gibt, nimm {time} als Schlüssel.",
+      keyWarning:
+        "Der Schlüssel ist {key}. Einträge mit demselben Wert in {key} werden zu einem zusammengeführt, viele könnten also verloren gehen. Wähle ein Feld, das jeden Eintrag eindeutig kennzeichnet.",
       useTimeKey: "{time} als Schlüssel nehmen",
       preview: "Vorschau ({count, plural, one {# Zeile} other {# Zeilen}})",
       updatePreview: "Vorschau aktualisieren",
@@ -191,6 +191,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
           "Ohne Bild-Hosts werden Bilder nur vom API-Host {host} kopiert.",
         seen: "Bilder in der Testantwort liegen auf {hosts}. Von dort werden noch keine Bilder kopiert.",
         allow: "{hosts} erlauben",
+        limit:
+          "Eine eigene API kopiert Bilder von höchstens {max} Bild-Hosts: Entferne einen, bevor du weitere hinzufügst.",
       },
     },
     tree: {

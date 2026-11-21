@@ -12,6 +12,9 @@ import {
   type PreparationGraph,
   type SemanticModelDefinition,
 } from "@netrics/domain";
+
+import { projectFilterQuerySchema } from "./project-filter.js";
+
 const id = z
   .string()
   .regex(/^[a-z][a-z0-9_.-]{0,99}$/)
@@ -281,6 +284,14 @@ export const dataSourceViewSchema = z.object({
   /** Listed, but larger than the workspace query row budget can load. */
   rowLimitExceeded: z.boolean().optional(),
 });
+/**
+ * GET data/sources: the project filter, or `connection` for one
+ * connection's datasets alone (its page, #834 review).
+ */
+export const dataSourcesQuerySchema = projectFilterQuerySchema.extend({
+  connection: z.uuid().optional(),
+});
+export type DataSourcesQuery = z.infer<typeof dataSourcesQuerySchema>;
 export const dataSourcesResponseSchema = z.object({
   sources: z.array(dataSourceViewSchema),
   /** The legacy observation catalog had more entries than the listing returns. */

@@ -125,6 +125,21 @@ export async function getDataSources(
   );
   return sources;
 }
+/** One connection's datasets alone, for its page (#834 review). */
+export async function getConnectionDataSources(
+  workspaceId: string,
+  connectionId: string,
+  forwarded?: Headers,
+): Promise<DataSource[]> {
+  const { sources } = await read(
+    dataSourcesResponseSchema,
+    base(workspaceId) +
+      "/sources?connection=" +
+      encodeURIComponent(connectionId),
+    forwarded,
+  );
+  return sources;
+}
 /** Moves a preparation or model to a project, or to none; no new draft. */
 export function setDataProject(
   workspaceId: string,

@@ -12,7 +12,10 @@ import {
   customApiVariableSchema,
 } from "@netrics/connector-sdk/custom-api";
 
-import { customApiDocumentResponseSchema } from "./custom-api.js";
+import {
+  customApiDocumentResponseSchema,
+  customApiErrorResponseSchema,
+} from "./custom-api.js";
 
 // The custom API builder (milestone 13, #806): a draft connection holds the
 // builder's secrets on the server while the definition is not saved yet; a
@@ -418,6 +421,8 @@ export const customApiUpdateErrorResponseSchema = z.object({
   error: z.string(),
   plan: customApiUpdatePlanSchema.optional(),
   blockers: z.array(customApiUpdateBlockerSchema).optional(),
+  /** invalid_request: what is wrong with the body (#834), never its values. */
+  issues: customApiErrorResponseSchema.shape.issues,
 });
 export type CustomApiUpdateErrorResponse = z.infer<
   typeof customApiUpdateErrorResponseSchema

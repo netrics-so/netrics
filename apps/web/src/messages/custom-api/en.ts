@@ -167,8 +167,8 @@ export const customApiEn = {
       keyField: "Key field",
       timeField: "Time field",
       noTimeField: "None",
-      timeKey:
-        "The key is {key}: records with the same {key} replace each other. If there is one record per {time}, use {time} as the key.",
+      keyWarning:
+        "The key is {key}. Records with the same {key} merge into one, so most of them may be lost. Pick a field that identifies each record.",
       useTimeKey: "Use {time} as key",
       preview: "Preview ({count, plural, one {# row} other {# rows}})",
       updatePreview: "Update preview",
@@ -187,6 +187,8 @@ export const customApiEn = {
           "Without image hosts, images are copied only from the API host {host}.",
         seen: "Images in the test response are on {hosts}, which images aren't copied from yet.",
         allow: "Allow {hosts}",
+        limit:
+          "A custom API copies images from at most {max} image hosts: remove one before adding more.",
       },
     },
     tree: {

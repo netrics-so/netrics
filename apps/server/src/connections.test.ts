@@ -1126,6 +1126,20 @@ describe("custom API builder drafts (#806)", () => {
     });
     expect(sources.statusCode).toBe(200);
     expect(JSON.stringify(sources.json())).not.toContain(draftId);
+    // One connection's datasets alone (#834 review); a bad id is refused.
+    const own = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${w1Id}/data/sources?connection=${draftId}`,
+      cookie: cookies.owner,
+    });
+    expect(own.statusCode, own.body).toBe(200);
+    expect(own.json()).toEqual({ sources: [] });
+    const bad = await call(world.app, {
+      method: "GET",
+      url: `/v1/workspaces/${w1Id}/data/sources?connection=nope`,
+      cookie: cookies.owner,
+    });
+    expect(bad.statusCode).toBe(400);
     const [row] = await world.admin`
       select name, status from connections where id = ${draftId}`;
     expect(row).toEqual({ name: "Builder draft", status: "draft" });
