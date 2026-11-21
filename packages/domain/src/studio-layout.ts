@@ -27,7 +27,8 @@ export type StudioWidgetType =
   | "countdown"
   | "gauge"
   | "review"
-  | "measure";
+  | "measure"
+  | "items";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -43,6 +44,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "gauge",
   "review",
   "measure",
+  "items",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -105,6 +107,8 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   gauge: { w: 3, h: 3 },
   review: { w: 4, h: 3 },
   measure: { w: 4, h: 3 },
+  // Three items of a grid, or one item with its image and text (#810).
+  items: { w: 3, h: 3 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
@@ -610,6 +614,15 @@ export function widgetTypeScale(
         any,
         title: m.title * scale,
         resource: m.resource * scale,
+        cell: m.cell * scale,
+      };
+    case "items":
+      // Each item's title in the body role, its subtitle and time as cells.
+      return {
+        any,
+        title: m.title * scale,
+        resource: m.resource * scale,
+        body: m.body * scale,
         cell: m.cell * scale,
       };
     case "compare": {

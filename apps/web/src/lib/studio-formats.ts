@@ -263,6 +263,8 @@ function readabilityWidget(
   if (isDataWidgetType(widget.type)) {
     return { ...base!, label: context.labelOf(widget) };
   }
+  // A latest-items widget's label is its title, as the server's (#810).
+  if (widget.type === "items") return { ...base!, label: widget.title };
   if (widget.type === "measure") {
     // A measure table's rows above its footer lines (#768), as the server.
     return {

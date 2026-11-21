@@ -13,6 +13,8 @@ import {
   dashboardDataFiltersSchema,
   slideFilterScopeSchema,
   dashboardWidgetInputSchema,
+  itemsWidgetBindingSchema,
+  itemsWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
   compareMeasureBindingSchema,
@@ -100,6 +102,7 @@ import {
 import { resolveThemeTokens } from "../themes/service.js";
 import { lockModelsForMappings } from "../data/service.js";
 import { compareBindingProblem } from "./compare-measure.js";
+import { validateDashboardItems } from "./items.js";
 import { presentSummaries } from "./summaries.js";
 import { copyLayouts, rebaseSlides, resolveSlideLayouts } from "./layouts.js";
 import {
@@ -354,6 +357,13 @@ export async function presentDashboard(
         type: "measure",
         binding: measureWidgetBindingSchema.parse(widget.modelBinding),
         options: measureWidgetOptionsSchema.parse(widget.options),
+      };
+    if (widget.type === "items")
+      return {
+        ...base,
+        type: "items",
+        binding: itemsWidgetBindingSchema.parse(widget.modelBinding),
+        options: itemsWidgetOptionsSchema.parse(widget.options),
       };
     if (isDataRow(widget)) {
       const denominator = denominatorOf(widget);
@@ -670,7 +680,7 @@ async function validateWidget(
     h: widget.h,
     title: widget.title ?? null,
   };
-  if (widget.type === "measure") {
+  if (widget.type === "measure" || widget.type === "items") {
     return ok({
       ...base,
       ...EMPTY_WIDGET_DATA,
@@ -1367,6 +1377,39 @@ async function validateDataBindings(
               return fail(400, "dashboard_measure_window_range_required");
             throw error;
           }
+      } else if (widget.type === "items") {
+        // A latest-items widget (#810): validated like a measure widget,
+        // again whenever its binding, slide scope or a filter of its model
+        // changed.
+        const binding = itemsWidgetBindingSchema.parse(widget.modelBinding);
+        const previous = widget.id ? storedWidgets.get(widget.id) : undefined;
+        const unchanged =
+          previous?.type === "items" &&
+          JSON.stringify(
+            itemsWidgetBindingSchema.safeParse(previous.modelBinding).data,
+          ) === JSON.stringify(binding) &&
+          storedScopes.get(previous.id) === JSON.stringify(scope) &&
+          !changedFilters.some(
+            (filter) =>
+              !storedFilters.has(filter.id) ||
+              !ids.has(filter.id) ||
+              binding.exclusions.some(
+                (exclusion) => exclusion.filterId === filter.id,
+              ) ||
+              [filter, storedFilters.get(filter.id)!].some((version) =>
+                version.mappings.some(
+                  (mapping) => mapping.modelId === binding.modelId,
+                ),
+              ),
+          );
+        if (!unchanged)
+          await validateDashboardItems(
+            tx,
+            workspaceId,
+            filters,
+            binding,
+            scope,
+          );
       } else if (dataWidgetCost(widget.type) > 0) {
         const exclusions = widget.filterExclusions ?? [];
         if (
@@ -1446,7 +1489,9 @@ function widgetInputOf(widget: DashboardWidgetRow): WidgetInput {
     type: widget.type,
     modelId: widget.modelId,
     modelBinding: widget.modelBinding as
-      import("@netrics/domain").MeasureWidgetBinding | null,
+      | import("@netrics/domain").MeasureWidgetBinding
+      | import("@netrics/domain").ItemsWidgetBinding
+      | null,
     filterExclusions:
       widget.filterExclusions as import("@netrics/domain").DashboardFilterExclusion[],
     x: widget.x,
@@ -1484,7 +1529,7 @@ function requestWidgetOf(value: unknown): unknown {
     title: v.title ?? null,
     filterExclusions: v.filterExclusions ?? [],
     options: v.options ?? {},
-    ...(type === "measure" ? { binding: v.binding } : {}),
+    ...(type === "measure" || type === "items" ? { binding: v.binding } : {}),
     ...(type === "compare"
       ? {
           measure: v.binding ?? null,

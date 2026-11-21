@@ -310,6 +310,8 @@ export function dashboardFormatWarnings(
           columns: inputs.columnsOf?.(widget) ?? null,
         };
       }
+      // A latest-items widget's label is its title, as a measure's (#810).
+      if (type === "items") return { ...base, label: widget.title };
       if (isDataWidgetType(type) || type === "review") {
         return { ...base, label: inputs.labelOf(widget) };
       }

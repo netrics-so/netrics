@@ -1447,7 +1447,7 @@ export const dashboardWidgets = pgTable(
     index("dashboard_widgets_goal_idx").on(table.goalId),
     check(
       "dashboard_widgets_type_valid",
-      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown', 'gauge', 'review', 'measure')`,
+      sql`${table.type} in ('metric', 'line', 'bar', 'image', 'text', 'clock', 'table', 'status', 'compare', 'countdown', 'gauge', 'review', 'measure', 'items')`,
     ),
     foreignKey({
       name: "dashboard_widgets_model_fk",
@@ -1455,11 +1455,11 @@ export const dashboardWidgets = pgTable(
       foreignColumns: [dataModels.id, dataModels.workspaceId],
     }),
     index("dashboard_widgets_model_idx").on(table.modelId),
-    // A measure widget names its model; a compare widget may (its measure
-    // binding, #507); no other widget does.
+    // A measure or latest-items widget (#810) names its model; a compare
+    // widget may (its measure binding, #507); no other widget does.
     check(
       "dashboard_widgets_model_valid",
-      sql`case when ${table.type} = 'measure' then ${table.modelId} is not null and ${table.modelBinding} is not null when ${table.type} = 'compare' then (${table.modelId} is null) = (${table.modelBinding} is null) else ${table.modelId} is null and ${table.modelBinding} is null end`,
+      sql`case when ${table.type} in ('measure', 'items') then ${table.modelId} is not null and ${table.modelBinding} is not null when ${table.type} = 'compare' then (${table.modelId} is null) = (${table.modelBinding} is null) else ${table.modelId} is null and ${table.modelBinding} is null end`,
     ),
     // Only goal widgets name a goal (theirs may be null: deleted).
     check(

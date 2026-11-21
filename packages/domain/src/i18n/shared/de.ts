@@ -12,6 +12,9 @@ export const sharedDe: Catalog<SharedMessages> = {
     plural: "Ressourcen",
   },
   latestReview: "Neueste Bewertung",
+  latestItems: "Neueste Einträge",
+  itemsNeedNewerApp:
+    "Aktualisiere netrics TV, um die neuesten Einträge zu sehen.",
   others: "Andere",
   sources: "Quellen",
   goal: "Ziel",

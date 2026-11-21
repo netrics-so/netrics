@@ -5,8 +5,10 @@ import {
   PERIODS,
   type DashboardDataFilter,
   type DashboardFilterValue,
+  type ItemsWidgetBinding,
   type MeasureWidgetBinding,
 } from "@netrics/domain";
+import { CUSTOM_API_IMAGE_NEWEST_MAX } from "./images.js";
 import {
   dataExpressionSchema,
   modelMeasureCellSchema,
@@ -88,6 +90,49 @@ export const measureWidgetOptionsSchema = z.object({
    */
   period: z.enum(PERIODS).optional(),
 });
+/**
+ * A latest-items widget's binding (#810): a published model and its
+ * dimensions for the image (a string field with role "image"), the title,
+ * an optional subtitle and the time (date or timestamp, newest first).
+ */
+export const itemsWidgetBindingSchema: z.ZodType<ItemsWidgetBinding> =
+  z.strictObject({
+    modelId: z.uuid(),
+    imageDimensionId: id,
+    titleDimensionId: id,
+    subtitleDimensionId: id.optional(),
+    timeDimensionId: id,
+    filter: dataExpressionSchema.optional(),
+    exclusions: z.array(dashboardFilterExclusionSchema).max(30).default([]),
+  });
+export const itemsWidgetOptionsSchema = z.object({
+  /** All at once in a grid, or one at a time. */
+  layout: z.enum(["grid", "rotate"]).default("grid"),
+  /** The newest items shown; a grid shows those that fit. */
+  count: z.number().int().min(1).max(CUSTOM_API_IMAGE_NEWEST_MAX).default(6),
+  /** Rotate: seconds per item. */
+  rotateSeconds: z.number().int().min(3).max(60).default(8),
+  imageFit: z.enum(["cover", "contain"]).default("cover"),
+  showTime: z.boolean().default(true),
+});
+export type ItemsWidgetOptions = z.infer<typeof itemsWidgetOptionsSchema>;
+/** A stored item image, served by netrics only (never the source URL). */
+export const itemsWidgetImageSchema = z.object({
+  id: z.uuid(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+export const itemsWidgetItemSchema = z.object({
+  /** At most 200 characters; longer values are cut with "…". */
+  title: z.string().max(200).nullable(),
+  subtitle: z.string().max(200).nullable(),
+  /** ISO date or timestamp as stored; clients word it in the viewer's time zone. */
+  time: z.string().max(40).nullable(),
+  /** Null: the image was not stored (yet), was skipped, or has no URL. */
+  image: itemsWidgetImageSchema.nullable(),
+});
+export type ItemsWidgetItem = z.infer<typeof itemsWidgetItemSchema>;
 export const dashboardFilterValuesSchema = z.record(
   id,
   dashboardFilterValueSchema,
@@ -142,7 +187,13 @@ export const dashboardMeasureMetadataSchema = z.object({
     }),
   ),
   dimensions: z.array(
-    z.object({ id, name: z.string(), type: z.enum(DATA_TYPES) }),
+    z.object({
+      id,
+      name: z.string(),
+      type: z.enum(DATA_TYPES),
+      /** The field's presentation role: "image", an image URL (#810). */
+      role: z.literal("image").optional(),
+    }),
   ),
 });
 /** The fields of a freshness summary (ADR 0025 section 7). */
@@ -229,8 +280,21 @@ export const dashboardWidgetDataSchema = z.object({
    */
   totals: z.array(modelMeasureCellSchema).max(20).optional(),
 });
+export const itemsWidgetDataSchema = z.object({
+  widgetId: z.uuid(),
+  status: z.enum(["ok", "no_data"]),
+  /** Newest first. */
+  items: z.array(itemsWidgetItemSchema).max(CUSTOM_API_IMAGE_NEWEST_MAX),
+  error: z.string().nullable(),
+  exclusions: z.array(dashboardFilterExclusionSchema),
+  /** ADR 0025: through the model's sources; absent without freshness. */
+  freshness: widgetFreshnessSchema.optional(),
+});
+export type ItemsWidgetData = z.infer<typeof itemsWidgetDataSchema>;
 export const dashboardDataResponseSchema = z.object({
   widgets: z.array(dashboardWidgetDataSchema),
+  /** Latest-items widgets' data (#810). */
+  items: z.array(itemsWidgetDataSchema).max(48).default([]),
   values: dashboardFilterValuesSchema,
 });
 export const publishedModelCatalogSchema = z.object({
@@ -250,6 +314,18 @@ export const dashboardMeasurePreviewSchema = z.strictObject({
       }),
     )
     .max(48),
+  /** Unsaved latest-items widgets (#810). */
+  items: z
+    .array(
+      z.strictObject({
+        id: z.uuid(),
+        binding: itemsWidgetBindingSchema,
+        options: itemsWidgetOptionsSchema,
+        scope: slideFilterScopeSchema.optional(),
+      }),
+    )
+    .max(48)
+    .default([]),
 });
 export type DashboardWidgetData = z.infer<typeof dashboardWidgetDataSchema>;
 export type DashboardDataResponse = z.infer<typeof dashboardDataResponseSchema>;

@@ -3,6 +3,8 @@ import type { z } from "zod";
 import {
   dashboardDataFiltersSchema,
   dashboardFilterExclusionSchema,
+  itemsWidgetBindingSchema,
+  itemsWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
   semanticModelDefinitionSchema,
@@ -61,6 +63,7 @@ import {
   type FreshnessReader,
   type WidgetFreshnessResult,
 } from "./freshness.js";
+import { queryDashboardItems } from "./items.js";
 import {
   modelSourceConnections,
   modelSourceDatasets,
@@ -102,7 +105,13 @@ export async function publishedModel(
       (field) => field.id === dimension.fieldId,
     );
     if (!field) throw new DataServiceError("data_model_schema_changed", 409);
-    return { id: dimension.id, name: dimension.name, type: field.type };
+    return {
+      id: dimension.id,
+      name: dimension.name,
+      type: field.type,
+      // An image URL field (#810): what a latest-items widget shows.
+      ...(field.role === "image" ? { role: "image" as const } : {}),
+    };
   });
   return {
     definition,
@@ -646,8 +655,30 @@ export async function queryDashboardData(
   if (Object.keys(values).some((key) => !ids.has(key)))
     throw new DataServiceError("dashboard_filter_unknown");
   const results = [];
+  const items = [];
   for (const slide of slides)
     for (const widget of slide.widgets) {
+      if (widget.type === "items") {
+        items.push(
+          await queryDashboardItems(
+            tx,
+            workspaceId,
+            {
+              id: widget.id,
+              binding: itemsWidgetBindingSchema.parse(widget.modelBinding),
+              options: itemsWidgetOptionsSchema.parse(widget.options),
+            },
+            filters,
+            values,
+            now,
+            defaults,
+            {},
+            slideScopeOf(slide),
+            freshnessReader,
+          ),
+        );
+        continue;
+      }
       if (widget.type !== "measure") continue;
       results.push(
         await queryDashboardMeasure(
@@ -671,6 +702,7 @@ export async function queryDashboardData(
     }
   return {
     widgets: results,
+    items,
     values: Object.fromEntries(
       filters.map((filter) => [
         filter.id,

@@ -125,6 +125,25 @@ export function reviewWidgetLabel(
 }
 
 /**
+ * A latest-items widget's label (#810): its title, else "Latest items".
+ */
+export function itemsWidgetLabel(
+  title: string | null,
+  locale: Locale = "en",
+): string {
+  const trimmed = title?.trim() ?? "";
+  return trimmed !== "" ? trimmed : sharedTranslator(locale)("latestItems");
+}
+
+/**
+ * The text an older screen shows in place of a latest-items widget (#810):
+ * "Update netrics TV to show the latest items."
+ */
+export function itemsNeedNewerAppText(locale: Locale = "en"): string {
+  return sharedTranslator(locale)("itemsNeedNewerApp");
+}
+
+/**
  * A provider message the server recorded in English (a refused key, #378)
  * in `locale`, found by its exact English text; null for any other text,
  * which clients show as it is (the provider's own words).

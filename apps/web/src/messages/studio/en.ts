@@ -73,7 +73,7 @@ export const studioEn = {
       add: "Add widget",
       hint: "Click to add it in the first free spot, or drag it onto the slide",
       addType:
-        "Add {type, select, measure {measure} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
+        "Add {type, select, measure {measure} items {latest items} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} other {widget}}",
     },
     assignTvs: {
       title: "Show “{name}” on TVs",
@@ -434,8 +434,29 @@ export const studioEn = {
         invalid: "The binding can’t be read. Use the metrics again.",
       },
     },
+    items: {
+      legend: "Latest items",
+      model: "Model",
+      image: "Image",
+      title: "Title",
+      subtitle: "Subtitle",
+      none: "None",
+      time: "Time",
+      layout: "Show",
+      grid: "As a grid",
+      rotate: "One at a time",
+      count: "Newest items",
+      rotateSeconds: "Seconds per item",
+      imageFit: "Image fit",
+      cover: "Fill",
+      contain: "Fit",
+      showTime: "Show the time",
+      help: "Shows the newest records of the model with their images. Images come from the newest records of each custom API stream.",
+    },
     newWidget: {
       noModels: "Publish a model in Data & measures first.",
+      noImageModels:
+        "Publish a model with an image field first, for example from a custom API.",
       noMetrics: "Add a connection with metrics first.",
       noBreakdown: "No metric can be broken down yet.",
       noImage: "Upload an image first (dashboard settings, Logo).",
@@ -626,9 +647,9 @@ export const studioEn = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, measure {Measure} metric {Metric} line {Line chart} bar {Bar chart} table {Table} review {Latest review} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
+        "{type, select, measure {Measure} items {Latest items} metric {Metric} line {Line chart} bar {Bar chart} table {Table} review {Latest review} compare {Compare} image {Image} text {Text} clock {Clock} status {Status} countdown {Countdown} gauge {Goal} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, measure {measure} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
+        "{title} ({type, select, measure {measure} items {latest items} metric {metric} line {line chart} bar {bar chart} table {table} review {latest review} compare {comparison} image {image} text {text} clock {clock} status {status board} countdown {countdown} gauge {goal} other {widget}})",
       copyOf: "{name} (copy)",
       continued: "{name} ({part})",
       slide: "Slide {number}",

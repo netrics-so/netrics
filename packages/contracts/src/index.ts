@@ -37,6 +37,9 @@ import {
   slideFilterScopeSchema,
   deviceScopeSchema,
   dashboardFilterExclusionSchema,
+  itemsWidgetBindingSchema,
+  itemsWidgetItemSchema,
+  itemsWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
 } from "./dashboard-data.js";
@@ -48,6 +51,7 @@ import {
 import { connectionCustomApiViewSchema } from "./custom-api.js";
 import { goalProgressSchema, goalResponseSchema } from "./goals.js";
 import {
+  CUSTOM_API_IMAGE_NEWEST_MAX,
   CUSTOM_API_IMAGE_SKIP_REASONS,
   imageContentTypeSchema,
 } from "./images.js";
@@ -2342,6 +2346,12 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     options: measureWidgetOptionsSchema.prefault({}),
   }),
   z.object({
+    type: z.literal("items"),
+    ...widgetInputShape,
+    binding: itemsWidgetBindingSchema,
+    options: itemsWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
     type: z.literal("metric"),
     ...widgetInputShape,
     ...dataBindingInputShape,
@@ -2526,6 +2536,12 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     ...widgetShape,
     binding: measureWidgetBindingSchema,
     options: measureWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("items"),
+    ...widgetShape,
+    binding: itemsWidgetBindingSchema,
+    options: itemsWidgetOptionsSchema,
   }),
   z.object({
     type: z.literal("metric"),
@@ -3269,8 +3285,10 @@ export const deviceDashboardQuerySchema = z.object({
   /**
    * What the client draws beyond its schema, comma separated (#784):
    * "measure_split", a measure value view's total with its split. Without
-   * it, such widgets arrive as their total alone. Unknown names are
-   * ignored.
+   * it, such widgets arrive as their total alone. "items", the latest-items
+   * widget (#810): without it, each such widget arrives as a text widget
+   * saying the app needs an update, and none of its images. Unknown names
+   * are ignored.
    */
   features: z.string().max(200).optional(),
 });
@@ -3629,6 +3647,26 @@ export const latestReviewResponseSchema = z.object({
 });
 export type LatestReviewResponse = z.infer<typeof latestReviewResponseSchema>;
 
+/**
+ * A latest-items widget's data on a screen (#810): newest first, each
+ * item's image by its id in the payload's `images` (null without one).
+ */
+export const deviceItemsDataSchema = z.object({
+  status: z.enum(["ok", "no_data"]),
+  items: z
+    .array(
+      z.object({
+        title: itemsWidgetItemSchema.shape.title,
+        subtitle: itemsWidgetItemSchema.shape.subtitle,
+        time: itemsWidgetItemSchema.shape.time,
+        imageId: z.uuid().nullable(),
+      }),
+    )
+    .max(CUSTOM_API_IMAGE_NEWEST_MAX),
+  freshness: widgetFreshnessSchema.optional(),
+});
+export type DeviceItemsData = z.infer<typeof deviceItemsDataSchema>;
+
 /** A widget's id and placement in a grid of `columns` × `rows`. */
 function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
   return {
@@ -3678,6 +3716,18 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
       groupBy: z.array(z.string()),
       options: measureWidgetOptionsSchema,
       data: dashboardWidgetDataSchema,
+    }),
+    /**
+     * The newest items of a model (#810), sent only to clients that ask
+     * with `features=items`; others get a text widget in its place. Each
+     * `imageId` is one of the payload's `images`.
+     */
+    z.object({
+      type: z.literal("items"),
+      ...deviceWidgetShape,
+      label: deviceDataLabelSchema,
+      options: itemsWidgetOptionsSchema,
+      data: deviceItemsDataSchema,
     }),
     z.object({
       type: z.literal("metric"),

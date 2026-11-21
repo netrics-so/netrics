@@ -3458,6 +3458,12 @@ export async function queryDataModel(
   preview = false,
   pageOwner?: string,
   admit: boolean | DeferredPageAdmission = true,
+  /**
+   * Extends the published definition before the query runs: a latest-items
+   * widget's internal count measure (#810). The query names what it adds,
+   * so its snapshots never mix with plain queries.
+   */
+  extend?: (definition: SemanticModelDefinition) => SemanticModelDefinition,
 ): Promise<DataModelQueryResult> {
   if (typeof admit === "object") admit.admit = undefined;
   if ((query.pageToken || query.pinPages) && !pageOwner)
@@ -3534,9 +3540,10 @@ export async function queryDataModel(
     preview && model.restoredFromVersion
       ? await modelPublication(tx, workspaceId, id, model.restoredFromVersion)
       : null;
-  const definition = semanticModelDefinitionSchema.parse(
+  const parsed = semanticModelDefinitionSchema.parse(
     preview ? model.definition : release!.definition,
   );
+  const definition = extend ? extend(parsed) : parsed;
   const evaluate = async (
     generations?: Record<string, string>,
     currentResources = false,

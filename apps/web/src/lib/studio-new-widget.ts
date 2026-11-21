@@ -10,6 +10,7 @@ import {
 import type { NewWidget } from "./studio-document";
 import { pickableMetrics } from "./format-metric";
 import { webTranslator } from "./i18n/catalogs";
+import { itemsBindingFor, itemsModels } from "./studio-items";
 import { needsCurrency } from "./tile-currency";
 
 // What "Add widget" creates (ADR 0015, section 2): every type with
@@ -68,6 +69,26 @@ export function newWidget(
             exclusions: [],
           },
           options: { view: "value", limit: 20 },
+        },
+      };
+    }
+    case "items": {
+      const binding = itemsModels(input.models ?? [])
+        .map(itemsBindingFor)
+        .find((binding) => binding !== null);
+      if (!binding) return { reason: t("noImageModels") };
+      return {
+        widget: {
+          type,
+          title: null,
+          binding,
+          options: {
+            layout: "grid",
+            count: 6,
+            rotateSeconds: 8,
+            imageFit: "cover",
+            showTime: true,
+          },
         },
       };
     }

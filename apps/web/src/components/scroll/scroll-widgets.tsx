@@ -1,5 +1,6 @@
 "use client";
 import { LiveMeasureWidget } from "@/components/studio/measure-widget";
+import { LiveItemsWidget } from "@/components/studio/items-widget";
 
 import { useRef } from "react";
 
@@ -1254,6 +1255,10 @@ function LiveScrollClock({
   );
 }
 
+/** The box a latest-items card is laid out in (#810): a half-wide slide
+ * widget, whatever its placement on the slide. */
+export const SCROLL_ITEMS_PLACEMENT = { x: 0, y: 0, w: 6, h: 4 } as const;
+
 /** A widget's scroll view card with its own data (signed-in pages). */
 export function LiveScrollWidget({
   widget,
@@ -1267,6 +1272,15 @@ export function LiveScrollWidget({
   switch (widget.type) {
     case "measure":
       return <LiveMeasureWidget widget={widget} env={env} />;
+    case "items":
+      return (
+        <div className="scroll-items">
+          <LiveItemsWidget
+            widget={{ ...widget, ...SCROLL_ITEMS_PLACEMENT }}
+            env={env}
+          />
+        </div>
+      );
     case "metric":
       return <LiveScrollMetric widget={widget} env={env} size={size} />;
     case "line":

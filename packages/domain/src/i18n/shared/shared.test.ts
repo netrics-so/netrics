@@ -8,6 +8,8 @@ import { compareCatalogs } from "../catalog.js";
 import {
   aggregationName,
   comparisonLabel,
+  itemsNeedNewerAppText,
+  itemsWidgetLabel,
   localizedProviderMessage,
   othersLabel,
   periodLabel,
@@ -117,5 +119,19 @@ describe("provider messages (#378)", () => {
 
   it("leaves any other text to the caller", () => {
     expect(localizedProviderMessage("Apple Ads answered 500")).toBeNull();
+  });
+});
+
+describe("latest items (#810)", () => {
+  it("labels an untitled widget and words the older-screen placeholder", () => {
+    expect(itemsWidgetLabel(null)).toBe("Latest items");
+    expect(itemsWidgetLabel("  ", "de")).toBe("Neueste Einträge");
+    expect(itemsWidgetLabel("Photos", "de")).toBe("Photos");
+    expect(itemsNeedNewerAppText()).toBe(
+      "Update netrics TV to show the latest items.",
+    );
+    expect(itemsNeedNewerAppText("de")).toBe(
+      "Aktualisiere netrics TV, um die neuesten Einträge zu sehen.",
+    );
   });
 });

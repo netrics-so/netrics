@@ -17,6 +17,13 @@ export const sharedEn = {
   },
   /** A latest-review widget without a title (ADR 0019 section 12). */
   latestReview: "Latest review",
+  /** A latest-items widget without a title (#810). */
+  latestItems: "Latest items",
+  /**
+   * What a screen that does not know the latest-items widget shows in its
+   * place (#810): an older netrics TV or kiosk.
+   */
+  itemsNeedNewerApp: "Update netrics TV to show the latest items.",
   /** A breakdown's remainder: the smaller groups added up. */
   others: "Others",
   /** A status board's default label (ADR 0019 section 7). */

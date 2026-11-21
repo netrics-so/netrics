@@ -18,10 +18,19 @@ import {
   validateDeviceFilterScope,
   validateMeasureView,
   validateSlideFilterScope,
+  itemsModelQuery,
+  ITEMS_COUNT_MEASURE_ID,
   type DashboardDataFilter,
+  type DashboardFilterValue,
   type DeviceFilterScope,
+  type ItemsWidgetBinding,
   type MeasureWidgetBinding,
 } from "./dashboard-data.js";
+import {
+  querySemanticModel,
+  type SemanticModelDefinition,
+} from "./data-model.js";
+import type { DataTable } from "./data-preparation.js";
 const binding: MeasureWidgetBinding = {
   modelId: "store",
   measureIds: ["income"],
@@ -821,5 +830,172 @@ describe("a measure table's order and labels follow its binding (#768)", () => {
     ).toEqual({ view: "table", limit: 20 });
     // Unchanged when everything is still shown.
     expect(measureOptionsForBinding(binding, options)).toEqual(options);
+  });
+});
+
+describe("itemsModelQuery (#810)", () => {
+  const photos: DataTable = {
+    fields: [
+      { id: "taken_at", name: "Taken", type: "date", nullable: true },
+      { id: "title", name: "Title", type: "string", nullable: true },
+      { id: "caption", name: "Caption", type: "string", nullable: true },
+      {
+        id: "photo",
+        name: "Photo",
+        type: "string",
+        nullable: true,
+        role: "image",
+      },
+    ],
+    rows: ["a", "b", "c", "d", "e", "f", "g", "h"].map((title, index) => ({
+      taken_at: `2026-11-0${index + 1}`,
+      title,
+      caption: `caption ${title}`,
+      photo: `https://img.example/${title}.png`,
+    })),
+  };
+  const photoModel: SemanticModelDefinition = {
+    version: 1,
+    datasets: ["photos"],
+    relationships: [],
+    dimensions: ["taken_at", "title", "caption", "photo"].map((id) => ({
+      id,
+      name: id,
+      datasetId: "photos",
+      fieldId: id,
+      ...(id === "taken_at"
+        ? { timeAlignment: "reporting_date" as const }
+        : {}),
+    })),
+    measures: [],
+  };
+  const itemsBinding: ItemsWidgetBinding = {
+    modelId: "photos-model",
+    imageDimensionId: "photo",
+    titleDimensionId: "title",
+    subtitleDimensionId: "caption",
+    timeDimensionId: "taken_at",
+    exclusions: [],
+  };
+  const titleFilter: DashboardDataFilter = {
+    id: "name",
+    name: "Name",
+    type: "string",
+    mode: "values",
+    mappings: [{ modelId: "photos-model", dimensionId: "title" }],
+    defaultValue: null,
+  };
+
+  it("queries the newest items: grouped by time, image, title, subtitle, window last", () => {
+    const { model, query } = itemsModelQuery(
+      photoModel,
+      [],
+      {},
+      itemsBinding,
+      6,
+    );
+    expect(query).toMatchObject({
+      measureIds: [ITEMS_COUNT_MEASURE_ID],
+      groupBy: ["taken_at", "photo", "title", "caption"],
+      window: "last",
+      limit: 6,
+    });
+    expect(model.measures.at(-1)).toMatchObject({
+      id: ITEMS_COUNT_MEASURE_ID,
+      kind: "aggregate",
+      datasetId: "photos",
+      aggregate: { op: "count" },
+    });
+    // The model itself is not changed.
+    expect(photoModel.measures).toEqual([]);
+  });
+
+  it("leaves the subtitle out of the grouping when there is none", () => {
+    const { subtitleDimensionId: _subtitle, ...withoutSubtitle } = itemsBinding;
+    expect(
+      itemsModelQuery(photoModel, [], {}, withoutSubtitle, 3).query.groupBy,
+    ).toEqual(["taken_at", "photo", "title"]);
+  });
+
+  it("applies a mapped dashboard filter and refuses an unmapped one without exclusion", () => {
+    const run = (values: Record<string, DashboardFilterValue>) => {
+      const { model, query } = itemsModelQuery(
+        photoModel,
+        [titleFilter],
+        values,
+        itemsBinding,
+        6,
+      );
+      return querySemanticModel(model, new Map([["photos", photos]]), query);
+    };
+    expect(
+      run({ name: { kind: "values", values: ["c"] } }).rows.map(
+        (row) => row.dimensions.title,
+      ),
+    ).toEqual(["c"]);
+    const unmapped = { ...titleFilter, mappings: [] };
+    expect(() =>
+      itemsModelQuery(photoModel, [unmapped], {}, itemsBinding, 6),
+    ).toThrow("dashboard_filter_not_applicable");
+    expect(
+      itemsModelQuery(
+        photoModel,
+        [unmapped],
+        {},
+        { ...itemsBinding, exclusions: [{ filterId: "name", reason: "All" }] },
+        6,
+      ).query.measureIds,
+    ).toEqual([ITEMS_COUNT_MEASURE_ID]);
+  });
+
+  it("returns the newest rows last, so reversing puts the newest first", () => {
+    const { model, query } = itemsModelQuery(
+      photoModel,
+      [],
+      {},
+      itemsBinding,
+      3,
+    );
+    const result = querySemanticModel(
+      model,
+      new Map([["photos", photos]]),
+      query,
+    );
+    expect(result.rows.map((row) => row.dimensions.title)).toEqual([
+      "f",
+      "g",
+      "h",
+    ]);
+  });
+
+  it("leaves items without a time out instead of showing them as newest", () => {
+    const { model, query } = itemsModelQuery(
+      photoModel,
+      [],
+      {},
+      itemsBinding,
+      2,
+    );
+    const undated: DataTable = {
+      ...photos,
+      rows: [...photos.rows, { ...photos.rows[0], taken_at: null, title: "x" }],
+    };
+    expect(
+      querySemanticModel(model, new Map([["photos", undated]]), query).rows.map(
+        (row) => row.dimensions.title,
+      ),
+    ).toEqual(["g", "h"]);
+  });
+
+  it("refuses an image dimension the model does not have", () => {
+    expect(() =>
+      itemsModelQuery(
+        photoModel,
+        [],
+        {},
+        { ...itemsBinding, imageDimensionId: "nope" },
+        3,
+      ),
+    ).toThrow("items_dimension_unknown");
   });
 });

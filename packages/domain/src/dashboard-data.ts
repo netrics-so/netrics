@@ -8,7 +8,11 @@ import {
   type DataType,
 } from "./data-expression.js";
 import { compareMeasureFilter } from "./compare-measure.js";
-import type { ModelQuery, ModelQueryOrder } from "./data-model.js";
+import type {
+  ModelQuery,
+  ModelQueryOrder,
+  SemanticModelDefinition,
+} from "./data-model.js";
 
 export type DashboardFilterType = Exclude<DataType, "json">;
 export type DashboardFilterValue =
@@ -426,6 +430,113 @@ export function dashboardModelQuery(
     ...(order ? { orderBy: order } : {}),
     ...(filter ? { filter } : {}),
   };
+}
+
+/**
+ * A latest-items widget's binding (#810): a published model's dimensions
+ * for each item's image (a string field with role "image"), title,
+ * optional subtitle and time (a date or timestamp, newest first).
+ */
+export interface ItemsWidgetBinding {
+  modelId: string;
+  imageDimensionId: string;
+  titleDimensionId: string;
+  subtitleDimensionId?: string;
+  timeDimensionId: string;
+  filter?: DataExpression;
+  exclusions: DashboardFilterExclusion[];
+}
+
+/** Internal measure id the items query adds to the model: a row count over
+ * the image dimension's dataset. */
+export const ITEMS_COUNT_MEASURE_ID = "__items_count";
+
+/**
+ * A copy of the model with the items widget's internal count measure: rows
+ * of the image dimension's dataset (#810).
+ */
+export function itemsModelWithCount(
+  model: SemanticModelDefinition,
+  binding: Pick<ItemsWidgetBinding, "imageDimensionId">,
+): SemanticModelDefinition {
+  const image = model.dimensions.find(
+    (dimension) => dimension.id === binding.imageDimensionId,
+  );
+  if (!image) dataFail("items_dimension_unknown", binding.imageDimensionId);
+  if (model.measures.some((measure) => measure.id === ITEMS_COUNT_MEASURE_ID))
+    dataFail("model_ids_not_unique");
+  return {
+    ...model,
+    measures: [
+      ...model.measures,
+      {
+        id: ITEMS_COUNT_MEASURE_ID,
+        name: "items",
+        kind: "aggregate",
+        datasetId: image.datasetId,
+        aggregate: { id: ITEMS_COUNT_MEASURE_ID, name: "items", op: "count" },
+      },
+    ],
+  };
+}
+
+/** The dimensions an items widget groups by, in query order. */
+export function itemsGroupBy(binding: ItemsWidgetBinding): string[] {
+  return [
+    binding.timeDimensionId,
+    binding.imageDimensionId,
+    binding.titleDimensionId,
+    ...(binding.subtitleDimensionId ? [binding.subtitleDimensionId] : []),
+  ];
+}
+
+/**
+ * The newest items of a model (#810): a copy of the model with an internal
+ * count measure, and the query grouped by time, image, title and subtitle,
+ * the last `count` groups of the time order. Items without a time are left
+ * out (they would sort last, so newest). Filters, exclusions, the screen's
+ * and the slide's scopes apply as in `dashboardModelQuery`. Rows come back
+ * oldest first; the caller reverses them so the newest item leads.
+ */
+export function itemsModelQuery(
+  model: SemanticModelDefinition,
+  filters: readonly DashboardDataFilter[],
+  values: Readonly<Record<string, DashboardFilterValue>>,
+  binding: ItemsWidgetBinding,
+  count: number,
+  scope?: DeviceFilterScope,
+  slide?: SlideFilterScope,
+): { model: SemanticModelDefinition; query: Omit<ModelQuery, "now"> } {
+  const withCount = itemsModelWithCount(model, binding);
+  const timed: DataExpression = {
+    kind: "call",
+    fn: "not",
+    args: [
+      {
+        kind: "call",
+        fn: "is_null",
+        args: [field(binding.timeDimensionId)],
+      },
+    ],
+  };
+  const query = dashboardModelQuery(
+    filters,
+    values,
+    {
+      modelId: binding.modelId,
+      measureIds: [ITEMS_COUNT_MEASURE_ID],
+      groupBy: itemsGroupBy(binding),
+      filter: binding.filter
+        ? { kind: "call", fn: "and", args: [binding.filter, timed] }
+        : timed,
+      exclusions: binding.exclusions,
+    },
+    count,
+    "last",
+    scope,
+    slide,
+  );
+  return { model: withCount, query };
 }
 
 /** A measure widget's options as far as they reach its binding (#768). */

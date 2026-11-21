@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { ScreenFormat, StudioPlacement } from "./studio-layout.js";
-import { slideLayoutProblem, type WidgetType } from "./studio.js";
+import {
+  dataWidgetCost,
+  slideLayoutProblem,
+  type WidgetType,
+} from "./studio.js";
 
 const metric = (rect: StudioPlacement) => ({
   type: "metric" as WidgetType,
@@ -115,4 +119,9 @@ describe("slideLayoutProblem in a primary format (ADR 0017)", () => {
   ])("%s", (_, placement, format, problem) => {
     expect(slideLayoutProblem([metric(placement)], format)).toBe(problem);
   });
+});
+
+describe("dataWidgetCost", () => {
+  it("counts an items widget as one data widget (#810)", () =>
+    expect(dataWidgetCost("items")).toBe(1));
 });

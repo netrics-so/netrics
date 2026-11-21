@@ -35,6 +35,8 @@ export interface ImageRouteDeps {
   authService: AuthService;
   db: Database;
   quota: ImageQuota;
+  now?: () => Date;
+  dataPolicy?: import("@netrics/domain").DataPolicy;
 }
 
 const imageParamsSchema = z.object({ imageId: z.uuid() });
@@ -128,7 +130,11 @@ export function registerImageRoutes(
 ): void {
   const requireSession = createRequireSession(deps.authService);
   const images = createImageService({ db: deps.db, quota: deps.quota });
-  const deviceImages = createDeviceImageService({ db: deps.db });
+  const deviceImages = createDeviceImageService({
+    db: deps.db,
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.dataPolicy ? { dataPolicy: deps.dataPolicy } : {}),
+  });
   const requireDevice = createRequireDevice({ db: deps.db });
 
   async function authorize(

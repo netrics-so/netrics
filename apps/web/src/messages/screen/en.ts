@@ -99,6 +99,13 @@ export const screenEn = {
       compareDerived: "derived",
       compareNoRatio: "–",
     },
+    /** The latest-items widget (#810). */
+    items: {
+      empty: "No items yet",
+      noImage: "No image",
+      image: "Image",
+      unavailable: "The items can’t be shown right now.",
+    },
     /** What a playing screen shows around its slides (ADR 0018, section 5). */
     player: {
       nextRefresh: "next refresh in {seconds} s",

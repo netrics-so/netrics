@@ -255,8 +255,10 @@ export function registerDeviceRoutes(
               "(slides, widgets, theme, images in the 16:9 layout) with " +
               "?schema=2, schema 3 (primary and custom layouts per screen " +
               "format, device rotation and display mode) with ?schema=3, " +
-              "each when server info lists it; ETags are per schema: send " +
-              "If-None-Match with the last ETag to get 304 when nothing changed",
+              "each when server info lists it; ?features=items adds " +
+              "latest-items widgets (others get a text in their place); " +
+              "ETags are per schema and features: send If-None-Match with " +
+              "the last ETag to get 304 when nothing changed",
             tags: ["devices"],
             querystring: deviceDashboardQuerySchema,
             response: z.union([

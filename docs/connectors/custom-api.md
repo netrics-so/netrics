@@ -137,6 +137,22 @@ A failed or skipped image never fails the sync. The connection page shows
 per image stream how many images are stored and how many were skipped, and
 why.
 
+### Latest items widget
+
+A dashboard shows the images in a **latest items** widget. It binds to a
+published model with an image dimension (a string field with the role
+`image`) and a date or time dimension, and shows the newest records (up to 50) as a grid or one at a time, each with its title, an optional subtitle and
+its time. Dashboard filters, slide scopes and screen scopes apply as on
+measure widgets. Each item's image is looked up by the SHA-256 of its URL
+among the stored images; an item outside the stored newest items, or whose
+image was skipped, shows a placeholder. Screens load the images only from
+netrics, never from the source URL, which no client receives.
+
+Screens get the widget when they ask for it (`?features=items` on
+`GET /v1/device/dashboard`); older netrics TV apps and kiosks get a text that
+asks to update in its place, and none of its images. A screen may fetch an
+item image only while its own current dashboard shows it.
+
 ## Instance settings
 
 | Setting                                  | Default | Meaning                                                |

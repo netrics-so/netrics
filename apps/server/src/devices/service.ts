@@ -1,4 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
+import { withoutItems } from "./items-compat.js";
 import { withoutMeasureSplits, type DeviceFeature } from "./measure-compat.js";
 
 import type {
@@ -25,6 +26,7 @@ import {
   deviceScopeSchema,
   deviceScreenSchema,
   displayModeSchema,
+  itemsWidgetBindingSchema,
   measureWidgetBindingSchema,
 } from "@netrics/contracts";
 import {
@@ -221,6 +223,22 @@ export function validateScope(
           filters.data,
           {},
           measureWidgetBindingSchema.parse(widget.modelBinding),
+          1,
+          "first",
+          values,
+        );
+      } else if (widget.type === "items") {
+        // Follows shared filters like a measure widget (#810).
+        const binding = itemsWidgetBindingSchema.parse(widget.modelBinding);
+        dashboardModelQuery(
+          filters.data,
+          {},
+          {
+            modelId: binding.modelId,
+            measureIds: [],
+            groupBy: [],
+            exclusions: binding.exclusions,
+          },
           1,
           "first",
           values,
@@ -786,9 +804,14 @@ export function createDeviceService(deps: DeviceServiceDeps) {
               : await payloads.get(key, build);
           // Older screens draw a grouped value view as its first row: they
           // get the total alone (#784).
-          const payload = features.has("measure_split")
+          const split = features.has("measure_split")
             ? built
             : withoutMeasureSplits(built);
+          // Screens that do not know the latest-items widget get a text in
+          // its place, and none of its images (#810).
+          const payload = features.has("items")
+            ? split
+            : withoutItems(split, locale);
           return ok<DeviceDashboardPayload>(
             "schema" in payload && payload.schema === 3
               ? withDevice(payload, deviceSettings(device))

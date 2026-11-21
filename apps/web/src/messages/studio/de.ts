@@ -76,7 +76,7 @@ export const studioDe: Catalog<typeof studioEn> = {
       add: "Widget hinzufügen",
       hint: "Klick, um es am ersten freien Platz einzufügen, oder zieh es auf die Folie",
       addType:
-        "{type, select, measure {Modellkennzahl} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} other {Widget}} hinzufügen",
+        "{type, select, measure {Modellkennzahl} items {Neueste Einträge} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} other {Widget}} hinzufügen",
     },
     assignTvs: {
       title: "„{name}“ auf TVs zeigen",
@@ -443,8 +443,29 @@ export const studioDe: Catalog<typeof studioEn> = {
           "Die Bindung kann nicht gelesen werden. Nutze wieder die Metriken.",
       },
     },
+    items: {
+      legend: "Neueste Einträge",
+      model: "Modell",
+      image: "Bild",
+      title: "Titel",
+      subtitle: "Untertitel",
+      none: "Keiner",
+      time: "Zeit",
+      layout: "Anzeigen",
+      grid: "Als Raster",
+      rotate: "Einzeln nacheinander",
+      count: "Neueste Einträge",
+      rotateSeconds: "Sekunden pro Eintrag",
+      imageFit: "Bildanpassung",
+      cover: "Füllen",
+      contain: "Einpassen",
+      showTime: "Zeit anzeigen",
+      help: "Zeigt die neuesten Datensätze des Modells mit ihren Bildern. Die Bilder stammen aus den neuesten Datensätzen jedes Streams einer eigenen API.",
+    },
     newWidget: {
       noModels: "Veröffentliche zuerst ein Modell unter Daten & Kennzahlen.",
+      noImageModels:
+        "Veröffentliche zuerst ein Modell mit einem Bildfeld, zum Beispiel aus einer eigenen API.",
       noMetrics: "Füg zuerst eine Verbindung mit Metriken hinzu.",
       noBreakdown: "Noch lässt sich keine Metrik aufschlüsseln.",
       noImage: "Lade zuerst ein Bild hoch (Dashboard-Einstellungen, Logo).",
@@ -639,9 +660,9 @@ export const studioDe: Catalog<typeof studioEn> = {
         invalid: "{name}: {problem}",
       },
       typeName:
-        "{type, select, measure {Modellkennzahl} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}}",
+        "{type, select, measure {Modellkennzahl} items {Neueste Einträge} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}}",
       namedWidget:
-        "{title} ({type, select, measure {Modellkennzahl} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}})",
+        "{title} ({type, select, measure {Modellkennzahl} items {Neueste Einträge} metric {Metrik} line {Liniendiagramm} bar {Balkendiagramm} table {Tabelle} review {Neueste Bewertung} compare {Vergleich} image {Bild} text {Text} clock {Uhr} status {Status} countdown {Countdown} gauge {Ziel} other {Widget}})",
       copyOf: "{name} (Kopie)",
       continued: "{name} ({part})",
       slide: "Folie {number}",

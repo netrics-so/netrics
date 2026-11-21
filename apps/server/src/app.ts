@@ -301,7 +301,13 @@ export async function buildApp(
     registry,
     ...(deps.now ? { now: deps.now } : {}),
   });
-  registerImageRoutes(app, { authService, db, quota: config.imageQuota });
+  registerImageRoutes(app, {
+    authService,
+    db,
+    quota: config.imageQuota,
+    dataPolicy: config.dataPolicy,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
   registerDeviceRoutes(app, {
     dataPolicy: config.dataPolicy,
     authService,

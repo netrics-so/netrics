@@ -8,6 +8,7 @@ import {
 } from "@netrics/contracts";
 import {
   findDeviceImage,
+  findImage,
   findImageUsers,
   hasSqlstate,
   insertAuditEvent,
@@ -17,6 +18,9 @@ import {
   type ImageRow,
 } from "@netrics/database";
 
+import type { DataPolicy } from "@netrics/domain";
+
+import { deviceItemImageIds } from "../devices/item-images.js";
 import { sanitizeImage, type ImageRejection } from "./format.js";
 import { postgresImageStore, type ImageStore } from "./store.js";
 
@@ -303,14 +307,19 @@ export interface DevicePrincipal {
 
 /**
  * Images for paired screens (ADR 0015, section 5): only those the device's
- * assigned dashboard shows. Everything else, including any image of
+ * assigned dashboard shows, and the item images its current payload's
+ * latest-items widgets show (#810). Everything else, including any image of
  * another workspace, is 404; a revoked device is 401.
  */
 export function createDeviceImageService(deps: {
   db: Database;
   store?: ImageStore;
+  /** The clock of the items queries (#810); tests pin it. */
+  now?: () => Date;
+  dataPolicy?: DataPolicy;
 }) {
   const store = deps.store ?? postgresImageStore;
+  const now = deps.now ?? (() => new Date());
   return {
     async read(
       device: DevicePrincipal,
@@ -320,8 +329,28 @@ export function createDeviceImageService(deps: {
       const image = await withWorkspace(
         deps.db,
         { workspaceId: device.workspaceId },
-        (tx) =>
-          findDeviceImage(tx, device.workspaceId, device.deviceId, imageId),
+        async (tx) => {
+          const shown = await findDeviceImage(
+            tx,
+            device.workspaceId,
+            device.deviceId,
+            imageId,
+          );
+          if (shown) return shown;
+          // An item image (#810) only while the device's own current
+          // payload references it; any other is unknown, like a wrong id.
+          const found = await findImage(tx, device.workspaceId, imageId);
+          if (found?.origin !== "custom_api") return null;
+          const referenced = await deviceItemImageIds(
+            tx,
+            device.workspaceId,
+            device.deviceId,
+            now(),
+            deps.dataPolicy,
+          );
+          return referenced.has(imageId) ? found : null;
+        },
+        { isolationLevel: "repeatable read" },
       );
       if (!image || (version !== undefined && version !== image.sha256)) {
         return fail(404, NOT_FOUND);
