@@ -42,7 +42,7 @@ type InjectResponse = Awaited<ReturnType<FastifyInstance["inject"]>>;
 let app: FastifyInstance, db: Database, admin: Sql;
 let owner: string, stranger: string;
 let workspaceId: string, otherWorkspaceId: string;
-let modelId: string, connectionId: string;
+let modelId: string, connectionId: string, databaseUrl: string;
 let ip = 0;
 
 interface Paired {
@@ -200,6 +200,7 @@ async function devicePayload(device: Paired, schema: 2 | 3 = 3) {
 
 beforeAll(async () => {
   const test = await createTestDatabase();
+  databaseUrl = test.appUrl;
   const config = loadConfig({
     DATABASE_URL: test.appUrl,
     LOG_LEVEL: "silent",
@@ -815,6 +816,109 @@ describe("a slide scoped to a linked product (#777)", () => {
     // Another workspace's member cannot ask about this one's models.
     expect((await ask([productsModelId], stranger)).statusCode).toBe(404);
     expect((await ask(["nope"])).statusCode).toBe(400);
+  });
+});
+
+describe("a deployment whose query limit is below the mapping table (#846)", () => {
+  // NETRICS_DATA_POLICY lowers the row limit and the workspace overrides
+  // nothing: the mapping (over 1,000 rows) cannot be read, so no product
+  // resolves. The dashboard read, save validation, the Studio's route and
+  // the screen's payload must all say so; before, the dashboard service
+  // read with the built-in default limits and resolved it.
+  let limited: FastifyInstance;
+  let productsModelId: string;
+  const ask = (
+    method: "GET" | "POST",
+    url: string,
+    options: { token?: string; payload?: unknown } = {},
+  ) =>
+    limited.inject({
+      method,
+      url,
+      headers: options.token
+        ? { authorization: `Bearer ${options.token}` }
+        : { cookie: owner },
+      remoteAddress: `198.51.100.${(ip += 1)}`,
+      ...(options.payload !== undefined
+        ? { payload: options.payload as InjectOptions["payload"] }
+        : {}),
+    });
+
+  beforeAll(async () => {
+    const config = loadConfig({
+      DATABASE_URL: databaseUrl,
+      LOG_LEVEL: "silent",
+      BETTER_AUTH_URL: "http://localhost:3001",
+      WEB_ORIGIN: "http://localhost:3000",
+      NETRICS_DATA_POLICY: JSON.stringify({ queryRows: 500 }),
+    });
+    limited = await buildApp(config, {
+      db,
+      authService: createAuthService(config, db, {
+        logger: pino({ level: "silent" }),
+      }),
+      checkDb: async () => true,
+    });
+    const [model] = await admin`
+      select id from data_models
+      where workspace_id = ${workspaceId} and name = 'Products'`;
+    productsModelId = model!.id as string;
+  });
+  afterAll(async () => {
+    await limited?.close();
+  });
+
+  it("resolves no product on the read, the save, the route and the screen", async () => {
+    const filters = [
+      {
+        ...appFilter(),
+        mappings: [
+          { modelId, dimensionId: "app" },
+          { modelId: productsModelId, dimensionId: "app" },
+        ],
+      },
+    ];
+    const slides = [{ scope: only("product:w"), widgets: [downloads()] }];
+    // Stored where the mapping can be read: a product slide whose widget
+    // follows the product.
+    const created = await createDashboard(slides, { dataFilters: filters });
+    expect(created.statusCode, created.body).toBe(200);
+    const id = created.json().dashboard.id as string;
+    expect(created.json().dashboard.productApps).toEqual({
+      "product:w": [APP_B()],
+    });
+    const dashboards = `/v1/workspaces/${workspaceId}/dashboards`;
+
+    // The Studio's route.
+    const route = await ask("POST", `${dashboards}/product-apps`, {
+      payload: { modelIds: [productsModelId] },
+    });
+    expect(route.statusCode, route.body).toBe(200);
+    expect(route.json()).toEqual({ productApps: {} });
+    // The dashboard read.
+    const read = await ask("GET", `${dashboards}/${id}`);
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json().dashboard).not.toHaveProperty("productApps");
+    // Save validation: the widget cannot follow the product.
+    const saved = await ask("POST", dashboards, {
+      payload: {
+        name: "Limited",
+        settings: { dataFilters: filters },
+        slides,
+      },
+    });
+    expectError(saved, 400, "dashboard_filter_not_applicable");
+    // The screen: every app's downloads, not the product's (3000).
+    const screen = await pair(id);
+    const payload = await ask("GET", "/v1/device/dashboard?schema=3", {
+      token: screen.accessToken,
+    });
+    expect(payload.statusCode, payload.body).toBe(200);
+    expect(
+      downloadsOf(
+        slideWidgets(deviceDashboardV3ResponseSchema.parse(payload.json()), 0),
+      ),
+    ).toBe(3030);
   });
 });
 

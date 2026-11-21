@@ -2133,12 +2133,17 @@ export function createStoreTemplateUpdateService(deps: {
     }
     let result: Awaited<ReturnType<typeof createUpdatedDashboardCopy>>;
     try {
-      result = await createUpdatedDashboardCopy(tx, actor, {
-        sourceId: entry.originalId,
-        name: storeTemplateCopy(actor.locale).updatedName(record.name),
-        merged: normalized,
-        widgetKeys: plan.dashboardKeys.get(key) ?? {},
-      });
+      result = await createUpdatedDashboardCopy(
+        tx,
+        actor,
+        {
+          sourceId: entry.originalId,
+          name: storeTemplateCopy(actor.locale).updatedName(record.name),
+          merged: normalized,
+          widgetKeys: plan.dashboardKeys.get(key) ?? {},
+        },
+        { policy: deps.policy, now: deps.now },
+      );
     } catch (error) {
       if (error instanceof DashboardCopyUnfit)
         throw new StoreUpdateUnmergeable(

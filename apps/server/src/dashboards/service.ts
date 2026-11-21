@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 
 import {
   dashboardProductApps,
+  type ProductScopeInputs,
   mappedModelIds,
   publishedModel,
   slideScopeOf,
@@ -251,6 +252,8 @@ export async function presentDashboard(
   workspaceId: string,
   dashboard: Dashboard,
   locale: Locale = DEFAULT_LOCALE,
+  /** The deployment's policy and clock: product scopes (#777). */
+  inputs: ProductScopeInputs,
 ): Promise<DashboardView> {
   const data = dashboard.slides.flatMap((slide) =>
     slide.widgets.filter(isDataRow),
@@ -285,9 +288,8 @@ export async function presentDashboard(
     tx,
     workspaceId,
     scopeModels,
-    { now: new Date() },
-    products,
-    releases,
+    inputs,
+    { only: products, releases },
   );
   const names = await findResourceNames(
     tx,
@@ -1299,7 +1301,9 @@ async function validateDataBindings(
   workspaceId: string,
   slides: readonly SlideInput[],
   filters: import("@netrics/domain").DashboardDataFilter[],
-  stored: Dashboard | null = null,
+  stored: Dashboard | null,
+  /** The deployment's policy and clock: product scopes (#777). */
+  inputs: ProductScopeInputs,
 ): Promise<Result<null>> {
   try {
     const ids = new Set(filters.map((filter) => filter.id));
@@ -1380,8 +1384,8 @@ async function validateDataBindings(
       tx,
       workspaceId,
       mappedModelIds(filters),
-      { now: new Date() },
-      scopeProducts(slides.map((slide) => slideScopeOf(slide))),
+      inputs,
+      { only: scopeProducts(slides.map((slide) => slideScopeOf(slide))) },
     );
     for (const { widget, scope } of slides.flatMap((slide) =>
       slide.widgets.map((widget) => ({ widget, scope: slideScopeOf(slide) })),
@@ -1643,6 +1647,8 @@ export async function createUpdatedDashboardCopy(
     merged: NormalizedDashboard; // merged items, refs unsymbolized
     widgetKeys: Record<string, string>;
   },
+  /** The deployment's policy and clock: product scopes (#777). */
+  inputs: ProductScopeInputs,
 ): Promise<
   Result<{ dashboard: DashboardView; widgetKeys: Record<string, string> }>
 > {
@@ -1769,6 +1775,8 @@ export async function createUpdatedDashboardCopy(
     workspaceId,
     slides,
     dataFilters.data,
+    null,
+    inputs,
   );
   if (!bindings.ok) return bindings;
   const themeId = (settings.themeId as string | undefined) ?? null;
@@ -1827,7 +1835,13 @@ export async function createUpdatedDashboardCopy(
     });
   });
   return ok({
-    dashboard: await presentDashboard(tx, workspaceId, copy, actor.locale),
+    dashboard: await presentDashboard(
+      tx,
+      workspaceId,
+      copy,
+      actor.locale,
+      inputs,
+    ),
     widgetKeys: copyKeys,
   });
 }
@@ -1845,7 +1859,13 @@ function counts(dashboard: Dashboard) {
 
 export function createDashboardService(deps: {
   db: Pick<Database, "transaction">;
+  /** The deployment's data policy (NETRICS_DATA_POLICY). */
+  policy?: ProductScopeInputs["policy"];
+  now?: ProductScopeInputs["now"];
 }) {
+  // What product scopes resolve with (#777), as the Studio's route and
+  // the device payload resolve them.
+  const inputs: ProductScopeInputs = { policy: deps.policy, now: deps.now };
   const inWorkspace = <T>(actor: Actor, run: (tx: Transaction) => Promise<T>) =>
     withWorkspace(
       deps.db,
@@ -1902,6 +1922,7 @@ export function createDashboardService(deps: {
                 actor.workspaceId,
                 dashboard,
                 actor.locale,
+                inputs,
               ),
             )
           : fail<DashboardView>(404, NOT_FOUND);
@@ -1931,6 +1952,8 @@ export function createDashboardService(deps: {
           actor.workspaceId,
           slides.value,
           body.settings?.dataFilters ?? [],
+          null,
+          inputs,
         );
         if (!bindings.ok) return bindings;
         const { rest, theme: themeRequest } = splitSettings(body.settings);
@@ -1977,6 +2000,7 @@ export function createDashboardService(deps: {
             actor.workspaceId,
             dashboard,
             actor.locale,
+            inputs,
           ),
         );
       });
@@ -2046,6 +2070,7 @@ export function createDashboardService(deps: {
           body.settings?.dataFilters ??
             dashboardDataFiltersSchema.parse(current.dataFilters),
           current,
+          inputs,
         );
         if (!bindings.ok) return bindings;
         const { rest, theme: themeRequest } = splitSettings(body.settings);
@@ -2120,6 +2145,7 @@ export function createDashboardService(deps: {
             actor.workspaceId,
             result.dashboard,
             actor.locale,
+            inputs,
           ),
         );
       });
@@ -2168,7 +2194,13 @@ export function createDashboardService(deps: {
           metadata: { name, sourceId: dashboardId },
         });
         return ok(
-          await presentDashboard(tx, actor.workspaceId, copy, actor.locale),
+          await presentDashboard(
+            tx,
+            actor.workspaceId,
+            copy,
+            actor.locale,
+            inputs,
+          ),
         );
       });
     },

@@ -10,7 +10,7 @@ import {
 } from "@netrics/contracts";
 import type { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Database, ImageQuota } from "@netrics/database";
-import { can, type WorkspaceAction } from "@netrics/domain";
+import { can, type DataPolicy, type WorkspaceAction } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
 import { createConnectionService } from "../connections/service.js";
@@ -44,6 +44,9 @@ export interface TemplateRouteDeps {
   oauthTokens?: OAuthTokenService;
   signedKeys?: SignedKeyProviders;
   quota: ImageQuota;
+  /** The deployment's data policy and clock: product scopes (#777). */
+  policy?: DataPolicy;
+  now?: () => Date;
 }
 
 export function registerTemplateRoutes(

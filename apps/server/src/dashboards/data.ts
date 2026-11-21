@@ -65,6 +65,7 @@ import {
 import {
   mappedProductApps,
   sourceFreshnessDependencies,
+  type ScopeMappingCache,
   type ScopeRead,
   type FreshnessReader,
   type WidgetFreshnessResult,
@@ -430,6 +431,17 @@ export function slideScopeOf(slide: {
   return slideFilterScopeSchema.safeParse(slide.scope ?? {}).data ?? {};
 }
 
+/**
+ * What product scopes are resolved with, the same wherever a dashboard is
+ * read, saved or sent to a screen: the deployment's data policy
+ * (NETRICS_DATA_POLICY; the workspace's own overrides are resolved on
+ * top) and its clock. Absent: the built-in defaults and the system clock.
+ */
+export interface ProductScopeInputs {
+  policy?: DataPolicy | undefined;
+  now?: (() => Date) | undefined;
+}
+
 /** The models a dashboard's shared filters map to, each once. */
 export function mappedModelIds(
   filters: readonly DashboardDataFilter[],
@@ -457,15 +469,32 @@ export function mappedModelIds(
  * read. A model or mapping that cannot be read resolves nothing (the
  * widgets then show every app, as without the scope), and the
  * transaction's statement timeout is left as it was.
+ *
+ * The one entry point of the dashboard read, save validation, the
+ * Studio's route and the device payload: each passes the deployment's
+ * policy and clock (`ProductScopeInputs`), so a mapping one of them cannot
+ * read under the configured limits is one none of them resolves.
  */
 export async function dashboardProductApps(
   tx: Transaction,
   workspaceId: string,
   modelIds: readonly string[],
-  read: ScopeRead,
-  only?: ReadonlySet<string>,
-  releases?: ReadonlyMap<string, ModelRelease>,
+  inputs: ProductScopeInputs,
+  options: {
+    /** Only these products; none: nothing is read. */
+    only?: ReadonlySet<string>;
+    /** The models' published releases, when read already (#835). */
+    releases?: ReadonlyMap<string, ModelRelease>;
+    /** The mapping tables the response has read (a device payload). */
+    cache?: ScopeMappingCache;
+  } = {},
 ): Promise<Map<string, string[]>> {
+  const { only, releases } = options;
+  const read: ScopeRead = {
+    now: inputs.now?.() ?? new Date(),
+    ...(inputs.policy ? { defaults: inputs.policy } : {}),
+    ...(options.cache ? { cache: options.cache } : {}),
+  };
   if (!modelIds.length || only?.size === 0) return new Map();
   try {
     return await tx.transaction(async (savepoint) => {

@@ -143,7 +143,7 @@ describe("store-template install statements (#668)", () => {
       statements.length = 0;
       await withWorkspace(db, { workspaceId: target.id }, async (tx) => {
         const dashboard = (await findDashboard(tx, target.id, id))!;
-        await presentDashboard(tx, target.id, dashboard, "en");
+        await presentDashboard(tx, target.id, dashboard, "en", {});
       });
       // Joined from the models: any statement that reads a release.
       const releaseReads = statements.filter(
@@ -172,7 +172,7 @@ describe("store-template install statements (#668)", () => {
         const dashboard = (await findDashboard(tx, target.id, id))!;
         if (dashboard.slides.some((slide) => "app" in (slide.scope as object)))
           scoped += 1;
-        await presentDashboard(tx, target.id, dashboard, "en");
+        await presentDashboard(tx, target.id, dashboard, "en", {});
       });
       const reading = (table: string) =>
         statements.filter(

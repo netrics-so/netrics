@@ -220,10 +220,7 @@ export function registerDashboardRoutes(
                   tx,
                   access.workspaceId,
                   [...new Set(body.modelIds)],
-                  {
-                    now: deps.now?.() ?? new Date(),
-                    ...(deps.policy ? { defaults: deps.policy } : {}),
-                  },
+                  deps,
                 ),
               ),
             }),

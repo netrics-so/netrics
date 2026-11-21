@@ -1319,12 +1319,8 @@ export async function slideProductApps(
     tx,
     workspaceId,
     mappedModelIds(filters),
-    {
-      now: options.now,
-      ...(options.dataPolicy ? { defaults: options.dataPolicy } : {}),
-      cache,
-    },
-    products,
+    { now: () => options.now, policy: options.dataPolicy },
+    { only: products, cache },
   );
 }
 
