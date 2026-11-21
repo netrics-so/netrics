@@ -308,24 +308,31 @@ function boundedRecord<V extends z.ZodType>(
   value: V,
   max: number,
 ) {
-  return z
-    .unknown()
-    .superRefine((raw, ctx) => {
-      if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return;
-      for (const k of Object.keys(raw))
-        if (UNSAFE_KEYS.has(k))
-          ctx.addIssue({ code: "custom", path: [k], message: "Reserved key" });
-    })
-    .pipe(
-      z
-        .record(
-          key.refine((k) => !UNSAFE_KEYS.has(k), { message: "Reserved key" }),
-          value,
-        )
-        .refine((record) => Object.keys(record).length <= max, {
-          message: `At most ${max} entries`,
-        }),
-    );
+  // A preprocess (not a refined z.unknown()) keeps the record's shape in
+  // the OpenAPI document: an input-side transform is described by its
+  // output schema.
+  return z.preprocess(
+    (raw, ctx) => {
+      if (raw !== null && typeof raw === "object" && !Array.isArray(raw))
+        for (const k of Object.keys(raw))
+          if (UNSAFE_KEYS.has(k))
+            ctx.addIssue({
+              code: "custom",
+              path: [k],
+              message: "Reserved key",
+              input: raw,
+            });
+      return raw;
+    },
+    z
+      .record(
+        key.refine((k) => !UNSAFE_KEYS.has(k), { message: "Reserved key" }),
+        value,
+      )
+      .refine((record) => Object.keys(record).length <= max, {
+        message: `At most ${max} entries`,
+      }),
+  );
 }
 
 /** Header map: RFC 7230 token names, none of the forbidden headers. */

@@ -2377,7 +2377,6 @@
                     ]
                   },
                   "authorizeParams": {
-                    "default": {},
                     "type": "object",
                     "propertyNames": {
                       "type": "string",
@@ -2478,7 +2477,6 @@
                       "maxLength": 2000
                     },
                     "query": {
-                      "default": {},
                       "type": "object",
                       "propertyNames": {
                         "type": "string",
@@ -2491,7 +2489,6 @@
                       }
                     },
                     "headers": {
-                      "default": {},
                       "type": "object",
                       "propertyNames": {
                         "type": "string",
@@ -73230,7 +73227,6 @@
                                 ]
                               },
                               "authorizeParams": {
-                                "default": {},
                                 "type": "object",
                                 "propertyNames": {
                                   "type": "string",
@@ -73303,7 +73299,6 @@
                                 "maxLength": 2000
                               },
                               "query": {
-                                "default": {},
                                 "type": "object",
                                 "propertyNames": {
                                   "type": "string",
@@ -73316,7 +73311,6 @@
                                 }
                               },
                               "headers": {
-                                "default": {},
                                 "type": "object",
                                 "propertyNames": {
                                   "type": "string",
@@ -74752,7 +74746,6 @@
                                 ]
                               },
                               "authorizeParams": {
-                                "default": {},
                                 "type": "object",
                                 "propertyNames": {
                                   "type": "string",
@@ -74825,7 +74818,6 @@
                                 "maxLength": 2000
                               },
                               "query": {
-                                "default": {},
                                 "type": "object",
                                 "propertyNames": {
                                   "type": "string",
@@ -74838,7 +74830,6 @@
                                 }
                               },
                               "headers": {
-                                "default": {},
                                 "type": "object",
                                 "propertyNames": {
                                   "type": "string",
