@@ -119,15 +119,27 @@ describe("broadPrivateHostEntries", () => {
       broadPrivateHostEntries([
         "*.com",
         "*.local",
+        "*.co.uk",
+        "*.com.au",
+        "*.github.io",
         "localhost",
         "api.localhost",
         "*.corp.example",
+        "*.example.co.uk",
         "intranet.example",
         "intranet",
         "10.20.0.0/16",
         "127.0.0.1",
       ]),
-    ).toEqual(["*.com", "*.local", "localhost", "api.localhost"]));
+    ).toEqual([
+      "*.com",
+      "*.local",
+      "*.co.uk",
+      "*.com.au",
+      "*.github.io",
+      "localhost",
+      "api.localhost",
+    ]));
 });
 
 describe("private host entries", () => {
