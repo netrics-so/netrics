@@ -876,6 +876,36 @@ describe("sync engine", () => {
     const state = await stateFor(workspaceA, connectionId);
     expect(state!.authState).toBe("auth_failed");
     expect(state!.historyFrom).toBeNull();
+    // ... and the failed backfill stays on record (#787).
+    expect(state!.backfillFailedAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps a failed backfill on record until a backfill succeeds (#787)", async () => {
+    const connectionId = await seedConnection(workspaceA, "demo");
+    // As a backfill that died with its retries used up left the connection.
+    const failedAt = new Date("2026-08-01T00:00:00Z");
+    await withWorkspace(appDb, { workspaceId: workspaceA }, (tx) =>
+      tx
+        .update(schema.connectionState)
+        .set({ historyFrom: null, backfillFailedAt: failedAt })
+        .where(eq(schema.connectionState.connectionId, connectionId)),
+    );
+    // Incremental syncs succeed from then on: the history stays unread.
+    const sync = await enqueue(workspaceA, connectionId, "connection.sync");
+    await waitFor(async () => (await jobRow(sync))?.status === "succeeded");
+    const after = await stateFor(workspaceA, connectionId);
+    expect(after!.lastSuccessAt).not.toBeNull();
+    expect(after!.backfillFailedAt).toEqual(failedAt);
+    // A backfill that reads the whole window clears it.
+    const backfill = await enqueue(
+      workspaceA,
+      connectionId,
+      "connection.backfill",
+    );
+    await waitFor(async () => (await jobRow(backfill))?.status === "succeeded");
+    const read = await stateFor(workspaceA, connectionId);
+    expect(read!.backfillFailedAt).toBeNull();
+    expect(read!.historyFrom).not.toBeNull();
   });
 
   it("keeps the read history when an incremental sync fails (#378)", async () => {
@@ -891,9 +921,10 @@ describe("sync engine", () => {
     );
     const jobId = await enqueue(workspaceA, connectionId, "connection.sync");
     await waitFor(async () => (await jobRow(jobId))?.status === "failed");
-    expect((await stateFor(workspaceA, connectionId))!.historyFrom).toEqual(
-      from,
-    );
+    const state = await stateFor(workspaceA, connectionId);
+    expect(state!.historyFrom).toEqual(from);
+    // Only a backfill's failure leaves the history unread (#787).
+    expect(state!.backfillFailedAt).toBeNull();
   });
 
   it("replaying the same backfill job writes zero new observations", async () => {

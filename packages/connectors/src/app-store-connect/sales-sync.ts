@@ -371,10 +371,7 @@ async function readSalesPage(
   // `from`, #758), so the lookback days are always re-read.
   const resumeAt = (resolvedEndMs: number) =>
     stamp(
-      Math.max(
-        resolvedEndMs - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-        runStartMs,
-      ),
+      Math.max(resolvedEndMs - INCREMENTAL_LOOKBACK_DAYS * DAY_MS, runStartMs),
     );
 
   const selected =

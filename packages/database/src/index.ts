@@ -625,6 +625,7 @@ export {
   activeBackfillConnections,
   AUTOMATIC_BACKFILL_RETRY_MS,
   AUTOMATIC_BACKFILLS_PER_SET,
+  connectionBackfillFailed,
   connectionBackfillState,
   datasetVersions,
   datasetsMissingBackfill,
@@ -636,6 +637,7 @@ export {
   queueDatasetBackfill,
   sourceHistoryIncomplete,
   storedDatasetsMissingBackfill,
+  storedDeclaredDatasets,
 } from "./dataset-backfill.js";
 export type {
   DatasetBackfillOutcome,

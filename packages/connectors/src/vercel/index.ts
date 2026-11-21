@@ -462,9 +462,7 @@ export function createVercelConnector(
       const get = client(context, runtime);
       const toMs = Date.parse(request.to);
       const resumed = readPageCursor(request.cursor);
-      const startMs = startOfUtcDay(
-        Date.parse(resumed.at ?? request.from),
-      );
+      const startMs = startOfUtcDay(Date.parse(resumed.at ?? request.from));
       // Where this run started reading: the first page's start, carried in
       // the page cursors. A later page starts at a month boundary, and a
       // checkpoint may come back in a later run with a later window (#765).
