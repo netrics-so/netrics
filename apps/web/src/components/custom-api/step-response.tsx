@@ -141,7 +141,15 @@ export function StepResponse({
           {t("noRecords")}
         </p>
       ) : null}
-      {record !== undefined ? (
+      {!counted ? (
+        <p className="help">
+          {pending ? null : (
+            <button type="button" onClick={onRefresh}>
+              {t("updatePreview")}
+            </button>
+          )}
+        </p>
+      ) : record !== undefined ? (
         <>
           <p>{t("pickFields")}</p>
           <JsonTree

@@ -22,10 +22,26 @@
     );
 }
 
+/* Narrower screens: the test panel goes below the step. */
+@media (max-width: 1500px) {
+  .custom-api-builder--panel {
+    grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
+  }
+
+  .custom-api-builder--panel .custom-api-panel {
+    grid-column: 2;
+    position: static;
+  }
+}
+
 @media (max-width: 1100px) {
   .custom-api-builder,
   .custom-api-builder--panel {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .custom-api-builder--panel .custom-api-panel {
+    grid-column: auto;
   }
 }
 
@@ -73,7 +89,7 @@
 .custom-api-stepper-item.is-current .custom-api-stepper-number {
   background: var(--accent-fill);
   border-color: var(--accent-fill);
-  color: var(--accent-text);
+  color: #fff;
 }
 
 .custom-api-stepper-item.is-done .custom-api-stepper-number {
@@ -92,7 +108,22 @@
 
 .custom-api-form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+}
+
+.custom-api-form > * {
+  min-width: 0;
+}
+
+.custom-api-form select {
+  max-width: 100%;
+}
+
+#custom-api-time-field,
+#custom-api-insert,
+#custom-api-window-format {
+  max-width: 360px;
 }
 
 .custom-api-form fieldset {
@@ -171,7 +202,16 @@
 
 .custom-api-copy code,
 .custom-api-log-url code {
-  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.custom-api-log-url td {
+  padding-top: 0;
+  font-size: var(--size-11);
+}
+
+.custom-api-log-entry td {
+  border-bottom: 0;
 }
 
 .custom-api-issues {

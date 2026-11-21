@@ -34,8 +34,7 @@ export function CustomApiSummary({
       {document.streams.map((stream) => (
         <div key={stream.key}>
           <p>
-            <strong>{stream.name}</strong>{" "}
-            <code>{stream.request.path}</code>
+            <strong>{stream.name}</strong> <code>{stream.request.path}</code>
           </p>
           <ul>
             {stream.fields.map((field) => (

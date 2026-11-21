@@ -1,5 +1,7 @@
 "use client";
 
+import { Fragment } from "react";
+
 import type { CustomApiRequestLogEntry } from "@netrics/contracts";
 
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -23,7 +25,6 @@ export function RequestLog({
             <tr>
               <th>{t("columns.page")}</th>
               <th>{t("columns.method")}</th>
-              <th>{t("columns.url")}</th>
               <th>{t("columns.status")}</th>
               <th>{t("columns.time")}</th>
               <th>{t("columns.size")}</th>
@@ -31,24 +32,32 @@ export function RequestLog({
           </thead>
           <tbody>
             {log.map((entry) => (
-              <tr key={entry.page}>
-                <td>{entry.page}</td>
-                <td>{entry.method}</td>
-                <td className="custom-api-log-url">
-                  <code>{entry.url}</code>
-                </td>
-                <td
-                  className={
-                    entry.status !== null && entry.status < 400
-                      ? undefined
-                      : "custom-api-log-failed"
-                  }
-                >
-                  {entry.status ?? "–"}
-                </td>
-                <td>{t("ms", { ms: entry.durationMs })}</td>
-                <td>{t("kb", { kb: kb.format(entry.bytes / 1024) })}</td>
-              </tr>
+              <Fragment key={entry.page}>
+                <tr className="custom-api-log-entry">
+                  <td>{entry.page}</td>
+                  <td>{entry.method}</td>
+                  <td
+                    className={
+                      entry.status !== null && entry.status < 400
+                        ? undefined
+                        : "custom-api-log-failed"
+                    }
+                  >
+                    {entry.status ?? "–"}
+                  </td>
+                  <td>{t("ms", { ms: entry.durationMs })}</td>
+                  <td>{t("kb", { kb: kb.format(entry.bytes / 1024) })}</td>
+                </tr>
+                {/* The URL as the server redacted it, on its own line. */}
+                <tr className="custom-api-log-url">
+                  <td colSpan={5}>
+                    <span className="visually-hidden">
+                      {t("columns.url")}:{" "}
+                    </span>
+                    <code>{entry.url}</code>
+                  </td>
+                </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
