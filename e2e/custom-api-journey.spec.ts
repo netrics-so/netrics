@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { expect, test, type Page } from "@playwright/test";
 
 import { customApiDe } from "../apps/web/src/messages/custom-api/de.ts";
@@ -6,6 +8,7 @@ import { sourcesDe } from "../apps/web/src/messages/sources/de.ts";
 import { sourcesEn } from "../apps/web/src/messages/sources/en.ts";
 import { formatMessage } from "../packages/domain/src/i18n/message-format.ts";
 import { CUSTOM_API_ORIGIN } from "./support/custom-api-origin.ts";
+import { ORIGIN } from "./support/origin.ts";
 import type { Locale } from "./support/labels.ts";
 import { startWorkspace } from "./support/session.ts";
 
@@ -177,4 +180,202 @@ test("a member builds, tests and connects a custom API", async ({
 
   for (const body of await Promise.all(answers))
     expect(body).not.toContain(TOKEN);
+});
+
+/** The Task 12 result as a document: daily stats by cursor, bearer login. */
+function shopDocument(withCurrency: boolean) {
+  return {
+    schemaVersion: 1,
+    name: "Shop API",
+    environments: [
+      { id: "production", name: "Production", baseUrl: CUSTOM_API_ORIGIN },
+    ],
+    variables: [],
+    auth: { type: "bearer" },
+    defaults: { refreshMinutes: 60, timeZone: "UTC" },
+    streams: [
+      {
+        key: "daily_stats",
+        name: "Daily stats",
+        request: {
+          path: "/builder/stats",
+          query: { from: "{{window.start}}", to: "{{window.end}}" },
+        },
+        pagination: {
+          type: "cursor",
+          cursorPath: "meta.next",
+          param: "cursor",
+        },
+        records: "data",
+        fields: [
+          {
+            id: "date",
+            name: "Date",
+            path: "date",
+            type: "date",
+            nullable: false,
+          },
+          { id: "orders", name: "Orders", path: "orders", type: "integer" },
+          {
+            id: "revenue_amount",
+            name: "Revenue",
+            path: "revenue.amount",
+            type: "decimal",
+          },
+          ...(withCurrency
+            ? [
+                {
+                  id: "revenue_currency",
+                  name: "Currency",
+                  path: "revenue.currency",
+                  type: "string",
+                },
+              ]
+            : []),
+        ],
+        keyFields: ["date"],
+        mode: "upsert",
+        reportingField: "date",
+        window: {
+          type: "date",
+          stepDays: 31,
+          lookbackDays: 3,
+          backfillDays: 30,
+          paramFormat: "date",
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Versions, connection updates, export and import (#808), in English and
+ * German: a saved custom API gets a second version; its connection is
+ * offered the update and takes it; version 1 is restored as version 3;
+ * the export holds no login; the file is imported into another workspace
+ * and connected there.
+ */
+test("a member versions, updates, exports and imports a custom API", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const c = labels(locale);
+  const t = (message: string, values: Record<string, unknown> = {}) =>
+    formatMessage(locale, message, values);
+  const { workspaceId } = await startWorkspace(page, locale);
+  const base = `/v1/workspaces/${workspaceId}/custom-api/definitions`;
+  const created = await page.request.post(base, {
+    headers: { origin: ORIGIN },
+    data: { document: shopDocument(false) },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const definitionId = (
+    (await created.json()) as { definition: { id: string } }
+  ).definition.id;
+  const connected = await page.request.post(
+    `${base}/${definitionId}/connections`,
+    {
+      headers: { origin: ORIGIN },
+      data: {
+        name: "Shop API",
+        environmentId: "production",
+        credentials: { token: TOKEN },
+      },
+    },
+  );
+  expect(connected.status(), await connected.text()).toBe(201);
+  const connectionId = (
+    (await connected.json()) as { connection: { id: string } }
+  ).connection.id;
+  // The edit: revenue.currency is ticked, saved as version 2.
+  const saved = await page.request.post(`${base}/${definitionId}/versions`, {
+    headers: { origin: ORIGIN },
+    data: { baseVersion: 1, document: shopDocument(true) },
+  });
+  expect(saved.status(), await saved.text()).toBe(201);
+
+  // History: versions 1 and 2 with the member's name.
+  const definitionPage = `/workspaces/${workspaceId}/custom-apis/${definitionId}`;
+  await page.goto(definitionPage);
+  const history = page.locator(".custom-api-history");
+  for (const version of [1, 2])
+    await expect(
+      history.locator(`li[data-version="${version}"]`),
+    ).toContainText(`Version ${version} · Journey ${locale} · `);
+  await expect(page.locator(".custom-api-connections")).toContainText(
+    c.connections.updateAvailable,
+  );
+
+  // The connection is offered the update, reviews and takes it.
+  const connectionPage = `/workspaces/${workspaceId}/connections/${connectionId}`;
+  await page.goto(connectionPage);
+  const banner = page.locator(".custom-api-update-banner");
+  await expect(banner).toContainText(
+    t(c.update.banner, { name: "Shop API", version: 2 }),
+  );
+  await banner.getByRole("link", { name: c.update.review }).click();
+  await expect(
+    page.getByText(
+      t(c.update.changes.field_added, {
+        field: "revenue_currency",
+        stream: "Daily stats",
+      }),
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(c.update.login.kept)).toBeVisible();
+  await page.getByRole("button", { name: c.update.apply }).click();
+  await expect(page.getByText(t(c.update.done, { version: 2 }))).toBeVisible();
+  await page.getByRole("link", { name: c.update.back }).click();
+  await expect(page).toHaveURL(new RegExp(`${connectionPage}$`));
+  await expect(page.getByRole("heading", { name: "Shop API" })).toBeVisible();
+  await expect(page.locator(".custom-api-update-banner")).toHaveCount(0);
+
+  // Restore version 1: it comes back as version 3.
+  await page.goto(definitionPage);
+  await history
+    .locator('li[data-version="1"]')
+    .getByRole("button", { name: c.history.restore })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText(
+    t(c.history.restoreConfirm, { version: 1 }),
+  );
+  await dialog.getByRole("button", { name: c.history.restore }).click();
+  await expect(
+    page.locator('.custom-api-history li[data-version="3"]'),
+  ).toContainText(t(c.history.sameAs, { version: 1 }));
+
+  // Export: the definition only, no login.
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: c.export.button }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe("shop-api.netrics-api.json");
+  const path = await download.path();
+  const text = readFileSync(path, "utf8");
+  expect(text).not.toContain(TOKEN);
+  expect(text).not.toContain(connectionId);
+  expect(text).not.toContain(workspaceId);
+  const file = JSON.parse(text) as Record<string, unknown>;
+  expect(file).toMatchObject({
+    format: "netrics.custom-api-definition",
+    schemaVersion: 1,
+  });
+
+  // Import it in another workspace, connect it there (exit gate 5 in
+  // miniature).
+  const other = await startWorkspace(page, locale);
+  await page.goto(`/workspaces/${other.workspaceId}/custom-apis`);
+  await page.locator("#custom-api-import-file").setInputFiles(path);
+  await page.getByRole("button", { name: c.import.button }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/workspaces/${other.workspaceId}/custom-apis/[0-9a-f-]{36}$`),
+  );
+  await page.getByRole("link", { name: c.list.connect, exact: true }).click();
+  await page.locator("#custom-api-connect-secret-token").fill(TOKEN);
+  await page.getByRole("button", { name: c.connect.submit }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/workspaces/${other.workspaceId}/connections/[0-9a-f-]{36}`),
+  );
+  await expect(page.getByText("Shop API").first()).toBeVisible();
+  await noToken(page);
 });
