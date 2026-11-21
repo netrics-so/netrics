@@ -26,6 +26,7 @@ import {
 
 import type { CustomApiCredentials } from "./credentials.js";
 import {
+  CUSTOM_API_SEEN_PAGES,
   decodeCursor,
   encodeCursor,
   type CustomApiCursorV1,
@@ -272,14 +273,16 @@ export function createCustomApiConnector(
 
     const stream = definition.streams[cursor.stream]!;
     const chunks = streamChunks(stream, request, timeZone);
-    if (cursor.chunk >= chunks.length)
+    if (cursor.chunk >= chunks.length) {
+      const { seen: _stale, ...kept } = cursor;
       cursor = {
-        ...cursor,
+        ...kept,
         chunk: 0,
         page: { type: "first" },
         refreshKey: "",
         pageIndex: 0,
       };
+    }
     // A windowed stream always has a chunk: the end date follows request.to.
     const chunk = chunks[cursor.chunk] ?? null;
 
@@ -362,14 +365,28 @@ export function createCustomApiConnector(
         definition,
         context.credentials as CustomApiCredentials,
         context.config,
+        stream,
       );
+    // A page by its URL without secrets and with sorted parameters: the
+    // request carries the auth where buildRequest put it (a query key
+    // last), the API's link may name it first or reorder the rest.
+    const pageHash = (url: string) => {
+      const normal = new URL(strip(url));
+      normal.searchParams.sort();
+      return sha256(normal.href).slice(0, 16);
+    };
     const nextUrl = found?.type === "next_url" ? strip(found.url) : null;
-    // A next link that names the page just read ends the stream. Compared
-    // without secrets: the request carries the auth where buildRequest put
-    // it (a query key last), the API's link may name it first.
+    // Pages of this refresh read so far, this one included. A next link
+    // back to one of them (the page itself, or A → B → A) ends the stream.
+    const seen =
+      found?.type === "next_url"
+        ? [...(cursor.seen ?? []), pageHash(built.url)].slice(
+            -CUSTOM_API_SEEN_PAGES,
+          )
+        : undefined;
     const next: PageState | null =
       found?.type === "next_url"
-        ? nextUrl === strip(built.url)
+        ? seen!.includes(pageHash(found.url))
           ? null
           : { type: "next_url", url: nextUrl! }
         : found;
@@ -404,11 +421,20 @@ export function createCustomApiConnector(
       records: cursor.run.records + raws.length,
     };
     let following: CustomApiCursorV1 | null;
+    // A new refresh (chunk or stream) starts without remembered pages.
+    const { seen: _seen, ...rest } = cursor;
     if (next !== null)
-      following = { ...cursor, page: next, refreshKey, pageIndex, run };
+      following = {
+        ...rest,
+        page: next,
+        refreshKey,
+        pageIndex,
+        run,
+        ...(seen ? { seen } : {}),
+      };
     else if (cursor.chunk + 1 < chunks.length)
       following = {
-        ...cursor,
+        ...rest,
         chunk: cursor.chunk + 1,
         page: { type: "first" },
         refreshKey: "",
@@ -417,7 +443,7 @@ export function createCustomApiConnector(
       };
     else if (cursor.stream + 1 < definition.streams.length)
       following = {
-        ...cursor,
+        ...rest,
         stream: cursor.stream + 1,
         chunk: 0,
         page: { type: "first" },

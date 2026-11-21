@@ -24,6 +24,8 @@ export const FIXTURE_DEFINITION_NAMES = [
   "api_key_query_400",
   "api_key_query_echo",
   "api_key_self_link",
+  "next_cycle",
+  "next_reorder",
   "bearer",
   "bearer_custom",
   "basic",
@@ -294,6 +296,14 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
     case "basic":
       auth = { type: "basic" };
       stream = itemStream("items", "/auth/basic", none);
+      break;
+    case "next_cycle":
+    case "next_reorder":
+      stream = itemStream(
+        "items",
+        name === "next_cycle" ? "/edge/next-cycle" : "/edge/next-reorder",
+        { type: "next_url", source: "body", path: "links.next" },
+      );
       break;
     case "next_off_host":
       stream = itemStream("items", "/edge/next-off-host", {

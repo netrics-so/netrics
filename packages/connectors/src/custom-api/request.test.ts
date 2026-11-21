@@ -226,15 +226,41 @@ describe("custom API requests", () => {
     const credentials = {
       host,
       token: FIXTURE_SECRETS.token,
-      variables: { tenant_secret: "s3cret-tenant", short_secret: "10" },
+      variables: { tenant_secret: "s3cret-tenant", short_secret: "2024ab" },
     };
+    // By value only from 8 characters: "2024ab" (6) stays.
     expect(
       stripCustomApiSecrets(
-        `https://${host}/v1/items?after=10&echo=s3cret-tenant&page=1`,
+        `https://${host}/v1/items?after=2024ab&echo=s3cret-tenant&page=1`,
         definition,
         credentials,
       ),
-    ).toBe(`https://${host}/v1/items?after=10&page=1`);
+    ).toBe(`https://${host}/v1/items?after=2024ab&page=1`);
+  });
+
+  it("strips a parameter the stream fills from a secret variable, whatever its length", () => {
+    const definition: CustomApiDefinition = {
+      ...shop,
+      variables: [...shop.variables, { id: "pin", label: "PIN", secret: true }],
+      auth: { type: "api_key", placement: "query", name: "key" },
+    };
+    // Not a definition the schema accepts (a secret outside auth); the
+    // strip holds even for one that slipped through.
+    const stream = { request: { path: "/items", query: { pin: "{{pin}}" } } };
+    const credentials = {
+      host,
+      apiKey: "k1",
+      variables: { pin: "42" },
+    } as CustomApiCredentials;
+    expect(
+      stripCustomApiSecrets(
+        `https://${host}/v1/items?key=k1&pin=42&after=42`,
+        definition,
+        credentials,
+        {},
+        stream as never,
+      ),
+    ).toBe(`https://${host}/v1/items?after=42`);
   });
 
   it("lists derived secrets for redaction", () =>

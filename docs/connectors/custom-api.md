@@ -192,7 +192,9 @@ clientSecret } }`.
 - **Pagination**: none; page number; offset and limit; cursor from a body
   path; next URL from a body path or the `Link` header. A next URL must stay
   on the API host. A stream ends on an empty page, a page shorter than the
-  page size, a missing or repeated cursor, or a missing next URL.
+  page size, a missing or repeated cursor, a missing next URL, or a next
+  URL back to a page it has already read (compared without secrets and with
+  sorted parameters).
 - **Records**: a dotted path (`data`, `meta.items`, `items[0].rows`) to a
   list or a single object.
 - **Fields**: every dataset type. A value that does not fit its field's type

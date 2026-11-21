@@ -3,6 +3,7 @@
 // definition. Credentials only ever go to the environment host.
 
 import {
+  parsePlaceholders,
   renderTemplate,
   type CustomApiDefinition,
   type CustomApiEnvironment,
@@ -256,28 +257,54 @@ export function customApiSecretValues(
 }
 
 /**
- * Shortest secret value a next link loses a parameter for, as the runtime's
- * redaction: a secret variable such as "10" must not strip `after=10`, and
- * values this short are never redacted anywhere either.
+ * Shortest secret value a next link loses an unrelated parameter for. By
+ * name, a parameter that carries a secret is always stripped (below); by
+ * value only from 8 characters, so a short secret ("10", "2024") does not
+ * strip `after=10` or `year=2024`.
  */
-const STRIPPED_SECRET_MIN_LENGTH = 4;
+const STRIPPED_SECRET_MIN_LENGTH = 8;
+
+/** Query parameter names a stream's template fills from a secret variable. */
+function secretQueryNames(
+  definition: AuthInput,
+  stream: Pick<CustomApiStream, "request"> | undefined,
+): string[] {
+  const secret = new Set(
+    definition.variables.filter((v) => v.secret).map((v) => v.id),
+  );
+  if (!stream || secret.size === 0) return [];
+  return Object.entries(stream.request.query ?? {})
+    .filter(([, template]) => {
+      try {
+        return parsePlaceholders(template).some((ref) => secret.has(ref.name));
+      } catch {
+        return false;
+      }
+    })
+    .map(([name]) => name);
+}
 
 /**
- * A next-page URL as it may be stored in a cursor: without the API key
- * query parameter and without any parameter whose value is a secret of at
- * least 4 characters (APIs that build next links from the request echo
- * them). buildRequest adds the auth again on every request.
+ * A next-page URL as it may be stored in a cursor (APIs that build next
+ * links from the request echo what it carried). Stripped by name, whatever
+ * the value: the API key query parameter and any query parameter the
+ * stream fills from a secret variable. Stripped by value: any parameter
+ * whose value is a secret of at least 8 characters. buildRequest adds the
+ * auth and the stream's query again on every request.
  */
 export function stripCustomApiSecrets(
   url: string,
   definition: AuthInput,
   credentials: CustomApiCredentials,
   config: Record<string, unknown> = {},
+  stream?: Pick<CustomApiStream, "request">,
 ): string {
   const parsed = new URL(url);
   const auth = definition.auth;
   if (auth.type === "api_key" && auth.placement === "query")
     parsed.searchParams.delete(auth.name);
+  for (const name of secretQueryNames(definition, stream))
+    parsed.searchParams.delete(name);
   const secrets = new Set(
     customApiSecretValues(definition, credentials, config).filter(
       (value) => value.length >= STRIPPED_SECRET_MIN_LENGTH,
