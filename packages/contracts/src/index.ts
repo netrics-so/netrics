@@ -907,12 +907,15 @@ export const connectionOAuthViewSchema = z.object({
 export type ConnectionOAuthView = z.infer<typeof connectionOAuthViewSchema>;
 
 /**
- * Why an OAuth authorization was started (ADR 0012): a new connection, or a
- * new grant for an existing one.
+ * Why an OAuth authorization was started (ADR 0012): a new connection, a
+ * new grant for an existing one, or the first grant of a connection that
+ * exists without one (a custom API connection or builder draft holding its
+ * client ID and secret, #805).
  */
 export const oauthAuthorizationPurposeSchema = z.enum([
   "connect",
   "reauthorize",
+  "authorize",
 ]);
 export type OAuthAuthorizationPurpose = z.infer<
   typeof oauthAuthorizationPurposeSchema

@@ -624,6 +624,13 @@
       "when": 1795219439059,
       "tag": "0088_items_widget",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1795222078545,
+      "tag": "0089_custom_oauth",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,7 @@ import {
   pruneOAuthAuthorizations,
   prunePendingKeys,
   pruneDraftConnections,
+  enqueueExpiredDraftGrants,
   pruneRevokedDevices,
   pruneCustomApiItemImages,
   CUSTOM_API_IMAGE_GRACE_DAYS,
@@ -303,6 +304,14 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
     // Custom API builder drafts 24 hours after they were last touched,
     // with their credentials (#806; DRAFT_CONNECTION_TTL_HOURS).
     await runTask("draft_connections", async () => {
+      // Drafts holding an OAuth grant: revoked by a worker job first (#805).
+      const draftGrantJobs = await enqueueExpiredDraftGrants(
+        schedulerDb,
+        now(),
+      );
+      if (draftGrantJobs > 0) {
+        logger.info({ draftGrantJobs }, "queued expired draft grant cleanup");
+      }
       const draftsDeleted = await pruneDraftConnections(schedulerDb, now());
       if (draftsDeleted > 0) {
         logger.info({ draftsDeleted }, "pruned draft connections");

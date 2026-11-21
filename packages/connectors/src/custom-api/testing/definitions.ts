@@ -36,6 +36,10 @@ export const FIXTURE_DEFINITION_NAMES = [
   "rate_limited",
   "photos",
   "photos_bearer",
+  "oauth_client_credentials",
+  "oauth_client_credentials_basic",
+  "oauth_code",
+  "oauth_code_no_pkce",
 ] as const;
 export type FixtureDefinitionName = (typeof FIXTURE_DEFINITION_NAMES)[number];
 
@@ -160,6 +164,30 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
   switch (name) {
     case "pages":
       stream = itemStream("items", "/items/pages", pageNumber);
+      break;
+    case "oauth_client_credentials":
+    case "oauth_client_credentials_basic":
+      auth = {
+        type: "oauth_client_credentials",
+        tokenUrl: `${PLACEHOLDER_ORIGIN}/oauth/token`,
+        scopes: ["items.read"],
+        clientAuth:
+          name === "oauth_client_credentials_basic" ? "basic" : "body",
+      };
+      stream = itemStream("items", "/oauth/api/items", { type: "none" });
+      break;
+    case "oauth_code":
+    case "oauth_code_no_pkce":
+      auth = {
+        type: "oauth_authorization_code",
+        authorizeUrl: `${PLACEHOLDER_ORIGIN}/oauth/authorize`,
+        tokenUrl: `${PLACEHOLDER_ORIGIN}/oauth/token`,
+        revokeUrl: `${PLACEHOLDER_ORIGIN}/oauth/revoke`,
+        scopes: ["items.read"],
+        pkce: name === "oauth_code",
+        authorizeParams: { audience: "netrics" },
+      };
+      stream = itemStream("items", "/oauth/api/items", { type: "none" });
       break;
     case "offset":
       stream = itemStream(
@@ -353,8 +381,22 @@ export function fixtureDefinition(
   origin: string,
 ): CustomApiDefinition {
   const parsed = customApiDefinitionSchema.parse(rawDefinition(name));
+  /** OAuth endpoint URLs point at the fixture too. */
+  const at = (url: string) => url.replace(PLACEHOLDER_ORIGIN, origin);
+  const auth = parsed.auth;
   return {
     ...parsed,
+    auth:
+      auth.type === "oauth_client_credentials"
+        ? { ...auth, tokenUrl: at(auth.tokenUrl) }
+        : auth.type === "oauth_authorization_code"
+          ? {
+              ...auth,
+              authorizeUrl: at(auth.authorizeUrl),
+              tokenUrl: at(auth.tokenUrl),
+              ...(auth.revokeUrl ? { revokeUrl: at(auth.revokeUrl) } : {}),
+            }
+          : auth,
     environments: parsed.environments.map((environment) => ({
       ...environment,
       baseUrl: origin,

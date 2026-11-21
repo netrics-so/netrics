@@ -1867,11 +1867,11 @@ export const oauthAuthorizations = pgTable(
     }).onDelete("cascade"),
     check(
       "oauth_authorizations_purpose_valid",
-      sql`${table.purpose} in ('connect', 'reauthorize')`,
+      sql`${table.purpose} in ('connect', 'reauthorize', 'authorize')`,
     ),
     check(
       "oauth_authorizations_purpose_connection",
-      sql`(${table.purpose} = 'reauthorize') = (${table.connectionId} is not null)`,
+      sql`(${table.purpose} in ('reauthorize', 'authorize')) = (${table.connectionId} is not null)`,
     ),
     check(
       "oauth_authorizations_project_connect",

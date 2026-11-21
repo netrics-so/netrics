@@ -6,6 +6,7 @@ import type { StoreTemplateDefinition } from "./dashboards/store-template.js";
 import { registerDataPolicyRoutes } from "./routes/data-policy.js";
 import cors from "@fastify/cors";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
+import type { Logger } from "pino";
 
 import {
   healthLiveResponseSchema,
@@ -42,6 +43,7 @@ import { providerHttp, type OAuthHttpFactory } from "./oauth/client.js";
 import { createOAuthProviders, type OAuthProviders } from "./oauth/config.js";
 import type { SignedKeyProviders } from "./signed-keys/registry.js";
 import {
+  createCustomOAuthResolver,
   createOAuthTokenService,
   type OAuthTokenService,
 } from "./oauth/tokens.js";
@@ -242,7 +244,18 @@ export async function buildApp(
       db,
       credentialKeyring,
       providers: oauthProviders,
+      logger: app.log as unknown as Logger,
       ...(deps.oauthHttp ? { http: deps.oauthHttp } : {}),
+      // Custom APIs' own OAuth apps (#805): token calls through the custom
+      // API egress (self-host private hosts; tests reach the fixture).
+      customOAuth: createCustomOAuthResolver({
+        credentialKeyring,
+        webOrigin: config.webOrigin,
+        privateHosts: config.customApiPrivateHosts,
+        ...(deps.executeOptions?.egress
+          ? { egress: deps.executeOptions.egress }
+          : {}),
+      }),
     });
   // App slides fetch the icons their apps lack (#709) the way "Use app
   // icon" does: through the connection, validated and stored.
@@ -284,6 +297,8 @@ export async function buildApp(
     limits: config.customApi,
     registry,
     credentialKeyring,
+    oauthTokens,
+    webOrigin: config.webOrigin,
     privateHosts: config.customApiPrivateHosts,
     ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
   });
@@ -292,6 +307,7 @@ export async function buildApp(
     db,
     limits: config.customApi,
     credentialKeyring,
+    oauthTokens,
     privateHosts: config.customApiPrivateHosts,
     ...(deps.executeOptions ? { executeOptions: deps.executeOptions } : {}),
     ...(deps.now ? { now: deps.now } : {}),

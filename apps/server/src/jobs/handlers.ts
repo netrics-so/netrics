@@ -11,6 +11,10 @@ import type { OAuthTokenService } from "../oauth/tokens.js";
 import type { ImageQuota } from "@netrics/database";
 import type { DataPolicy } from "@netrics/domain";
 
+import {
+  createDraftExpiredHandler,
+  DRAFT_EXPIRED_JOB,
+} from "../custom-api/draft-cleanup.js";
 import { createSyncJobHandlers } from "../sync/engine.js";
 
 export interface JobHandlerContext {
@@ -123,6 +127,10 @@ export function createJobHandlers(
   };
   if (deps) {
     Object.assign(handlers, createSyncJobHandlers(deps));
+    handlers[DRAFT_EXPIRED_JOB] = createDraftExpiredHandler({
+      ...(deps.oauthTokens ? { oauthTokens: deps.oauthTokens } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
+    });
   }
   return handlers;
 }

@@ -124,8 +124,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
       "Zum Wechsel der Umgebung brauchst du die Zugangsdaten erneut.",
     custom_api_connection_limit:
       "Dieser Workspace hat die Höchstzahl an Verbindungen zu eigenen APIs erreicht.",
-    custom_api_oauth_unavailable:
-      "OAuth-Anmeldung für eigene APIs ist noch nicht verfügbar.",
+    custom_api_token_failed:
+      "Der Token-Endpunkt hat kein Token geliefert. Prüf die Token-URL und versuch es erneut.",
     custom_api_draft_not_found:
       "Diese Testverbindung ist abgelaufen. Melde dich erneut an.",
     custom_api_draft_limit:

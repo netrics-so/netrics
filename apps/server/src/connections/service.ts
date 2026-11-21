@@ -104,9 +104,14 @@ import {
 import type { OAuthProviders } from "../oauth/config.js";
 import {
   callWithAccessToken,
+  connectionOAuthProvider,
   NeedsReauthorizationError,
-  oauthStrategyFor,
+  requiredOAuthScopes,
 } from "../oauth/connector-auth.js";
+import {
+  CUSTOM_OAUTH_PROVIDER_ID,
+  type CustomOAuthProvider,
+} from "../oauth/providers/custom.js";
 import {
   createOAuthTokenService,
   openOAuthCredentials,
@@ -147,7 +152,19 @@ import {
   connectorFor,
   type ResolvedConnector,
 } from "../custom-api/connectors.js";
-import { prepareCustomApiUpdate } from "../custom-api/connections.js";
+import {
+  prepareCustomApiUpdate,
+  prepareCustomOAuthClientChange,
+  type CustomOAuthClientChange,
+} from "../custom-api/connections.js";
+
+/** Ends a transaction with a refusal, rolling back what it wrote. */
+class RollBack<T> extends Error {
+  constructor(readonly result: T) {
+    super("rolled back");
+    this.name = "RollBack";
+  }
+}
 import { latestReview, storedReviewsKey } from "../reviews/latest.js";
 import {
   applyFreshness,
@@ -646,28 +663,33 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
    */
   async function checkOAuthConnection(
     actor: Actor,
-    connectorId: string,
+    registered: ResolvedConnector,
     connectionId: string,
     provider: string,
     config: Record<string, unknown>,
   ): Promise<Result<true>> {
-    const registered = registry.get(connectorId);
-    const strategy = registered
-      ? oauthStrategyFor(registered.manifest, provider)
-      : undefined;
-    if (!registered || !strategy) {
+    const requiredScopes = requiredOAuthScopes(registered, provider);
+    if (!requiredScopes) {
       return fail(400, "invalid_request");
     }
     try {
       const check = await callWithAccessToken({
         tokens: oauthTokens,
         binding: { workspaceId: actor.workspaceId, connectionId },
-        requiredScopes: strategy.scopes,
+        requiredScopes,
         call: (credentials, options) =>
           executeCheck(
             registered.connector,
             { connectionId, config, credentials: { ...credentials } },
-            options,
+            callOptionsFor(
+              registered,
+              { ...deps.executeOptions, ...options },
+              {
+                credentials: { ...credentials },
+                config,
+                privateHosts: callOptions.privateHosts,
+              },
+            ),
           ),
         rejected: (result) => !result.ok,
       });
@@ -714,19 +736,20 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         { ...deps.executeOptions, ...base },
         { credentials, config, privateHosts: callOptions.privateHosts },
       );
-    if (existing.oauth) {
-      const strategy = oauthStrategyFor(
-        registered.manifest,
-        existing.oauth.provider,
-      );
-      if (!strategy) {
+    const oauthProvider = connectionOAuthProvider(
+      registered,
+      existing.oauth?.provider,
+    );
+    if (oauthProvider) {
+      const requiredScopes = requiredOAuthScopes(registered, oauthProvider);
+      if (!requiredScopes) {
         return fail(400, "connector_unavailable");
       }
       return ok(
         await callWithAccessToken({
           tokens: oauthTokens,
           binding: { workspaceId: actor.workspaceId, connectionId },
-          requiredScopes: strategy.scopes,
+          requiredScopes,
           rejected,
           call: (credentials, options) =>
             call(
@@ -833,7 +856,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       });
       return ok({ check: checked.value, resources, selection });
     } catch (error) {
-      return existing.oauth
+      return connectionOAuthProvider(registered, existing.oauth?.provider)
         ? oauthCallFailure(error)
         : signedKeyCallFailure(error);
     }
@@ -1416,28 +1439,45 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           provider: string;
           refreshToken: string | null;
           shared: boolean;
+          /** A custom API's own OAuth app (#805), built before the delete. */
+          custom: CustomOAuthProvider | null;
         } | null = null;
         if (grant) {
           let refreshToken: string | null;
-          try {
-            refreshToken = loaded.row.credentialsEncrypted
-              ? openOAuthCredentials(
-                  loaded.row.credentialsEncrypted,
-                  credentialKeyring,
-                  { workspaceId: actor.workspaceId, connectionId },
-                )
+          let custom: CustomOAuthProvider | null = null;
+          if (grant.provider === CUSTOM_OAUTH_PROVIDER_ID) {
+            // Endpoints from the pinned definition, client and refresh
+            // token from the custom envelope.
+            const resolved = await oauthTokens.customOAuth?.resolve(tx, {
+              workspaceId: actor.workspaceId,
+              connectionId,
+            });
+            custom = resolved?.provider ?? null;
+            // Never sent to hosts it was not entered for.
+            refreshToken = resolved?.bindingHeld
+              ? resolved.credentials.refreshToken
               : null;
-          } catch {
-            // An unreadable envelope cannot be revoked; deletion goes on
-            // and the revocation is reported as failed.
-            refreshToken = null;
+          } else {
+            try {
+              refreshToken = loaded.row.credentialsEncrypted
+                ? openOAuthCredentials(
+                    loaded.row.credentialsEncrypted,
+                    credentialKeyring,
+                    { workspaceId: actor.workspaceId, connectionId },
+                  )
+                : null;
+            } catch {
+              // An unreadable envelope cannot be revoked; deletion goes on
+              // and the revocation is reported as failed.
+              refreshToken = null;
+            }
           }
           const shared = await releaseOAuthGrant(tx, {
             provider: grant.provider,
             accountSub: grant.accountSub,
             connectionId,
           });
-          release = { provider: grant.provider, refreshToken, shared };
+          release = { provider: grant.provider, refreshToken, shared, custom };
         }
         await deleteConnectionRow(tx, actor.workspaceId, connectionId);
         await insertAuditEvent(tx, {
@@ -1468,6 +1508,30 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     const { release } = deleted;
     if (!release) {
       return ok({ revocation: null });
+    }
+    if (release.custom?.grant === "client_credentials") {
+      // A client-credentials grant has no user consent to withdraw; its
+      // cached token was deleted with the connection.
+      return ok({ revocation: null });
+    }
+    if (release.provider === CUSTOM_OAUTH_PROVIDER_ID) {
+      // Without a revoke URL nothing is sent: the user removes access at
+      // the provider (the authorize URL's origin).
+      const revoked =
+        release.custom && release.refreshToken
+          ? await oauthTokens.revokeCustomGrant(
+              release.custom,
+              release.refreshToken,
+            )
+          : false;
+      return ok({
+        revocation: {
+          provider: release.provider,
+          status: revoked ? "revoked" : "failed",
+          accountPermissionsUrl:
+            release.custom?.definition.accountPermissionsUrl ?? null,
+        },
+      });
     }
     const accountPermissionsUrl =
       oauthProviders.get(release.provider)?.definition.accountPermissionsUrl ??
@@ -2193,7 +2257,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
       const registered = connectorFor(registry, existing);
       const strategy = registered
-        ? oauthStrategyFor(registered.manifest, existing.oauth.provider)
+        ? requiredOAuthScopes(registered, existing.oauth.provider)
         : undefined;
       if (!registered || !strategy) {
         return fail(400, "invalid_request");
@@ -2203,7 +2267,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const resources = await callWithAccessToken({
           tokens: oauthTokens,
           binding: { workspaceId: actor.workspaceId, connectionId },
-          requiredScopes: strategy.scopes,
+          requiredScopes: strategy,
           call: (credentials, options) =>
             executeDiscover(
               registered.connector,
@@ -2436,12 +2500,56 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return fail(400, "invalid_request");
       }
       // An OAuth connection's credentials are its grant: they change only
-      // through reauthorization (ADR 0012), never by pasting a token.
+      // through reauthorization (ADR 0012), never by pasting a token. A
+      // custom API with an OAuth login (#805) keeps its client credentials
+      // and environment: its grant is bound to both.
+      const oauthProvider = connectionOAuthProvider(
+        registered,
+        existing.oauth?.provider,
+      );
+      // A custom API's own OAuth client may be replaced on the same
+      // environment (#805): validated here (token request, check), written
+      // in this update's transaction (prepareCustomOAuthClientChange).
+      const customClientChange =
+        oauthProvider === CUSTOM_OAUTH_PROVIDER_ID &&
+        body.credentials !== undefined &&
+        body.pendingKeyId === undefined &&
+        body.customApiEnvironmentId === undefined &&
+        body.secretVariables === undefined;
       if (
-        existing.oauth &&
-        (body.credentials !== undefined || body.pendingKeyId !== undefined)
+        oauthProvider &&
+        !customClientChange &&
+        (body.credentials !== undefined ||
+          body.pendingKeyId !== undefined ||
+          (oauthProvider === CUSTOM_OAUTH_PROVIDER_ID &&
+            (body.customApiEnvironmentId !== undefined ||
+              body.secretVariables !== undefined)))
       ) {
         return fail(400, "oauth_authorization_required");
+      }
+      let clientChange: CustomOAuthClientChange | null = null;
+      if (customClientChange) {
+        const changed = await prepareCustomOAuthClientChange({
+          db,
+          credentialKeyring,
+          oauthTokens,
+          actor,
+          existing,
+          resolved: registered,
+          credentials: body.credentials!,
+          privateHosts: callOptions.privateHosts,
+          ...(deps.executeOptions
+            ? { executeOptions: deps.executeOptions }
+            : {}),
+        });
+        if (!changed.ok) {
+          return fail(
+            changed.status === 409 ? 400 : changed.status,
+            changed.error,
+          );
+        }
+        clientChange = changed.value;
+        body = { ...body, credentials: undefined };
       }
       // Key replacement with a generated key pair (ADR 0020 §3): from here
       // on it is a key upload like any other; the pending row goes in the
@@ -2598,12 +2706,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
       // A config change of an OAuth connection is checked with a fresh access
       // token from the token service, never the stored refresh token.
-      if (existing.oauth && body.config !== undefined) {
+      if (oauthProvider && body.config !== undefined) {
         const check = await checkOAuthConnection(
           actor,
-          existing.row.connectorId,
+          registered,
           connectionId,
-          existing.oauth.provider,
+          oauthProvider,
           nextConfig ?? existingConfig,
         );
         if (!check.ok) {
@@ -2623,7 +2731,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       // added, replaced or removed on its own: the main key and the
       // connection's auth state stay as they are.
       const additionalProvider =
-        !existing.oauth && body.credentials !== undefined
+        !oauthProvider && body.credentials !== undefined
           ? additionalKeyUpdate(registered.manifest, body.credentials)
           : null;
       let additionalChanges: Array<{
@@ -2654,7 +2762,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (customApiChange.envelope !== undefined)
           storedCredentials = customApiChange.envelope ?? undefined;
       } else if (
-        !existing.oauth &&
+        !oauthProvider &&
         (body.config !== undefined || body.credentials !== undefined)
       ) {
         let credentials: Record<string, unknown>;
@@ -2772,7 +2880,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           : {}),
       };
 
-      return inWorkspace(actor, async (tx) => {
+      const write = async (
+        tx: Transaction,
+      ): Promise<Result<ConnectionDetail>> => {
         const consumed = await consumePending(tx, actor, pending);
         if (!consumed.ok) {
           return consumed;
@@ -3023,7 +3133,28 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             actor.locale,
           ),
         );
-      });
+      };
+      if (!clientChange) {
+        return inWorkspace(actor, write);
+      }
+      // The client change and the rest of the update commit together: it
+      // takes its locks first in the transaction, and a later refusal
+      // rolls it back.
+      const change = clientChange;
+      let afterCommit: () => Promise<void> = async () => {};
+      try {
+        const result = await inWorkspace(actor, async (tx) => {
+          afterCommit = await change.apply(tx);
+          const written = await write(tx);
+          if (!written.ok) throw new RollBack(written);
+          return written;
+        });
+        await afterCommit();
+        return result;
+      } catch (error) {
+        if (error instanceof RollBack) return error.result;
+        throw error;
+      }
     },
 
     /**

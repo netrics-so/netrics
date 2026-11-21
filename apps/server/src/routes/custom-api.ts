@@ -10,6 +10,7 @@ import {
   customApiDefinitionListResponseSchema,
   customApiDefinitionResponseSchema,
   customApiErrorResponseSchema,
+  customApiOAuthInfoResponseSchema,
   updateCustomApiDefinitionRequestSchema,
 } from "@netrics/contracts";
 import type {
@@ -27,6 +28,9 @@ import {
 import { createCustomApiConnectionService } from "../custom-api/connections.js";
 import type { CredentialKeyring } from "../credentials.js";
 import type { CustomApiInstanceConfig } from "../env.js";
+import { oauthRedirectUri } from "../oauth/config.js";
+import { CUSTOM_OAUTH_PROVIDER_ID } from "../oauth/providers/custom.js";
+import type { OAuthTokenService } from "../oauth/tokens.js";
 import {
   parseBody,
   resolveAccess,
@@ -51,6 +55,10 @@ export interface CustomApiRouteDeps {
   privateHosts: readonly string[];
   /** Tests only: options for every connector call (e.g. local egress). */
   executeOptions?: ExecuteOptions;
+  /** Custom OAuth (#805): client-credentials tokens at creation. */
+  oauthTokens?: OAuthTokenService;
+  /** WEB_ORIGIN: the custom OAuth redirect URI users register. */
+  webOrigin: string;
 }
 
 const definitionParamsSchema = z.object({ definitionId: z.uuid() });
@@ -109,6 +117,34 @@ export function registerCustomApiRoutes(
   void app.register(
     (scope, _opts, done) => {
       scope.addHook("onRequest", requireSession);
+
+      // The redirect URI a user registers at their own OAuth app for a
+      // custom API (#805): netrics cannot own apps for APIs it does not
+      // know, so the builder shows this URL to enter there.
+      scope.get(
+        "/workspaces/:workspaceId/custom-api/oauth",
+        {
+          schema: routeSchema({
+            summary:
+              "The OAuth redirect URI to register for a custom API's own OAuth app",
+            tags: TAGS,
+            response: customApiOAuthInfoResponseSchema,
+            errors: [403],
+          }),
+        },
+        async (request, reply) => {
+          const access = await authorize(request, reply, "connections:view");
+          if (!access) {
+            return;
+          }
+          return customApiOAuthInfoResponseSchema.parse({
+            redirectUri: oauthRedirectUri(
+              deps.webOrigin,
+              CUSTOM_OAUTH_PROVIDER_ID,
+            ),
+          });
+        },
+      );
 
       scope.get(
         BASE,

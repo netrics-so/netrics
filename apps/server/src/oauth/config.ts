@@ -19,6 +19,11 @@ export interface ConfiguredOAuthProvider {
   clientSecret: Secret;
   /** Derived from WEB_ORIGIN, never taken from a request. */
   redirectUri: string;
+  /**
+   * How the client authenticates at the token and revocation endpoints:
+   * in the form body (default) or as HTTP basic (RFC 6749 2.3.1).
+   */
+  clientAuth?: "body" | "basic";
 }
 
 /**

@@ -23,6 +23,7 @@ import {
 } from "../custom-api/drafts.js";
 import { createCustomApiTestRequestService } from "../custom-api/test-request.js";
 import type { CustomApiInstanceConfig } from "../env.js";
+import type { OAuthTokenService } from "../oauth/tokens.js";
 import {
   parseBody,
   resolveAccess,
@@ -47,6 +48,8 @@ export interface CustomApiBuilderRouteDeps {
   executeOptions?: ExecuteOptions;
   /** Clock of the draft touches and the test rate window; tests pin it. */
   now?: () => Date;
+  /** Custom OAuth tokens and revocation of OAuth drafts (#805). */
+  oauthTokens?: OAuthTokenService;
 }
 
 /** A test request carries one unsaved definition. */

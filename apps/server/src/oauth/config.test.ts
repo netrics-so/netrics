@@ -57,7 +57,7 @@ describe("provider definitions", () => {
       },
       serverDomains: ["oauth2.googleapis.com"],
     });
-    expect(googleProvider.openIdConnect.issuers).toContain(
+    expect(googleProvider.openIdConnect?.issuers).toContain(
       "https://accounts.google.com",
     );
   });

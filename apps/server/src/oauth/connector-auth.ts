@@ -6,6 +6,11 @@ import type {
 import type { OAuthAuthReason } from "@netrics/database";
 
 import type { CredentialBinding } from "../credentials.js";
+import type { ResolvedConnector } from "../custom-api/connectors.js";
+import {
+  CUSTOM_OAUTH_PROVIDER_ID,
+  isCustomOAuthAuth,
+} from "./providers/custom.js";
 import { OAuthTokenError, type OAuthTokenService } from "./tokens.js";
 
 // How the host hands an access token to an oauth2 connector (ADR 0012).
@@ -53,6 +58,37 @@ export function oauthStrategyFor(
     (strategy): strategy is OAuth2AuthStrategy =>
       strategy.strategy === "oauth2" && strategy.provider === providerId,
   );
+}
+
+/**
+ * Scopes a connection's grant must cover: the oauth2 strategy's for bundled
+ * providers, the definition's (maybe none) for "custom" (#805). Undefined
+ * when the connector has no OAuth for that provider.
+ */
+export function requiredOAuthScopes(
+  resolved: ResolvedConnector,
+  providerId: string,
+): readonly string[] | undefined {
+  if (providerId === CUSTOM_OAUTH_PROVIDER_ID) {
+    const auth = resolved.customApi?.definition.auth;
+    return auth && isCustomOAuthAuth(auth) ? auth.scopes : undefined;
+  }
+  return oauthStrategyFor(resolved.manifest, providerId)?.scopes;
+}
+
+/**
+ * The OAuth provider a connection's connector calls go through: the grant's
+ * provider, or "custom" for a custom API with an OAuth login even before it
+ * has a grant (a client-credentials connection mints its first token on
+ * use). Null for connections without OAuth.
+ */
+export function connectionOAuthProvider(
+  resolved: ResolvedConnector,
+  grantProvider: string | null | undefined,
+): string | null {
+  const auth = resolved.customApi?.definition.auth;
+  if (auth && isCustomOAuthAuth(auth)) return CUSTOM_OAUTH_PROVIDER_ID;
+  return grantProvider ?? null;
 }
 
 export interface OAuthConnectorCallInput<T> {

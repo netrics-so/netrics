@@ -25,7 +25,10 @@ import {
 import { createCredentialKeyring, redactSecrets } from "./credentials.js";
 import type { Config } from "./env.js";
 import { createOAuthProviders } from "./oauth/config.js";
-import { createOAuthTokenService } from "./oauth/tokens.js";
+import {
+  createCustomOAuthResolver,
+  createOAuthTokenService,
+} from "./oauth/tokens.js";
 import {
   createJobHandlers,
   ContinueJobError,
@@ -382,6 +385,11 @@ export async function startWorker(config: Config): Promise<void> {
         credentialKeyring,
         providers: createOAuthProviders(config),
         logger,
+        customOAuth: createCustomOAuthResolver({
+          credentialKeyring,
+          webOrigin: config.webOrigin,
+          privateHosts: config.customApiPrivateHosts,
+        }),
       }),
     }),
     concurrency: config.workerConcurrency,

@@ -522,23 +522,6 @@ describe("the custom API test request", () => {
     expect(explicit.rows[0]).toMatchObject({ date: "2024-03-01" });
   });
 
-  it("answers custom_api_oauth_unavailable for an OAuth draft until C-G4", async () => {
-    const definition = draftDefinition({
-      auth: {
-        type: "oauth_client_credentials",
-        tokenUrl: `${fixture.origin}/oauth/token`,
-        scopes: [],
-      },
-    });
-    const id = await newDraft(
-      { clientId: "client-id", clientSecret: "client-secret" },
-      definition,
-    );
-    const body = parsed(await testRequest(id, { definition }));
-    expect(body.error?.code).toBe("custom_api_oauth_unavailable");
-    expect(fixture.requests).toHaveLength(0);
-  });
-
   it("asks for a missing secret before any request", async () => {
     const id = await newDraft(null);
     const body = parsed(await testRequest(id, { definition: statsDraft() }));

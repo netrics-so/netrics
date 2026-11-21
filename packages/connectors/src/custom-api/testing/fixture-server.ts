@@ -16,6 +16,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { crc32, deflateSync } from "node:zlib";
+import { createHash, randomBytes } from "node:crypto";
 
 export const FIXTURE_SECRETS = {
   apiKey: "fx-api-key-0001",
@@ -23,6 +24,45 @@ export const FIXTURE_SECRETS = {
   username: "fx-user",
   password: "fx-pass-0001",
 } as const;
+
+/** The OAuth client the fixture's /oauth/* endpoints accept (#805). */
+export const FIXTURE_OAUTH_CLIENT = {
+  clientId: "fx-oauth-client",
+  clientSecret: "fx-oauth-client-secret-0001",
+} as const;
+
+/**
+ * The fixture's OAuth server state (#805). Test code only: it holds every
+ * issued value so tests can assert that none of them leaks.
+ */
+export interface FixtureOAuthServer {
+  /** Every code, access token and refresh token issued so far. */
+  issued: string[];
+  /** Each token request: grant type, client auth style and PKCE data. */
+  tokenRequests: Array<{
+    grantType: string;
+    clientAuth: "body" | "basic" | "none";
+    codeVerifier: string | null;
+    codeChallenge: string | null;
+    scope: string | null;
+  }>;
+  /** Each revocation request's token. */
+  revoked: string[];
+  /** Each revocation request's token and token_type_hint. */
+  revokeRequests: Array<{ token: string; hint: string | null }>;
+  /** Runs before a token request is answered (tests interleave work there). */
+  onToken: (() => Promise<void> | void) | null;
+  /** Runs before a revocation is answered (tests interleave work there). */
+  onRevoke: (() => Promise<void> | void) | null;
+  /** The client secret the token endpoint accepts (rotate to "revoke" the client). */
+  clientSecret: string;
+  /** Lifetime of new access tokens. */
+  expiresIn: number;
+  /** Makes every issued access token expired. */
+  expireAccessTokens(): void;
+  /** Revokes every refresh token (the user withdrew the grant). */
+  revokeRefreshTokens(): void;
+}
 
 /** A credential the fixture knows but refuses with 403. */
 export const FIXTURE_FORBIDDEN = "forbidden-key";
@@ -54,6 +94,8 @@ export interface CustomApiFixtureServer {
   setImages(paths: readonly string[] | null): void;
   /** GET /photos: adds `?sig=<value>` to every photo URL; null removes it. */
   signUrls(value: string | null): void;
+  /** The /oauth/* endpoints' state (#805). */
+  oauth: FixtureOAuthServer;
   close(): Promise<void>;
 }
 
@@ -247,6 +289,223 @@ export async function startCustomApiFixtureServer(
   let port = 0;
   let photoImages: readonly string[] | null = null;
   let photoSignature: string | null = null;
+  const codes = new Map<
+    string,
+    {
+      clientId: string;
+      redirectUri: string;
+      challenge: string | null;
+      scope: string | null;
+    }
+  >();
+  /** Access token → expiry (ms). */
+  const accessTokens = new Map<string, number>();
+  /** Refresh token → the scope it was granted. */
+  const refreshTokens = new Map<string, string | null>();
+  const oauth: FixtureOAuthServer = {
+    issued: [],
+    tokenRequests: [],
+    revoked: [],
+    revokeRequests: [],
+    onRevoke: null,
+    onToken: null,
+    clientSecret: FIXTURE_OAUTH_CLIENT.clientSecret,
+    expiresIn: 3600,
+    expireAccessTokens() {
+      for (const token of accessTokens.keys()) accessTokens.set(token, 0);
+    },
+    revokeRefreshTokens() {
+      refreshTokens.clear();
+    },
+  };
+  const issue = (prefix: string) => {
+    const value = `${prefix}-${randomBytes(12).toString("hex")}`;
+    oauth.issued.push(value);
+    return value;
+  };
+
+  /**
+   * /oauth/authorize, /oauth/token, /oauth/revoke and /oauth/api/items.
+   * Token URL query options: `rotate=1` rotates refresh tokens,
+   * `norefresh=1` issues none, `scopesep=comma` lists granted scopes with
+   * commas (GitHub, Slack), `tokentype=<type>` answers that token_type
+   * (`none` omits it; Slack answers "bot"), `grantscope=<scope>` grants
+   * that scope whatever was asked for.
+   */
+  const handleOAuth = (
+    request: IncomingMessage,
+    response: ServerResponse,
+    url: URL,
+    headers: Record<string, string>,
+    send: (
+      status: number,
+      body: unknown,
+      extra?: Record<string, string>,
+    ) => void,
+  ) => {
+    const query = url.searchParams;
+    if (url.pathname === "/oauth/authorize") {
+      const redirectUri = query.get("redirect_uri") ?? "";
+      if (
+        query.get("response_type") !== "code" ||
+        query.get("client_id") !== FIXTURE_OAUTH_CLIENT.clientId ||
+        !redirectUri
+      )
+        return send(400, { error: "invalid_request" });
+      const challenge = query.get("code_challenge");
+      if (challenge && query.get("code_challenge_method") !== "S256")
+        return send(400, { error: "invalid_request" });
+      const code = issue("fx-code");
+      codes.set(code, {
+        clientId: FIXTURE_OAUTH_CLIENT.clientId,
+        redirectUri,
+        challenge,
+        scope: query.get("scope"),
+      });
+      const target = new URL(redirectUri);
+      target.searchParams.set("code", code);
+      const state = query.get("state");
+      if (state) target.searchParams.set("state", state);
+      response.writeHead(302, { location: target.toString() });
+      return response.end();
+    }
+    if (url.pathname === "/oauth/api/items") {
+      const bearer = /^Bearer (.+)$/.exec(headers.authorization ?? "")?.[1];
+      const expires = bearer ? accessTokens.get(bearer) : undefined;
+      if (expires === undefined || expires <= Date.now())
+        return send(401, { error: "invalid_token" });
+      return send(200, {
+        data: FIXTURE_ITEMS.slice(0, 3).map((item) => ({ ...item })),
+      });
+    }
+    if (
+      request.method !== "POST" ||
+      (url.pathname !== "/oauth/token" && url.pathname !== "/oauth/revoke")
+    )
+      return send(404, { error: "not found" });
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const body = new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+      let clientId = body.get("client_id");
+      let clientSecret = body.get("client_secret");
+      let clientAuth: "body" | "basic" | "none" = clientId ? "body" : "none";
+      const basic = /^Basic (.+)$/.exec(headers.authorization ?? "")?.[1];
+      if (basic) {
+        const [id, secret] = Buffer.from(basic, "base64")
+          .toString("utf8")
+          .split(":")
+          .map((part) => decodeURIComponent(part.replace(/\+/g, " ")));
+        clientId = id ?? null;
+        clientSecret = secret ?? null;
+        clientAuth = "basic";
+      }
+      if (
+        clientId !== FIXTURE_OAUTH_CLIENT.clientId ||
+        clientSecret !== oauth.clientSecret
+      )
+        return send(401, { error: "invalid_client" });
+      if (url.pathname === "/oauth/revoke") {
+        const token = body.get("token") ?? "";
+        oauth.revoked.push(token);
+        oauth.revokeRequests.push({
+          token,
+          hint: body.get("token_type_hint"),
+        });
+        refreshTokens.delete(token);
+        accessTokens.delete(token);
+        void Promise.resolve(oauth.onRevoke?.()).finally(() => send(200, {}));
+        return;
+      }
+      const respond = () => {
+        const grantType = body.get("grant_type") ?? "";
+        const verifier = body.get("code_verifier");
+        const code = body.get("code");
+        const stored = code ? codes.get(code) : undefined;
+        oauth.tokenRequests.push({
+          grantType,
+          clientAuth,
+          codeVerifier: verifier,
+          codeChallenge: stored?.challenge ?? null,
+          scope: body.get("scope") ?? stored?.scope ?? null,
+        });
+        const tokenType = (): Record<string, string> => {
+          const type = query.get("tokentype");
+          return type === "none" ? {} : { token_type: type ?? "Bearer" };
+        };
+        const granted = (requested: string | null) => {
+          const scope = query.get("grantscope") ?? requested;
+          return scope && query.get("scopesep") === "comma"
+            ? scope.split(" ").join(",")
+            : scope;
+        };
+        const tokens = (scope: string | null, refresh: boolean) => {
+          const accessToken = issue("fx-access");
+          accessTokens.set(accessToken, Date.now() + oauth.expiresIn * 1000);
+          const refreshToken =
+            refresh && query.get("norefresh") !== "1"
+              ? issue("fx-refresh")
+              : null;
+          if (refreshToken) refreshTokens.set(refreshToken, scope);
+          return send(200, {
+            access_token: accessToken,
+            ...tokenType(),
+            expires_in: oauth.expiresIn,
+            ...(refreshToken ? { refresh_token: refreshToken } : {}),
+            ...(granted(scope) ? { scope: granted(scope) } : {}),
+          });
+        };
+        switch (grantType) {
+          case "client_credentials":
+            return tokens(body.get("scope"), false);
+          case "authorization_code": {
+            if (!code || !stored) return send(400, { error: "invalid_grant" });
+            codes.delete(code);
+            if (body.get("redirect_uri") !== stored.redirectUri)
+              return send(400, { error: "invalid_grant" });
+            if (stored.challenge) {
+              const expected = verifier
+                ? createHash("sha256").update(verifier).digest("base64url")
+                : null;
+              if (expected !== stored.challenge)
+                return send(400, { error: "invalid_grant" });
+            }
+            return tokens(stored.scope, true);
+          }
+          case "refresh_token": {
+            const token = body.get("refresh_token") ?? "";
+            if (!refreshTokens.has(token))
+              return send(400, { error: "invalid_grant" });
+            const accessToken = issue("fx-access");
+            accessTokens.set(accessToken, Date.now() + oauth.expiresIn * 1000);
+            const scope = refreshTokens.get(token) ?? null;
+            let rotated: string | null = null;
+            if (query.get("rotate") === "1") {
+              refreshTokens.delete(token);
+              rotated = issue("fx-refresh");
+              refreshTokens.set(rotated, scope);
+            }
+            return send(200, {
+              access_token: accessToken,
+              ...tokenType(),
+              expires_in: oauth.expiresIn,
+              ...(rotated ? { refresh_token: rotated } : {}),
+              ...(granted(scope) ? { scope: granted(scope) } : {}),
+            });
+          }
+          default:
+            return send(400, { error: "unsupported_grant_type" });
+        }
+      };
+      // A test may hold the answer (the request is already recorded).
+      const hook = oauth.onToken;
+      if (hook) {
+        void Promise.resolve(hook()).finally(respond);
+        return;
+      }
+      return respond();
+    });
+  };
 
   const handler = (request: IncomingMessage, response: ServerResponse) => {
     const host = single(request.headers.host);
@@ -297,6 +556,9 @@ export async function startCustomApiFixtureServer(
       else if (!ok) send(401, { error: "unauthorized" });
       else onOk();
     };
+
+    if (url.pathname.startsWith("/oauth/"))
+      return handleOAuth(request, response, url, headers, send);
 
     switch (url.pathname) {
       case "/items/pages": {
@@ -606,6 +868,7 @@ export async function startCustomApiFixtureServer(
     signUrls(value) {
       photoSignature = value;
     },
+    oauth,
     close() {
       return new Promise<void>((resolve) => {
         server.closeAllConnections();

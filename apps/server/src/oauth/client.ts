@@ -9,6 +9,7 @@ import type {
 import { Secret } from "../secret.js";
 import type { ConfiguredOAuthProvider } from "./config.js";
 import type { OAuthProviderDefinition } from "./providers/index.js";
+import { CUSTOM_OAUTH_PROVIDER_ID } from "./providers/custom.js";
 
 // The host side of the authorization-code flow (ADR 0012): authorization
 // URL, code exchange, ID token checks and revocation. The HTTP client is a
@@ -74,12 +75,16 @@ export function pkceChallenge(verifier: string): string {
 
 export interface AuthorizationRequest {
   state: string;
+  /** Sent only to OpenID Connect providers (it comes back in the ID token). */
   nonce: string;
   codeVerifier: string;
   scopes: readonly string[];
 }
 
-/** The provider URL the browser is sent to. */
+/**
+ * The provider URL the browser is sent to. Without OpenID Connect no
+ * `nonce`; without scopes no `scope`; with PKCE off no challenge.
+ */
 export function buildAuthorizationUrl(
   provider: ConfiguredOAuthProvider,
   request: AuthorizationRequest,
@@ -89,11 +94,17 @@ export function buildAuthorizationUrl(
   params.set("response_type", "code");
   params.set("client_id", provider.clientId);
   params.set("redirect_uri", provider.redirectUri);
-  params.set("scope", request.scopes.join(" "));
+  if (request.scopes.length > 0) {
+    params.set("scope", request.scopes.join(" "));
+  }
   params.set("state", request.state);
-  params.set("nonce", request.nonce);
-  params.set("code_challenge", pkceChallenge(request.codeVerifier));
-  params.set("code_challenge_method", provider.definition.pkce);
+  if (provider.definition.openIdConnect) {
+    params.set("nonce", request.nonce);
+  }
+  if (provider.definition.pkce) {
+    params.set("code_challenge", pkceChallenge(request.codeVerifier));
+    params.set("code_challenge_method", provider.definition.pkce);
+  }
   for (const [key, value] of Object.entries(
     provider.definition.authorizationParams,
   )) {
@@ -139,7 +150,41 @@ function form(values: Record<string, string>): ConnectorFetchInit {
   };
 }
 
-/** Exchanges an authorization code with its PKCE verifier (RFC 6749 4.1.3). */
+/**
+ * A form POST to a token or revocation endpoint with the client's
+ * credentials: in the body (default) or as HTTP basic with both values
+ * form-encoded first (RFC 6749 2.3.1).
+ */
+export function clientForm(
+  provider: Pick<ConfiguredOAuthProvider, "clientId" | "clientSecret"> & {
+    clientAuth?: "body" | "basic";
+  },
+  values: Record<string, string>,
+): ConnectorFetchInit {
+  if (provider.clientAuth === "basic") {
+    const encode = (value: string) =>
+      encodeURIComponent(value).replace(/%20/g, "+");
+    const basic = Buffer.from(
+      `${encode(provider.clientId)}:${encode(provider.clientSecret.reveal())}`,
+      "utf8",
+    ).toString("base64");
+    const init = form(values);
+    return {
+      ...init,
+      headers: { ...init.headers, authorization: `Basic ${basic}` },
+    };
+  }
+  return form({
+    ...values,
+    client_id: provider.clientId,
+    client_secret: provider.clientSecret.reveal(),
+  });
+}
+
+/**
+ * Exchanges an authorization code (RFC 6749 4.1.3), with its PKCE verifier
+ * when the provider uses PKCE.
+ */
 export async function exchangeCode(
   provider: ConfiguredOAuthProvider,
   http: OAuthHttp,
@@ -149,13 +194,13 @@ export async function exchangeCode(
   try {
     response = await http(
       provider.definition.tokenEndpoint,
-      form({
+      clientForm(provider, {
         grant_type: "authorization_code",
         code: input.code,
         redirect_uri: provider.redirectUri,
-        client_id: provider.clientId,
-        client_secret: provider.clientSecret.reveal(),
-        code_verifier: input.codeVerifier,
+        ...(provider.definition.pkce
+          ? { code_verifier: input.codeVerifier }
+          : {}),
       }),
     );
   } catch (error) {
@@ -181,7 +226,13 @@ export async function exchangeCode(
       ? (body[key] as string)
       : null;
   const accessToken = text("access_token");
-  if (!accessToken || (text("token_type") ?? "").toLowerCase() !== "bearer") {
+  // A custom API's provider (#805) may omit token_type or name another one
+  // (Slack: "bot"); netrics sends its token as a bearer token regardless.
+  const custom = provider.definition.id === CUSTOM_OAUTH_PROVIDER_ID;
+  if (
+    !accessToken ||
+    (!custom && (text("token_type") ?? "").toLowerCase() !== "bearer")
+  ) {
     throw new OAuthError("token_exchange", "invalid_response");
   }
   const expiresIn =
@@ -198,7 +249,10 @@ export async function exchangeCode(
     accessTokenExpiresAt: new Date(
       (input.now ?? new Date()).getTime() + expiresIn * 1000,
     ),
-    scopes: scope ? scope.split(/\s+/).filter((entry) => entry !== "") : null,
+    // Custom providers may separate scopes with commas (GitHub, Slack).
+    scopes: scope
+      ? scope.split(custom ? /[\s,]+/ : /\s+/).filter((entry) => entry !== "")
+      : null,
   };
 }
 
@@ -313,11 +367,9 @@ export async function isRefreshTokenLive(
   try {
     response = await http(
       provider.definition.tokenEndpoint,
-      form({
+      clientForm(provider, {
         grant_type: "refresh_token",
         refresh_token: refreshToken.reveal(),
-        client_id: provider.clientId,
-        client_secret: provider.clientSecret.reveal(),
       }),
     );
   } catch (error) {

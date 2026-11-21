@@ -20,6 +20,10 @@ export const CUSTOM_API_MESSAGES = {
     "The run stopped after 100,000 records, the most one run reads. The data so far is kept; the next run continues.",
   durationLimit:
     "The run stopped after 30 minutes, the longest one run takes. The data so far is kept; the next run continues.",
+  tokenRefused:
+    "The token endpoint refused the client ID or client secret. Check both values and enter them again.",
+  scopeRefused:
+    "The token endpoint did not grant every scope this API needs. Check the client's permissions at the provider, then enter the client ID and secret again.",
 } as const;
 
 export type CustomApiMessage =

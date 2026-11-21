@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { CUSTOM_API_CONNECTOR_ID } from "@netrics/connectors/custom-api";
 import type { FastifyBaseLogger } from "fastify";
 
 import type {
+  OAuthAuthorizationPurpose,
   OAuthCallbackOutcome,
   OAuthCallbackRequest,
   OAuthCallbackResponse,
@@ -18,10 +19,12 @@ import type {
 } from "@netrics/connector-sdk";
 import {
   consumeOAuthAuthorization,
+  enqueueJob,
   findConnection,
   findConnectionOAuth,
   findMembership,
   findProject,
+  finishConnectionSetup,
   insertAuditEvent,
   insertConnection,
   insertOAuthAuthorization,
@@ -67,8 +70,16 @@ import {
 import {
   defaultReturnPath,
   isAllowedReturnPath,
+  isBuilderReturnPath,
   withOutcome,
 } from "./return-path.js";
+import { loadConnectionCustomApiDefinition } from "../custom-api/load-definition.js";
+import {
+  CUSTOM_OAUTH_PROVIDER_ID,
+  generateCustomAccountSub,
+  sealCustomOAuthCredentials,
+} from "./providers/custom.js";
+import type { CustomOAuthResolution } from "./tokens.js";
 
 /**
  * The OAuth authorization flow (ADR 0012, #132): start writes the state
@@ -114,8 +125,15 @@ function oauthStrategy(
   );
 }
 
-function requiredAction(purpose: "connect" | "reauthorize"): WorkspaceAction {
-  return purpose === "connect" ? "connections:create" : "connections:update";
+/**
+ * connect and authorize (the first grant of a custom API connection or
+ * draft the member is setting up) need connections:create; reauthorize
+ * needs connections:update.
+ */
+function requiredAction(purpose: OAuthAuthorizationPurpose): WorkspaceAction {
+  return purpose === "reauthorize"
+    ? "connections:update"
+    : "connections:create";
 }
 
 /** Thrown inside the flow to end it with an outcome; never carries secrets. */
@@ -137,7 +155,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
     tx: Transaction,
     workspaceId: string,
     userId: string,
-    purpose: "connect" | "reauthorize",
+    purpose: OAuthAuthorizationPurpose,
   ): Promise<boolean> {
     const membership = await findMembership(tx, workspaceId, userId);
     return (
@@ -188,12 +206,15 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       }
       // Custom API connections come from a definition (milestone 13);
       // their OAuth runs through the connection, never the generic start.
-      if (body.connectorId === CUSTOM_API_CONNECTOR_ID && !body.connectionId) {
-        return {
-          ok: false,
-          status: 400,
-          error: "custom_api_requires_definition",
-        };
+      if (body.connectorId === CUSTOM_API_CONNECTOR_ID) {
+        if (!body.connectionId) {
+          return {
+            ok: false,
+            status: 400,
+            error: "custom_api_requires_definition",
+          };
+        }
+        return startCustom(actor, body, body.connectionId);
       }
       const registered = registry.get(body.connectorId);
       if (!registered) {
@@ -371,6 +392,22 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
         if (!query.code) {
           throw new FlowStop("failed", "missing_code");
         }
+        if (providerId === CUSTOM_OAUTH_PROVIDER_ID) {
+          const result = await completeCustom(
+            authorization,
+            userId,
+            query.code,
+          );
+          logger.info(
+            {
+              provider: providerId,
+              purpose: authorization.purpose,
+              outcome: result.outcome,
+            },
+            "oauth authorization completed",
+          );
+          return result;
+        }
         const registered = registry.get(authorization.connectorId);
         const strategy = registered && oauthStrategy(registered.manifest);
         const provider = oauthProviders.get(providerId);
@@ -399,7 +436,7 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
           now: now(),
         });
         const account = verifyIdToken(tokens.idToken, {
-          issuers: provider.definition.openIdConnect.issuers,
+          issuers: provider.definition.openIdConnect?.issuers ?? [],
           clientId: provider.clientId,
           nonce: authorization.nonce,
           now: now(),
@@ -533,13 +570,374 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
           consumed && outcome !== "invalid_state" && outcome !== "forbidden"
             ? consumed.returnPath
             : "/";
+        // The builder reopens its draft (#805).
+        const draft: Record<string, string> =
+          consumed?.connectionId && isBuilderReturnPath(returnPath)
+            ? { draft: consumed.connectionId }
+            : {};
         return {
           outcome,
-          redirectTo: withOutcome(returnPath, { oauth: outcome }),
+          redirectTo: withOutcome(returnPath, { oauth: outcome, ...draft }),
         };
       }
     },
   };
+
+  // ---------------------------------------------------------- custom OAuth
+  //
+  // Custom APIs (milestone 13, #805, ADR 0027): the OAuth app is the
+  // user's. Its endpoints come from the connection's definition (pinned,
+  // or a builder draft's unsaved one) and its client ID and secret from the
+  // connection's envelope; the connection exists before its first grant
+  // (purpose authorize). There is no OpenID: the account id is generated
+  // and kept across reauthorizations, so the grant-liveness refresh of the
+  // shared-account rules is not needed (no other connection holds it).
+
+  /** The token endpoint and client a code exchange is bound to (hashed). */
+  function customExchangeBinding(custom: CustomOAuthResolution): string {
+    return createHash("sha256")
+      .update(
+        `${custom.provider.definition.tokenEndpoint}\n${custom.credentials.clientId}`,
+        "utf8",
+      )
+      .digest("base64url");
+  }
+
+  function equalStrings(a: string, b: string): boolean {
+    const left = Buffer.from(a, "utf8");
+    const right = Buffer.from(b, "utf8");
+    return left.length === right.length && timingSafeEqual(left, right);
+  }
+
+  /** The connection's provider and envelope, read in `tx`. */
+  async function customOf(
+    tx: Transaction,
+    workspaceId: string,
+    connectionId: string,
+  ): Promise<CustomOAuthResolution | null> {
+    const loaded = await loadConnectionCustomApiDefinition(
+      tx,
+      workspaceId,
+      connectionId,
+    );
+    if (loaded?.definition.auth.type !== "oauth_authorization_code") {
+      return null;
+    }
+    return (
+      (await deps.oauthTokens.customOAuth?.resolve(tx, {
+        workspaceId,
+        connectionId,
+      })) ?? null
+    );
+  }
+
+  async function startCustom(
+    actor: FlowActor,
+    body: StartOAuthAuthorizationRequest,
+    connectionId: string,
+  ): Promise<StartResult> {
+    if (body.allowAccountChange || body.projectId) {
+      return { ok: false, status: 400, error: "invalid_request" };
+    }
+    const state = randomToken();
+    // Custom OAuth has no OpenID nonce: the column binds the code exchange
+    // to the token endpoint and client the sign-in starts with.
+    let nonce = randomToken();
+    const codeVerifier = randomToken();
+    const id = randomUUID();
+    const expiresAt = new Date(now().getTime() + AUTHORIZATION_TTL_MS);
+    const started = await withWorkspace(
+      db,
+      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      async (tx) => {
+        const found = await findConnection(
+          tx,
+          actor.workspaceId,
+          connectionId,
+          { includeDrafts: true },
+        );
+        if (!found) {
+          return {
+            ok: false as const,
+            status: 404 as const,
+            error: "connection_not_found",
+          };
+        }
+        if (found.row.connectorId !== CUSTOM_API_CONNECTOR_ID) {
+          return {
+            ok: false as const,
+            status: 400 as const,
+            error: "invalid_request",
+          };
+        }
+        const loaded = await loadConnectionCustomApiDefinition(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        if (loaded?.definition.auth.type !== "oauth_authorization_code") {
+          return {
+            ok: false as const,
+            status: 400 as const,
+            error: "oauth_not_supported",
+          };
+        }
+        const custom = await customOf(tx, actor.workspaceId, connectionId);
+        if (!custom) {
+          return {
+            ok: false as const,
+            status: 400 as const,
+            error: "custom_api_secret_missing",
+          };
+        }
+        // Entered for other hosts: the client ID and secret are needed
+        // again before anything is sent.
+        if (!custom.bindingHeld) {
+          return {
+            ok: false as const,
+            status: 400 as const,
+            error: "custom_api_credentials_host_changed",
+          };
+        }
+        nonce = customExchangeBinding(custom);
+        const grant = await findConnectionOAuth(
+          tx,
+          actor.workspaceId,
+          connectionId,
+        );
+        const purpose: OAuthAuthorizationPurpose = grant
+          ? "reauthorize"
+          : "authorize";
+        if (!can(actor.role, requiredAction(purpose))) {
+          return {
+            ok: false as const,
+            status: 403 as const,
+            error: "forbidden",
+          };
+        }
+        const draftOf = loaded.draft
+          ? (found.row.config as { draft?: { definitionId?: unknown } })?.draft
+              ?.definitionId
+          : null;
+        const returnPath =
+          body.returnPath ??
+          (loaded.draft
+            ? typeof draftOf === "string"
+              ? `/workspaces/${actor.workspaceId}/custom-apis/${draftOf}`
+              : `/workspaces/${actor.workspaceId}/custom-apis/new`
+            : defaultReturnPath(actor.workspaceId, connectionId));
+        if (!isAllowedReturnPath(returnPath, actor.workspaceId)) {
+          return {
+            ok: false as const,
+            status: 400 as const,
+            error: "invalid_return_path",
+          };
+        }
+        await insertOAuthAuthorization(tx, {
+          id,
+          workspaceId: actor.workspaceId,
+          userId: actor.callerId,
+          provider: CUSTOM_OAUTH_PROVIDER_ID,
+          connectorId: CUSTOM_API_CONNECTOR_ID,
+          connectionId,
+          projectId: null,
+          purpose,
+          allowAccountChange: false,
+          returnPath,
+          stateHash: hashState(state),
+          nonce,
+          codeVerifierEncrypted: Buffer.from(
+            encryptOAuthCodeVerifier(codeVerifier, credentialKeyring, {
+              workspaceId: actor.workspaceId,
+              authorizationId: id,
+            }),
+            "utf8",
+          ),
+          expiresAt,
+        });
+        return { ok: true as const, purpose, provider: custom.provider };
+      },
+    );
+    if (!started.ok) {
+      return started;
+    }
+    return {
+      ok: true,
+      value: {
+        authorizationUrl: buildAuthorizationUrl(started.provider, {
+          state,
+          nonce,
+          codeVerifier,
+          scopes: started.provider.scopes,
+        }),
+        purpose: started.purpose,
+        expiresAt: expiresAt.toISOString(),
+      },
+    };
+  }
+
+  /**
+   * The custom callback after the state, user and role checks: exchanges
+   * the code at the connection's current token endpoint and stores the
+   * grant. Authorize on a connection waiting for its first grant finishes
+   * its setup (scheduled, backfill queued); on a draft it stores the grant
+   * only.
+   */
+  async function completeCustom(
+    authorization: ConsumedOAuthAuthorization,
+    userId: string,
+    code: string,
+  ): Promise<OAuthCallbackResponse> {
+    const { workspaceId } = authorization;
+    const connectionId = authorization.connectionId;
+    const tokens = deps.oauthTokens;
+    if (!connectionId || !tokens.customOAuth) {
+      throw new FlowStop("failed", "provider_unavailable");
+    }
+    const custom = await withWorkspace(db, { workspaceId, userId }, (tx) =>
+      customOf(tx, workspaceId, connectionId),
+    );
+    if (!custom) {
+      throw new FlowStop("failed", "connection_gone");
+    }
+    // Only to the token endpoint and client the sign-in started with, and
+    // only with credentials entered for the current hosts.
+    if (
+      !custom.bindingHeld ||
+      !equalStrings(customExchangeBinding(custom), authorization.nonce)
+    ) {
+      throw new FlowStop("failed", "client_changed");
+    }
+    const provider = custom.provider;
+    const codeVerifier = decryptOAuthCodeVerifier(
+      authorization.codeVerifierEncrypted.toString("utf8"),
+      credentialKeyring,
+      { workspaceId, authorizationId: authorization.id },
+    );
+    const http = tokens.customOAuth.fetch(provider, 10_000);
+    const issued = await exchangeCode(provider, http, {
+      code,
+      codeVerifier,
+      now: now(),
+    });
+    const granted = issued.scopes ?? [...provider.scopes];
+    if (provider.scopes.some((scope) => !granted.includes(scope))) {
+      // Not usable: revoked again (best effort), nothing stored.
+      await tokens.revokeCustomGrant(
+        provider,
+        (issued.refreshToken ?? issued.accessToken).reveal(),
+        issued.refreshToken ? "refresh_token" : "access_token",
+      );
+      throw new FlowStop("scope_missing", "scope_missing");
+    }
+    const outcome = await withWorkspace(
+      db,
+      { workspaceId, userId },
+      async (tx) => {
+        if (
+          !(await stillAllowed(tx, workspaceId, userId, authorization.purpose))
+        ) {
+          throw new FlowStop("forbidden", "role_missing");
+        }
+        const current = await customOf(tx, workspaceId, connectionId);
+        // The client the code was issued to must still be the connection's.
+        if (
+          !current ||
+          current.credentials.clientId !== custom.credentials.clientId ||
+          current.provider.definition.tokenEndpoint !==
+            provider.definition.tokenEndpoint
+        ) {
+          throw new FlowStop("failed", "connection_changed");
+        }
+        const found = await findConnection(tx, workspaceId, connectionId, {
+          includeDrafts: true,
+        });
+        if (!found) {
+          throw new FlowStop("failed", "connection_gone");
+        }
+        const binding = { workspaceId, connectionId };
+        const existing = await findConnectionOAuth(
+          tx,
+          workspaceId,
+          connectionId,
+        );
+        await updateConnection(tx, workspaceId, connectionId, {
+          credentialsEncrypted: sealCustomOAuthCredentials(
+            {
+              ...current.credentials,
+              refreshToken: issued.refreshToken?.reveal() ?? null,
+            },
+            credentialKeyring,
+            binding,
+          ),
+        });
+        await upsertConnectionOAuth(tx, {
+          workspaceId,
+          connectionId,
+          provider: CUSTOM_OAUTH_PROVIDER_ID,
+          // The account stays the connection's across reauthorizations.
+          accountSub: existing?.accountSub ?? generateCustomAccountSub(),
+          accountEmail: null,
+          grantedScopes: granted,
+          accessTokenEncrypted: Buffer.from(
+            encryptOAuthAccessToken(
+              issued.accessToken.reveal(),
+              credentialKeyring,
+              binding,
+            ),
+            "utf8",
+          ),
+          accessTokenExpiresAt: issued.accessTokenExpiresAt,
+        });
+        const draft = found.row.status === "draft";
+        if (!draft) {
+          if (found.row.setupPending) {
+            if (await finishConnectionSetup(tx, workspaceId, connectionId)) {
+              await enqueueJob(tx, {
+                kind: "connection.backfill",
+                workspaceId,
+                connectionId,
+                idempotencyKey: `backfill:${connectionId}`,
+              });
+            }
+          } else {
+            // Healthy again and due now.
+            await resetConnectionAuth(tx, workspaceId, connectionId, {
+              schedule: true,
+            });
+          }
+        }
+        const first = existing === null;
+        await insertAuditEvent(tx, {
+          workspaceId,
+          actorUserId: userId,
+          action: first
+            ? "connection.oauth_authorized"
+            : "connection.oauth_reauthorized",
+          target: connectionId,
+          metadata: {
+            connectorId: CUSTOM_API_CONNECTOR_ID,
+            provider: CUSTOM_OAUTH_PROVIDER_ID,
+            ...(draft ? { draft: true } : {}),
+          },
+        });
+        return {
+          outcome: first ? ("connected" as const) : ("reauthorized" as const),
+          draft,
+        };
+      },
+    );
+    const back: Record<string, string> = outcome.draft
+      ? { draft: connectionId }
+      : { connection: connectionId };
+    return {
+      outcome: outcome.outcome,
+      redirectTo: withOutcome(authorization.returnPath, {
+        oauth: outcome.outcome,
+        ...back,
+      }),
+    };
+  }
 
   interface Grant {
     tokens: TokenSet;
