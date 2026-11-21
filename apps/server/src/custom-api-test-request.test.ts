@@ -20,11 +20,16 @@ import {
   withWorkspace,
   type Database,
   type Sql,
+  type Transaction,
 } from "@netrics/database";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
-import { takeCustomApiTestSlot } from "./custom-api/test-rate.js";
+import {
+  releaseCustomApiTestLease,
+  takeCustomApiTestLease,
+  takeCustomApiTestSlot,
+} from "./custom-api/test-rate.js";
 import { loadConfig } from "./env.js";
 import {
   createTestDatabase,
@@ -624,6 +629,39 @@ describe("the test request rate limit", () => {
       (await testRequest(draft, { definition }, workspace)).statusCode,
     ).toBe(200);
     expect((await lease())[0]!.custom_api_test_until).toBeNull();
+  });
+
+  it("never releases a lease another test took after its own ran out", async () => {
+    const workspace = await newWorkspace("Outlived lease");
+    const draft = await newDraft(null, statsDraft(), workspace);
+    const inWs = <T>(fn: (tx: Transaction) => Promise<T>) =>
+      withWorkspace(db, { workspaceId: workspace }, fn);
+    const first = await inWs((tx) =>
+      takeCustomApiTestLease(tx, workspace, draft),
+    );
+    expect(first).not.toBeNull();
+    expect(
+      await inWs((tx) => takeCustomApiTestLease(tx, workspace, draft)),
+    ).toBeNull();
+    // The first test outlives its lease; another process takes the draft.
+    await admin`update connection_state
+      set custom_api_test_until = now() - interval '1 second'
+      where connection_id = ${draft}`;
+    const second = await inWs((tx) =>
+      takeCustomApiTestLease(tx, workspace, draft),
+    );
+    expect(second).not.toBeNull();
+    // The first test ends: the second one's lease stays.
+    await inWs((tx) => releaseCustomApiTestLease(tx, workspace, draft, first!));
+    expect(
+      await inWs((tx) => takeCustomApiTestLease(tx, workspace, draft)),
+    ).toBeNull();
+    await inWs((tx) =>
+      releaseCustomApiTestLease(tx, workspace, draft, second!),
+    );
+    expect(
+      await inWs((tx) => takeCustomApiTestLease(tx, workspace, draft)),
+    ).not.toBeNull();
   });
 
   it("keeps the window on the database clock, not the API's", async () => {

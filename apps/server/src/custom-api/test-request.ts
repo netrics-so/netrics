@@ -406,11 +406,10 @@ export function createCustomApiTestRequestService(
           { workspaceId: actor.workspaceId, userId: actor.callerId },
           fn,
         );
-      if (
-        !(await inDraft((tx) =>
-          takeCustomApiTestLease(tx, actor.workspaceId, draftId),
-        ))
-      )
+      const lease = await inDraft((tx) =>
+        takeCustomApiTestLease(tx, actor.workspaceId, draftId),
+      );
+      if (lease === null)
         return { ok: false, status: 409, error: "custom_api_test_busy" };
 
       try {
@@ -574,7 +573,7 @@ export function createCustomApiTestRequestService(
         };
       } finally {
         await inDraft((tx) =>
-          releaseCustomApiTestLease(tx, actor.workspaceId, draftId),
+          releaseCustomApiTestLease(tx, actor.workspaceId, draftId, lease),
         );
       }
     },

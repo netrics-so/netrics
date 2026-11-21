@@ -66,35 +66,41 @@ export async function takeCustomApiTestSlot(
 
 /**
  * Takes the draft's test lease when no test of it runs (none, or an
- * expired lease). False while another test of the draft runs, in this
- * process or another.
+ * expired lease): the lease it wrote (to release exactly that one), or
+ * null while another test of the draft runs, in this process or another.
  */
 export async function takeCustomApiTestLease(
   tx: Transaction,
   workspaceId: string,
   draftId: string,
-): Promise<boolean> {
+): Promise<string | null> {
   const lease = `${CUSTOM_API_TEST_LEASE_SECONDS} seconds`;
-  const rows = await tx.execute(
+  const [row] = await tx.execute<{ until: string }>(
     sql`update connection_state
         set custom_api_test_until = now() + ${lease}::interval
         where workspace_id = ${workspaceId}
           and connection_id = ${draftId}
           and (custom_api_test_until is null
             or custom_api_test_until <= now())
-        returning connection_id`,
+        returning custom_api_test_until::text as until`,
   );
-  return rows.length === 1;
+  return row?.until ?? null;
 }
 
-/** Ends the draft's test lease. */
+/**
+ * Ends the draft's test lease, only if it is still the one this test took:
+ * a test that outlived its lease never clears the lease another test has
+ * taken since.
+ */
 export async function releaseCustomApiTestLease(
   tx: Transaction,
   workspaceId: string,
   draftId: string,
+  taken: string,
 ): Promise<void> {
   await tx.execute(
     sql`update connection_state set custom_api_test_until = null
-        where workspace_id = ${workspaceId} and connection_id = ${draftId}`,
+        where workspace_id = ${workspaceId} and connection_id = ${draftId}
+          and custom_api_test_until = ${taken}::timestamptz`,
   );
 }
