@@ -1,7 +1,8 @@
 /**
  * The JSON Schema subset connector manifests may use for their configSchema:
  * a top-level object with `properties` (each supporting
- * type/enum/default/minimum/maximum, plus title/description for forms),
+ * type/enum/default/minimum/maximum/minLength/maxLength, plus
+ * title/description for forms),
  * `required`, and `additionalProperties`.
  * Deliberately NOT a full JSON Schema implementation — anything outside this
  * subset is a manifest authoring error, and keeping it small keeps it
@@ -20,6 +21,8 @@ interface PropertySchema {
   default?: unknown;
   minimum?: unknown;
   maximum?: unknown;
+  minLength?: unknown;
+  maxLength?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -57,6 +60,9 @@ export interface ConfigField {
   defaultValue?: unknown;
   minimum?: number;
   maximum?: number;
+  /** A string's length in characters. */
+  minLength?: number;
+  maxLength?: number;
 }
 
 /** The schema as form fields; unknown types render as strings. */
@@ -87,6 +93,12 @@ export function parseConfigSchema(schema: ConfigSchema): ConfigField[] {
       ...(raw.default !== undefined ? { defaultValue: raw.default } : {}),
       ...(typeof raw.minimum === "number" ? { minimum: raw.minimum } : {}),
       ...(typeof raw.maximum === "number" ? { maximum: raw.maximum } : {}),
+      ...(typeof raw.minLength === "number"
+        ? { minLength: raw.minLength }
+        : {}),
+      ...(typeof raw.maxLength === "number"
+        ? { maxLength: raw.maxLength }
+        : {}),
     };
     return [field];
   });
@@ -195,6 +207,31 @@ export function validateConnectionConfig(
       return {
         ok: false,
         message: `${key} must be at most ${property.maximum}`,
+      };
+    }
+    // Lengths in characters (code points), as JSON Schema counts them.
+    const length = typeof value === "string" ? [...value].length : undefined;
+    if (
+      length !== undefined &&
+      typeof property.minLength === "number" &&
+      length < property.minLength
+    ) {
+      return {
+        ok: false,
+        message:
+          property.minLength === 1
+            ? `${key} must not be empty`
+            : `${key} must be at least ${property.minLength} characters`,
+      };
+    }
+    if (
+      length !== undefined &&
+      typeof property.maxLength === "number" &&
+      length > property.maxLength
+    ) {
+      return {
+        ok: false,
+        message: `${key} must be at most ${property.maxLength} characters`,
       };
     }
   }

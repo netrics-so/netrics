@@ -110,6 +110,9 @@ export function ConfigFields({
               type="text"
               value={value}
               disabled={disabled}
+              {...(field.maxLength !== undefined
+                ? { maxLength: field.maxLength }
+                : {})}
               aria-invalid={error ? true : undefined}
               onChange={(event) => onChange(field.key, event.target.value)}
             />

@@ -379,6 +379,24 @@ private func itemsWidget(_ payload: DeviceDashboardV2) throws -> (ItemsWidgetOpt
         #expect(ImageBudget.kept(payload(slides: slides), budget: budget) == [logoHash, itemHashes[0], itemHashes[2]])
     }
 
+    @Test func aNewerImageIsNeverSkippedForAnOlderOne() {
+        // #830 review: item 0 (newest) is too large for what is left; the
+        // smaller items 1 and 2 would fit, but are older: none is kept.
+        let sizes = [1_000, 10, 10]
+        let images = itemIDs.indices.map { i in
+            """
+            {"id": "\(itemIDs[i])", "sha256": "\(itemHashes[i])", "contentType": "image/jpeg", "width": 800,
+             "height": 600, "bytes": \(sizes[i]), "url": "/v1/device/images/\(itemIDs[i])?v=\(itemHashes[i])"}
+            """
+        }
+        let payload = v2Payload(
+            slides: itemsSlideJSON(), images: "[\(logoImageJSON), \(images.joined(separator: ","))]")
+        #expect(ImageBudget.kept(payload, budget: logoBytes.count + 500) == [logoHash])
+        // With room for item 0, the next ones follow while they fit.
+        #expect(
+            ImageBudget.kept(payload, budget: logoBytes.count + 1_015) == [logoHash, itemHashes[0], itemHashes[1]])
+    }
+
     @Test func itemsBeyondCountAreNotKept() {
         let slides = itemsSlideJSON(
             options: #"{"layout": "grid", "count": 1, "rotateSeconds": 8, "imageFit": "cover", "showTime": true}"#)

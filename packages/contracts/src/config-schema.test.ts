@@ -48,6 +48,33 @@ describe("validateConnectionConfig", () => {
     expect(validateConnectionConfig(open, { days: 7, extra: 1 }).ok).toBe(true);
   });
 
+  it("enforces a string's minLength and maxLength in characters (#830)", () => {
+    const named = {
+      type: "object",
+      properties: { name: { type: "string", minLength: 1, maxLength: 5 } },
+    };
+    expect(validateConnectionConfig(named, { name: "" })).toEqual({
+      ok: false,
+      message: "name must not be empty",
+    });
+    expect(validateConnectionConfig(named, { name: "abcdef" })).toEqual({
+      ok: false,
+      message: "name must be at most 5 characters",
+    });
+    // Five characters, more UTF-16 units.
+    expect(validateConnectionConfig(named, { name: "ab😀😀😀" }).ok).toBe(true);
+    expect(
+      validateConnectionConfig(
+        { properties: { name: { type: "string", minLength: 3 } } },
+        { name: "ab" },
+      ),
+    ).toEqual({ ok: false, message: "name must be at least 3 characters" });
+    expect(parseConfigSchema(named)[0]).toMatchObject({
+      minLength: 1,
+      maxLength: 5,
+    });
+  });
+
   it("treats a property without a type as unconstrained", () => {
     expect(validateConnectionConfig(schema, { days: 7, note: 42 }).ok).toBe(
       true,
