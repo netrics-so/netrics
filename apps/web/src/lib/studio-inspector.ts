@@ -187,11 +187,25 @@ export function bindMetricPatch(
   }
   const grouped = startingGroupBy(metric, dimensions, widget.options.groupBy);
   if (!grouped) return null;
+  // Another metric: the head written for the old one goes, and so do the
+  // values the old grouping was limited to (#787).
+  const { valueLabel: _label, ...options } = withoutGroupKeys(
+    widget.options,
+  ) as GroupedWidget["options"] & { valueLabel?: string };
   return {
     ...base,
     dimensions: grouped.dimensions,
-    options: { ...widget.options, groupBy: grouped.groupBy },
+    options: { ...options, groupBy: grouped.groupBy },
   } as WidgetPatch;
+}
+
+/**
+ * A bar's or table's options without a table's `groupKeys` (#787): they
+ * name values of the grouping and connection they were chosen for.
+ */
+function withoutGroupKeys<T extends object>(options: T): T {
+  const { groupKeys: _keys, ...rest } = options as T & { groupKeys?: unknown };
+  return rest as T;
 }
 
 /** A bar's or table's patch for another groupBy: no filter on it. */
@@ -203,7 +217,7 @@ export function groupByPatch(
   return {
     dimensions,
     ...(groupBy === RESOURCE_DIMENSION ? { resourceName: null } : {}),
-    options: { ...widget.options, groupBy },
+    options: { ...withoutGroupKeys(widget.options), groupBy },
   } as WidgetPatch;
 }
 

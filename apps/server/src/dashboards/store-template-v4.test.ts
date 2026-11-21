@@ -44,6 +44,7 @@ import {
   storeTemplateV3,
   storeTemplateV4,
   storeTemplateV5,
+  storeTemplateV6,
 } from "./store-template.js";
 import { appSlideKey } from "./store-portfolio.js";
 import { apple, google, now } from "./test-helpers.js";
@@ -202,8 +203,8 @@ const decisions = (
             : [],
     ),
   );
-async function updateAvailable(requestId: string) {
-  const list = await updates().list(actor());
+async function updateAvailable(requestId: string, template = storeTemplate) {
+  const list = await updates(template).list(actor());
   return list.installs.find((entry) => entry.requestId === requestId)!
     .updateAvailable;
 }
@@ -316,7 +317,7 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
         slide.scope,
       ]),
     ).toEqual([
-      ["App portfolio", null, {}],
+      ["Overview", null, {}],
       [
         "Focus Timer: Pomodoro & Deep Work",
         focusIcon,
@@ -422,7 +423,7 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     expect(plan.summary.widgets.added).toBeGreaterThan(0);
     expect(copy.settings.autoAdvance).toBe(true);
     expect(copy.slides.map((slide) => slide.name)).toEqual([
-      "App portfolio",
+      "Overview",
       "Focus Timer: Pomodoro & Deep Work",
       "Notes: Quick Capture for Ideas",
       "Timer",
@@ -533,8 +534,8 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
       "measure:rating+rating_count",
       "review:1002",
     ]);
-    expect(await updateAvailable(requestId)).toBe(true);
-    const { plan, copy } = await applyUpdate(requestId);
+    expect(await updateAvailable(requestId, storeTemplateV6)).toBe(true);
+    const { plan, copy } = await applyUpdate(requestId, storeTemplateV6);
     expect(plan).toMatchObject({ fromVersion: 5, toVersion: 6 });
     // Only the linked product's slide changes (its downloads, and where
     // its ratings and review sit); single-store apps and the overview stay
@@ -574,14 +575,97 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
           .filter((w) => w.severity === "attention")
           .map((w) => `${slide.name} ${w.format} ${w.code}`),
       ).toEqual([]);
-    const swapped = await updates().swap(
+    const swapped = await updates(storeTemplateV6).swap(
+      actor(),
+      (await updates(storeTemplateV6).list(actor())).installs.find(
+        (entry) => entry.requestId === requestId,
+      )!.openUpdate!.id,
+      "dashboard:portfolio",
+    );
+    expect(swapped.dashboards[0]!.swappedAt).not.toBeNull();
+    expect(await updateAvailable(requestId, storeTemplateV6)).toBe(false);
+  });
+
+  it("offers version 7's overview to a version 6 install and keeps its website links (#779, #787)", async () => {
+    const requestId = randomUUID();
+    await install(storeTemplateV6, requestId);
+    // Focus's website is linked and its visitors are on the dashboard, as
+    // version 6 built them.
+    const website = { connectionId: vercelId, projectId: "prj_focus" };
+    await products().update(actor(), requestId, {
+      products: [{ productId: focus, pricing: "auto", website }],
+    });
+    const linked = await applyUpdate(requestId, storeTemplateV6);
+    const open = (await updates(storeTemplateV6).list(actor())).installs.find(
+      (entry) => entry.requestId === requestId,
+    )!.openUpdate!.id;
+    await updates(storeTemplateV6).swap(actor(), open, "dashboard:portfolio");
+    expect(await updateAvailable(requestId, storeTemplateV6)).toBe(false);
+    const v6 = await readDashboard(linked.copy.id);
+    const visitors = (dashboard: typeof v6) =>
+      dashboard.slides[0]!.widgets.flatMap((widget) =>
+        widget.type === "table" && widget.metricKey === "vercel.visitors"
+          ? [widget]
+          : [],
+      );
+    expect(v6.slides[0]!.name).toBe("App portfolio");
+    // Every project of the connection, under the metric's name.
+    expect(visitors(v6).map((widget) => widget.options)).toEqual([
+      { groupBy: "resource", limit: 3, showChange: true, showOthers: false },
+    ]);
+
+    expect(await updateAvailable(requestId)).toBe(true);
+    const { plan, copy } = await applyUpdate(requestId);
+    expect(plan).toMatchObject({ fromVersion: 6, toVersion: 7 });
+    // The overview's name and its visitors table: nothing else, and no
+    // data record.
+    expect(
+      plan.records
+        .flatMap((record) => record.items)
+        .map((item) => [item.ref, item.change, item.outcome].join(" ")),
+    ).toEqual([
+      "dashboard:portfolio#slide:0 changed template",
+      `dashboard:portfolio#widget:visitors:${vercelId} changed template`,
+    ]);
+    expect(copy.slides[0]!.name).toBe("Overview");
+    expect(visitors(copy).map((widget) => widget.options)).toEqual([
+      {
+        groupBy: "resource",
+        limit: 3,
+        showChange: true,
+        showOthers: false,
+        groupKeys: ["prj_focus"],
+        valueLabel: "30-day total",
+      },
+    ]);
+    // The link is the product's, not the template's: it is still there,
+    // and Focus's slide still shows its website.
+    expect(
+      (await products().read(actor(), requestId)).products.find(
+        (product) => product.productId === focus,
+      )!.website,
+    ).toMatchObject(website);
+    expect(
+      copy.slides
+        .find((slide) => slide.name?.startsWith("Focus"))!
+        .widgets.find(
+          (widget) =>
+            widget.type === "metric" && widget.metricKey === "vercel.visitors",
+        ),
+    ).toMatchObject({ dimensions: { resource: "prj_focus" } });
+    for (const slide of copy.slides)
+      expect(
+        slide.formatWarnings
+          .filter((w) => w.severity === "attention")
+          .map((w) => `${slide.name} ${w.format} ${w.code}`),
+      ).toEqual([]);
+    await updates().swap(
       actor(),
       (await updates().list(actor())).installs.find(
         (entry) => entry.requestId === requestId,
       )!.openUpdate!.id,
       "dashboard:portfolio",
     );
-    expect(swapped.dashboards[0]!.swappedAt).not.toBeNull();
     expect(await updateAvailable(requestId)).toBe(false);
   });
 
@@ -666,7 +750,7 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
         },
       ],
     });
-    const { plan, copy } = await applyUpdate(requestId);
+    const { plan, copy } = await applyUpdate(requestId, storeTemplateV6);
     expect(plan).toMatchObject({ fromVersion: 5, toVersion: 6 });
     const items = plan.records
       .flatMap((record) => record.items)
@@ -927,7 +1011,7 @@ describe("App Portfolio version 4", { timeout: TIMEOUT_MS }, () => {
     expect(await updateAvailable(requestId)).toBe(true);
     const { copy } = await applyUpdate(requestId);
     expect(copy.slides.map((slide) => slide.name)).toEqual([
-      "App portfolio",
+      "Overview",
       "Focus Timer: Pomodoro & Deep Work",
       "Notes",
       "Timer",

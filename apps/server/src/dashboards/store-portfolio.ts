@@ -20,7 +20,7 @@ import {
 export type StoreConnectorId = "app-store-connect" | "google-play";
 export type StoreMetric = "downloads" | "proceeds" | "ratings";
 /** The store template versions this module builds (see store-template.ts). */
-export type StoreTemplateVersion = 1 | 2 | 3 | 4 | 5 | 6;
+export type StoreTemplateVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export interface StoreTemplateSource {
   id: string;
   name: string;
@@ -42,6 +42,8 @@ export const storeTemplateCopy = (locale: Locale) =>
   locale === "de"
     ? {
         name: "App-Portfolio",
+        /** The first slide's name beside app slides (version 7). */
+        overview: "Übersicht",
         /** The updated copy of a dashboard (template updates, 11E). */
         updatedName: (name: string) => `${name} (aktualisiert)`.slice(0, 100),
         downloads: "Downloads und Nutzerinstallationen",
@@ -93,12 +95,16 @@ export const storeTemplateCopy = (locale: Locale) =>
         downloads30: "Downloads, 30 Tage",
         ownPeriod: "Zeigt die letzten 30 Tage, nicht den Zeitraum des Filters.",
         visitors: "Website-Besucher, letzte 30 Tage",
+        /** The visitors table's value head: a sum, not a day's number. */
+        visitorsTotal: "Summe 30 Tage",
         appStore: "App Store",
         connectionOwn:
           "Nutzt Metrik und Zeitraum seiner Verbindung, nicht die Filter der Store-Daten.",
       }
     : {
         name: "App portfolio",
+        /** The first slide's name beside app slides (version 7). */
+        overview: "Overview",
         /** The updated copy of a dashboard (template updates, 11E). */
         updatedName: (name: string) => `${name} (updated)`.slice(0, 100),
         downloads: "Downloads and user installs",
@@ -150,6 +156,8 @@ export const storeTemplateCopy = (locale: Locale) =>
         downloads30: "Downloads, 30 days",
         ownPeriod: "Shows the last 30 days, not the filter's range.",
         visitors: "Website visitors, last 30 days",
+        /** The visitors table's value head: a sum, not a day's number. */
+        visitorsTotal: "30-day total",
         appStore: "App Store",
         connectionOwn:
           "Uses its connection's own metric and period, not the store data filters.",
@@ -1126,7 +1134,7 @@ export function buildStoreDashboardTemplate(
   productId?: string,
   /** Version 4: the overview plus one slide per app (not for one app). */
   portfolio?: StorePortfolio,
-  /** The template version the portfolio's slides are built for (4 to 6). */
+  /** The template version the portfolio's slides are built for (4 to 7). */
   version: StoreTemplateVersion = 4,
 ): {
   request: CreateDashboardRequest;
@@ -1389,6 +1397,31 @@ export function appSlideWidgets(
   ];
 }
 
+/** The most projects a visitors table is limited to (`groupKeys`). */
+const OVERVIEW_WEBSITES = 100;
+
+/**
+ * The websites the install's apps link in a Vercel connection (version 7,
+ * #787): the projects its visitors table lists, in a stable order. The
+ * connection's other projects belong to no app here.
+ */
+function linkedWebsites(
+  portfolio: StorePortfolio,
+  connectionId: string,
+): string[] {
+  return [
+    ...new Set(
+      portfolio.apps.flatMap((app) =>
+        app.website?.connectionId === connectionId
+          ? [app.website.projectId]
+          : [],
+      ),
+    ),
+  ]
+    .sort()
+    .slice(0, OVERVIEW_WEBSITES);
+}
+
 /** The connections of the overview's revenue and visitor tables. */
 function overviewTables(portfolio: StorePortfolio) {
   const websites = [
@@ -1512,6 +1545,8 @@ function buildPortfolioSlides(
     metricKey: string,
     title: string,
     y: number,
+    /** Version 7: the rows it is limited to, its value column's head. */
+    only: { groupKeys?: string[]; valueLabel?: string } = {},
   ): Unplaced => ({
     type: "table",
     y,
@@ -1526,6 +1561,7 @@ function buildPortfolioSlides(
       limit: OVERVIEW_TABLE_ROWS,
       showChange: true,
       showOthers: false,
+      ...only,
     },
   });
   const sized = (
@@ -1538,6 +1574,12 @@ function buildPortfolioSlides(
   };
   const tables = overviewTables(portfolio);
   const several = portfolio.appStore.length > 1;
+  const appSlides = storeAppSlides(portfolio, version).shown;
+  // Version 7 (#779): beside app slides the overview has a name of its
+  // own. Before, the template's, which the header showed beside a
+  // dashboard named after it. An only slide keeps the template's name,
+  // which headers leave out where it is the dashboard's (#622).
+  const overviewName = version >= 7 && appSlides.length ? t.overview : t.name;
   // In reading order, then two rows of at most three (each at least the
   // four columns a table needs): the model tables, revenue per App Store
   // connection, ratings, visitors per Vercel connection.
@@ -1591,7 +1633,21 @@ function buildPortfolioSlides(
       },
       ...tables.visitors.map((connectionId) => ({
         key: `widget:visitors:${connectionId}`,
-        widget: table(connectionId, VERCEL_VISITORS, t.visitors, 4),
+        widget: table(
+          connectionId,
+          VERCEL_VISITORS,
+          t.visitors,
+          4,
+          // Version 7 (#787): the websites the apps link, not every
+          // project of the connection, under a head that says the rows
+          // are 30-day sums (the metric is named "Daily visitors").
+          version >= 7
+            ? {
+                groupKeys: linkedWebsites(portfolio, connectionId),
+                valueLabel: t.visitorsTotal,
+              }
+            : {},
+        ),
       })),
     ],
     first = Math.min(3, tablesInOrder.length - 1),
@@ -1628,7 +1684,7 @@ function buildPortfolioSlides(
     scales: readonly number[] = STUDIO_FONT_SCALES,
   ) => {
     const slide = {
-      name: t.name,
+      name: overviewName,
       layouts: {},
       widgets: widgets.map(({ key, widget }) => ({
         id: key,
@@ -2060,8 +2116,8 @@ function buildPortfolioSlides(
     } satisfies Slide,
   });
   const slides = [
-    overviewSlide("slide:0", t.name, overview),
-    ...storeAppSlides(portfolio, version).shown.map(appSlide),
+    overviewSlide("slide:0", overviewName, overview),
+    ...appSlides.map(appSlide),
   ];
   return {
     request: {

@@ -1598,6 +1598,11 @@ export const metricBreakdownRequestSchema = z.object({
    * returned, with the same aggregation, conversion and currency.
    */
   withPrevious: z.boolean().optional(),
+  /**
+   * Only these values of the `groupBy` dimension (a table's `groupKeys`,
+   * #787); "Others" adds up the rest of these. Absent: every value.
+   */
+  groups: z.array(z.string().min(1).max(200)).min(1).max(100).optional(),
 });
 export type MetricBreakdownRequest = z.infer<
   typeof metricBreakdownRequestSchema
@@ -2123,6 +2128,17 @@ export const tableWidgetOptionsSchema = z.object({
   showChange: z.boolean().default(true),
   /** A last, dimmed "Others" row with the rest added up. */
   showOthers: z.boolean().default(false),
+  /**
+   * Only these values of the grouped dimension (#787): some of a
+   * connection's projects, say. Absent lists every value. "Others" then
+   * adds up the rest of these.
+   */
+  groupKeys: z.array(z.string().min(1).max(200)).min(1).max(100).optional(),
+  /**
+   * The value column's head in place of the metric's name (#787), for a
+   * head that says what the rows add up ("30-day total").
+   */
+  valueLabel: z.string().trim().min(1).max(40).optional(),
 });
 /**
  * A compare widget (ADR 0019 section 10): two metrics and their ratio.

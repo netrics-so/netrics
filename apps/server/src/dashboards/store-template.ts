@@ -61,7 +61,13 @@ export const STORE_TEMPLATE_ID = "store_portfolio";
  * per currency beside the App Store's revenue. Everything else is version
  * 5's.
  */
-export const STORE_TEMPLATE_VERSION = 6;
+/**
+ * 7: beside app slides the overview slide is named "Overview" (#779), not
+ * after the template again, and its visitors tables list only the websites
+ * the install's apps link, under a head that says "30-day total" (#787).
+ * Everything else is version 6's.
+ */
+export const STORE_TEMPLATE_VERSION = 7;
 
 export const storeMetrics: StoreMetric[] = ["downloads", "proceeds", "ratings"];
 
@@ -397,6 +403,8 @@ export const storeTemplateV3: StoreTemplateDefinition = defineStoreTemplate(3);
 export const storeTemplateV4: StoreTemplateDefinition = defineStoreTemplate(4);
 /** Version 5, frozen like version 1 (`store-template.test.ts`). */
 export const storeTemplateV5: StoreTemplateDefinition = defineStoreTemplate(5);
+/** Version 6, frozen like version 1 (`store-template.test.ts`). */
+export const storeTemplateV6: StoreTemplateDefinition = defineStoreTemplate(6);
 
 /** What version 4 builds the slides from: the apps and App Store accounts. */
 export function storePortfolio(inputs: StoreTemplateInputs) {
