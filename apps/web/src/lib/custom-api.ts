@@ -2,7 +2,7 @@
 // test requests, definitions and connections from a definition. Same-origin
 // paths through the web app's API proxy, like browserSend.
 
-import { z, type ZodType } from "zod";
+import type { ZodType } from "zod";
 
 import {
   connectionResponseSchema,
@@ -10,6 +10,7 @@ import {
   customApiDefinitionResponseSchema,
   customApiDraftResponseSchema,
   customApiErrorResponseSchema,
+  customApiOAuthInfoResponseSchema,
   customApiTestRequestSchema,
   customApiTestResponseSchema,
   promoteCustomApiDraftRequestSchema,
@@ -186,12 +187,15 @@ export function connectDefinition(
 
 // C-G4 (#805): the redirect URL a provider needs, and the sign-in of a
 // draft or a pending connection through the existing OAuth start route.
-const customApiOAuthInfoSchema = z.object({ redirectUri: z.url() });
 
 export function getCustomOAuthInfo(
   workspaceId: string,
 ): Promise<{ redirectUri: string }> {
-  return send(customApiOAuthInfoSchema, "GET", `${base(workspaceId)}/oauth`);
+  return send(
+    customApiOAuthInfoResponseSchema,
+    "GET",
+    `${base(workspaceId)}/oauth`,
+  );
 }
 
 export function startCustomOAuth(

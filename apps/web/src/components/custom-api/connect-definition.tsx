@@ -77,17 +77,20 @@ export async function connectAndSignIn(
 ): Promise<{ connectionId: string; authorizationUrl: string | null }> {
   let connectionId = input.connectionId;
   if (connectionId !== null) {
-    // A retry: the connection takes the form as it is now.
+    // A retry: the connection takes the form as it is now. An OAuth
+    // connection keeps its environment (its grant is bound to it, C-G4); a
+    // new client ID there leaves it needing the sign-in that follows
+    // (purpose reauthorize).
     const { body } = input;
     await api.updateConnection(input.workspaceId, connectionId, {
       name: body.name,
       config: body.variables,
-      customApiEnvironmentId: body.environmentId,
       projectId: body.projectId ?? null,
+      ...(input.oauth ? {} : { customApiEnvironmentId: body.environmentId }),
       ...(Object.keys(body.credentials).length
         ? { credentials: body.credentials }
         : {}),
-      ...(Object.keys(body.secretVariables).length
+      ...(!input.oauth && Object.keys(body.secretVariables).length
         ? { secretVariables: body.secretVariables }
         : {}),
     });
@@ -217,6 +220,8 @@ export function ConnectDefinition({
           <select
             id="custom-api-connect-environment"
             value={environmentId}
+            // An OAuth connection, once created, keeps its environment.
+            disabled={oauthCode && created !== null}
             onChange={(event) => setEnvironmentId(event.target.value)}
           >
             {environments.map((environment) => (

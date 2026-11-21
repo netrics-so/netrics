@@ -322,10 +322,10 @@ describe("custom API builder review fixes", () => {
       authorizationUrl: "https://auth.example.test/a",
     });
     expect(connectDefinition).toHaveBeenCalledTimes(1);
+    // OAuth: the client changes, the environment stays (C-G4).
     expect(updateConnection).toHaveBeenCalledWith(W, D, {
       name: "Shop EU",
       config: { account_id: "42" },
-      customApiEnvironmentId: "staging",
       projectId: null,
       credentials: { clientId: "c2", clientSecret: "secret-2" },
     });
