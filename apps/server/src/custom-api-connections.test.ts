@@ -546,6 +546,44 @@ describe("connections from a custom API definition", () => {
     );
   });
 
+  it("changes a connection's plain values on the connection page, checked with the stored login (#830)", async () => {
+    const definition = await createDefinition();
+    const created = connectionResponseSchema.parse(
+      (await connect(definition.id)).json(),
+    ).connection;
+    const url = `/v1/workspaces/${workspaceId}/connections/${created.id}`;
+    fixture.reset();
+    const changed = await call("PATCH", url, owner, {
+      config: { account_id: "acc-2" },
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect(
+      connectionResponseSchema.parse(changed.json()).connection,
+    ).toMatchObject({
+      config: { account_id: "acc-2" },
+      customApi: { environmentId: "production" },
+    });
+    // Checked against the API with the stored key and secret value.
+    expect(fixture.requests.length).toBeGreaterThan(0);
+    expect(fixture.requests[0]!.headers["x-api-key"]).toBe(
+      FIXTURE_SECRETS.apiKey,
+    );
+    expect(fixture.requests[0]!.headers["x-tenant"]).toBe("tenant-secret-0001");
+    // Every plain value is required; a secret value is never plain config.
+    for (const config of [
+      {},
+      { account_id: "" },
+      { account_id: "x".repeat(501) },
+      { account_id: "acc-3", tenant: "x" },
+    ]) {
+      const refused = await call("PATCH", url, owner, { config });
+      expect(refused.statusCode, refused.body).toBe(400);
+    }
+    const [row] = await admin<{ config: Record<string, unknown> }[]>`
+      select config from connections where id = ${created.id}`;
+    expect(row!.config).toEqual({ account_id: "acc-2" });
+  });
+
   it("previews a stored connection with the custom API egress and redaction", async () => {
     const bearer = {
       type: "bearer" as const,

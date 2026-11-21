@@ -6,14 +6,17 @@ import { customApiDe } from "../apps/web/src/messages/custom-api/de.ts";
 import { customApiEn } from "../apps/web/src/messages/custom-api/en.ts";
 import { sourcesDe } from "../apps/web/src/messages/sources/de.ts";
 import { sourcesEn } from "../apps/web/src/messages/sources/en.ts";
+import { workspaceDe } from "../apps/web/src/messages/workspace/de.ts";
+import { workspaceEn } from "../apps/web/src/messages/workspace/en.ts";
+import { FIXTURE_SECRETS } from "../packages/connectors/src/custom-api/testing/fixture-server.ts";
 import { formatMessage } from "../packages/domain/src/i18n/message-format.ts";
 import { CUSTOM_API_ORIGIN } from "./support/custom-api-origin.ts";
 import { ORIGIN } from "./support/origin.ts";
 import type { Locale } from "./support/labels.ts";
 import { startWorkspace } from "./support/session.ts";
 
-/** The fixture server's bearer token (FIXTURE_SECRETS.token). */
-const TOKEN = "fx-bearer-token-0001";
+/** The fixture server's bearer token. */
+const TOKEN = FIXTURE_SECRETS.token;
 
 const labels = (locale: Locale) =>
   ((locale === "de" ? customApiDe : customApiEn) as typeof customApiEn)
@@ -377,5 +380,66 @@ test("a member versions, updates, exports and imports a custom API", async ({
     new RegExp(`/workspaces/${other.workspaceId}/connections/[0-9a-f-]{36}`),
   );
   await expect(page.getByText("Shop API").first()).toBeVisible();
+  await noToken(page);
+});
+
+/**
+ * A custom API connection's plain values are edited on its connection page
+ * (#830), not only through a definition update; its login stays.
+ */
+test("a member changes a custom API connection's values on its page", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const w = (locale === "de" ? workspaceDe : workspaceEn) as typeof workspaceEn;
+  const { workspaceId } = await startWorkspace(page, locale);
+  const base = `/v1/workspaces/${workspaceId}/custom-api/definitions`;
+  const created = await page.request.post(base, {
+    headers: { origin: ORIGIN },
+    data: {
+      document: {
+        ...shopDocument(false),
+        variables: [{ id: "shop", label: "Shop", secret: false }],
+      },
+    },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const definitionId = (
+    (await created.json()) as { definition: { id: string } }
+  ).definition.id;
+  const connected = await page.request.post(
+    `${base}/${definitionId}/connections`,
+    {
+      headers: { origin: ORIGIN },
+      data: {
+        name: "Shop API",
+        environmentId: "production",
+        variables: { shop: "north" },
+        credentials: { token: TOKEN },
+      },
+    },
+  );
+  expect(connected.status(), await connected.text()).toBe(201);
+  const connectionId = (
+    (await connected.json()) as { connection: { id: string } }
+  ).connection.id;
+
+  await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
+  const value = page.locator("#config-shop");
+  await expect(value).toHaveValue("north");
+  await value.fill("south");
+  await page
+    .getByRole("button", { name: w.connections.edit.saveChanges })
+    .click();
+  await expect(page.getByText(w.connections.edit.updated)).toBeVisible();
+  await page.reload();
+  await expect(page.locator("#config-shop")).toHaveValue("south");
+  const stored = await page.request.get(
+    `/v1/workspaces/${workspaceId}/connections/${connectionId}`,
+  );
+  expect(
+    ((await stored.json()) as { connection: { config: unknown } }).connection
+      .config,
+  ).toEqual({ shop: "south" });
   await noToken(page);
 });

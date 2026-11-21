@@ -11,6 +11,7 @@ import {
   ItemsWidgetView,
   itemTime,
   itemsGridLayout,
+  itemsTextHeight,
   startRotation,
   workspaceItemViews,
   type ItemsWidgetItemView,
@@ -95,6 +96,47 @@ describe("latest items widget view (#810)", () => {
     expect(layout.columns).toBe(1);
     expect(layout.shown).toBeLessThan(6);
     expect(layout.shown).toBeGreaterThanOrEqual(1);
+  });
+
+  it("reserves a subtitle row only for the items it can show, as on TV", () => {
+    // #830: an item beyond `count` used to add a subtitle row, which costs a
+    // row of tiles on a 6 × 4 widget; netrics TV looks at the first `count`.
+    const eight: ItemsWidgetItemView[] = Array.from({ length: 8 }, (_, n) => ({
+      title: `t${n}`,
+      subtitle: null,
+      time: null,
+      image: null,
+    }));
+    const withSubtitle = (at: number) =>
+      eight.map((item, n) => (n === at ? { ...item, subtitle: "s" } : item));
+    const rows = (list: ItemsWidgetItemView[]) =>
+      renderI18n(
+        <ItemsWidgetView
+          label="Photos"
+          items={list}
+          options={options({ count: 6 })}
+          status="ok"
+          placement={{ x: 0, y: 0, w: 6, h: 4 }}
+          showHeader
+          fontScale={1}
+          audience="viewer"
+          timeZone="UTC"
+        />,
+        "en",
+      ).match(/grid-template-rows:repeat\((\d+)/)?.[1];
+    expect(rows(eight)).toBe("2");
+    expect(rows(withSubtitle(7))).toBe("2");
+    expect(rows(withSubtitle(0))).toBe("1");
+
+    const sizes = { body: 20, cell: 10 };
+    expect(
+      itemsTextHeight(withSubtitle(7), { count: 6, showTime: false }, sizes),
+    ).toBe(itemsTextHeight(eight, { count: 6, showTime: false }, sizes));
+    expect(
+      itemsTextHeight(withSubtitle(5), { count: 6, showTime: false }, sizes),
+    ).toBeGreaterThan(
+      itemsTextHeight(eight, { count: 6, showTime: false }, sizes),
+    );
   });
 
   it("shows one item at a time and advances after rotateSeconds", () => {
