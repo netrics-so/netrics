@@ -104,8 +104,14 @@ export function TvDashboard({
   );
   const slides = useMemo(
     // As screens show them: widgets follow their slide's scope (#707).
-    () => documentRotation(dashboard.slides.map(scopedSlide), settings),
-    [dashboard.slides, settings],
+    () =>
+      documentRotation(
+        dashboard.slides.map((slide) =>
+          scopedSlide(slide, dashboard.productApps),
+        ),
+        settings,
+      ),
+    [dashboard.slides, dashboard.productApps, settings],
   );
 
   return (

@@ -21837,6 +21837,21 @@
                             }
                           ]
                         },
+                        "productApps": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "maxItems": 1000,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            }
+                          }
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -25029,6 +25044,21 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "productApps": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "maxItems": 1000,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            }
+                          }
                         },
                         "slides": {
                           "type": "array",
@@ -31021,6 +31051,21 @@
                             }
                           ]
                         },
+                        "productApps": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "maxItems": 1000,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            }
+                          }
+                        },
                         "slides": {
                           "type": "array",
                           "items": {
@@ -34369,6 +34414,21 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "productApps": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "maxItems": 1000,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            }
+                          }
                         },
                         "slides": {
                           "type": "array",
@@ -105173,6 +105233,21 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "productApps": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "maxItems": 1000,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            }
+                          }
                         },
                         "slides": {
                           "type": "array",

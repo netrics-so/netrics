@@ -86,6 +86,11 @@ export interface StudioDocument {
    * only by a save that re-bases the dashboard (see `toReplaceRequest`).
    */
   primaryFormat?: ScreenFormat;
+  /**
+   * The linked products the shared filters can name, with their member
+   * apps (#777), as the server sent them. Read-only: never saved.
+   */
+  productApps?: Dashboard["productApps"];
 }
 
 /** The document's primary format. */
@@ -252,6 +257,7 @@ export function toDocument(dashboard: Dashboard): StudioDocument {
     projectId: dashboard.projectId,
     settings: { ...dashboard.settings },
     primaryFormat: dashboard.primaryFormat,
+    ...(dashboard.productApps ? { productApps: dashboard.productApps } : {}),
     slides: dashboard.slides.map(
       ({ position: _position, formatWarnings: _warnings, ...slide }) => ({
         ...slide,
@@ -546,7 +552,11 @@ export function documentProblems(
       const name = widgetName(widget, locale);
       // A widget that follows the slide's scope through its resource needs
       // no exclusion of those filters (#707).
-      const follow = slideScopeFollow(widget, slide.scope);
+      const follow = slideScopeFollow(
+        widget,
+        slide.scope,
+        document.productApps,
+      );
       if (follow?.conflict)
         at(
           webTranslator(locale, "data.dashboard")("slideScopeConflict", {

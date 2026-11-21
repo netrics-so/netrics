@@ -160,7 +160,9 @@ export function PreviewScreen({
       <ScrollView
         name={name}
         logoImageId={logoImageId(document.settings)}
-        slides={document.slides.map(scopedSlide)}
+        slides={document.slides.map((slide) =>
+          scopedSlide(slide, document.productApps),
+        )}
         tokens={tokens}
         images={env.images}
         initialWidth={device.screen.width}
@@ -177,7 +179,7 @@ export function PreviewScreen({
   return (
     <SlideCanvas
       slide={{
-        ...scopedSlide(slide),
+        ...scopedSlide(slide, context.document.productApps),
         layouts: context.layouts.get(slide.id) ?? null,
       }}
       tokens={tokens}

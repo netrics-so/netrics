@@ -3,6 +3,7 @@ import {
   type CompareSourceContext,
 } from "../dashboards/compare-measure.js";
 import {
+  dashboardProductApps,
   queryDashboardMeasure,
   slideScopeOf,
   slideScopedWidgets,
@@ -11,7 +12,10 @@ import { queryDashboardItems } from "../dashboards/items.js";
 import {
   applyFreshness,
   createFreshnessReader,
+  createScopeMappingCache,
   REVIEWS_FRESHNESS_STREAM,
+  scopeProducts,
+  type ScopeMappingCache,
   type FreshnessDependency,
   type FreshnessManifests,
   type FreshnessReader,
@@ -110,6 +114,7 @@ import {
   type DashboardDataFilter,
   type DeviceFilterScope,
   type Locale,
+  type ProductApps,
   type ThemeTokens,
 } from "@netrics/domain";
 
@@ -331,6 +336,8 @@ async function loadDataContext(
   workspaceId: string,
   widgets: readonly DataWidget[],
   options: BuildOptions,
+  /** The mapping tables the payload already read (slideProductApps). */
+  mappings?: ScopeMappingCache,
 ): Promise<DataContext> {
   const connections = await listConnections(tx, workspaceId);
   const states = new Map(
@@ -392,7 +399,12 @@ async function loadDataContext(
       connections.map(({ row, state }) => [row.id, state?.historyFrom ?? null]),
     ),
     freshness: options.freshness
-      ? createFreshnessReader(workspaceId, options.freshness, options.locale)
+      ? createFreshnessReader(
+          workspaceId,
+          options.freshness,
+          options.locale,
+          mappings,
+        )
       : null,
     compareSources: {
       states,
@@ -603,11 +615,20 @@ export async function buildDeviceDashboard(
   const tiles: DeviceTile[] = [];
   // Tiles cannot follow shared filters: a scoped screen gets none (#500).
   if (dashboard && !hasDeviceScope(options.scope)) {
-    // Widgets read the app their slide is scoped to (#707).
+    const apps = await slideProductApps(
+      tx,
+      workspaceId,
+      dashboard,
+      dashboardDataFiltersSchema.safeParse(dashboard.dataFilters ?? []).data ??
+        [],
+      options,
+    );
+    // Widgets read the app their slide is scoped to (#707), a linked
+    // product's app of their connection (#777).
     const sources = schema1Tiles(
       dashboard.slides.map((slide) => ({
         ...slide,
-        widgets: slideScopedWidgets(slide),
+        widgets: slideScopedWidgets(slide, apps),
       })),
     ).filter(isDataWidget);
     const context = await loadDataContext(tx, workspaceId, sources, options);
@@ -1246,12 +1267,15 @@ interface BuiltDashboard {
  * The slides a screen shows: enabled ones, and with a fixed scope (#500)
  * only widgets that follow it and no slide scoped to something the scope
  * leaves out (#707): the screen's scope wins, and such a slide would show
- * nothing. Widgets read the app their slide is scoped to (#707).
+ * nothing. Widgets read the app their slide is scoped to (#707), a linked
+ * product's app of their connection through `apps` (slideProductApps,
+ * #777).
  */
 export function screenSlides(
   dashboard: Awaited<ReturnType<typeof findDashboard>>,
   filters: DashboardDataFilter[],
   scope: DeviceFilterScope | undefined,
+  apps?: ProductApps,
 ) {
   return (dashboard?.slides ?? [])
     .filter(
@@ -1264,10 +1288,42 @@ export function screenSlides(
     )
     .map((slide) => ({
       ...slide,
-      widgets: slideScopedWidgets(slide).filter((widget) =>
+      widgets: slideScopedWidgets(slide, apps).filter((widget) =>
         followsDeviceScope(widget.type, scope),
       ),
     }));
+}
+
+/**
+ * The member apps of the linked products a dashboard's enabled slides are
+ * scoped to (#777), for `screenSlides`; nothing is read when no slide
+ * names a product. `cache` shares the mapping tables with the payload's
+ * freshness reads.
+ */
+export async function slideProductApps(
+  tx: Transaction,
+  workspaceId: string,
+  dashboard: Awaited<ReturnType<typeof findDashboard>>,
+  filters: DashboardDataFilter[],
+  options: Pick<BuildOptions, "now" | "dataPolicy">,
+  cache: ScopeMappingCache = createScopeMappingCache(),
+): Promise<Map<string, string[]>> {
+  const products = scopeProducts(
+    (dashboard?.slides ?? [])
+      .filter((slide) => slide.enabled)
+      .map((slide) => slideScopeOf(slide)),
+  );
+  return dashboardProductApps(
+    tx,
+    workspaceId,
+    filters,
+    {
+      now: options.now,
+      ...(options.dataPolicy ? { defaults: options.dataPolicy } : {}),
+      cache,
+    },
+    products,
+  );
 }
 
 /**
@@ -1329,13 +1385,27 @@ async function buildSlides(
   const filters = dashboardDataFiltersSchema.parse(
     dashboard?.dataFilters ?? [],
   );
-  const slides = screenSlides(dashboard, filters, options.scope);
+  const mappings = createScopeMappingCache();
+  const slides = screenSlides(
+    dashboard,
+    filters,
+    options.scope,
+    await slideProductApps(
+      tx,
+      workspaceId,
+      dashboard,
+      filters,
+      options,
+      mappings,
+    ),
+  );
 
   const context = await loadDataContext(
     tx,
     workspaceId,
     slides.flatMap((slide) => slide.widgets.filter(isDataWidget)),
     options,
+    mappings,
   );
   // Latest-items widgets (#810) before the images: theirs are referenced.
   const items = await deviceItemsWidgets(

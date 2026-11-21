@@ -194,6 +194,8 @@ export interface WidgetPanelProps {
    * review" acts on the review the canvas shows, that of the slide's app.
    */
   slideScope?: import("@netrics/domain").SlideFilterScope;
+  /** The dashboard's linked products with their member apps (#777). */
+  productApps?: import("@netrics/domain").ProductApps | undefined;
   dispatch: (action: StudioAction) => void;
   onUploadImage?: (file: File) => Promise<string | null>;
   /** Resolves to null when deleted, else why not. */
@@ -493,6 +495,7 @@ function ReviewFields({
   images,
   connections,
   slideScope,
+  productApps,
   dispatch,
   onUploadImage,
 }: WidgetPanelProps & { widget: ReviewWidget }) {
@@ -514,7 +517,7 @@ function ReviewFields({
   const resourceId = widget.dimensions[RESOURCE_DIMENSION] ?? "";
   // As the canvas reads it: on a scoped slide, the slide's app (#705).
   const shown = slideScope
-    ? (scopedSlide({ scope: slideScope, widgets: [widget] })
+    ? (scopedSlide({ scope: slideScope, widgets: [widget] }, productApps)
         .widgets[0] as ReviewWidget)
     : widget;
   const { data } = useLatestReviewData(workspaceId, shown);

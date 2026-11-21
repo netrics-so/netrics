@@ -160,6 +160,7 @@ export async function queryDashboardItems(
             deviceScope,
             { now, defaults, cache: freshnessReader.scopeMappings },
             input.binding.filter,
+            { filters, values },
           ),
         );
       }

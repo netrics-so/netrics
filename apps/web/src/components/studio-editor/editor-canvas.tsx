@@ -409,7 +409,7 @@ export function EditorCanvas({
     >
       <SlideCanvas
         // Widgets show the app their slide is scoped to (#707).
-        slide={scopedSlide(slide)}
+        slide={scopedSlide(slide, env.productApps)}
         tokens={tokens}
         showHeader={settings.showHeader}
         header={{

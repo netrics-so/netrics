@@ -284,7 +284,10 @@ it computes the widget's data:
   types): the stream that lists the widget's metric key in its
   connector's manifest, on the widget's connection; resources from the
   widget's resource scope or the slide scope (#707), else every selected
-  resource.
+  resource. A slide scoped to a linked product (`product:<id>`) gives a
+  widget that is not fixed to an app the product's app of its connection
+  (#777), resolved through the mapping tables of the workspace's
+  store-template installs, read as for measure widgets below.
 - **Measure widgets**: the model's sources (ADR 0022). A source dataset
   binding resolves to `data_datasets (connection_id, key)` and so to the
   stream listing that dataset key; an `observation:<connection>:<metric>`
@@ -293,15 +296,27 @@ it computes the widget's data:
   Resources are the apps the slide scope and a screen's scope pick on
   each connection (#767): a scope value naming a resource, or a linked
   product (`product:<id>`) resolved through its install's mapping table to
-  its apps. A connection the scope names no app of adds no rows; a scope
-  that picks no apps leaves every selected resource. This extends
-  `modelSourceHealth`, which already walks the same bindings.
+  its apps. The filters' chosen values (a viewer's choice, else the
+  default) and the dashboard's fixed values pick apps the same way (#776),
+  so freshness covers the apps the rows cover; a filter the widget
+  excludes picks nothing. A connection the scope names no app of adds no
+  rows; a scope that picks no apps leaves every selected resource, and so
+  does a mapping table that cannot be read, for any reason: freshness
+  never fails a widget. This extends `modelSourceHealth`, which already
+  walks the same bindings.
 - **Latest-review widgets**: the connector's stream with key `reviews`;
   no metric or dataset carries review text, so a connector that ingests
   review text declares its reviews in a stream with that key. Resources as
   for metric widgets.
 - For each (connection, stream) the resource rows are used, and the
   connection row for resources without one.
+- An app a widget names (its own, a scope's, a product's member) that has
+  no row in any of the widget's streams, while other rows are used, counts
+  as **no data yet** (#776): a periodic row without a covered day, so the
+  summary has no `dataThrough` and a product is never shown fresher than
+  its least fresh app. It is not overdue by itself. Its check time is its
+  connection's latest. An app without rows alone leaves the widget without
+  freshness, as below.
 
 A widget whose data depends on no stream with stored rows has no
 freshness, and shows `updatedAt` as today.

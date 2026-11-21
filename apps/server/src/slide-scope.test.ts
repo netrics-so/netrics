@@ -549,6 +549,172 @@ describe("a slide scoped to one app", () => {
   });
 });
 
+describe("a slide scoped to a linked product (#777)", () => {
+  // A second model over a store-template install's mapping table, which
+  // links app-b into a product; the app filter maps to it as well.
+  let productsModelId: string;
+  const productFilter = () => ({
+    ...appFilter(),
+    mappings: [
+      { modelId, dimensionId: "app" },
+      { modelId: productsModelId, dimensionId: "app" },
+    ],
+  });
+
+  beforeAll(async () => {
+    const data = `/v1/workspaces/${workspaceId}/data`;
+    const mapping = await call("POST", `${data}/manual`, {
+      cookie: owner,
+      payload: {
+        definition: {
+          key: "store_mapping",
+          name: "Mapping",
+          version: 1,
+          mode: "snapshot",
+          grain: "One product per source app",
+          keyFields: ["app_key"],
+          retentionDays: null,
+          fields: ["app_key", "product_id"].map((id) => ({
+            id,
+            name: id,
+            type: "string",
+            nullable: false,
+            classification: "internal",
+          })),
+        },
+        records: [
+          { values: { app_key: APP_B(), product_id: "product:w" } },
+          // A product with two apps of the connection picks no single one.
+          { values: { app_key: APP_A(), product_id: "product:twins" } },
+          {
+            values: {
+              app_key: connectionResourceKey(connectionId, "app-c"),
+              product_id: "product:twins",
+            },
+          },
+        ],
+      },
+    });
+    expect(mapping.statusCode, mapping.body).toBe(200);
+    const datasetId = mapping.json().datasetId as string;
+    const model = await call("POST", `${data}/models`, {
+      cookie: owner,
+      payload: {
+        name: "Products",
+        definition: {
+          version: 1,
+          datasets: [datasetId],
+          relationships: [],
+          dimensions: [
+            { id: "app", name: "App", datasetId, fieldId: "product_id" },
+          ],
+          measures: [
+            {
+              id: "apps",
+              name: "Apps",
+              kind: "aggregate",
+              datasetId,
+              aggregate: { id: "apps", name: "apps", op: "count" },
+            },
+          ],
+        },
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    productsModelId = model.json().model.id as string;
+    expect(
+      (
+        await call("POST", `${data}/models/${productsModelId}/publish`, {
+          cookie: owner,
+          payload: { version: 1 },
+        })
+      ).statusCode,
+    ).toBe(200);
+    await admin`
+      insert into data_template_installs (workspace_id, request_id,
+        request_hash, result)
+      values (${workspaceId}, gen_random_uuid(), ${"0".repeat(64)},
+        ${admin.json({ mappingDatasetId: datasetId })})`;
+  }, 120_000);
+
+  it("gives a metric widget the product's app of its connection", async () => {
+    const created = await createDashboard(
+      [
+        // No exclusion: the widget follows the product through its app.
+        { name: "Product", scope: only("product:w"), widgets: [downloads()] },
+        {
+          name: "All apps",
+          widgets: [
+            downloads({
+              filterExclusions: [{ filterId: "app", reason: "All apps" }],
+            }),
+          ],
+        },
+      ],
+      { dataFilters: [productFilter()] },
+    );
+    expect(created.statusCode, created.body).toBe(200);
+    const dashboard = created.json().dashboard;
+    // Browsers resolve the same scope from the products' member apps.
+    expect(dashboard.productApps).toEqual({
+      "product:twins": [APP_A(), connectionResourceKey(connectionId, "app-c")],
+      "product:w": [APP_B()],
+    });
+    expect((await dashboardOf(dashboard.id)).productApps).toEqual(
+      dashboard.productApps,
+    );
+    const body = deviceDashboardV3ResponseSchema.parse(
+      await devicePayload(await pair(dashboard.id)),
+    );
+    // app-b's downloads only; before, every app's (3030).
+    expect(downloadsOf(slideWidgets(body, 0))).toBe(3000);
+    expect(downloadsOf(slideWidgets(body, 1))).toBe(3030);
+    // Schema 1 tiles follow it as well.
+    const tiles = (await call("GET", "/v1/device/dashboard", {
+      token: (await pair(dashboard.id)).accessToken,
+    })) as InjectResponse;
+    expect(tiles.statusCode, tiles.body).toBe(200);
+    expect(
+      (tiles.json() as { tiles: { value: number }[] }).tiles.map(
+        (tile) => tile.value,
+      ),
+    ).toEqual([3000, 3030]);
+  });
+
+  it("refuses a widget fixed to another app, and one the product picks no single app for", async () => {
+    expectError(
+      await createDashboard(
+        [
+          {
+            scope: only("product:w"),
+            widgets: [downloads({ dimensions: { resource: "app-a" } })],
+          },
+        ],
+        { dataFilters: [productFilter()] },
+      ),
+      400,
+      "slide_scope_resource_conflict",
+    );
+    for (const product of ["product:twins", "product:unknown"])
+      expectError(
+        await createDashboard(
+          [{ scope: only(product), widgets: [downloads()] }],
+          { dataFilters: [productFilter()] },
+        ),
+        400,
+        "dashboard_filter_not_applicable",
+      );
+  });
+
+  it("has no products on a dashboard without shared filters", async () => {
+    const created = await createDashboard([{ widgets: [] }], {
+      dataFilters: [],
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    expect(created.json().dashboard).not.toHaveProperty("productApps");
+  });
+});
+
 describe("a screen scope and a slide scope", () => {
   it("leaves out a slide scoped to an app the screen may not show", async () => {
     const created = await createDashboard([

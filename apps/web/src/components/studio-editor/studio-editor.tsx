@@ -387,6 +387,7 @@ export function StudioEditor({
       metrics: metricsById,
       connections,
       images: studioImages,
+      productApps: draft.productApps,
     }),
     [
       workspaceId,
@@ -394,6 +395,7 @@ export function StudioEditor({
       theme.tokens.fontScale,
       draft.settings.showHeader,
       draft.settings.dataFilters,
+      draft.productApps,
       filterValues,
       metricsById,
       connections,
@@ -1147,6 +1149,7 @@ export function StudioEditor({
                 currency={currency}
                 connections={connections}
                 {...(slide?.scope ? { slideScope: slide.scope } : {})}
+                productApps={draft.productApps}
                 dispatch={dispatch}
                 onUploadImage={onUploadImage}
                 onDeleteImage={onDeleteImage}

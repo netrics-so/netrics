@@ -218,6 +218,27 @@ describe("a slide's scope and logo (#707)", () => {
     expect(slideScopeFollow(image, app("123"))).toBeNull();
   });
 
+  it("lets a metric widget read a linked product's app of its connection (#777)", () => {
+    const product = {
+      app: { kind: "values" as const, values: ["product:p"] },
+    };
+    // The dashboard's `productApps`: the product's app of each store.
+    const apps = { "product:p": [`${ID(9)}:123`, `${ID(8)}:com.example`] };
+    expect(
+      scopedSlide(slide([metric], { scope: product }), apps).widgets[0],
+    ).toMatchObject({ dimensions: { resource: "123" } });
+    expect(slideScopeFollow(metric, product, apps)).toEqual({
+      follows: ["app"],
+      resource: "123",
+      conflict: false,
+    });
+    // Without the product's apps the widget cannot follow it.
+    expect(scopedSlide(slide([metric], { scope: product })).widgets[0]).toBe(
+      metric,
+    );
+    expect(slideScopeFollow(metric, product)?.follows).toEqual([]);
+  });
+
   it("loads a slide's own logo with the dashboard's images", () => {
     expect(
       referencedImageIds({

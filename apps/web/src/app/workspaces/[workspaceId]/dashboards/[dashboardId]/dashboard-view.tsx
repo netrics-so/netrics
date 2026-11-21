@@ -95,8 +95,11 @@ export function DashboardView({
 
   // As screens show them: widgets follow their slide's scope (#707).
   const shownSlides = useMemo(
-    () => dashboard.slides.map(scopedSlide),
-    [dashboard.slides],
+    () =>
+      dashboard.slides.map((slide) =>
+        scopedSlide(slide, dashboard.productApps),
+      ),
+    [dashboard.slides, dashboard.productApps],
   );
   const metricsById = useMemo(
     () => new Map(metrics.map((metric) => [metricId(metric), metric])),

@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 
 import {
+  dashboardProductApps,
   publishedModel,
   slideScopeOf,
   validateDashboardMeasure,
   safeDataError,
 } from "./data.js";
+import { scopeProducts } from "./freshness.js";
 import {
   barWidgetOptionsSchema,
   dashboardDataFiltersSchema,
@@ -259,6 +261,15 @@ export async function presentDashboard(
   const reviews = dashboard.slides.flatMap((slide) =>
     slide.widgets.filter(isReviewRow),
   );
+  // The linked products a slide's scope can name, with their member apps
+  // (#777): connection widgets follow such a scope through them.
+  const productApps = await dashboardProductApps(
+    tx,
+    workspaceId,
+    dashboardDataFiltersSchema.safeParse(dashboard.dataFilters ?? []).data ??
+      [],
+    { now: new Date() },
+  );
   const names = await findResourceNames(
     tx,
     workspaceId,
@@ -465,6 +476,15 @@ export async function presentDashboard(
     settings: settingsOf(dashboard),
     primaryFormat: dashboard.primaryFormat as ScreenFormatKey,
     archivedAt: dashboard.archivedAt?.toISOString() ?? null,
+    ...(productApps.size
+      ? {
+          productApps: Object.fromEntries(
+            [...productApps]
+              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              .map(([product, keys]) => [product, [...keys].sort()]),
+          ),
+        }
+      : {}),
     slides: dashboard.slides.map((slide) => ({
       id: slide.id,
       position: slide.position,
@@ -1329,6 +1349,15 @@ async function validateDataBindings(
       if (!scope.success) return fail(400, "slide_scope_value_invalid");
       validateSlideFilterScope(filters, scope.data);
     }
+    // A slide scoped to a linked product: connection widgets follow it
+    // through the product's app of their connection (#777).
+    const productApps = await dashboardProductApps(
+      tx,
+      workspaceId,
+      filters,
+      { now: new Date() },
+      scopeProducts(slides.map((slide) => slideScopeOf(slide))),
+    );
     for (const { widget, scope } of slides.flatMap((slide) =>
       slide.widgets.map((widget) => ({ widget, scope: slideScopeOf(slide) })),
     )) {
@@ -1427,6 +1456,7 @@ async function validateDataBindings(
                 widget.connectionId,
                 exclusions,
                 widget.dimensions[RESOURCE_DIMENSION],
+                productApps,
               )
             : { follows: [], conflict: false };
         if (scoped.conflict) return fail(400, "slide_scope_resource_conflict");

@@ -2718,6 +2718,16 @@ export const dashboardSchema = z.object({
    * it; only a swap or swap-back changes it.
    */
   archivedAt: z.iso.datetime().nullable(),
+  /**
+   * The linked products the dashboard's shared filters can name
+   * (`product:<id>`), each with its member apps as
+   * `<connectionId>:<resourceId>` keys (#777): a metric, line, bar, table
+   * or review widget on a slide scoped to a product reads the product's
+   * app of its connection. Absent when there are none. Read-only.
+   */
+  productApps: z
+    .record(z.string(), z.array(z.string().min(1).max(300)).max(1000))
+    .optional(),
   slides: z.array(dashboardSlideSchema),
   /**
    * The metric widgets of all slides in reading order, as tiles. Kept for
