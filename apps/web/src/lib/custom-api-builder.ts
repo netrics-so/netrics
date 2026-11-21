@@ -14,7 +14,6 @@ import {
   customApiIssues,
   customApiPagePlaceholders,
   customApiPaginationSchema,
-  customApiReservedVariableId,
   customApiStreamSchema,
   customApiWindowSchema,
   PAGE_PLACEHOLDERS,

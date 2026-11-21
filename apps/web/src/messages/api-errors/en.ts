@@ -123,28 +123,24 @@ export const apiErrorsEn = {
     custom_api_token_failed:
       "The token endpoint did not answer with a token. Check the token URL and try again.",
     custom_api_draft_not_found:
-      "This test connection has expired. Start the login again.",
+      "This test login expired. Enter the login again.",
     custom_api_draft_limit:
-      "This workspace has too many unsaved custom APIs in progress. Finish or close one, or try again tomorrow.",
+      "Too many unfinished custom APIs. Finish or close one first.",
     custom_api_variable_reserved:
       "A secret connection value can't be named token, password, username or host. Rename it.",
     custom_api_secret_unknown:
       "This login method does not use one of the entered secrets.",
     custom_api_credentials_host_changed:
-      "The secrets were entered for another host. Enter them again for this address.",
+      "You changed where netrics sends your login. Enter it again.",
     custom_api_test_rate_limited:
       "Too many test requests in this workspace. Wait a minute and try again.",
-    custom_api_test_busy:
-      "A test request for this API is still running. Wait for it to finish.",
-    custom_api_secret_missing:
-      "Enter the login details this API needs before testing.",
+    custom_api_test_busy: "A test request is still running.",
+    custom_api_secret_missing: "Enter the login first.",
     custom_api_auth_rejected:
-      "The API refused the login details. Check the key, token or password.",
-    custom_api_destination_blocked:
-      "netrics may not reach this address. Custom APIs must be public https hosts.",
-    custom_api_timeout: "The API did not answer in time.",
-    custom_api_records_not_array:
-      "The record path does not point to a list. Pick the list that holds the records.",
+      "The API refused the login. Check the key or token.",
+    custom_api_destination_blocked: "netrics can't reach this address.",
+    custom_api_timeout: "The API took too long to answer.",
+    custom_api_records_not_array: "This is not a list of records.",
     custom_api_http_error:
       "The API answered with an error. Check the request path and the values.",
     custom_api_response_invalid:

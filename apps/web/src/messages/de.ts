@@ -5,6 +5,7 @@ import { accountDe } from "./account/de";
 import { apiErrorsDe } from "./api-errors/de";
 import { authDe } from "./auth/de";
 import { commonDe } from "./common/de";
+import { customApiDe } from "./custom-api/de";
 import { dashboardsDe } from "./dashboards/de";
 import type { WebMessages } from "./en";
 import { formatsDe } from "./formats/de";
@@ -43,4 +44,5 @@ export const de: Catalog<WebMessages> = {
   ...shellDe,
   ...sourcesDe,
   ...dataDe,
+  ...customApiDe,
 };

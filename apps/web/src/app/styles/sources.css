@@ -182,7 +182,8 @@ button.catalogue-pill[aria-pressed="true"]:hover:not(:disabled) {
   box-shadow: var(--selection-ring);
 }
 
-.catalogue-card--planned {
+/* Custom API: built by the workspace, not a bundled connector. */
+.catalogue-card--custom-api {
   background: var(--raised);
   border-style: dashed;
   border-color: var(--border-strong);
@@ -329,13 +330,6 @@ a.catalogue-cta--fix {
 a.catalogue-cta--fix:hover {
   background: var(--warning-wash);
   border-color: var(--warning);
-}
-
-.catalogue-cta--disabled {
-  cursor: default;
-  color: var(--muted);
-  background: transparent;
-  border-style: dashed;
 }
 
 .sources-table {

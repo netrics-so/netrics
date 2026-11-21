@@ -60,6 +60,8 @@ interface NewConnectionWizardProps {
   initialConnectorId?: string | null;
   /** The user's active project: new connections start in it (#573). */
   projectId?: string | null;
+  /** Custom API definitions of the workspace (the Custom API card). */
+  customApiDefinitionCount?: number;
 }
 
 export function NewConnectionWizard({
@@ -68,6 +70,7 @@ export function NewConnectionWizard({
   standings = {},
   initialConnectorId = null,
   projectId = null,
+  customApiDefinitionCount = 0,
 }: NewConnectionWizardProps) {
   const locale = useLocale();
   const t = useT("connections.wizard");
@@ -295,6 +298,7 @@ export function NewConnectionWizard({
             selectedId: connector?.id ?? null,
             onPick: selectConnector,
           }}
+          customApiDefinitionCount={customApiDefinitionCount}
         />
       </div>
 

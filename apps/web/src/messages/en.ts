@@ -3,6 +3,7 @@ import { accountEn } from "./account/en";
 import { apiErrorsEn } from "./api-errors/en";
 import { authEn } from "./auth/en";
 import { commonEn } from "./common/en";
+import { customApiEn } from "./custom-api/en";
 import { dashboardsEn } from "./dashboards/en";
 import { formatsEn } from "./formats/en";
 import { goalsEn } from "./goals/en";
@@ -40,6 +41,7 @@ export const EN_AREAS = {
   shell: shellEn,
   sources: sourcesEn,
   data: dataEn,
+  customApi: customApiEn,
 } as const;
 
 export const en = {
@@ -58,6 +60,7 @@ export const en = {
   ...shellEn,
   ...sourcesEn,
   ...dataEn,
+  ...customApiEn,
 } as const;
 
 export type WebMessages = typeof en;

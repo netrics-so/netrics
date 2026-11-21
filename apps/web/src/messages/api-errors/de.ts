@@ -127,28 +127,25 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     custom_api_token_failed:
       "Der Token-Endpunkt hat kein Token geliefert. Prüf die Token-URL und versuch es erneut.",
     custom_api_draft_not_found:
-      "Diese Testverbindung ist abgelaufen. Melde dich erneut an.",
+      "Diese Testanmeldung ist abgelaufen. Gib die Anmeldung erneut ein.",
     custom_api_draft_limit:
-      "In diesem Workspace sind zu viele ungespeicherte eigene APIs in Arbeit. Schließ eine ab oder versuch es morgen erneut.",
+      "Zu viele unfertige eigene APIs. Stell zuerst eine fertig oder schließe sie.",
     custom_api_variable_reserved:
       "Ein geheimer Verbindungswert darf nicht token, password, username oder host heißen. Benenne ihn um.",
     custom_api_secret_unknown:
       "Diese Anmeldemethode verwendet eines der eingegebenen Geheimnisse nicht.",
     custom_api_credentials_host_changed:
-      "Die Geheimnisse wurden für einen anderen Host eingegeben. Gib sie für diese Adresse erneut ein.",
+      "Du hast geändert, wohin netrics deine Anmeldung sendet. Gib sie erneut ein.",
     custom_api_test_rate_limited:
       "Zu viele Testanfragen in diesem Workspace. Warte eine Minute und versuch es erneut.",
-    custom_api_test_busy:
-      "Für diese API läuft noch eine Testanfrage. Warte, bis sie fertig ist.",
-    custom_api_secret_missing:
-      "Gib vor dem Test die Anmeldedaten ein, die diese API braucht.",
+    custom_api_test_busy: "Eine Testanfrage läuft noch.",
+    custom_api_secret_missing: "Gib zuerst die Anmeldung ein.",
     custom_api_auth_rejected:
-      "Die API hat die Anmeldedaten abgelehnt. Prüf den Schlüssel, das Token oder das Passwort.",
+      "Die API hat die Anmeldung abgelehnt. Prüfe den Schlüssel oder das Token.",
     custom_api_destination_blocked:
-      "netrics darf diese Adresse nicht erreichen. Eigene APIs müssen öffentliche https-Hosts sein.",
-    custom_api_timeout: "Die API hat nicht rechtzeitig geantwortet.",
-    custom_api_records_not_array:
-      "Der Datensatzpfad zeigt auf keine Liste. Wähl die Liste, die die Datensätze enthält.",
+      "netrics kann diese Adresse nicht erreichen.",
+    custom_api_timeout: "Die API hat zu lange für die Antwort gebraucht.",
+    custom_api_records_not_array: "Das ist keine Liste von Einträgen.",
     custom_api_http_error:
       "Die API hat mit einem Fehler geantwortet. Prüf den Anfragepfad und die Werte.",
     custom_api_response_invalid:

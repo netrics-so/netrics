@@ -20,10 +20,6 @@ import {
   type ConnectorStanding,
 } from "@/lib/sources";
 
-/** Where the custom API connector is planned (milestone 13). */
-export const CUSTOM_API_PLAN_URL =
-  "https://github.com/netrics-so/netrics/blob/main/docs/milestones/13-custom-api-connector.md";
-
 /** At most this many metric chips per card; the rest is "+N". */
 const MAX_CHIPS = 4;
 
@@ -47,13 +43,16 @@ interface ConnectorCatalogueProps {
   mode: CatalogueMode;
   /** The category shown first (tests; the page starts with "all"). */
   initialFilter?: ConnectorCategory | "all";
+  /** Custom API definitions of the workspace: "Connect existing" when any. */
+  customApiDefinitionCount?: number;
 }
 
 /**
  * The connector catalogue (design 3c, #306): category pills that filter
  * instantly, then a card per connector with its metrics, how it signs in,
  * how often it refreshes and what to do: connect, add another, or fix the
- * connection that needs attention. "Custom API" always shows, as a plan.
+ * connection that needs attention. "Custom API" always shows: build one, or
+ * connect one the workspace already has.
  */
 export function ConnectorCatalogue({
   workspaceId,
@@ -61,6 +60,7 @@ export function ConnectorCatalogue({
   standings,
   mode,
   initialFilter = "all",
+  customApiDefinitionCount = 0,
 }: ConnectorCatalogueProps) {
   const t = useT("sources");
   const [filter, setFilter] = useState<ConnectorCategory | "all">(
@@ -98,7 +98,11 @@ export function ConnectorCatalogue({
           </li>
         ))}
         <li>
-          <CustomApiCard />
+          <CustomApiCard
+            workspaceId={workspaceId}
+            canCreate={mode.kind === "pick" || mode.canCreate}
+            definitionCount={customApiDefinitionCount}
+          />
         </li>
       </ul>
     </div>
@@ -262,12 +266,24 @@ function CardActions({
   );
 }
 
-/** Custom API connections arrive with milestone 13; until then, the plan. */
-function CustomApiCard() {
+/**
+ * Custom APIs (milestone 13): "Build" opens the builder, "Connect existing"
+ * the workspace's custom APIs. The same links in the new-connection
+ * wizard; viewers see the card without actions.
+ */
+export function CustomApiCard({
+  workspaceId,
+  canCreate,
+  definitionCount,
+}: {
+  workspaceId: string;
+  canCreate: boolean;
+  definitionCount: number;
+}) {
   const t = useT("sources");
   const name = t("customApi.name");
   return (
-    <article className="catalogue-card catalogue-card--planned">
+    <article className="catalogue-card catalogue-card--custom-api">
       <div className="catalogue-card-head">
         <ConnectorIcon name={name} brandColor={null} size="large" />
         <div className="catalogue-card-title">
@@ -276,24 +292,28 @@ function CustomApiCard() {
         </div>
       </div>
       <p className="catalogue-description">{t("customApi.description")}</p>
-      <div className="catalogue-card-foot">
-        <a
-          className="catalogue-facts"
-          href={CUSTOM_API_PLAN_URL}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {t("customApi.plan")} ↗
-        </a>
-        <span className="catalogue-actions">
-          <span
-            className="catalogue-cta catalogue-cta--disabled"
-            aria-disabled="true"
-          >
-            {t("cta.comingLater")}
+      {canCreate ? (
+        <div className="catalogue-card-foot">
+          <span className="catalogue-actions">
+            {definitionCount > 0 ? (
+              <Link
+                className="catalogue-cta"
+                href={`/workspaces/${workspaceId}/custom-apis`}
+                aria-label={t("customApi.connectExistingName")}
+              >
+                {t("cta.connectExisting")}
+              </Link>
+            ) : null}
+            <Link
+              className="catalogue-cta primary"
+              href={`/workspaces/${workspaceId}/custom-apis/new`}
+              aria-label={t("customApi.buildName")}
+            >
+              {t("cta.build")}
+            </Link>
           </span>
-        </span>
-      </div>
+        </div>
+      ) : null}
     </article>
   );
 }

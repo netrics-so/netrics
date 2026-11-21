@@ -3,6 +3,10 @@ import { projectQueryString } from "./project-scope";
 import { ZodError, type ZodType, type z } from "zod";
 
 import {
+  customApiDefinitionListResponseSchema,
+  customApiDefinitionResponseSchema,
+  type CustomApiDefinitionListResponse,
+  type CustomApiDefinitionResponse,
   IMAGE_NAME_HEADER,
   storeTemplateApplyRequestSchema,
   storeTemplateCopyRequestSchema,
@@ -466,6 +470,34 @@ export function listConnections(
     forwarded,
     `/v1/workspaces/${workspaceId}/connections${projectQueryString(query)}`,
   );
+}
+
+/** The workspace's custom API definitions (milestone 13), archived ones aside. */
+export function listCustomApiDefinitions(
+  forwarded: Headers,
+  workspaceId: string,
+): Promise<CustomApiDefinitionListResponse> {
+  return serverGet(
+    customApiDefinitionListResponseSchema,
+    forwarded,
+    `/v1/workspaces/${workspaceId}/custom-api/definitions`,
+  );
+}
+
+/** One custom API definition with its current document; null on 404. */
+export async function getCustomApiDefinition(
+  forwarded: Headers,
+  workspaceId: string,
+  definitionId: string,
+): Promise<CustomApiDefinitionResponse | null> {
+  const response = await apiFetch(
+    `/v1/workspaces/${workspaceId}/custom-api/definitions/${definitionId}`,
+    { headers: forwarded },
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return parseResponse(customApiDefinitionResponseSchema, response);
 }
 
 /** Returns null on 404 (gone or from another workspace). */

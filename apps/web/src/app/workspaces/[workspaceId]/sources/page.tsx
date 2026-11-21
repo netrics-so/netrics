@@ -14,6 +14,7 @@ import { ConnectorCatalogue } from "@/components/sources/connector-catalogue";
 import {
   listConnections,
   listConnectors,
+  listCustomApiDefinitions,
   listProjects,
   listWorkspaces,
 } from "@/lib/api";
@@ -69,15 +70,20 @@ export default async function SourcesPage({
   const role = membership.role;
   // The active project's connections (#573); the shell's source health
   // stays workspace-wide.
-  const [{ connections }, { connectors }, { projects }] = await Promise.all([
-    listConnections(
-      forwarded,
-      workspaceId,
-      navigationQuery(projectScope(membership.activeProjectId, [])),
-    ),
-    listConnectors(forwarded),
-    listProjects(forwarded, workspaceId),
-  ]);
+  const [{ connections }, { connectors }, { projects }, customApis] =
+    await Promise.all([
+      listConnections(
+        forwarded,
+        workspaceId,
+        navigationQuery(projectScope(membership.activeProjectId, [])),
+      ),
+      listConnectors(forwarded),
+      listProjects(forwarded, workspaceId),
+      // The Custom API card offers "Connect existing" when there are some.
+      listCustomApiDefinitions(forwarded, workspaceId).catch(() => ({
+        definitions: [],
+      })),
+    ]);
   const projectName = activeProjectName(
     projectScope(membership.activeProjectId, projects),
     projects,
@@ -181,6 +187,7 @@ export default async function SourcesPage({
           connectors={connectors}
           standings={connectorStandings(connections)}
           mode={{ kind: "links", canCreate }}
+          customApiDefinitionCount={customApis.definitions.length}
         />
       </section>
 

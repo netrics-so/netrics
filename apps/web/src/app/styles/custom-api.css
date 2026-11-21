@@ -1,0 +1,8 @@
+/* The custom API builder and list (milestone 13, #807), Signal admin. */
+
+.custom-api-list-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
