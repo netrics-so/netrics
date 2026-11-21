@@ -115,6 +115,10 @@ services:
       NETRICS_DATA_POLICY: ${NETRICS_DATA_POLICY:-}
       NETRICS_OAUTH_GOOGLE_CLIENT_ID: ${NETRICS_OAUTH_GOOGLE_CLIENT_ID:-}
       NETRICS_OAUTH_GOOGLE_CLIENT_SECRET: ${NETRICS_OAUTH_GOOGLE_CLIENT_SECRET:-}
+      # History loads (backfills) of one connector's OAuth connections that
+      # run at a time; they share the OAuth app's quota. 0: no cap. See
+      # README, "Google connectors".
+      WORKER_BACKFILLS_PER_APP: ${WORKER_BACKFILLS_PER_APP:-4}
       # The worker syncs only connectors it has, so it reads the same opt-in.
       NETRICS_PREVIEW_CONNECTORS: ${NETRICS_PREVIEW_CONNECTORS:-}
       # The worker runs custom API syncs, so it reads the same private hosts.

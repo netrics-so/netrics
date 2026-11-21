@@ -97,6 +97,17 @@ Set both or neither; the API refuses to start with only one. Its startup log
 redirect URIs. While the app is External and in Testing, Google expires
 refresh tokens after 7 days; publish it or use an Internal app.
 
+All connections of such a connector share the OAuth app's request quota,
+across workspaces. The worker therefore loads the history (a backfill) of
+at most 4 of a connector's OAuth connections at a time; the others wait
+their turn, and regular syncs are not held back. To change the number, set
+`WORKER_BACKFILLS_PER_APP` in `.env` (`0` removes the cap) and run
+`docker compose up -d`:
+
+```dotenv
+WORKER_BACKFILLS_PER_APP=4
+```
+
 ### Web app and API on separate hosts
 
 Not needed for this install: here the web app reaches the API over the
