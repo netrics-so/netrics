@@ -1,5 +1,18 @@
 import { defineConfig, devices } from "@playwright/test";
+import {
+  CUSTOM_API_ORIGIN,
+  CUSTOM_API_TLS,
+  ensureCustomApiCertificate,
+} from "./e2e/support/custom-api-origin.ts";
 import { API, API_PORT, ORIGIN, WEB_PORT } from "./e2e/support/origin.ts";
+
+// The custom API builder journey (#807) reads a local https fixture server
+// with a self-signed certificate made here. The API it tests against must
+// trust it and may reach 127.0.0.1: a reused local `pnpm dev` API needs
+// the same two variables, NETRICS_CUSTOM_API_PRIVATE_HOSTS=127.0.0.1 and
+// NODE_EXTRA_CA_CERTS=node_modules/.cache/netrics-e2e/custom-api-tls/cert.pem.
+// The certificate is made again before it expires; restart such an API then.
+ensureCustomApiCertificate();
 
 /**
  * Browser journeys against the real web app and API (#570). Locally, a
@@ -50,6 +63,8 @@ export default defineConfig({
         PORT: String(API_PORT),
         BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? API,
         WEB_ORIGIN: process.env.WEB_ORIGIN ?? ORIGIN,
+        NETRICS_CUSTOM_API_PRIVATE_HOSTS: "127.0.0.1",
+        NODE_EXTRA_CA_CERTS: CUSTOM_API_TLS.cert,
       },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
@@ -60,6 +75,13 @@ export default defineConfig({
       env: { NETRICS_API_URL: process.env.NETRICS_API_URL ?? API },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
+    },
+    {
+      command: "node e2e/support/custom-api-fixture.ts",
+      url: `${CUSTOM_API_ORIGIN}/health`,
+      ignoreHTTPSErrors: true,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
     },
   ],
 });

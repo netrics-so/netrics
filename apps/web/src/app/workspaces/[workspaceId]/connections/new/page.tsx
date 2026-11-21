@@ -13,6 +13,7 @@ import {
   getWorkspace,
   listConnections,
   listConnectors,
+  listCustomApiDefinitions,
   listWorkspaces,
 } from "@/lib/api";
 import { getT } from "@/lib/i18n/server";
@@ -119,6 +120,13 @@ export default async function NewConnectionPage({
         )}
         initialConnectorId={connectorParam}
         projectId={membership.activeProjectId}
+        customApiDefinitionCount={
+          (
+            await listCustomApiDefinitions(forwarded, workspaceId).catch(
+              () => ({ definitions: [] }),
+            )
+          ).definitions.length
+        }
       />
     </>
   );

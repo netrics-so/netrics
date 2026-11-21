@@ -1,0 +1,329 @@
+/* The custom API builder and list (milestone 13, #807), Signal admin. */
+
+.custom-api-list-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* Builder: stepper left, step in the middle, test panel right (steps 3–6). */
+.custom-api-builder {
+  display: grid;
+  grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.custom-api-builder--panel {
+  grid-template-columns: minmax(170px, 210px) minmax(0, 1fr) minmax(
+      260px,
+      360px
+    );
+}
+
+/* Narrower screens: the test panel goes below the step. */
+@media (max-width: 1500px) {
+  .custom-api-builder--panel {
+    grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
+  }
+
+  .custom-api-builder--panel .custom-api-panel {
+    grid-column: 2;
+    position: static;
+  }
+}
+
+@media (max-width: 1100px) {
+  .custom-api-builder,
+  .custom-api-builder--panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .custom-api-builder--panel .custom-api-panel {
+    grid-column: auto;
+  }
+}
+
+.custom-api-stepper ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.custom-api-stepper button {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+}
+
+.custom-api-stepper button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.custom-api-stepper-item.is-current button {
+  background: var(--accent-wash);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.custom-api-stepper-number {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  font-size: var(--size-12);
+}
+
+.custom-api-stepper-item.is-current .custom-api-stepper-number {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: #fff;
+}
+
+.custom-api-stepper-item.is-done .custom-api-stepper-number {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.custom-api-stepper-item.has-issue .custom-api-stepper-number {
+  color: var(--warning-text);
+  border-color: var(--warning);
+}
+
+.custom-api-step {
+  min-width: 0;
+}
+
+.custom-api-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.custom-api-form > * {
+  min-width: 0;
+}
+
+.custom-api-form select {
+  max-width: 100%;
+}
+
+#custom-api-time-field,
+#custom-api-insert,
+#custom-api-window-format {
+  max-width: 360px;
+}
+
+.custom-api-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.custom-api-form legend,
+.custom-api-label {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.custom-api-environment {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-card);
+  padding: 12px !important;
+}
+
+.custom-api-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.custom-api-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.custom-api-kv,
+.custom-api-variable {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.custom-api-kv input,
+.custom-api-variable input:not([type="checkbox"]) {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.custom-api-row-actions,
+.custom-api-actions,
+.custom-api-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.custom-api-nav {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.custom-api-nav .primary {
+  margin-left: auto;
+}
+
+.custom-api-warning {
+  color: var(--warning-text);
+}
+
+.custom-api-saved {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.custom-api-copy code,
+.custom-api-log-url code {
+  overflow-wrap: anywhere;
+}
+
+.custom-api-log-url td {
+  padding-top: 0;
+  font-size: var(--size-11);
+}
+
+.custom-api-log-entry td {
+  border-bottom: 0;
+}
+
+.custom-api-issues {
+  margin-top: 12px;
+  color: var(--text-2);
+  font-size: var(--size-13);
+}
+
+.custom-api-issues ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.custom-api-panel {
+  position: sticky;
+  top: 16px;
+  min-width: 0;
+}
+
+.custom-api-ok {
+  color: var(--success);
+}
+
+.custom-api-log table {
+  font-size: var(--size-12);
+}
+
+.custom-api-log-failed {
+  color: var(--danger);
+}
+
+.custom-api-mode span {
+  display: grid;
+}
+
+/* The response tree. */
+.json-tree {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--size-12);
+  max-height: 420px;
+  overflow: auto;
+}
+
+.json-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding-right: 8px;
+  outline: none;
+}
+
+.json-tree-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.json-tree-item--picked {
+  background: var(--accent-wash);
+}
+
+.json-tree-toggle {
+  width: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.json-tree-key {
+  color: var(--text-2);
+}
+
+.json-tree-key::after {
+  content: ":";
+}
+
+.json-tree-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.json-tree-value--string {
+  color: var(--accent-text);
+}
+
+.json-tree-summary,
+.json-tree-marker,
+.json-tree-value--null {
+  color: var(--muted);
+}
+
+.json-tree-marker {
+  font-style: italic;
+}
+
+.json-tree-pick,
+.json-tree-more {
+  min-height: 0;
+  padding: 1px 8px;
+  font-size: var(--size-12);
+  font-family: var(--font-admin);
+}
+
+.custom-api-mapping table input:not([type="checkbox"]):not([type="radio"]),
+.custom-api-mapping table select {
+  min-width: 110px;
+}

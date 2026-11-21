@@ -58,7 +58,8 @@ export const sourcesDe: Catalog<typeof sourcesEn> = {
       fix: "Beheben",
       details: "Details",
       selected: "Ausgewählt",
-      comingLater: "Kommt später",
+      build: "Bauen",
+      connectExisting: "Vorhandene verbinden",
     },
     connectName: "{name} verbinden",
     addAnotherName: "Weitere {name}-Verbindung hinzufügen",
@@ -68,10 +69,10 @@ export const sourcesDe: Catalog<typeof sourcesEn> = {
     previewHint: "Noch nicht fertig: Dieser Connector kann sich noch ändern.",
     customApi: {
       name: "Eigene API",
-      tag: "Kommt später",
-      description:
-        "Mach deine eigene JSON-API zur Quelle, ganz ohne Code. Geplant für ein späteres Release.",
-      plan: "Zum Plan",
+      tag: "Selbst gebaut",
+      description: "Mach deine eigene JSON-API zur Quelle, ganz ohne Code.",
+      buildName: "Eigene API bauen",
+      connectExistingName: "Vorhandene eigene API verbinden",
     },
     itemImages: {
       title: "Bilder",

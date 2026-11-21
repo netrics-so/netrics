@@ -9,6 +9,9 @@ import { projectFilterQuerySchema } from "./project-filter.js";
 // connector SDK's internal subpath, the one package both contracts and
 // connectors may import; the API contract re-exports it.
 export {
+  CUSTOM_API_CREDENTIAL_NAMES,
+  CUSTOM_API_FIELD_FORMATS,
+  CUSTOM_API_FORBIDDEN_HEADERS,
   CUSTOM_API_ISSUE_CODES,
   CUSTOM_API_LIMITS,
   CUSTOM_API_SCHEMA_VERSION,
@@ -18,13 +21,22 @@ export {
   customApiEnvironmentSchema,
   customApiFieldSchema,
   customApiIssues,
+  customApiPagePlaceholders,
   customApiPaginationSchema,
+  customApiReservedVariableId,
   customApiStreamSchema,
   customApiVariableSchema,
   customApiWindowSchema,
+  formatDataPath,
+  PAGE_PLACEHOLDERS,
+  parseDataPath,
+  parsePlaceholders,
+  readDataPath,
   upgradeCustomApiDefinition,
+  WINDOW_PLACEHOLDERS,
 } from "@netrics/connector-sdk/custom-api";
 export type {
+  DataPathSegment,
   CustomApiAuth,
   CustomApiDefinition,
   CustomApiDefinitionErrorCode,

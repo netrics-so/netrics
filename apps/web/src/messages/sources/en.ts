@@ -58,7 +58,8 @@ export const sourcesEn = {
       fix: "Fix",
       details: "Details",
       selected: "Selected",
-      comingLater: "Coming later",
+      build: "Build",
+      connectExisting: "Connect existing",
     },
     connectName: "Connect {name}",
     addAnotherName: "Add another {name} connection",
@@ -68,10 +69,11 @@ export const sourcesEn = {
     previewHint: "Not final yet: this connector may still change.",
     customApi: {
       name: "Custom API",
-      tag: "Coming later",
+      tag: "Build your own",
       description:
-        "Turn your own JSON API into a source, without writing code. Planned for a later release.",
-      plan: "Read the plan",
+        "Turn your own JSON API into a source, without writing code.",
+      buildName: "Build a custom API",
+      connectExistingName: "Connect an existing custom API",
     },
     /** A custom API connection's item images per stream (#809). */
     itemImages: {

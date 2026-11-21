@@ -10,9 +10,26 @@ datasets of bundled connectors. Design: [ADR 0027](../decisions/0027-custom-api-
 
 > Status: milestone 13. Definitions, their versions and connections with
 > every login method (none, API key, bearer token, HTTP basic, OAuth client
-> credentials and OAuth authorization code) work through the API, and the
-> images of image streams are copied after each sync. The builder UI and the
-> latest items widget follow.
+> credentials and OAuth authorization code) work through the API and the
+> builder, and the images of image streams are copied after each sync. The
+> latest items widget follows.
+
+## Builder
+
+Sources → Custom API → **Build** opens a guided editor in six steps:
+Basics (name, environments, project), Login, Request (path, query, headers,
+connection values, `{{…}}` values inserted from a menu), Response (the
+redacted answer as a tree: click the list that holds the records, tick the
+fields, check the suggested types, see the mapped rows), Paging and time
+window (tested with up to five pages), Schedule and review. **Save and
+connect** saves the definition and turns the builder's draft into its first
+connection. The draft is created when the Login step is first opened, and
+its id stays in the address (`?draft=`), so a reload keeps the test login.
+Secrets are sent once; the builder only ever shows that one is saved. A
+change of the base URL's host, the environment or the login method says
+that the saved login is deleted, and the Login step asks for it again.
+**Connect existing** (or `/custom-apis`) connects a saved definition again,
+with its own environment, values and credentials.
 
 ## Definitions and connections
 

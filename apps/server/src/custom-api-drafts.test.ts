@@ -378,6 +378,33 @@ describe("custom API draft connections", () => {
     );
   });
 
+  it("refuses a secret connection value named like a login credential", async () => {
+    const { draft } = await createDraft();
+    for (const id of ["token", "password", "username"]) {
+      const definition = {
+        ...bearerDraft(),
+        variables: [{ id, label: "Secret", secret: true }],
+      };
+      expectError(
+        await updateDraft(draft.id, {
+          definition,
+          environmentId: "production",
+        }),
+        400,
+        "custom_api_variable_reserved",
+      );
+    }
+    // A plain (not secret) value may use the name.
+    const plain = await updateDraft(draft.id, {
+      definition: {
+        ...bearerDraft(),
+        variables: [{ id: "token", label: "Token", secret: false }],
+      },
+      environmentId: "production",
+    });
+    expect(plain.statusCode, plain.body).toBe(200);
+  });
+
   it("accepts a short Basic username but not a short password (review #820)", async () => {
     const { draft } = await createDraft();
     const basic = { ...bearerDraft(), auth: { type: "basic" } };

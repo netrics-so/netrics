@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Connection, ConnectorCatalogEntry } from "@netrics/contracts";
 
 import { ConnectedStrip } from "./connected-strip";
-import { ConnectorCatalogue, CUSTOM_API_PLAN_URL } from "./connector-catalogue";
+import { ConnectorCatalogue } from "./connector-catalogue";
 import { renderI18n } from "@/lib/i18n/test-render";
 import { connectorStandings } from "@/lib/sources";
 
@@ -198,13 +198,52 @@ describe("ConnectorCatalogue", () => {
     expect(html).toContain("API key");
   });
 
-  it("filters by category but always shows the custom API plan", () => {
+  it("filters by category but always shows the custom API card", () => {
     const html = render({ initialFilter: "seo" });
     expect(html).toContain("Google Search Console");
     expect(html).not.toContain("Vercel Web Analytics");
     expect(html).toContain("Custom API");
-    expect(html).toContain(`href="${CUSTOM_API_PLAN_URL}"`);
-    expect(html).toContain('aria-disabled="true">Coming later');
+  });
+
+  it("offers Build and Connect existing on the Custom API card (en, de)", () => {
+    const none = render();
+    expect(none).toMatch(
+      /aria-label="Build a custom API" href="\/workspaces\/w\/custom-apis\/new">Build</,
+    );
+    expect(none).not.toContain("Connect existing");
+    const some = render({ customApiDefinitionCount: 2 });
+    expect(some).toMatch(
+      /aria-label="Connect an existing custom API" href="\/workspaces\/w\/custom-apis">Connect existing</,
+    );
+    const de = renderI18n(
+      <ConnectorCatalogue
+        workspaceId="w"
+        connectors={CONNECTORS}
+        standings={standings}
+        mode={{ kind: "links", canCreate: true }}
+        customApiDefinitionCount={1}
+      />,
+      "de",
+    );
+    expect(de).toContain("Selbst gebaut");
+    expect(de).toMatch(/aria-label="Eigene API bauen"[^>]*>Bauen</);
+    expect(de).toMatch(/>Vorhandene verbinden</);
+    // The wizard's pick mode links the same way.
+    const pick = render({
+      mode: { kind: "pick", selectedId: null, onPick: () => {} },
+      customApiDefinitionCount: 1,
+    });
+    expect(pick).toContain('href="/workspaces/w/custom-apis/new"');
+    expect(pick).toContain('href="/workspaces/w/custom-apis"');
+  });
+
+  it("shows the card without actions to viewers", () => {
+    const html = render({
+      mode: { kind: "links", canCreate: false },
+      customApiDefinitionCount: 3,
+    });
+    expect(html).toContain("Turn your own JSON API into a source");
+    expect(html).not.toContain("custom-apis");
   });
 
   it("offers no create actions to roles that cannot create", () => {

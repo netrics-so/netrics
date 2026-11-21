@@ -528,6 +528,19 @@ describe("the custom API test request", () => {
     expect(body.error?.code).toBe("custom_api_secret_missing");
     expect(fixture.requests).toHaveLength(0);
   });
+
+  it("refuses a secret connection value named like a credential, without a request (review #824)", async () => {
+    const id = await newDraft();
+    const response = await testRequest(id, {
+      definition: {
+        ...statsDraft(),
+        variables: [{ id: "password", label: "Password", secret: true }],
+      },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json()).toEqual({ error: "custom_api_variable_reserved" });
+    expect(fixture.requests).toHaveLength(0);
+  });
 });
 
 describe("the test request rate limit", () => {
