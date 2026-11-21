@@ -26,6 +26,7 @@ import {
   kioskRefreshCycle,
   kioskShown,
   payloadRotation,
+  pollShowsOffline,
 } from "./kiosk-view";
 
 // The kiosk in the workspace's screen language (ADR 0016, #256): labels
@@ -524,5 +525,44 @@ describe("kiosk wording for wall screens (#649)", () => {
     // Before the first answer there is no time to show.
     const never = { ...paired(slides("en"), true), updatedAt: null };
     expect(render(never)).not.toContain("last update");
+  });
+});
+
+describe("offline badge without the header (#835)", () => {
+  const minute = 60_000;
+  it("follows tvOS's rule: a failed poll, or none confirmed for two refreshes", () => {
+    const now = Date.parse("2026-11-21T12:00:00Z");
+    const at = (ago: number) => ({ updatedAt: now - ago, offline: false });
+    expect(pollShowsOffline({ ...at(0), offline: true }, 60, now)).toBe(true);
+    expect(pollShowsOffline(at(2 * minute), 60, now)).toBe(false);
+    expect(pollShowsOffline(at(2 * minute + 1000), 60, now)).toBe(true);
+    expect(pollShowsOffline({ updatedAt: null, offline: false }, 60, now)).toBe(
+      false,
+    );
+  });
+
+  const headless = (updatedAt: number, offline: boolean, locale = "en") => {
+    const payload = slides(locale);
+    payload.dashboard!.showHeader = false;
+    return render({ ...paired(payload, offline), updatedAt });
+  };
+  it("shows a muted badge in the corner, in English and German", () => {
+    const stale = Date.now() - 10 * minute;
+    const en = headless(stale, false);
+    expect(en).toContain("kiosk-offline--badge");
+    expect(en).toContain("Offline — last update");
+    expect(headless(stale, false, "de")).toContain(
+      "Offline – letzte Aktualisierung",
+    );
+    // A failing poll shows it at once.
+    expect(headless(Date.now(), true)).toContain("kiosk-offline--badge");
+  });
+  it("shows none while the poll is healthy, nor with a header", () => {
+    expect(headless(Date.now(), false)).not.toContain("kiosk-offline");
+    const withHeader = render({
+      ...paired(slides("en")),
+      updatedAt: Date.now() - 10 * minute,
+    });
+    expect(withHeader).not.toContain("kiosk-offline--badge");
   });
 });

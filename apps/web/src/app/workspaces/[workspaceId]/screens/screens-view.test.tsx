@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { Device } from "@netrics/contracts";
 import type { Locale } from "@netrics/domain";
 
-import { ScreensView, type ScreenItem } from "./screens-view";
+import {
+  countsWithRevoked,
+  ScreensView,
+  withRevoked,
+  type ScreenItem,
+} from "./screens-view";
 import { renderI18n } from "@/lib/i18n/test-render";
 import { screenPreview } from "@/lib/screens";
 
@@ -319,5 +324,30 @@ describe("Screens page", () => {
     });
     expect(viewer).toContain("Country: DE");
     expect(viewer).not.toContain("Limit Country");
+  });
+});
+
+describe("a screen revoked on the page (#835)", () => {
+  const first = SCREENS[0]!.device.id;
+  const here = new Map([
+    [first, "2026-11-21T12:00:00Z"],
+    // Already revoked in the page's data: counted once.
+    ["d3", "2026-11-21T12:00:00Z"],
+  ]);
+  it("is shown revoked and not online before the data reloads", () => {
+    const screens = withRevoked(SCREENS, here, "just now");
+    expect(screens[0]).toMatchObject({
+      online: false,
+      revoked: "just now",
+      device: { revokedAt: "2026-11-21T12:00:00Z" },
+    });
+    expect(screens[1]).toBe(SCREENS[1]);
+    expect(screens[2]).toBe(SCREENS[2]);
+    expect(withRevoked(SCREENS, new Map(), "just now")).toBe(SCREENS);
+  });
+  it("leaves the counts of online and active screens", () => {
+    expect(
+      countsWithRevoked({ total: 2, online: 1, revoked: 1 }, SCREENS, here),
+    ).toEqual({ total: 1, online: 0, revoked: 2 });
   });
 });

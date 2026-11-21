@@ -261,3 +261,28 @@ private func staleDashboardRoute() -> Handler {
         #expect(rotation.nextChange() == T0.addingTimeInterval(145))
     }
 }
+
+@Suite struct OfflineCornerBadgeTests {
+    private let t0 = Date(timeIntervalSince1970: 1_795_000_000)
+    private func badge(header: Bool = false, offline: Bool = false, after seconds: TimeInterval,
+                       language: ScreenLanguage = .en) -> String? {
+        PollHealth.cornerBadge(
+            showHeader: header, offline: offline, updatedAt: t0, refreshAfterSec: 60,
+            now: t0.addingTimeInterval(seconds), timeZone: "UTC", language: language)
+    }
+
+    /** Without the header, the header's offline text, by the same rule (#835). */
+    @Test func showsTheMarkerWithoutAHeaderByTheHeadersRule() {
+        let time = TVTime.hourMinute(t0, timeZone: "UTC", language: .en)
+        #expect(badge(after: 121) == "Offline — last update \(time)")
+        #expect(badge(after: 121, language: .de) == "Offline – letzte Aktualisierung \(TVTime.hourMinute(t0, timeZone: "UTC", language: .de))")
+        #expect(badge(offline: true, after: 5) == "Offline — last update \(time)")
+        #expect(badge(after: 120) == nil)
+    }
+
+    /** With the header, the header says it: no badge. */
+    @Test func showsNothingWithAHeader() {
+        #expect(badge(header: true, after: 600) == nil)
+        #expect(badge(header: true, offline: true, after: 5) == nil)
+    }
+}

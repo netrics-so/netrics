@@ -3391,6 +3391,15 @@ a.health-badge:hover {
   color: var(--t-muted, #8a919c);
 }
 
+/* A dashboard without its header (#835): a small, muted badge, as tvOS. */
+.slide-screen-status .kiosk-offline--badge {
+  padding: 0.3vh 0.8vw;
+  border-radius: 999px;
+  font-size: 1.6vh;
+  color: var(--t-muted, #8a919c);
+  background: color-mix(in srgb, var(--t-background, #07090c) 70%, transparent);
+}
+
 .slide-screen--idle,
 .slide-screen--idle * {
   cursor: none;

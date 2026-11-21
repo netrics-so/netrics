@@ -32,6 +32,11 @@ interface DeviceControlsProps {
   /** The Apple TV app shows Screen view only: no mode to choose. */
   appleTv: boolean;
   dashboards: Array<{ id: string; name: string }>;
+  /**
+   * Called with the revocation's time as soon as the API confirms it, so
+   * the page shows the screen revoked before its data reloads (#835).
+   */
+  onRevoked?: (revokedAt: string) => void;
 }
 
 /**
@@ -43,6 +48,7 @@ export function DeviceControls({
   device,
   appleTv,
   dashboards,
+  onRevoked,
 }: DeviceControlsProps) {
   const locale = useLocale();
   const t = useT("devices");
@@ -96,7 +102,10 @@ export function DeviceControls({
 
   function onRevoke() {
     setConfirming(false);
-    void run(() => revokeDevice(workspaceId, device.id));
+    void run(async () => {
+      const { device: revoked } = await revokeDevice(workspaceId, device.id);
+      onRevoked?.(revoked.revokedAt ?? new Date().toISOString());
+    });
   }
 
   return (

@@ -42,6 +42,7 @@ export const screensEn = {
     scope: "Fixed scope",
     noScope: "Whole dashboard",
     revokedNote: "Revoked {time}. This screen no longer shows data.",
+    revokedJustNow: "just now",
     readOnly: "Only owners and admins change a screen’s settings.",
     columns: {
       name: "Name",

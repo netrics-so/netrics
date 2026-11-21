@@ -823,4 +823,20 @@ public enum PollHealth {
     public static func showsOffline(offline: Bool, updatedAt: Date?, refreshAfterSec: Int, now: Date) -> Bool {
         offline || isStale(updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now)
     }
+
+    /**
+     * The corner badge of a dashboard without its header (#835): the
+     * header's offline text ("Offline — last update 14:05") by the same
+     * rule; nil with the header (it says so there) or while the poll is
+     * healthy. The web kiosk's `pollShowsOffline` is the same rule.
+     */
+    public static func cornerBadge(
+        showHeader: Bool, offline: Bool, updatedAt: Date?, refreshAfterSec: Int, now: Date, timeZone: String,
+        language: ScreenLanguage
+    ) -> String? {
+        guard !showHeader,
+            showsOffline(offline: offline, updatedAt: updatedAt, refreshAfterSec: refreshAfterSec, now: now)
+        else { return nil }
+        return TVTime.offlineMarker(updatedAt: updatedAt, timeZone: timeZone, language: language)
+    }
 }

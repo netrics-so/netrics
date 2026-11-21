@@ -229,16 +229,56 @@ function PairingScreen({ state }: { state: KioskState }) {
   );
 }
 
+/** Refreshes without a confirmed poll before a screen says it is offline. */
+export const POLL_STALE_AFTER = 2;
+
+/**
+ * Whether a screen says it is offline (#739, #835), as tvOS's
+ * `PollHealth.showsOffline`: the last poll failed, or none has confirmed
+ * the dashboard for more than two refreshes (a poll that stopped without
+ * failing).
+ */
+export function pollShowsOffline(
+  state: Pick<KioskState, "updatedAt" | "offline">,
+  refreshAfterSec: number,
+  now: number,
+): boolean {
+  if (state.offline) return true;
+  if (state.updatedAt === null) return false;
+  const seconds =
+    refreshAfterSec > 0 ? refreshAfterSec : DEVICE_REFRESH_AFTER_SECONDS;
+  return now - state.updatedAt > POLL_STALE_AFTER * seconds * 1000;
+}
+
+/** Now, every `everyMs`: for checks whose answer changes with time alone. */
+function useTicking(everyMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(timer);
+  }, [everyMs]);
+  return now;
+}
+
 /** The offline note; its last update in the viewer's zone (#736). */
-function OfflineMarker({ state }: { state: KioskState }) {
+function OfflineMarker({
+  state,
+  shown = state.offline,
+  className = "kiosk-offline",
+}: {
+  state: KioskState;
+  /** Whether to show it; the last poll's failure unless the caller knows more. */
+  shown?: boolean;
+  className?: string;
+}) {
   const t = useT("screen.kiosk");
   const locale = useLocale();
   const viewerZone = useViewerTimeZone();
-  if (!state.offline) {
+  if (!shown) {
     return null;
   }
   return (
-    <span className="kiosk-offline" role="status" title={state.lastError ?? ""}>
+    <span className={className} role="status" title={state.lastError ?? ""}>
       {state.updatedAt
         ? t("offlineSince", {
             time: clockTime(state.updatedAt, viewerZone, locale),
@@ -321,6 +361,12 @@ function KioskSlides({
     images: state.images,
   };
   const formats = isFormatsDashboard(payload) ? payload : null;
+  // Without the header, a muted badge in the corner says the screen is
+  // offline, by tvOS's rule (#835); checked again as time passes.
+  const now = useTicking(10_000);
+  const cornerOffline =
+    !dashboard.showHeader &&
+    pollShowsOffline(state, payload.refreshAfterSec, now);
   return (
     <div
       className={idle ? "slide-screen slide-screen--idle" : "slide-screen"}
@@ -350,9 +396,13 @@ function KioskSlides({
         empty={<p className="kiosk-text slide-screen-empty">{t("noSlides")}</p>}
       />
       {/* With the header the marker is in it; without, in the corner. */}
-      {state.offline && !dashboard.showHeader ? (
+      {cornerOffline ? (
         <div className="slide-screen-status">
-          <OfflineMarker state={state} />
+          <OfflineMarker
+            state={state}
+            shown
+            className="kiosk-offline kiosk-offline--badge"
+          />
         </div>
       ) : null}
     </div>

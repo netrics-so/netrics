@@ -151,6 +151,13 @@ public struct SlideCanvasView: View {
                         .position(x: CGFloat(rect.x + rect.width / 2), y: CGFloat(rect.y + rect.height / 2))
                 }
             }
+            if geometry.frame.header == nil {
+                // No header to carry the offline marker: a muted badge in
+                // the top corner, in the canvas padding (#835).
+                OfflineCornerBadge(state: state, refreshAfterSec: payload.refreshAfterSec, env: env)
+                    .frame(width: width, height: height, alignment: .topTrailing)
+                    .allowsHitTesting(false)
+            }
             if let footer {
                 // In the canvas's bottom padding (32 units): the grid is unchanged.
                 let canvas = geometry.frame.canvas
@@ -221,6 +228,34 @@ struct StoredImage {
  * beside a one-line name, so it is dropped before the dashboard name is
  * cut. The page ("1/2") is never dropped.
  */
+/** "⚠ Offline — last update 14:05" in a corner of a slide without its header (#835). */
+struct OfflineCornerBadge: View {
+    let state: DeviceState
+    let refreshAfterSec: Int
+    let env: WidgetEnv
+
+    var body: some View {
+        // Re-checked as time passes, as the header's marker (#739).
+        TimelineView(.periodic(from: .distantPast, by: SlideHeaderView.healthCheck)) { context in
+            if let text = PollHealth.cornerBadge(
+                showHeader: false, offline: state.offline, updatedAt: state.updatedAt,
+                refreshAfterSec: refreshAfterSec, now: context.date, timeZone: TVTime.viewerZone(),
+                language: env.language)
+            {
+                Text(verbatim: "⚠ \(text)")
+                    .font(env.font(20))
+                    .foregroundStyle(env.colors.muted)
+                    .lineLimit(1)
+                    .padding(.horizontal, env.pt(10))
+                    .padding(.vertical, env.pt(3))
+                    .background(Capsule().fill(env.colors.background.opacity(0.7)))
+                    .padding(.top, env.pt(1))
+                    .padding(.trailing, env.pt(StudioLayout.padding))
+            }
+        }
+    }
+}
+
 struct SlideHeaderView: View {
     let payload: DeviceDashboardV2
     let slide: DeviceSlide
