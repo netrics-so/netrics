@@ -40,7 +40,6 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       environmentName: "Name der Umgebung",
       removeEnvironment: "Umgebung entfernen",
       testEnvironment: "Testen mit",
-      project: "Projekt",
       environmentWarning:
         "Wenn du mit einer anderen Umgebung testest oder diese entfernst, wird die gespeicherte Anmeldung gelöscht.",
       hostWarning:
@@ -132,7 +131,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         "Hake die Felder an, die du behalten willst. Alles andere wird nicht gespeichert.",
       noRecords:
         "Die Anfrage hat keine Einträge geliefert. Ändere die Anfrage oder den Zeitraum und sende sie erneut.",
-      noTest: "Sende zuerst eine Testanfrage.",
+      noTest:
+        "Sende eine Testanfrage, um die Antwort zu sehen und Felder anzuhaken.",
       useAsRecords: "Als Einträge verwenden",
       wholeResponse: "Die ganze Antwort",
       suggestedList: "Vorgeschlagen",
@@ -170,6 +170,9 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       keyField: "Schlüsselfeld",
       timeField: "Zeitfeld",
       noTimeField: "Keins",
+      timeKey:
+        "Der Schlüssel ist {key}: Einträge mit demselben Wert in {key} ersetzen einander. Wenn es einen Eintrag pro {time} gibt, nimm {time} als Schlüssel.",
+      useTimeKey: "{time} als Schlüssel nehmen",
       preview: "Vorschau ({count, plural, one {# Zeile} other {# Zeilen}})",
       updatePreview: "Vorschau aktualisieren",
       previewStale:
@@ -181,6 +184,14 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       nulled:
         "{field}: {count, plural, one {# Wert war} other {# Werte waren}} nicht lesbar und {count, plural, one {wurde} other {wurden}} leer.",
       cut: "{count, plural, one {# weiterer} other {# weitere}}",
+      images: {
+        label: "Bild-Hosts",
+        help: "netrics kopiert Bilder nur von diesen Hosts. Trenne sie mit Kommas; *.example.com erlaubt jede Subdomain.",
+        apiOnly:
+          "Ohne Bild-Hosts werden Bilder nur vom API-Host {host} kopiert.",
+        seen: "Bilder in der Testantwort liegen auf {hosts}. Von dort werden noch keine Bilder kopiert.",
+        allow: "{hosts} erlauben",
+      },
     },
     tree: {
       label: "Antwort",
@@ -259,6 +270,7 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       streamSummary:
         "{name}: {count, plural, one {# Feld} other {# Felder}}, Schlüssel {key}",
       hosts: "netrics sendet Anfragen an {hosts}.",
+      imageHosts: "netrics kopiert Bilder von {hosts}.",
       save: "Speichern und verbinden",
       saveVersion: "Neue Version speichern",
       saving: "Wird gespeichert …",
@@ -345,6 +357,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         "Für eine Testanfrage gibst du die Anmeldung ein und speicherst sie. Zum Speichern von Änderungen brauchst du sie nicht.",
       secretValueMissing:
         "Für eine Testanfrage gibst du die geheimen Verbindungswerte ein und speicherst sie. Zum Speichern von Änderungen brauchst du sie nicht.",
+      variableValue:
+        "Für eine Testanfrage gibst du für jeden Verbindungswert einen Wert ein. Zum Speichern von Änderungen brauchst du sie nicht.",
     },
     errors: {
       leave:
@@ -425,6 +439,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         variable_removed:
           "Der Verbindungswert {variable} wird nicht mehr genutzt.",
         schedule_changed: "Das Aktualisierungsintervall ändert sich.",
+        images_changed:
+          "Die Bildeinstellungen ändern sich: von welchen Hosts Bilder kopiert werden oder wie viele.",
       },
       aspects: {
         type: "Typ",
@@ -433,6 +449,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         format: "Format",
         unit: "Einheit",
         classification: "Einstufung",
+        nullable: "darf leer sein",
+        name: "Name",
       },
       needs: {
         title: "Vor der Aktualisierung",

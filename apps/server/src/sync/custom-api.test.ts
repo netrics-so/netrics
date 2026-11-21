@@ -28,6 +28,7 @@ import {
 
 import { createCredentialKeyring, encryptCredentials } from "../credentials.js";
 import { canonicalSha256 } from "../custom-api/canonical-json.js";
+import { createDataService } from "../data/service.js";
 import { ContinueJobError, createJobHandlers } from "../jobs/handlers.js";
 import {
   createTestDatabase,
@@ -229,6 +230,19 @@ describe("custom-api on the sync engine", () => {
       new Set([3]),
     );
     expect(await authState(connectionId)).toBe("ok");
+    // Datasets are named by stream: the listing prefixes the connection's
+    // name, so two connections can be told apart (#834).
+    const [user] = await owner<{ id: string }[]>`
+      select id from users where email = 'custom-api@example.com'`;
+    const { sources } = await createDataService(appDb).listSources({
+      workspaceId,
+      callerId: user!.id,
+    });
+    expect(
+      sources.find((source) => source.connectionId === connectionId)?.name,
+    ).toBe(
+      `${definition("pages").name} · ${definition("pages").streams[0]!.name}`,
+    );
   });
 
   it("marks the connection auth_failed with the 401 message", async () => {

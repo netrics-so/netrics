@@ -149,6 +149,7 @@ export function useChangeText() {
         return t(`changes.${change.kind}`, { variable: change.variable });
       case "auth_changed":
       case "schedule_changed":
+      case "images_changed":
         return t(`changes.${change.kind}`);
     }
   };
@@ -228,6 +229,8 @@ export function ConnectionUpdateReview({
     }
   }
 
+  const back = `/workspaces/${workspaceId}/connections/${connectionId}`;
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
@@ -248,8 +251,10 @@ export function ConnectionUpdateReview({
         if (fresh) setPlan(fresh);
         else router.refresh();
       } else {
+        // The review page has nothing left to show once the update ran
+        // (#834): the connection's page confirms it.
         setDone(result.version);
-        router.refresh();
+        router.push(`${back}?updated=${result.version}`);
       }
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
@@ -258,7 +263,6 @@ export function ConnectionUpdateReview({
     }
   }
 
-  const back = `/workspaces/${workspaceId}/connections/${connectionId}`;
   if (done !== null)
     return (
       <div className="card stack">

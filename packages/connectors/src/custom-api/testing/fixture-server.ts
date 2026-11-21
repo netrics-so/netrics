@@ -77,9 +77,13 @@ export interface RecordedRequest {
 }
 
 export interface CustomApiFixtureServer {
-  /** "http://127.0.0.1:<port>" or, with tls, "https://127.0.0.1:<port>". */
+  /**
+   * "http://<publicHost>:<port>" or, with tls, "https://<publicHost>:<port>"
+   * (publicHost: 127.0.0.1 unless given).
+   */
   origin: string;
-  host: "127.0.0.1";
+  /** The public host (127.0.0.1 unless given). */
+  host: string;
   port: number;
   /** The self-signed certificate (PEM) with tls, for egress `tlsCa`; null without. */
   ca: string | null;
@@ -263,6 +267,11 @@ function selfSignedCertificate(): { key: string; cert: string } {
   return certificate;
 }
 
+/** A host as written in a URL: IPv6 addresses in brackets. */
+function urlHost(host: string): string {
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
 function single(value: string | string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 }
@@ -271,13 +280,26 @@ function single(value: string | string[] | undefined): string {
  * Starts the fixture API on 127.0.0.1 (port 0 unless given). With
  * `tls: true` it serves https with a self-signed certificate for
  * 127.0.0.1 (exposed as `ca`); an object supplies key and certificate.
+ *
+ * `publicHost` is the host name the answers link to (image URLs, next
+ * links, echoed URLs), for a client that reaches the fixture under another
+ * name, such as a containerised netrics through `host.docker.internal`
+ * (#834); `otherHost` is the "another host" of the off-host edge cases
+ * (default: localhost, or 127.0.0.1 when publicHost is localhost). With
+ * tls and a public host name, supply a certificate for that name.
  */
 export async function startCustomApiFixtureServer(
   options: {
     port?: number;
     tls?: boolean | { key: string; cert: string };
+    publicHost?: string;
+    otherHost?: string;
   } = {},
 ): Promise<CustomApiFixtureServer> {
+  const publicHost = options.publicHost ?? "127.0.0.1";
+  const otherHost =
+    options.otherHost ??
+    (publicHost === "localhost" ? "127.0.0.1" : "localhost");
   const tls =
     options.tls === true
       ? selfSignedCertificate()
@@ -521,8 +543,8 @@ export async function startCustomApiFixtureServer(
       query,
       headers,
     });
-    const origin = `${scheme}://127.0.0.1:${port}`;
-    const otherOrigin = `${scheme}://localhost:${port}`;
+    const origin = `${scheme}://${urlHost(publicHost)}:${port}`;
+    const otherOrigin = `${scheme}://${urlHost(otherHost)}:${port}`;
     const items = FIXTURE_ITEMS.map((item) => ({
       ...item,
       image_url: `${origin}/images/${item.id}.png`,
@@ -854,8 +876,8 @@ export async function startCustomApiFixtureServer(
   });
   port = (server.address() as AddressInfo).port;
   return {
-    origin: `${scheme}://127.0.0.1:${port}`,
-    host: "127.0.0.1",
+    origin: `${scheme}://${urlHost(publicHost)}:${port}`,
+    host: publicHost,
     port,
     ca: tls ? tls.cert : null,
     requests,

@@ -283,7 +283,16 @@ export const customApiChangeSchema = z.discriminatedUnion("kind", [
     stream: z.string(),
     field: z.string(),
     changes: z.array(
-      z.enum(["type", "path", "role", "format", "unit", "classification"]),
+      z.enum([
+        "type",
+        "path",
+        "role",
+        "format",
+        "unit",
+        "classification",
+        "nullable",
+        "name",
+      ]),
     ),
   }),
   z.object({
@@ -309,6 +318,8 @@ export const customApiChangeSchema = z.discriminatedUnion("kind", [
     variable: z.string(),
   }),
   z.object({ kind: z.literal("schedule_changed") }),
+  /** The image hosts or the number of newest items with images (#834). */
+  z.object({ kind: z.literal("images_changed") }),
 ]);
 export type CustomApiChange = z.infer<typeof customApiChangeSchema>;
 

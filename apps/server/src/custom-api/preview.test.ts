@@ -54,6 +54,27 @@ describe("redaction", () => {
     );
   });
 
+  it("keeps an OAuth envelope's hosts and client ID readable (#834)", () => {
+    const secrets = secretSetOf(
+      {
+        host: "api.example.test:8443",
+        hosts: ["api.example.test", "auth.example.test"],
+        clientId: "client-123",
+        clientSecret: "client-secret-1",
+        refreshToken: null,
+      },
+      {},
+    );
+    expect(
+      redactUrl(
+        "https://api.example.test:8443/items?client_id=client-123&s=client-secret-1",
+        secrets,
+      ),
+    ).toBe(
+      "https://api.example.test:8443/items?client_id=client-123&s=[redacted]",
+    );
+  });
+
   it("redacts lowercase percent-escapes, JSON-escaped forms and URLs that new URL() re-encodes", () => {
     const secrets = secretSetOf({ token: "tok/en+value" }, {});
     expect(redactText("a tok%2fen%2bvalue b TOK%2Fen%2Bvalue", secrets)).toBe(

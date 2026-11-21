@@ -265,17 +265,12 @@ export function ConnectDefinition({
           setSecrets((current) => ({ ...current, [key]: value ?? "" }))
         }
       />
-      <div className="field">
-        <label htmlFor="custom-api-connect-project">
-          {t("basics.project")}
-        </label>
-        <ProjectSelect
-          id="custom-api-connect-project"
-          projects={projects}
-          value={projectId}
-          onChange={setProjectId}
-        />
-      </div>
+      <ProjectSelect
+        id="custom-api-connect-project"
+        projects={projects}
+        value={projectId}
+        onChange={setProjectId}
+      />
       {oauthCode ? <p className="help">{t("connect.signInNext")}</p> : null}
       {error ? (
         <p className="error" role="alert">
