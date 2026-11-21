@@ -8,6 +8,7 @@ import {
 } from "@/lib/project-pickers";
 import { pickerQuery, projectScope } from "@/lib/project-scope";
 import { SharedFilterEditor } from "./shared-filters";
+import { useConfirmation } from "@/components/confirm-dialog";
 import { DashboardFilters } from "@/components/studio/shared-filters";
 
 import Link from "next/link";
@@ -18,6 +19,7 @@ import {
   useId,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from "react";
 
@@ -275,7 +277,9 @@ export function StudioEditor({
     ),
   );
   const dirty = isDirty(state) || pendingFormulaIds.length > 0;
-  useLeaveGuard(dirty);
+  const leaveDialog = useLeaveGuard(dirty);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const confirmation = useConfirmation();
 
   const { draft } = state;
   const slide = selectedSlide(state);
@@ -786,7 +790,9 @@ export function StudioEditor({
                 {t("dashboards")}
               </Link>
             </nav>
-            <h1>{draft.name.trim() || t("untitled")}</h1>
+            <h1 ref={heading} tabIndex={-1}>
+              {draft.name.trim() || t("untitled")}
+            </h1>
             <span
               className={
                 dirty ? "studio-state studio-state--dirty" : "studio-state"
@@ -828,12 +834,21 @@ export function StudioEditor({
               <button
                 type="button"
                 className="studio-discard"
-                onClick={() => {
-                  if (window.confirm(t("discardConfirm"))) {
+                onClick={async () => {
+                  const confirmed = await confirmation.ask({
+                    title: t("discardConfirm"),
+                    confirm: t("discard"),
+                    cancel: common("cancel"),
+                    destructive: true,
+                  });
+                  if (confirmed) {
                     dispatch({ type: "discard" });
                     setFormulaDrafts({});
                     setError(null);
                     setShowProblems(false);
+                    // This button is disabled now: the focus goes to the
+                    // heading instead of being lost.
+                    setTimeout(() => heading.current?.focus(), 0);
                   }
                 }}
                 disabled={!dirty || saving}
@@ -873,10 +888,17 @@ export function StudioEditor({
             <div className="actions">
               <button
                 type="button"
-                onClick={() => {
-                  if (!dirty || window.confirm(t("loadTheirsConfirm"))) {
-                    void reloadSaved();
-                  }
+                onClick={async () => {
+                  const confirmed =
+                    !dirty ||
+                    (await confirmation.ask({
+                      title: t("loadTheirsConfirm"),
+                      text: t("loadTheirsConfirmText"),
+                      confirm: t("loadTheirs"),
+                      cancel: common("cancel"),
+                      destructive: true,
+                    }));
+                  if (confirmed) void reloadSaved();
                 }}
                 disabled={saving}
               >
@@ -1248,6 +1270,8 @@ export function StudioEditor({
             }
           />
         ) : null}
+        {leaveDialog}
+        {confirmation.dialog}
       </div>
     </DashboardDataProvider>
   );

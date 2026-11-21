@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.setConfig({ testTimeout: 20_000 });
 
 import {
+  connectionDetailResponseSchema,
   connectionResponseSchema,
   connectionPreviewResponseSchema,
   connectionResourcesResponseSchema,
@@ -70,7 +71,7 @@ const CONNECTOR_ID = "asc-fixture";
 /** What the fixture connector does on its next calls. */
 let behaviour: "ok" | "revoked" = "ok";
 /** What the probe answers. */
-let probeAnswer: "ok" | "wrong-vendor" = "ok";
+let probeAnswer: "ok" | "wrong-vendor" | "refused" | "refused-as-text" = "ok";
 /** Credentials every connector call received, in order. */
 const received: Array<Record<string, unknown>> = [];
 
@@ -167,6 +168,18 @@ const provider: SignedKeyProviderDefinition = {
       async run(context) {
         // A probe's message may quote what it got; the host redacts it.
         const token = context.accessToken();
+        if (probeAnswer === "refused" || probeAnswer === "refused-as-text") {
+          // A refusal with a known reason names its code (#795); text in
+          // its place is not a code and never leaves the host.
+          return {
+            ok: false,
+            message: `The key was refused (token ${token}).`,
+            code:
+              probeAnswer === "refused"
+                ? "app_store_connect.key_mismatch"
+                : `refused ${token}`,
+          };
+        }
         return probeAnswer === "ok"
           ? { ok: true }
           : {
@@ -448,13 +461,50 @@ describe("creating a connection with a key", () => {
     expect(received).toHaveLength(0);
   });
 
+  it("answers a refused probe with its reason code next to the message (#795)", async () => {
+    const before = await connectionCount();
+    try {
+      probeAnswer = "refused";
+      const refused = await create(keyCredentials());
+      expect(refused.statusCode).toBe(400);
+      expect(refused.json()).toEqual({
+        error: "The key was refused (token [redacted]).",
+        errorCode: "app_store_connect.key_mismatch",
+      });
+      // The preview validates the same way.
+      const preview = await call("POST", "/connections/preview", {
+        connectorId: CONNECTOR_ID,
+        config: { vendorNumber: "85012345" },
+        credentials: keyCredentials(),
+      });
+      expect(preview.statusCode).toBe(400);
+      expect(preview.json()).toMatchObject({
+        errorCode: "app_store_connect.key_mismatch",
+      });
+      probeAnswer = "refused-as-text";
+      const text = await create(keyCredentials());
+      expect(text.statusCode).toBe(400);
+      expect(text.json()).toEqual({
+        error: "The key was refused (token [redacted]).",
+      });
+    } finally {
+      probeAnswer = "ok";
+    }
+    expect(await connectionCount()).toBe(before);
+    expect(received).toHaveLength(0);
+  });
+
   it("refuses a key the provider rejects during the connector check", async () => {
     const before = await connectionCount();
     behaviour = "revoked";
     try {
-      expect(errorOf(await create(keyCredentials()))).toBe(
+      const response = await create(keyCredentials());
+      expect(errorOf(response)).toBe(
         appStoreConnectProvider.authFailure.unauthorized,
       );
+      expect(response.json()).toMatchObject({
+        errorCode: "app_store_connect.unauthorized",
+      });
     } finally {
       behaviour = "ok";
       received.length = 0;
@@ -594,13 +644,23 @@ describe("a signed-key connection", () => {
     received.length = 0;
     expect((await state()).auth_state).toBe("auth_failed");
     const [run] = await admin`
-      select error_class, error_message from sync_runs
+      select error_class, error_message, error_code from sync_runs
       where connection_id = ${connectionId} and status = 'failed'
       order by started_at desc limit 1
     `;
     expect(run).toMatchObject({
       error_class: "auth",
       error_message: appStoreConnectProvider.authFailure.unauthorized,
+      // The stable reason, by which clients translate (#795).
+      error_code: "app_store_connect.unauthorized",
+    });
+    const detail = connectionDetailResponseSchema.parse(
+      (await call("GET", `/connections/${connectionId}`)).json(),
+    );
+    expect(detail.syncRuns[0]).toMatchObject({
+      errorClass: "auth",
+      errorMessage: appStoreConnectProvider.authFailure.unauthorized,
+      errorCode: "app_store_connect.unauthorized",
     });
   });
 

@@ -110,8 +110,11 @@ export const sharedEn = {
   },
   /**
    * A provider's refusal of a connection's key (#378). The server records
-   * the English text as a failed sync's or key check's message; clients
-   * show it in the viewer's language (`localizedProviderMessage`).
+   * a reason code next to the English message of a failed sync or key
+   * check (#795), and clients show the code's text in the viewer's
+   * language (`providerMessageForCode`, PROVIDER_MESSAGE_CODES). Rows
+   * recorded before codes are found by their exact English text
+   * (`localizedProviderMessage`).
    */
   providerMessages: {
     appleAds: {
@@ -124,6 +127,23 @@ export const sharedEn = {
       /** A call answered 403. */
       forbidden:
         "Apple Ads refused access: the API user needs an API role, such as API Account Read Only (API Read Only in Apple's answers), in this ad account. A non-API role removes API access. Ask an Account Admin to change the role, or set up a new key.",
+    },
+    appStoreConnect: {
+      /** A call answered 401 with a freshly signed token. */
+      unauthorized:
+        "App Store Connect refused the key: it was revoked, or the issuer ID, key ID and private key do not belong together. Upload a new App Store Connect key.",
+      /** A call answered 403. */
+      forbidden:
+        "App Store Connect refused access: the key's role was changed or access was removed. This key needs the Sales or Finance role. Upload a new App Store Connect key.",
+      /** The key check answered 401 before the key was stored. */
+      keyMismatch:
+        "App Store Connect refused the key: the issuer ID, key ID and private key do not belong together, or the key was revoked. Check the three values, or create a new team key and upload it.",
+      /** The key check answered 403: the key's role reads no sales. */
+      roleMissing:
+        "This key cannot read sales reports. It needs the Sales or Finance role; Admin also works, but grants more than netrics needs. Create a team key with the Sales role and upload it.",
+      /** The key check answered 403 for a missing agreement. */
+      agreementsMissing:
+        "App Store Connect requires an agreement that is missing or has expired. The Account Holder must accept the latest agreements in App Store Connect (Business), then try again.",
     },
     /**
      * The custom-api connector's fixed messages (milestone 13), equal to

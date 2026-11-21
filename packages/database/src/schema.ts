@@ -896,6 +896,10 @@ export const syncRuns = pgTable(
     errorClass: text("error_class"),
     // Already redacted by the writer; must never carry credential material.
     errorMessage: text("error_message"),
+    // The stable reason of the failure, when it has a known one (#795):
+    // clients translate by it; the message stays the English fallback. A
+    // fixed word such as "apple_ads.invalid_client", never provider text.
+    errorCode: text("error_code"),
     observationsWritten: integer("observations_written").notNull().default(0),
   },
   (table) => [
@@ -910,6 +914,10 @@ export const syncRuns = pgTable(
     check(
       "sync_runs_error_class_valid",
       sql`${table.errorClass} in ('auth', 'transient', 'contract', 'budget', 'rate_limited')`,
+    ),
+    check(
+      "sync_runs_error_code_valid",
+      sql`${table.errorCode} ~ '^[a-z0-9]+([._][a-z0-9]+)*$' and length(${table.errorCode}) <= 64`,
     ),
     index("sync_runs_connection_started_idx").on(
       table.connectionId,

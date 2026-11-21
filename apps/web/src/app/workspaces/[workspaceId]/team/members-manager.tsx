@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { canManageMember } from "@netrics/domain";
 import type { Invitation, Member, WorkspaceRole } from "@netrics/contracts";
 
+import { useConfirmation } from "@/components/confirm-dialog";
 import {
   apiErrorMessage,
   createInvitation,
@@ -205,6 +206,8 @@ function MemberRow({
   const locale = useLocale();
   const t = useT("members");
   const roles = useT("common.roles");
+  const common = useT("common");
+  const confirmation = useConfirmation();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -266,15 +269,17 @@ function MemberRow({
             type="button"
             className="danger"
             disabled={pending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  t("confirmRemove", {
-                    name: member.displayName,
-                    email: member.email,
-                  }),
-                )
-              ) {
+            onClick={async () => {
+              const confirmed = await confirmation.ask({
+                title: t("confirmRemove", {
+                  name: member.displayName,
+                  email: member.email,
+                }),
+                confirm: common("remove"),
+                cancel: common("cancel"),
+                destructive: true,
+              });
+              if (confirmed) {
                 void run(() => removeMember(workspaceId, member.userId));
               }
             }}
@@ -284,6 +289,7 @@ function MemberRow({
         ) : null}
       </span>
       {error ? <div className="error">{error}</div> : null}
+      {confirmation.dialog}
     </div>
   );
 }

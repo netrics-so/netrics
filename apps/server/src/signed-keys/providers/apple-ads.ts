@@ -53,8 +53,9 @@ const SEARCHADS_ID = /^SEARCHADS\.[0-9a-z]+(?:-[0-9a-z]+){2,}$/i;
 const KEY_ID = /^[0-9a-z]+(?:-[0-9a-z]+){2,}$/i;
 
 /**
- * The refusals' English texts come from the shared catalog (#378), so the
- * web shows a recorded refusal in the viewer's language.
+ * The refusals' English texts come from the shared catalog (#378). Each is
+ * recorded with its reason code (#795), by which the web shows a refusal
+ * in the viewer's language.
  */
 const REFUSALS = sharedEn.providerMessages.appleAds;
 
@@ -157,6 +158,7 @@ export const appleAdsProvider: SignedKeyProviderDefinition = {
       expires_in: z.number().int().positive(),
     }),
     invalidClient: INVALID_CLIENT_MESSAGE,
+    invalidClientCode: "apple_ads.invalid_client",
   },
   serverDomains: [APPLE_ID_HOST, APPLE_ADS_HOST],
   // Apple asks the API user for a public key: netrics generates the pair
@@ -187,5 +189,9 @@ export const appleAdsProvider: SignedKeyProviderDefinition = {
   authFailure: {
     unauthorized: REFUSALS.unauthorized,
     forbidden: REFUSALS.forbidden,
+    codes: {
+      unauthorized: "apple_ads.unauthorized",
+      forbidden: "apple_ads.forbidden",
+    },
   },
 };

@@ -29,8 +29,8 @@ export const studioDe: Catalog<typeof studioEn> = {
       showOnTvsCount: "Auf Bildschirmen zeigen ({count})",
       conflict:
         "Jemand anderes hat dieses Dashboard gespeichert, während du es bearbeitet hast. Deine Änderungen sind nicht gespeichert.",
-      loadTheirsConfirm:
-        "Die gespeicherte Version laden? Deine ungespeicherten Änderungen gehen verloren.",
+      loadTheirsConfirm: "Die gespeicherte Version laden?",
+      loadTheirsConfirmText: "Deine ungespeicherten Änderungen gehen verloren.",
       loadTheirs: "Ihre Version laden",
       saveCopy: "Meine als Kopie speichern",
       stage: "Folie",
@@ -601,8 +601,9 @@ export const studioDe: Catalog<typeof studioEn> = {
       customizeHelp:
         "Ordne diese Folie in {ratio} von Hand an, ausgehend vom automatischen Layout. Andere Folien bleiben automatisch, und Widgets, die du in {primary} hinzufügst, werden hier für dich zum Prüfen platziert.",
       backToAuto: "Zurück zu automatisch",
-      backToAutoConfirm:
-        "Diese Folie in {ratio} wieder automatisch anordnen? Deine Anordnung für {ratio} wird entfernt (Rückgängig holt sie zurück).",
+      backToAutoConfirm: "Diese Folie in {ratio} wieder automatisch anordnen?",
+      backToAutoConfirmText:
+        "Deine Anordnung für {ratio} wird entfernt (Rückgängig holt sie zurück).",
       customEditorNote:
         "Diese Folie ist in {ratio} von Hand angeordnet. Position, Größe, Seite und Sichtbarkeit gelten hier nur für {ratio}. Widgets fügst du in {primary} hinzu.",
       contentEverywhere:
@@ -621,8 +622,9 @@ export const studioDe: Catalog<typeof studioEn> = {
       showIn: "Anzeigen",
       showInLabel: "{name} in {ratio} anzeigen",
       makePrimary: "{ratio} zum primären Format machen",
-      makePrimaryConfirm:
-        "{name} {ratio} zum primären Format machen? Das speichert das Dashboard. Du gestaltest dann in {ratio}, und das Layout in {primary} bleibt als angepasstes Layout erhalten.",
+      makePrimaryConfirm: "{name} {ratio} zum primären Format machen?",
+      makePrimaryConfirmText:
+        "Das speichert das Dashboard. Du gestaltest dann in {ratio}, und das Layout in {primary} bleibt als angepasstes Layout erhalten.",
       makePrimaryBlocked:
         "Damit {ratio} das primäre Format werden kann, muss dort jede Folie auf eine Seite passen und jedes Widget angezeigt werden.",
       blockedOverflow: "{slide} geht auf mehr als einer Seite weiter.",

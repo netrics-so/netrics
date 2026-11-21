@@ -88,11 +88,79 @@ describe("web → API calls", () => {
     );
   });
 
+  // A server-side call that forwards only the cookie answers in the wrong
+  // language (#770); forwardedHeaders carries both (#790).
+  it.each([
+    // The pages before #770.
+    'import { headers } from "next/headers";\nexport async function page() {\n  const cookieHeader = (await headers()).get("cookie") ?? "";\n  return cookieHeader;\n}\n',
+    // The fetchers before #770.
+    'declare function apiFetch(path: string, init: object): Promise<Response>;\nexport const get = (cookieHeader: string) =>\n  apiFetch("/v1/me", { headers: { cookie: cookieHeader } });\n',
+    "export const h = (value: string) => ({ Cookie: value });\n",
+    'export const h = (value: string) => ({ "cookie": value });\n',
+    'export const h = (value: string) => new Headers([["cookie", value]]);\n',
+    'export function h(value: string) {\n  const headers = new Headers();\n  headers.set("cookie", value);\n  return headers;\n}\n',
+    'export function h(value: string) {\n  const headers = new Headers();\n  headers.append("Cookie", value);\n  return headers;\n}\n',
+  ])("rejects a hand-built cookie header: %s", async (source) => {
+    for (const filePath of [
+      "apps/web/src/lib/x.ts",
+      "apps/web/src/app/x/page.tsx",
+    ]) {
+      const errors = await restrictedSyntax(filePath, source);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.message).toContain("forwardedHeaders");
+    }
+  });
+
+  it.each([
+    'import { headers } from "next/headers";\nimport { forwardedHeaders } from "@/lib/api-fetch";\nexport const forwarded = async () => forwardedHeaders(await headers());\n',
+    // Response cookies are another matter (the /v1 proxy).
+    'export const h = (upstream: Response, out: Headers) => {\n  for (const cookie of upstream.getSetCookie()) out.append("set-cookie", cookie);\n};\n',
+    'export const language = (incoming: Headers) => incoming.get("accept-language");\n',
+  ])("allows forwarded headers and response cookies: %s", async (source) => {
+    expect(await restrictedSyntax("apps/web/src/lib/x.ts", source)).toEqual([]);
+  });
+
+  it("allows the helper itself to read the cookie header", async () => {
+    const errors = await restrictedSyntax(
+      "apps/web/src/lib/api-fetch.ts",
+      'export const c = (incoming: Headers) => incoming.get("cookie");\n',
+    );
+    expect(errors).toEqual([]);
+  });
+
   it("allows the helper itself to read NETRICS_API_URL", async () => {
     const errors = await restrictedSyntax(
       "apps/web/src/lib/api-fetch.ts",
       "export const u = process.env.NETRICS_API_URL;\n",
     );
     expect(errors).toEqual([]);
+  });
+});
+
+// Questions are asked in the app's own dialog (#798).
+describe("web confirmations", () => {
+  it.each([
+    'export const ok = () => window.confirm("Delete?");\n',
+    'export const ok = () => confirm("Delete?");\n',
+    'export const say = () => window.alert("Done");\n',
+    'export const name = () => window.prompt("Name");\n',
+  ])("rejects a native browser dialog: %s", async (source) => {
+    for (const filePath of [
+      "apps/web/src/lib/x.ts",
+      "apps/web/src/components/x.tsx",
+    ]) {
+      const [result] = await eslint.lintText(source, { filePath });
+      expect(result?.messages.map((message) => message.ruleId)).toEqual([
+        "no-alert",
+      ]);
+    }
+  });
+
+  it("allows a question asked through the app's dialog", async () => {
+    const [result] = await eslint.lintText(
+      "declare const steps: { confirm(): Promise<boolean> };\nexport const ok = () => steps.confirm();\n",
+      { filePath: "apps/web/src/components/x.tsx" },
+    );
+    expect(result?.messages).toEqual([]);
   });
 });

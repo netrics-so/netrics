@@ -549,7 +549,7 @@ export async function queryMetricBreakdown(
 
   let rows: GroupRow[];
   try {
-    rows = await readGroups(current);
+    rows = await readGroups(current, request.groups);
   } catch (err) {
     if (isQueryCanceled(err)) {
       return { ok: false, status: 503, error: "query_timeout" };

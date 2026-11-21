@@ -116,7 +116,7 @@ export function StoreTemplateForm({
     } | null>(null);
   const initialized = useRef(!!install || !!initialOptions);
   const unsaved = dirty && !done;
-  useLeaveGuard(!onUnsaved && unsaved, t("unsaved"));
+  const leaveDialog = useLeaveGuard(!onUnsaved && unsaved, t("unsaved"));
   useEffect(() => {
     onUnsaved?.(unsaved);
   }, [unsaved, onUnsaved]);
@@ -836,6 +836,7 @@ export function StoreTemplateForm({
           {error}
         </p>
       ) : null}
+      {leaveDialog}
     </div>
   );
 }

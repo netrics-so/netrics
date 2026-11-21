@@ -12,6 +12,7 @@ import { AppPicker } from "./app-picker";
 import { ConfigFields } from "./config-fields";
 import {
   apiErrorMessage,
+  providerFailureMessage,
   previewStoredConnection,
   updateConnection,
 } from "@/lib/api";
@@ -55,7 +56,7 @@ export function StoreConnectionSettings({
   const [pending, setPending] = useState<"check" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  useLeaveGuard(dirty, t("unsaved"));
+  const leaveDialog = useLeaveGuard(dirty, t("unsaved"));
   const [notice, setNotice] = useState<string | null>(null);
   function change(key: string, value: string) {
     setDirty(true);
@@ -168,7 +169,7 @@ export function StoreConnectionSettings({
           className={preview.check.ok ? "notice" : "error"}
           role={preview.check.ok ? "status" : "alert"}
         >
-          {preview.check.message ??
+          {providerFailureMessage(preview.check, locale) ??
             (preview.check.ok ? t("accessOk") : t("accessFailed"))}
         </div>
       ) : null}
@@ -207,6 +208,7 @@ export function StoreConnectionSettings({
           {error}
         </p>
       ) : null}
+      {leaveDialog}
     </form>
   );
 }

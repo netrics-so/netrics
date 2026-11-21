@@ -9,6 +9,7 @@ import {
   storeTemplateV3,
   storeTemplateV4,
   storeTemplateV5,
+  storeTemplateV6,
   type StoreTemplateIds,
   type StoreTemplateInputs,
   type StoreTemplateRecord,
@@ -100,6 +101,8 @@ const VERSION_HASHES: Record<number, string> = {
   // Version 6 changes only app slides, which `fixtureInputs` has none of:
   // `APP_SLIDE_HASHES` guards them.
   6: "62b47283b5c76be5eb2de73a7c8166d5a4e98ed2d4b7a5f7011547ccdf6a7c22",
+  // Version 7 changes the overview beside app slides only, as version 6.
+  7: "62b47283b5c76be5eb2de73a7c8166d5a4e98ed2d4b7a5f7011547ccdf6a7c22",
 };
 const VERSION_1_HASH = VERSION_HASHES[1];
 
@@ -133,6 +136,12 @@ describe("versioned store template", () => {
     expect(VERSION_HASHES[STORE_TEMPLATE_VERSION]).toBe(
       sha256(JSON.stringify(buildAll(fixtureInputs))),
     );
+  });
+  it("keeps version 6 frozen after the template moves on", () => {
+    expect(storeTemplateV6.version).toBe(6);
+    expect(
+      sha256(JSON.stringify(buildAll(fixtureInputs, storeTemplateV6))),
+    ).toBe(VERSION_HASHES[6]);
   });
   it("keeps version 4 frozen after the template moves on", () => {
     expect(storeTemplateV4.version).toBe(4);
@@ -473,16 +482,19 @@ describe("version 4: an overview and one slide per app (#709)", () => {
     4: "034364f9fb26ab383278ff8a92015b88fdb1c4d10bc165055f877cb2ec827622",
     5: "71bd572ac6b0d3e39dae1b4f718cf6fdf3ca2b5e261f1c11ee82617d73b4df3d",
     6: "76f0760d5c8493c5fef4479bd42c532a3a03a243f62a5456e2808609d5e8994f",
+    7: "52435c8e0011b162f7b24489201dba745bf5692d2f9b7af3da0a720ac2bf6403",
   };
-  it("needs a version bump for any app slide change; 4 and 5 stay frozen", () => {
+  it("needs a version bump for any app slide change; 4 to 6 stay frozen", () => {
     const hash = (template: typeof storeTemplate) =>
       sha256(JSON.stringify(buildAll({ ...fixtureInputs, apps }, template)));
     expect({
       4: hash(storeTemplateV4),
       5: hash(storeTemplateV5),
+      6: hash(storeTemplateV6),
       [STORE_TEMPLATE_VERSION]: hash(storeTemplate),
     }).toEqual(APP_SLIDE_HASHES);
     expect(APP_SLIDE_HASHES[6]).not.toBe(APP_SLIDE_HASHES[5]);
+    expect(APP_SLIDE_HASHES[7]).not.toBe(APP_SLIDE_HASHES[6]);
   });
   it("shows both stores on a linked product's slide from version 6 (#784)", () => {
     const linked = (paid: boolean, website: boolean) => ({
@@ -1226,5 +1238,171 @@ describe("version 5: the model tables fit their tiles (#768)", () => {
       ["rating", 0, 3, 6],
       ["proceeds", 6, 3, 6],
     ]);
+  });
+});
+
+describe("version 7: the overview's name and its websites (#779, #787)", () => {
+  const vercel = [
+    "33333333-3333-4333-8333-333333333333",
+    "44444444-4444-4444-8444-444444444444",
+  ] as const;
+  /** Four apps with a website each: three in one connection, one in another. */
+  const apps: StoreAppIdentity[] = [
+    ["Atlas", vercel[0], "prj_atlas"],
+    ["Birch", vercel[0], "prj_birch"],
+    ["Cedar", vercel[1], "prj_cedar"],
+    ["Dune", vercel[0], "prj_dune"],
+    // A second app on Atlas's website: listed once.
+    ["Ember", vercel[0], "prj_atlas"],
+    ["Fern", null, null],
+  ].map(([name, connectionId, projectId], n) => ({
+    productId: `${apple.id}:${n}`,
+    name: name!,
+    paid: false,
+    icon: null,
+    appStore: { connectionId: apple.id, appId: `${n}` },
+    stores: ["app-store-connect"],
+    website: connectionId && projectId ? { connectionId, projectId } : null,
+  }));
+  const slidesOf = (
+    template: typeof storeTemplate,
+    locale: "en" | "de" = "en",
+    inputs: Partial<StoreTemplateInputs> = {},
+  ) => {
+    const record = buildAll(
+      { ...fixtureInputs, locale, apps, ...inputs },
+      template,
+    ).at(-1)!;
+    if (record.kind !== "dashboard") throw new Error("no dashboard");
+    return createDashboardRequestSchema.parse(record.request).slides!;
+  };
+  const visitorsOf = (slides: ReturnType<typeof slidesOf>) =>
+    slides[0]!.widgets.flatMap((widget) =>
+      widget.type === "table" && widget.metricKey === "vercel.visitors"
+        ? [widget]
+        : [],
+    );
+
+  it("names the overview slide Overview, not after the dashboard again (#779)", () => {
+    // Up to version 6 the first slide carried the template's name, which
+    // is the dashboard's default name too.
+    expect(slidesOf(storeTemplateV6)[0]!.name).toBe("App portfolio");
+    expect(slidesOf(storeTemplateV6, "de")[0]!.name).toBe("App-Portfolio");
+    expect(slidesOf(storeTemplate)[0]!.name).toBe("Overview");
+    expect(slidesOf(storeTemplate, "de")[0]!.name).toBe("Übersicht");
+    // Whatever the dashboard is called.
+    expect(slidesOf(storeTemplate, "en", { name: "Overview" })[0]!.name).toBe(
+      "Overview",
+    );
+    // An only slide (no apps to show) keeps the template's name, which
+    // headers leave out where it is the dashboard's (#622).
+    expect(slidesOf(storeTemplate, "en", { apps: [] })[0]!.name).toBe(
+      "App portfolio",
+    );
+  });
+
+  it("lists only the websites the apps link, per connection (#787)", () => {
+    const before = visitorsOf(slidesOf(storeTemplateV6));
+    // Version 6 ranked every project of the connection.
+    expect(before.map((widget) => widget.options)).toEqual(
+      before.map(() => ({
+        groupBy: "resource",
+        limit: 3,
+        showChange: true,
+        showOthers: false,
+      })),
+    );
+    for (const locale of ["en", "de"] as const) {
+      const tables = visitorsOf(slidesOf(storeTemplate, locale));
+      expect(
+        tables.map((widget) => [
+          widget.connectionId,
+          widget.options.groupKeys,
+          widget.dimensions ?? {},
+        ]),
+      ).toEqual([
+        [vercel[0], ["prj_atlas", "prj_birch", "prj_dune"], {}],
+        [vercel[1], ["prj_cedar"], {}],
+      ]);
+      // The rows are 30-day sums of a metric named "Daily visitors": the
+      // head says so.
+      expect(tables.map((widget) => widget.options.valueLabel)).toEqual(
+        tables.map(() => (locale === "de" ? "Summe 30 Tage" : "30-day total")),
+      );
+      expect(tables.map((widget) => widget.period)).toEqual(
+        tables.map(() => "last_30_days"),
+      );
+    }
+  });
+
+  it("changes nothing else: the other tiles and every app slide are version 6's", () => {
+    for (const locale of ["en", "de"] as const) {
+      const [was, ...wasApps] = slidesOf(storeTemplateV6, locale);
+      const [now, ...nowApps] = slidesOf(storeTemplate, locale);
+      expect(nowApps).toEqual(wasApps);
+      expect(
+        now!.widgets.map((widget) =>
+          widget.type === "table"
+            ? {
+                ...widget,
+                options: {
+                  groupBy: widget.options.groupBy,
+                  limit: widget.options.limit,
+                  showChange: widget.options.showChange,
+                  showOthers: widget.options.showOthers,
+                },
+              }
+            : widget,
+        ),
+      ).toEqual(was!.widgets);
+    }
+  });
+
+  it("keeps the overview on one page at 16:9 with every number of connection tables (#787)", () => {
+    const pages: Record<string, number[]> = {};
+    // One or two App Store connections, none to two Vercel connections:
+    // four to six tiles (five with one of each, as in the report).
+    for (const appStore of [1, 2])
+      for (const websites of [0, 1, 2]) {
+        const asc = Array.from({ length: appStore }, (_, n) => ({
+          ...appleSource,
+          id: uuidFor(`asc:${n}`),
+          name: `App Store account ${n + 1}`,
+        }));
+        const overview = slidesOf(storeTemplate, "de", {
+          connections: [...asc, fixtureInputs.connections[1]!],
+          apps: apps.map((app, n) => ({
+            ...app,
+            appStore: { connectionId: asc[n % appStore]!.id, appId: `${n}` },
+            website:
+              app.website &&
+              vercel.indexOf(app.website.connectionId as never) < websites
+                ? app.website
+                : null,
+          })),
+        })[0]!;
+        const widgets = overview.widgets.map((widget, index) => ({
+          ...widget,
+          id: `w${index}`,
+        }));
+        expect(slideLayoutProblem(overview.widgets)).toBeNull();
+        for (const format of SCREEN_FORMAT_KEYS)
+          (pages[format] ??= []).push(
+            slideLayoutFor({
+              widgets,
+              primaryFormat: "16x9",
+              format,
+              custom: null,
+            }).length,
+          );
+      }
+    // An Apple TV (16:9) shows every tile on one page.
+    expect(pages["16x9"]).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(pages["21x9"]).toEqual([1, 1, 1, 1, 1, 1]);
+    // Narrower formats page it (the "1/2" a browser window that is not
+    // 16:9 shows): their own grids hold fewer tiles.
+    expect(pages["4x3"]).toEqual([2, 2, 2, 2, 2, 2]);
+    expect(pages["9x16"]).toEqual([2, 2, 2, 2, 2, 2]);
+    expect(pages["3x4"]).toEqual([2, 3, 3, 3, 3, 3]);
   });
 });

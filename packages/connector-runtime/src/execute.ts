@@ -29,7 +29,11 @@ import {
   type EgressOptions,
 } from "./egress.js";
 import { createConnectorLogger, type ConnectorLogSink } from "./log.js";
-import { redactConnectorError, redactCredentialValues } from "./redact.js";
+import {
+  credentialFreeCode,
+  redactConnectorError,
+  redactCredentialValues,
+} from "./redact.js";
 
 /** Time budget per connector call (one check, discover, or sync page). */
 /** Brand of the host's custom API call options; never exported. */
@@ -451,17 +455,16 @@ export async function executeCheck(
       `connector "${connector.manifest.id}" returned an invalid check result: ${formatIssues(parsed.error.issues)}`,
     );
   }
-  const result = parsed.data;
-  if (result.message) {
-    return {
-      ...result,
-      message: redactCredentialValues(
-        result.message,
-        redactionSet(context, options),
-      ),
-    };
-  }
-  return result;
+  // The message is redacted; a reason code that holds a credential value
+  // or a derived secret is dropped whole (#795).
+  const secrets = redactionSet(context, options);
+  const { code: reported, message, ...rest } = parsed.data;
+  const code = credentialFreeCode(reported, secrets);
+  return {
+    ...rest,
+    ...(message ? { message: redactCredentialValues(message, secrets) } : {}),
+    ...(code !== undefined ? { code } : {}),
+  };
 }
 
 /**

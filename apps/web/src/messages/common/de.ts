@@ -7,6 +7,8 @@ export const commonDe: Catalog<typeof commonEn> = {
     save: "Speichern",
     saving: "Wird gespeichert…",
     cancel: "Abbrechen",
+    leave: "Verlassen",
+    stay: "Bleiben",
     close: "Schließen",
     back: "Zurück",
     continue: "Weiter",

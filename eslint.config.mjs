@@ -71,6 +71,38 @@ function webApiFetchRestrictions() {
 }
 
 /**
+ * Server-side API calls forward the browser request through
+ * forwardedHeaders (apps/web/src/lib/api-fetch): the cookie and
+ * Accept-Language together. A call that picks the cookie out itself answers
+ * in the wrong language (#770), so no web file reads, sets or spells a
+ * `cookie` header (#790). `set-cookie` on responses is not affected.
+ */
+function cookieHeaderRestrictions() {
+  const message =
+    "Forward the browser request with forwardedHeaders (apps/web/src/lib/api-fetch, #770), which carries the cookie and Accept-Language; do not build a cookie header.";
+  const cookie = "/^cookie$/i";
+  return [
+    // headers.get("cookie"), (await headers()).get("cookie")
+    {
+      selector: `CallExpression[callee.property.name='get'] > Literal[value=${cookie}].arguments:first-child`,
+      message,
+    },
+    // headers.set("cookie", …), headers.append("cookie", …)
+    {
+      selector: `CallExpression[callee.property.name=/^(set|append)$/] > Literal[value=${cookie}].arguments:first-child`,
+      message,
+    },
+    // { cookie: … }, { Cookie: … }, { "cookie": … } and [["cookie", …]]
+    { selector: `Property[key.name=${cookie}]`, message },
+    { selector: `Property[key.value=${cookie}]`, message },
+    {
+      selector: `ArrayExpression > ArrayExpression > Literal[value=${cookie}]:first-child`,
+      message,
+    },
+  ];
+}
+
+/**
  * Web files whose user-facing text comes from the message catalogs (ADR
  * 0016 section 9): every component in apps/web/src.
  */
@@ -179,6 +211,18 @@ const layering = [
     files: ["apps/web/src/**/*.{ts,tsx}"],
     ignores: ["apps/web/src/lib/api-fetch.ts", "apps/web/src/**/*.test.ts"],
     rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...webApiFetchRestrictions(),
+        ...cookieHeaderRestrictions(),
+      ],
+    },
+  },
+  // Component tests (the block above reaches *.test.tsx) may spell a cookie
+  // header: they stand in for the browser request.
+  {
+    files: ["apps/web/src/**/*.test.tsx"],
+    rules: {
       "no-restricted-syntax": ["error", ...webApiFetchRestrictions()],
     },
   },
@@ -191,6 +235,7 @@ const layering = [
       "no-restricted-syntax": [
         "error",
         ...webApiFetchRestrictions(),
+        ...cookieHeaderRestrictions(),
         ...i18nRestrictions(),
         ...intlLocaleRestrictions(),
       ],
@@ -205,9 +250,17 @@ const layering = [
       "no-restricted-syntax": [
         "error",
         ...webApiFetchRestrictions(),
+        ...cookieHeaderRestrictions(),
         ...intlLocaleRestrictions(),
       ],
     },
+  },
+  // Questions are asked in the app's own dialog (useConfirmation in
+  // apps/web/src/components/confirm-dialog, #798), never with the browser's
+  // alert, confirm or prompt.
+  {
+    files: ["apps/web/src/**/*.{ts,tsx}"],
+    rules: { "no-alert": "error" },
   },
   // Runtime tests exercise the real demo connector as a fixture.
   {

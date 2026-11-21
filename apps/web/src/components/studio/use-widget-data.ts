@@ -266,6 +266,9 @@ export function useBreakdownData(
     ...(widget.type === "table" && widget.options.showChange
       ? { withPrevious: true }
       : {}),
+    ...(widget.type === "table" && widget.options.groupKeys
+      ? { groups: widget.options.groupKeys }
+      : {}),
   });
   const load = useCallback(
     () => queryMetricBreakdown(workspaceId, JSON.parse(key)),

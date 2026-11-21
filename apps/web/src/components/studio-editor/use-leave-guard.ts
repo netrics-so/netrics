@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
+import { useConfirmation, type Question } from "@/components/confirm-dialog";
 import { useT } from "@/lib/i18n/client";
 
 /**
@@ -41,17 +42,33 @@ export function leavesPage(
 
 /**
  * Asks before unsaved changes are lost (ADR 0015: explicit Save, no
- * autosave): on reload, closing the tab and leaving by a link in the app.
+ * autosave). Leaving by a link in the app asks in the app's own dialog
+ * (#798) and follows the link on "Leave"; a reload or closing the tab can
+ * only be asked by the browser (beforeunload). Render the returned dialog.
  */
-export function useLeaveGuard(dirty: boolean, overrideMessage?: string) {
+export function useLeaveGuard(
+  dirty: boolean,
+  overrideMessage?: string,
+): ReactNode {
   const t = useT("studio.editor");
-  const message = overrideMessage ?? t("leaveConfirm");
+  const common = useT("common");
+  const { ask, dialog } = useConfirmation();
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
-  const messageRef = useRef(message);
-  messageRef.current = message;
+  const askRef = useRef<() => Promise<boolean>>(null);
+  askRef.current = () => {
+    const question: Question = {
+      title: overrideMessage ?? t("leaveConfirm"),
+      confirm: common("leave"),
+      cancel: common("stay"),
+      destructive: true,
+    };
+    return ask(question);
+  };
 
   useEffect(() => {
+    // The link whose click was confirmed and is being repeated.
+    let confirmed: HTMLAnchorElement | null = null;
     function onBeforeUnload(event: BeforeUnloadEvent) {
       if (dirtyRef.current) {
         event.preventDefault();
@@ -62,11 +79,27 @@ export function useLeaveGuard(dirty: boolean, overrideMessage?: string) {
       if (!dirtyRef.current || event.defaultPrevented) return;
       const anchor = (event.target as Element | null)?.closest?.("a[href]");
       if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (anchor === confirmed) return;
       if (!leavesPage(anchor, event, window.location)) return;
-      if (!window.confirm(messageRef.current)) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
+      event.preventDefault();
+      event.stopPropagation();
+      void askRef.current?.().then((leave) => {
+        if (!leave) return;
+        // After the dialog is gone: the same click again, so the link
+        // navigates the way it would have (Next's Link on the client).
+        setTimeout(() => {
+          if (!anchor.isConnected) {
+            window.location.assign(anchor.href);
+            return;
+          }
+          confirmed = anchor;
+          try {
+            anchor.click();
+          } finally {
+            confirmed = null;
+          }
+        }, 0);
+      });
     }
     window.addEventListener("beforeunload", onBeforeUnload);
     // Capture: runs before Next's Link handler navigates client-side.
@@ -76,4 +109,5 @@ export function useLeaveGuard(dirty: boolean, overrideMessage?: string) {
       document.removeEventListener("click", onClick, true);
     };
   }, []);
+  return dialog;
 }

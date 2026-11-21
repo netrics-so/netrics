@@ -14,6 +14,7 @@ import {
   deleteDashboard,
   duplicateDashboard,
 } from "@/lib/api";
+import { useConfirmation } from "@/components/confirm-dialog";
 import { ScrollView } from "@/components/scroll/scroll-view";
 import { LiveScrollWidget } from "@/components/scroll/scroll-widgets";
 import { pickableMetrics } from "@/lib/format-metric";
@@ -77,6 +78,7 @@ export function DashboardView({
   const locale = useLocale();
   const t = useT("dashboard");
   const common = useT("common");
+  const confirmation = useConfirmation();
   const router = useRouter();
   useServerRefresh();
   const [dashboard, setDashboard] = useState(initial);
@@ -153,9 +155,13 @@ export function DashboardView({
   }
 
   async function onDelete() {
-    if (!window.confirm(t("deleteConfirm", { name: dashboard.name }))) {
-      return;
-    }
+    const confirmed = await confirmation.ask({
+      title: t("deleteConfirm", { name: dashboard.name }),
+      confirm: common("delete"),
+      cancel: common("cancel"),
+      destructive: true,
+    });
+    if (!confirmed) return;
     setPending(true);
     try {
       await deleteDashboard(workspaceId, dashboard.id);
@@ -198,6 +204,7 @@ export function DashboardView({
           {common("delete")}
         </button>
       ) : null}
+      {confirmation.dialog}
     </div>
   );
   const filterBar = (

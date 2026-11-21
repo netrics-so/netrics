@@ -24,6 +24,7 @@ import { TokenField } from "../token-field";
 import { ConnectorCatalogue } from "@/components/sources/connector-catalogue";
 import {
   apiErrorMessage,
+  providerFailureMessage,
   createConnection,
   previewConnection,
 } from "@/lib/api";
@@ -219,7 +220,9 @@ export function NewConnectionWizard({
       setSelectedResources(new Set(result.resources.map((r) => r.id)));
       setAppSelection(null);
       if (!result.check.ok) {
-        showFailure(result.check.message ?? t("checkFailed"));
+        showFailure(
+          providerFailureMessage(result.check, locale) ?? t("checkFailed"),
+        );
       }
     } catch (cause) {
       setPreview(null);

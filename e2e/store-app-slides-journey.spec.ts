@@ -88,11 +88,18 @@ test("the App portfolio shows an overview and one slide per app with its icon", 
 
   const tabs = page.getByRole("tab");
   await expect(tabs).toHaveText([
-    locale === "de" ? "App-Portfolio" : "App portfolio",
+    locale === "de" ? "Übersicht" : "Overview",
     "Focus",
     "Notes",
     "Timer",
   ]);
+  // The header names the dashboard once, then the slide (#779): not
+  // "App-Portfolio App-Portfolio".
+  const header = page.locator(".slide-frame .studio-header");
+  await expect(header.locator(".studio-header-name")).toHaveText(s.defaultName);
+  await expect(header.locator(".studio-header-slide")).toHaveText(
+    locale === "de" ? "Übersicht" : "Overview",
+  );
   // The overview has the dashboard's header; each app slide its icon.
   for (const name of ["Focus", "Notes", "Timer"]) {
     await page.getByRole("tab", { name, exact: true }).click();

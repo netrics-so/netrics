@@ -1,3 +1,5 @@
+import { ConnectorError } from "@netrics/connector-sdk";
+
 const SECRET_KEY_PATTERN = /secret|token|password|credential|key/i;
 const REDACTED = "[redacted]";
 
@@ -78,6 +80,31 @@ export function redactCredentialValues(
 }
 
 /**
+ * A reason code (SDK 0.2.18, #795) that may leave the credential boundary:
+ * `code` itself, or undefined when it holds a credential value. A code is
+ * well formed (lowercase words) and still not trusted: a connector could
+ * build one from a credential ("acme." + a lowercase hex token), and codes
+ * are stored and logged unredacted. Such a code is dropped whole, never
+ * forwarded in part. Values are compared in lower case too, since a
+ * connector has to lowercase a credential to fit it into a code.
+ */
+export function credentialFreeCode(
+  code: string | undefined,
+  credentials: Record<string, unknown>,
+): string | undefined {
+  if (code === undefined) {
+    return undefined;
+  }
+  const lower = code.toLowerCase();
+  for (const secret of collectSecretValues(credentials)) {
+    if (code.includes(secret) || lower.includes(secret.toLowerCase())) {
+      return undefined;
+    }
+  }
+  return code;
+}
+
+/**
  * Re-throws a connector error with credential values stripped from the
  * message. The cause chain is dropped on purpose: it may embed credential
  * material, and logs/errors must never carry it (milestone invariant).
@@ -87,7 +114,16 @@ export function redactConnectorError(
   credentials: Record<string, unknown>,
 ): Error {
   const message = error instanceof Error ? error.message : String(error);
-  const redacted = new Error(redactCredentialValues(message, credentials));
+  const text = redactCredentialValues(message, credentials);
+  // A reason code (SDK 0.2.18, #795) crosses the boundary with the
+  // redacted message, unless it holds a credential value: then the error
+  // crosses as a plain one, without a code.
+  const code =
+    error instanceof ConnectorError
+      ? credentialFreeCode(error.code, credentials)
+      : undefined;
+  const redacted =
+    code !== undefined ? new ConnectorError(text, code) : new Error(text);
   redacted.name = error instanceof Error ? error.name : "Error";
   return redacted;
 }

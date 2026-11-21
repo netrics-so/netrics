@@ -664,10 +664,36 @@ export type PreviewConnectionRequest = z.infer<
   typeof previewConnectionRequestSchema
 >;
 
+/**
+ * A stable reason code next to an English message (#795, ADR 0016 section
+ * 5): lowercase words joined by "_" or ".", such as
+ * `apple_ads.invalid_client`. Clients show their own text for a code they
+ * know, in the viewer's language, and the message otherwise. The shape
+ * equals the connector SDK's `errorCodeSchema`.
+ */
+export const reasonCodeSchema = z
+  .string()
+  .max(64)
+  .regex(/^[a-z0-9]+(?:[._][a-z0-9]+)*$/);
+
 export const connectionCheckResultSchema = z.object({
   ok: z.boolean(),
   message: z.string().min(1).optional(),
+  /** The reason of a failed check, when it has a known one (#795). */
+  code: reasonCodeSchema.optional(),
 });
+
+/**
+ * A connection route's failure. `error` is a code, or for a refused
+ * credential check the provider's English message; `errorCode` is then its
+ * stable reason, when it has a known one (#795).
+ */
+export const connectionErrorResponseSchema = errorResponseSchema.extend({
+  errorCode: reasonCodeSchema.optional(),
+});
+export type ConnectionErrorResponse = z.infer<
+  typeof connectionErrorResponseSchema
+>;
 export type ConnectionCheckResult = z.infer<typeof connectionCheckResultSchema>;
 
 export const discoveredResourceSchema = z.object({
@@ -1121,6 +1147,12 @@ export const syncRunSchema = z.object({
     .enum(["auth", "transient", "contract", "budget", "rate_limited"])
     .nullable(),
   errorMessage: z.string().nullable(),
+  /**
+   * The stable reason of the failure, when it has a known one (#795):
+   * translate by it and fall back to `errorMessage`. Null for runs recorded
+   * before codes and for failures without a known reason.
+   */
+  errorCode: reasonCodeSchema.nullable(),
   observationsWritten: z.number().int().nonnegative(),
 });
 export type SyncRun = z.infer<typeof syncRunSchema>;
@@ -1604,6 +1636,11 @@ export const metricBreakdownRequestSchema = z.object({
    * returned, with the same aggregation, conversion and currency.
    */
   withPrevious: z.boolean().optional(),
+  /**
+   * Only these values of the `groupBy` dimension (a table's `groupKeys`,
+   * #787); "Others" adds up the rest of these. Absent: every value.
+   */
+  groups: z.array(z.string().min(1).max(200)).min(1).max(100).optional(),
 });
 export type MetricBreakdownRequest = z.infer<
   typeof metricBreakdownRequestSchema
@@ -2129,6 +2166,17 @@ export const tableWidgetOptionsSchema = z.object({
   showChange: z.boolean().default(true),
   /** A last, dimmed "Others" row with the rest added up. */
   showOthers: z.boolean().default(false),
+  /**
+   * Only these values of the grouped dimension (#787): some of a
+   * connection's projects, say. Absent lists every value. "Others" then
+   * adds up the rest of these.
+   */
+  groupKeys: z.array(z.string().min(1).max(200)).min(1).max(100).optional(),
+  /**
+   * The value column's head in place of the metric's name (#787), for a
+   * head that says what the rows add up ("30-day total").
+   */
+  valueLabel: z.string().trim().min(1).max(40).optional(),
 });
 /**
  * A compare widget (ADR 0019 section 10): two metrics and their ratio.

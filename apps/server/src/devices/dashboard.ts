@@ -833,6 +833,7 @@ async function tableWidgetOf(
           groupBy: options.groupBy,
           limit: options.limit,
           withPrevious: options.showChange,
+          ...(options.groupKeys ? { groups: options.groupKeys } : {}),
         },
         context.options.now,
         queryOptions(context.options),
@@ -868,7 +869,7 @@ async function tableWidgetOf(
         groupBy: options.groupBy,
         columns: {
           label: breakdown?.groupByName ?? options.groupBy,
-          value: metricName,
+          value: options.valueLabel ?? metricName,
         },
         rows: (breakdown?.groups ?? []).map((group) => ({
           key: group.key,

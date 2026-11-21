@@ -19,21 +19,18 @@ import {
 // exchange, the form, error mapping, and probes and candidate keys that
 // exchange without caching. The cached path is in token-store.test.ts.
 
-function setup() {
+function setup(provider = fixtureExchangeProvider) {
   const client = fixtureClient(p256KeyPair());
   const fake = createFakeTokenExchange([client]);
   const requests: Array<{ url: string; body: string }> = [];
   const registry = new SignedKeyProviders({
-    definitions: new Map([[FIXTURE_PROVIDER_ID, fixtureExchangeProvider]]),
+    definitions: new Map([[FIXTURE_PROVIDER_ID, provider]]),
     http: () => async (url, init) => {
       requests.push({ url, body: init?.body ?? "" });
       return fake.fetch(url, init);
     },
   });
-  const parsed = registry.parse(
-    fixtureExchangeProvider,
-    fixtureCredentials(client),
-  );
+  const parsed = registry.parse(provider, fixtureCredentials(client));
   if (!parsed.ok) {
     throw new Error(parsed.message);
   }
@@ -213,6 +210,28 @@ describe("signed-key token exchange", () => {
     expect(calls).toBe(0);
     expect(error).toBeInstanceOf(SignedKeyRejectedError);
     expect((error as Error).message).toBe(FIXTURE_INVALID_CLIENT);
+    // A provider that names no reason code (#795) keeps working: the
+    // refusal has its message only.
+    expect((error as SignedKeyRejectedError).code).toBeUndefined();
+  });
+
+  it("carries the provider's reason code of an invalid_client refusal (#795)", async () => {
+    const { key, fake } = setup({
+      ...fixtureExchangeProvider,
+      exchange: {
+        ...fixtureExchangeProvider.exchange!,
+        invalidClientCode: "test_ads.invalid_client",
+      },
+    });
+    fake.nextErrors.push({ status: 400, body: { error: "invalid_client" } });
+    const error = await callWithSignedKey({
+      key,
+      call: async () => "ok",
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SignedKeyRejectedError);
+    expect((error as SignedKeyRejectedError).code).toBe(
+      "test_ads.invalid_client",
+    );
   });
 });
 

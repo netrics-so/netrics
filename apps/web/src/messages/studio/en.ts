@@ -27,8 +27,8 @@ export const studioEn = {
       showOnTvsCount: "Show on screens ({count})",
       conflict:
         "Someone else saved this dashboard while you were editing. Your changes are not saved.",
-      loadTheirsConfirm:
-        "Load the saved version? Your unsaved changes are lost.",
+      loadTheirsConfirm: "Load the saved version?",
+      loadTheirsConfirmText: "Your unsaved changes are lost.",
       loadTheirs: "Load their version",
       saveCopy: "Save mine as a copy",
       stage: "Slide",
@@ -588,8 +588,9 @@ export const studioEn = {
       customizeHelp:
         "Arrange this slide by hand in {ratio}, starting from the automatic layout. Other slides stay automatic, and widgets you add in {primary} are placed here for you to review.",
       backToAuto: "Back to automatic",
-      backToAutoConfirm:
-        "Lay out this slide automatically in {ratio} again? Your arrangement for {ratio} is removed (Undo brings it back).",
+      backToAutoConfirm: "Lay out this slide automatically in {ratio} again?",
+      backToAutoConfirmText:
+        "Your arrangement for {ratio} is removed (Undo brings it back).",
       customEditorNote:
         "Arranged by hand in {ratio} for this slide. Position, size, page and visibility here apply to {ratio} only. Add widgets in {primary}.",
       contentEverywhere:
@@ -608,8 +609,9 @@ export const studioEn = {
       showIn: "Show",
       showInLabel: "Show {name} in {ratio}",
       makePrimary: "Make {ratio} the primary format",
-      makePrimaryConfirm:
-        "Make {name} {ratio} the primary format? This saves the dashboard. You then design in {ratio}, and the {primary} layout is kept as a custom layout.",
+      makePrimaryConfirm: "Make {name} {ratio} the primary format?",
+      makePrimaryConfirmText:
+        "This saves the dashboard. You then design in {ratio}, and the {primary} layout is kept as a custom layout.",
       makePrimaryBlocked:
         "To make {ratio} the primary format, every slide must fit on one page there with every widget shown.",
       blockedOverflow: "{slide} continues on more than one page.",
