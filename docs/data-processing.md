@@ -983,6 +983,37 @@ each store's day and next time (ADR 0025 sections 7 and 8). Version 5
 installs get version 6 through the reviewed template update; only the
 linked products' slides change.
 
+### The overview's name and its websites (template version 7)
+
+[#779](https://github.com/netrics-so/netrics/issues/779): the overview slide
+carried the template's name, which is also the dashboard's default name.
+The header leaves out a slide name equal to the dashboard's (#622), but a
+dashboard with another name (a renamed one, or an updated copy, "App
+portfolio (updated)") read "… App portfolio" beside it. From version 7 the
+overview slide is named "Overview" / "Übersicht" where app slides follow
+it; an only slide keeps the template's name.
+
+[#787](https://github.com/netrics-so/netrics/issues/787): the overview's
+"Website visitors, last 30 days" table ranked every project of the Vercel
+connection, whether an app links it or not. From version 7 it lists the
+projects the install's apps link in that connection, as the app slides show
+them: a table widget's `groupKeys` limits its rows to those values of the
+grouped dimension (the breakdown query's `groups`; "Others" then adds up
+the rest of these, not of the connection). Its value column reads "30-day
+total" / "Summe 30 Tage" (a table's `valueLabel`) instead of the metric's
+name, "Daily visitors", beside a sum over thirty days. Both options are
+set by the template; the Studio keeps them while a table is edited and
+drops `groupKeys` when its grouping changes, and both when its metric
+does.
+
+A website linked or unlinked later changes the list through the usual
+template update of changed apps. The overview's layout is version 6's: up
+to six tiles in two rows on one page at 16:9 (and 21:9); 4:3 and the
+portrait formats page it. Version 6 installs get version 7 through the
+reviewed template update (the overview slide and its visitors tables;
+no data record changes), and the website links, which are the products'
+(`data_template_products`), stay as they are.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

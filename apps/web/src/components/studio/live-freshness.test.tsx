@@ -233,6 +233,42 @@ function expectFreshness(
   };
 }
 
+describe("a table limited to some groups (#787)", () => {
+  it("asks for its groupKeys only and heads its values with valueLabel", async () => {
+    const limited = {
+      ...tableWidget,
+      options: {
+        ...tableWidget.options,
+        groupKeys: ["DE", "US"],
+        valueLabel: "30-day total",
+      },
+    } as typeof tableWidget;
+    // The request the hook shares carries the groups: only a load under
+    // that key reaches the widget.
+    await sharedLoad(
+      `breakdown|${env.workspaceId}|${JSON.stringify({
+        ...metricRequest(limited),
+        groupBy: "territory",
+        limit: 5,
+        groups: ["DE", "US"],
+      })}`,
+      () => Promise.resolve(breakdown()),
+    );
+    const head = (value: string) => `sw-table-head-value">${value}<`;
+    const html = renderI18n(<LiveTableWidget widget={limited} env={env} />);
+    expect(text(html)).toContain("Germany");
+    expect(html).toContain(head("30-day total"));
+    expect(html).not.toContain(head("Proceeds"));
+    // Without a head of its own: the metric's name, as before.
+    clearSharedLoads();
+    await seedBreakdown(tableWidget, breakdown());
+    const plain = renderI18n(
+      <LiveTableWidget widget={tableWidget} env={env} />,
+    );
+    expect(plain).toContain(head("Proceeds"));
+  });
+});
+
 describe("live widgets show their query's freshness (#727)", () => {
   it(
     "metric",
