@@ -61,6 +61,12 @@ describe("validateConnectionConfig", () => {
       ok: false,
       message: "name must be at most 5 characters",
     });
+    // Counted as connectors read it, trimmed; stored as sent.
+    expect(validateConnectionConfig(named, { name: "   " }).ok).toBe(false);
+    expect(validateConnectionConfig(named, { name: " abcde " })).toEqual({
+      ok: true,
+      config: { name: " abcde " },
+    });
     // Five characters, more UTF-16 units.
     expect(validateConnectionConfig(named, { name: "ab😀😀😀" }).ok).toBe(true);
     expect(
