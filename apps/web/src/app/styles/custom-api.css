@@ -323,9 +323,18 @@
   font-family: var(--font-admin);
 }
 
+/* The field table fits its card at desktop widths (#834): inputs take their
+   column's width instead of their own; narrow screens still scroll. */
 .custom-api-mapping table input:not([type="checkbox"]):not([type="radio"]),
 .custom-api-mapping table select {
-  min-width: 110px;
+  width: 100%;
+  min-width: 84px;
+}
+
+.custom-api-mapping td,
+.custom-api-mapping th {
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 /* History, connections, export, import and updates (#808). */

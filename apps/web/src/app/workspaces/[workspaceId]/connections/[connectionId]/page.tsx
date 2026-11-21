@@ -21,7 +21,8 @@ import { ConnectionProject } from "./connection-project";
 import { ConnectionFreshness } from "./connection-freshness";
 import { ConnectionItemImages } from "./connection-item-images";
 import { SyncRunError } from "./sync-run-error";
-import { ConnectionRefresh, waitsForSync } from "./connection-refresh";
+import { ConnectionRefresh } from "./connection-refresh";
+import { waitsForSync } from "./wait-for-sync";
 import { CustomApiConnectionLogin } from "@/components/custom-api/connection-login";
 import { CustomApiUpdateBanner } from "@/components/custom-api/connection-update-review";
 import {
