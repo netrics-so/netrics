@@ -667,6 +667,22 @@ export async function startCustomApiFixtureServer(
               : send(500, { error: "page two is broken" }),
         );
       }
+      case "/auth/api-key-self-link": {
+        // The last page links to itself, with the key placed first.
+        const key = query.api_key;
+        const after = int("after", 0);
+        return authorize(
+          key === FIXTURE_SECRETS.apiKey,
+          key === FIXTURE_FORBIDDEN,
+          () =>
+            send(200, {
+              data: items.slice(after, after + PAGE_SIZE),
+              links: {
+                next: `${origin}/auth/api-key-self-link?api_key=${key}&after=${PAGE_SIZE}`,
+              },
+            }),
+        );
+      }
       case "/auth/bearer": {
         const value = headers.authorization;
         return authorize(

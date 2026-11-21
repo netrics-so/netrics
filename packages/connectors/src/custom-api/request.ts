@@ -256,10 +256,17 @@ export function customApiSecretValues(
 }
 
 /**
+ * Shortest secret value a next link loses a parameter for, as the runtime's
+ * redaction: a secret variable such as "10" must not strip `after=10`, and
+ * values this short are never redacted anywhere either.
+ */
+const STRIPPED_SECRET_MIN_LENGTH = 4;
+
+/**
  * A next-page URL as it may be stored in a cursor: without the API key
- * query parameter and without any parameter whose value is a secret (APIs
- * that build next links from the request echo them). buildRequest adds the
- * auth again on every request.
+ * query parameter and without any parameter whose value is a secret of at
+ * least 4 characters (APIs that build next links from the request echo
+ * them). buildRequest adds the auth again on every request.
  */
 export function stripCustomApiSecrets(
   url: string,
@@ -272,7 +279,9 @@ export function stripCustomApiSecrets(
   if (auth.type === "api_key" && auth.placement === "query")
     parsed.searchParams.delete(auth.name);
   const secrets = new Set(
-    customApiSecretValues(definition, credentials, config),
+    customApiSecretValues(definition, credentials, config).filter(
+      (value) => value.length >= STRIPPED_SECRET_MIN_LENGTH,
+    ),
   );
   for (const [name, value] of [...parsed.searchParams])
     if (secrets.has(value)) parsed.searchParams.delete(name, value);

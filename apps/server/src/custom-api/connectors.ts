@@ -4,10 +4,11 @@
 // manifest differs per connection. "custom-api" is never in the registry,
 // so a call site that still asks registry.get() for it fails loudly.
 
-import type {
-  ConnectorRegistry,
-  ExecuteOptions,
-  RegisteredConnector,
+import {
+  customApiCallOptions,
+  type ConnectorRegistry,
+  type ExecuteOptions,
+  type RegisteredConnector,
 } from "@netrics/connector-runtime";
 import { assertManifestCompatible } from "@netrics/connector-sdk";
 import {
@@ -130,7 +131,7 @@ export function callOptionsFor(
     const { allowPrivateHosts: _private, ...egress } = base.egress;
     return { ...base, egress };
   }
-  return {
+  return customApiCallOptions({
     ...base,
     egress: customApiEgress(input.privateHosts, base.egress),
     timeoutMs: 60_000,
@@ -142,5 +143,5 @@ export function callOptionsFor(
         input.config ?? {},
       ),
     ],
-  };
+  });
 }

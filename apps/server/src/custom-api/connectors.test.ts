@@ -1,4 +1,8 @@
-import { ConnectorRegistry } from "@netrics/connector-runtime";
+import {
+  ConnectorRegistry,
+  ContractViolationError,
+  executeCheck,
+} from "@netrics/connector-runtime";
 import { CUSTOM_API_LIMITS } from "@netrics/connector-sdk/custom-api";
 import { createDemoConnector } from "@netrics/connectors";
 import type { ConnectionCustomApi } from "@netrics/database";
@@ -145,5 +149,48 @@ describe("custom API call options", () => {
     expect(bundled.egress?.redirects).toBeUndefined();
     expect(bundled.redactValues).toBeUndefined();
     expect(bundled.timeoutMs).toBe(5);
+  });
+
+  it("redacts derived secrets in a custom-api call, and refuses look-alike options", async () => {
+    const shop = customApiFixture("v1-shop") as Record<string, unknown>;
+    const custom = connectorFor(
+      registry,
+      conn({
+        versionId: "basic",
+        document: { ...shop, auth: { type: "basic" } },
+      }),
+    )!;
+    const credentials = {
+      host: "api.example.com",
+      username: "fx-user",
+      password: "fx-pass-0001",
+    };
+    const basic = Buffer.from("fx-user:fx-pass-0001").toString("base64");
+    // The API echoes the Authorization header it got: a value derived from
+    // the credentials, not one of them.
+    const echoing = {
+      ...custom.connector,
+      check: async () => ({ ok: false, message: `echo: Basic ${basic}` }),
+    };
+    const context = { connectionId: "c1", config: {}, credentials };
+    const options = callOptionsFor(
+      custom,
+      {},
+      {
+        credentials,
+        privateHosts: [],
+      },
+    );
+    const checked = await executeCheck(echoing, context, options);
+    expect(checked.ok).toBe(false);
+    expect(checked.message).toContain("[redacted]");
+    expect(checked.message).not.toContain(basic);
+    // The same values built by hand: refused, not run unredacted.
+    await expect(
+      executeCheck(echoing, context, {
+        egress: { ...options.egress },
+        redactValues: [],
+      }),
+    ).rejects.toBeInstanceOf(ContractViolationError);
   });
 });

@@ -356,17 +356,22 @@ export function createCustomApiConnector(
       apiHost,
     });
     // The cursor is stored and shown to viewers: never with a secret in it.
+    const strip = (url: string) =>
+      stripCustomApiSecrets(
+        url,
+        definition,
+        context.credentials as CustomApiCredentials,
+        context.config,
+      );
+    const nextUrl = found?.type === "next_url" ? strip(found.url) : null;
+    // A next link that names the page just read ends the stream. Compared
+    // without secrets: the request carries the auth where buildRequest put
+    // it (a query key last), the API's link may name it first.
     const next: PageState | null =
       found?.type === "next_url"
-        ? {
-            type: "next_url",
-            url: stripCustomApiSecrets(
-              found.url,
-              definition,
-              context.credentials as CustomApiCredentials,
-              context.config,
-            ),
-          }
+        ? nextUrl === strip(built.url)
+          ? null
+          : { type: "next_url", url: nextUrl! }
         : found;
 
     // Dataset pages of this response; the refresh's last one completes it.

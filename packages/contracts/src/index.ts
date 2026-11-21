@@ -1249,9 +1249,10 @@ export const updateConnectionRequestSchema = z.object({
   resources: z.array(z.string().min(1)).nullable().optional(),
   /**
    * Custom API connections: another environment of the pinned definition.
-   * Credentials are bound to the environment host, so this needs
-   * `credentials` too, unless the login method is none and the definition
-   * has no secret variables.
+   * Credentials are bound to the environment host and are never carried to
+   * another one, so this needs `credentials` (unless the login method is
+   * none) and `secretVariables` with every secret variable (when the
+   * definition has any).
    */
   customApiEnvironmentId: z.string().min(1).max(40).optional(),
   /**

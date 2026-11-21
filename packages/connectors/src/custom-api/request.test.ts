@@ -9,6 +9,7 @@ import {
   CustomApiConfigError,
   CustomApiResponseError,
   customApiSecretValues,
+  stripCustomApiSecrets,
   type CustomApiCredentials,
 } from "./index.js";
 import { b64, sdkFixture } from "./test-helpers.js";
@@ -202,6 +203,38 @@ describe("custom API requests", () => {
     expect(customApiSecretValues(definition, credentials)).toEqual(
       expect.arrayContaining(["s3cret-tenant", "t-s3cret-tenant"]),
     );
+  });
+
+  it("strips secret values from a next link, but not short ones", () => {
+    const definition: CustomApiDefinition = {
+      ...shop,
+      variables: [
+        ...shop.variables,
+        { id: "tenant_secret", label: "Tenant secret", secret: true },
+        { id: "short_secret", label: "Short secret", secret: true },
+      ],
+      auth: {
+        type: "bearer",
+        headerName: "Authorization",
+        prefix: "Bearer",
+        headers: {
+          "X-Tenant": "{{tenant_secret}}",
+          "X-Short": "{{short_secret}}",
+        },
+      },
+    };
+    const credentials = {
+      host,
+      token: FIXTURE_SECRETS.token,
+      variables: { tenant_secret: "s3cret-tenant", short_secret: "10" },
+    };
+    expect(
+      stripCustomApiSecrets(
+        `https://${host}/v1/items?after=10&echo=s3cret-tenant&page=1`,
+        definition,
+        credentials,
+      ),
+    ).toBe(`https://${host}/v1/items?after=10&page=1`);
   });
 
   it("lists derived secrets for redaction", () =>

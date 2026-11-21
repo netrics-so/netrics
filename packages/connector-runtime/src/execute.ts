@@ -32,6 +32,9 @@ import { createConnectorLogger, type ConnectorLogSink } from "./log.js";
 import { redactConnectorError, redactCredentialValues } from "./redact.js";
 
 /** Time budget per connector call (one check, discover, or sync page). */
+/** Brand of the host's custom API call options; never exported. */
+const CUSTOM_API_CALL_OPTIONS: unique symbol = Symbol("customApiCallOptions");
+
 export interface ExecuteOptions {
   /** Host-owned, already connection-scoped durable dataset staging. */
   datasetStaging?: (signal: AbortSignal) => ConnectorDatasetStaging;
@@ -62,6 +65,8 @@ export interface ExecuteOptions {
    * connectors; lookup, allowPrivateAddresses, allowInsecureHttp and tlsCa
    * are for tests only.
    */
+  /** Set only by customApiCallOptions: where the options came from. */
+  readonly [CUSTOM_API_CALL_OPTIONS]?: true;
   egress?: Pick<
     EgressOptions,
     | "lookup"
@@ -141,15 +146,27 @@ function classifyConnectorError(
 export const CUSTOM_API_CONNECTOR_ID = "custom-api";
 
 /**
+ * Marks options as the host's custom API call options. The host builds them
+ * in one place (the server's callOptionsFor) and passes them through this;
+ * the mark survives spreading (`{ ...options, onResponse }`), a hand-built
+ * options object never has it.
+ */
+export function customApiCallOptions(options: ExecuteOptions): ExecuteOptions {
+  return { ...options, [CUSTOM_API_CALL_OPTIONS]: true };
+}
+
+/**
  * The custom-api connector runs a user's definition: only with the host's
- * custom API call options (same-host redirects, its bounds and derived
- * secrets to redact). A call site that forgot them fails loudly instead of
- * running it with a bundled connector's egress.
+ * custom API call options (marked by customApiCallOptions, with same-host
+ * redirects and derived secrets to redact). A call site that forgot them,
+ * or built look-alike options by hand, fails loudly instead of running it
+ * with a bundled connector's egress.
  */
 function assertCallOptions(connector: Connector, options: ExecuteOptions) {
   if (
     connector.manifest.id === CUSTOM_API_CONNECTOR_ID &&
-    (options.egress?.redirects !== "same-host" ||
+    (options[CUSTOM_API_CALL_OPTIONS] !== true ||
+      options.egress?.redirects !== "same-host" ||
       options.redactValues === undefined)
   )
     throw new ContractViolationError(

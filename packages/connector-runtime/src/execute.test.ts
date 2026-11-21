@@ -19,6 +19,7 @@ import { demoManifest } from "@netrics/connectors";
 
 import {
   ContractViolationError,
+  customApiCallOptions,
   executeCheck,
   executeDiscover,
   executeResourceIcons,
@@ -1222,6 +1223,9 @@ describe("custom-api call options guard (ADR 0027)", () => {
       {},
       { egress: { redirects: "allowlist" as const }, redactValues: [] },
       { egress: { redirects: "same-host" as const } },
+      // Look-alike options built by hand, without customApiCallOptions.
+      { egress: { redirects: "same-host" as const }, redactValues: [] },
+      customApiCallOptions({ egress: { redirects: "allowlist" } }),
     ]) {
       await expect(
         executeCheck(custom, baseContext, options),
@@ -1233,11 +1237,16 @@ describe("custom-api call options guard (ADR 0027)", () => {
         executeDiscover(custom, baseContext, options),
       ).rejects.toBeInstanceOf(ContractViolationError);
     }
+    const marked = customApiCallOptions({
+      egress: { redirects: "same-host" },
+      redactValues: [],
+    });
+    expect(await executeCheck(custom, baseContext, marked)).toEqual({
+      ok: true,
+    });
+    // The mark survives spreading, as call sites add their own options.
     expect(
-      await executeCheck(custom, baseContext, {
-        egress: { redirects: "same-host" },
-        redactValues: [],
-      }),
+      await executeCheck(custom, baseContext, { ...marked, timeoutMs: 5_000 }),
     ).toEqual({ ok: true });
     // Bundled connectors need nothing extra.
     expect(

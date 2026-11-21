@@ -373,6 +373,21 @@ describe("custom-api connector", () => {
     expect(error.message).not.toContain(FIXTURE_SECRETS.apiKey);
   });
 
+  it("ends on a next link to the same page, with the key placed first", async () => {
+    fixture.reset();
+    const { result } = await syncAll(
+      connector(def("api_key_self_link")),
+      BACKFILL,
+      ctx({ apiKey: FIXTURE_SECRETS.apiKey }),
+    );
+    // Page 1, then page 2 links to itself: two requests, not the page cap.
+    expect(fixture.requests.map((request) => request.query.after)).toEqual([
+      undefined,
+      "10",
+    ]);
+    expect(result.done).toBe(true);
+  });
+
   it("starts every stream again when a later run gets another window", async () => {
     const pages = def("pages");
     const endless = def("endless");

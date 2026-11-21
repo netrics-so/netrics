@@ -15,6 +15,7 @@ export {
   assertContextIsPlain,
   ConnectorTimeoutError,
   ContractViolationError,
+  customApiCallOptions,
   executeCheck,
   executeDiscover,
   executeResourceIcons,
