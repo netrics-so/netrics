@@ -30,21 +30,41 @@ describe("upgradeCustomApiDefinition", () => {
       upgradeCustomApiDefinition({ ...fixture("v1-shop"), schemaVersion: 2 }),
     ).toThrow(expect.objectContaining({ code: "unsupported_schema_version" })));
 
-  it.each<[unknown, string]>([
-    [null, "not_an_object"],
-    [[], "not_an_object"],
-    ["x", "not_an_object"],
-    [{ schemaVersion: "1" }, "unsupported_schema_version"],
-    [{ schemaVersion: 0 }, "unsupported_schema_version"],
-    [{ schemaVersion: 1.5 }, "unsupported_schema_version"],
-    [{}, "unsupported_schema_version"],
-  ])("refuses %j", (raw, code) => {
+  it.each<[unknown, string, string]>([
+    [null, "not_an_object", ""],
+    [[], "not_an_object", ""],
+    ["x", "not_an_object", ""],
+    [{ schemaVersion: "1" }, "unsupported_schema_version", "schemaVersion"],
+    [{ schemaVersion: 0 }, "unsupported_schema_version", "schemaVersion"],
+    [{ schemaVersion: 1.5 }, "unsupported_schema_version", "schemaVersion"],
+    [{}, "unsupported_schema_version", "schemaVersion"],
+  ])("refuses %j with one issue to mark", (raw, code, path) => {
     try {
       upgradeCustomApiDefinition(raw);
       expect.unreachable();
     } catch (error) {
       expect(error).toBeInstanceOf(CustomApiDefinitionError);
-      expect(error).toMatchObject({ code, issues: [] });
+      const e = error as CustomApiDefinitionError;
+      expect(e.code).toBe(code);
+      expect(e.issues).toEqual([{ path, code: "invalid", message: e.message }]);
+    }
+  });
+
+  it("refuses an oversized document before parsing it", () => {
+    const raw = {
+      ...fixture("v1-shop"),
+      // Unknown and over the size limit: only the size is reported, so the
+      // parse never ran.
+      padding: "x".repeat(300_000),
+    };
+    try {
+      upgradeCustomApiDefinition(raw);
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: "invalid",
+        issues: [{ path: "", code: "document_too_large" }],
+      });
     }
   });
 

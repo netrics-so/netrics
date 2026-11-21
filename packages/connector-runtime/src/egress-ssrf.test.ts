@@ -24,6 +24,7 @@ import {
   createEgressFetch,
   isBlockedAddress,
   isMetadataAddress,
+  broadPrivateHostEntries,
   parsePrivateHostEntries,
   privateHostPolicy,
   type EgressOptions,
@@ -81,6 +82,12 @@ describe("tunnelled and legacy IPv6 forms (each named, so a regression points at
     ["Teredo prefix", "2001::1"],
     ["site-local", "fec0::1"],
     ["site-local upper", "feff:ffff::1"],
+    ["IPv4-translated loopback", "::ffff:0:7f00:1"],
+    [
+      "IPv4-translated public (whole ::ffff:0:0:0/96 refused)",
+      "::ffff:0:101:101",
+    ],
+    ["IPv4-translated dotted", "::ffff:0:10.0.0.1"],
   ])("blocks %s (%s)", (_name, a) => expect(isBlockedAddress(a)).toBe(true));
 });
 
@@ -96,12 +103,31 @@ describe("isMetadataAddress", () => {
     "100.100.100.200",
     "192.0.0.192",
     "fe80::1",
+    "::ffff:0:a9fe:a9fe",
+    "::ffff:0:169.254.169.254",
   ])("%s", (a) => expect(isMetadataAddress(a)).toBe(true));
   it("does not treat ordinary private addresses as metadata", () => {
     expect(isMetadataAddress("10.0.0.1")).toBe(false);
     expect(isMetadataAddress("127.0.0.1")).toBe(false);
     expect(isMetadataAddress("fd12::1")).toBe(false);
   });
+});
+
+describe("broadPrivateHostEntries", () => {
+  it("names single-label wildcards and localhost", () =>
+    expect(
+      broadPrivateHostEntries([
+        "*.com",
+        "*.local",
+        "localhost",
+        "api.localhost",
+        "*.corp.example",
+        "intranet.example",
+        "intranet",
+        "10.20.0.0/16",
+        "127.0.0.1",
+      ]),
+    ).toEqual(["*.com", "*.local", "localhost", "api.localhost"]));
 });
 
 describe("private host entries", () => {

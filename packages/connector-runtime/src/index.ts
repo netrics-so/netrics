@@ -5,6 +5,7 @@ export {
   hostAllowed,
   isBlockedAddress,
   isMetadataAddress,
+  broadPrivateHostEntries,
   parsePrivateHostEntries,
   privateHostPolicy,
   type EgressOptions,

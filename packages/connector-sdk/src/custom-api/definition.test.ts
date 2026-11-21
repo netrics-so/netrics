@@ -849,18 +849,53 @@ describe("customApiDefinitionSchema", () => {
     ).toBe(true);
   });
 
-  it("drops __proto__ keys instead of polluting prototypes", () => {
-    const input = doc(() => {});
-    input.streams[0].request.headers = JSON.parse(
-      '{"__proto__":{"polluted":"yes"},"Accept":"x"}',
-    );
-    const result = customApiDefinitionSchema.safeParse(input);
-    if (result.success) {
-      const headers = result.data.streams[0]!.request.headers;
-      expect(Object.getPrototypeOf(headers)).toBe(Object.prototype);
-      expect(Object.keys(headers)).toEqual(["Accept"]);
+  it.each(["headers", "query"] as const)(
+    "refuses a __proto__ key in request %s with an issue",
+    (where) => {
+      const input = doc(() => {});
+      input.streams[0].request[where] = JSON.parse(
+        '{"__proto__":{"polluted":"yes"},"Accept":"x"}',
+      );
+      expect(issuesOf(input)).toContainEqual({
+        path: `streams.0.request.${where}.__proto__`,
+        code: "invalid",
+        message: "Reserved key",
+      });
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    },
+  );
+
+  it("refuses constructor and prototype keys in records", () => {
+    for (const key of ["constructor", "prototype"]) {
+      const input = doc(() => {});
+      input.streams[0].request.query = { [key]: "x" };
+      expect(issuesOf(input)).toContainEqual(
+        expect.objectContaining({ path: `streams.0.request.query.${key}` }),
+      );
     }
-    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("names unknown properties cut and escaped", () => {
+    const long = `sk_live_${"x".repeat(200)}`;
+    const input = doc((d) => {
+      d[long] = 1;
+      d['a"b\nc'] = 2;
+    });
+    const [unknown] = issuesOf(input).filter((i) => i.path === "");
+    expect(unknown!.message).toBe(
+      `Unknown properties: "${long.slice(0, 63)}…", "a\\"b\\nc"`,
+    );
+    expect(unknown!.message).not.toContain(long);
+  });
+
+  it("cuts and escapes key names in issue paths", () => {
+    const long = `k${"y".repeat(150)}`;
+    const input = doc((d) => {
+      d.streams[0].request.query = { [long]: "{{nope}}" };
+    });
+    const paths = issuesOf(input).map((i) => i.path);
+    expect(paths).toContain(`streams.0.request.query.${long.slice(0, 63)}…`);
+    expect(paths.join()).not.toContain(long);
   });
 
   it("yields a valid source dataset for every stream", () => {

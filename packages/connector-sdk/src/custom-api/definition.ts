@@ -297,20 +297,35 @@ const imageHost = z
     message: 'Expected a lower-case host name or "*.example.com"',
   });
 
-/** Own-key record bounded in size; keys that could reach a prototype are refused. */
+/**
+ * Own-key record bounded in size; keys that could reach a prototype are
+ * refused with an issue. zod's record skips an own `__proto__` key (as
+ * `JSON.parse` creates it) without a word, so the raw keys are checked
+ * before the record parses.
+ */
 function boundedRecord<V extends z.ZodType>(
   key: z.ZodString,
   value: V,
   max: number,
 ) {
   return z
-    .record(
-      key.refine((k) => !UNSAFE_KEYS.has(k), { message: "Reserved key" }),
-      value,
-    )
-    .refine((record) => Object.keys(record).length <= max, {
-      message: `At most ${max} entries`,
-    });
+    .unknown()
+    .superRefine((raw, ctx) => {
+      if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return;
+      for (const k of Object.keys(raw))
+        if (UNSAFE_KEYS.has(k))
+          ctx.addIssue({ code: "custom", path: [k], message: "Reserved key" });
+    })
+    .pipe(
+      z
+        .record(
+          key.refine((k) => !UNSAFE_KEYS.has(k), { message: "Reserved key" }),
+          value,
+        )
+        .refine((record) => Object.keys(record).length <= max, {
+          message: `At most ${max} entries`,
+        }),
+    );
 }
 
 /** Header map: RFC 7230 token names, none of the forbidden headers. */
@@ -960,7 +975,26 @@ export interface CustomApiIssue {
 const ISSUE_CODES = new Set<string>(CUSTOM_API_ISSUE_CODES);
 export const CUSTOM_API_MAX_ISSUES = 20;
 
-/** First 20 issues; path joined with "." ("streams.0.fields.2.path"); zod built-ins get code "invalid". Never includes input values. */
+/** Longest key name an issue repeats; longer ones are cut with "…". */
+const ISSUE_KEY_LENGTH = 64;
+
+/** A key name from the input, cut and with control characters escaped. */
+function issueKey(key: PropertyKey): string {
+  const text = typeof key === "symbol" ? "symbol" : String(key);
+  const cut =
+    text.length > ISSUE_KEY_LENGTH
+      ? `${text.slice(0, ISSUE_KEY_LENGTH - 1)}…`
+      : text;
+  // JSON escaping, without the quotes: control characters, `"` and `\`.
+  return JSON.stringify(cut).slice(1, -1);
+}
+
+/**
+ * First 20 issues; path joined with "." ("streams.0.fields.2.path"); zod
+ * built-ins get code "invalid". Never includes input values. Key names from
+ * the input (record keys in a path, unknown properties) are cut to 64
+ * characters and escaped.
+ */
 export function customApiIssues(error: z.ZodError): CustomApiIssue[] {
   return error.issues.slice(0, CUSTOM_API_MAX_ISSUES).map((entry) => {
     const code =
@@ -970,13 +1004,23 @@ export function customApiIssues(error: z.ZodError): CustomApiIssue[] {
         ? (entry.params.code as CustomApiIssueCode)
         : "invalid";
     return {
-      path: entry.path.map(String).join("."),
+      path: entry.path.map(issueKey).join("."),
       code,
-      // zod's built-in messages describe the expectation, never the input;
-      // custom messages here are fixed sentences.
-      message: entry.message,
+      // zod's built-in messages describe the expectation, never the input,
+      // except the unknown-key message, which repeats the keys whole; it is
+      // rebuilt with cut keys. Custom messages here are fixed sentences.
+      message:
+        entry.code === "unrecognized_keys"
+          ? unknownKeysMessage(entry.keys)
+          : entry.message,
     };
   });
+}
+
+function unknownKeysMessage(keys: readonly string[]): string {
+  const shown = keys.slice(0, 3).map((key) => `"${issueKey(key)}"`);
+  const more = keys.length > 3 ? ` and ${keys.length - 3} more` : "";
+  return `Unknown ${keys.length === 1 ? "property" : "properties"}: ${shown.join(", ")}${more}`;
 }
 
 // ------------------------------------------------------------------ upgrade
@@ -991,13 +1035,50 @@ const ERROR_MESSAGES: Record<CustomApiDefinitionErrorCode, string> = {
   invalid: "The custom API definition is invalid",
 };
 
+/** The one issue a whole-document error carries, so callers always mark something. */
+const DOCUMENT_ISSUES: Record<
+  Exclude<CustomApiDefinitionErrorCode, "invalid">,
+  CustomApiIssue
+> = {
+  not_an_object: {
+    path: "",
+    code: "invalid",
+    message: ERROR_MESSAGES.not_an_object,
+  },
+  unsupported_schema_version: {
+    path: "schemaVersion",
+    code: "invalid",
+    message: ERROR_MESSAGES.unsupported_schema_version,
+  },
+};
+
 export class CustomApiDefinitionError extends Error {
+  readonly issues: CustomApiIssue[];
   constructor(
     readonly code: CustomApiDefinitionErrorCode,
-    readonly issues: CustomApiIssue[],
+    issues: CustomApiIssue[],
   ) {
     super(ERROR_MESSAGES[code]);
     this.name = "CustomApiDefinitionError";
+    this.issues =
+      issues.length === 0 && code !== "invalid"
+        ? [{ ...DOCUMENT_ISSUES[code] }]
+        : issues;
+  }
+}
+
+/**
+ * Compact JSON size of an input document, or Infinity when it does not
+ * serialize. Every property of the input survives the strict parse, so an
+ * input over the limit is over it after the parse too: checking it first
+ * spares parsing an oversized document.
+ */
+function inputBytes(raw: unknown): number {
+  try {
+    const text = JSON.stringify(raw);
+    return text === undefined ? 0 : utf8ByteLength(text);
+  } catch {
+    return Number.POSITIVE_INFINITY;
   }
 }
 
@@ -1041,6 +1122,14 @@ export function upgradeCustomApiDefinition(raw: unknown): CustomApiDefinition {
       throw new Error(`Custom API upgrade from version ${version} is broken`);
     doc = next;
   }
+  if (inputBytes(doc) > CUSTOM_API_LIMITS.documentBytes)
+    throw new CustomApiDefinitionError("invalid", [
+      {
+        path: "",
+        code: "document_too_large",
+        message: "The definition is too large",
+      },
+    ]);
   const parsed = customApiDefinitionSchema.safeParse(doc);
   if (!parsed.success)
     throw new CustomApiDefinitionError(
