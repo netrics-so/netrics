@@ -15,11 +15,14 @@ export function TestPanel({
   test,
   error,
   pending,
+  missingSecrets = [],
 }: {
   test: CustomApiTestResponse | null;
   /** A refused test request (rate limit, host change, expired draft). */
   error: string | null;
   pending: boolean;
+  /** Labels of the secrets the draft does not hold yet. */
+  missingSecrets?: readonly string[];
 }) {
   const t = useT("customApi.test");
   const response = useT("customApi.response");
@@ -44,7 +47,14 @@ export function TestPanel({
         ) : (
           <p className="error" role="alert">
             {test.error
-              ? apiErrorMessage(new ApiError(200, test.error.code), locale)
+              ? test.error.code === "custom_api_secret_missing" &&
+                missingSecrets.length
+                ? t("missing", {
+                    names: new Intl.ListFormat(locale, {
+                      type: "conjunction",
+                    }).format(missingSecrets),
+                  })
+                : apiErrorMessage(new ApiError(200, test.error.code), locale)
               : null}
           </p>
         )

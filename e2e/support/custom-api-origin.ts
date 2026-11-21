@@ -23,9 +23,28 @@ export const CUSTOM_API_TLS = {
   cert: `${dir}cert.pem`,
 };
 
-/** A self-signed certificate for 127.0.0.1, made once (no key is committed). */
+/** The cached certificate is still valid for at least a day. */
+function certificateValid(): boolean {
+  if (!existsSync(CUSTOM_API_TLS.key) || !existsSync(CUSTOM_API_TLS.cert))
+    return false;
+  try {
+    execFileSync(
+      "openssl",
+      ["x509", "-checkend", "86400", "-noout", "-in", CUSTOM_API_TLS.cert],
+      { stdio: "ignore" },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A self-signed certificate for 127.0.0.1 (no key is committed), made again
+ * when it is missing or expires within a day.
+ */
 export function ensureCustomApiCertificate(): void {
-  if (existsSync(CUSTOM_API_TLS.key) && existsSync(CUSTOM_API_TLS.cert)) return;
+  if (certificateValid()) return;
   mkdirSync(dir, { recursive: true });
   execFileSync("openssl", [
     "req",
@@ -36,7 +55,7 @@ export function ensureCustomApiCertificate(): void {
     "ec_paramgen_curve:prime256v1",
     "-nodes",
     "-days",
-    "2",
+    "7",
     "-subj",
     "/CN=127.0.0.1",
     "-addext",

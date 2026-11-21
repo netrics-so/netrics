@@ -147,9 +147,12 @@ export function treeItems(
 }
 
 export type TreeKeyAction =
-  "next" | "prev" | "expand" | "collapse" | "toggle" | "pick" | null;
+  "next" | "prev" | "expand" | "collapse" | "toggle" | "more" | "pick" | null;
 
-/** Keyboard: arrows move and open/close, Enter toggles, Space picks. */
+/**
+ * Keyboard: arrows move and open/close, Enter toggles (on an open list that
+ * shows only its first item, Enter shows the rest), Space picks.
+ */
 export function treeKey(key: string, item: TreeItem): TreeKeyAction {
   const branch = item.kind === "object" || item.kind === "array";
   switch (key) {
@@ -162,7 +165,7 @@ export function treeKey(key: string, item: TreeItem): TreeKeyAction {
     case "ArrowLeft":
       return branch && item.expanded ? "collapse" : "prev";
     case "Enter":
-      return branch ? "toggle" : null;
+      return item.hiddenItems > 0 ? "more" : branch ? "toggle" : null;
     case " ":
       return "pick";
     default:
@@ -180,9 +183,16 @@ export function pickOf(
   return item.kind === "leaf" && item.value !== null ? "value" : null;
 }
 
-function leafText(value: Json): string {
-  if (typeof value === "string") return JSON.stringify(value);
-  return String(value);
+/** The server's cut of a long string: "<start>… (N characters)". */
+const STRING_CUT = /… \(\d+ characters\)$/;
+
+/** A leaf as text, with the server's cut suffix apart (shown as a marker). */
+export function leafParts(value: Json): { text: string; cut: string | null } {
+  if (typeof value !== "string") return { text: String(value), cut: null };
+  const cut = STRING_CUT.exec(value);
+  return cut
+    ? { text: JSON.stringify(value.slice(0, cut.index)), cut: cut[0] }
+    : { text: JSON.stringify(value), cut: null };
 }
 
 export interface JsonTreeProps {
@@ -253,6 +263,8 @@ export function JsonTree({
     else if (action === "expand") toggle(item.path, true);
     else if (action === "collapse") toggle(item.path, false);
     else if (action === "toggle") toggle(item.path);
+    else if (action === "more")
+      setShowAll((current) => new Set(current).add(item.path));
     else pick(item);
   };
   const tabStop = items.some((item) => item.path === focused)
@@ -264,6 +276,7 @@ export function JsonTree({
       className="json-tree"
       role="tree"
       aria-label={label ?? t("tree.label")}
+      aria-multiselectable={mode === "fields" ? true : undefined}
       ref={tree}
     >
       {items.map((item, index) => {
@@ -326,7 +339,13 @@ export function JsonTree({
               <span
                 className={`json-tree-value json-tree-value--${item.value === null ? "null" : typeof item.value}`}
               >
-                {leafText(item.value)}
+                {leafParts(item.value).text}
+                {leafParts(item.value).cut ? (
+                  <span className="json-tree-marker">
+                    {" "}
+                    {leafParts(item.value).cut}
+                  </span>
+                ) : null}
               </span>
             ) : (
               <span className="json-tree-summary">

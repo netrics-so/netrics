@@ -41,6 +41,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       removeEnvironment: "Umgebung entfernen",
       testEnvironment: "Testen mit",
       project: "Projekt",
+      environmentWarning:
+        "Wenn du mit einer anderen Umgebung testest oder diese entfernst, wird die gespeicherte Anmeldung gelöscht.",
       hostWarning:
         "Wenn du diese Adresse änderst, wird die gespeicherte Anmeldung gelöscht. Du gibst sie im Schritt Anmeldung erneut ein.",
     },
@@ -274,6 +276,7 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       wait: "Zu viele Testanfragen. Versuch es in {seconds, plural, one {# Sekunde} other {# Sekunden}} erneut.",
       window: "Zeitraum des Tests: {start} bis {end}",
       status: "HTTP {status}",
+      missing: "Gib zuerst ein und speichere: {names}.",
     },
     log: {
       title: "Anfragen",
@@ -337,6 +340,12 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       environments: "Umgebungen",
       stream: "Daten",
     },
+    hints: {
+      secretMissing:
+        "Für eine Testanfrage gibst du die Anmeldung ein und speicherst sie. Zum Speichern von Änderungen brauchst du sie nicht.",
+      secretValueMissing:
+        "Für eine Testanfrage gibst du die geheimen Verbindungswerte ein und speicherst sie. Zum Speichern von Änderungen brauchst du sie nicht.",
+    },
     errors: {
       leave:
         "Baukasten verlassen? Deine Testanmeldung wird nach 24 Stunden gelöscht.",
@@ -367,7 +376,7 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       variableLabel: "Jeder Verbindungswert braucht eine Bezeichnung.",
       variableDuplicate: "Zwei Verbindungswerte haben denselben Namen.",
       reservedVariable:
-        "Ein geheimer Verbindungswert darf nicht token, password, username oder host heißen.",
+        "Ein geheimer Verbindungswert verwendet einen Namen, der für die Anmeldung reserviert ist. Benenne ihn um.",
       secretValueMissing:
         "Gib jeden geheimen Verbindungswert ein und speichere ihn.",
       variableValue:

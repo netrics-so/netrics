@@ -137,6 +137,8 @@ export function StepLogin({
   draftId,
   secretsLost,
   pending,
+  values,
+  onValueChange,
   onSaveSecrets,
   onSignIn,
 }: StepProps & {
@@ -146,12 +148,14 @@ export function StepLogin({
   secretsLost: boolean;
   pending: boolean;
   /** Sends the secrets once; resolves true when they were stored. */
+  /** Secrets typed but not saved yet (kept by the builder, never stored). */
+  values: Readonly<Record<string, string>>;
+  onValueChange: (name: string, value: string | undefined) => void;
   onSaveSecrets: (secrets: Record<string, string>) => Promise<boolean>;
   onSignIn: () => void;
 }) {
   const t = useT("customApi.login");
   const auth = state.auth;
-  const [values, setValues] = useState<Record<string, string>>({});
   const entries = useCredentialEntries(auth);
   const credentialsStored = entries.some((e) =>
     state.secretsSet.includes(e.name),
@@ -161,7 +165,13 @@ export function StepLogin({
       ...current,
       auth: { ...current.auth, ...patch } as CustomApiAuth,
     }));
-  const entered = enteredSecrets(values);
+  const entered = enteredSecrets(
+    Object.fromEntries(
+      entries
+        .filter((e) => values[e.name] !== undefined)
+        .map((e) => [e.name, values[e.name]!]),
+    ),
+  );
 
   return (
     <div className="custom-api-form">
@@ -180,7 +190,8 @@ export function StepLogin({
                 name="custom-api-auth"
                 checked={auth.type === type}
                 onChange={() => {
-                  setValues({});
+                  for (const entry of entries)
+                    onValueChange(entry.name, undefined);
                   update((current) => ({
                     ...current,
                     auth: defaultAuth(type),
@@ -244,7 +255,7 @@ export function StepLogin({
 
       {auth.type === "oauth_client_credentials" ||
       auth.type === "oauth_authorization_code" ? (
-        <OAuthSettings auth={auth} setAuth={setAuth} />
+        <OAuthSettings key={auth.type} auth={auth} setAuth={setAuth} />
       ) : null}
       {auth.type === "oauth_authorization_code" && credentialsStored ? (
         <p className="help custom-api-warning">{t("oauthChangeWarning")}</p>
@@ -257,14 +268,7 @@ export function StepLogin({
             stored={state.secretsSet}
             values={values}
             idPrefix="custom-api-secret"
-            onChange={(name, value) =>
-              setValues((current) => {
-                const next = { ...current };
-                if (value === undefined) delete next[name];
-                else next[name] = value;
-                return next;
-              })
-            }
+            onChange={onValueChange}
           />
           <div className="custom-api-actions">
             <button
@@ -273,7 +277,7 @@ export function StepLogin({
               disabled={pending || !entered}
               onClick={async () => {
                 if (!entered) return;
-                if (await onSaveSecrets(entered)) setValues({});
+                await onSaveSecrets(entered);
               }}
             >
               {pending ? t("saving") : t("save")}

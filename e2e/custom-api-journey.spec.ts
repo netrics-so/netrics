@@ -161,6 +161,20 @@ test("a member builds, tests and connects a custom API", async ({
   ).toBeVisible();
   await noToken(page);
 
+  // Editing without the API's credentials: a schedule-only change saves a
+  // new version (review #824).
+  await page.goto(`/workspaces/${workspaceId}/custom-apis`);
+  await page.getByRole("link", { name: c.list.edit }).click();
+  await page.getByRole("button", { name: c.steps.review }).click();
+  await page.locator("#custom-api-refresh").fill("30");
+  await page.getByRole("button", { name: c.review.saveVersion }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/workspaces/${workspaceId}/custom-apis$`),
+  );
+  await expect(
+    page.getByText(formatMessage(locale, c.list.version, { version: 2 })),
+  ).toBeVisible();
+
   for (const body of await Promise.all(answers))
     expect(body).not.toContain(TOKEN);
 });

@@ -149,6 +149,11 @@ export function StepBasics({
                 >
                   {t("removeEnvironment")}
                 </button>
+                {secretsStored && testing ? (
+                  <p className="help custom-api-warning">
+                    {t("environmentWarning")}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </fieldset>

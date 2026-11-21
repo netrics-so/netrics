@@ -731,7 +731,36 @@ function reviewIssues(state: BuilderState): string[] {
 }
 
 /** Message keys (namespace `customApi`) of what keeps a step from being complete; [] = complete. */
-export function stepIssues(state: BuilderState, step: BuilderStep): string[] {
+export function stepIssues(
+  state: BuilderState,
+  step: BuilderStep,
+  options: { editing?: boolean } = {},
+): string[] {
+  const all = allStepIssues(state, step);
+  return options.editing ? all.filter((key) => !SECRET_HINTS.has(key)) : all;
+}
+
+/**
+ * Editing a saved definition needs no credentials: saving does not test.
+ * There the missing-secret checks are hints, not gates.
+ */
+const SECRET_HINTS = new Set([
+  "issues.secretMissing",
+  "issues.secretValueMissing",
+]);
+
+/** The secret checks a step shows as hints while editing (they don't block). */
+export function stepHints(
+  state: BuilderState,
+  step: BuilderStep,
+  options: { editing?: boolean } = {},
+): string[] {
+  return options.editing
+    ? allStepIssues(state, step).filter((key) => SECRET_HINTS.has(key))
+    : [];
+}
+
+function allStepIssues(state: BuilderState, step: BuilderStep): string[] {
   switch (step) {
     case "basics":
       return basicsIssues(state);

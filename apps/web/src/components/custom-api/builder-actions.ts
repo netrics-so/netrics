@@ -11,7 +11,11 @@ import {
   type CustomApiDraft,
 } from "@netrics/contracts";
 
+import type { Locale } from "@netrics/domain";
+
+import { apiErrorMessage } from "@/lib/api";
 import * as client from "@/lib/custom-api";
+import { webTranslator } from "@/lib/i18n/catalogs";
 import {
   BUILDER_STEPS,
   definitionOf,
@@ -29,6 +33,7 @@ export type BuilderClient = Pick<
   | "promoteDraft"
   | "createDefinition"
   | "saveDefinitionVersion"
+  | "startCustomOAuth"
 >;
 
 export const defaultClient: BuilderClient = client;
@@ -92,9 +97,12 @@ export async function syncDraft(
 }
 
 /**
- * Moving to a step: the draft is created on the first entry to Login (or
- * any later step), never before; an existing draft is brought up to date
- * when the state is complete enough to store.
+ * Moving to a step: a new definition's draft is created on the first entry
+ * to Login (or any later step), never before; editing a saved definition
+ * creates it only when a secret is saved or a test is sent
+ * (`createDraft: false`). An existing draft is brought up to date when the
+ * state is complete enough to store, together with secrets typed but not
+ * saved yet, so a typed replacement is never dropped.
  */
 export async function enterStep(
   api: BuilderClient,
@@ -104,6 +112,9 @@ export async function enterStep(
     definitionId?: string;
     state: BuilderState;
     target: BuilderStep;
+    createDraft?: boolean;
+    /** Typed, not yet saved secrets (names → values). */
+    secrets?: Record<string, string> | null;
   },
 ): Promise<{
   draftId: string | null;
@@ -111,7 +122,13 @@ export async function enterStep(
   secretsLost: boolean;
 }> {
   let draftId = input.draftId;
-  if (!draftId && BUILDER_STEPS.indexOf(input.target) >= 1)
+  const secrets = input.secrets ?? null;
+  if (
+    !draftId &&
+    ((input.createDraft !== false &&
+      BUILDER_STEPS.indexOf(input.target) >= 1) ||
+      secrets !== null)
+  )
     draftId = await ensureDraft(
       api,
       input.workspaceId,
@@ -120,8 +137,54 @@ export async function enterStep(
     );
   if (!draftId || !draftReady(input.state))
     return { draftId, state: input.state, secretsLost: false };
-  const synced = await syncDraft(api, input.workspaceId, draftId, input.state);
+  const synced = await syncDraft(
+    api,
+    input.workspaceId,
+    draftId,
+    input.state,
+    secrets ?? undefined,
+  );
   return { draftId, ...synced };
+}
+
+/**
+ * The OAuth sign-in of a draft: the draft first stores the current
+ * definition (C-G4 builds the authorize request from it), then the sign-in
+ * starts. When that update forgot the saved client (another host or
+ * method), nothing starts: the login has to be entered again.
+ */
+export async function startSignIn(
+  api: BuilderClient,
+  input: { workspaceId: string; draftId: string; state: BuilderState },
+): Promise<
+  | { kind: "secretsLost"; state: BuilderState }
+  | { kind: "redirect"; state: BuilderState; authorizationUrl: string }
+> {
+  const synced = await syncDraft(
+    api,
+    input.workspaceId,
+    input.draftId,
+    input.state,
+  );
+  if (synced.secretsLost) return { kind: "secretsLost", state: synced.state };
+  const { authorizationUrl } = await api.startCustomOAuth(
+    input.workspaceId,
+    input.draftId,
+  );
+  return { kind: "redirect", state: synced.state, authorizationUrl };
+}
+
+/** A refused builder request in the viewer's language; 429 says how long to wait. */
+export function builderErrorMessage(cause: unknown, locale: Locale): string {
+  if (
+    cause instanceof client.CustomApiRequestError &&
+    cause.status === 429 &&
+    cause.retryAfterSeconds !== null
+  )
+    return webTranslator(locale, "customApi.test")("wait", {
+      seconds: cause.retryAfterSeconds,
+    });
+  return apiErrorMessage(cause, locale);
 }
 
 /** Sends a test request (1 page from the Request step, 5 to test paging). */

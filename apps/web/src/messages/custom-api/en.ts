@@ -41,6 +41,8 @@ export const customApiEn = {
       removeEnvironment: "Remove environment",
       testEnvironment: "Test with",
       project: "Project",
+      environmentWarning:
+        "Testing with another environment, or removing this one, deletes the saved login.",
       hostWarning:
         "Changing this address deletes the saved login. You enter it again in the Login step.",
     },
@@ -268,6 +270,7 @@ export const customApiEn = {
       wait: "Too many test requests. Try again in {seconds, plural, one {# second} other {# seconds}}.",
       window: "Time window of the test: {start} to {end}",
       status: "HTTP {status}",
+      missing: "Enter and save first: {names}.",
     },
     log: {
       title: "Requests",
@@ -329,6 +332,12 @@ export const customApiEn = {
       environments: "Environments",
       stream: "Data",
     },
+    hints: {
+      secretMissing:
+        "To send a test request, enter and save the login. Saving changes doesn't need it.",
+      secretValueMissing:
+        "To send a test request, enter and save the secret connection values. Saving changes doesn't need them.",
+    },
     errors: {
       leave: "Leave the builder? Your test login is deleted after 24 hours.",
     },
@@ -358,7 +367,7 @@ export const customApiEn = {
       variableLabel: "Every connection value needs a label.",
       variableDuplicate: "Two connection values have the same name.",
       reservedVariable:
-        "A secret connection value can't be named token, password, username or host.",
+        "A secret connection value uses a name reserved for the login. Rename it.",
       secretValueMissing: "Enter and save every secret connection value.",
       variableValue: "Enter a value for the test for every connection value.",
       recordsMissing: "Pick the list that holds your records.",

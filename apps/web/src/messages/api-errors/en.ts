@@ -127,7 +127,7 @@ export const apiErrorsEn = {
     custom_api_draft_limit:
       "Too many unfinished custom APIs. Finish or close one first.",
     custom_api_variable_reserved:
-      "A secret connection value can't be named token, password, username or host. Rename it.",
+      "This name is reserved for the login. Rename the secret connection value.",
     custom_api_secret_unknown:
       "This login method does not use one of the entered secrets.",
     custom_api_credentials_host_changed:

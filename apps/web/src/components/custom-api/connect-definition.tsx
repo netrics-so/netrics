@@ -59,6 +59,40 @@ export function connectRequest(
 }
 
 /**
+ * Creates the connection (unless an earlier attempt did) and, for OAuth
+ * (authorization code), starts its sign-in.
+ */
+export async function connectAndSignIn(
+  api: ConnectClient,
+  input: {
+    workspaceId: string;
+    definitionId: string;
+    /** Created by an earlier attempt: not created again. */
+    connectionId: string | null;
+    oauth: boolean;
+    body: ReturnType<typeof connectRequest>;
+    onCreated: (connectionId: string) => void;
+  },
+): Promise<{ connectionId: string; authorizationUrl: string | null }> {
+  let connectionId = input.connectionId;
+  if (connectionId === null) {
+    const { connection } = await api.connectDefinition(
+      input.workspaceId,
+      input.definitionId,
+      input.body,
+    );
+    connectionId = connection.id;
+    input.onCreated(connectionId);
+  }
+  if (!input.oauth) return { connectionId, authorizationUrl: null };
+  const { authorizationUrl } = await api.startCustomOAuth(
+    input.workspaceId,
+    connectionId,
+  );
+  return { connectionId, authorizationUrl };
+}
+
+/**
  * Connect an existing custom API (#807): environment, connection values,
  * the login's secrets and a project; OAuth (authorization code) then signs
  * in at the provider.
@@ -93,6 +127,9 @@ export function ConnectDefinition({
     definition.projectId,
   );
   const [pending, setPending] = useState(false);
+  // The connection created by an earlier attempt whose sign-in did not
+  // start: a retry signs it in instead of creating another one.
+  const [created, setCreated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const credentialEntries = useCredentialEntries(document.auth);
   const secretEntries = [
@@ -112,26 +149,27 @@ export function ConnectDefinition({
     setPending(true);
     setError(null);
     try {
-      const { connection } = await api.connectDefinition(
+      const result = await connectAndSignIn(api, {
         workspaceId,
-        definition.id,
-        connectRequest(definition, {
+        definitionId: definition.id,
+        connectionId: created,
+        oauth: oauthCode,
+        body: connectRequest(definition, {
           name: shownName,
           environmentId,
           values,
           secrets,
           projectId,
         }),
-      );
-      if (oauthCode) {
-        const { authorizationUrl } = await api.startCustomOAuth(
-          workspaceId,
-          connection.id,
-        );
-        window.location.assign(authorizationUrl);
+        onCreated: setCreated,
+      });
+      if (result.authorizationUrl) {
+        window.location.assign(result.authorizationUrl);
         return;
       }
-      router.push(`/workspaces/${workspaceId}/connections/${connection.id}`);
+      router.push(
+        `/workspaces/${workspaceId}/connections/${result.connectionId}`,
+      );
     } catch (cause) {
       setError(apiErrorMessage(cause, locale));
       setPending(false);

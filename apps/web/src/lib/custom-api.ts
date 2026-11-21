@@ -103,7 +103,7 @@ export async function updateDraft(
   const { draft } = await send(
     customApiDraftResponseSchema,
     "PUT",
-    `${base(workspaceId)}/drafts/${draftId}`,
+    `${base(workspaceId)}/drafts/${encodeURIComponent(draftId)}`,
     updateCustomApiDraftRequestSchema.parse(body),
   );
   return draft;
@@ -113,7 +113,11 @@ export function deleteDraft(
   workspaceId: string,
   draftId: string,
 ): Promise<void> {
-  return send(null, "DELETE", `${base(workspaceId)}/drafts/${draftId}`);
+  return send(
+    null,
+    "DELETE",
+    `${base(workspaceId)}/drafts/${encodeURIComponent(draftId)}`,
+  );
 }
 
 export function testDraft(
@@ -124,7 +128,7 @@ export function testDraft(
   return send(
     customApiTestResponseSchema,
     "POST",
-    `${base(workspaceId)}/drafts/${draftId}/test`,
+    `${base(workspaceId)}/drafts/${encodeURIComponent(draftId)}/test`,
     customApiTestRequestSchema.parse(body),
   );
 }
@@ -137,7 +141,7 @@ export function promoteDraft(
   return send(
     promoteCustomApiDraftResponseSchema,
     "POST",
-    `${base(workspaceId)}/drafts/${draftId}/promote`,
+    `${base(workspaceId)}/drafts/${encodeURIComponent(draftId)}/promote`,
     promoteCustomApiDraftRequestSchema.parse(body),
   );
 }
@@ -162,7 +166,7 @@ export function saveDefinitionVersion(
   return send(
     customApiDefinitionResponseSchema,
     "POST",
-    `${base(workspaceId)}/definitions/${definitionId}/versions`,
+    `${base(workspaceId)}/definitions/${encodeURIComponent(definitionId)}/versions`,
     body,
   );
 }
@@ -175,7 +179,7 @@ export function connectDefinition(
   return send(
     connectionResponseSchema,
     "POST",
-    `${base(workspaceId)}/definitions/${definitionId}/connections`,
+    `${base(workspaceId)}/definitions/${encodeURIComponent(definitionId)}/connections`,
     createCustomApiConnectionRequestSchema.parse(body),
   );
 }

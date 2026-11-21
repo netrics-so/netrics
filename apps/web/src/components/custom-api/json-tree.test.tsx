@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  leafParts,
   initiallyExpanded,
   JsonTree,
   pickOf,
@@ -32,6 +33,15 @@ const render = (props: Partial<Parameters<typeof JsonTree>[0]> = {}) =>
   );
 
 describe("JSON tree", () => {
+  it("separates the server's string cut from the value", () => {
+    expect(leafParts("abc… (5000 characters)")).toEqual({
+      text: '"abc"',
+      cut: "… (5000 characters)",
+    });
+    expect(leafParts("plain")).toEqual({ text: '"plain"', cut: null });
+    expect(leafParts(12)).toEqual({ text: "12", cut: null });
+  });
+
   it("picks the record array by click and by keyboard", () => {
     const html = render();
     // The suggested list is highlighted and has the button.
@@ -48,7 +58,14 @@ describe("JSON tree", () => {
     // Space picks, Enter toggles, arrows move.
     expect(treeKey(" ", data)).toBe("pick");
     expect(pickOf(data, "records")).toBe("records");
-    expect(treeKey("Enter", data)).toBe("toggle");
+    // Open with its first item only: Enter shows the rest (keyboard reach).
+    expect(treeKey("Enter", data)).toBe("more");
+    const all = treeItems(
+      BODY,
+      initiallyExpanded(BODY),
+      new Set(["data"]),
+    ).find((item) => item.path === "data")!;
+    expect(treeKey("Enter", all)).toBe("toggle");
     expect(treeKey("ArrowDown", data)).toBe("next");
     expect(treeKey("ArrowLeft", data)).toBe("collapse");
     const meta = treeItems(BODY, initiallyExpanded(BODY)).find(
@@ -125,6 +142,10 @@ describe("JSON tree", () => {
     );
     expect(html).toContain(
       '<span class="json-tree-marker">… 120 more keys</span>',
+    );
+    // A cut string shows its cut as a marker, not as data.
+    expect(html).toContain(
+      '&quot;abc&quot;<span class="json-tree-marker"> … (5000 characters)</span>',
     );
     // A list of objects with a marker is still a record list.
     expect(html).toContain('data-pick="items"');

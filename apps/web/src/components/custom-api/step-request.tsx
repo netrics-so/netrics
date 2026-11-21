@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef } from "react";
 
 import {
   availablePlaceholders,
@@ -26,10 +26,18 @@ export function StepRequest({
   state,
   update,
   pending,
+  values: secretValues,
+  onValueChange,
+  savedVariableIds = new Set(),
   onSaveSecrets,
   onTest,
 }: StepProps & {
   pending: boolean;
+  /** Secrets typed but not saved yet (kept by the builder, never stored). */
+  values: Readonly<Record<string, string>>;
+  onValueChange: (name: string, value: string | undefined) => void;
+  /** Variables of the saved definition: their ids stay (connections use them). */
+  savedVariableIds?: ReadonlySet<string>;
   onSaveSecrets: (secrets: Record<string, string>) => Promise<boolean>;
   onTest: () => void;
 }) {
@@ -40,7 +48,6 @@ export function StepRequest({
     start: state.stream.path.length,
     end: state.stream.path.length,
   });
-  const [secretValues, setSecretValues] = useState<Record<string, string>>({});
   const placeholders = availablePlaceholders(state);
   const track =
     (target: Target) => (event: { currentTarget: HTMLInputElement }) => {
@@ -146,7 +153,13 @@ export function StepRequest({
   const secretEntries = state.variables
     .filter((v) => v.secret && v.id)
     .map((v) => ({ name: v.id, label: v.label || v.id }));
-  const entered = enteredSecrets(secretValues);
+  const entered = enteredSecrets(
+    Object.fromEntries(
+      secretEntries
+        .filter((e) => secretValues[e.name] !== undefined)
+        .map((e) => [e.name, secretValues[e.name]!]),
+    ),
+  );
 
   return (
     <div className="custom-api-form">
@@ -202,7 +215,15 @@ export function StepRequest({
                     ...current,
                     variables: current.variables.map((v, i) =>
                       i === index
-                        ? { ...v, label, id: variableIdFromLabel(label, taken) }
+                        ? {
+                            ...v,
+                            label,
+                            // A saved variable keeps its id: connections
+                            // hold their values under it.
+                            id: savedVariableIds.has(v.id)
+                              ? v.id
+                              : variableIdFromLabel(label, taken),
+                          }
                         : v,
                     ),
                   };
@@ -277,21 +298,13 @@ export function StepRequest({
               stored={state.secretsSet}
               values={secretValues}
               idPrefix="custom-api-secret-variable"
-              onChange={(name, value) =>
-                setSecretValues((current) => {
-                  const next = { ...current };
-                  if (value === undefined) delete next[name];
-                  else next[name] = value;
-                  return next;
-                })
-              }
+              onChange={onValueChange}
             />
             <button
               type="button"
               disabled={pending || !entered}
               onClick={async () => {
-                if (entered && (await onSaveSecrets(entered)))
-                  setSecretValues({});
+                if (entered) await onSaveSecrets(entered);
               }}
             >
               {login("save")}

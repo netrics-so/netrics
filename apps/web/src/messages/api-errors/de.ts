@@ -131,7 +131,7 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     custom_api_draft_limit:
       "Zu viele unfertige eigene APIs. Stell zuerst eine fertig oder schließe sie.",
     custom_api_variable_reserved:
-      "Ein geheimer Verbindungswert darf nicht token, password, username oder host heißen. Benenne ihn um.",
+      "Dieser Name ist für die Anmeldung reserviert. Benenne den geheimen Verbindungswert um.",
     custom_api_secret_unknown:
       "Diese Anmeldemethode verwendet eines der eingegebenen Geheimnisse nicht.",
     custom_api_credentials_host_changed:

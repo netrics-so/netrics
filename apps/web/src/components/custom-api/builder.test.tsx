@@ -48,6 +48,11 @@ function mockClient(draft: Partial<CustomApiDraft> = {}) {
     promoteDraft: vi.fn(),
     createDefinition: vi.fn(),
     saveDefinitionVersion: vi.fn(),
+    startCustomOAuth: vi.fn(async () => ({
+      authorizationUrl: "https://auth.example.test/authorize?state=s",
+      purpose: "reauthorize" as const,
+      expiresAt: "2026-11-21T12:10:00.000Z",
+    })),
   } satisfies Record<keyof BuilderClient, unknown>;
 }
 
@@ -83,6 +88,8 @@ function renderLogin(locale: Locale, state: BuilderState, secretsLost = false) {
       draftId={D}
       secretsLost={secretsLost}
       pending={false}
+      values={{}}
+      onValueChange={() => {}}
       onSaveSecrets={async () => true}
       onSignIn={() => {}}
     />,
