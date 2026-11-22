@@ -98,7 +98,7 @@ const vercelDe: ManifestTranslation = {
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
   version: "0.1.4",
-  sdkVersion: "^0.2.13",
+  sdkVersion: "^0.2.19",
   category: "web",
   brandColor: "#000000",
   name: "Vercel Web Analytics",
@@ -207,6 +207,9 @@ export const vercelManifest: ConnectorManifest = {
   resourceNoun: { singular: "project", plural: "projects" },
   // The synced projects can be changed after connecting (#782).
   supportsResourceSelection: true,
+  // Discovery is the project list, one cheap request: the host may name
+  // the projects before a first run's pages (SDK 0.2.19, #782).
+  discoversBeforeFirstSync: true,
   translations: { de: vercelDe },
   rateLimit: { maxRequests: 400, windowSeconds: 60 },
   // When the numbers arrive (ADR 0025): Vercel counts live, so every

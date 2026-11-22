@@ -67,6 +67,8 @@ const manifest: ConnectorManifest = {
   supportsBackfill: true,
   backfillDays: 30,
   outboundDomains: [],
+  // Lists its resources before a first run's pages (#782).
+  discoversBeforeFirstSync: true,
 };
 
 /** While set, every request after the first backfill page meets the limit. */

@@ -620,10 +620,9 @@ describe("a signed-key connection", () => {
 
   it("syncs with a fresh token per connector call", async () => {
     await runSync();
-    // check, the resource names before a first run's pages (#782), one
-    // sync page and the first discover of the names after it (#194), each
-    // with its own token.
-    expect(received).toHaveLength(4);
+    // check, one sync page and the first discover of the resource names
+    // (#194), each with its own token.
+    expect(received).toHaveLength(3);
     for (const credentials of received) {
       expect(Object.keys(credentials)).toEqual(["accessToken"]);
       expect(

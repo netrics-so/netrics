@@ -1112,16 +1112,18 @@ async function runSync(
     throw new TerminalJobError(safeMessage(error));
   }
 
-  // Step 2b (#782): a connection that has never synced successfully and
-  // has no resource names yet learns them before the pages are read, so
-  // pickers and tables can name its resources while a long first backfill
-  // runs or waits for a provider limit. Strictly additive: the names are
-  // provisional (they never count as a discovery), and step 4 discovers
-  // after the sync exactly as it does without this step, so names a
-  // connector only learns while syncing are stored by the same run. Best
-  // effort, except a provider limit with a known reset, which defers the
-  // run before any page is asked for.
-  if (!state?.lastSuccessAt) {
+  // Step 2b (#782): only for a connector that declares its discovery cheap
+  // and safe before the first sync (discoversBeforeFirstSync, SDK 0.2.19);
+  // every other connector's first run makes the same calls as ever. A
+  // connection that has never synced successfully and has no resource
+  // names yet learns them before the pages are read, so pickers and tables
+  // can name its resources while a long first backfill runs or waits for a
+  // provider limit. Strictly additive: the names are provisional (they
+  // never count as a discovery), and step 4 discovers after the sync
+  // exactly as it does without this step. Best effort, except a provider
+  // limit with a known reset, which defers the run before any page is
+  // asked for.
+  if (manifest.discoversBeforeFirstSync && !state?.lastSuccessAt) {
     try {
       const discoveredAt = await withWorkspace(appDb, { workspaceId }, (tx) =>
         connectionResourcesDiscoveredAt(tx, workspaceId, connectionId),

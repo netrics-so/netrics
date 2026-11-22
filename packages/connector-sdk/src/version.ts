@@ -26,7 +26,10 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.17: optional dataset field role "image" (dataset contract v1, ADR 0026).
 // 0.2.18: optional reason codes next to messages: CheckResult.code and
 // ConnectorError (#795). Connectors that set none keep working.
-export const SDK_VERSION = "0.2.18";
+// 0.2.19: the optional manifest field discoversBeforeFirstSync: discovery
+// is cheap and safe before the first sync, so the host may name the
+// resources before a first run's pages (#782).
+export const SDK_VERSION = "0.2.19";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

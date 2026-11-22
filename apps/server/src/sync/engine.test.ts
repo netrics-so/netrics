@@ -316,12 +316,17 @@ const namingConnector: Connector = {
 
 /**
  * Learns its resource's name while it syncs, like Google Play without
- * the Reporting API (package IDs first, the listing's name from the sync).
+ * the Reporting API (package IDs first, the listing's name from the sync),
+ * and declares that the host may list its resources before a first run.
  */
 let learnedName: string | null = null;
 let learningDiscovers = 0;
+let learningSyncFails = false;
 const learningConnector: Connector = {
-  manifest: testManifest("learning", "learning.installs"),
+  manifest: {
+    ...testManifest("learning", "learning.installs"),
+    discoversBeforeFirstSync: true,
+  },
   async check() {
     return { ok: true };
   },
@@ -336,6 +341,9 @@ const learningConnector: Connector = {
     ];
   },
   async sync() {
+    if (learningSyncFails) {
+      throw new Error("provider cannot answer right now");
+    }
     learnedName = "Example App";
     return {
       observations: [
@@ -1950,9 +1958,7 @@ describe("resource names (#194)", () => {
     namingName = "Wurfel";
 
     await syncAt(connectionId, start);
-    // Listed before the pages of the first run (#782, provisional), and
-    // discovered after the sync as always.
-    expect(namingDiscovers).toBe(2);
+    expect(namingDiscovers).toBe(1);
     expect(await names(connectionId)).toEqual([
       { id: "app-1", name: "Wurfel" },
       { id: "app-2", name: "Dicey" },
@@ -1961,49 +1967,60 @@ describe("resource names (#194)", () => {
     // An hour later: the names are fresh, no discover.
     namingName = "Wurfel 2";
     await syncAt(connectionId, new Date(start.getTime() + 60 * 60 * 1000));
-    expect(namingDiscovers).toBe(2);
+    expect(namingDiscovers).toBe(1);
 
     // A day later: refreshed.
     await syncAt(connectionId, new Date(start.getTime() + DAY_MS));
-    expect(namingDiscovers).toBe(3);
+    expect(namingDiscovers).toBe(2);
     expect((await names(connectionId))[0]).toEqual({
       id: "app-1",
       name: "Wurfel 2",
     });
   });
 
-  it("are known before the first sync succeeds (#782), and discovered once it does", async () => {
-    const connectionId = await seedConnection(workspaceA, "naming");
+  it("of a connector that allows it are known before the first sync succeeds (#782)", async () => {
+    const connectionId = await seedConnection(workspaceA, "learning");
     const start = new Date("2026-09-21T08:00:00Z");
-    namingDiscovers = 0;
-    namingName = "Wurfel";
-    namingSyncFails = true;
+    learnedName = null;
+    learningDiscovers = 0;
+    learningSyncFails = true;
     try {
       await expect(syncAt(connectionId, start)).rejects.toThrow();
+      // Provisional: what the listing knows before any sync, here the ID.
       expect(await names(connectionId)).toEqual([
-        { id: "app-1", name: "Wurfel" },
-        { id: "app-2", name: "Dicey" },
+        { id: "com.example.app", name: "com.example.app" },
       ]);
-      expect(namingDiscovers).toBe(1);
+      expect(learningDiscovers).toBe(1);
       // The next failing attempt has the names: no second listing.
       await expect(
         syncAt(connectionId, new Date(start.getTime() + 60_000)),
       ).rejects.toThrow();
-      expect(namingDiscovers).toBe(1);
+      expect(learningDiscovers).toBe(1);
+    } finally {
+      learningSyncFails = false;
+    }
+    // The first run that succeeds makes the usual discovery after it.
+    await syncAt(connectionId, new Date(start.getTime() + 120_000));
+    expect(learningDiscovers).toBe(2);
+    expect(await names(connectionId)).toEqual([
+      { id: "com.example.app", name: "Example App" },
+    ]);
+  });
+
+  it("of a connector that does not declare it are not listed before a first run (#782)", async () => {
+    const connectionId = await seedConnection(workspaceA, "naming");
+    namingDiscovers = 0;
+    namingSyncFails = true;
+    try {
+      await expect(
+        syncAt(connectionId, new Date("2026-09-21T08:00:00Z")),
+      ).rejects.toThrow();
     } finally {
       namingSyncFails = false;
     }
-    // The first run that succeeds still makes the daily discovery.
-    namingName = "Wurfel 2";
-    await syncAt(connectionId, new Date(start.getTime() + 120_000));
-    expect(namingDiscovers).toBe(2);
-    expect((await names(connectionId))[0]).toEqual({
-      id: "app-1",
-      name: "Wurfel 2",
-    });
-    // And then at most daily, as before.
-    await syncAt(connectionId, new Date(start.getTime() + 180_000));
-    expect(namingDiscovers).toBe(2);
+    // As ever: no discover call before a run has succeeded.
+    expect(namingDiscovers).toBe(0);
+    expect(await names(connectionId)).toEqual([]);
   });
 
   it("names learned during the first sync are stored by that run, as before (#782)", async () => {
