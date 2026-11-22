@@ -1,6 +1,7 @@
 # 0028 — Time grain for grouped dates and timestamps
 
-Status: accepted (2026-11-22; [#838](https://github.com/netrics-so/netrics/issues/838)).
+Status: accepted (2026-11-22; [#838](https://github.com/netrics-so/netrics/issues/838);
+§5 added with [#853](https://github.com/netrics-so/netrics/issues/853)).
 Extends ADR 0022 (§4 query semantics, §5 widget bindings).
 
 ## Context
@@ -126,6 +127,35 @@ Both clients word years 1 to 99 with the year they are ("Jan 1, 1"); the
 year 0, which has no wording of its own, is shown as stored. The Apple TV
 app also shows 5 to 14 October 1582 as stored: Foundation's Gregorian
 calendar has no such days.
+
+### 5. Studio starts a new timestamp grouping per day
+
+Owner decision 2026-11-22
+([#853](https://github.com/netrics-so/netrics/issues/853)). A group per
+instant is rarely what a table or chart of a timestamp is meant to show, so
+Studio gives a timestamp it newly groups by the grain `day`. "Each time"
+stays a choice.
+
+- **A Studio default, not a meaning.** A binding without a grain still
+  means a group per instant (§1): the server adds nothing, there is no
+  migration, and saved widgets, templates and widgets made through the API
+  are what they were. Opened in Studio, they show the grain they have.
+- **Newly grouped** means the widget did not group by the dimension before
+  the edit: ticked under "Group by" / "Split by", chosen in a chart
+  (which replaces the dimension before it), ticked again after being
+  unticked (its grain went with it), or the dimension a view starts with
+  when the widget had no grouping (a table's or bar chart's first
+  dimension, a line chart's first date or timestamp).
+- **Kept** is everything else: a view switch that keeps the grouping, a
+  change of measures, a change of another dimension, and choosing "Each
+  time" by hand. None of them sets a grain.
+- **Only what the query accepts** (§2, one rule for widgets and Studio): no
+  grain on a timestamp the chosen measures are read per value of
+  (`allowedTimeGrains`), so a measure's required timestamp, and with it
+  the grouping a widget gets when its model changes, starts without one;
+  and none on the dimension a declared click-to-filter reads, which cannot
+  be bucketed.
+- **Dates are unchanged**: a date per day is no grain (§2).
 
 ## Out of scope
 
