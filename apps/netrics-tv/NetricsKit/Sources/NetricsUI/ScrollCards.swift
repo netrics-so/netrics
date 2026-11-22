@@ -389,7 +389,7 @@ struct ScrollBarCard: View {
                     .font(env.font(Size.resource, .semibold))
                     .foregroundStyle(env.colors.muted)
             } else if rows.isEmpty {
-                ScrollMutedLine(text: KitStrings.text(.noDataForPeriod, language), env: env)
+                ScrollMutedLine(text: DataSurface.emptyBreakdownText(noActivity: data.noActivity, language: language), env: env)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -474,7 +474,7 @@ struct ScrollTableCard: View {
                     .font(env.font(Size.resource, .semibold))
                     .foregroundStyle(env.colors.muted)
             } else if rows.isEmpty {
-                ScrollMutedLine(text: KitStrings.text(.noDataForPeriod, language), env: env)
+                ScrollMutedLine(text: DataSurface.emptyBreakdownText(noActivity: data.noActivity, language: language), env: env)
             } else if ScrollGeometry.tableStacks(
                 values: rows.map(\.value), changes: rows.compactMap { $0.change?.text }, units: units)
             {

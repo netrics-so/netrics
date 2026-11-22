@@ -609,6 +609,13 @@ public struct BarWidgetData: Codable, Sendable, Equatable {
     public var updatedAt: String?
     /** How far the numbers reach (ADR 0025); nil from servers without it. */
     public var freshness: WidgetFreshness? = nil
+    /**
+     * The source was read over the whole period and reported no activity
+     * (#799): with status `no_data`, "No activity in this period" instead
+     * of "No data yet". Nil from servers without it and whenever it does
+     * not hold.
+     */
+    public var noActivity: Bool? = nil
     public var conversion: TileConversion?
 
     public init(
@@ -627,7 +634,7 @@ public struct BarWidgetData: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, unit, groupBy, bars, others, status, updatedAt, freshness, conversion
+        case period, aggregation, unit, groupBy, bars, others, status, updatedAt, freshness, noActivity, conversion
     }
 
     public init(from decoder: Decoder) throws {
@@ -641,6 +648,7 @@ public struct BarWidgetData: Codable, Sendable, Equatable {
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
         freshness = c.lenient(WidgetFreshness.self, .freshness)
+        noActivity = c.lenient(Bool.self, .noActivity) == true ? true : nil
         conversion = c.lenient(TileConversion.self, .conversion)
     }
 }
@@ -694,6 +702,8 @@ public struct TableWidgetData: Codable, Sendable, Equatable {
     public var updatedAt: String?
     /** How far the numbers reach (ADR 0025); nil from servers without it. */
     public var freshness: WidgetFreshness? = nil
+    /** As a bar widget's (#799). */
+    public var noActivity: Bool? = nil
     public var conversion: TileConversion?
     public var better: MetricBetter
 
@@ -716,7 +726,8 @@ public struct TableWidgetData: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case period, aggregation, unit, groupBy, columns, rows, others, status, updatedAt, freshness, conversion, better
+        case period, aggregation, unit, groupBy, columns, rows, others, status, updatedAt, freshness, noActivity
+        case conversion, better
     }
 
     public init(from decoder: Decoder) throws {
@@ -731,6 +742,7 @@ public struct TableWidgetData: Codable, Sendable, Equatable {
         status = c.lenient(DeviceTileStatus.self, .status) ?? .ok
         updatedAt = c.lenient(String.self, .updatedAt)
         freshness = c.lenient(WidgetFreshness.self, .freshness)
+        noActivity = c.lenient(Bool.self, .noActivity) == true ? true : nil
         conversion = c.lenient(TileConversion.self, .conversion)
         better = c.lenient(MetricBetter.self, .better) ?? .higher
     }

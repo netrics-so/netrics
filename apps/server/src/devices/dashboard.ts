@@ -127,6 +127,7 @@ import {
   queryMetric,
   queryMetricBreakdown,
   tileAllResourcesName,
+  type MetricCoverage,
   type QueryOptions,
 } from "../metrics/query.js";
 
@@ -495,38 +496,47 @@ async function guarded<T>(
   return result?.ok ? result.value : null;
 }
 
+/**
+ * The days the provider published and netrics read (#378) of a metric as
+ * a widget or goal binds it: an empty sum over them is 0, an empty
+ * breakdown "no activity" (#799).
+ */
+async function boundCoverage(
+  tx: Transaction,
+  context: DataContext,
+  binding: { connectionId: string; metricKey: string; dimensions: unknown },
+): Promise<{ coverage?: MetricCoverage }> {
+  const coverage = context.freshness
+    ? readCoverage(
+        await context.freshness.read(tx, [
+          metricDependency(
+            binding.connectionId,
+            binding.metricKey,
+            binding.dimensions,
+          ),
+        ]),
+        {
+          historyFrom: context.historyFrom.get(binding.connectionId) ?? null,
+          backfilling: context.backfilling.has(binding.connectionId),
+        },
+      )
+    : undefined;
+  return coverage ? { coverage } : {};
+}
+
 async function queryWidget(
   tx: Transaction,
   widget: DataWidget,
   context: DataContext,
 ): Promise<MetricQueryResponse | null> {
-  // The days the provider published and netrics read (#378): an empty sum
-  // over them is 0.
-  const coverage = context.freshness
-    ? readCoverage(
-        await context.freshness.read(tx, [
-          metricDependency(
-            widget.connectionId,
-            widget.metricKey,
-            widget.dimensions,
-          ),
-        ]),
-        {
-          historyFrom: context.historyFrom.get(widget.connectionId) ?? null,
-          backfilling: context.backfilling.has(widget.connectionId),
-        },
-      )
-    : undefined;
+  const coverage = await boundCoverage(tx, context, widget);
   return guarded(tx, widget, context, (savepoint) =>
     queryMetric(
       savepoint,
       context.workspaceId,
       metricRequest(widget),
       context.options.now,
-      {
-        ...queryOptions(context.options),
-        ...(coverage ? { coverage } : {}),
-      },
+      { ...queryOptions(context.options), ...coverage },
     ),
   );
 }
@@ -711,6 +721,7 @@ async function dataWidgetOf(
       groupBy: RESOURCE_DIMENSION,
     });
     const request = metricRequest(widget);
+    const coverage = await boundCoverage(tx, context, widget);
     const breakdown: MetricBreakdownResponse | null = await guarded(
       tx,
       widget,
@@ -721,7 +732,7 @@ async function dataWidgetOf(
           context.workspaceId,
           { ...request, groupBy: options.groupBy, limit: options.limit },
           context.options.now,
-          queryOptions(context.options),
+          { ...queryOptions(context.options), ...coverage },
         ),
     );
     const hasData =
@@ -753,6 +764,7 @@ async function dataWidgetOf(
           groupBy: options.groupBy,
           bars: breakdown?.groups ?? [],
           others: breakdown?.others ?? null,
+          ...(breakdown?.noActivity ? { noActivity: true as const } : {}),
         },
         [
           metricDependency(
@@ -820,6 +832,7 @@ async function tableWidgetOf(
     groupBy: RESOURCE_DIMENSION,
   });
   const request = metricRequest(widget);
+  const coverage = await boundCoverage(tx, context, widget);
   const breakdown: MetricBreakdownResponse | null = await guarded(
     tx,
     widget,
@@ -836,7 +849,7 @@ async function tableWidgetOf(
           ...(options.groupKeys ? { groups: options.groupKeys } : {}),
         },
         context.options.now,
-        queryOptions(context.options),
+        { ...queryOptions(context.options), ...coverage },
       ),
   );
   const others = options.showOthers ? (breakdown?.others ?? null) : null;
@@ -879,6 +892,7 @@ async function tableWidgetOf(
           ratio: group.ratio ?? null,
         })),
         others,
+        ...(breakdown?.noActivity ? { noActivity: true as const } : {}),
       },
       [
         metricDependency(
@@ -1203,6 +1217,8 @@ async function gaugeWidgetOf(
   const reading = await readGoal(tx, context.workspaceId, goal, now, {
     exchangeRates: context.options.exchangeRates ?? false,
     locale,
+    // A quiet period the source read stands at 0 (#799).
+    ...(await boundCoverage(tx, context, goal)),
   });
   const state = context.states.get(goal.connectionId) ?? null;
   const value = reading?.progress.value ?? null;

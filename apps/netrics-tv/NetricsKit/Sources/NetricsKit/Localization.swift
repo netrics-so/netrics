@@ -57,7 +57,7 @@ public enum KitText: String, Sendable, CaseIterable {
     case measureHistoryIncomplete
     case measureSourcePaused, measureSourceOutage, measureSourceCollectionPaused, measureSourcePending
     case sourceReportsPending
-    case noDataForPeriod, noDataYet, noDataToCompare, noComparison, couldNotLoad
+    case noDataForPeriod, noDataYet, noActivity, noDataToCompare, noComparison, couldNotLoad
     case noticeAuthFailed, noticeOutage, noticeFirstSync, noticeLastSync
     case justNow, never, timeAgo, timeIn, minuteOne, minuteOther, hourOne, hourOther, dayOne, dayOther
     case offline, offlineLastUpdate, offlineShort
@@ -115,6 +115,7 @@ public enum KitStrings {
         .aggregationLast: "Latest",
         .noDataForPeriod: "No data for this period yet",
         .noDataYet: "No data yet",
+        .noActivity: "No activity in this period",
         .measurePending: "Data not available yet",
         .measureUnavailable: "Data not available",
         .measureStale: "Last valid data",
@@ -271,6 +272,7 @@ public enum KitStrings {
         .aggregationLast: "Aktuell",
         .noDataForPeriod: "Noch keine Daten für diesen Zeitraum",
         .noDataYet: "Noch keine Daten",
+        .noActivity: "Keine Aktivität in diesem Zeitraum",
         .measurePending: "Daten noch nicht verfügbar",
         .measureUnavailable: "Daten nicht verfügbar",
         .measureStale: "Letzte gültige Daten",

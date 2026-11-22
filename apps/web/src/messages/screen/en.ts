@@ -37,6 +37,7 @@ export const screenEn = {
       approximate: "Approximate",
       noDataYet: "No data for this period yet",
       noDataShort: "No data yet",
+      noActivity: "No activity in this period",
       noComparison: "No data to compare {comparison}",
       noComparisonShort: "No comparison",
       notEnoughData: "Not enough data for a chart yet",

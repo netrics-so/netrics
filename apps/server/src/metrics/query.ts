@@ -593,6 +593,21 @@ export async function queryMetricBreakdown(
   }
 
   const breakdown = rankBreakdown(aggregation, values, limit);
+  // Nothing to rank because nothing happened (#799): the rule of a metric
+  // query's 0 over read days. No number is shown, so the currency need not
+  // be known. A table restricted to chosen groups stays "no data": like a
+  // filter, the choice can hide activity.
+  const noActivity =
+    rows.length === 0 &&
+    request.groups === undefined &&
+    readsZeroWhenEmpty({
+      kind: metric.kind,
+      aggregation,
+      windowStart: window.dates.from,
+      coverage: options.coverage,
+      filters: Object.keys(request.dimensions ?? {}),
+      currencyKnown: true,
+    });
 
   // The previous window's value of each ranked group, formed the same way:
   // the same aggregation, the same currency (a per-currency amount keeps
@@ -702,6 +717,7 @@ export async function queryMetricBreakdown(
         value: breakdown.others.value,
         groups: breakdown.others.groups,
       },
+      ...(noActivity ? { noActivity: true as const } : {}),
     },
   };
 }

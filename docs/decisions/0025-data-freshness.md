@@ -524,8 +524,21 @@ date alone, which are not stored). Limits:
   windows count as read only up to that day, and its widgets are marked
   stale by the connection's state.
 
-Ratios over two zeros (cost per install) stay without a value. Breakdowns
-(bars, tables) keep their empty state.
+Ratios over two zeros (cost per install) stay without a value.
+
+**Goals and breakdowns (#799).** A goal reads its metric with the same
+query, so a goal over such a period stands at 0 (0 %) instead of without
+a value, under the same limits. A breakdown (bar chart, table) has nothing
+to rank there. Its status stays `no_data`, and the response and the device
+payload add `noActivity: true`: screens say "No activity in this period"
+instead of "No data yet". The field is optional and only ever `true`;
+screens that do not know it show "No data yet" as before. It follows the
+rule above with two differences: the currency need not be known (no
+amount is shown), and a table restricted to chosen groups (`groupKeys`)
+never has it, since the choice can hide activity like a filter. A widget
+on a slide scoped to an app or a linked product reads that app through
+its `resource` filter and is therefore outside the rule, like any
+filtered widget.
 
 ## Alternatives considered
 

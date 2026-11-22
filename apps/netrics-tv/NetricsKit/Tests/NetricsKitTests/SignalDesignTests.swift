@@ -137,6 +137,19 @@ enum BuiltinThemes {
         #expect(DataSurface.noData.texts(source: nil, language: .de).hint == "Noch keine Daten")
     }
 
+    // A breakdown the source read and found quiet (#799): only the no-data surface changes its line.
+    @Test func wordsAQuietBreakdown() {
+        #expect(DataSurface.noData.breakdownTexts(noActivity: true, language: .en) == (nil, "No activity in this period"))
+        #expect(DataSurface.noData.breakdownTexts(noActivity: true, language: .de).hint == "Keine Aktivität in diesem Zeitraum")
+        // Not read over the whole period, or a server without the field: as before.
+        #expect(DataSurface.noData.breakdownTexts(noActivity: nil, language: .en) == (nil, "No data yet"))
+        #expect(DataSurface.noData.breakdownTexts(noActivity: false, language: .de).hint == "Noch keine Daten")
+        #expect(DataSurface.backfilling.breakdownTexts(noActivity: true, language: .en).hint == "Loading history…")
+        #expect(DataSurface.authFailed.breakdownTexts(noActivity: true, language: .en).headline == "Reconnect the source")
+        #expect(DataSurface.emptyBreakdownText(noActivity: true, language: .en) == "No activity in this period")
+        #expect(DataSurface.emptyBreakdownText(noActivity: nil, language: .de) == "Noch keine Daten für diesen Zeitraum")
+    }
+
     @Test func keepsTheReconnectLineAtItsDesignSize() {
         #expect(DataSurface.reconnectSize(small: 24) == 28.5)
         #expect(DataSurface.reconnectSize(small: 27.6) == 27.6 * 1.1875)

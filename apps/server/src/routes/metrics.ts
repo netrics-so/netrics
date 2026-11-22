@@ -12,11 +12,7 @@ import {
   metricResourcesResponseSchema,
   workspaceMetricListResponseSchema,
 } from "@netrics/contracts";
-import {
-  findConnectionHistory,
-  withWorkspace,
-  type Database,
-} from "@netrics/database";
+import { withWorkspace, type Database } from "@netrics/database";
 import { can, type Locale } from "@netrics/domain";
 
 import type { AuthService } from "../auth/index.js";
@@ -30,8 +26,8 @@ import {
 } from "../metrics/query.js";
 import {
   createFreshnessReader,
+  liveReadCoverage,
   metricLiveFreshness,
-  readCoverage,
   type FreshnessManifests,
 } from "../dashboards/freshness.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
@@ -131,16 +127,12 @@ export function registerMetricRoutes(
                 body,
               );
               // An empty sum over read days is 0 (#378), as on screens.
-              const coverage = live.freshness
-                ? readCoverage(
-                    live,
-                    await findConnectionHistory(
-                      tx,
-                      access.workspaceId,
-                      body.connectionId,
-                    ),
-                  )
-                : undefined;
+              const coverage = await liveReadCoverage(
+                tx,
+                access.workspaceId,
+                body.connectionId,
+                live,
+              );
               const found = await queryMetric(
                 tx,
                 access.workspaceId,
@@ -194,6 +186,18 @@ export function registerMetricRoutes(
             { workspaceId: access.workspaceId, userId: access.callerId },
             async (tx) => {
               const locale = request.sessionIdentity!.locale;
+              const live = await metricLiveFreshness(
+                tx,
+                reader(access.workspaceId, locale),
+                body,
+              );
+              // Nothing ranked over read days is "no activity" (#799).
+              const coverage = await liveReadCoverage(
+                tx,
+                access.workspaceId,
+                body.connectionId,
+                live,
+              );
               const found = await queryMetricBreakdown(
                 tx,
                 access.workspaceId,
@@ -202,20 +206,11 @@ export function registerMetricRoutes(
                 {
                   exchangeRates: deps.exchangeRates ?? false,
                   locale,
+                  ...(coverage ? { coverage } : {}),
                 },
               );
               return found.ok
-                ? {
-                    ...found,
-                    value: {
-                      ...found.value,
-                      ...(await metricLiveFreshness(
-                        tx,
-                        reader(access.workspaceId, locale),
-                        body,
-                      )),
-                    },
-                  }
+                ? { ...found, value: { ...found.value, ...live } }
                 : found;
             },
           );

@@ -31,6 +31,13 @@ import {
   type Locale,
 } from "@netrics/domain";
 
+import {
+  createFreshnessReader,
+  liveReadCoverage,
+  metricLiveFreshness,
+  type FreshnessManifests,
+  type FreshnessReader,
+} from "../dashboards/freshness.js";
 import { validateBinding } from "../dashboards/service.js";
 import {
   findAllResourcesNames,
@@ -69,6 +76,11 @@ export interface GoalServiceDeps {
   exchangeRates?: boolean;
   /** The clock; tests pin it. */
   now?: () => Date;
+  /**
+   * The connector registry: the read days of a goal's metric (ADR 0025
+   * section 9, #799). Absent: an empty period never stands at 0.
+   */
+  registry?: FreshnessManifests;
 }
 
 function dimensionsOf(row: GoalRow): Record<string, string> {
@@ -146,10 +158,24 @@ export function createGoalService(deps: GoalServiceDeps) {
     actor: Actor,
     row: GoalRow,
     at: Date,
+    reader: FreshnessReader | undefined,
   ): Promise<GoalCurrent | null> {
+    // A quiet period the source read stands at 0 (#799), by the rule and
+    // the read days of a metric query on the same binding.
+    const coverage = await liveReadCoverage(
+      tx,
+      actor.workspaceId,
+      row.connectionId,
+      await metricLiveFreshness(tx, reader, {
+        connectionId: row.connectionId,
+        metricKey: row.metricKey,
+        dimensions: dimensionsOf(row),
+      }),
+    );
     const reading = await readGoal(tx, actor.workspaceId, row, at, {
       exchangeRates: deps.exchangeRates ?? false,
       locale: actor.locale ?? DEFAULT_LOCALE,
+      coverage,
     });
     return reading
       ? {
@@ -187,6 +213,14 @@ export function createGoalService(deps: GoalServiceDeps) {
       actor.locale ?? DEFAULT_LOCALE,
     );
     const at = now();
+    // One reader for the list: it loads each connection's rows once.
+    const reader = deps.registry
+      ? createFreshnessReader(
+          actor.workspaceId,
+          deps.registry,
+          actor.locale ?? DEFAULT_LOCALE,
+        )
+      : undefined;
     const goals: Goal[] = [];
     for (const row of rows) {
       const dimensions = dimensionsOf(row);
@@ -212,7 +246,7 @@ export function createGoalService(deps: GoalServiceDeps) {
           metricKey: row.metricKey,
           dimensions,
         }),
-        current: await currentOf(tx, actor, row, at),
+        current: await currentOf(tx, actor, row, at, reader),
         dashboards: await findDashboardsUsingGoal(
           tx,
           actor.workspaceId,
