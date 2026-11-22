@@ -620,6 +620,8 @@ describe("engine run and observations", () => {
     });
     expect(detail.connection.state.lastSuccessAt).not.toBeNull();
     expect(detail.syncRuns.length).toBeGreaterThan(0);
+    // A connector without a resource selection has none to show (#854).
+    expect(detail).not.toHaveProperty("resourceSelection");
     expect(detail.syncRuns[0]).toMatchObject({
       mode: "backfill",
       status: "succeeded",

@@ -1297,8 +1297,24 @@ export const connectionRecordSkipsSchema = z.object({
 });
 export type ConnectionRecordSkips = z.infer<typeof connectionRecordSkipsSchema>;
 
+/** A resource of a connection's stored selection (#854). */
+export const selectedResourceSchema = z.object({
+  id: z.string(),
+  /** The name discovery stored for it; null while none is known. */
+  name: z.string().nullable(),
+});
+export type SelectedResource = z.infer<typeof selectedResourceSchema>;
+
 export const connectionDetailResponseSchema = z.object({
   connection: connectionDetailSchema,
+  /**
+   * What the connection syncs, for connectors with a resource selection
+   * (#854): null when no selection is stored (every current and future
+   * resource), else the selected resources, named ones first by name. An
+   * empty list collects nothing. Absent for connectors without a
+   * selection.
+   */
+  resourceSelection: z.array(selectedResourceSchema).nullable().optional(),
   syncRuns: z.array(syncRunSchema),
   history: connectionHistorySchema,
   /**

@@ -665,6 +665,7 @@ export default async function ConnectionDetailPage({
               workspaceId={workspaceId}
               connection={connection}
               connector={connector}
+              synced={detail.resourceSelection}
             />
           ) : null}
         </div>

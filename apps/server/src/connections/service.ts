@@ -45,7 +45,11 @@ import type {
   Connector,
   ConnectorManifest,
 } from "@netrics/connector-sdk";
-import { ANALYTICS_METRIC_KEYS, ANALYTICS_STREAM } from "@netrics/connectors";
+import {
+  ANALYTICS_METRIC_KEYS,
+  ANALYTICS_STREAM,
+  vercelManifest,
+} from "@netrics/connectors";
 import { upgradeCustomApiDefinition } from "@netrics/connector-sdk/custom-api";
 import { CUSTOM_API_CONNECTOR_ID } from "@netrics/connectors/custom-api";
 import {
@@ -178,6 +182,7 @@ import {
   createFreshnessReader,
   REVIEWS_FRESHNESS_STREAM,
 } from "../dashboards/freshness.js";
+import { selectedResourcesOf } from "../sync/freshness.js";
 import {
   presentConnection,
   presentConnectionDetail,
@@ -315,6 +320,22 @@ function configChanged(
   };
   return normalize(before) !== normalize(after);
 }
+
+/**
+ * Connectors whose stored selection names at least one resource (#854): a
+ * Vercel connection that syncs no project collects nothing, which was only
+ * ever saved by mistake. A rule of this product for this connector, kept
+ * here instead of in the connector manifest: the SDK contract stays as it
+ * is, and the stores, where an empty selection pauses collection on
+ * purpose, are untouched. A connection that already stores an empty
+ * selection is not changed: it keeps collecting nothing until a selection
+ * is saved.
+ */
+const SELECTION_NEEDS_A_RESOURCE: ReadonlySet<string> = new Set([
+  vercelManifest.id,
+]);
+/** Saving an empty selection for such a connector. */
+const RESOURCE_SELECTION_EMPTY = "resource_selection_empty";
 
 function resourceSelectionOf(config: Record<string, unknown>): string[] | null {
   const value = config.resourceSelection;
@@ -864,6 +885,44 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         optionsFor({}, envelope.value),
       ),
     );
+  }
+
+  /**
+   * The stored selection for the connection's page (#854), by the rule the
+   * sync engine reads it with (`selectedResourcesOf`): undefined for a
+   * connector without a selection, null when none is stored (every
+   * resource), else its members with the names discovery stored, named
+   * ones first. An empty list collects nothing.
+   */
+  async function storedResourceSelection(
+    tx: Transaction,
+    workspaceId: string,
+    loaded: ConnectionWithState,
+  ): Promise<{ id: string; name: string | null }[] | null | undefined> {
+    const manifest = connectorFor(registry, loaded)?.manifest;
+    if (!manifest?.supportsResourceSelection) return undefined;
+    const selected = selectedResourcesOf(
+      loaded.row.config as Record<string, unknown>,
+      manifest,
+    );
+    if (!selected) return null;
+    const connectionId = loaded.row.id;
+    const names = await findResourceNames(
+      tx,
+      workspaceId,
+      selected.map((resourceId) => ({ connectionId, resourceId })),
+    );
+    return [...new Set(selected)]
+      .map((id) => ({
+        id,
+        name: names.get(resourceNameKey(connectionId, id)) ?? null,
+      }))
+      .sort(
+        (a, b) =>
+          Number(a.name === null) - Number(b.name === null) ||
+          (a.name ?? a.id).localeCompare(b.name ?? b.id, "en") ||
+          a.id.localeCompare(b.id, "en"),
+      );
   }
 
   /**
@@ -1767,6 +1826,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
       const config = { ...validated.value };
       if (
+        entry.resources?.length === 0 &&
+        SELECTION_NEEDS_A_RESOURCE.has(registered.manifest.id)
+      ) {
+        return fail(400, RESOURCE_SELECTION_EMPTY);
+      }
+      if (
         entry.resources !== undefined &&
         (registered.manifest.supportsResourceSelection ||
           entry.resources.length > 0)
@@ -2523,8 +2588,14 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           actor.workspaceId,
           loaded,
         );
+        const resourceSelection = await storedResourceSelection(
+          tx,
+          actor.workspaceId,
+          loaded,
+        );
         return {
           ...loaded,
+          resourceSelection,
           syncRuns,
           signedKey,
           backfill,
@@ -2544,6 +2615,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           found.signedKey,
           actor.locale,
         ),
+        ...(found.resourceSelection !== undefined
+          ? { resourceSelection: found.resourceSelection }
+          : {}),
         syncRuns: found.syncRuns.map(presentSyncRun),
         history: historyView(found, found.backfill, found.incomplete, registry),
         freshness: presentFreshness(
@@ -2851,6 +2925,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         nextConfig ??= { ...existingConfig };
         const selection =
           body.resources === null ? null : [...new Set(body.resources)].sort();
+        if (
+          selection?.length === 0 &&
+          SELECTION_NEEDS_A_RESOURCE.has(registered.manifest.id)
+        )
+          return fail(400, RESOURCE_SELECTION_EMPTY);
         if (selection?.length) {
           const { resourceSelection: _selection, ...candidate } = nextConfig;
           const preview = await previewStoredConnection(

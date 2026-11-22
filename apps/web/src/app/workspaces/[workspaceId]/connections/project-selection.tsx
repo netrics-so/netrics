@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type FormEvent } from "react";
+import { useId, useMemo, useState, type FormEvent } from "react";
 import type {
   ConnectionDetail,
   ConnectorCatalogEntry,
   DiscoveredResource,
+  SelectedResource,
   StoredConnectionPreviewResponse,
 } from "@netrics/contracts";
 import { useLeaveGuard } from "@/components/studio-editor/use-leave-guard";
@@ -26,10 +27,10 @@ function withoutAnalytics(resource: DiscoveredResource): boolean {
 /**
  * What the picker shows for a loaded project list. A refused check (no
  * project with Web Analytics is left, say) still opens the picker with the
- * refusal: the stored selection can be reduced or cleared and saved, which
- * is how the connection is repaired. Projects without Web Analytics are
- * not offered; a selected one stays in the selection, as not listed, so it
- * can be removed.
+ * refusal and what can be done about it: the stored selection can be
+ * reduced, to at least one project (#854). Projects without Web Analytics
+ * are not offered; a selected one stays in the selection, as not listed, so
+ * it can be removed.
  */
 export function pickerState(result: StoredConnectionPreviewResponse): {
   resources: DiscoveredResource[];
@@ -47,23 +48,140 @@ export function pickerState(result: StoredConnectionPreviewResponse): {
   };
 }
 
+/** Most synced projects named before "and N more". */
+const SYNCED_SHOWN = 20;
+
 /**
- * Which projects a website connection syncs, changed after connecting
- * (#782). The list comes from the provider with the stored token (the token
- * itself never reaches the browser); saving changes only the selection.
- * Deselected projects keep their collected data.
+ * Whether a selection can be saved (#854): all projects (null) or at least
+ * one. The API refuses an empty one for this connector too.
+ */
+export function selectionSavable(selection: readonly string[] | null) {
+  return selection === null || selection.length > 0;
+}
+
+/**
+ * What the connection syncs, shown without loading the project list
+ * (#854): the stored selection as the connection's page got it, by name
+ * where one is known and by ID otherwise. A connection that still stores
+ * an empty selection (from before one was required) collects nothing and
+ * says how to change that. Nothing while the selection is unknown.
+ */
+export function SyncedProjects({
+  selection,
+}: {
+  selection: readonly SelectedResource[] | null | undefined;
+}) {
+  const t = useT("connections.projects");
+  if (selection === undefined) return null;
+  if (selection === null) return <p>{t("syncedAll")}</p>;
+  if (selection.length === 0)
+    return (
+      <p className="notice warning" role="status">
+        {t("syncedNone", { action: t("check") })}
+      </p>
+    );
+  const shown = selection.slice(0, SYNCED_SHOWN);
+  return (
+    <>
+      <p>{t("syncedList", { count: selection.length })}</p>
+      <ul>
+        {shown.map((resource) => (
+          <li key={resource.id}>{resource.name ?? resource.id}</li>
+        ))}
+        {selection.length > shown.length ? (
+          <li className="muted">
+            {t("syncedMore", { count: selection.length - shown.length })}
+          </li>
+        ) : null}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * The loaded project list with the selection being edited: the check's
+ * refusal with what can be done, the picker, and Save, which needs a
+ * change and a selection that names a project (or all of them).
+ */
+export function ProjectSelectionEditor({
+  resources,
+  hidden,
+  refusal,
+  selection,
+  dirty,
+  pending,
+  onChange,
+  onCancel,
+}: {
+  resources: DiscoveredResource[];
+  hidden: number;
+  refusal: string | null;
+  selection: string[] | null;
+  dirty: boolean;
+  pending: "load" | "save" | null;
+  onChange: (selection: string[] | null) => void;
+  onCancel: () => void;
+}) {
+  const t = useT("connections.projects");
+  const common = useT("common");
+  const hintId = useId();
+  const savable = selectionSavable(selection);
+  return (
+    <>
+      {refusal !== null ? (
+        <div className="error" role="alert">
+          <p>{refusal}</p>
+          <p>{t("refusedHelp")}</p>
+        </div>
+      ) : null}
+      <AppPicker
+        texts="connections.projects"
+        resources={resources}
+        value={selection}
+        onChange={onChange}
+        disabled={pending !== null}
+        noneHelpId={hintId}
+      />
+      {hidden > 0 ? (
+        <p className="help">{t("withoutAnalytics", { count: hidden })}</p>
+      ) : null}
+      <div className="actions">
+        <button
+          className="primary"
+          type="submit"
+          disabled={pending !== null || !dirty || !savable}
+          aria-describedby={savable ? undefined : hintId}
+        >
+          {pending === "save" ? common("saving") : t("save")}
+        </button>
+        <button type="button" disabled={pending !== null} onClick={onCancel}>
+          {t("cancel")}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Which projects a website connection syncs, shown up front (#854) and
+ * changed after connecting (#782). The list to choose from comes from the
+ * provider with the stored token (the token itself never reaches the
+ * browser); saving changes only the selection. Deselected projects keep
+ * their collected data.
  */
 export function ProjectSelection({
   workspaceId,
   connection,
   connector,
+  synced,
 }: {
   workspaceId: string;
   connection: ConnectionDetail;
   connector: ConnectorCatalogEntry;
+  /** The stored selection, from the connection's detail response. */
+  synced?: readonly SelectedResource[] | null;
 }) {
   const t = useT("connections.projects");
-  const common = useT("common");
   const locale = useLocale();
   const router = useRouter();
   const fields = useMemo(
@@ -111,6 +229,7 @@ export function ProjectSelection({
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!selectionSavable(selection)) return;
     setPending("save");
     setError(null);
     setNotice(null);
@@ -136,6 +255,7 @@ export function ProjectSelection({
       <p className="muted">{t("intro")}</p>
       {resources === null ? (
         <>
+          <SyncedProjects selection={synced} />
           <div className="actions">
             <button
               type="button"
@@ -147,48 +267,24 @@ export function ProjectSelection({
           </div>
         </>
       ) : (
-        <>
-          {refusal !== null ? (
-            <div className="error" role="alert">
-              <p>{refusal}</p>
-              <p>{t("refusedHelp")}</p>
-            </div>
-          ) : null}
-          <AppPicker
-            texts="connections.projects"
-            resources={resources}
-            value={selection}
-            onChange={(value) => {
-              setDirty(true);
-              setSelection(value);
-            }}
-            disabled={pending !== null}
-          />
-          {hidden > 0 ? (
-            <p className="help">{t("withoutAnalytics", { count: hidden })}</p>
-          ) : null}
-          <div className="actions">
-            <button
-              className="primary"
-              type="submit"
-              disabled={pending !== null || !dirty}
-            >
-              {pending === "save" ? common("saving") : t("save")}
-            </button>
-            <button
-              type="button"
-              disabled={pending !== null}
-              onClick={() => {
-                setResources(null);
-                setRefusal(null);
-                setDirty(false);
-                setError(null);
-              }}
-            >
-              {t("cancel")}
-            </button>
-          </div>
-        </>
+        <ProjectSelectionEditor
+          resources={resources}
+          hidden={hidden}
+          refusal={refusal}
+          selection={selection}
+          dirty={dirty}
+          pending={pending}
+          onChange={(value) => {
+            setDirty(true);
+            setSelection(value);
+          }}
+          onCancel={() => {
+            setResources(null);
+            setRefusal(null);
+            setDirty(false);
+            setError(null);
+          }}
+        />
       )}
       {notice ? (
         <p className="notice" role="status">

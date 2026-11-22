@@ -6,6 +6,7 @@ import { commonEn } from "../apps/web/src/messages/common/en.ts";
 import { workspaceDe } from "../apps/web/src/messages/workspace/de.ts";
 import { workspaceEn } from "../apps/web/src/messages/workspace/en.ts";
 import { type Locale } from "./support/labels.ts";
+import { ORIGIN } from "./support/origin.ts";
 import { startWorkspace } from "./support/session.ts";
 import { ownerUrl } from "./support/store-template.ts";
 
@@ -15,6 +16,8 @@ import { ownerUrl } from "./support/store-template.ts";
 // is written directly, and the two calls that would ask Vercel (the project
 // list and the save, which checks the selection there) answer from
 // fixtures; server tests cover them against a stand-in for Vercel.
+// The page shows what is synced before the list is loaded, and a selection
+// without a project cannot be saved (#854).
 
 const messages = (locale: Locale) =>
   (locale === "de" ? workspaceDe : workspaceEn).connections;
@@ -29,7 +32,10 @@ const PROJECTS = [
  * A Vercel connection syncing two projects, with visitors for both. Only
  * the first project has a stored name, as while a first backfill runs.
  */
-async function seedConnection(workspaceId: string): Promise<string> {
+async function seedConnection(
+  workspaceId: string,
+  selection: string[] = ["prj_alpha", "prj_beta"],
+): Promise<string> {
   const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
   try {
     const [row] = await sql<{ id: string }[]>`
@@ -37,7 +43,7 @@ async function seedConnection(workspaceId: string): Promise<string> {
         (workspace_id, connector_id, name, setup_pending, config,
          credentials_encrypted)
       values (${workspaceId}, 'vercel', 'Websites', false,
-        ${sql.json({ resourceSelection: ["prj_alpha", "prj_beta"] })},
+        ${sql.json({ resourceSelection: selection })},
         ${Buffer.from("not-a-real-envelope")})
       returning id`;
     const id = row!.id;
@@ -137,6 +143,17 @@ test("a Vercel connection names its projects and changes which are synced", asyn
     panel.getByRole("heading", { name: t.projects.heading }),
   ).toBeVisible();
   await expect(panel.getByText(t.projects.intro)).toBeVisible();
+  // What is synced, before the list is loaded (#854): the name where one
+  // is known, the ID otherwise.
+  const synced = panel.getByRole("listitem");
+  await expect(
+    panel.getByText(
+      locale === "de"
+        ? "2 Projekte werden synchronisiert:"
+        : "2 projects are synced:",
+    ),
+  ).toBeVisible();
+  await expect(synced).toHaveText(["alpha-site", "prj_beta"]);
   await panel.getByRole("button", { name: t.projects.check }).click();
 
   // The projects by name; one without Web Analytics is not offered.
@@ -155,7 +172,15 @@ test("a Vercel connection names its projects and changes which are synced", asyn
   const save = panel.getByRole("button", { name: t.projects.save });
   await expect(save).toBeDisabled();
 
-  await beta.uncheck();
+  // No project selected: nothing to save, and the reason (#854).
+  await panel.getByRole("button", { name: t.projects.clear }).click();
+  await expect(alpha).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await expect(panel.getByText(t.projects.noneHelp)).toBeVisible();
+  await expect(save).toHaveAccessibleDescription(t.projects.noneHelp);
+  await alpha.check();
+  await expect(save).toBeEnabled();
+  await expect(panel.getByText(t.projects.noneHelp)).toHaveCount(0);
 
   // Unsaved: an in-app link asks in the app's own dialog. Stay keeps the
   // page and the change, Leave follows the link.
@@ -180,6 +205,15 @@ test("a Vercel connection names its projects and changes which are synced", asyn
   await save.click();
   await expect(panel.getByText(t.projects.saved)).toBeVisible();
   expect(saved).toEqual([{ resources: ["prj_alpha"] }]);
+  // The page shows the new selection without another click.
+  await expect(
+    panel.getByText(
+      locale === "de"
+        ? "1 Projekt wird synchronisiert:"
+        : "1 project is synced:",
+    ),
+  ).toBeVisible();
+  await expect(synced).toHaveText(["alpha-site"]);
   // The removed project's values are still there.
   await expect(rows.filter({ hasText: "17" })).toBeVisible();
 });
@@ -227,10 +261,92 @@ test("a refused check still lets the selection be reduced and saved", async ({
     panel.getByRole("checkbox", { name: /prj_alpha/ }),
   ).toBeChecked();
 
+  // Reduced to nothing it cannot be saved (#854); the list is loaded again.
+  const save = panel.getByRole("button", { name: t.projects.save });
+  await panel.getByRole("button", { name: t.projects.clear }).click();
+  await expect(save).toBeDisabled();
+  await expect(panel.getByText(t.projects.noneHelp)).toBeVisible();
+  await panel.getByRole("button", { name: t.projects.cancel }).click();
+  await panel.getByRole("button", { name: t.projects.check }).click();
+  await expect(beta).toBeChecked();
+
   // A project that is not listed leaves the list once it is unticked.
   await beta.click();
   await expect(beta).toHaveCount(0);
-  await panel.getByRole("button", { name: t.projects.save }).click();
+  await save.click();
   await expect(panel.getByText(t.projects.saved)).toBeVisible();
   expect(saved).toEqual([{ resources: ["prj_alpha"] }]);
+});
+
+test("a connection without a selected project says so and is repaired by choosing one", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = messages(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  // Saved empty before a project was required (#854): it is not migrated.
+  const connectionId = await seedConnection(workspaceId, []);
+  const path = `/v1/workspaces/${workspaceId}/connections/${connectionId}`;
+
+  // The API refuses to save an empty selection, before asking Vercel.
+  const refused = await page.request.patch(path, {
+    headers: { origin: ORIGIN },
+    data: { resources: [] },
+  });
+  expect(refused.status(), await refused.text()).toBe(400);
+  expect(((await refused.json()) as { error: string }).error).toBe(
+    "resource_selection_empty",
+  );
+
+  const saved: unknown[] = [];
+  await page.route(`**${path}/preview`, (route) =>
+    route.fulfill({
+      json: {
+        check: { ok: true },
+        resources: PROJECTS.filter((project) => project.analytics).map(
+          (project) => ({
+            id: project.id,
+            name: project.name,
+            kind: "project",
+            metadata: { accountId: "team_fixture", webAnalytics: true },
+          }),
+        ),
+        selection: [],
+      },
+    }),
+  );
+  await page.route(`**${path}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    const body = route.request().postDataJSON() as { resources: string[] };
+    saved.push(body);
+    const current = await page.request.get(path);
+    await saveSelection(connectionId, body.resources);
+    return route.fulfill({ json: await current.json() });
+  });
+
+  await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
+  // The page still works: the collected values are there.
+  const latest = page.locator(".card").filter({
+    has: page.getByRole("heading", { name: t.detail.latestObservations }),
+  });
+  await expect(latest.getByRole("table").locator("tbody tr")).toHaveCount(2);
+
+  // Nothing is synced, and what to do about it.
+  const panel = page.locator("#project-selection");
+  const none = t.projects.syncedNone.replace("{action}", t.projects.check);
+  await expect(panel.getByRole("status")).toHaveText(none);
+  await expect(panel.getByRole("listitem")).toHaveCount(0);
+
+  await panel.getByRole("button", { name: t.projects.check }).click();
+  const save = panel.getByRole("button", { name: t.projects.save });
+  const alpha = panel.getByRole("checkbox", { name: /alpha-site/ });
+  await expect(alpha).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await expect(panel.getByText(t.projects.noneHelp)).toBeVisible();
+  await alpha.check();
+  await save.click();
+  await expect(panel.getByText(t.projects.saved)).toBeVisible();
+  expect(saved).toEqual([{ resources: ["prj_alpha"] }]);
+  await expect(panel.getByText(none)).toHaveCount(0);
+  await expect(panel.getByRole("listitem")).toHaveText(["alpha-site"]);
 });

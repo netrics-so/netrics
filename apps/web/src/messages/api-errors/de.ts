@@ -105,6 +105,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     theme_not_found: "Dieses Design existiert nicht mehr.",
     review_not_found: "Diese Bewertung gibt es nicht mehr.",
     connection_not_found: "Diese Verbindung gibt es nicht mehr.",
+    resource_selection_empty:
+      "Wähle mindestens ein Projekt oder alle Projekte aus. Eine leere Auswahl kann nicht gespeichert werden.",
     custom_api_definition_not_found: "Diese eigene API gibt es nicht mehr.",
     custom_api_definition_invalid:
       "Die Definition der eigenen API enthält Fehler. Korrigier die markierten Felder und speichere erneut.",

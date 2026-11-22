@@ -9,7 +9,8 @@ const PAGE_SIZE = 50;
 /**
  * null follows all current and future apps; an empty list collects none.
  * `texts` names the resources: apps, or the projects of a website
- * connection (#782).
+ * connection (#782). `noneHelpId` is the id of the note shown for an empty
+ * list, for a form that refers to it (#854).
  */
 export function AppPicker({
   resources,
@@ -17,12 +18,14 @@ export function AppPicker({
   onChange,
   disabled = false,
   texts = "connections.apps",
+  noneHelpId,
 }: {
   resources: DiscoveredResource[];
   value: string[] | null;
   onChange: (value: string[] | null) => void;
   disabled?: boolean;
   texts?: "connections.apps" | "connections.projects";
+  noneHelpId?: string;
 }) {
   const t = useT(texts);
   const id = useId();
@@ -157,7 +160,9 @@ export function AppPicker({
             </nav>
           ) : null}
           {value.length === 0 ? (
-            <p className="notice">{t("noneHelp")}</p>
+            <p className="notice" id={noneHelpId}>
+              {t("noneHelp")}
+            </p>
           ) : null}
         </>
       ) : null}

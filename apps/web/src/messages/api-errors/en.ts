@@ -101,6 +101,8 @@ export const apiErrorsEn = {
     goal_not_found: "That goal no longer exists.",
     review_not_found: "That review no longer exists.",
     connection_not_found: "That connection no longer exists.",
+    resource_selection_empty:
+      "Select at least one project, or all projects. An empty selection cannot be saved.",
     custom_api_definition_not_found: "That custom API no longer exists.",
     custom_api_definition_invalid:
       "The custom API definition has errors. Fix the marked fields and save again.",

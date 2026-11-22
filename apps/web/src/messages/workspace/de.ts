@@ -283,7 +283,14 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "Keine Projekte mit Web Analytics gefunden. Prüfe den Scope des Tokens.",
       noResults: "Keine passenden Projekte.",
       noneHelp:
-        "Keine Projekte ausgewählt: Es wird nichts Neues synchronisiert. Bereits importierte Daten bleiben verfügbar.",
+        "Wähle mindestens ein Projekt aus oder alle Projekte: Eine leere Auswahl kann nicht gespeichert werden.",
+      syncedAll:
+        "Alle aktuellen und zukünftigen Projekte, die dieses Token sehen kann, werden synchronisiert.",
+      syncedList:
+        "{count, plural, one {# Projekt wird synchronisiert:} other {# Projekte werden synchronisiert:}}",
+      syncedMore: "und {count} weitere",
+      syncedNone:
+        "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Wähle über „{action}“ mindestens ein Projekt (oder alle Projekte) aus, oder lösche die Verbindung. Bereits importierte Daten bleiben erhalten.",
       pages: "Seiten der Projektliste",
       previous: "Zurück",
       next: "Weiter",
@@ -294,7 +301,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       checking: "Projekte werden geladen…",
       accessFailed: "Die Projektliste konnte nicht geladen werden.",
       refusedHelp:
-        "Du kannst unten weiterhin Projekte aus der Auswahl entfernen und speichern.",
+        "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, wähle ein anderes Projekt oder lösche diese Verbindung. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
       save: "Projektauswahl speichern",
       cancel: "Abbrechen",
       saved:

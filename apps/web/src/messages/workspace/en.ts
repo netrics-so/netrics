@@ -270,7 +270,14 @@ export const workspaceEn = {
       empty: "No projects with Web Analytics found. Check the token’s scope.",
       noResults: "No matching projects.",
       noneHelp:
-        "No projects selected: nothing new is synced. The data already collected stays available.",
+        "Select at least one project, or choose all projects: an empty selection cannot be saved.",
+      syncedAll:
+        "All current and future projects this token can see are synced.",
+      syncedList:
+        "{count, plural, one {# project is synced:} other {# projects are synced:}}",
+      syncedMore: "and {count} more",
+      syncedNone:
+        "No project is selected, so this connection collects nothing new. Use “{action}” to choose at least one project (or all projects), or delete the connection. The data already collected is kept.",
       pages: "Project list pages",
       previous: "Previous",
       next: "Next",
@@ -281,7 +288,7 @@ export const workspaceEn = {
       checking: "Loading projects…",
       accessFailed: "The project list could not be loaded.",
       refusedHelp:
-        "You can still remove projects from the selection below and save.",
+        "If no project can be synced: enable Web Analytics for a project in Vercel and load the list again, choose another project, or delete this connection. You can still remove projects from the selection below; at least one has to stay selected.",
       save: "Save project selection",
       cancel: "Cancel",
       saved:
