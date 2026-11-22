@@ -126,6 +126,56 @@ export function bindingWithGrains<
     },
   );
 }
+/**
+ * A binding whose newly grouped timestamps start per day (#853). Grouped by
+ * a timestamp as it is, a widget has a group per instant, which is rarely
+ * what a table or chart is meant to show, so a timestamp Studio adds to the
+ * grouping (ticked, chosen in a chart, or the dimension a view starts
+ * with) gets "day"; "Each time" stays a choice. `previous` is what the
+ * widget grouped by before: a dimension it already had keeps its grain or
+ * its lack of one, as saved widgets and those made through the API do.
+ *
+ * Only where the widget stays one the server accepts: not on a dimension
+ * the chosen measures are read per value of (`allowedTimeGrains`), and not
+ * on the one a declared click-to-filter reads its value from, which cannot
+ * be bucketed. A date is its own day and has no grain to start with.
+ */
+export function bindingWithStartingGrains<
+  B extends Extract<DashboardWidget, { type: "measure" }>["binding"],
+>(
+  binding: B,
+  previous: readonly string[],
+  model: CatalogModel | undefined,
+  filters: readonly DashboardDataFilter[] = [],
+): B {
+  if (!model) return binding;
+  const fixed = measureFixedGrainDimensions(model.measures, binding.measureIds);
+  const mappings =
+    filters
+      .find((filter) => filter.id === binding.interaction?.filterId)
+      ?.mappings.filter((mapping) => mapping.modelId === binding.modelId) ?? [];
+  const clicked = mappings.length === 1 ? mappings[0]!.dimensionId : undefined;
+  const starting = model.dimensions.filter(
+    (dimension) =>
+      dimension.type === "timestamp" &&
+      binding.groupBy.includes(dimension.id) &&
+      !previous.includes(dimension.id) &&
+      !Object.hasOwn(binding.groupByGrain ?? {}, dimension.id) &&
+      dimension.id !== clicked &&
+      allowedTimeGrains(dimension, fixed).includes(STARTING_TIME_GRAIN),
+  );
+  if (!starting.length) return binding;
+  return {
+    ...binding,
+    groupByGrain: {
+      ...binding.groupByGrain,
+      ...Object.fromEntries(
+        starting.map((dimension) => [dimension.id, STARTING_TIME_GRAIN]),
+      ),
+    },
+  };
+}
+const STARTING_TIME_GRAIN: TimeGrain = "day";
 export function valueViewMeasureId(
   model: CatalogModel | undefined,
   measureIds: string[],
@@ -147,19 +197,26 @@ export function patchForView(
   >,
   view: MeasureView,
   model: CatalogModel | undefined,
+  filters: readonly DashboardDataFilter[] = [],
 ) {
-  // A time grain stays with its dimension, like the grouping itself (#838).
+  // A time grain stays with its dimension, like the grouping itself (#838);
+  // a timestamp the view starts with is grouped per day (#853).
   const binding = bindingWithGrains(
-    {
-      ...widget.binding,
-      measureIds:
-        view === "table"
-          ? widget.binding.measureIds
-          : view === "value"
-            ? [valueViewMeasureId(model, widget.binding.measureIds)]
-            : widget.binding.measureIds.slice(0, 1),
-      groupBy: groupByForView(view, widget.binding.groupBy, model),
-    },
+    bindingWithStartingGrains(
+      {
+        ...widget.binding,
+        measureIds:
+          view === "table"
+            ? widget.binding.measureIds
+            : view === "value"
+              ? [valueViewMeasureId(model, widget.binding.measureIds)]
+              : widget.binding.measureIds.slice(0, 1),
+        groupBy: groupByForView(view, widget.binding.groupBy, model),
+      },
+      widget.binding.groupBy,
+      model,
+      filters,
+    ),
     model,
   );
   return {
@@ -232,7 +289,16 @@ export function MeasureFields({
   // column labels it named (#768): a template's top N by a measure, or its
   // short heads, never outlive what the widget shows.
   const update = (patch: Partial<typeof widget.binding>) => {
-    const binding = bindingWithGrains({ ...widget.binding, ...patch }, model);
+    // A timestamp this adds to the grouping starts per day (#853).
+    const binding = bindingWithGrains(
+      bindingWithStartingGrains(
+        { ...widget.binding, ...patch },
+        widget.binding.groupBy,
+        model,
+        filters,
+      ),
+      model,
+    );
     dispatch({
       type: "updateWidget",
       widgetId: widget.id,
@@ -263,14 +329,21 @@ export function MeasureFields({
               type: "updateWidget",
               widgetId: widget.id,
               patch: {
-                binding: {
-                  modelId: next.modelId,
-                  measureIds: next.measures
-                    .slice(0, 1)
-                    .map((measure) => measure.id),
-                  groupBy: required.slice(0, 3),
-                  exclusions: [],
-                },
+                // The new model's own grouping: nothing of it is kept, so
+                // a timestamp in it starts per day where the measure
+                // allows one (#853; a required dimension allows none).
+                binding: bindingWithStartingGrains(
+                  {
+                    modelId: next.modelId,
+                    measureIds: next.measures
+                      .slice(0, 1)
+                      .map((measure) => measure.id),
+                    groupBy: required.slice(0, 3),
+                    exclusions: [],
+                  },
+                  [],
+                  next,
+                ),
                 options: optionsForModel(widget.options, next),
               },
             });
@@ -318,6 +391,7 @@ export function MeasureFields({
                 widget,
                 event.target.value as MeasureView,
                 model,
+                filters,
               ),
             })
           }

@@ -12,7 +12,8 @@ import { seedReferenceTable, startWorkspace } from "./support/session.ts";
  * timestamp has a row per second; choosing "Day" next to the dimension in
  * Studio makes it a row per day of the workspace's calendar, worded as a
  * date. The choice stays with the grouping across view switches and is
- * saved with the widget.
+ * saved with the widget. A timestamp ticked in Studio starts per day (#853);
+ * one a saved widget already groups by keeps what it has.
  */
 test("a timestamp grouped per day in Studio shows one row per day", async ({
   page,
@@ -132,12 +133,37 @@ test("a timestamp grouped per day in Studio shows one row per day", async ({
     name: t.grain.label.replace("{name}", "Taken"),
     exact: true,
   });
-  await expect(group.getByRole("checkbox", { name: "Taken" })).toBeChecked();
+  const taken = group.getByRole("checkbox", { name: "Taken" });
+  await expect(taken).toBeChecked();
+  // A widget saved per instant (here: made through the API) stays so.
   await expect(grain).toHaveValue("");
-
-  // Per day: three days in Berlin, worded as dates.
-  await grain.selectOption({ label: t.grain.day });
   const rows = canvas.locator("tbody tr");
+
+  // Ticked in Studio, a timestamp starts per day (#853): three days in
+  // Berlin, worded as dates. A date next to it has no grain to start with.
+  const firstDay = group.getByRole("checkbox", { name: "Upload day" });
+  await firstDay.check();
+  await expect(grain).toHaveValue("");
+  await taken.uncheck();
+  await expect(grain).toHaveCount(0);
+  await taken.check();
+  await expect(grain).toHaveValue("day");
+  await expect(
+    fields.getByRole("combobox", {
+      name: t.grain.label.replace("{name}", "Upload day"),
+      exact: true,
+    }),
+  ).toHaveValue("");
+  await firstDay.uncheck();
+  await expect(grain).toHaveValue("day");
+  await expect(rows).toHaveCount(3);
+  // "Each time" stays a choice, and stays chosen.
+  await grain.selectOption({ label: t.grain.none });
+  await expect(grain).toHaveValue("");
+  await expect(rows).toHaveCount(5);
+
+  // Per day, chosen by hand.
+  await grain.selectOption({ label: t.grain.day });
   await expect(rows).toHaveCount(3);
   const day = (n: number) =>
     de ? `${String(n).padStart(2, "0")}.11.2026` : `Nov ${n}, 2026`;

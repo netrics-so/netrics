@@ -532,7 +532,10 @@ is refused, and a week or month does not satisfy a measure's
 `requiredDimensions`. `day` on a date changes nothing and is not stored.
 Measure widgets store the same field in their binding; Studio offers it next
 to a grouped time dimension, limited to what the widget's measures allow
-(each catalog measure lists its `fixedGrainDimensions`).
+(each catalog measure lists its `fixedGrainDimensions`). A timestamp newly
+ticked there starts per day, where the measures allow it; that is Studio's
+starting choice only, and a binding without the field stays a group per
+instant.
 
 ## Data authoring workspace
 

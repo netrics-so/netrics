@@ -9,6 +9,7 @@ import {
 } from "@netrics/domain";
 import { renderI18n } from "@/lib/i18n/test-render";
 import {
+  bindingWithStartingGrains,
   LINE_VIEW_LIMIT,
   limitForView,
   MeasureFields,
@@ -482,5 +483,160 @@ describe("a time grain next to a grouped time dimension (#838)", () => {
       windowed[0],
     );
     expect("groupByGrain" in perDay.binding).toBe(false);
+  });
+
+  describe("a newly grouped timestamp starts per day (#853)", () => {
+    it("selects Day for a ticked timestamp, in English and German", () => {
+      // What ticking "Taken" dispatches for a table grouped by "Album".
+      const before = grouped("table", ["album"]);
+      const binding = bindingWithStartingGrains(
+        { ...before.binding, groupBy: ["album", "taken"] },
+        before.binding.groupBy,
+        photos[0],
+      );
+      expect(binding.groupByGrain).toEqual({ taken: "day" });
+      const ticked = { ...before, binding };
+      const en = grain(html(ticked), "Taken: one group per");
+      expect(en).toContain('<option value="day" selected="">Day</option>');
+      // "Each time" stays a choice.
+      expect(en).toContain('<option value="">Each time</option>');
+      const de = grain(html(ticked, "de"), "Taken: eine Gruppe pro");
+      expect(de).toContain('<option value="day" selected="">Tag</option>');
+      expect(de).toContain('<option value="">Zeitpunkt</option>');
+    });
+
+    it("leaves a timestamp the widget already groups by as it is", () => {
+      // A saved or API-made widget per instant: ticking another dimension,
+      // or choosing "Each time", is no new grouping of the timestamp.
+      const saved = grouped("table", ["taken"]);
+      const more = bindingWithStartingGrains(
+        { ...saved.binding, groupBy: ["taken", "album"] },
+        saved.binding.groupBy,
+        photos[0],
+      );
+      expect("groupByGrain" in more).toBe(false);
+      expect(
+        grain(html(saved), "Taken: one group per"),
+        "opened in Studio",
+      ).toContain('<option value="" selected="">Each time</option>');
+      const weekly = grouped("table", ["taken"], { taken: "week" });
+      expect(
+        bindingWithStartingGrains(
+          { ...weekly.binding, groupBy: ["taken", "album"] },
+          weekly.binding.groupBy,
+          photos[0],
+        ).groupByGrain,
+      ).toEqual({ taken: "week" });
+      // Each view keeps it too.
+      for (const view of ["value", "bar", "line"] as const)
+        expect(
+          "groupByGrain" in patchForView(saved, view, photos[0]).binding,
+          view,
+        ).toBe(false);
+    });
+
+    it("has no grain to start a date or another dimension with", () => {
+      const before = grouped("table", []);
+      const binding = bindingWithStartingGrains(
+        { ...before.binding, groupBy: ["day", "album"] },
+        [],
+        photos[0],
+      );
+      expect("groupByGrain" in binding).toBe(false);
+    });
+
+    it("starts per day again once unticked and ticked again", () => {
+      const unticked = grouped("table", ["album"]);
+      expect(
+        bindingWithStartingGrains(
+          { ...unticked.binding, groupBy: ["album", "taken"] },
+          unticked.binding.groupBy,
+          photos[0],
+        ).groupByGrain,
+      ).toEqual({ taken: "day" });
+      // A chart's choice replaces the one before it.
+      const bar = grouped("bar", ["album"]);
+      expect(
+        bindingWithStartingGrains(
+          { ...bar.binding, groupBy: ["taken"] },
+          bar.binding.groupBy,
+          photos[0],
+        ).groupByGrain,
+      ).toEqual({ taken: "day" });
+    });
+
+    it("groups the timestamp a view starts with per day", () => {
+      // A line chart of a plain value takes the model's first time
+      // dimension; a table or bar chart its first dimension.
+      const value = grouped("value", []);
+      for (const view of ["table", "bar", "line"] as const) {
+        const next = patchForView(value, view, photos[0]);
+        expect(next.binding.groupBy, view).toEqual(["taken"]);
+        expect(next.binding.groupByGrain, view).toEqual({ taken: "day" });
+      }
+    });
+
+    it("follows what the chosen measures accept", () => {
+      // "Revenue per sale" is read per value of "Sold at": no grain.
+      const perSale = sales(["perSale"], []);
+      const fixed = bindingWithStartingGrains(
+        { ...perSale.binding, groupBy: ["sold"] },
+        [],
+        windowed[0],
+      );
+      expect("groupByGrain" in fixed).toBe(false);
+      expect(
+        grain(
+          salesHtml({ ...perSale, binding: fixed }),
+          "Sold at: one group per",
+        ),
+      ).toContain('<option value="" selected="">Each time</option>');
+      // With a measure that leaves it free, it starts per day.
+      const free = sales(["revenue"], []);
+      expect(
+        bindingWithStartingGrains(
+          { ...free.binding, groupBy: ["sold"] },
+          [],
+          windowed[0],
+        ).groupByGrain,
+      ).toEqual({ sold: "day" });
+      // Adding the measure afterwards takes the day back (#838).
+      const added = patchForView(
+        sales(["perSale"], ["sold"], { sold: "day" }),
+        "table",
+        windowed[0],
+      );
+      expect("groupByGrain" in added.binding).toBe(false);
+    });
+
+    it("leaves the dimension a click filters by ungrouped into days", () => {
+      // A declared click-to-filter reads the dimension's own values; a
+      // bucketed one is refused, so the default stays out of its way.
+      const filters = [
+        {
+          id: "when",
+          name: "When",
+          mappings: [{ modelId: photos[0]!.modelId, dimensionId: "taken" }],
+        },
+      ] as unknown as Parameters<typeof bindingWithStartingGrains>[3];
+      const before = grouped("table", ["album"]);
+      const binding = bindingWithStartingGrains(
+        {
+          ...before.binding,
+          groupBy: ["album", "taken"],
+          interaction: { filterId: "when" },
+        },
+        before.binding.groupBy,
+        photos[0],
+        filters,
+      );
+      expect("groupByGrain" in binding).toBe(false);
+    });
+
+    it("changes nothing without the widget's model", () => {
+      const before = grouped("table", []);
+      const binding = { ...before.binding, groupBy: ["taken"] };
+      expect(bindingWithStartingGrains(binding, [], undefined)).toBe(binding);
+    });
   });
 });
