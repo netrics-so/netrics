@@ -374,7 +374,10 @@ export type DeleteWorkspaceOutcome =
  * workspace row lock that the user is an owner and `name` is the
  * workspace's name, then ends every way into the workspace, records an
  * installation-level audit event and queues the `workspace.purge` job that
- * removes the data (migration 0094).
+ * removes the data (migration 0094). It needs a read committed transaction,
+ * and fails (isLastWorkspaceError) when the workspace is the user's only
+ * one: no membership, in any role, of another workspace that is not
+ * deleted (#855, migration 0095).
  */
 export async function deleteWorkspace(
   tx: Transaction,

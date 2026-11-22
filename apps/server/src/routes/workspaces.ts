@@ -33,6 +33,7 @@ import {
   hasSqlstate,
   insertAuditEvent,
   isLastOwnerError,
+  isLastWorkspaceError,
   listAuditEvents,
   listMembers,
   listMembershipsForUser,
@@ -446,11 +447,14 @@ export function registerWorkspaceRoutes(
       // here and again by delete_workspace() under the workspace row lock,
       // with the caller's role. Afterwards the workspace has no members,
       // so every later request for it is a 404 like any unknown workspace.
+      // The owner's only workspace is not deleted (#855): the database
+      // decides that too, under a lock that orders the owner's deletions.
       scope.post(
         "/workspaces/:workspaceId/delete",
         {
           schema: routeSchema({
-            summary: "Delete a workspace and everything in it",
+            summary:
+              "Delete a workspace and everything in it (409 workspace_last for the caller's only workspace)",
             tags: ["workspaces"],
             body: deleteWorkspaceRequestSchema,
             errors: [400, 403, 404, 409],
@@ -482,6 +486,9 @@ export function registerWorkspaceRoutes(
             // (lock_not_available): nothing was deleted, try again.
             if (hasSqlstate(error, "55P03")) {
               return sendError(reply, 409, "workspace_busy");
+            }
+            if (isLastWorkspaceError(error)) {
+              return sendError(reply, 409, "workspace_last");
             }
             throw error;
           }

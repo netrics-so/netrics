@@ -224,6 +224,9 @@ beforeAll(async () => {
   fixture = await createItemsFixture("wsdelete");
   admin = fixture.admin;
   doomed = fixture.workspaceId;
+  // The owner's other workspace: an owner's only workspace is not deleted
+  // (#855, "the owner's only workspace" below).
+  await createWorkspaceAs(fixture.owner, "Owner spare");
 
   const registry = createDefaultRegistry();
   registry.register(oauthConnector());
@@ -684,6 +687,7 @@ describe("deleting a workspace", () => {
   it("resumes after a purge that stopped half way, and after its job is lost", async () => {
     const cookie = await fixture.signUp("wsdelete-second@example.com");
     const second = await createWorkspaceAs(cookie, "Second");
+    const spare = await createWorkspaceAs(cookie, "Second spare");
     const sub = "wsdelete-second";
     await oauthConnection(second, sub);
     await oauthConnection(second, `${sub}-b`);
@@ -701,7 +705,7 @@ describe("deleting a workspace", () => {
       where kind = 'workspace.purge'
         and payload ->> 'purge_workspace_id' = ${second}`;
     // Deleted, and still unreachable while nothing purges it.
-    expect(await listed(cookie)).toEqual([]);
+    expect(await listed(cookie)).toEqual([spare]);
     expect(await workspaceRow(second)).toBeDefined();
 
     expect(await enqueueWorkspacePurges(schedulerDb)).toBe(1);
@@ -715,27 +719,190 @@ describe("deleting a workspace", () => {
     expect(await rowsOf(second)).toEqual({});
   });
 
-  it("leaves a user whose last workspace it was able to start a new one", async () => {
-    const cookie = await fixture.signUp("wsdelete-last@example.com");
-    const only = await createWorkspaceAs(cookie, "Only");
-    expect((await requestDelete(only, cookie, "Only")).statusCode).toBe(204);
-    expect(await listed(cookie)).toEqual([]);
-    const me = await fixture.app.inject({
-      method: "GET",
-      url: "/v1/me",
-      headers: { cookie },
-    });
-    expect(me.statusCode).toBe(200);
-    const next = await createWorkspaceAs(cookie, "Only");
-    expect(await listed(cookie)).toEqual([next]);
-    await runPurges();
-    expect(await workspaceRow(only)).toBeUndefined();
-    expect(await workspaceRow(next)).toMatchObject({ deleted_at: null });
-  });
-
   it("keeps the last owner of a workspace that is not deleted", async () => {
     await expect(
       admin`delete from memberships where workspace_id = ${kept}`,
     ).rejects.toThrow(/last owner/);
+  });
+});
+
+// #855: an owner cannot delete their only workspace. "Only" counts the
+// deleting user's memberships, in any role, in workspaces that are not
+// deleted; nobody else's.
+describe("the owner's only workspace", () => {
+  const deletedEvents = async (workspaceId: string) => {
+    const [row] = await admin<{ count: number }[]>`
+      select count(*)::int as count from audit_events
+      where action = 'workspace.deleted' and target = ${workspaceId}`;
+    return row!.count;
+  };
+
+  /** delete_workspace() itself, as the application role. */
+  const inDatabase = async (
+    workspaceId: string,
+    email: string,
+    name: string,
+    isolation = "read committed",
+  ) => {
+    const [user] = await admin<{ id: string }[]>`
+      select id from users where email = ${email}`;
+    const app = createRawSqlClient(fixture.testDb.appUrl, { max: 1 });
+    try {
+      return await app.begin(`isolation level ${isolation}`, async (tx) => {
+        await tx`select set_config('app.workspace_id', ${workspaceId}, true),
+          set_config('app.user_id', ${user!.id}, true)`;
+        const [row] = await tx<{ outcome: string }[]>`
+          select delete_workspace(${name}) as outcome`;
+        return row!.outcome;
+      });
+    } finally {
+      await app.end({ timeout: 5 });
+    }
+  };
+
+  it("is refused, by the API and by the database on its own, and nothing changes", async () => {
+    const cookie = await fixture.signUp("wsdelete-only@example.com");
+    const only = await createWorkspaceAs(cookie, "Only");
+    const before = await rowsOf(only);
+
+    expectError(
+      await requestDelete(only, cookie, "Only"),
+      409,
+      "workspace_last",
+    );
+    // Whatever name was typed: there is nothing to confirm.
+    expectError(
+      await requestDelete(only, cookie, "Else"),
+      409,
+      "workspace_last",
+    );
+    await expect(
+      inDatabase(only, "wsdelete-only@example.com", "Only"),
+    ).rejects.toMatchObject({ code: "WS002" });
+
+    expect(await workspaceRow(only)).toMatchObject({ deleted_at: null });
+    expect(await rowsOf(only)).toEqual(before);
+    expect(await purgeJobs(only)).toEqual([]);
+    expect(await deletedEvents(only)).toBe(0);
+    expect(await listed(cookie)).toEqual([only]);
+    // Still a working workspace.
+    const read = await fixture.app.inject({
+      method: "GET",
+      url: `/v1/workspaces/${only}`,
+      headers: { cookie },
+    });
+    expect(read.statusCode).toBe(200);
+  });
+
+  it("can be deleted once the owner has a second workspace; the one left is then the only one", async () => {
+    const cookie = await fixture.signUp("wsdelete-two@example.com");
+    const first = await createWorkspaceAs(cookie, "First");
+    expectError(
+      await requestDelete(first, cookie, "First"),
+      409,
+      "workspace_last",
+    );
+    const second = await createWorkspaceAs(cookie, "Second of two");
+    expect((await requestDelete(first, cookie, "First")).statusCode).toBe(204);
+    expect(await listed(cookie)).toEqual([second]);
+
+    // The deleted one still exists, waiting for its purge (no worker runs
+    // here), and does not count as a second workspace.
+    expect((await workspaceRow(first))!.deleted_at).not.toBeNull();
+    expectError(
+      await requestDelete(second, cookie, "Second of two"),
+      409,
+      "workspace_last",
+    );
+    await expect(
+      inDatabase(second, "wsdelete-two@example.com", "Second of two"),
+    ).rejects.toMatchObject({ code: "WS002" });
+    // Not even with a membership of the deleted workspace put back behind
+    // the deletion's back (the trigger of 0094 is off for this one row).
+    const [user] = await admin<{ id: string }[]>`
+      select id from users where email = 'wsdelete-two@example.com'`;
+    await admin.begin(async (tx) => {
+      await tx`alter table memberships
+        disable trigger memberships_refuse_deleted_workspace`;
+      await tx`insert into memberships (workspace_id, user_id, role)
+        values (${first}, ${user!.id}, 'owner')`;
+      await tx`alter table memberships
+        enable trigger memberships_refuse_deleted_workspace`;
+    });
+    expectError(
+      await requestDelete(second, cookie, "Second of two"),
+      409,
+      "workspace_last",
+    );
+    expect((await workspaceRow(second))!.deleted_at).toBeNull();
+    await admin`delete from memberships where workspace_id = ${first}`;
+
+    await runPurges();
+    expect(await workspaceRow(first)).toBeUndefined();
+    expect(await workspaceRow(second)).toMatchObject({ deleted_at: null });
+  });
+
+  it("a membership in someone else's workspace counts, whatever the role", async () => {
+    const email = "wsdelete-guest@example.com";
+    const cookie = await fixture.signUp(email);
+    const own = await createWorkspaceAs(cookie, "Own");
+    expectError(await requestDelete(own, cookie, "Own"), 409, "workspace_last");
+    const invited = await addMemberViaInvitation(
+      fixture.app,
+      fixture.db,
+      keptOwner,
+      kept,
+      email,
+      "viewer",
+    );
+    expect(invited.statusCode, invited.body).toBe(200);
+    expect((await requestDelete(own, cookie, "Own")).statusCode).toBe(204);
+    expect(await listed(cookie)).toEqual([kept]);
+  });
+
+  it("does not protect other members: they are left without a workspace and can start a new one", async () => {
+    const ownerCookie = await fixture.signUp("wsdelete-host@example.com");
+    const shared = await createWorkspaceAs(ownerCookie, "Shared");
+    const other = await createWorkspaceAs(ownerCookie, "Host other");
+    const email = "wsdelete-member@example.com";
+    const memberCookie = await fixture.signUp(email);
+    const invited = await addMemberViaInvitation(
+      fixture.app,
+      fixture.db,
+      ownerCookie,
+      shared,
+      email,
+      "admin",
+    );
+    expect(invited.statusCode, invited.body).toBe(200);
+    expect(await listed(memberCookie)).toEqual([shared]);
+
+    expect(
+      (await requestDelete(shared, ownerCookie, "Shared")).statusCode,
+    ).toBe(204);
+    expect(await listed(ownerCookie)).toEqual([other]);
+    expect(await listed(memberCookie)).toEqual([]);
+    const me = await fixture.app.inject({
+      method: "GET",
+      url: "/v1/me",
+      headers: { cookie: memberCookie },
+    });
+    expect(me.statusCode).toBe(200);
+    const next = await createWorkspaceAs(memberCookie, "Shared");
+    expect(await listed(memberCookie)).toEqual([next]);
+  });
+
+  it("the database refuses a transaction whose snapshot could predate another deletion", async () => {
+    const email = "wsdelete-snapshot@example.com";
+    const cookie = await fixture.signUp(email);
+    const first = await createWorkspaceAs(cookie, "Snapshot one");
+    await createWorkspaceAs(cookie, "Snapshot two");
+    for (const isolation of ["repeatable read", "serializable"]) {
+      await expect(
+        inDatabase(first, email, "Snapshot one", isolation),
+      ).rejects.toMatchObject({ code: "0A000" });
+    }
+    expect((await workspaceRow(first))!.deleted_at).toBeNull();
+    expect(await inDatabase(first, email, "Snapshot one")).toBe("deleted");
   });
 });

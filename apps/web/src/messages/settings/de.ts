@@ -52,6 +52,9 @@ export const settingsDe: Catalog<typeof settingsEn> = {
       typeLabel:
         "Gib zur Bestätigung den Namen des Workspaces „{workspace}“ ein",
       confirm: "Workspace löschen",
+      onlyWorkspace:
+        "Das ist dein einziger Workspace, deshalb kannst du ihn nicht löschen. Lege zuerst einen weiteren Workspace an; danach kannst du diesen löschen.",
+      createAnother: "Weiteren Workspace anlegen",
     },
     screenLanguage: {
       label: "Bildschirmsprache",

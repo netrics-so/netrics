@@ -433,6 +433,186 @@ describe("transactions of other isolation levels", () => {
   });
 });
 
+// #855: an owner's only workspace is not deleted. Each deletion holds only
+// its own workspace's fence, so two deletions by one user, of that user's
+// last two workspaces, are ordered by a lock on the user, taken before the
+// fence: exactly one deletes, the other is refused, and neither waits for
+// something the other needs.
+describe("two deletions by one user of their last two workspaces (#855)", () => {
+  /** A new user with exactly two workspaces. */
+  async function userWithTwo(label: string) {
+    const email = `wsfence-${label}@example.com`;
+    const cookie = await fixture.signUp(email);
+    const [user] = await admin<{ id: string }[]>`
+      select id from users where email = ${email}`;
+    const create = async (name: string) => {
+      const created = await fixture.app.inject({
+        method: "POST",
+        url: "/v1/workspaces",
+        headers: { cookie },
+        payload: { name },
+      });
+      expect(created.statusCode, created.body).toBe(200);
+      return workspaceResponseSchema.parse(created.json()).workspace.id;
+    };
+    return {
+      cookie,
+      userId: user!.id,
+      a: await create(`${label} A`),
+      b: await create(`${label} B`),
+    };
+  }
+
+  /**
+   * delete_workspace() as `userId` in an open transaction: `outcome`
+   * settles when the function answers, the transaction ends with `finish`.
+   */
+  function openDeletion(userId: string, workspaceId: string, name: string) {
+    const answered = gate();
+    const end = gate();
+    let outcome: string | undefined;
+    let rollBack = false;
+    const done = appRaw
+      .begin(async (tx) => {
+        await tx`select set_config('app.workspace_id', ${workspaceId}, true),
+          set_config('app.user_id', ${userId}, true)`;
+        try {
+          const [row] = await tx<{ outcome: string }[]>`
+            select delete_workspace(${name}) as outcome`;
+          outcome = row!.outcome;
+        } finally {
+          answered.open();
+        }
+        await end.opened;
+        if (rollBack) throw new Error("rolled back by the test");
+      })
+      .then(
+        () => ({ outcome, error: null as unknown }),
+        (error: unknown) => ({ outcome, error }),
+      );
+    return {
+      answered: answered.opened,
+      finish: async (how: "commit" | "rollback" = "commit") => {
+        rollBack = how === "rollback";
+        end.open();
+        return done;
+      },
+      done,
+    };
+  }
+
+  const live = async (userId: string) => {
+    const rows = await admin<{ id: string }[]>`
+      select w.id from memberships m join workspaces w on w.id = m.workspace_id
+      where m.user_id = ${userId} and w.deleted_at is null`;
+    return rows.map((row) => row.id);
+  };
+
+  it("the second waits for the first to commit and is then refused; it does not hold its workspace's fence while it waits", async () => {
+    const user = await userWithTwo("pair");
+    const first = openDeletion(user.userId, user.a, "pair A");
+    await first.answered;
+    // Uncommitted: for everyone else both workspaces are still live.
+    expect((await live(user.userId)).sort()).toEqual([user.a, user.b].sort());
+
+    const second = openDeletion(user.userId, user.b, "pair B");
+    // It waits for the user lock ...
+    await untilFenceWaiters(1);
+    // ... and not on, or with, the fence of its own workspace: work for
+    // that workspace goes on meanwhile.
+    await withWorkspace(fixture.db, { workspaceId: user.b }, (tx) =>
+      tx.execute(sql`select 1`),
+    );
+    expect(await fenceWaiters()).toBe(1);
+
+    expect((await first.finish()).error).toBeNull();
+    await second.answered;
+    const refused = await second.finish();
+    expect(refused.outcome).toBeUndefined();
+    expect(refused.error).toMatchObject({ code: "WS002" });
+    expect(await live(user.userId)).toEqual([user.b]);
+    expect(await fenceWaiters()).toBe(0);
+  });
+
+  it("the second deletes when the first rolls back", async () => {
+    const user = await userWithTwo("undo");
+    const first = openDeletion(user.userId, user.a, "undo A");
+    await first.answered;
+    const second = openDeletion(user.userId, user.b, "undo B");
+    await untilFenceWaiters(1);
+    expect((await first.finish("rollback")).error).not.toBeNull();
+    await second.answered;
+    expect(await second.finish()).toEqual({ outcome: "deleted", error: null });
+    expect(await live(user.userId)).toEqual([user.a]);
+  });
+
+  it("a deletion that waits for work in its workspace does not let the other one through", async () => {
+    // The first holds the user lock while it waits for its fence; the
+    // second queues behind it and is refused once the first has deleted.
+    const user = await userWithTwo("held");
+    const inside = gate();
+    const go = gate();
+    const work = withWorkspace(
+      fixture.db,
+      { workspaceId: user.a },
+      async () => {
+        inside.open();
+        await go.opened;
+      },
+    );
+    await inside.opened;
+    const first = openDeletion(user.userId, user.a, "held A");
+    await untilFenceWaiters(1);
+    const second = openDeletion(user.userId, user.b, "held B");
+    await untilFenceWaiters(2);
+    go.open();
+    await work;
+    await first.answered;
+    expect(await first.finish()).toEqual({ outcome: "deleted", error: null });
+    expect((await second.finish()).error).toMatchObject({ code: "WS002" });
+    expect(await live(user.userId)).toEqual([user.b]);
+  });
+
+  it("deletions by two users who share both workspaces do not wait for each other", async () => {
+    // Each takes their own user lock and their own workspace's fence; the
+    // count of the other workspaces locks nothing.
+    const one = await userWithTwo("cross-one");
+    const two = await userWithTwo("cross-two");
+    await admin`
+      insert into memberships (workspace_id, user_id, role)
+      values (${one.a}, ${two.userId}, 'owner'),
+             (${two.a}, ${one.userId}, 'owner')`;
+    const first = openDeletion(one.userId, one.a, "cross-one A");
+    await first.answered;
+    const second = openDeletion(two.userId, two.a, "cross-two A");
+    await second.answered;
+    expect(await fenceWaiters()).toBe(0);
+    expect(await first.finish()).toEqual({ outcome: "deleted", error: null });
+    expect(await second.finish()).toEqual({ outcome: "deleted", error: null });
+  });
+
+  it("through the API: exactly one of the two requests deletes", async () => {
+    const user = await userWithTwo("api");
+    const request = (workspaceId: string, name: string) =>
+      fixture.app.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/delete`,
+        headers: { cookie: user.cookie },
+        payload: { name },
+      });
+    const responses = await Promise.all([
+      request(user.a, "api A"),
+      request(user.b, "api B"),
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([
+      204, 409,
+    ]);
+    const refused = responses.find((response) => response.statusCode === 409)!;
+    expect(refused.json()).toEqual({ error: "workspace_last" });
+    expect(await live(user.userId)).toHaveLength(1);
+  });
+});
+
 describe("a workspace that is gone altogether (purged)", () => {
   it.each([
     ["read committed", {}],
