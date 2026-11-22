@@ -608,7 +608,13 @@ docker compose exec postgres psql -U netrics -d netrics -c \
 - `workspace.purged`: the workspace's id, how many connections were removed,
   and how many OAuth grants were `revoked`, `failed` or `kept`. A grant
   that two connections of the deleted workspace shared counts as `kept` for
-  the first and `revoked` for the last.
+  the first and `revoked` for the last. **These counts are those of the
+  attempt that finished the purge.** When the job was retried or the
+  `worker` restarted on the way, connections removed in earlier attempts
+  are missing, so `failed: 0` does not prove that every revocation worked.
+  The `worker` log has one line per connection with an OAuth grant
+  (`oauth grant of a purged connection`: workspace id, connection id,
+  provider and outcome, never a token), in every attempt.
 
 They are deleted after 12 months, like every audit entry. Container logs
 keep the workspace's id for as long as you keep logs.

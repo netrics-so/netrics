@@ -435,10 +435,10 @@ describe("transactions of other isolation levels", () => {
 
 // #855: an owner's only workspace is not deleted. Each deletion holds only
 // its own workspace's fence, so two deletions by one user, of that user's
-// last two workspaces, are ordered by a lock on the user, taken before the
-// fence: exactly one deletes, the other is refused, and neither waits for
-// something the other needs.
-describe("two deletions by one user of their last two workspaces (#855)", () => {
+// last two workspaces (or by two co-owners of the same two), are ordered by
+// one lock for all deletions, taken before the fence: exactly one deletes,
+// the other is refused, and neither waits for something the other needs.
+describe("deletions that depend on each other's workspace (#855)", () => {
   /** A new user with exactly two workspaces. */
   async function userWithTwo(label: string) {
     const email = `wsfence-${label}@example.com`;
@@ -516,7 +516,7 @@ describe("two deletions by one user of their last two workspaces (#855)", () => 
     expect((await live(user.userId)).sort()).toEqual([user.a, user.b].sort());
 
     const second = openDeletion(user.userId, user.b, "pair B");
-    // It waits for the user lock ...
+    // It waits for the deletion lock ...
     await untilFenceWaiters(1);
     // ... and not on, or with, the fence of its own workspace: work for
     // that workspace goes on meanwhile.
@@ -547,7 +547,7 @@ describe("two deletions by one user of their last two workspaces (#855)", () => 
   });
 
   it("a deletion that waits for work in its workspace does not let the other one through", async () => {
-    // The first holds the user lock while it waits for its fence; the
+    // The first holds the deletion lock while it waits for its fence; the
     // second queues behind it and is refused once the first has deleted.
     const user = await userWithTwo("held");
     const inside = gate();
@@ -573,22 +573,80 @@ describe("two deletions by one user of their last two workspaces (#855)", () => 
     expect(await live(user.userId)).toEqual([user.b]);
   });
 
-  it("deletions by two users who share both workspaces do not wait for each other", async () => {
-    // Each takes their own user lock and their own workspace's fence; the
-    // count of the other workspaces locks nothing.
-    const one = await userWithTwo("cross-one");
-    const two = await userWithTwo("cross-two");
+  /** Two users who own the same two workspaces and nothing else. */
+  async function coOwners(label: string) {
+    const one = await userWithTwo(`${label}-one`);
+    const email = `wsfence-${label}-two@example.com`;
+    const cookie = await fixture.signUp(email);
+    const [user] = await admin<{ id: string }[]>`
+      select id from users where email = ${email}`;
     await admin`
       insert into memberships (workspace_id, user_id, role)
-      values (${one.a}, ${two.userId}, 'owner'),
-             (${two.a}, ${one.userId}, 'owner')`;
-    const first = openDeletion(one.userId, one.a, "cross-one A");
+      values (${one.a}, ${user!.id}, 'owner'), (${one.b}, ${user!.id}, 'owner')`;
+    return { one, two: { cookie, userId: user!.id }, a: one.a, b: one.b };
+  }
+
+  it("two co-owners of the same two workspaces each delete a different one: the second waits and is refused", async () => {
+    // Without an order between them each would count the other's
+    // workspace as live, both would delete, and both would be left with
+    // none: a result neither order of the two deletions allows.
+    const pair = await coOwners("co");
+    const first = openDeletion(pair.one.userId, pair.a, "co-one A");
     await first.answered;
-    const second = openDeletion(two.userId, two.a, "cross-two A");
-    await second.answered;
-    expect(await fenceWaiters()).toBe(0);
+    const second = openDeletion(pair.two.userId, pair.b, "co-one B");
+    await untilFenceWaiters(1);
+    // It waits holding nothing: its workspace is not stalled.
+    await withWorkspace(fixture.db, { workspaceId: pair.b }, (tx) =>
+      tx.execute(sql`select 1`),
+    );
+    expect(await fenceWaiters()).toBe(1);
     expect(await first.finish()).toEqual({ outcome: "deleted", error: null });
+    await second.answered;
+    const refused = await second.finish();
+    expect(refused.outcome).toBeUndefined();
+    expect(refused.error).toMatchObject({ code: "WS002" });
+    expect(await live(pair.one.userId)).toEqual([pair.b]);
+    expect(await live(pair.two.userId)).toEqual([pair.b]);
+    expect(await fenceWaiters()).toBe(0);
+  });
+
+  it("two co-owners through the API: one 204, the other workspace_last", async () => {
+    const pair = await coOwners("co-api");
+    const request = (cookie: string, workspaceId: string, name: string) =>
+      fixture.app.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/delete`,
+        headers: { cookie },
+        payload: { name },
+      });
+    const responses = await Promise.all([
+      request(pair.one.cookie, pair.a, "co-api-one A"),
+      request(pair.two.cookie, pair.b, "co-api-one B"),
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([
+      204, 409,
+    ]);
+    const refused = responses.find((response) => response.statusCode === 409)!;
+    expect(refused.json()).toEqual({ error: "workspace_last" });
+    const left = await live(pair.one.userId);
+    expect(left).toHaveLength(1);
+    expect(await live(pair.two.userId)).toEqual(left);
+  });
+
+  it("deletions by users who share nothing queue too, and both delete", async () => {
+    // One order for every deletion of the installation: the second waits
+    // for the first to end, then finds its own other workspace live.
+    const one = await userWithTwo("apart-one");
+    const two = await userWithTwo("apart-two");
+    const first = openDeletion(one.userId, one.a, "apart-one A");
+    await first.answered;
+    const second = openDeletion(two.userId, two.a, "apart-two A");
+    await untilFenceWaiters(1);
+    expect(await first.finish()).toEqual({ outcome: "deleted", error: null });
+    await second.answered;
     expect(await second.finish()).toEqual({ outcome: "deleted", error: null });
+    expect(await live(one.userId)).toEqual([one.b]);
+    expect(await live(two.userId)).toEqual([two.b]);
   });
 
   it("through the API: exactly one of the two requests deletes", async () => {

@@ -12,37 +12,47 @@
 -- four return values and reads any other as "deleted", fails instead of
 -- answering that the workspace is gone.
 --
--- Two deletions by one user, of that user's last two workspaces, must not
--- both pass. Each holds only its own workspace's fence and sees the other's
--- workspace as live until the other commits, so the check is serialised per
--- user: a transaction-level advisory lock on the caller, taken FIRST, before
--- the fence. The second deletion waits there, holding nothing, until the
--- first has committed or rolled back, and then counts what is left (a new
--- statement, so under READ COMMITTED it sees the first one's commit; any
--- other isolation level is refused, its snapshot could predate it).
+-- Two deletions whose callers each rely on the workspace the other one
+-- deletes must not both pass: one user deleting their last two workspaces
+-- at once, or two co-owners of the same two workspaces each deleting a
+-- different one. Each deletion holds only its own workspace's fence and
+-- sees the other workspace as live until the other commits. So deletions
+-- are put in one order for the whole installation: a transaction-level
+-- advisory lock with one fixed key, taken FIRST, before the fence. A second
+-- deletion waits there, holding nothing, until the first has committed or
+-- rolled back, and then counts what is left (a new statement, so under READ
+-- COMMITTED it sees the first one's commit; any other isolation level is
+-- refused, its snapshot could predate it). The result is always one that
+-- the deletions could have produced one after the other.
 --
--- Why before the fence: while a deletion waits for the user lock it must not
--- hold the exclusive fence, which stalls every request of its workspace.
--- And no deadlock: only delete_workspace() takes user locks, one per
--- transaction, always before its one fence. A transaction that waits for a
--- user lock holds no lock at all; the holder of a user lock waits only for
--- its own workspace's fence, whose holders (tenant transactions and the
--- entry points of 0094) never ask for a user lock. So no cycle can close.
+-- One lock for all, not one per user: whose eligibility a deletion changes
+-- is every member of its workspace, and locking those in some order is more
+-- machinery than rare, short deletions are worth. The price: deletions do
+-- not run side by side, and one that waits for work in its workspace (up to
+-- the 10 seconds below) holds the others up for that long.
 --
--- Nothing else takes the user lock, deliberately:
+-- Why before the fence: while a deletion waits for the lock it must not
+-- hold an exclusive fence, which stalls every request of its workspace.
+-- And no deadlock: only delete_workspace() takes this lock, once per
+-- transaction, before its one fence and before any row lock. A transaction
+-- that waits for it holds no lock at all. Its holder then stands exactly
+-- where a deletion stood in 0094 (waiting for its own fence, then working
+-- under it), and nothing it can wait for (tenant transactions, the entry
+-- points of 0094, accept_invitation, member removal) ever asks for this
+-- lock. So no cycle can close through it.
+--
+-- Nothing else takes the lock, deliberately:
 --   - accept_invitation and create_workspace only ADD a membership. A
 --     deletion that does not see one being added refuses where it might
 --     have passed, which is the answer of "deletion first, then the new
 --     membership".
---   - Another owner deleting, or an admin removing the caller from, the
---     caller's other workspace at the same moment leaves the caller without
---     a workspace. That is the result of the same two actions one after the
---     other, which is allowed: the rule protects the deleting owner at the
---     time of the deletion, not every member for ever.
+--   - Removing a member (or a member leaving) is not a deletion and is not
+--     ordered with one: a caller who is removed from their other workspace
+--     while they delete this one can be left without a workspace. Out of
+--     scope here; the removal runs under that workspace's shared fence only.
 --
 -- The wait for both locks together stays within the 10 seconds of 0094
--- (55P03 afterwards, answered 409 workspace_busy). The key is 32 bits of
--- the user id; two users sharing one only wait for each other's deletion.
+-- (55P03 afterwards, answered 409 workspace_busy).
 CREATE OR REPLACE FUNCTION delete_workspace(p_name text)
 RETURNS text
 LANGUAGE plpgsql
@@ -67,10 +77,7 @@ BEGIN
       USING ERRCODE = 'feature_not_supported';
   END IF;
   PERFORM set_config('lock_timeout', '10s', true);
-  PERFORM pg_advisory_xact_lock(
-    hashtext('netrics.workspace_delete_user'),
-    hashtext(v_user_id::text)
-  );
+  PERFORM pg_advisory_xact_lock(hashtext('netrics.workspace_delete'), 0);
   -- What is left of the 10 seconds (0 would mean no timeout).
   PERFORM set_config(
     'lock_timeout',

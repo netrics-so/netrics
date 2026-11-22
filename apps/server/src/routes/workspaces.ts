@@ -448,7 +448,7 @@ export function registerWorkspaceRoutes(
       // with the caller's role. Afterwards the workspace has no members,
       // so every later request for it is a 404 like any unknown workspace.
       // The owner's only workspace is not deleted (#855): the database
-      // decides that too, under a lock that orders the owner's deletions.
+      // decides that too, under a lock that puts deletions in one order.
       scope.post(
         "/workspaces/:workspaceId/delete",
         {

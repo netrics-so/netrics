@@ -68,15 +68,32 @@ the deleting owner is a member, in any role, of no other workspace that is
 not deleted. Only the deleting owner counts: other members may be left
 without a workspace and are offered to create one.
 
-Two deletions by one user each hold only their own workspace's fence, so
-the count is serialised by a second advisory lock, on the user, taken before
-the fence. Before, because a deletion that waits for it must not hold a
-fence, which stalls a workspace. Only `delete_workspace()` takes it, once
-per transaction: whoever waits for a user lock holds nothing, and whoever
-holds one waits only for a fence, whose other holders never ask for a user
-lock. Invitation acceptance and workspace creation do not take it: they
-only add memberships, and a deletion that misses one refuses where it could
-have passed.
+Two deletions can each rely on the workspace the other one deletes: one
+user deleting their last two workspaces at once, or two co-owners of the
+same two workspaces each deleting a different one. Each holds only its own
+workspace's fence and would count the other workspace as live. So all
+deletions of the installation run in one order: a second advisory lock with
+a fixed key, taken before the fence. The second deletion waits, then counts
+what the first left, and the outcome is always one the deletions could have
+produced one after the other.
+
+- One lock, not one per user: a deletion changes the eligibility of every
+  member of its workspace, and deletions are rare and short. The price is
+  that they do not run side by side; one that waits up to 10 seconds for
+  work in its workspace holds the others up for that long (the wait for both
+  locks shares the 10 seconds).
+- Before the fence, because a deletion that waits for the lock must not hold
+  an exclusive fence, which stalls a workspace.
+- No deadlock: only `delete_workspace()` takes it, once per transaction,
+  before any other lock. Whoever waits for it holds nothing; whoever holds
+  it stands where a deletion stood before (waiting for its fence, then
+  working under it), and nothing it can wait for ever asks for this lock.
+- Invitation acceptance and workspace creation do not take it: they only
+  add memberships, and a deletion that misses one refuses where it could
+  have passed.
+- Removing a member is not ordered with deletions. An owner who is removed
+  from their other workspace while they delete this one can be left without
+  a workspace. Not covered.
 
 ### 5. What is recorded
 
@@ -95,5 +112,5 @@ workspace's own audit events go with it.
   that already sets its context.
 - A deleted workspace cannot be restored by the application. Backups are not
   rewritten.
-- The lock keys are 32-bit hashes: two workspaces (or users) that share one
-  only wait for each other's deletion.
+- The fence's key is a 32-bit hash of the workspace id: two workspaces that
+  share one only wait for each other's deletion.
