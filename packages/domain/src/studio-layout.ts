@@ -1131,10 +1131,15 @@ export interface MeasureTableLayout {
  * The characters of a measure table's text with their widths in em (#768),
  * regular and semibold, per renderer: IBM Plex Sans on web screens, the
  * system font on netrics TV (tabular digits, at the sizes it draws: 24, 28
- * and 36 units at every theme font scale, 1080p and 4K, plus 0.5 % for
- * its tracking at small sizes), rounded up to 0.001 em. Kerning only narrows a text, so the sums never fall short.
+ * and 36 units at every theme font scale, 1080p and 4K, plus 0.5 %),
+ * rounded up to 0.001 em. Kerning narrows nearly every pair; the 0.5 %
+ * is for the few it widens ("rt", "ry"), so the sums do not fall short.
  * Other characters, and bold, take the conservative estimate. NetricsKit
  * has the same tables (StudioLayout.measureGlyph*).
+ *
+ * `tvSmall` is the system font at 17 pt, the smallest of its optical
+ * sizes, with the same 0.5 % (#780): netrics TV on iPad and iPhone draws below the TV's sizes,
+ * where the system font is wider (`MEASURE_TV_SMALL_SIZES`).
  */
 export const MEASURE_GLYPH_CHARS: readonly string[] = [
   ..." !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•",
@@ -1218,7 +1223,82 @@ export const MEASURE_GLYPH_EMS = {
       0.575, 0.869, 0.701, 0.254, 0.254, 0.43, 0.43, 0.453,
     ],
   },
+  tvSmall: {
+    regular: [
+      0.258, 0.288, 0.455, 0.608, 0.608, 0.905, 0.69, 0.273, 0.359, 0.359,
+      0.449, 0.608, 0.273, 0.449, 0.273, 0.281, 0.608, 0.608, 0.608, 0.608,
+      0.608, 0.608, 0.608, 0.608, 0.608, 0.608, 0.273, 0.273, 0.608, 0.608,
+      0.608, 0.49, 0.898, 0.652, 0.635, 0.694, 0.705, 0.574, 0.55, 0.725, 0.721,
+      0.244, 0.516, 0.637, 0.546, 0.853, 0.721, 0.75, 0.613, 0.75, 0.632, 0.615,
+      0.612, 0.716, 0.652, 0.948, 0.657, 0.634, 0.64, 0.359, 0.281, 0.359,
+      0.608, 0.561, 0.477, 0.529, 0.592, 0.537, 0.592, 0.549, 0.339, 0.587,
+      0.566, 0.223, 0.223, 0.521, 0.229, 0.849, 0.561, 0.569, 0.588, 0.587,
+      0.358, 0.501, 0.34, 0.561, 0.52, 0.753, 0.502, 0.521, 0.517, 0.359, 0.235,
+      0.359, 0.608, 0.652, 0.652, 0.652, 0.652, 0.652, 0.652, 0.94, 0.694,
+      0.574, 0.574, 0.574, 0.574, 0.244, 0.244, 0.244, 0.244, 0.735, 0.721,
+      0.75, 0.75, 0.75, 0.75, 0.75, 0.747, 0.716, 0.716, 0.716, 0.716, 0.634,
+      0.603, 0.6, 0.529, 0.529, 0.529, 0.529, 0.529, 0.529, 0.882, 0.537, 0.549,
+      0.549, 0.549, 0.549, 0.223, 0.223, 0.223, 0.223, 0.56, 0.561, 0.569,
+      0.569, 0.569, 0.569, 0.569, 0.569, 0.561, 0.561, 0.561, 0.561, 0.521,
+      0.588, 0.521, 0.273, 0.996, 0.608, 0.608, 0.608, 0.561, 0.853, 0.784,
+      0.273, 0.273, 0.436, 0.436, 0.449,
+    ],
+    semibold: [
+      0.243, 0.316, 0.513, 0.634, 0.634, 0.975, 0.711, 0.306, 0.389, 0.389,
+      0.457, 0.634, 0.306, 0.457, 0.306, 0.3, 0.634, 0.634, 0.634, 0.634, 0.634,
+      0.634, 0.634, 0.634, 0.634, 0.634, 0.306, 0.306, 0.634, 0.634, 0.634,
+      0.519, 0.903, 0.689, 0.658, 0.711, 0.718, 0.59, 0.566, 0.734, 0.747,
+      0.276, 0.556, 0.669, 0.563, 0.874, 0.737, 0.76, 0.638, 0.76, 0.658, 0.639,
+      0.629, 0.731, 0.682, 0.974, 0.689, 0.667, 0.649, 0.389, 0.3, 0.389, 0.634,
+      0.589, 0.477, 0.554, 0.616, 0.555, 0.616, 0.568, 0.368, 0.61, 0.594,
+      0.249, 0.248, 0.558, 0.256, 0.889, 0.589, 0.587, 0.612, 0.612, 0.392,
+      0.528, 0.371, 0.589, 0.546, 0.8, 0.538, 0.555, 0.534, 0.389, 0.261, 0.389,
+      0.634, 0.689, 0.689, 0.689, 0.689, 0.689, 0.689, 0.969, 0.711, 0.59, 0.59,
+      0.59, 0.59, 0.276, 0.276, 0.276, 0.276, 0.747, 0.737, 0.76, 0.76, 0.76,
+      0.76, 0.76, 0.756, 0.731, 0.731, 0.731, 0.731, 0.667, 0.634, 0.638, 0.554,
+      0.554, 0.554, 0.554, 0.554, 0.554, 0.896, 0.555, 0.568, 0.568, 0.568,
+      0.568, 0.249, 0.249, 0.249, 0.249, 0.585, 0.589, 0.587, 0.587, 0.587,
+      0.587, 0.587, 0.587, 0.589, 0.589, 0.589, 0.589, 0.555, 0.612, 0.555,
+      0.306, 1.014, 0.653, 0.634, 0.634, 0.589, 0.874, 0.879, 0.306, 0.306,
+      0.496, 0.496, 0.457,
+    ],
+  },
 } as const;
+
+/**
+ * The system font below 24 pt (#780), where netrics TV draws on iPad and
+ * iPhone (a unit is less than a point there): `[points, blend, tracking]`
+ * rows, read linearly between two rows; under the first row, the first
+ * row. A glyph is then `tvSmall + blend × (tv − tvSmall) + tracking` em
+ * wide. The font's optical size runs from its 17 pt design to its 28 pt
+ * one (`blend`: the share of the larger, which `tv` stands in for), and
+ * under 17 pt every glyph is tracked wider by the same amount, most at
+ * 6 pt and below. Measured with Core Text for every character of
+ * `MEASURE_GLYPH_CHARS` from 2 to 24 pt, tracking rounded up, so a text
+ * is counted at most about 2 % wider than drawn. From 24 pt, `tv` alone,
+ * as on a TV.
+ */
+export const MEASURE_TV_SMALL_SIZES: readonly (readonly [
+  number,
+  number,
+  number,
+])[] = [
+  [6, 0, 0.0665],
+  [7, 0, 0.0595],
+  [8, 0, 0.0515],
+  [9, 0, 0.0445],
+  [10, 0, 0.038],
+  [11, 0, 0.032],
+  [12, 0, 0.026],
+  [13, 0, 0.0205],
+  [14, 0, 0.0155],
+  [15, 0, 0.0105],
+  [16, 0, 0.0065],
+  [17, 0, 0.0005],
+  [19, 0.0909, -0.001],
+  [20, 0.2363, -0.005],
+  [24, 0.8182, -0.003],
+];
 
 /**
  * Whose text a measure table counts: a web screen's, netrics TV's, or
@@ -1237,21 +1317,70 @@ const MEASURE_GLYPHS = {
     regular: glyphMap(MEASURE_GLYPH_EMS.tv.regular),
     semibold: glyphMap(MEASURE_GLYPH_EMS.tv.semibold),
   },
+  tvSmall: {
+    regular: glyphMap(MEASURE_GLYPH_EMS.tvSmall.regular),
+    semibold: glyphMap(MEASURE_GLYPH_EMS.tvSmall.semibold),
+  },
 };
 
-/** A measure table's text width in units (see `MEASURE_GLYPH_EMS`). */
+/** Points per unit a fit counts with (default 1, see `points`). */
+function measurePoints(points: number | undefined): number {
+  return points !== undefined && Number.isFinite(points) && points > 0
+    ? points
+    : 1;
+}
+
+/**
+ * The system font's blend and tracking at a size in points
+ * (`MEASURE_TV_SMALL_SIZES`); null from 24 pt, where `tv` alone counts.
+ */
+function measureTvSmallSize(
+  points: number,
+): { blend: number; tracking: number } | null {
+  const rows = MEASURE_TV_SMALL_SIZES;
+  if (!(points < rows[rows.length - 1]![0])) return null;
+  const first = rows[0]!;
+  if (points <= first[0]) return { blend: first[1], tracking: first[2] };
+  const next = rows.findIndex((row) => points <= row[0]);
+  const from = rows[next - 1]!,
+    to = rows[next]!;
+  const share = (points - from[0]) / (to[0] - from[0]);
+  return {
+    blend: from[1] + (to[1] - from[1]) * share,
+    tracking: from[2] + (to[2] - from[2]) * share,
+  };
+}
+
+/**
+ * A measure table's text width in units (see `MEASURE_GLYPH_EMS`).
+ * `points`: the points a unit is drawn at (default 1, a TV); netrics TV on
+ * iPad and iPhone passes its smaller unit, and its system font is counted
+ * as wide as it draws at that size (`MEASURE_TV_SMALL_SIZES`). Web text
+ * is as wide in em at every size.
+ */
 export function measureTextWidth(
   text: string,
   fontSize: number,
   weight: StudioFontWeight = "regular",
   font: MeasureFont = "any",
+  points?: number,
 ): number {
+  const small =
+    font === "web" || weight === "bold"
+      ? null
+      : measureTvSmallSize(fontSize * measurePoints(points));
   let width = 0;
   for (const char of text) {
     const web =
       weight === "bold" ? undefined : MEASURE_GLYPHS.web[weight].get(char);
-    const tv =
+    const large =
       weight === "bold" ? undefined : MEASURE_GLYPHS.tv[weight].get(char);
+    const little =
+      weight === "bold" ? undefined : MEASURE_GLYPHS.tvSmall[weight].get(char);
+    const tv =
+      small === null || large === undefined || little === undefined
+        ? large
+        : little + small.blend * (large - little) + small.tracking;
     const em =
       web === undefined || tv === undefined
         ? undefined
@@ -1285,6 +1414,12 @@ interface MeasureTableBox {
   /** Whose text widths to count (default: the wider of web and TV). */
   font?: MeasureFont;
   /**
+   * The points a unit is drawn at (default 1): netrics TV on iPad and
+   * iPhone, whose system font is wider at its small sizes (#780, see
+   * `measureTextWidth`).
+   */
+  points?: number;
+  /**
    * Column widths that keep the column heads' words whole where the box
    * has the room (`measureTableColumnWidths`, #780), as the web draws
    * them. Without it every column has an even share (netrics TV, and the
@@ -1310,6 +1445,7 @@ export function measureTableColumnWidths(input: {
   fontScale?: number;
   pixel?: number;
   font?: MeasureFont;
+  points?: number;
 }): number[] {
   const count = input.columns.length;
   if (count === 0) return [];
@@ -1325,7 +1461,9 @@ export function measureTableColumnWidths(input: {
         0,
         ...head
           .split(" ")
-          .map((word) => measureTextWidth(word, cell, "semibold", input.font)),
+          .map((word) =>
+            measureTextWidth(word, cell, "semibold", input.font, input.points),
+          ),
       ) + side,
   );
   if (
@@ -1370,7 +1508,7 @@ function measureTableParts(input: MeasureTableBox) {
     weight: StudioFontWeight = "regular",
   ) =>
     wrappedLineCount(text, Math.max(0, room), size, weight, (part, at, w) =>
-      measureTextWidth(part, at, w, input.font),
+      measureTextWidth(part, at, w, input.font, input.points),
     );
   const titleLines = Math.min(
     STUDIO_LABEL_MAX_LINES,
@@ -1389,10 +1527,14 @@ function measureTableParts(input: MeasureTableBox) {
   // round wider than their share (#768).
   const room = (column: number) =>
     (columnWidths?.[column] ?? even) - m.cellPadding - pixel;
+  // A widened column's room is its head's widest word but for the rounding
+  // of the sums, which must not count that word as too wide (1e-9).
   const lines = (texts: readonly string[], weight: StudioFontWeight) =>
     Math.max(
       1,
-      ...texts.map((text, column) => wrap(text, room(column), cell, weight)),
+      ...texts.map((text, column) =>
+        wrap(text, room(column) + (columnWidths ? 1e-9 : 0), cell, weight),
+      ),
     );
   const row = (count: number) =>
     count * (cell * m.lineHeight + pixel) + m.cellPadding + m.border;
@@ -1518,11 +1660,13 @@ export function freshnessLevelFit(
   width: number,
   fontScale?: number,
   font: MeasureFont = "any",
+  points?: number,
 ): number {
   const size = MEASURE_TABLE_METRICS.footer * effectiveFontScale(fontScale);
   const index = levels.findIndex((lines) =>
     lines.every(
-      (line) => measureTextWidth(line, size, "regular", font) <= width + 1e-9,
+      (line) =>
+        measureTextWidth(line, size, "regular", font, points) <= width + 1e-9,
     ),
   );
   return index === -1 ? Math.max(0, levels.length - 1) : index;
@@ -1596,7 +1740,7 @@ export function measureSplitLayout(
   const cell = m.cell * scale;
   const head = parts.titleLines * m.title * scale * m.lineHeight + m.gap;
   const widthOf = (text: string, at: number, weight: StudioFontWeight) =>
-    measureTextWidth(text, at, weight, input.font);
+    measureTextWidth(text, at, weight, input.font, input.points);
   const lineHeight = ([label, value]: readonly [string, string]) =>
     Math.max(
       1,
@@ -1623,6 +1767,11 @@ export function measureSplitLayout(
   // which it fits the width on as few lines as the room holds. Width is
   // never a reason for a group line to give way: the total wraps between
   // its amounts instead.
+  // Below 24 pt the system font's em widths change with the size (#780,
+  // `MEASURE_TV_SMALL_SIZES`), and not always the same way.
+  const sized =
+    input.font !== "web" &&
+    measureTvSmallSize(least * measurePoints(input.points)) !== null;
   const value = (room: number): { size: number; lines: number } | null => {
     if (total === null) return room >= -1e-9 ? { size: 0, lines: 0 } : null;
     for (let lines = 1; lines <= 8; lines++) {
@@ -1630,7 +1779,23 @@ export function measureSplitLayout(
       if (tall < least - 1e-9) return null;
       // The largest size at most `tall` whose text takes `lines` lines.
       let size = Math.min(most, tall);
-      const oneLine = measureTextWidth(total, 1, "semibold", input.font);
+      if (sized) {
+        // Every candidate is checked at its own size, down to the
+        // smallest: a width at one size says nothing about another.
+        for (; size > least + 1e-9; size -= 0.5 * scale)
+          if (totalLines(size) <= lines) return { size, lines };
+        if (totalLines(least) <= lines) return { size: least, lines };
+        continue;
+      }
+      // As wide in em at every size from here down: one line's largest
+      // size follows from its width per unit of size.
+      const oneLine = measureTextWidth(
+        total,
+        1,
+        "semibold",
+        input.font,
+        size * measurePoints(input.points),
+      );
       if (lines === 1 && oneLine > 0)
         size = Math.min(size, (width - pixel) / oneLine);
       for (; size >= least - 1e-9; size -= 0.5 * scale)

@@ -374,26 +374,30 @@ extension MeasureWidgetData {
     }
 
     public func freshnessSourceLayout(
-        width: Double?, scroll: Bool, fontScale: Double, now: Date = Date(), language: ScreenLanguage = .en,
-        timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+        width: Double?, scroll: Bool, fontScale: Double, points: Double? = nil, now: Date = Date(),
+        language: ScreenLanguage = .en, timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
     ) -> FreshnessSourceLayout? {
         if width == nil && !scroll {
             let levels = freshnessSourceLevels(now: now, language: language, timeZone: timeZone, region: region)
             return levels.isEmpty ? nil : .firstThatFits(levels)
         }
         return freshnessSourceLines(
-            width: width, fontScale: fontScale, now: now, language: language, timeZone: timeZone, region: region
+            width: width, fontScale: fontScale, points: points, now: now, language: language, timeZone: timeZone,
+            region: region
         ).map { .lines($0) }
     }
 
+    /// `points`: the points a unit is drawn at (iPad and iPhone, #780).
     public func freshnessSourceLines(
-        width: Double?, fontScale: Double, now: Date = Date(), language: ScreenLanguage = .en,
-        timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
+        width: Double?, fontScale: Double, points: Double? = nil, now: Date = Date(),
+        language: ScreenLanguage = .en, timeZone: TimeZone = .current, region: Locale = .autoupdatingCurrent
     ) -> [String]? {
         let levels = freshnessSourceLevels(now: now, language: language, timeZone: timeZone, region: region)
         guard !levels.isEmpty else { return nil }
         guard let width else { return levels[Swift.min(1, levels.count - 1)] }
-        return levels[StudioLayout.freshnessLevelFit(levels: levels, width: width, fontScale: fontScale, font: .tv)]
+        return levels[
+            StudioLayout.freshnessLevelFit(
+                levels: levels, width: width, fontScale: fontScale, font: .tv, points: points)]
     }
 
     /// Whether a freshness line shows under the tile. Without one the oldest
@@ -651,16 +655,20 @@ extension MeasureWidgetData {
     /// The rows a measure table shows in its tile and its "N of M" line
     /// (StudioLayout.measureTableRowsShown, as the web): rows give way to
     /// the footer, never the other way round. Without a box (scroll cards,
-    /// which grow with their content), every row.
+    /// which grow with their content), every row. In a box, `columnWidths`
+    /// are the columns' widths in units, which keep the heads' words whole
+    /// where the tile has the room (#780, as the web). `points`: the points
+    /// a unit is drawn at; under a point (iPad, iPhone) the system font is
+    /// wider, and counted so.
     public func tableFit(
         label: String, measureIds: [String], groupBy: [String], rows: [MeasureResultRow],
         box: (width: Double, height: Double)?, fontScale: Double, labels: [String: String]? = nil, pixel: Double? = nil,
-        now: Date = Date(), language: ScreenLanguage = .en
-    ) -> (shown: Int, rowsLine: String?) {
+        points: Double? = nil, now: Date = Date(), language: ScreenLanguage = .en
+    ) -> (shown: Int, rowsLine: String?, columnWidths: [Double]?) {
         let total = Swift.max(result?.totalRows ?? 0, rows.count)
         let line = { (shown: Int, all: Int) in KitStrings.text(.measureGroupsShown, language, shown, all) }
         guard let box, !rows.isEmpty else {
-            return (rows.count, total > rows.count ? line(rows.count, total) : nil)
+            return (rows.count, total > rows.count ? line(rows.count, total) : nil, nil)
         }
         let names =
             groupBy.map { id in labels?[id] ?? metadata?.dimensions.first { $0.id == id }?.name ?? id }
@@ -671,19 +679,23 @@ extension MeasureWidgetData {
         }
         return StudioLayout.measureTableRowsShown(
             label: label, width: box.width, height: box.height, fontScale: fontScale, columns: names, rows: cells,
-            total: total, footer: footer(rows: rows, width: box.width, fontScale: fontScale, now: now, language: language),
+            total: total,
+            footer: footer(
+                rows: rows, width: box.width, fontScale: fontScale, points: points, now: now, language: language),
             pixel: pixel,
             // netrics TV draws in the system font.
-            font: .tv, rowsLine: line)
+            font: .tv, points: points, wholeHeadWords: true, rowsLine: line)
     }
 
     /// The footer lines of a fitted tile, with as many freshness lines as
     /// the form over several sources that fits `width` takes (#784).
-    func footer(rows: [MeasureResultRow], width: Double, fontScale: Double, now: Date, language: ScreenLanguage)
-        -> [String?]
-    {
+    func footer(
+        rows: [MeasureResultRow], width: Double, fontScale: Double, points: Double? = nil, now: Date,
+        language: ScreenLanguage
+    ) -> [String?] {
         let count =
-            freshnessSourceLines(width: width, fontScale: fontScale, now: now, language: language)?.count ?? 1
+            freshnessSourceLines(width: width, fontScale: fontScale, points: points, now: now, language: language)?
+            .count ?? 1
         return footerLines(rows: rows, now: now, language: language, freshnessLineCount: count)
     }
 
@@ -715,8 +727,8 @@ extension MeasureWidgetData {
     /// cards), every line at the full size.
     public func splitFit(
         label: String, measureIds: [String], groupBy: [String], rows: [MeasureResultRow],
-        box: (width: Double, height: Double)?, fontScale: Double, pixel: Double? = nil, now: Date = Date(),
-        language: ScreenLanguage = .en
+        box: (width: Double, height: Double)?, fontScale: Double, pixel: Double? = nil, points: Double? = nil,
+        now: Date = Date(), language: ScreenLanguage = .en
     ) -> (valueSize: Double, valueLines: Int?, shown: Int, rowsLine: String?) {
         let lines = splitLines(measureIds: measureIds, groupBy: groupBy, rows: rows, language: language)
         guard let box else {
@@ -728,8 +740,9 @@ extension MeasureWidgetData {
         let fit = StudioLayout.measureSplitLayout(
             label: label, width: box.width, height: box.height, fontScale: fontScale,
             total: splitTotal(measureIds: measureIds, language: language), lines: lines,
-            footer: footer(rows: rows, width: box.width, fontScale: fontScale, now: now, language: language),
-            pixel: pixel, font: .tv,
+            footer: footer(
+                rows: rows, width: box.width, fontScale: fontScale, points: points, now: now, language: language),
+            pixel: pixel, font: .tv, points: points,
             rowsLine: { KitStrings.text(.measureGroupsShown, language, $0, $1) })
         return (fit.valueSize, fit.valueLines, fit.shown, fit.rowsLine)
     }
