@@ -16,6 +16,7 @@ import {
   type Database,
   type ImageQuota,
   type ImageRow,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 
 import type { DataPolicy } from "@netrics/domain";
@@ -82,7 +83,8 @@ export function sanitizeImageName(raw: string | undefined): string {
   let decoded: string;
   try {
     decoded = decodeURIComponent(raw);
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return "image";
   }
   const base = decoded.normalize("NFC").split(/[/\\]/).pop() ?? "";
@@ -152,6 +154,7 @@ async function withoutQueryValues<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
+    rethrowWorkspaceGone(error);
     throw new ImageStoreError(sqlstateOf(error));
   }
 }

@@ -15,7 +15,11 @@ import {
   CUSTOM_API_CONNECTOR_ID,
   type CustomApiPin,
 } from "@netrics/connectors/custom-api";
-import { findConnection, type Transaction } from "@netrics/database";
+import {
+  findConnection,
+  type Transaction,
+  rethrowWorkspaceGone,
+} from "@netrics/database";
 
 export type LoadedCustomApiDefinition =
   | {
@@ -69,7 +73,8 @@ export async function loadConnectionCustomApiDefinition(
         datasetVersions: { ...pinned.datasetVersions },
       },
     };
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return null;
   }
 }

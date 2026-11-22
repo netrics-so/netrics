@@ -19,6 +19,7 @@ import {
   withWorkspace,
   type Db,
   type Transaction,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import { ContractViolationError } from "@netrics/connector-runtime";
 import type { DataPolicy } from "@netrics/domain";
@@ -65,6 +66,7 @@ export function createDatasetStaging(input: {
         return result;
       });
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return contract(error);
     }
   };
@@ -82,6 +84,7 @@ export function createDatasetStaging(input: {
     try {
       return prepareConnectorStagePages(pages, definition);
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return contract(error);
     }
   };

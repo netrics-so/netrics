@@ -1,3 +1,4 @@
+import { rethrowWorkspaceGone } from "@netrics/database";
 import {
   barWidgetOptionsSchema,
   clockWidgetOptionsSchema,
@@ -280,6 +281,7 @@ function resolver(key: StoreTemplateKey) {
       try {
         return fn();
       } catch (error) {
+        rethrowWorkspaceGone(error);
         if (!(error instanceof UnresolvableReference)) throw error;
         failed.push(itemRef);
         return undefined;

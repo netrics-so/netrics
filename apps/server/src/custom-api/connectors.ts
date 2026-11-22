@@ -1,3 +1,4 @@
+import { rethrowWorkspaceGone } from "@netrics/database";
 // Connector resolution per connection (milestone 13, ADR 0027). Bundled
 // connectors come from the registry; a custom-api connection's connector is
 // built from its pinned definition version and environment, because its
@@ -53,7 +54,8 @@ function buildCustomApi(pinned: ConnectionCustomApi): ResolvedConnector | null {
     const connector = createCustomApiConnector({ definition, pin });
     const manifest = assertManifestCompatible(connector.manifest);
     return { connector, manifest, customApi: { pin, definition } };
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     // A pin to an unknown environment, a missing dataset version or a
     // document this server cannot read: the connection has no connector.
     return null;

@@ -4,7 +4,11 @@ import type {
   LatestReviewResponse,
   ReviewWidgetOptions,
 } from "@netrics/contracts";
-import { findLatestAppReview, type Transaction } from "@netrics/database";
+import {
+  findLatestAppReview,
+  type Transaction,
+  rethrowWorkspaceGone,
+} from "@netrics/database";
 
 import { decryptCredentials, type CredentialKeyring } from "../credentials.js";
 import { tileStatus } from "../devices/dashboard.js";
@@ -37,7 +41,8 @@ export function storedReviewsKey(
       }),
     ) as Record<string, unknown>;
     return stored[REVIEWS_KEY_ID] != null;
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return false;
   }
 }

@@ -49,6 +49,7 @@ import {
   type Transaction,
   type CustomApiDefinitionVersionRow,
   type Database,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import type { Locale } from "@netrics/domain";
 
@@ -423,6 +424,7 @@ export async function prepareCustomOAuthClientChange(input: {
     try {
       token = await oauthTokens.requestClientCredentialsToken(provider);
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return fail(400, customOAuthTokenFailure(error));
     }
     const scopes = token.scopes ?? [...provider.scopes];
@@ -640,6 +642,7 @@ export function createCustomApiConnectionService(
       try {
         token = await deps.oauthTokens.requestClientCredentialsToken(provider);
       } catch (error) {
+        rethrowWorkspaceGone(error);
         return fail(400, customOAuthTokenFailure(error));
       }
       const credentials = { accessToken: token.accessToken };
@@ -785,7 +788,8 @@ export function createCustomApiConnectionService(
       let definition: CustomApiDefinition;
       try {
         definition = upgradeCustomApiDefinition(version.document);
-      } catch {
+      } catch (caught) {
+        rethrowWorkspaceGone(caught);
         return fail(400, "custom_api_definition_invalid");
       }
       if (!definition.environments.some((e) => e.id === body.environmentId))

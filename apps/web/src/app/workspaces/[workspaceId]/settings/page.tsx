@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { LOCALE_NAMES, can } from "@netrics/domain";
 
+import { DeleteWorkspace } from "./delete-workspace";
 import { DisplayCurrencyForm } from "./display-currency-form";
 import { RenameWorkspaceForm } from "./rename-workspace-form";
 import { ScreenLanguageForm } from "./screen-language-form";
@@ -136,6 +137,17 @@ export default async function WorkspaceSettingsPage({
           </Link>
         </p>
       </div>
+
+      {can(role, "workspace:delete") ? (
+        <div className="card" id="delete-workspace">
+          <h2>{t("deletion.title")}</h2>
+          <p className="muted">{t("deletion.hint")}</p>
+          <DeleteWorkspace
+            workspaceId={workspaceId}
+            name={workspaceResult.workspace.name}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -17,6 +17,7 @@ import {
   DEFAULT_BACKFILLS_PER_APP,
   failJob,
   heartbeat,
+  isWorkspaceDeleted,
   renewJobLease,
   type Database,
   type Job,
@@ -24,6 +25,7 @@ import {
 
 import { createCredentialKeyring, redactSecrets } from "./credentials.js";
 import type { Config } from "./env.js";
+import { createConnectionService } from "./connections/service.js";
 import { createOAuthProviders } from "./oauth/config.js";
 import {
   createCustomOAuthResolver,
@@ -245,7 +247,10 @@ export function createWorker(deps: WorkerDeps): WorkerHandle {
       }
       // NonRetryable → dead-letter; Terminal → 'failed' (no retries, no
       // dead-letter, e.g. rejected credentials); anything else retries.
-      const terminal = error instanceof TerminalJobError;
+      // A job of a workspace deleted meanwhile (#839) ends, without retries
+      // and without paging the dead-letter queue.
+      const terminal =
+        error instanceof TerminalJobError || isWorkspaceDeleted(error);
       const retryable = !terminal && !(error instanceof NonRetryableJobError);
       try {
         stopRenewing();
@@ -370,6 +375,28 @@ export async function startWorker(config: Config): Promise<void> {
     config.appEncryptionKey,
     config.appEncryptionKeysPrevious,
   );
+  const oauthProviders = createOAuthProviders(config);
+  const oauthTokens = createOAuthTokenService({
+    db: appDb,
+    credentialKeyring,
+    providers: oauthProviders,
+    logger,
+    customOAuth: createCustomOAuthResolver({
+      credentialKeyring,
+      webOrigin: config.webOrigin,
+      privateHosts: config.customApiPrivateHosts,
+    }),
+  });
+  // The purge of a deleted workspace removes its connections the way the
+  // API does (#839): grants released and revoked through the same service.
+  const connections = createConnectionService({
+    db: appDb,
+    registry,
+    credentialKeyring,
+    oauthProviders,
+    oauthTokens,
+    customApiPrivateHosts: config.customApiPrivateHosts,
+  });
   const worker = createWorker({
     schedulerDb,
     appDb,
@@ -380,17 +407,9 @@ export async function startWorker(config: Config): Promise<void> {
       customApiImageQuota: config.customApiImageQuota,
       dataPolicy: config.dataPolicy,
       customApiPrivateHosts: config.customApiPrivateHosts,
-      oauthTokens: createOAuthTokenService({
-        db: appDb,
-        credentialKeyring,
-        providers: createOAuthProviders(config),
-        logger,
-        customOAuth: createCustomOAuthResolver({
-          credentialKeyring,
-          webOrigin: config.webOrigin,
-          privateHosts: config.customApiPrivateHosts,
-        }),
-      }),
+      oauthTokens,
+      purgeConnection: (workspaceId, connectionId) =>
+        connections.removeForPurge(workspaceId, connectionId),
     }),
     concurrency: config.workerConcurrency,
     backfillsPerApp: config.workerBackfillsPerApp,

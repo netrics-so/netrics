@@ -10,6 +10,7 @@ import {
   type Database,
   type PendingKeyOwner,
   type Transaction,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 
 import {
@@ -142,7 +143,8 @@ export function createPendingKeyStore(deps: PendingKeyStoreDeps) {
           credentialKeyring,
           { workspaceId: owner.workspaceId, pendingKeyId: row.id },
         );
-      } catch {
+      } catch (caught) {
+        rethrowWorkspaceGone(caught);
         return null;
       }
     },

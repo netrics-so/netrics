@@ -1,3 +1,4 @@
+import { rethrowWorkspaceGone } from "@netrics/database";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import * as contracts from "@netrics/contracts";
@@ -73,6 +74,7 @@ export function registerDataRoutes(
     try {
       return await operation(access);
     } catch (error) {
+      rethrowWorkspaceGone(error);
       if (error instanceof DataInUseError)
         return reply.code(409).send(
           contracts.dataInUseResponseSchema.parse({

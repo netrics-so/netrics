@@ -41,6 +41,18 @@ export const settingsDe: Catalog<typeof settingsEn> = {
       hint: "Farben und Textgröße von Dashboards auf TVs: fünf eingebaute Designs und deine eigenen.",
       manage: "Designs verwalten",
     },
+    deletion: {
+      title: "Workspace löschen",
+      hint: "Löscht diesen Workspace für alle Mitglieder, mit seinen Verbindungen und deren Daten, Datasets, Dashboards, Bildern, Bildschirmen und Einladungen. Der Zugriff auf verbundene Konten wird entzogen, soweit ihn kein anderer Workspace nutzt. Das lässt sich nicht rückgängig machen.",
+      button: "Workspace löschen…",
+      deleting: "Wird gelöscht…",
+      confirmTitle: "„{workspace}“ löschen?",
+      confirmText:
+        "Der Workspace wird mit allem, was darin ist, für alle Mitglieder gelöscht, und seine Bildschirme zeigen keine Dashboards mehr. Das lässt sich nicht rückgängig machen.",
+      typeLabel:
+        "Gib zur Bestätigung den Namen des Workspaces „{workspace}“ ein",
+      confirm: "Workspace löschen",
+    },
     screenLanguage: {
       label: "Bildschirmsprache",
       automatic: "Vorgabe der Installation ({language})",

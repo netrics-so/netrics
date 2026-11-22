@@ -1,7 +1,11 @@
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "./context.js";
-import { withUserContext, withWorkspace } from "./context.js";
+import {
+  isWorkspaceDeleted,
+  withUserContext,
+  withWorkspace,
+} from "./context.js";
 import * as schema from "./schema.js";
 
 export type DomainUser = typeof schema.users.$inferSelect;
@@ -131,37 +135,43 @@ export async function listMembershipsForUser(
   );
   const result: MembershipInfo[] = [];
   for (const membership of memberships) {
-    const resolved = await withWorkspace(
-      db,
-      { workspaceId: membership.workspaceId, userId },
-      async (tx) => {
-        const rows = await tx
-          .select({ name: schema.workspaces.name })
-          .from(schema.workspaces)
-          .where(eq(schema.workspaces.id, membership.workspaceId));
-        const workspaceName = rows[0]?.name;
-        if (workspaceName === undefined || membership.activeProjectId === null)
-          return { workspaceName, activeProjectId: null };
-        const projects = await tx
-          .select({ archivedAt: schema.projects.archivedAt })
-          .from(schema.projects)
-          .where(
-            and(
-              eq(schema.projects.id, membership.activeProjectId),
-              eq(schema.projects.workspaceId, membership.workspaceId),
-            ),
-          );
-        const project = projects[0];
-        return {
-          workspaceName,
-          activeProjectId:
-            project === undefined || project.archivedAt !== null
-              ? null
-              : membership.activeProjectId,
-        };
-      },
+    // A workspace deleted since the memberships were read is left out.
+    const resolved = await liveOnly(() =>
+      withWorkspace(
+        db,
+        { workspaceId: membership.workspaceId, userId },
+        async (tx) => {
+          const rows = await tx
+            .select({ name: schema.workspaces.name })
+            .from(schema.workspaces)
+            .where(eq(schema.workspaces.id, membership.workspaceId));
+          const workspaceName = rows[0]?.name;
+          if (
+            workspaceName === undefined ||
+            membership.activeProjectId === null
+          )
+            return { workspaceName, activeProjectId: null };
+          const projects = await tx
+            .select({ archivedAt: schema.projects.archivedAt })
+            .from(schema.projects)
+            .where(
+              and(
+                eq(schema.projects.id, membership.activeProjectId),
+                eq(schema.projects.workspaceId, membership.workspaceId),
+              ),
+            );
+          const project = projects[0];
+          return {
+            workspaceName,
+            activeProjectId:
+              project === undefined || project.archivedAt !== null
+                ? null
+                : membership.activeProjectId,
+          };
+        },
+      ),
     );
-    if (resolved.workspaceName !== undefined) {
+    if (resolved && resolved.workspaceName !== undefined) {
       result.push({
         ...membership,
         workspaceName: resolved.workspaceName,
@@ -170,4 +180,14 @@ export async function listMembershipsForUser(
     }
   }
   return result;
+}
+
+/** `run`, or null when its workspace is deleted (#839). */
+async function liveOnly<T>(run: () => Promise<T>): Promise<T | null> {
+  try {
+    return await run();
+  } catch (error) {
+    if (isWorkspaceDeleted(error)) return null;
+    throw error;
+  }
 }

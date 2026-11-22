@@ -8,6 +8,7 @@ import {
   createProjectRequestSchema,
   createWorkspaceRequestSchema,
   createWorkspaceResponseSchema,
+  deleteWorkspaceRequestSchema,
   memberListResponseSchema,
   memberResponseSchema,
   projectListResponseSchema,
@@ -25,9 +26,11 @@ import {
   createWorkspaceWithOwner,
   deleteMembership,
   deleteProject,
+  deleteWorkspace,
   findMembership,
   findProject,
   findWorkspace,
+  hasSqlstate,
   insertAuditEvent,
   isLastOwnerError,
   listAuditEvents,
@@ -44,6 +47,7 @@ import {
   type MemberDetails,
   type Project,
   type Workspace,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   can,
@@ -200,6 +204,7 @@ export function registerWorkspaceRoutes(
                 callerId,
               });
             } catch (error) {
+              rethrowWorkspaceGone(error);
               request.log.error(
                 { err: error, workspaceId: workspace.id },
                 "demo content failed",
@@ -245,6 +250,7 @@ export function registerWorkspaceRoutes(
                 callerId: access.callerId,
               });
             } catch (error) {
+              rethrowWorkspaceGone(error);
               request.log.error(
                 { err: error, workspaceId: access.workspaceId },
                 "demo content failed",
@@ -433,6 +439,66 @@ export function registerWorkspaceRoutes(
           return workspaceResponseSchema.parse({
             workspace: toWorkspace(workspace),
           });
+        },
+      );
+
+      // Deleting a workspace (#839). Owners only; the typed name is checked
+      // here and again by delete_workspace() under the workspace row lock,
+      // with the caller's role. Afterwards the workspace has no members,
+      // so every later request for it is a 404 like any unknown workspace.
+      scope.post(
+        "/workspaces/:workspaceId/delete",
+        {
+          schema: routeSchema({
+            summary: "Delete a workspace and everything in it",
+            tags: ["workspaces"],
+            body: deleteWorkspaceRequestSchema,
+            errors: [400, 403, 404, 409],
+          }),
+        },
+        async (request, reply) => {
+          const access = await resolveAccess(deps.db, request, reply);
+          if (!access) {
+            return;
+          }
+          if (!can(access.role, "workspace:delete")) {
+            return sendError(reply, 403, "forbidden");
+          }
+          const body = parseBody(deleteWorkspaceRequestSchema, request, reply);
+          if (!body) {
+            return;
+          }
+          let outcome: Awaited<ReturnType<typeof deleteWorkspace>>;
+          try {
+            // No fence of its own: delete_workspace() takes it exclusively.
+            outcome = await withWorkspace(
+              deps.db,
+              { workspaceId: access.workspaceId, userId: access.callerId },
+              (tx) => deleteWorkspace(tx, body.name),
+              { fence: "none" },
+            );
+          } catch (error) {
+            // Work for the workspace was still running after 10 seconds
+            // (lock_not_available): nothing was deleted, try again.
+            if (hasSqlstate(error, "55P03")) {
+              return sendError(reply, 409, "workspace_busy");
+            }
+            throw error;
+          }
+          if (outcome === "not_found") {
+            return sendError(reply, 404, "workspace_not_found");
+          }
+          if (outcome === "forbidden") {
+            return sendError(reply, 403, "forbidden");
+          }
+          if (outcome === "name_mismatch") {
+            return sendError(reply, 400, "workspace_name_mismatch");
+          }
+          request.log.info(
+            { workspaceId: access.workspaceId, userId: access.callerId },
+            "workspace deleted; purge queued",
+          );
+          return reply.code(204).send();
         },
       );
 

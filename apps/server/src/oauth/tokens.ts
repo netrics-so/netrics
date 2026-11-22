@@ -21,6 +21,7 @@ import {
   type Database,
   type OAuthAuthReason,
   type Transaction,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import { and, eq } from "drizzle-orm";
 import type { Logger } from "pino";
@@ -231,7 +232,8 @@ export function createCustomOAuthResolver(deps: {
           deps.credentialKeyring,
           binding,
         );
-      } catch {
+      } catch (caught) {
+        rethrowWorkspaceGone(caught);
         return null;
       }
       return {
@@ -473,6 +475,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
         refreshTimeoutMs,
       );
     } catch (error) {
+      rethrowWorkspaceGone(error);
       // Network failures, timeouts and egress denials carry no token
       // material, but keep only their name to be sure.
       const name = error instanceof Error ? error.name : "Error";
@@ -484,7 +487,8 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
     let body: unknown;
     try {
       body = response.json();
-    } catch {
+    } catch (caught) {
+      rethrowWorkspaceGone(caught);
       body = undefined;
     }
     if (response.status === 200) {
@@ -863,7 +867,8 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
             keyring,
             binding,
           );
-        } catch {
+        } catch (caught) {
+          rethrowWorkspaceGone(caught);
           stored = rejectedAccessToken;
         }
         if (stored === rejectedAccessToken) {
@@ -926,6 +931,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
         }
         return true;
       } catch (error) {
+        rethrowWorkspaceGone(error);
         deps.logger?.warn(
           {
             provider: CUSTOM_OAUTH_PROVIDER_ID,
@@ -969,6 +975,7 @@ export function createOAuthTokenService(deps: OAuthTokenServiceDeps) {
         }
         return true;
       } catch (error) {
+        rethrowWorkspaceGone(error);
         deps.logger?.warn(
           {
             provider: providerId,

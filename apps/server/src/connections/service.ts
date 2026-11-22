@@ -98,6 +98,7 @@ import {
   type Database,
   type Transaction,
   type ProjectFilter,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 
 import {
@@ -356,6 +357,7 @@ export async function checkCredentials(
       ? ok(true)
       : fail(400, check.message ?? "credential check failed", check.code);
   } catch (error) {
+    rethrowWorkspaceGone(error);
     // Thrown checks signal a provider-side failure (outage, rate limit); the
     // message is redacted at the runtime boundary already.
     return fail(400, safeMessage(error));
@@ -393,6 +395,7 @@ async function checkSignedKey(
       ? ok(true)
       : fail(400, check.message ?? "credential check failed", check.code);
   } catch (error) {
+    rethrowWorkspaceGone(error);
     return signedKeyCallFailure(error);
   }
 }
@@ -767,6 +770,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         ? ok(true)
         : fail(400, check.message ?? "credential check failed", check.code);
     } catch (error) {
+      rethrowWorkspaceGone(error);
       // OAuthTokenError and connector failures carry redacted messages.
       return oauthCallFailure(error);
     }
@@ -934,6 +938,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       });
       return ok({ check: checked.value, resources, selection });
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return connectionOAuthProvider(registered, existing.oauth?.provider)
         ? oauthCallFailure(error)
         : signedKeyCallFailure(error);
@@ -1095,7 +1100,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           { workspaceId, connectionId: row.id },
         ),
       ) as Record<string, unknown>;
-    } catch {
+    } catch (caught) {
+      rethrowWorkspaceGone(caught);
       return null;
     }
     // A connector that also takes a token may hold one instead of a key.
@@ -1147,6 +1153,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         ) as Record<string, unknown>,
       );
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return fail(400, safeMessage(error));
     }
   }
@@ -1333,6 +1340,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       });
       return ok({ check, resources });
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return signedKeyCallFailure(error);
     }
   }
@@ -1361,6 +1369,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         ),
       ) as Record<string, unknown>;
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return fail(400, safeMessage(error));
     }
     const key = storedSignedKey(registered.manifest, credentials);
@@ -1384,6 +1393,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       });
       return ok({ resources });
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return signedKeyCallFailure(error);
     }
   }
@@ -1431,6 +1441,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         ),
       ) as Record<string, unknown>;
     } catch (error) {
+      rethrowWorkspaceGone(error);
       return fail(400, safeMessage(error));
     }
     const key = storedSignedKey(registered.manifest, credentials);
@@ -1482,24 +1493,77 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     );
 
   /**
+   * Who disconnects: a member, or the purge of a deleted workspace (#839),
+   * which has no caller and also removes builder drafts.
+   */
+  interface Disconnector {
+    workspaceId: string;
+    callerId: string | null;
+    includeDrafts?: boolean;
+    /** The purge: the workspace is deleted, which every other caller refuses. */
+    deletedWorkspace?: boolean;
+  }
+  const fenceOf = (actor: Disconnector) =>
+    actor.deletedWorkspace ? ({ fence: "any" } as const) : undefined;
+
+  /**
+   * Deletes a connection under the grant lock of its provider account (see
+   * `remove`).
+   */
+  async function removeAs(
+    actor: Disconnector,
+    connectionId: string,
+  ): Promise<Result<DeleteConnectionResponse>> {
+    // The grant's account decides the lock; a reauthorization may change
+    // the account while this waits, so it is read again under the lock.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const linked = await withWorkspace(
+        db,
+        {
+          workspaceId: actor.workspaceId,
+          ...(actor.callerId ? { userId: actor.callerId } : {}),
+        },
+        (tx) => findConnectionOAuth(tx, actor.workspaceId, connectionId),
+        fenceOf(actor),
+      );
+      const key = linked
+        ? { provider: linked.provider, accountSub: linked.accountSub }
+        : null;
+      const outcome = key
+        ? await withOAuthGrantLocks(db, [key], (lockedDb) =>
+            disconnect(lockedDb, actor, connectionId, key),
+          )
+        : await disconnect(db, actor, connectionId, null);
+      if (outcome !== "account_changed") {
+        return outcome;
+      }
+    }
+    return fail(400, "connection_busy");
+  }
+
+  /**
    * The disconnect under the grant lock of `key` (null: not an OAuth
    * connection when looked up). Answers "account_changed" when the
    * connection's grant no longer belongs to the locked account.
    */
   async function disconnect(
     handle: Database,
-    actor: Actor,
+    actor: Disconnector,
     connectionId: string,
     key: { provider: string; accountSub: string } | null,
   ): Promise<Result<DeleteConnectionResponse> | "account_changed"> {
     const deleted = await withWorkspace(
       handle,
-      { workspaceId: actor.workspaceId, userId: actor.callerId },
+      {
+        workspaceId: actor.workspaceId,
+        ...(actor.callerId ? { userId: actor.callerId } : {}),
+      },
       async (tx) => {
         const loaded = await findConnection(
           tx,
           actor.workspaceId,
           connectionId,
+          actor.includeDrafts ? { includeDrafts: true } : {},
         );
         if (!loaded) {
           return null;
@@ -1553,7 +1617,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
                     { workspaceId: actor.workspaceId, connectionId },
                   )
                 : null;
-            } catch {
+            } catch (caught) {
+              rethrowWorkspaceGone(caught);
               // An unreadable envelope cannot be revoked; deletion goes on
               // and the revocation is reported as failed.
               refreshToken = null;
@@ -1591,6 +1656,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         });
         return { release };
       },
+      fenceOf(actor),
     );
     if (deleted === "account_changed") {
       return deleted;
@@ -2185,6 +2251,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           }),
         });
       } catch (error) {
+        rethrowWorkspaceGone(error);
         return signedKeyCallFailure(error);
       }
     },
@@ -2304,6 +2371,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       try {
         check = await executeCheck(registered.connector, context);
       } catch (error) {
+        rethrowWorkspaceGone(error);
         return fail(400, safeMessage(error));
       }
       if (!check.ok) {
@@ -2313,6 +2381,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const resources = await executeDiscover(registered.connector, context);
         return ok({ check, resources });
       } catch (error) {
+        rethrowWorkspaceGone(error);
         return fail(400, safeMessage(error));
       }
     },
@@ -2370,6 +2439,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         });
         return ok({ resources, selection: resourceSelectionOf(config) });
       } catch (error) {
+        rethrowWorkspaceGone(error);
         return oauthCallFailure(error);
       }
     },
@@ -2706,6 +2776,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               ),
             ) as Record<string, unknown>;
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return fail(400, safeMessage(error));
           }
         }
@@ -2896,6 +2967,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               ),
             ) as Record<string, unknown>;
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return fail(400, safeMessage(error));
           }
         } else {
@@ -3308,25 +3380,26 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       actor: Actor,
       connectionId: string,
     ): Promise<Result<DeleteConnectionResponse>> {
-      // The grant's account decides the lock; a reauthorization may change
-      // the account while this waits, so it is read again under the lock.
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const linked = await inWorkspace(actor, (tx) =>
-          findConnectionOAuth(tx, actor.workspaceId, connectionId),
-        );
-        const key = linked
-          ? { provider: linked.provider, accountSub: linked.accountSub }
-          : null;
-        const outcome = key
-          ? await withOAuthGrantLocks(db, [key], (lockedDb) =>
-              disconnect(lockedDb, actor, connectionId, key),
-            )
-          : await disconnect(db, actor, connectionId, null);
-        if (outcome !== "account_changed") {
-          return outcome;
-        }
-      }
-      return fail(400, "connection_busy");
+      return removeAs(actor, connectionId);
+    },
+
+    /**
+     * `remove` for the purge of a deleted workspace (#839): no caller, and
+     * builder drafts too, so their grants are revoked like any other.
+     */
+    async removeForPurge(
+      workspaceId: string,
+      connectionId: string,
+    ): Promise<Result<DeleteConnectionResponse>> {
+      return removeAs(
+        {
+          workspaceId,
+          callerId: null,
+          includeDrafts: true,
+          deletedWorkspace: true,
+        },
+        connectionId,
+      );
     },
 
     /** Reuses a sync that is already waiting instead of queueing another. */
@@ -3712,7 +3785,8 @@ async function connectionRecordSkips(
         },
       ]),
     );
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return undefined;
   }
   const rows = await listStreamRecords(tx, workspaceId, loaded.row.id);
@@ -3757,7 +3831,8 @@ async function connectionItemImages(
         .filter((stream) => stream.fields.some((f) => f.role === "image"))
         .map((stream) => [stream.key, stream.name]),
     );
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return undefined;
   }
   if (names.size === 0) return undefined;

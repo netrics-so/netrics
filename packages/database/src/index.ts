@@ -25,8 +25,14 @@ export {
   isLostConnection,
   isDuplicateMembershipError,
   isLastOwnerError,
+  isWorkspaceDeleted,
+  rethrowWorkspaceGone,
   withUserContext,
   withWorkspace,
+  WORKSPACE_DELETED_SQLSTATE,
+  WorkspaceDeletedError,
+  workspaceState,
+  type WorkspaceState,
 } from "./context.js";
 export type {
   Db,
@@ -433,6 +439,10 @@ export type { DomainUser, MembershipInfo } from "./users.js";
 export {
   addMembership,
   createProject,
+  deleteWorkspace,
+  enqueueWorkspacePurges,
+  WORKSPACE_PURGE_JOB,
+  type DeleteWorkspaceOutcome,
   createWorkspaceWithOwner,
   deleteMembership,
   deleteProject,

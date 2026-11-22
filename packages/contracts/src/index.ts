@@ -223,6 +223,22 @@ export type RenameWorkspaceRequest = z.infer<
   typeof renameWorkspaceRequestSchema
 >;
 
+/**
+ * POST /v1/workspaces/:workspaceId/delete (#839), owners only: deletes the
+ * workspace with everything in it, for good. `name` is the workspace's name
+ * as the user typed it to confirm (space around it is ignored); 400
+ * workspace_name_mismatch when it is not. Answers 204 once nobody can reach
+ * the workspace any more; its data is removed in the background. 409
+ * workspace_busy when work for the workspace did not finish within ten
+ * seconds: nothing was deleted, the request can be repeated.
+ */
+export const deleteWorkspaceRequestSchema = z.object({
+  name: z.string().max(200),
+});
+export type DeleteWorkspaceRequest = z.infer<
+  typeof deleteWorkspaceRequestSchema
+>;
+
 export const workspaceResponseSchema = z.object({
   workspace: workspaceSchema,
 });

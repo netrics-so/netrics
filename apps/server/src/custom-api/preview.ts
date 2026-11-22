@@ -1,3 +1,4 @@
+import { rethrowWorkspaceGone } from "@netrics/database";
 // The test response of the custom API builder (milestone 13, #806), made
 // safe to return: every string (keys and values) is redacted by value with
 // the draft's secrets (raw, URL-encoded in either hex case, form-encoded
@@ -129,7 +130,8 @@ export function redactUrl(url: string, secrets: SecretSet): string {
   let parsed: URL;
   try {
     parsed = new URL(raw);
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return raw;
   }
   parsed.username = "";

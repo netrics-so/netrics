@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { DEFAULT_DATA_POLICY, type DataPolicy } from "@netrics/domain";
 import { dataPolicyOverrideSchema } from "@netrics/contracts";
 import type { Db, Transaction } from "./context.js";
+import { workspaceState } from "./context.js";
 import { dataWorkspacePolicies } from "./schema.js";
 
 export async function resolveDataPolicy(
@@ -24,6 +25,8 @@ export async function adminSetDataPolicy(
   input: unknown,
 ) {
   const overrides = dataPolicyOverrideSchema.parse(input);
+  // Not for a deleted workspace (#839), whoever calls this.
+  if ((await workspaceState(db, workspaceId)) === "deleted") return null;
   const [row] = await db.execute<{ workspace_id: string }>(
     sql`select admin_set_data_policy(${workspaceId}::uuid, ${JSON.stringify(overrides)}::jsonb) as workspace_id`,
   );

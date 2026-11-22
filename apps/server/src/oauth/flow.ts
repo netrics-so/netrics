@@ -28,6 +28,7 @@ import {
   insertAuditEvent,
   insertConnection,
   insertOAuthAuthorization,
+  isWorkspaceDeleted,
   oauthAccountHasGrant,
   releaseOAuthGrant,
   resetConnectionAuth,
@@ -78,6 +79,7 @@ import {
   CUSTOM_OAUTH_PROVIDER_ID,
   generateCustomAccountSub,
   sealCustomOAuthCredentials,
+  type CustomOAuthProvider,
 } from "./providers/custom.js";
 import type { CustomOAuthResolution } from "./tokens.js";
 
@@ -165,11 +167,14 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
   }
 
   /**
-   * Revokes a refused grant at the provider, unless a connection on this
-   * instance holds a grant of the same account: Google revokes per account
-   * and project, so that would stop those connections too. Runs under the
-   * account's grant lock (`lockedDb`), so no grant of the account is stored
-   * between the check and the revocation.
+   * Revokes a grant that was issued but not stored (refused, or the store
+   * failed: the role is gone, the workspace was deleted meanwhile, #839) at
+   * the provider, unless a connection on this instance holds a grant of the
+   * same account: Google revokes per account and project, so that would
+   * stop those connections too. Runs under the account's grant lock
+   * (`lockedDb`), so no grant of the account is stored between the check
+   * and the revocation. Best effort: it never throws over the failure that
+   * led here, and logs the provider and the outcome only.
    */
   async function discardGrant(
     lockedDb: Database,
@@ -177,22 +182,86 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
     tokens: TokenSet,
     account: IdTokenAccount,
   ): Promise<void> {
-    if (
-      await oauthAccountHasGrant(lockedDb, provider.definition.id, account.sub)
-    ) {
-      return;
-    }
-    const token: Secret = tokens.refreshToken ?? tokens.accessToken;
-    const revoked = await deps.oauthTokens.revokeGrant(
-      provider.definition.id,
-      token.reveal(),
-    );
-    if (!revoked) {
+    try {
+      if (
+        await oauthAccountHasGrant(
+          lockedDb,
+          provider.definition.id,
+          account.sub,
+        )
+      ) {
+        logger.info(
+          { provider: provider.definition.id, revocation: "kept" },
+          "unstored oauth grant kept: the account has a connection",
+        );
+        return;
+      }
+      const token: Secret = tokens.refreshToken ?? tokens.accessToken;
+      const revoked = await deps.oauthTokens.revokeGrant(
+        provider.definition.id,
+        token.reveal(),
+      );
+      if (!revoked) {
+        logger.warn(
+          { provider: provider.definition.id, revocation: "failed" },
+          "oauth grant revocation failed",
+        );
+      } else {
+        logger.info(
+          { provider: provider.definition.id, revocation: "revoked" },
+          "unstored oauth grant revoked",
+        );
+      }
+    } catch {
+      // Whether the account has a connection is unknown (the database
+      // failed): nothing is revoked.
       logger.warn(
-        { provider: provider.definition.id },
+        { provider: provider.definition.id, revocation: "failed" },
         "oauth grant revocation failed",
       );
     }
+  }
+
+  /**
+   * Revokes a custom grant that was issued but not stored, unless the
+   * connection still holds a grant (a reauthorization that failed: the
+   * token may share the provider's grant with the stored one). A deleted
+   * workspace holds none for this purpose: its purge revokes what is
+   * stored. Best effort, never throws, logs provider and outcome only.
+   */
+  async function discardCustomGrant(
+    workspaceId: string,
+    connectionId: string,
+    provider: CustomOAuthProvider,
+    issued: TokenSet,
+  ): Promise<void> {
+    let revocation: "kept" | "revoked" | "failed";
+    try {
+      let held = false;
+      try {
+        held =
+          (await withWorkspace(db, { workspaceId }, (tx) =>
+            findConnectionOAuth(tx, workspaceId, connectionId),
+          )) !== null;
+      } catch (error) {
+        if (!isWorkspaceDeleted(error)) throw error;
+      }
+      revocation = held
+        ? "kept"
+        : (await deps.oauthTokens.revokeCustomGrant(
+              provider,
+              (issued.refreshToken ?? issued.accessToken).reveal(),
+              issued.refreshToken ? "refresh_token" : "access_token",
+            ))
+          ? "revoked"
+          : "failed";
+    } catch {
+      revocation = "failed";
+    }
+    logger[revocation === "failed" ? "warn" : "info"](
+      { provider: CUSTOM_OAUTH_PROVIDER_ID, revocation },
+      "unstored custom oauth grant",
+    );
   }
 
   return {
@@ -462,78 +531,101 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
         //    A reauthorization also locks the account linked now, since an
         //    account change releases that account's grant; the locks are
         //    taken in a fixed order, so two account swaps cannot deadlock.
-        const previousSub =
-          authorization.purpose === "reauthorize" && authorization.connectionId
-            ? await linkedAccount(
-                authorization.workspaceId,
-                userId,
-                authorization.connectionId,
-              )
-            : null;
-        const keys = [account.sub, ...(previousSub ? [previousSub] : [])].map(
-          (accountSub) => ({ provider: providerId, accountSub }),
-        );
-        const result = await withOAuthGrantLocks(db, keys, async (lockedDb) => {
-          const refreshToken = tokens.refreshToken;
-          if (refusal || !refreshToken) {
-            await discardGrant(lockedDb, provider, tokens, account);
-            throw refusal ?? new FlowStop("failed", "no_refresh_token");
-          }
-          // Revocation is account-wide: a disconnect of this account that
-          // revoked between the code exchange and this lock also killed
-          // this grant. No revocation can start while the lock is held, so
-          // one refresh tells whether the grant is still live.
-          if (!(await isRefreshTokenLive(provider, http, refreshToken))) {
-            throw new FlowStop("failed", "grant_revoked");
-          }
-          const grant = { tokens, refreshToken, account, granted };
-          let stored: Stored;
-          try {
-            stored = await withWorkspace(
-              lockedDb,
-              { workspaceId: authorization.workspaceId, userId },
-              async (tx) => {
-                if (
-                  !(await stillAllowed(
-                    tx,
-                    authorization.workspaceId,
-                    userId,
-                    authorization.purpose,
-                  ))
-                ) {
-                  throw new FlowStop("forbidden", "role_missing");
-                }
-                return authorization.purpose === "connect"
-                  ? connect(tx, authorization, registered.manifest, grant)
-                  : reauthorize(tx, authorization, grant, previousSub);
-              },
-            );
-          } catch (error) {
-            if (
-              error instanceof FlowStop &&
-              error.outcome === "account_mismatch"
-            ) {
+        //    From here on the provider has issued a grant: whatever keeps
+        //    it from being stored (a refusal, the role gone, the workspace
+        //    deleted meanwhile, #839) also discards it. `settled`: stored,
+        //    discarded, or found dead.
+        let settled = false;
+        const storeGrant = async () => {
+          const previousSub =
+            authorization.purpose === "reauthorize" &&
+            authorization.connectionId
+              ? await linkedAccount(
+                  authorization.workspaceId,
+                  userId,
+                  authorization.connectionId,
+                )
+              : null;
+          const keys = [account.sub, ...(previousSub ? [previousSub] : [])].map(
+            (accountSub) => ({ provider: providerId, accountSub }),
+          );
+          return withOAuthGrantLocks(db, keys, async (lockedDb) => {
+            const refreshToken = tokens.refreshToken;
+            if (refusal || !refreshToken) {
               await discardGrant(lockedDb, provider, tokens, account);
+              settled = true;
+              throw refusal ?? new FlowStop("failed", "no_refresh_token");
             }
-            throw error;
-          }
-          // An account change released the previous account's grant on
-          // this connection; when no other connection on the instance uses
-          // it, it is revoked, still under that account's lock.
-          if (stored.releasedRefreshToken) {
-            const revoked = await deps.oauthTokens.revokeGrant(
-              providerId,
-              stored.releasedRefreshToken.reveal(),
-            );
-            if (!revoked) {
-              logger.warn(
-                { provider: providerId },
-                "oauth revocation of the previous account failed",
+            // Revocation is account-wide: a disconnect of this account that
+            // revoked between the code exchange and this lock also killed
+            // this grant. No revocation can start while the lock is held, so
+            // one refresh tells whether the grant is still live.
+            if (!(await isRefreshTokenLive(provider, http, refreshToken))) {
+              settled = true;
+              throw new FlowStop("failed", "grant_revoked");
+            }
+            const grant = { tokens, refreshToken, account, granted };
+            let stored: Stored;
+            try {
+              stored = await withWorkspace(
+                lockedDb,
+                { workspaceId: authorization.workspaceId, userId },
+                async (tx) => {
+                  if (
+                    !(await stillAllowed(
+                      tx,
+                      authorization.workspaceId,
+                      userId,
+                      authorization.purpose,
+                    ))
+                  ) {
+                    throw new FlowStop("forbidden", "role_missing");
+                  }
+                  return authorization.purpose === "connect"
+                    ? connect(tx, authorization, registered.manifest, grant)
+                    : reauthorize(tx, authorization, grant, previousSub);
+                },
               );
+            } catch (error) {
+              // Nothing was stored (the transaction rolled back).
+              await discardGrant(lockedDb, provider, tokens, account);
+              settled = true;
+              throw error;
             }
+            settled = true;
+            // An account change released the previous account's grant on
+            // this connection; when no other connection on the instance uses
+            // it, it is revoked, still under that account's lock.
+            if (stored.releasedRefreshToken) {
+              const revoked = await deps.oauthTokens.revokeGrant(
+                providerId,
+                stored.releasedRefreshToken.reveal(),
+              );
+              if (!revoked) {
+                logger.warn(
+                  { provider: providerId },
+                  "oauth revocation of the previous account failed",
+                );
+              }
+            }
+            return stored.response;
+          });
+        };
+        let result: OAuthCallbackResponse;
+        try {
+          result = await storeGrant();
+        } catch (error) {
+          // Stopped before the grant lock was held (the workspace was
+          // deleted before the linked account could be read).
+          if (!settled) {
+            await withOAuthGrantLocks(
+              db,
+              [{ provider: providerId, accountSub: account.sub }],
+              (lockedDb) => discardGrant(lockedDb, provider, tokens, account),
+            ).catch(() => undefined);
           }
-          return stored.response;
-        });
+          throw error;
+        }
         logger.info(
           {
             provider: providerId,
@@ -565,9 +657,13 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
           },
           "oauth authorization refused",
         );
-        // Only the user who started the flow learns where it was headed.
+        // Only the user who started the flow learns where it was headed,
+        // and not into a workspace deleted meanwhile (#839): the start page.
         const returnPath =
-          consumed && outcome !== "invalid_state" && outcome !== "forbidden"
+          consumed &&
+          outcome !== "invalid_state" &&
+          outcome !== "forbidden" &&
+          !isWorkspaceDeleted(error)
             ? consumed.returnPath
             : "/";
         // The builder reopens its draft (#805).
@@ -830,6 +926,8 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
       );
       throw new FlowStop("scope_missing", "scope_missing");
     }
+    // Issued from here on: a store that fails (the role gone, the client
+    // changed, the workspace deleted meanwhile, #839) discards the grant.
     const outcome = await withWorkspace(
       db,
       { workspaceId, userId },
@@ -926,7 +1024,10 @@ export function createOAuthFlow(deps: OAuthFlowDeps) {
           draft,
         };
       },
-    );
+    ).catch(async (error: unknown) => {
+      await discardCustomGrant(workspaceId, connectionId, provider, issued);
+      throw error;
+    });
     const back: Record<string, string> = outcome.draft
       ? { draft: connectionId }
       : { connection: connectionId };

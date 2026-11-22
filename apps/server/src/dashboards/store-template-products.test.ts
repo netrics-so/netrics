@@ -174,13 +174,18 @@ beforeAll(async () => {
     [workspaceId, vercelId, [["prj_site", "example.com", "project"]]],
     [otherId, foreignVercelId, [["prj_other", "other.example", "project"]]],
   ] as const)
-    await withWorkspace(db, { workspaceId: workspace }, (tx) =>
-      upsertConnectionResources(tx, {
-        workspaceId: workspace,
-        connectionId,
-        resources: resources.map(([id, name, kind]) => ({ id, name, kind })),
-        now: new Date(now),
-      }),
+    await withWorkspace(
+      db,
+      { workspaceId: workspace },
+      (tx) =>
+        upsertConnectionResources(tx, {
+          workspaceId: workspace,
+          connectionId,
+          resources: resources.map(([id, name, kind]) => ({ id, name, kind })),
+          now: new Date(now),
+        }),
+      // The schema before 0094 has no workspace fence yet.
+      { fence: "none" },
     );
   // The install runs today's service code, which reads every connections
   // column, so it runs on the migrated schema; the rows above are in the

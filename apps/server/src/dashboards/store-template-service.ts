@@ -22,6 +22,7 @@ import {
   type TableLocks,
   type Transaction,
   notDraftConnection,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -515,7 +516,8 @@ export function createStoreTemplateService(deps: {
             (tx) => installIconSources(tx, actor.workspaceId, input, defaults),
           );
           if (sources.length) await deps.fetchIcons(actor, sources);
-        } catch {
+        } catch (caught) {
+          rethrowWorkspaceGone(caught);
           // No icon: the slide has no logo; the install goes on.
         }
       try {

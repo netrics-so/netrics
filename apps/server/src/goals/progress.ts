@@ -1,3 +1,4 @@
+import { rethrowWorkspaceGone } from "@netrics/database";
 import type { MetricQueryResponse } from "@netrics/contracts";
 import type { GoalRow, Transaction } from "@netrics/database";
 import {
@@ -87,7 +88,8 @@ export async function readGoal(
         timeZone: read.timeZone,
       }),
     };
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return null;
   }
 }
