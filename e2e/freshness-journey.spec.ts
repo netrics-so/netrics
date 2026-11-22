@@ -12,7 +12,10 @@ import { ownerUrl } from "./support/store-template.ts";
 // ~9:00 PM") and a continuous one's ("Checked 10 min. ago · next check
 // ~2:30 PM"), a signed-in metric widget the same line from its live query
 // (#727), and the connection's page lists its streams by name. The
-// freshness rows are seeded as a succeeded sync leaves them.
+// freshness rows are seeded as a succeeded sync leaves them. The sales
+// report reaches a day older than the day of the check, so a tile with room
+// names it ("Last reporting day: Nov 15 · …", #791) and a narrow one shows
+// the line as it was.
 
 const CONNECTOR = "app-store-connect";
 const HOUR = 3_600_000;
@@ -21,6 +24,9 @@ const MINUTE = 60_000;
 /** The UTC day before `now`, as a provider's YYYY-MM-DD. */
 const yesterday = (now: number) =>
   new Date(now - 24 * HOUR).toISOString().slice(0, 10);
+/** Two UTC days back: before the day of the check in every time zone. */
+const reportingDay = (now: number) =>
+  new Date(now - 48 * HOUR).toISOString().slice(0, 10);
 
 /**
  * An App Store Connect connection that synced 10 minutes ago, with a
@@ -60,12 +66,13 @@ async function seedConnection(workspaceId: string, now: number) {
         values (${workspaceId}, ${id}, ${definition},
           ${sql.json({ resource: "1" })},
           ${`${yesterday(now)}T00:00:00Z`}::timestamptz, ${value})`;
-    // Sales: yesterday is complete; today's report is due in three hours.
+    // Sales: the reports reach the day before yesterday; the next is due
+    // in three hours.
     await sql`
       insert into connection_freshness (workspace_id, connection_id, stream,
         resource, data_through, time_zone, next_expected_at, checked_at,
         advanced_at)
-      values (${workspaceId}, ${id}, 'sales', '', ${yesterday(now)},
+      values (${workspaceId}, ${id}, 'sales', '', ${reportingDay(now)},
         'America/Los_Angeles', ${new Date(now + 3 * HOUR)}, ${checked},
         ${checked})`;
     // Reviews: read by that sync, nothing to expect.
@@ -138,9 +145,12 @@ const measureWidget = (x: number, title: string, modelId: string) => ({
 
 const wording = {
   en: {
-    periodic: /^Up to \w{3} \d{1,2} · fetched \d+ min\. ago · next [^~]*~/,
+    periodic:
+      /^Last reporting day: \w{3} \d{1,2} · fetched \d+ min\. ago · next [^~]*~/,
+    narrow: /^Up to \w{3} \d{1,2} · fetched \d+ min\. ago · next [^~]*~/,
     continuous: /^Checked \d+ min\. ago · next check [^~]*~/,
-    metric: /^Up to \w{3} \d{1,2} · fetched \d+ min\. ago/,
+    metric:
+      /^(?:Last reporting day:|Up to) \w{3} \d{1,2} · fetched \d+ min\. ago/,
     title: "Data freshness",
     sales: /^Sales up to \w{3} \d{1,2} · next [^~]*~/,
     reviews: /^Reviews checked \d+ min\. ago · next check [^~]*~/,
@@ -148,9 +158,12 @@ const wording = {
     oldest: "Oldest source refresh",
   },
   de: {
-    periodic: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\. · nächste [^~]*~/,
+    periodic:
+      /^Letzter Berichtstag: \d{1,2}\. \S+ · abgerufen vor \d+ Min\. · nächste [^~]*~/,
+    narrow: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\. · nächste [^~]*~/,
     continuous: /^Geprüft vor \d+ Min\. · nächste Prüfung [^~]*~/,
-    metric: /^Bis \d{1,2}\. \S+ · abgerufen vor \d+ Min\./,
+    metric:
+      /^(?:Letzter Berichtstag:|Bis) \d{1,2}\. \S+ · abgerufen vor \d+ Min\./,
     title: "Datenstand",
     sales: / bis \d{1,2}\. \S+ · nächste [^~]*~/,
     reviews: / geprüft vor \d+ Min\. · nächste Prüfung [^~]*~/,
@@ -191,14 +204,21 @@ test("widgets and the connection page say how far the data reaches", async ({
               measureWidget(0, "Downloads", downloads),
               measureWidget(6, "Reviews", reviews),
               // The control: its data loses its freshness on the way (#769).
-              { ...measureWidget(6, "Without freshness", downloads), y: 4 },
+              {
+                ...measureWidget(6, "Without freshness", downloads),
+                x: 4,
+                y: 4,
+                w: 4,
+              },
+              // Too narrow to name the day: the line as it was (#791).
+              { ...measureWidget(8, "Narrow", downloads), y: 4, w: 4 },
               // A signed-in metric widget: its live query's freshness (#727).
               {
                 type: "metric",
                 title: "Downloads metric",
                 x: 0,
                 y: 4,
-                w: 6,
+                w: 4,
                 h: 4,
                 connectionId: seeded.connectionId,
                 metricKey: seeded.downloadsKey,
@@ -258,7 +278,23 @@ test("widgets and the connection page say how far the data reaches", async ({
   await expect(widget("Downloads").locator(".sw-measure-value")).toHaveText(
     /42/,
   );
+  // The day is older than the day of the check: named, and on one line.
   await expect(periodic).toHaveAttribute("title", w.periodic);
+  await expect(periodic).toHaveText(w.periodic);
+  const box = await periodic.evaluate((line) => ({
+    line: line.getBoundingClientRect().bottom,
+    parts: [...line.children].map(
+      (part) => part.getBoundingClientRect().bottom,
+    ),
+  }));
+  expect(box.parts.length).toBe(3);
+  for (const bottom of box.parts)
+    expect(bottom).toBeLessThanOrEqual(box.line + 1);
+  // A tile without room for that keeps the line it had, parts dropped
+  // from the end by the stylesheet.
+  await expect(
+    widget("Narrow").locator(".sw-measure-freshness"),
+  ).toHaveAttribute("title", w.narrow);
   await expect(continuous).toHaveAttribute("title", w.continuous);
   await expect(periodic).not.toHaveClass(/sw-notice/);
   // The freshness line replaces the oldest source refresh, as on tvOS

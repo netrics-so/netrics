@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { DashboardWidgetData } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
 import {
+  freshnessLevelFit,
   measureTableColumnWidths,
   type DashboardDataFilter,
 } from "@netrics/domain";
@@ -13,6 +14,7 @@ import {
   formatMeasureCell,
   liveInteraction,
   MeasureWidgetView,
+  namedPartsThatFit,
   type MeasureWidget,
 } from "./measure-widget";
 const format = (
@@ -925,16 +927,84 @@ describe("a total with its split, and freshness per source (#784)", () => {
   });
 
   it("lists every store's day in the freshness line, in the form that fits", () => {
-    // A wide tile: each store's day and next time.
+    // A wide tile: each store's day and next time, the days named
+    // (#791: both are older than the day of the check).
     const wide = text(view(data(), { w: 12, h: 3 }));
     expect(wide).toMatch(
-      /App Store up to Nov 17 · next (?:tomorrow )?~[^|]+ · Google Play up to Nov 11/,
+      /App Store last reporting day: Nov 17 · next (?:tomorrow )?~[^|]+ · Google Play last reporting day: Nov 11 · fetched 10 min\. ago\|/,
+    );
+    // Half the width: no room to name them, the line as it was.
+    const half = text(view(data(), { w: 6, h: 3 }));
+    expect(half).not.toContain("last reporting day");
+    expect(half).toMatch(/App Store up to Nov 17 · .*Google Play up to Nov 11/);
+    // A card that grows names the days and wraps.
+    expect(text(view(data()))).toContain(
+      "|App Store last reporting day: Nov 17 · Google Play last reporting day: Nov 11|",
     );
     // A third of the width: the days only, or shorter, never a store less.
     const narrow = text(view(data(), { w: 4, h: 3 }, "de"));
     expect(narrow).toContain("App Store bis");
     expect(narrow).toContain("Google Play bis");
     expect(narrow).not.toContain("nächste");
+  });
+
+  it("names one source's day where the tile has room, and drops that first (#791)", () => {
+    const single = (dataThrough: string) =>
+      data({
+        freshness: {
+          kind: "periodic",
+          stream: "Installs",
+          fetchedAt: sources[1]!.fetchedAt,
+          dataThrough,
+          nextExpectedAt: sources[0]!.nextExpectedAt,
+        },
+      } as Partial<DashboardWidgetData>);
+    const line = (html: string) =>
+      /<p class="sw-measure-freshness"[^>]*>(.*?)<\/p>/
+        .exec(html)![1]!
+        .replace(/<[^>]+>/g, "")
+        .replace(/\u202f/g, " ");
+    const wide = line(view(single("2026-11-11"), { w: 12, h: 3 }));
+    expect(wide).toMatch(
+      /^Last reporting day: Nov 11 · fetched 10 min\. ago · next (?:tomorrow )?~.+$/,
+    );
+    expect(line(view(single("2026-11-11"), { w: 12, h: 3 }, "de"))).toMatch(
+      /^Letzter Berichtstag: 11\. Nov\. · abgerufen vor 10 Min\. · nächste /,
+    );
+    // A narrow tile: the parts as before, dropped from the end by the
+    // stylesheet; the named day never takes a part's place.
+    const narrow = line(view(single("2026-11-11"), { w: 2, h: 3 }));
+    expect(narrow).toMatch(/^Up to Nov 11 · fetched 10 min\. ago · next /);
+    // The day of the check itself: the line is the one before.
+    const today = new Date().toISOString().slice(0, 10);
+    expect(line(view(single(today), { w: 12, h: 3 }))).toMatch(/^Up to /);
+    // A card that grows has no width to fit: the line as before.
+    expect(line(view(single("2026-11-11")))).toMatch(/^Up to Nov 11 · /);
+  });
+
+  it("fits the named parts as many as the plain ones, or not at all (#791)", () => {
+    const plain = ["Up to Nov 11", "fetched 10 min. ago", "next ~9:00 PM"];
+    const named = ["Last reporting day: Nov 11", ...plain.slice(1)];
+    expect(namedPartsThatFit(plain, named, 1808, 1)).toEqual(named);
+    let fewer = 0;
+    for (let width = 100; width <= 1808; width += 4) {
+      const shown = namedPartsThatFit(plain, named, width, 1);
+      if (shown === null) continue;
+      // Never fewer parts than the plain line fits at this width.
+      const plainFits = [3, 2, 1].find(
+        (count) =>
+          freshnessLevelFit(
+            [[plain.slice(0, count).join(" · ")], [""]],
+            width,
+            1,
+            "web",
+          ) === 0,
+      );
+      expect(shown.length).toBe(plainFits);
+      if (shown.length < 3) fewer += 1;
+    }
+    expect(fewer).toBeGreaterThan(0);
+    expect(namedPartsThatFit(plain, named, 100, 1)).toBeNull();
   });
 
   it("counts every freshness line when a table fits its rows", () => {

@@ -145,9 +145,42 @@ function fetchedTime(
   };
 }
 
+/**
+ * Whether the last day a report covers is older than the day netrics last
+ * checked (#791, ADR 0025 section 8): the provider's day, as written,
+ * against the calendar day of `fetchedAt` in the viewer's zone. A report
+ * that lags by its normal cadence counts. Never for a continuous stream,
+ * a monthly one (it names a month) or a stream without a day yet.
+ */
+export function reportingDayBeforeCheck(
+  freshness: Pick<
+    WidgetFreshness,
+    "kind" | "dataThrough" | "period" | "fetchedAt"
+  >,
+  clock: FreshnessClock,
+): boolean {
+  if (
+    freshness.kind !== "periodic" ||
+    !freshness.dataThrough ||
+    freshness.period === "month"
+  ) {
+    return false;
+  }
+  const checked = Date.parse(freshness.fetchedAt);
+  const day = providerDay(freshness.dataThrough).getTime() / DAY_MS;
+  if (Number.isNaN(checked) || Number.isNaN(day)) return false;
+  return day < localDay(checked, clock);
+}
+
 export interface FreshnessPartsOptions {
   /** Prefix the stream's name, for lists of several streams. */
   stream?: boolean;
+  /**
+   * Word the day as "Last reporting day: Nov 17" where it is older than
+   * the day of the last check (`reportingDayBeforeCheck`, #791); the other
+   * parts are the same.
+   */
+  reportingDay?: boolean;
   /** Say when netrics last read a periodic stream; default true. */
   fetched?: boolean;
   /**
@@ -200,8 +233,17 @@ export function freshnessParts(
   const monthly = freshness.period === "month";
   if (freshness.dataThrough) {
     const date = periodText(freshness.dataThrough, monthly, clock);
+    const named =
+      options.reportingDay === true &&
+      reportingDayBeforeCheck(freshness, clock);
     parts.push(
-      stream ? t("streamUpTo", { stream, date }) : t("upTo", { date }),
+      named
+        ? stream
+          ? t("streamReportingDay", { stream, date })
+          : t("reportingDay", { date })
+        : stream
+          ? t("streamUpTo", { stream, date })
+          : t("upTo", { date }),
     );
   }
   if (freshness.late && freshness.dataThrough) {
@@ -248,28 +290,43 @@ function numericDay(date: string, clock: FreshnessClock): string {
   }).format(providerDay(date));
 }
 
+/** One form of a several-source line: its lines, and the same with the days named. */
+export interface FreshnessSourceForm {
+  lines: string[];
+  /**
+   * The form with "last reporting day" for every source whose day is
+   * older than its last check (#791); absent when no source's is, and for
+   * the short forms.
+   */
+  named?: string[];
+}
+
 /**
  * The forms of a freshness line that lists several sources (#784, ADR 0025
  * sections 7 and 8), longest first, each one or more lines; empty without
- * `sources`. Screens show the first form that fits one line
- * (`freshnessLevelFit`): every source's day and next time and the fetch
+ * `sources`. Every source's day and next time and the fetch
  * ("App Store up to Nov 17 · next ~9:00 PM · Google Play up to Nov 11 ·
  * fetched 10 min. ago"); without the fetch; the days only; the days in
  * short numbers ("App Store up to 11/17 · Google Play up to 11/11"); the
  * stores and their days alone ("App Store 11/17 · Google Play 11/11");
  * and last the short days on a line each. A source is never left out. Under a warning
  * every form has the days (and "not published yet") only.
+ *
+ * The first three forms also come `named` (#791): "App Store last
+ * reporting day: Nov 17 · …" for each source whose day is older than the
+ * day of its last check.
  */
-export function freshnessSourceLevels(
+export function freshnessSourceForms(
   freshness: WidgetFreshness,
   clock: FreshnessClock,
   options: Pick<FreshnessPartsOptions, "warning" | "paused"> = {},
-): string[][] {
+): FreshnessSourceForm[] {
   const sources = freshness.sources ?? [];
   if (sources.length < 2) return [];
   const t = webTranslator(clock.locale, "screen.freshness");
   const named = sources.map((source) => {
-    const parts = freshnessParts({ ...source, stream: source.source }, clock, {
+    const line = { ...source, stream: source.source };
+    const parts = freshnessParts(line, clock, {
       stream: true,
       fetched: false,
       ...options,
@@ -277,10 +334,16 @@ export function freshnessSourceLevels(
     // Under a warning a continuous source still names its check.
     const all = parts.length
       ? parts
-      : freshnessParts({ ...source, stream: source.source }, clock, {
-          stream: true,
-        }).slice(0, 1);
+      : freshnessParts(line, clock, { stream: true }).slice(0, 1);
     const first = all.slice(0, 1);
+    // The day named (#791): only the first part differs, if any.
+    const day = freshnessParts(line, clock, {
+      stream: true,
+      fetched: false,
+      reportingDay: true,
+      ...options,
+    }).slice(0, 1);
+    const dayNamed = day.length === 1 && day[0] !== first[0];
     const short =
       source.kind === "periodic" &&
       source.dataThrough &&
@@ -299,9 +362,13 @@ export function freshnessSourceLevels(
       source.period !== "month"
         ? [`${source.source} ${numericDay(source.dataThrough, clock)}`]
         : short;
+    const shown = options.warning ? all.slice(0, source.late ? 2 : 1) : all;
     return {
-      all: options.warning ? all.slice(0, source.late ? 2 : 1) : all,
+      all: shown,
       first,
+      namedAll: dayNamed ? [...day, ...shown.slice(1)] : shown,
+      namedFirst: dayNamed ? day : first,
+      dayNamed,
       short,
       shortest,
     };
@@ -314,15 +381,45 @@ export function freshnessSourceLevels(
       : "time" in fetched
         ? t("fetched", { time: fetched.time })
         : t("fetchedOn", { date: fetched.date });
+  const anyNamed = named.some((source) => source.dayNamed);
   const full = named.flatMap((source) => source.all);
+  const namedFull = named.flatMap((source) => source.namedAll);
+  const form = (lines: string[], other?: string[]): FreshnessSourceForm =>
+    anyNamed && other ? { lines, named: other } : { lines };
   return [
-    ...(fetchedPart ? [[join([...full, fetchedPart])]] : []),
-    [join(full)],
-    [join(named.flatMap((source) => source.first))],
-    [join(named.flatMap((source) => source.short))],
-    [join(named.flatMap((source) => source.shortest))],
-    named.map((source) => join(source.short)),
+    ...(fetchedPart
+      ? [
+          form(
+            [join([...full, fetchedPart])],
+            [join([...namedFull, fetchedPart])],
+          ),
+        ]
+      : []),
+    form([join(full)], [join(namedFull)]),
+    form(
+      [join(named.flatMap((source) => source.first))],
+      [join(named.flatMap((source) => source.namedFirst))],
+    ),
+    form([join(named.flatMap((source) => source.short))]),
+    form([join(named.flatMap((source) => source.shortest))]),
+    form(named.map((source) => join(source.short))),
   ];
+}
+
+/**
+ * The forms as the levels a screen picks from, the first that fits one
+ * line (`freshnessLevelFit`): each form with the days named (#791) right
+ * before the same form without. Naming the day so never costs a part a
+ * tile shows today: it is the first thing a narrower tile drops.
+ */
+export function freshnessSourceLevels(
+  freshness: WidgetFreshness,
+  clock: FreshnessClock,
+  options: Pick<FreshnessPartsOptions, "warning" | "paused"> = {},
+): string[][] {
+  return freshnessSourceForms(freshness, clock, options).flatMap((form) =>
+    form.named ? [form.named, form.lines] : [form.lines],
+  );
 }
 
 /** Every prefix of the parts, longest first: footer candidates. */
@@ -332,13 +429,42 @@ export function partsCandidates(parts: readonly string[]): string[] {
   );
 }
 
-/** The freshness line's candidates, longest first (ADR 0018 section 5). */
+/**
+ * A widget's freshness parts with the day named (#791): "Last reporting
+ * day: Nov 17" in place of "Up to Nov 17", the rest the same. Null where
+ * the day is not older than the day of the last check, and for lists that
+ * name the stream (a connection's page, a status board), which stay as
+ * they are.
+ */
+export function reportingDayParts(
+  freshness: WidgetFreshness,
+  clock: FreshnessClock,
+  options: FreshnessPartsOptions = {},
+): string[] | null {
+  if (options.stream || !reportingDayBeforeCheck(freshness, clock)) {
+    return null;
+  }
+  return freshnessParts(freshness, clock, { ...options, reportingDay: true });
+}
+
+/**
+ * The freshness line's candidates, longest first (ADR 0018 section 5).
+ * Where the last reporting day is older than the day of the last check
+ * (#791), each candidate comes with the day named right before it: "Last
+ * reporting day: Nov 17 · fetched 10 min. ago", then "Up to Nov 17 ·
+ * fetched 10 min. ago". A widget that has no room for the longer wording
+ * shows exactly what it showed before.
+ */
 export function freshnessCandidates(
   freshness: WidgetFreshness,
   clock: FreshnessClock,
   options: FreshnessPartsOptions = {},
 ): string[] {
-  return partsCandidates(freshnessParts(freshness, clock, options));
+  const plain = partsCandidates(freshnessParts(freshness, clock, options));
+  const named = reportingDayParts(freshness, clock, options);
+  if (!named || named.length !== plain.length) return plain;
+  const namedCandidates = partsCandidates(named);
+  return plain.flatMap((line, index) => [namedCandidates[index]!, line]);
 }
 
 /** The statuses whose warning notice comes before the freshness line. */

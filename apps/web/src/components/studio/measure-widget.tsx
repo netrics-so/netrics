@@ -15,7 +15,8 @@ import { ApiError } from "@/lib/api";
 import { formatPercentChange } from "@/lib/format-metric";
 import {
   freshnessParts,
-  freshnessSourceLevels,
+  freshnessSourceForms,
+  reportingDayParts,
   type FreshnessClock,
 } from "@/lib/freshness";
 import { useViewerTimeZone } from "@/lib/viewer-time-zone";
@@ -136,7 +137,18 @@ const FAILING_SOURCES = new Set([
 export function measureFreshnessLine(
   data: DashboardWidgetData | null,
   clock: FreshnessClock,
-): { parts: string[]; warning: boolean; levels: string[][] } | null {
+): {
+  parts: string[];
+  /**
+   * The parts with the day named ("Last reporting day: Nov 17", #791);
+   * null where the day is not older than the day of the last check.
+   */
+  named: string[] | null;
+  warning: boolean;
+  levels: string[][];
+  /** Off a slide (scroll cards, which wrap): the several-source lines. */
+  card: string[] | null;
+} | null {
   const freshness = data?.freshness;
   if (!data || !freshness || data.error || data.status === "no_data") {
     return null;
@@ -150,13 +162,44 @@ export function measureFreshnessLine(
   const parts = freshnessParts(freshness, clock, { warning: failing });
   // Several sources (#784): each one's day and next time, in the forms
   // the tile picks from (freshnessLevelFit).
-  const levels = freshnessSourceLevels(freshness, clock, { warning: failing });
+  // Each form with the days named right before it (#791).
+  const forms = freshnessSourceForms(freshness, clock, { warning: failing });
+  const levels = forms.flatMap((form) =>
+    form.named ? [form.named, form.lines] : [form.lines],
+  );
   if (parts.length === 0 && levels.length === 0) return null;
+  const card = forms[Math.max(0, forms.length - 4)];
   return {
     parts,
+    named: reportingDayParts(freshness, clock, { warning: failing }),
     warning: data.status === "stale" && freshness.late === true,
     levels,
+    card: card ? (card.named ?? card.lines) : null,
   };
+}
+
+/**
+ * The named parts a tile has room for (#791): as many as it shows of the
+ * plain ones, never fewer, measured as the several-source fit measures
+ * (`freshnessLevelFit`). Null: the plain parts, as before.
+ */
+export function namedPartsThatFit(
+  parts: readonly string[],
+  named: readonly string[],
+  width: number,
+  fontScale: number,
+): string[] | null {
+  if (named.length !== parts.length || parts.length === 0) return null;
+  const line = (list: readonly string[], count: number) => [
+    list.slice(0, count).join(" · "),
+  ];
+  // Longest first: each count with the day named, then without.
+  const levels = parts.flatMap((_, index) => {
+    const count = parts.length - index;
+    return [line(named, count), line(parts, count)];
+  });
+  const level = freshnessLevelFit(levels, width, fontScale, "web");
+  return level % 2 === 0 ? named.slice(0, parts.length - level / 2) : null;
 }
 
 export function MeasureWidgetView({
@@ -306,18 +349,32 @@ export function MeasureWidgetView({
   // A provider overdue by a day keeps its one warning line, as on tvOS.
   const sourceLines =
     freshness?.levels.length && !freshness.warning
-      ? freshness.levels[
-          placement
-            ? freshnessLevelFit(
-                freshness.levels,
-                contentBox(placement, showHeader).width,
-                fontScale,
-                "web",
-              )
-            : // Cards grow: every source's day and next time, wrapping.
-              Math.max(0, freshness.levels.length - 4)
-        ]!
+      ? placement
+        ? freshness.levels[
+            freshnessLevelFit(
+              freshness.levels,
+              contentBox(placement, showHeader).width,
+              fontScale,
+              "web",
+            )
+          ]!
+        : // Off a slide cards grow: every source's day, wrapping.
+          freshness.card
       : null;
+  // One source on a slide (#791): the day is named ("Last reporting day:
+  // Nov 17") where that fits the tile with the parts it shows anyway;
+  // else the line is as before, its parts dropped from the end.
+  const shownParts =
+    freshness && !sourceLines
+      ? ((placement && !freshness.warning && freshness.named
+          ? namedPartsThatFit(
+              freshness.parts,
+              freshness.named,
+              contentBox(placement, showHeader).width,
+              fontScale,
+            )
+          : null) ?? freshness.parts)
+      : [];
   const freshnessFooter: null[] = freshness
     ? (sourceLines ?? [null]).map(() => null)
     : [];
@@ -788,12 +845,15 @@ export function MeasureWidgetView({
               ? "sw-measure-freshness sw-measure-freshness--overdue"
               : "sw-measure-freshness"
           }
-          title={freshness.parts.join(" · ")}
+          title={(shownParts === freshness.parts
+            ? freshness.parts
+            : (freshness.named ?? shownParts)
+          ).join(" · ")}
           suppressHydrationWarning
         >
           {/* Whole parts only: those that do not fit wrap out of sight,
               so a narrow widget drops them from the end. */}
-          {freshness.parts.map((part, index) => (
+          {shownParts.map((part, index) => (
             <span key={index}>{index === 0 ? part : ` · ${part}`}</span>
           ))}
         </p>

@@ -83,6 +83,8 @@ public enum KitText: String, Sendable, CaseIterable {
     case freshUpTo, freshStreamUpTo, freshFetched, freshFetchedOn, freshNext, freshNextSoon, freshNotPublished
     case freshCheckingAgain, freshCheckingAgainSoon, freshChecked, freshCheckedOn, freshStreamChecked
     case freshStreamCheckedOn, freshNextCheck, freshNextCheckSoon, freshTomorrow, freshApprox
+    // The day named where it is older than the day of the last check (#791).
+    case freshReportingDay, freshStreamReportingDay
     case measureGroupsShown, measureOldestRefresh, measureTrue, measureFalse
 }
 
@@ -221,6 +223,8 @@ public enum KitStrings {
         .serverError: "The server answered with an error (HTTP %d). Try again later.",
         .freshUpTo: "Up to %@",
         .freshStreamUpTo: "%@ up to %@",
+        .freshReportingDay: "Last reporting day: %@",
+        .freshStreamReportingDay: "%@ last reporting day: %@",
         .freshFetched: "fetched %@",
         .freshFetchedOn: "fetched %@",
         .freshNext: "next %@",
@@ -378,6 +382,8 @@ public enum KitStrings {
         .serverError: "Der Server hat mit einem Fehler geantwortet (HTTP %d). Versuch es später noch einmal.",
         .freshUpTo: "Bis %@",
         .freshStreamUpTo: "%@ bis %@",
+        .freshReportingDay: "Letzter Berichtstag: %@",
+        .freshStreamReportingDay: "%@ letzter Berichtstag: %@",
         .freshFetched: "abgerufen %@",
         .freshFetchedOn: "abgerufen am %@",
         .freshNext: "nächste %@",

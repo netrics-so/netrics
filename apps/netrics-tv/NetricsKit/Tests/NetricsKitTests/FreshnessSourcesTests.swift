@@ -64,7 +64,7 @@ private var both: WidgetFreshness {
     }
 
     @Test func listsEverySourceAndDegradesInOrder() {
-        let en = FreshnessText(language: .en, timeZone: berlin, region: us24).sourceLevels(both, now: now)
+        let en = FreshnessText(language: .en, timeZone: berlin, region: us24).sourceForms(both, now: now).map(\.lines)
         #expect(
             en == [
                 ["App Store up to Nov 17 · next ~21:00 · Google Play up to Nov 11 · fetched 10 min. ago"],
@@ -74,7 +74,7 @@ private var both: WidgetFreshness {
                 ["App Store 11/17 · Google Play 11/11"],
                 ["App Store up to 11/17", "Google Play up to 11/11"],
             ])
-        let de = FreshnessText(language: .de, timeZone: berlin, region: germany).sourceLevels(both, now: now)
+        let de = FreshnessText(language: .de, timeZone: berlin, region: germany).sourceForms(both, now: now).map(\.lines)
         #expect(de[1] == ["App Store bis 17. Nov. · nächste ~21:00 · Google Play bis 11. Nov."])
         #expect(de[3] == ["App Store bis 17.11. · Google Play bis 11.11."])
         #expect(de[4] == ["App Store 17.11. · Google Play 11.11."])
@@ -83,7 +83,7 @@ private var both: WidgetFreshness {
 
     @Test func underAWarningOnlyEachDay() {
         let levels = FreshnessText(language: .en, timeZone: berlin, region: us24)
-            .sourceLevels(both, status: .outage, now: now)
+            .sourceForms(both, status: .outage, now: now).map(\.lines)
         #expect(levels[0] == ["App Store up to Nov 17 · Google Play up to Nov 11"])
         #expect(levels[5] == ["App Store up to 11/17", "Google Play up to 11/11"])
     }

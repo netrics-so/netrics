@@ -71,8 +71,11 @@ const overdue: WidgetFreshness = {
   late: true,
   nextCheckAt: "2026-11-16T12:45:00Z",
 };
-const FRESH_EN = "Up to Nov 15 · fetched 10 min. ago";
-const FRESH_DE = "Bis 15. Nov. · abgerufen vor 10 Min.";
+// The day is older than the day of the check: named where it fits (#791).
+const FRESH_EN = "Last reporting day: Nov 15 · fetched 10 min. ago";
+// A tile without room for it (the German gauge) keeps the line as it was.
+const FRESH_DE =
+  /(?:Letzter Berichtstag: 15\. Nov\.|Bis 15\. Nov\.) · abgerufen vor 10 Min\./;
 const LATE_EN = "Up to Nov 14 · Nov 15 not published yet";
 
 // A healthy connection that synced five minutes ago: "ok" by its state.
@@ -222,7 +225,7 @@ function expectFreshness(
     const [en, de] = await render({ freshness: periodic });
     expect(text(en)).toContain(FRESH_EN);
     expect(text(en)).not.toContain("updated");
-    expect(text(de)).toContain(FRESH_DE);
+    expect(text(de)).toMatch(FRESH_DE);
     expect(en).not.toContain("sw-notice--stale");
 
     clearSharedLoads();
@@ -339,7 +342,9 @@ describe("live widgets show their query's freshness (#727)", () => {
     const html = renderI18n(
       <LiveCompareWidget widget={compareWidget} env={env} />,
     );
-    expect(text(html)).toContain("Up to Nov 13 · fetched 30 min. ago");
+    expect(text(html)).toContain(
+      "Last reporting day: Nov 13 · fetched 30 min. ago",
+    );
   });
 
   it(

@@ -7,7 +7,9 @@ Implemented by #702 (SDK, storage, scheduler), #703 (connectors), #704
 describes no shipped behaviour yet. Amended 2026-11-19 by #784: widgets
 that combine sources list each source's freshness (sections 7 and 8). Amended
 2026-11-20 by #378: an empty window of days the connection has read
-completely sums to 0 (section 9).
+completely sums to 0 (section 9). Amended 2026-11-22 by #791: the day is
+named "Last reporting day" where it is older than the day of the last check
+(section 8).
 
 Extends ADR 0015 (widgets), ADR 0018 section 5 (freshness footer) and
 ADR 0022 (models and their sources).
@@ -447,6 +449,47 @@ keeps its month's name in forms 4 and 5. A metric widget gives its
 freshness line room right after its label, value and notice, before the
 change, the period line and the sparkline (#784), so every number says
 how far it reaches. One source keeps the single line above.
+
+**Last reporting day**
+([#791](https://github.com/netrics-so/netrics/issues/791), 2026-11-22). A
+line carries three dates, always in this order: the last day a report
+covers (`dataThrough`, the provider's day), when netrics last checked
+(`fetchedAt`) and when the next is due (`nextExpectedAt`, or `nextCheckAt`
+for a late provider and a continuous stream). "Up to Nov 11" is the first
+of them, not the check. Read on 19 Nov, beside a store whose reports reach
+17 Nov and on a tile too narrow for "fetched 10 min. ago", it looks as if
+netrics had stopped checking on the 11th. So the day says what it is where
+the two differ:
+
+| Case                                | English                                                                                                             | German                                                                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| The day is older than the check day | Last reporting day: Nov 17 · fetched 10 min. ago · next ~9:00 PM                                                    | Letzter Berichtstag: 17. Nov. · abgerufen vor 10 Min. · nächste ~21:00                                                       |
+| The day is the check day            | Up to Nov 19 · fetched 10 min. ago · next ~9:00 PM                                                                  | Bis 19. Nov. · abgerufen vor 10 Min. · nächste ~21:00                                                                        |
+| Several sources                     | App Store last reporting day: Nov 17 · next ~9:00 PM · Google Play last reporting day: Nov 11 · fetched 10 min. ago | App Store letzter Berichtstag: 17. Nov. · nächste ~21:00 · Google Play letzter Berichtstag: 11. Nov. · abgerufen vor 10 Min. |
+
+- **When.** A periodic stream published by day whose `dataThrough`, the
+  provider's date as written, is earlier than the calendar day of
+  `fetchedAt` in the viewer's zone. A report that lags by its normal
+  cadence counts: App Store sales read in the morning are a day or two
+  behind and are named. Never for a monthly stream (it names a month), a
+  continuous stream or a stream without a day yet. With several sources
+  each source decides for itself, by its own `fetchedAt`.
+- **Which wording.** "Last reporting day: Nov 17" takes the place of "Up to
+  Nov 17" and says the same date once; the other parts and their order are
+  unchanged, also in the late wording and under a warning.
+- **It is the first thing to go.** Each candidate of the line comes with
+  the day named right before the same candidate without: "Last reporting
+  day: Nov 17 · fetched 10 min. ago", then "Up to Nov 17 · fetched 10 min.
+  ago". A tile shows the named one only where it fits with every part the
+  tile shows anyway, so a tile without room shows exactly what it showed
+  before. Of the forms for several sources, 1 to 3 come named the same
+  way, each right before itself; the short forms 4 to 6 stay as they are.
+  A scroll card, which wraps, names the day.
+- **Where not.** The warning notice ("Source unreachable · Up to Nov 14"),
+  the overdue warning line, and lists that name the stream (a connection's
+  page, a status board, the detail sheet) keep their wording.
+- The payload is unchanged: both dates were in it, per widget and per
+  source.
 
 Precedence, highest first:
 
