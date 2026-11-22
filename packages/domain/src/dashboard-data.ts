@@ -995,10 +995,16 @@ export function formatDataDate(
   if (type === "date") {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) return null;
-    const date = new Date(
-      Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+    // setUTCFullYear keeps a year before 100 the year it is (Date.UTC
+    // reads 1 as 1901). The year 0 would read as the year 1: as stored.
+    const date = new Date(0);
+    date.setUTCFullYear(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
     );
-    if (date.toISOString().slice(0, 10) !== value) return null;
+    if (date.toISOString().slice(0, 10) !== value || match[1] === "0000")
+      return null;
     return new Intl.DateTimeFormat(locale, {
       dateStyle: "medium",
       timeZone: "UTC",

@@ -815,6 +815,20 @@ describe("display formatting (#619)", () => {
   it("shows a calendar day in the locale's date format, the same day in every time zone", () => {
     expect(formatDataDate("2026-01-07", "date", "de")).toBe("07.01.2026");
     expect(formatDataDate("2026-01-07", "date", "en")).toBe("Jan 7, 2026");
+    // Years before 100 keep the year they are (review 3 of #852): the
+    // bucket of a source's zero time is a date like any other.
+    expect(formatDataDate("0001-01-01", "date", "en")).toBe("Jan 1, 1");
+    expect(formatDataDate("0001-01-01", "date", "de")).toBe("01.01.1");
+    expect(formatDataDate("0050-12-31", "date", "en")).toBe("Dec 31, 50");
+    expect(formatDataDate("0050-12-31", "date", "de")).toBe("31.12.50");
+    expect(formatDataDate("0099-02-28", "date", "en")).toBe("Feb 28, 99");
+    expect(formatDataDate("0100-03-01", "date", "de")).toBe("01.03.100");
+    expect(formatDataDate("0004-02-29", "date", "en")).toBe("Feb 29, 4");
+    // No day, in any year.
+    expect(formatDataDate("0001-02-29", "date", "en")).toBeNull();
+    expect(formatDataDate("0050-02-30", "date", "de")).toBeNull();
+    // The year 0 has no wording that tells it from the year 1: as stored.
+    expect(formatDataDate("0000-01-01", "date", "en")).toBeNull();
     expect(formatDataDate("2026-01-07", "date", "de", "Pacific/Honolulu")).toBe(
       "07.01.2026",
     );

@@ -518,6 +518,174 @@ describe("grouping a timestamp by a time grain (#838)", () => {
   });
 });
 
+describe("what bucketing costs (review 3 of #852)", () => {
+  // Every row its own day at midnight UTC, so grouping per day forms the
+  // groups grouping per instant does: the only difference in operations is
+  // the bucketing itself, one per bucketed value.
+  const day = (date: string) => `${date}T00:00:00Z`;
+  const two: SemanticModelDefinition = {
+    ...model,
+    dimensions: [
+      ...model.dimensions,
+      { id: "seen", name: "Seen", datasetId: "items", fieldId: "taken_at" },
+    ],
+    measures: [
+      ...model.measures,
+      {
+        id: "previous",
+        name: "Previous month",
+        kind: "period_offset",
+        baseMeasureId: "count",
+        timeDimensionId: "day",
+        offset: { unit: "month", length: 1 },
+        output: "value",
+      },
+    ],
+  };
+  const operations = (
+    taken: string[],
+    query: Partial<ModelQuery> & Pick<ModelQuery, "groupBy">,
+  ) =>
+    querySemanticModel(two, new Map([["items", items(taken)]]), {
+      measureIds: ["count"],
+      now: "2026-11-22T00:00:00Z",
+      ...query,
+    }).operations;
+  /** Operations the grains add to the same query without them. */
+  const added = (
+    taken: string[],
+    query: Partial<ModelQuery> & Pick<ModelQuery, "groupBy">,
+    groupByGrain: NonNullable<ModelQuery["groupByGrain"]>,
+  ) => operations(taken, { ...query, groupByGrain }) - operations(taken, query);
+  const range = (from: string, to: string): DataExpression => ({
+    kind: "call",
+    fn: "and",
+    args: [
+      {
+        kind: "call",
+        fn: "gte",
+        args: [
+          { kind: "field", fieldId: "day" },
+          { kind: "literal", type: "date", value: from },
+        ],
+      },
+      {
+        kind: "call",
+        fn: "lte",
+        args: [
+          { kind: "field", fieldId: "day" },
+          { kind: "literal", type: "date", value: to },
+        ],
+      },
+    ],
+  });
+  const far = Array.from({ length: 300 }, (_, index) =>
+    day(new Date(Date.UTC(2020, 0, 1 + index)).toISOString().slice(0, 10)),
+  );
+  const later = ["2026-11-20", "2026-11-21"].map(day);
+  const shown = ["2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"].map(
+    day,
+  );
+
+  it("buckets only the rows a filter keeps", () => {
+    const filter: DataExpression = {
+      kind: "call",
+      fn: "gte",
+      args: [
+        { kind: "field", fieldId: "taken" },
+        { kind: "literal", type: "timestamp", value: day("2026-11-10") },
+      ],
+    };
+    expect(
+      added(
+        [...far, ...shown],
+        { groupBy: ["taken"], filter },
+        { taken: "day" },
+      ),
+    ).toBe(shown.length);
+  });
+
+  it("buckets once per row for each bucketed dimension", () => {
+    expect(
+      added(
+        [...far, ...shown],
+        { groupBy: ["taken", "seen"] },
+        { taken: "day", seen: "day" },
+      ),
+    ).toBe(2 * (far.length + shown.length));
+    expect(
+      added(
+        [...far, ...shown],
+        { groupBy: ["taken", "seen"] },
+        { seen: "day" },
+      ),
+    ).toBe(far.length + shown.length);
+    // A missing value has no bucket to compute.
+    expect(
+      querySemanticModel(two, new Map([["items", items([null, null])]]), {
+        measureIds: ["count"],
+        groupBy: ["taken"],
+        groupByGrain: { taken: "day" },
+      }).operations,
+    ).toBe(
+      querySemanticModel(two, new Map([["items", items([null, null])]]), {
+        measureIds: ["count"],
+        groupBy: ["taken"],
+      }).operations,
+    );
+  });
+
+  it("buckets only the rows inside a rolling window's bounds, once", () => {
+    // Shown: 10 to 13 November; the 7-day window also reads 4 to 9.
+    const lookback = ["2026-11-04", "2026-11-09"].map(day);
+    const query = {
+      measureIds: ["rolling"],
+      groupBy: ["day", "taken"],
+      filter: range("2026-11-10", "2026-11-13"),
+    };
+    expect(
+      added([...far, ...lookback, ...shown, ...later], query, { taken: "day" }),
+    ).toBe(lookback.length + shown.length);
+    // Rows outside the bounds cost the same with and without a grain.
+    expect(
+      added([...far, ...lookback, ...shown, ...later], query, { taken: "day" }),
+    ).toBe(added([...lookback, ...shown], query, { taken: "day" }));
+  });
+
+  it("buckets only the rows a comparison with an earlier period reads", () => {
+    // 10 to 13 November against 10 to 13 October.
+    const before = ["2026-10-10", "2026-10-13"].map(day);
+    const between = ["2026-10-20", "2026-11-01"].map(day);
+    const query = {
+      measureIds: ["previous"],
+      groupBy: ["taken"],
+      filter: range("2026-11-10", "2026-11-13"),
+    };
+    const all = [...far, ...before, ...between, ...shown, ...later];
+    const inBounds = before.length + between.length + shown.length;
+    expect(added(all, query, { taken: "day" })).toBe(inBounds);
+    expect(
+      added(
+        all,
+        { ...query, groupBy: ["taken", "seen"] },
+        {
+          taken: "day",
+          seen: "week",
+        },
+      ),
+    ).toBe(
+      added(
+        [...before, ...between, ...shown],
+        { ...query, groupBy: ["taken", "seen"] },
+        {
+          taken: "day",
+          seen: "week",
+        },
+      ),
+    );
+  });
+});
+
 describe("time grain buckets", () => {
   it("names a bucket by its first day", () => {
     expect(grainStart("2026-11-22", "day")).toBe("2026-11-22");
@@ -638,18 +806,16 @@ describe("time grain buckets", () => {
     for (const timeZone of ["UTC", "Europe/Berlin"])
       for (const grain of ["day", "week", "month"] as const) {
         const bucket = timeGrainBucket("timestamp", grain, timeZone);
-        for (const value of [
-          "",
-          "soon",
-          "2026-13-45T99:00:00Z",
-          "2026-11-02",
-          7,
-          {},
-        ])
+        for (const value of ["", "soon", "2026-13-45T99:00:00Z", "2026-11-02"])
           expect(
             failure(() => bucket(value as string)),
             String(value),
           ).toBe("data_timestamp_invalid");
+        // What is no text at all fails as it does in a table.
+        for (const value of [7, {}])
+          expect(failure(() => bucket(value as string))).toBe(
+            "data_string_required",
+          );
         const date = timeGrainBucket("date", grain, timeZone);
         for (const value of ["", "soon", "2026-02-30", "2026-11-02T08:00:00Z"])
           expect(
@@ -770,5 +936,94 @@ describe("time grain buckets", () => {
         previous = day;
       }
     }
+  });
+
+  it("accepts exactly the timestamps and dates a table can hold (review 3 of #852)", () => {
+    const valid = (type: "date" | "timestamp", value: unknown) => {
+      try {
+        validateDataValue(type, value, false);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const timestamps: unknown[] = [
+      "2026-11-02T08:00:00Z",
+      "2026-11-02T08:00:00.1Z",
+      "2026-11-02T08:00:00.123456789Z",
+      "2026-11-02T24:00:00Z",
+      "2026-11-02T24:00:00.000Z",
+      "0000-01-01T00:00:00Z",
+      "9999-12-31T24:00:00Z",
+      // Not timestamps, though cutting their fraction would make them one.
+      "2026-11-02T24:00:00.1Z",
+      "2026-11-02T24:00:00.000000001Z",
+      "2026-11-02T08:00:00.Z",
+      "2026-11-02T08:00:00.1234567890Z",
+      "2026-11-02T08:00:00.1.2Z",
+      "2026-11-02T08:00:00:00Z",
+      "2026-11-02T08:00:00..Z",
+      "2026-11-02T08:00:00",
+      "2026-11-02T08:00:00z",
+      "2026-11-02T08:00:00+05:30",
+      "2026-11-02T08:00Z",
+      "2026-11-02T24:00:01Z",
+      "2026-11-02T25:00:00Z",
+      "2026-11-02T08:60:00Z",
+      "2026-11-02T23:59:60Z",
+      "2026-02-30T08:00:00Z",
+      "2026-13-01T08:00:00Z",
+      "2026-11-02 08:00:00Z",
+      " 2026-11-02T08:00:00Z",
+      "2026-11-02T08:00:00Z\n",
+      "2026-11-02",
+      "soon",
+      "",
+      7,
+      null,
+      {},
+    ];
+    const dates: unknown[] = [
+      "2026-11-02",
+      "0000-01-01",
+      "9999-12-31",
+      "2024-02-29",
+      "2026-02-29",
+      "2026-11-31",
+      "2026-00-10",
+      "2026-11-2",
+      "2026-11-02T08:00:00Z",
+      "2026-11-02\n",
+      "soon",
+      "",
+      7,
+      null,
+    ];
+    expect(timestamps.filter((value) => valid("timestamp", value)).length).toBe(
+      7,
+    );
+    for (const timeZone of ["UTC", "Europe/Berlin", "Etc/GMT-14"])
+      for (const grain of ["day", "week", "month"] as const) {
+        for (const [type, values] of [
+          ["timestamp", timestamps],
+          ["date", dates],
+        ] as const) {
+          const bucket = timeGrainBucket(type, grain, timeZone);
+          for (const value of values) {
+            let result: unknown;
+            try {
+              result = bucket(value as string);
+            } catch (error) {
+              // A data error, never anything else.
+              expect(error, String(value)).toBeInstanceOf(DataProcessingError);
+              result = undefined;
+            }
+            const where = `${type} ${timeZone} ${grain} ${JSON.stringify(value)}`;
+            expect(result !== undefined, where).toBe(valid(type, value));
+            if (result !== undefined)
+              expect(result, where).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+          }
+        }
+      }
   });
 });

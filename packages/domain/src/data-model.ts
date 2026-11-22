@@ -1074,6 +1074,9 @@ export function querySemanticModel(
         }
         values[id] = current?.[d.fieldId] ?? null;
       }
+      // The row's values as its group shows them (#838): bucketed once,
+      // and only for a row no filter or window bound has excluded.
+      let shown: DataRow;
       if (windowPlan) {
         const date = values[windowPlan.dimensionId] as string | null;
         if (date !== null) {
@@ -1086,15 +1089,18 @@ export function querySemanticModel(
           windowPlan.residual.evaluate(values, budget).value !== true
         )
           continue;
-        const partition = dataKey(
-          groupFields,
-          groupedValues(values),
-          windowPlan.partitionBy,
-        );
+        // Without a date bound the query keeps undated rows, as it would
+        // without windowed measures; windows are only missing there.
+        if (
+          date === null
+            ? windowPlan.from !== null || windowPlan.to !== null
+            : (windowPlan.lowest !== null && date < windowPlan.lowest) ||
+              (windowPlan.to !== null && date > windowPlan.to)
+        )
+          continue;
+        shown = groupedValues(values);
+        const partition = dataKey(groupFields, shown, windowPlan.partitionBy);
         if (date === null) {
-          // Without a date bound the query keeps undated rows, as it would
-          // without windowed measures; windows are only missing there.
-          if (windowPlan.from !== null || windowPlan.to !== null) continue;
           const datasetUndated =
             undated.get(datasetId) ?? new Map<string, DataRow[]>();
           undated.set(datasetId, datasetUndated);
@@ -1102,11 +1108,6 @@ export function querySemanticModel(
           rows.push(row);
           datasetUndated.set(partition, rows);
         } else {
-          if (
-            (windowPlan.lowest !== null && date < windowPlan.lowest) ||
-            (windowPlan.to !== null && date > windowPlan.to)
-          )
-            continue;
           const datasetBuckets =
             buckets.get(datasetId) ?? new Map<string, Map<string, DataRow[]>>();
           buckets.set(datasetId, datasetBuckets);
@@ -1120,7 +1121,7 @@ export function querySemanticModel(
         }
       } else if (filter && filter.evaluate(values, budget).value !== true)
         continue;
-      const shown = groupedValues(values);
+      else shown = groupedValues(values);
       const group = dataKey(groupFields, shown, query.groupBy);
       if (!groupValues.has(group))
         groupValues.set(

@@ -91,13 +91,19 @@ A model query, and a measure widget's binding, carry an optional
 ### 3. Where it is computed
 
 In the shared query engine (`querySemanticModel`), in the single pass over a
-dataset's rows that already resolves dimension values: a row is filtered on
-its own values, then keyed by its bucket. No group per instant is ever
-built, so the cost is one zone lookup per row (remembered per quarter hour of
-UTC) inside the existing operation budget and row limits. The engine
-evaluates loaded tables in the server process; there is no SQL statement to
-truncate in. Preparations are unchanged: their `to_date` remains the UTC
-day.
+dataset's rows that already resolves dimension values. A row is first
+filtered on its own values and, for rolling and comparison measures,
+checked against the window's bounds; only a row that remains is bucketed,
+once per bucketed dimension, and that result keys both its window partition
+and its group. A row a filter or bound excludes costs what it costs without
+a grain. No group per instant is ever built, so the cost is one operation
+and one zone lookup per kept value (remembered per quarter hour of UTC)
+inside the existing operation budget and row limits. The engine evaluates
+loaded tables in the server process; there is no SQL statement to truncate
+in. Preparations are unchanged: their `to_date` remains the UTC day.
+
+A value is checked with the tables' own validator before it is bucketed, so
+bucketing accepts exactly the dates and timestamps a table can hold.
 
 ### 4. Clients
 
@@ -106,6 +112,12 @@ bucketed timestamp is reported as `date` in the widget's `metadata`. The web
 app and the Apple TV app format a dimension by that type, so they show
 "Nov 2, 2026" / "02.11.2026" without a change, and current TV builds need no
 update. The device payload's shape is unchanged.
+
+A bucket can be an early day (a source's zero time gives `0001-01-01`).
+Both clients word years 1 to 99 with the year they are ("Jan 1, 1"); the
+year 0, which has no wording of its own, is shown as stored. The Apple TV
+app also shows 5 to 14 October 1582 as stored: Foundation's Gregorian
+calendar has no such days.
 
 ## Out of scope
 

@@ -1,4 +1,4 @@
-import { dataFail, validateDataValue } from "./data-expression.js";
+import { validateDataValue } from "./data-expression.js";
 import { civilDate } from "./metrics.js";
 
 /**
@@ -98,12 +98,11 @@ export function timeGrainBucket(
     return day;
   };
   return (value) => {
+    // The tables' own check, on the value as it is: what it refuses has no
+    // bucket, whatever a shortened copy of it would parse as.
+    validateDataValue("timestamp", value, false);
     // Whole seconds: the precision of a zone's offset.
-    const instant =
-      typeof value === "string" && /^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(value)
-        ? Date.parse(value.slice(0, 19) + "Z")
-        : NaN;
-    if (!Number.isFinite(instant)) dataFail("data_timestamp_invalid");
+    const instant = Date.parse(value.slice(0, 19) + "Z");
     const slot = Math.floor(instant / SLOT_MS);
     const day = startOf(slot);
     return bucketOf(day === startOf(slot + 1) ? day : dayAt(instant));
