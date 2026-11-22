@@ -148,9 +148,7 @@ test("a Vercel connection names its projects and changes which are synced", asyn
   const synced = panel.getByRole("listitem");
   await expect(
     panel.getByText(
-      locale === "de"
-        ? "2 Projekte werden synchronisiert:"
-        : "2 projects are synced:",
+      locale === "de" ? "Ausgewählte Projekte (2):" : "Selected projects (2):",
     ),
   ).toBeVisible();
   await expect(synced).toHaveText(["alpha-site", "prj_beta"]);
@@ -208,9 +206,7 @@ test("a Vercel connection names its projects and changes which are synced", asyn
   // The page shows the new selection without another click.
   await expect(
     panel.getByText(
-      locale === "de"
-        ? "1 Projekt wird synchronisiert:"
-        : "1 project is synced:",
+      locale === "de" ? "Ausgewähltes Projekt (1):" : "Selected project (1):",
     ),
   ).toBeVisible();
   await expect(synced).toHaveText(["alpha-site"]);

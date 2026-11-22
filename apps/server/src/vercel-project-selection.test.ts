@@ -446,6 +446,26 @@ describe("the synced projects are shown, and at least one is required (#854)", (
     await storeSelection(["prj_alpha"]);
   });
 
+  it("a selection far beyond the SQL parameter limit still reads", async () => {
+    // Nothing caps a stored selection's length: the names are looked up
+    // with the IDs as one parameter, not one each (65,535 at most).
+    const many = [
+      "prj_alpha",
+      ...Array.from({ length: 70_000 }, (_, index) => `prj_many_${index}`),
+    ];
+    await storeSelection(many);
+    try {
+      const shown = (await detail()).resourceSelection!;
+      expect(shown).toHaveLength(many.length);
+      expect(shown[0]).toEqual({ id: "prj_alpha", name: "alpha-site" });
+      expect(shown.filter((resource) => resource.name !== null)).toHaveLength(
+        1,
+      );
+    } finally {
+      await storeSelection(["prj_alpha"]);
+    }
+  });
+
   it("no stored selection reads as all projects", async () => {
     expect((await select(null)).statusCode).toBe(200);
     expect((await detail()).resourceSelection).toBeNull();

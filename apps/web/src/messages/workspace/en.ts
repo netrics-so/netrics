@@ -257,7 +257,7 @@ export const workspaceEn = {
       title: "Projects to sync",
       all: "All current and future projects",
       allHelp:
-        "New projects this token can see will be included automatically.",
+        "New projects the token lists (for the Team ID in the settings, if one is set) are included automatically once Web Analytics is enabled for them. Projects without Web Analytics are skipped.",
       choose: "Choose projects",
       search: "Search projects by name or ID",
       selectResults: "Select results ({count})",
@@ -272,12 +272,14 @@ export const workspaceEn = {
       noneHelp:
         "Select at least one project, or choose all projects: an empty selection cannot be saved.",
       syncedAll:
-        "All current and future projects this token can see are synced.",
+        "Selection: all current and future projects. Synced are the projects the token lists (for the Team ID in the settings, if one is set) that have Web Analytics enabled; projects without it are skipped.",
       syncedList:
-        "{count, plural, one {# project is synced:} other {# projects are synced:}}",
+        "{count, plural, one {Selected project (#):} other {Selected projects (#):}}",
+      syncedHelp:
+        "A selected project is only synced while the token can see it and Web Analytics is enabled for it. “{action}” loads the current list and marks selected projects that are not listed.",
       syncedMore: "and {count} more",
       syncedNone:
-        "No project is selected, so this connection collects nothing new. Use “{action}” to choose at least one project (or all projects), or delete the connection. The data already collected is kept.",
+        "No project is selected, so this connection collects nothing new. Use “{action}” to choose at least one project (or all projects); the data already collected is kept. Deleting the connection instead also deletes the data it collected.",
       pages: "Project list pages",
       previous: "Previous",
       next: "Next",
@@ -288,7 +290,7 @@ export const workspaceEn = {
       checking: "Loading projects…",
       accessFailed: "The project list could not be loaded.",
       refusedHelp:
-        "If no project can be synced: enable Web Analytics for a project in Vercel and load the list again, choose another project, or delete this connection. You can still remove projects from the selection below; at least one has to stay selected.",
+        "If no project can be synced: enable Web Analytics for a project in Vercel and load the list again, or choose another project; the data already collected is kept either way. Deleting this connection instead also deletes the data it collected. You can still remove projects from the selection below; at least one has to stay selected.",
       save: "Save project selection",
       cancel: "Cancel",
       saved:

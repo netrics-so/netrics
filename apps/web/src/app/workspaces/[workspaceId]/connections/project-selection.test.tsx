@@ -141,34 +141,47 @@ describe("the synced projects up front, and at least one required (#854)", () =>
       { id: "prj_b", name: null },
     ];
     const en = render("en", {}, synced);
-    expect(en).toContain("2 projects are synced:");
+    expect(en).toContain("Selected projects (2):");
+    // The configured selection, not a promise of data: a project is only
+    // synced while the token sees it and it has Web Analytics.
+    expect(en).toContain(
+      "A selected project is only synced while the token can see it and Web Analytics is enabled for it.",
+    );
+    expect(en).not.toContain("are synced");
     expect(en).toContain("<li>alpha-site</li>");
     expect(en).toContain("<li>prj_b</li>");
     // A named project is shown by its name only.
     expect(en).not.toContain("prj_a");
     expect(en).toContain("Change project selection");
     const de = render("de", {}, synced);
-    expect(de).toContain("2 Projekte werden synchronisiert:");
+    expect(de).toContain("Ausgewählte Projekte (2):");
+    expect(de).toContain(
+      "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist.",
+    );
     expect(de).toContain("<li>alpha-site</li>");
-    expect(render("en", {}, [synced[0]!])).toContain("1 project is synced:");
+    expect(render("en", {}, [synced[0]!])).toContain("Selected project (1):");
     expect(render("de", {}, [synced[0]!])).toContain(
-      "1 Projekt wird synchronisiert:",
+      "Ausgewähltes Projekt (1):",
     );
   });
 
   it("says all projects when no selection is stored", () => {
-    expect(render("en", {}, null)).toContain(
-      "All current and future projects this token can see are synced.",
+    // Qualified: the team of the settings, and only with Web Analytics.
+    const en = render("en", {}, null);
+    expect(en).toContain("Selection: all current and future projects.");
+    expect(en).toContain(
+      "Synced are the projects the token lists (for the Team ID in the settings, if one is set) that have Web Analytics enabled; projects without it are skipped.",
     );
-    expect(render("de", {}, null)).toContain(
-      "Alle aktuellen und zukünftigen Projekte, die dieses Token sehen kann, werden synchronisiert.",
-    );
+    const de = render("de", {}, null);
+    expect(de).toContain("Auswahl: alle aktuellen und zukünftigen Projekte.");
+    expect(de).toContain("Projekte ohne Web Analytics werden übersprungen.");
   });
 
   it("says nothing about the selection while it is unknown", () => {
     // An API from before the field: no claim either way.
     const en = render("en", {});
-    expect(en).not.toContain("are synced");
+    expect(en).not.toContain("Selected project");
+    expect(en).not.toContain("Selection:");
     expect(en).not.toContain("No project is selected");
     expect(en).not.toContain("<ul>");
   });
@@ -179,7 +192,11 @@ describe("the synced projects up front, and at least one required (#854)", () =>
       "No project is selected, so this connection collects nothing new.",
     );
     expect(en).toContain(
-      "Use “Change project selection” to choose at least one project (or all projects), or delete the connection.",
+      "Use “Change project selection” to choose at least one project (or all projects); the data already collected is kept.",
+    );
+    // Deleting is no way to keep the history: it goes with the connection.
+    expect(en).toContain(
+      "Deleting the connection instead also deletes the data it collected.",
     );
     expect(en).toContain('role="status"');
     const de = render("de", {}, []);
@@ -187,6 +204,9 @@ describe("the synced projects up front, and at least one required (#854)", () =>
       "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues.",
     );
     expect(de).toContain("„Projektauswahl ändern“");
+    expect(de).toContain(
+      "Wenn du stattdessen die Verbindung löschst, werden auch ihre importierten Daten gelöscht.",
+    );
   });
 
   it("cuts a long list short", () => {
@@ -195,7 +215,7 @@ describe("the synced projects up front, and at least one required (#854)", () =>
       name: `site-${index}`,
     }));
     const en = renderI18n(<SyncedProjects selection={many} />, "en");
-    expect(en).toContain("23 projects are synced:");
+    expect(en).toContain("Selected projects (23):");
     expect(en.match(/<li>site-/g)).toHaveLength(20);
     expect(en).toContain("and 3 more");
     expect(renderI18n(<SyncedProjects selection={many} />, "de")).toContain(
@@ -270,7 +290,10 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     const en = editor("en", ["prj_a", "prj_gone"], { refusal });
     expect(en).toContain(refusal);
     expect(en).toContain(
-      "enable Web Analytics for a project in Vercel and load the list again, choose another project, or delete this connection",
+      "enable Web Analytics for a project in Vercel and load the list again, or choose another project; the data already collected is kept either way.",
+    );
+    expect(en).toContain(
+      "Deleting this connection instead also deletes the data it collected.",
     );
     expect(en).toContain("at least one has to stay selected");
     // Reduced to one project it can still be saved.
@@ -282,7 +305,10 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     ).toContain('disabled=""');
     const de = editor("de", ["prj_a"], { refusal });
     expect(de).toContain(
-      "Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, wähle ein anderes Projekt oder lösche diese Verbindung",
+      "Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt",
+    );
+    expect(de).toContain(
+      "Wenn du stattdessen diese Verbindung löschst, werden auch ihre importierten Daten gelöscht.",
     );
     expect(de).toContain("mindestens eines muss ausgewählt bleiben");
   });

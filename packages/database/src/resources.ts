@@ -289,20 +289,22 @@ export async function findResourceNames(
   }
   const connectionIds = [...new Set(resources.map((r) => r.connectionId))];
   const resourceIds = [...new Set(resources.map((r) => r.resourceId))];
+  // Each list is one parameter (#854): a stored selection has no length
+  // limit, and a parameter per ID would meet the protocol's 65,535.
   const rows = await tx.execute(sql`
     select r.connection_id, r.resource_id, r.name
     from connection_resources r
     join connections c
       on c.workspace_id = ${workspaceId} and c.id = r.connection_id
     where r.workspace_id = ${workspaceId}
-      and r.connection_id in (${sql.join(
-        connectionIds.map((id) => sql`${id}`),
-        sql`, `,
-      )})
-      and r.resource_id in (${sql.join(
-        resourceIds.map((id) => sql`${id}`),
-        sql`, `,
-      )})
+      and r.connection_id in (
+        select value::uuid
+        from jsonb_array_elements_text(${JSON.stringify(connectionIds)}::jsonb)
+      )
+      and r.resource_id in (
+        select value
+        from jsonb_array_elements_text(${JSON.stringify(resourceIds)}::jsonb)
+      )
       and ${labelsResourceDimension(sql`c.connector_id`)}`);
   return new Map(
     rows.map((row) => [

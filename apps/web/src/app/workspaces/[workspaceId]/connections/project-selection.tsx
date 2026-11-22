@@ -60,9 +60,12 @@ export function selectionSavable(selection: readonly string[] | null) {
 }
 
 /**
- * What the connection syncs, shown without loading the project list
- * (#854): the stored selection as the connection's page got it, by name
- * where one is known and by ID otherwise. A connection that still stores
+ * What the connection is set to sync, shown without loading the project
+ * list (#854): the stored selection as the connection's page got it, by
+ * name where one is known and by ID otherwise. It is the configuration, not
+ * what the provider serves right now: the page makes no provider call, so
+ * a project the token lost or without Web Analytics is only marked once
+ * the list is loaded, and the text says so. A connection that still stores
  * an empty selection (from before one was required) collects nothing and
  * says how to change that. Nothing while the selection is unknown.
  */
@@ -94,6 +97,7 @@ export function SyncedProjects({
           </li>
         ) : null}
       </ul>
+      <p className="help">{t("syncedHelp", { action: t("check") })}</p>
     </>
   );
 }

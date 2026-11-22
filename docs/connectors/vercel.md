@@ -27,8 +27,11 @@ see.
 ## Change which projects are synced
 
 On the connection's page, **Edit connection → Synced projects** shows what
-is synced: all current and future projects, or the selected ones by name
-(by ID until a project has been named). **Change project selection** lists
+is selected: all current and future projects, or the selected ones by name
+(by ID until a project has been named). A selected project is only synced
+while the token can see it and Web Analytics is enabled for it; with "all
+projects", those the token lists (for the Team ID, if one is set) that have
+Web Analytics. **Change project selection** lists
 the projects the token can see (those with Web Analytics enabled) and lets
 you choose all current and future projects, or a selection.
 
@@ -44,7 +47,8 @@ you choose all current and future projects, or a selection.
   checked, and choosing a project (or all projects) makes it sync again.
 - When none of the selected projects can be synced (Web Analytics was
   turned off for them), the list says so. Enable Web Analytics for a
-  project in Vercel, choose another project, or delete the connection.
+  project in Vercel, or choose another project. Deleting the connection
+  is the third way out, and also deletes the data it collected.
 
 A Vercel token grants the same access you have within its scope. netrics
 only reads the project list and Web Analytics with it. The token is stored

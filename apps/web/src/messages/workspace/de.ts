@@ -269,7 +269,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       title: "Projekte für die Synchronisierung",
       all: "Alle aktuellen und zukünftigen Projekte",
       allHelp:
-        "Neue Projekte, die dieses Token sehen kann, werden automatisch einbezogen.",
+        "Neue Projekte, die das Token auflistet (für die Team-ID in den Einstellungen, falls gesetzt), werden automatisch einbezogen, sobald Web Analytics für sie aktiviert ist. Projekte ohne Web Analytics werden übersprungen.",
       choose: "Projekte auswählen",
       search: "Projekte nach Name oder ID suchen",
       selectResults: "Suchergebnisse auswählen ({count})",
@@ -285,12 +285,14 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       noneHelp:
         "Wähle mindestens ein Projekt aus oder alle Projekte: Eine leere Auswahl kann nicht gespeichert werden.",
       syncedAll:
-        "Alle aktuellen und zukünftigen Projekte, die dieses Token sehen kann, werden synchronisiert.",
+        "Auswahl: alle aktuellen und zukünftigen Projekte. Synchronisiert werden die Projekte, die das Token auflistet (für die Team-ID in den Einstellungen, falls gesetzt) und für die Web Analytics aktiviert ist; Projekte ohne Web Analytics werden übersprungen.",
       syncedList:
-        "{count, plural, one {# Projekt wird synchronisiert:} other {# Projekte werden synchronisiert:}}",
+        "{count, plural, one {Ausgewähltes Projekt (#):} other {Ausgewählte Projekte (#):}}",
+      syncedHelp:
+        "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist. „{action}“ lädt die aktuelle Liste und kennzeichnet ausgewählte Projekte, die nicht aufgelistet sind.",
       syncedMore: "und {count} weitere",
       syncedNone:
-        "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Wähle über „{action}“ mindestens ein Projekt (oder alle Projekte) aus, oder lösche die Verbindung. Bereits importierte Daten bleiben erhalten.",
+        "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Wähle über „{action}“ mindestens ein Projekt (oder alle Projekte) aus; bereits importierte Daten bleiben erhalten. Wenn du stattdessen die Verbindung löschst, werden auch ihre importierten Daten gelöscht.",
       pages: "Seiten der Projektliste",
       previous: "Zurück",
       next: "Weiter",
@@ -301,7 +303,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       checking: "Projekte werden geladen…",
       accessFailed: "Die Projektliste konnte nicht geladen werden.",
       refusedHelp:
-        "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, wähle ein anderes Projekt oder lösche diese Verbindung. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
+        "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Wenn du stattdessen diese Verbindung löschst, werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
       save: "Projektauswahl speichern",
       cancel: "Abbrechen",
       saved:
