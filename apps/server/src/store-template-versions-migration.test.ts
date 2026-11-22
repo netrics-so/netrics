@@ -291,8 +291,13 @@ describe("0072 store template versions", () => {
       expect(rows.length).toBeGreaterThan(0);
       expect(rows.every((row) => row.workspaceId === id)).toBe(true);
     }
-    const none = await withWorkspace(db, { workspaceId: randomUUID() }, (tx) =>
-      tx.select().from(schema.dataTemplateRecords),
+    // An unknown workspace sees nothing under RLS (without the workspace
+    // fence, which refuses one before any read, #839).
+    const none = await withWorkspace(
+      db,
+      { workspaceId: randomUUID() },
+      (tx) => tx.select().from(schema.dataTemplateRecords),
+      { fence: "none" },
     );
     expect(none).toEqual([]);
   });

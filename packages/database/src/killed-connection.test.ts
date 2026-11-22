@@ -10,7 +10,7 @@ import postgres from "postgres";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "./auth-schema.js";
-import { withWorkspace } from "./context.js";
+import { withWorkspace as withFencedWorkspace } from "./context.js";
 import { createDatabase } from "./index.js";
 import { withSessionAdvisoryLock, type PooledDb } from "./reserved.js";
 import * as schema from "./schema.js";
@@ -29,6 +29,14 @@ import {
 //
 // Every backend killed here belongs to this file's own database, and is picked
 // by its pid, so concurrent test runs on the same server are never touched.
+
+// The workspaces here are made up (this is about the driver), which the
+// workspace fence would refuse (#839).
+const withWorkspace = <T>(
+  db: Parameters<typeof withFencedWorkspace>[0],
+  ctx: Parameters<typeof withFencedWorkspace>[1],
+  fn: Parameters<typeof withFencedWorkspace<T>>[2],
+) => withFencedWorkspace(db, ctx, fn, { fence: "none" });
 
 let testDb: TestDatabase;
 let admin: postgres.Sql;

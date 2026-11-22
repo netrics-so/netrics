@@ -199,9 +199,11 @@ describe("the workspace quota index migration", () => {
       ]),
     );
     // Before: a full scan of each table (other indexes or the heap).
+    // (The workspace's own row through its primary key is the fence every
+    // tenant transaction takes, #839; nothing serializable writes it.)
     for (const lock of locks)
       expect(lock).toMatch(
-        /^(tuple .*|page data_(connector_stages|prepared_generations|datasets)_workspace_idx)$/,
+        /^(tuple .*|page workspaces_pkey|page data_(connector_stages|prepared_generations|datasets)_workspace_idx)$/,
       );
   });
 });

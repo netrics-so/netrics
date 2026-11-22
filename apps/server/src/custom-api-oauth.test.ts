@@ -35,6 +35,7 @@ import {
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
+import { createConnectionService } from "./connections/service.js";
 import { createCredentialKeyring, decryptCredentials } from "./credentials.js";
 import { loadConfig } from "./env.js";
 import { createJobHandlers } from "./jobs/handlers.js";
@@ -804,6 +805,175 @@ describe("custom OAuth: revocation", () => {
     expect(deleted.statusCode).toBe(204);
     expect(fixture.oauth.revoked).toContain(refresh);
     expect(await grant(id)).toBeNull();
+  });
+
+  it("the purge of a deleted workspace revokes a draft's grant and removes its definitions, connections and drafts (#839)", async () => {
+    const home = workspaceId;
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/workspaces",
+      headers: { cookie: owner },
+      payload: { name: "Doomed custom" },
+    });
+    const doomed = workspaceResponseSchema.parse(created.json()).workspace.id;
+    // The helpers act on `workspaceId`.
+    workspaceId = doomed;
+    let draft: string;
+    let refresh: string;
+    try {
+      // A definition with a pinned connection, and a draft holding a grant.
+      await connection(document("oauth_client_credentials"));
+      draft = await newDraft(document("oauth_code"));
+      await authorize(draft);
+      refresh = (await envelope(draft)).refreshToken as string;
+    } finally {
+      workspaceId = home;
+    }
+    const rows = async () => {
+      const [row] = await admin<Record<string, number>[]>`
+        select
+          (select count(*)::int from connections where workspace_id = ${doomed}) as connections,
+          (select count(*)::int from connections where workspace_id = ${doomed} and status = 'draft') as drafts,
+          (select count(*)::int from connection_oauth where workspace_id = ${doomed}) as grants,
+          (select count(*)::int from custom_api_definitions where workspace_id = ${doomed}) as definitions,
+          (select count(*)::int from custom_api_definition_versions where workspace_id = ${doomed}) as versions,
+          (select count(*)::int from workspaces where id = ${doomed}) as workspaces`;
+      return row!;
+    };
+    expect(await rows()).toEqual({
+      connections: 2,
+      drafts: 1,
+      grants: 2,
+      definitions: 1,
+      versions: 1,
+      workspaces: 1,
+    });
+
+    const deleted = await call("POST", `/v1/workspaces/${doomed}/delete`, {
+      name: "Doomed custom",
+    });
+    expect(deleted.statusCode, deleted.body).toBe(204);
+    // The expired-draft cleanup leaves a deleted workspace to its purge.
+    await admin`
+      update connections set updated_at = now() - interval '25 hours'
+      where id = ${draft}`;
+    const [queued] = await admin<{ queued: number }[]>`
+      select enqueue_expired_draft_grants(now(), interval '24 hours', 100) as queued`;
+    expect(queued!.queued).toBe(0);
+    expect(fixture.oauth.revoked).not.toContain(refresh);
+
+    const connections = createConnectionService({
+      db,
+      registry: new ConnectorRegistry(),
+      credentialKeyring: keyring,
+      oauthProviders: new OAuthProviders([]),
+      oauthTokens: tokens,
+    });
+    const purge = createJobHandlers({
+      registry: new ConnectorRegistry(),
+      credentialKeyring: keyring,
+      oauthTokens: tokens,
+      purgeConnection: (workspace, connectionId) =>
+        connections.removeForPurge(workspace, connectionId),
+    })["workspace.purge"]!;
+    await purge({
+      job: {
+        id: randomUUID(),
+        kind: "workspace.purge",
+        workspaceId: null,
+        connectionId: null,
+        attempts: 0,
+        payload: { purge_workspace_id: doomed },
+      } as unknown as Job,
+      appDb: db,
+      schedulerDb: db,
+      logger: pino({ level: "silent" }),
+    });
+    // The draft's grant is revoked at its provider; the client-credentials
+    // connection had no consent to withdraw.
+    expect(fixture.oauth.revoked).toContain(refresh);
+    expect(await rows()).toEqual({
+      connections: 0,
+      drafts: 0,
+      grants: 0,
+      definitions: 0,
+      versions: 0,
+      workspaces: 0,
+    });
+    const [event] = await admin<{ metadata: unknown }[]>`
+      select metadata from audit_events
+      where action = 'workspace.purged' and target = ${doomed}`;
+    expect(event!.metadata).toEqual({
+      connections: 2,
+      oauthGrants: { revoked: 1, failed: 0, kept: 0 },
+    });
+    // The other workspace's drafts and grants were not touched.
+    expect((await call("GET", ws("/connections"))).statusCode).toBe(200);
+  });
+
+  it("revokes the grant of a code exchange the workspace's deletion overtook (#839)", async () => {
+    const home = workspaceId;
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/workspaces",
+      headers: { cookie: owner },
+      payload: { name: "Overtaken" },
+    });
+    const doomed = workspaceResponseSchema.parse(created.json()).workspace.id;
+    workspaceId = doomed;
+    try {
+      const id = await newDraft(document("oauth_code"));
+      const started = await start(id);
+      expect(started.statusCode, started.body).toBe(200);
+      const consent = await fixtureGet(
+        startOAuthAuthorizationResponseSchema.parse(started.json())
+          .authorizationUrl,
+      );
+      const back = new URL(consent.location);
+      const revokedBefore = fixture.oauth.revoked.length;
+      // The provider holds its answer to the code exchange.
+      let reached!: () => void;
+      let answer!: () => void;
+      const exchanging = new Promise<void>((resolve) => (reached = resolve));
+      const held = new Promise<void>((resolve) => (answer = resolve));
+      fixture.oauth.onToken = () => {
+        fixture.oauth.onToken = null;
+        reached();
+        return held;
+      };
+      const pending = call("POST", "/v1/oauth/custom/callback", {
+        state: back.searchParams.get("state"),
+        code: back.searchParams.get("code"),
+      });
+      await exchanging;
+      // Meanwhile the workspace is deleted.
+      const deleted = await call("POST", `/v1/workspaces/${doomed}/delete`, {
+        name: "Overtaken",
+      });
+      expect(deleted.statusCode, deleted.body).toBe(204);
+      answer();
+      const callback = await pending;
+      expect(callback.statusCode, callback.body).toBe(200);
+      expect(oauthCallbackResponseSchema.parse(callback.json()).outcome).toBe(
+        "failed",
+      );
+      // The token the provider just issued is revoked, and nothing stored.
+      const revoked = fixture.oauth.revoked.slice(revokedBefore);
+      expect(revoked).toHaveLength(1);
+      expect(await grant(id)).toBeNull();
+      expect((await envelope(id)).refreshToken ?? null).toBeNull();
+      const line = logLines.find((entry) =>
+        entry.includes("unstored custom oauth grant"),
+      );
+      expect(JSON.parse(line!)).toMatchObject({
+        provider: "custom",
+        revocation: "revoked",
+      });
+      expect(line).not.toContain(revoked[0]!);
+    } finally {
+      fixture.oauth.onToken = null;
+      workspaceId = home;
+    }
   });
 
   it("revokes an expired draft's grant before the cleanup deletes it", async () => {

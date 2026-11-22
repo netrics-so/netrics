@@ -26,6 +26,7 @@ import {
   type Database,
   type ImageQuota,
   type ImageRow,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 
 import { sanitizeImage } from "./format.js";
@@ -125,6 +126,7 @@ export async function fetchAndStoreIcons(
       ),
     );
   } catch (error) {
+    rethrowWorkspaceGone(error);
     throw new ResourceIconFetchError(error);
   }
   const names = new Map(input.resources.map((r) => [r.id, r.name]));
@@ -214,6 +216,7 @@ async function storeIcon(
             store.remove(savepoint, workspaceId, existing.id),
           );
         } catch (error) {
+          rethrowWorkspaceGone(error);
           if (!hasSqlstate(error, "23503")) {
             throw error;
           }
@@ -488,6 +491,7 @@ export function createResourceIconService(deps: ResourceIconServiceDeps) {
           // The connection cannot be called (its code, e.g. no credentials).
           if (!called.ok) warn(count, called.error);
         } catch (error) {
+          rethrowWorkspaceGone(error);
           // The provider's words stay out of logs and answers: its class.
           warn(count, error);
         }
@@ -576,6 +580,7 @@ export function createResourceIconService(deps: ResourceIconServiceDeps) {
         }
         stored = result.value;
       } catch (error) {
+        rethrowWorkspaceGone(error);
         if (!(error instanceof ResourceIconFetchError)) {
           throw error;
         }

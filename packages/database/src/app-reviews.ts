@@ -1,3 +1,4 @@
+import { rethrowWorkspaceGone } from "./context.js";
 import { and, desc, eq, gte, isNull, lt, notInArray, sql } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
@@ -122,6 +123,7 @@ export async function ingestAppReviews(
   try {
     return await storeAppReviews(tx, input);
   } catch (error) {
+    rethrowWorkspaceGone(error);
     throw new AppReviewStoreError(sqlState(error));
   }
 }

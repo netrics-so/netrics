@@ -24,6 +24,7 @@ import {
   withWorkspace,
   type Database,
   type Invitation,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import { can, canManageMember } from "@netrics/domain";
 
@@ -212,7 +213,8 @@ export function registerInvitationRoutes(
                   inviterAcceptLanguage: request.headers["accept-language"],
                 }),
               });
-            } catch {
+            } catch (caught) {
+              rethrowWorkspaceGone(caught);
               // The invitation stays open; inviting again sends a new link.
               return sendError(reply, 502, "email_delivery_failed");
             }

@@ -1,4 +1,8 @@
-import { withWorkspace, findDashboard } from "@netrics/database";
+import {
+  withWorkspace,
+  findDashboard,
+  rethrowWorkspaceGone,
+} from "@netrics/database";
 import { DEFAULT_DATA_POLICY, type DataPolicy } from "@netrics/domain";
 import {
   dashboardDimensionValuesInputSchema,
@@ -162,6 +166,7 @@ export function registerDashboardRoutes(
               { isolationLevel: "repeatable read" },
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, 400, safeDataError(error));
           }
         },
@@ -401,6 +406,7 @@ export function registerDashboardRoutes(
               { isolationLevel: "repeatable read" },
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             sendError(reply, 400, safeDataError(error));
           }
         },

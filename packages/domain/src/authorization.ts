@@ -6,6 +6,7 @@ export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 export type WorkspaceAction =
   | "workspace:view"
   | "workspace:rename"
+  | "workspace:delete"
   | "members:view"
   | "members:add"
   | "members:change-role"
@@ -34,6 +35,7 @@ export type WorkspaceAction =
 const ALL_ACTIONS: readonly WorkspaceAction[] = [
   "workspace:view",
   "workspace:rename",
+  "workspace:delete",
   "members:view",
   "members:add",
   "members:change-role",
@@ -62,7 +64,8 @@ const ALL_ACTIONS: readonly WorkspaceAction[] = [
 
 const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<WorkspaceAction>> = {
   owner: new Set(ALL_ACTIONS),
-  admin: new Set(ALL_ACTIONS),
+  // Everything but deleting the workspace, which is the owners' (#839).
+  admin: new Set(ALL_ACTIONS.filter((action) => action !== "workspace:delete")),
   editor: new Set([
     "workspace:view",
     "members:view",

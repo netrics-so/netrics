@@ -14,6 +14,7 @@ import {
   listConnections,
   schema,
   type Transaction,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -342,6 +343,7 @@ export async function readCompareMeasure(
       (dimension) => dimension.id === measure.dateDimensionId,
     )?.type;
   } catch (error) {
+    rethrowWorkspaceGone(error);
     return failed(safeDataError(error));
   }
   if (dimensionType === undefined) return failed("model_dimension_not_found");

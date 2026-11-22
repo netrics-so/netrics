@@ -56,6 +56,7 @@ import {
   withWorkspace,
   type Database,
   type DeviceRow,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   dashboardModelQuery,
@@ -248,6 +249,7 @@ export function validateScope(
       }
     }
   } catch (error) {
+    rethrowWorkspaceGone(error);
     return error instanceof DataProcessingError &&
       error.code.startsWith("device_scope_")
       ? error.code

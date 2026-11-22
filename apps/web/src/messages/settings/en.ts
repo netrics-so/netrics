@@ -40,6 +40,17 @@ export const settingsEn = {
       hint: "Colours and text size of dashboards on TVs: five built-in themes and your own.",
       manage: "Manage themes",
     },
+    deletion: {
+      title: "Delete workspace",
+      hint: "Deletes this workspace for every member, with its connections and their data, datasets, dashboards, images, screens and invitations. Access granted to connected accounts is withdrawn where no other workspace uses it. This cannot be undone.",
+      button: "Delete workspace…",
+      deleting: "Deleting…",
+      confirmTitle: "Delete “{workspace}”?",
+      confirmText:
+        "The workspace and everything in it is deleted for all members, and its screens stop showing dashboards. This cannot be undone.",
+      typeLabel: "Type the workspace name “{workspace}” to confirm",
+      confirm: "Delete workspace",
+    },
     screenLanguage: {
       label: "Screen language",
       automatic: "Installation default ({language})",

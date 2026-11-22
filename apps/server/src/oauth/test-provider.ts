@@ -153,6 +153,11 @@ export class FixtureOAuthProvider {
   /** Delay before answering /token (ms), to widen race windows. */
   tokenDelayMs = 0;
   /**
+   * Holds the answer to the next code exchange until it settles (null:
+   * off); the request is already counted. One use.
+   */
+  onCodeExchange: (() => Promise<void>) | null = null;
+  /**
    * Delay between receiving a revocation and applying it (ms): the request
    * is counted at once, the account's tokens die when it answers.
    */
@@ -329,6 +334,11 @@ export class FixtureOAuthProvider {
     }
     if (this.tokenDelayMs > 0) {
       await sleep(this.tokenDelayMs);
+    }
+    if (grantType === "authorization_code" && this.onCodeExchange) {
+      const hold = this.onCodeExchange;
+      this.onCodeExchange = null;
+      await hold();
     }
     const injected = this.nextTokenErrors.shift();
     if (injected) {

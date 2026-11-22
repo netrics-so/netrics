@@ -70,6 +70,10 @@ export const apiErrorsEn = {
       "This dashboard is archived while its updated copy is on your screens. Switch back on its update page to use or edit it again.",
 
     last_owner: "The last owner of a workspace cannot be demoted or removed.",
+    workspace_busy:
+      "The workspace is busy right now. Nothing was deleted; try again in a moment.",
+    workspace_name_mismatch:
+      "That is not the name of this workspace. Nothing was deleted.",
     membership_exists: "That person is already a member of this workspace.",
     email_delivery_failed:
       "The invitation email could not be sent. Try again later.",

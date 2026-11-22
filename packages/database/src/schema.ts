@@ -147,12 +147,20 @@ export const workspaces = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Set when an owner deleted the workspace (#839): from then on it has no
+    // members, invitations or live screens, and a `workspace.purge` job
+    // removes its data and finally this row (migration 0094).
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     check(
       "workspaces_screen_locale_format",
       sql`${table.screenLocale} is null or ${table.screenLocale} ~ '^[a-z]{2,3}$'`,
     ),
+    // enqueue_workspace_purges scans the few deleted workspaces.
+    index("workspaces_deleted_idx")
+      .on(table.deletedAt)
+      .where(sql`${table.deletedAt} is not null`),
   ],
 );
 
@@ -1010,6 +1018,14 @@ export const jobs = pgTable(
     index("jobs_finished_created_idx")
       .on(table.createdAt)
       .where(sql`${table.status} in ('succeeded', 'failed', 'dead')`),
+    // At most one live purge per deleted workspace (#839). Purge jobs carry
+    // no workspace_id (the row would go with the workspace's cascade); the
+    // workspace is named in the payload.
+    uniqueIndex("jobs_one_live_workspace_purge")
+      .on(sql`(${table.payload} ->> 'purge_workspace_id')`)
+      .where(
+        sql`${table.kind} = 'workspace.purge' and ${table.status} in ('pending', 'running', 'continuing')`,
+      ),
   ],
 );
 

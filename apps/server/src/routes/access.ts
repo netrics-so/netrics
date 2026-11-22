@@ -10,6 +10,7 @@ import type { Locale } from "@netrics/domain";
 import {
   findMembership,
   withUserContext,
+  workspaceState,
   type Database,
 } from "@netrics/database";
 
@@ -60,8 +61,15 @@ export async function resolveAccess(
     return null;
   }
   const { domainUserId: callerId, locale } = request.sessionIdentity!;
-  const membership = await withUserContext(db, { userId: callerId }, (tx) =>
-    findMembership(tx, params.data.workspaceId, callerId),
+  // A deleted workspace has no members; the fence also waits out a
+  // deletion in progress, so access is never resolved across one (#839).
+  const membership = await withUserContext(
+    db,
+    { userId: callerId },
+    async (tx) =>
+      (await workspaceState(tx, params.data.workspaceId)) === "live"
+        ? findMembership(tx, params.data.workspaceId, callerId)
+        : null,
   );
   if (!membership) {
     sendError(reply, 404, "workspace_not_found");

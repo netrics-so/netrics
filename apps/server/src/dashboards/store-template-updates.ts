@@ -25,6 +25,7 @@ import {
   type Database,
   type Transaction,
   notDraftConnection,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -595,7 +596,8 @@ export function createStoreTemplateUpdateService(deps: {
         },
       );
       if (sources.length) await deps.fetchIcons(actor, sources);
-    } catch {
+    } catch (caught) {
+      rethrowWorkspaceGone(caught);
       // No icon: the slide has no logo.
     }
   }
@@ -2254,7 +2256,8 @@ export function createStoreTemplateUpdateService(deps: {
       let code: string | null;
       try {
         code = validateScope(target, storedScope(device));
-      } catch {
+      } catch (caught) {
+        rethrowWorkspaceGone(caught);
         code = "device_scope_not_applicable";
       }
       if (code) problems.push({ id: device.id, name: device.name, code });

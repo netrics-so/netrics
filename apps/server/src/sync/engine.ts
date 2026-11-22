@@ -46,6 +46,7 @@ import {
   type OAuthAuthReason,
   type Transaction,
   notDraftConnection,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   CUSTOM_API_IMAGE_QUOTA_DEFAULT_BYTES,
@@ -666,6 +667,7 @@ async function runSync(
             });
       });
     } catch (recordingError) {
+      rethrowWorkspaceGone(recordingError);
       log.error(
         { err: safeMessage(recordingError) },
         "failed to record sync failure",
@@ -750,6 +752,7 @@ async function runSync(
           );
       });
     } catch (recordingError) {
+      rethrowWorkspaceGone(recordingError);
       log.error(
         { err: safeMessage(recordingError) },
         "failed to record rate limit",
@@ -834,6 +837,7 @@ async function runSync(
           ) as Record<string, unknown>)
         : {};
   } catch (error) {
+    rethrowWorkspaceGone(error);
     await recordFailure("contract", error);
     throw new NonRetryableJobError(safeMessage(error));
   }
@@ -1143,6 +1147,7 @@ async function runSync(
         );
       }
     } catch (error) {
+      rethrowWorkspaceGone(error);
       if (error instanceof RateLimitedError) throw await rateLimited(error);
       log.warn({ err: safeMessage(error) }, "resource names not discovered");
     }
@@ -1610,6 +1615,7 @@ async function runSync(
         );
       }
     } catch (error) {
+      rethrowWorkspaceGone(error);
       log.warn(
         { err: safeMessage(error) },
         "datasets without history not checked",
@@ -1644,6 +1650,7 @@ async function runSync(
       refreshIcons = true;
     }
   } catch (error) {
+    rethrowWorkspaceGone(error);
     log.warn({ err: safeMessage(error) }, "resource names not refreshed");
   }
 
@@ -1662,6 +1669,7 @@ async function runSync(
         log: (message) => log.warn(message),
       });
     } catch (error) {
+      rethrowWorkspaceGone(error);
       log.warn({ err: safeMessage(error) }, "resource icons not refreshed");
     }
   }
@@ -1682,6 +1690,7 @@ async function runSync(
         log: (message, fields) => log.info(fields ?? {}, message),
       });
     } catch (error) {
+      rethrowWorkspaceGone(error);
       log.warn({ err: safeMessage(error) }, "item images not stored");
     }
   }

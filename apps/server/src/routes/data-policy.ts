@@ -12,6 +12,7 @@ import {
   withWorkspace,
   insertAuditEvent,
   type Database,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import type { AuthService } from "../auth/index.js";
 import { createRequireInstallationAdmin } from "./principal.js";
@@ -86,7 +87,8 @@ export function registerDataPolicyRoutes(
             },
           );
           return result ?? sendError(reply, 404, "workspace_not_found");
-        } catch {
+        } catch (caught) {
+          rethrowWorkspaceGone(caught);
           return sendError(reply, 503, "data_policy_failed");
         }
       },

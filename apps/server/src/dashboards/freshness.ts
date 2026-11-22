@@ -11,6 +11,7 @@ import {
   type Transaction,
   notDraftConnection,
   findConnectionHistory,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -1065,7 +1066,8 @@ async function readMapping(
           }).load(mapping)
         ).rows,
     );
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return null;
   }
   // As resolveStoreProducts: an app's first mapping row decides.

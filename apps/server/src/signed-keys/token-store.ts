@@ -6,6 +6,7 @@ import {
   withWorkspace,
   type ConnectionSignedKeyTokenRow,
   type Database,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import type { Logger } from "pino";
 
@@ -79,7 +80,8 @@ export function createSignedKeyTokenStore(deps: SignedKeyTokenStoreDeps) {
         typeof sealed.key === "string"
         ? { accessToken: sealed.accessToken, key: sealed.key }
         : null;
-    } catch {
+    } catch (caught) {
+      rethrowWorkspaceGone(caught);
       // A cache entry that cannot be opened (e.g. its keyring key is gone)
       // is a miss; the next exchange overwrites it.
       return null;

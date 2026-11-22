@@ -10,6 +10,7 @@ import {
 const ALL_ACTIONS: WorkspaceAction[] = [
   "workspace:view",
   "workspace:rename",
+  "workspace:delete",
   "members:view",
   "members:add",
   "members:change-role",
@@ -40,6 +41,7 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
   owner: {
     "workspace:view": true,
     "workspace:rename": true,
+    "workspace:delete": true,
     "members:view": true,
     "members:add": true,
     "members:change-role": true,
@@ -68,6 +70,7 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
   admin: {
     "workspace:view": true,
     "workspace:rename": true,
+    "workspace:delete": false,
     "members:view": true,
     "members:add": true,
     "members:change-role": true,
@@ -96,6 +99,7 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
   editor: {
     "workspace:view": true,
     "workspace:rename": false,
+    "workspace:delete": false,
     "members:view": true,
     "members:add": false,
     "members:change-role": false,
@@ -124,6 +128,7 @@ const EXPECTED: Record<WorkspaceRole, Record<WorkspaceAction, boolean>> = {
   viewer: {
     "workspace:view": true,
     "workspace:rename": false,
+    "workspace:delete": false,
     "members:view": true,
     "members:add": false,
     "members:change-role": false,

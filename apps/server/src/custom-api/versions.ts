@@ -18,6 +18,7 @@ import {
   listCustomApiDefinitionVersions,
   withWorkspace,
   type Database,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 
 import type { CustomApiInstanceConfig } from "../env.js";
@@ -50,7 +51,8 @@ function summaryOf(
       ),
       environments: document.environments.length,
     };
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return { streams: 0, fields: 0, environments: 0 };
   }
 }

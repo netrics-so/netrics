@@ -73,6 +73,10 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
 
     last_owner:
       "Der letzte Inhaber eines Workspaces kann weder herabgestuft noch entfernt werden.",
+    workspace_busy:
+      "Der Workspace ist gerade beschäftigt. Es wurde nichts gelöscht; versuche es gleich noch einmal.",
+    workspace_name_mismatch:
+      "Das ist nicht der Name dieses Workspaces. Es wurde nichts gelöscht.",
     membership_exists: "Diese Person ist schon Mitglied dieses Workspaces.",
     email_delivery_failed:
       "Die Einladungs-E-Mail konnte nicht gesendet werden. Versuch es später noch einmal.",

@@ -20,6 +20,7 @@ import {
   findItemImages,
   resolveDataPolicy,
   type Transaction,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import { DataServiceError, queryDataModel } from "../data/service.js";
 import { itemImageUrlHash } from "../images/custom-api-images.js";
@@ -238,6 +239,7 @@ export async function queryDashboardItems(
       };
     });
   } catch (error) {
+    rethrowWorkspaceGone(error);
     return {
       widgetId: input.id,
       status: "no_data",
