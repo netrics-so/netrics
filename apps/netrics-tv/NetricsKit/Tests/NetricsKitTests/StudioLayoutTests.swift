@@ -626,6 +626,58 @@ private func weight(_ any: Any?) -> StudioFontWeight {
             }
         }
 
+        /// The last reporting day named (#791): a line the fit takes as
+        /// fitting is never drawn wider, so naming the day cannot cut a
+        /// part the plain line shows. The footers of metric, gauge, chart,
+        /// table, compare and review tiles fit with `estimateTextWidth`
+        /// and draw one line of the system font with tabular digits; a
+        /// measure tile's several-source forms fit with the calibrated
+        /// widths (one source there is fitted by the view as drawn).
+        @Test func coverTheNamedReportingDayAsDrawn() {
+            let footers = [
+                "Last reporting day: Nov 17 · fetched 10 min. ago · next ~21:00",
+                "Last reporting day: Nov 17 · fetched 10 min. ago · next ~9:00 PM",
+                "Last reporting day: Feb 28 · fetched 23 hr. ago · next tomorrow ~12:00 AM",
+                "Last reporting day: Nov 17 · fetched 10 min. ago", "Last reporting day: Nov 17",
+                "Last reporting day: Nov 17 · Nov 18 not published yet · checking again ~10:20",
+                "derived · last reporting day: Nov 17 · fetched 10 min. ago",
+                "Letzter Berichtstag: 17. Nov. · abgerufen vor 10 Min. · nächste ~21:00",
+                "Letzter Berichtstag: 28. Feb. · abgerufen vor 23 Std. · nächste morgen ~00:00",
+                "Letzter Berichtstag: 17. Nov. · abgerufen vor 10 Min.", "Letzter Berichtstag: 17. Nov.",
+                "Letzter Berichtstag: 17. Nov. · 18. Nov. noch nicht veröffentlicht · erneut prüfen ~10:20",
+                "Letzter Berichtstag: 11. Feb.", "Letzter Berichtstag: 30. Sept.", "Last reporting day: Sep 30",
+            ]
+            let sources = [
+                "App Store last reporting day: Nov 17 · next ~21:00 · Google Play last reporting day: Nov 11 · fetched 10 min. ago",
+                "App Store last reporting day: Nov 17 · next ~9:00 PM · Google Play last reporting day: Nov 11",
+                "App Store last reporting day: Nov 17 · Google Play last reporting day: Nov 11",
+                "App Store letzter Berichtstag: 17. Nov. · nächste ~21:00 · Google Play letzter Berichtstag: 11. Nov. · abgerufen vor 10 Min.",
+                "App Store letzter Berichtstag: 17. Nov. · Google Play letzter Berichtstag: 11. Nov.",
+            ]
+            for scale in [1.0, 1.15, 1.3] {
+                for screen in [1.0, 2.0] {
+                    // Footers draw at the tile's smallest size, from 24 units.
+                    for base in [24.0, 28.0, 32.0] {
+                        let size = base * scale * screen
+                        let font = Self.font(CGFloat(size), semibold: false)
+                        for text in footers {
+                            #expect(
+                                Self.drawn(text, font) <= StudioLayout.estimateTextWidth(text, fontSize: size) + 1e-6,
+                                "\(text) at \(size)")
+                        }
+                    }
+                    let size = 24.0 * scale * screen
+                    let font = Self.font(CGFloat(size), semibold: false)
+                    for text in sources {
+                        #expect(
+                            Self.drawn(text, font)
+                                <= StudioLayout.measureTextWidth(text, fontSize: size, weight: .regular, font: .tv) + 1e-6,
+                            "\(text) at \(size)")
+                    }
+                }
+            }
+        }
+
         static func drawn(_ text: String, _ font: CTFont) -> Double {
             CTLineGetTypographicBounds(
                 CTLineCreateWithAttributedString(

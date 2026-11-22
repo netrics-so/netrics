@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import type { DashboardWidgetData } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
 import {
-  freshnessLevelFit,
   measureTableColumnWidths,
   type DashboardDataFilter,
 } from "@netrics/domain";
@@ -14,7 +13,6 @@ import {
   formatMeasureCell,
   liveInteraction,
   MeasureWidgetView,
-  namedPartsThatFit,
   type MeasureWidget,
 } from "./measure-widget";
 const format = (
@@ -628,10 +626,10 @@ describe("the oldest source refresh next to the freshness line (#769)", () => {
 
   it("shows only the freshness line when the widget has one, as on tvOS", () => {
     const en = view(true);
-    expect(en).toContain("Up to Nov 15");
+    expect(en).toContain("Last reporting day: Nov 15");
     expect(en).not.toContain("Oldest source refresh");
     const de = view(true, "de");
-    expect(de).toContain("Bis 15. Nov.");
+    expect(de).toContain("Letzter Berichtstag: 15. Nov.");
     expect(de).not.toContain("Älteste Quellenaktualisierung");
   });
 
@@ -668,7 +666,7 @@ describe("the oldest source refresh next to the freshness line (#769)", () => {
     expect(view(continuous)).not.toContain("Oldest source refresh");
     // A periodic stream with its covered day and ok: the line only.
     const ok = view(periodic, "en", { status: "ok" });
-    expect(ok).toContain("Up to Nov 15");
+    expect(ok).toContain("Last reporting day: Nov 15");
     expect(ok).not.toContain("Oldest source refresh");
   });
 });
@@ -937,9 +935,10 @@ describe("a total with its split, and freshness per source (#784)", () => {
     const half = text(view(data(), { w: 6, h: 3 }));
     expect(half).not.toContain("last reporting day");
     expect(half).toMatch(/App Store up to Nov 17 · .*Google Play up to Nov 11/);
-    // A card that grows names the days and wraps.
-    expect(text(view(data()))).toContain(
-      "|App Store last reporting day: Nov 17 · Google Play last reporting day: Nov 11|",
+    // A card that grows wraps: every store's day and next time without
+    // the fetch (form 2, as on netrics TV), the days named.
+    expect(text(view(data()))).toMatch(
+      /\|App Store last reporting day: Nov 17 · next (?:tomorrow )?~[^|·]+ · Google Play last reporting day: Nov 11\|/,
     );
     // A third of the width: the days only, or shorter, never a store less.
     const narrow = text(view(data(), { w: 4, h: 3 }, "de"));
@@ -948,8 +947,8 @@ describe("a total with its split, and freshness per source (#784)", () => {
     expect(narrow).not.toContain("nächste");
   });
 
-  it("names one source's day where the tile has room, and drops that first (#791)", () => {
-    const single = (dataThrough: string) =>
+  it("one source: a tile measures the named day as drawn, a card names it and wraps (#791)", () => {
+    const single = (dataThrough: string, extra: object = {}) =>
       data({
         freshness: {
           kind: "periodic",
@@ -957,54 +956,55 @@ describe("a total with its split, and freshness per source (#784)", () => {
           fetchedAt: sources[1]!.fetchedAt,
           dataThrough,
           nextExpectedAt: sources[0]!.nextExpectedAt,
+          ...extra,
         },
       } as Partial<DashboardWidgetData>);
-    const line = (html: string) =>
-      /<p class="sw-measure-freshness"[^>]*>(.*?)<\/p>/
-        .exec(html)![1]!
-        .replace(/<[^>]+>/g, "")
-        .replace(/\u202f/g, " ");
-    const wide = line(view(single("2026-11-11"), { w: 12, h: 3 }));
-    expect(wide).toMatch(
-      /^Last reporting day: Nov 11 · fetched 10 min\. ago · next (?:tomorrow )?~.+$/,
-    );
-    expect(line(view(single("2026-11-11"), { w: 12, h: 3 }, "de"))).toMatch(
-      /^Letzter Berichtstag: 11\. Nov\. · abgerufen vor 10 Min\. · nächste /,
-    );
-    // A narrow tile: the parts as before, dropped from the end by the
-    // stylesheet; the named day never takes a part's place.
-    const narrow = line(view(single("2026-11-11"), { w: 2, h: 3 }));
-    expect(narrow).toMatch(/^Up to Nov 11 · fetched 10 min\. ago · next /);
-    // The day of the check itself: the line is the one before.
-    const today = new Date().toISOString().slice(0, 10);
-    expect(line(view(single(today), { w: 12, h: 3 }))).toMatch(/^Up to /);
-    // A card that grows has no width to fit: the line as before.
-    expect(line(view(single("2026-11-11")))).toMatch(/^Up to Nov 11 · /);
-  });
-
-  it("fits the named parts as many as the plain ones, or not at all (#791)", () => {
-    const plain = ["Up to Nov 11", "fetched 10 min. ago", "next ~9:00 PM"];
-    const named = ["Last reporting day: Nov 11", ...plain.slice(1)];
-    expect(namedPartsThatFit(plain, named, 1808, 1)).toEqual(named);
-    let fewer = 0;
-    for (let width = 100; width <= 1808; width += 4) {
-      const shown = namedPartsThatFit(plain, named, width, 1);
-      if (shown === null) continue;
-      // Never fewer parts than the plain line fits at this width.
-      const plainFits = [3, 2, 1].find(
-        (count) =>
-          freshnessLevelFit(
-            [[plain.slice(0, count).join(" · ")], [""]],
-            width,
-            1,
-            "web",
-          ) === 0,
+    const paragraph = (html: string, name: string) => {
+      const match = new RegExp(`<p class="${name}"[^>]*>(.*?)</p>`).exec(html);
+      return match
+        ? match[1]!.replace(/<[^>]+>/g, "").replace(/\u202f/g, " ")
+        : null;
+    };
+    const line = (html: string) => paragraph(html, "sw-measure-freshness");
+    const probe = (html: string) => paragraph(html, "sw-measure-fresh-probe");
+    // A tile: the line as before until the browser has measured that the
+    // named wording shows as many parts; the named one waits out of sight.
+    for (const w of [4, 12]) {
+      const tile = view(single("2026-11-11"), { w, h: 3 });
+      expect(line(tile)).toMatch(
+        /^Up to Nov 11 · fetched 10 min\. ago · next /,
       );
-      expect(shown.length).toBe(plainFits);
-      if (shown.length < 3) fewer += 1;
+      expect(probe(tile)).toMatch(
+        /^Last reporting day: Nov 11 · fetched 10 min\. ago · next /,
+      );
     }
-    expect(fewer).toBeGreaterThan(0);
-    expect(namedPartsThatFit(plain, named, 100, 1)).toBeNull();
+    expect(probe(view(single("2026-11-11"), { w: 12, h: 3 }, "de"))).toMatch(
+      /^Letzter Berichtstag: 11\. Nov\. · abgerufen vor 10 Min\. · /,
+    );
+    // The day of the check itself: nothing to name, nothing to measure.
+    const today = new Date().toISOString().slice(0, 10);
+    const same = view(single(today), { w: 12, h: 3 });
+    expect(line(same)).toMatch(/^Up to /);
+    expect(same).not.toContain("sw-measure-fresh-probe");
+    // A card that grows names the day and wraps, as on netrics TV.
+    const wrapping = "sw-measure-freshness sw-measure-freshness--wrap";
+    const card = view(single("2026-11-11"));
+    expect(paragraph(card, wrapping)).toMatch(
+      /^Last reporting day: Nov 11 · fetched 10 min\. ago · next /,
+    );
+    expect(card).not.toContain("sw-measure-fresh-probe");
+    expect(paragraph(view(single(today)), wrapping)).toMatch(/^Up to /);
+    // A provider overdue by a day keeps its one warning line, on a tile
+    // and on a card.
+    const overdue = single("2026-11-11", { late: true });
+    for (const placement of [{ w: 12, h: 3 }, undefined]) {
+      const html = view({ ...overdue, status: "stale" }, placement);
+      expect(
+        paragraph(html, "sw-measure-freshness sw-measure-freshness--overdue"),
+      ).toBe("Up to Nov 11 · Nov 12 not published yet");
+      expect(html).not.toContain("sw-measure-fresh-probe");
+      expect(html).not.toContain("Last reporting day");
+    }
   });
 
   it("counts every freshness line when a table fits its rows", () => {

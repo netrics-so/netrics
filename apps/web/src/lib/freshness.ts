@@ -467,6 +467,26 @@ export function freshnessCandidates(
   return plain.flatMap((line, index) => [namedCandidates[index]!, line]);
 }
 
+/**
+ * For a footer shown with the day named (#791): the candidate right after
+ * it, the same parts with the plain wording, which is what the widget
+ * showed before. Null for any other line. Screens fall back to it when the
+ * browser draws the named one cut.
+ */
+export function plainTwin(
+  candidates: readonly (string | null)[],
+  line: string | null,
+  locale: Locale,
+): string | null {
+  if (!line) return null;
+  const label = webTranslator(locale, "screen.freshness")("reportingDay", {
+    date: "",
+  });
+  if (!line.includes(label)) return null;
+  const twin = candidates[candidates.indexOf(line) + 1];
+  return twin && !twin.includes(label) ? twin : null;
+}
+
 /** The statuses whose warning notice comes before the freshness line. */
 export function isWarningStatus(status: DeviceTileStatus | undefined): boolean {
   return status === "stale" || status === "outage" || status === "auth_failed";

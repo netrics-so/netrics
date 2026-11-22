@@ -270,7 +270,12 @@ export function CompareWidgetView(input: CompareWidgetViewProps) {
           {props.notice}
         </WidgetNotice>
       ) : footer ? (
-        <WidgetFooter size={sizes.small}>{footer}</WidgetFooter>
+        <WidgetFooter
+          size={sizes.small}
+          candidates={compareFooterCandidates(candidates, locale)}
+        >
+          {footer}
+        </WidgetFooter>
       ) : null}
     </article>
   );

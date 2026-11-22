@@ -10,6 +10,7 @@ import {
   freshnessParts,
   freshnessSourceForms,
   freshnessSourceLevels,
+  plainTwin,
   reportingDayBeforeCheck,
   type FreshnessClock,
 } from "./freshness";
@@ -588,6 +589,28 @@ describe("last reporting day (#791)", () => {
     expect(
       freshnessNotice("Source unreachable", "outage", appStore, at("en")),
     ).toBe("Source unreachable · Up to Nov 17");
+  });
+
+  it("knows the plain line a named footer falls back to when drawn cut", () => {
+    for (const locale of ["en", "de"] as const) {
+      const candidates = freshnessCandidates(appStore, at(locale));
+      // Each named candidate: the same parts right after it.
+      expect(plainTwin(candidates, candidates[0]!, locale)).toBe(candidates[1]);
+      expect(plainTwin(candidates, candidates[4]!, locale)).toBe(candidates[5]);
+      // A plain one has none, nor has a line that is not a candidate.
+      expect(plainTwin(candidates, candidates[1]!, locale)).toBeNull();
+      expect(plainTwin(candidates, candidates[5]!, locale)).toBeNull();
+      expect(plainTwin(candidates, null, locale)).toBeNull();
+      expect(plainTwin([], candidates[0]!, locale)).toBeNull();
+    }
+    // A footer without freshness never falls back to its shorter form.
+    const updated = [
+      "updated 2 min. ago · Stripe",
+      "updated 2 min. ago",
+      "Stripe",
+    ];
+    for (const line of updated)
+      expect(plainTwin(updated, line, "en")).toBeNull();
   });
 
   const product: WidgetFreshness = {

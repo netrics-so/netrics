@@ -439,16 +439,33 @@ describe("measure widget footer", () => {
         data={data({ freshness: periodic })}
       />,
     );
+    // A card (no tile to fit) names the day and wraps (#791).
     expect(line(html)).toBe(
-      "Up to Nov 15 · fetched 10 min. ago · next any minute",
+      "Last reporting day: Nov 15 · fetched 10 min. ago · next any minute",
     );
+    expect(html).toContain("sw-measure-freshness--wrap");
+    // The day of the check itself: the line as it was.
+    expect(
+      line(
+        renderI18n(
+          <MeasureWidgetView
+            widget={widget}
+            data={data({
+              freshness: { ...periodic, dataThrough: "2026-11-16" },
+            })}
+          />,
+        ),
+      ),
+    ).toBe("Up to Nov 16 · fetched 10 min. ago · next any minute");
   });
 
   it("a late provider is muted; an overdue one is the warning", () => {
     const muted = renderI18n(
       <MeasureWidgetView widget={widget} data={data({ freshness: late })} />,
     );
-    expect(muted).toContain('class="sw-measure-freshness"');
+    expect(muted).toContain(
+      'class="sw-measure-freshness sw-measure-freshness--wrap"',
+    );
     expect(muted).toContain("Nov 15 not published yet");
     const overdue = renderI18n(
       <MeasureWidgetView
@@ -498,7 +515,7 @@ describe("measure widget footer", () => {
         })}
       />,
     );
-    expect(line(html)).toBe("Up to Nov 15");
+    expect(line(html)).toBe("Last reporting day: Nov 15");
     expect(html).not.toContain("next any minute");
   });
 

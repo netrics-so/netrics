@@ -474,17 +474,31 @@ the two differ:
   behind and are named. Never for a monthly stream (it names a month), a
   continuous stream or a stream without a day yet. With several sources
   each source decides for itself, by its own `fetchedAt`.
-- **Which wording.** "Last reporting day: Nov 17" takes the place of "Up to
-  Nov 17" and says the same date once; the other parts and their order are
-  unchanged, also in the late wording and under a warning.
-- **It is the first thing to go.** Each candidate of the line comes with
-  the day named right before the same candidate without: "Last reporting
-  day: Nov 17 · fetched 10 min. ago", then "Up to Nov 17 · fetched 10 min.
-  ago". A tile shows the named one only where it fits with every part the
-  tile shows anyway, so a tile without room shows exactly what it showed
-  before. Of the forms for several sources, 1 to 3 come named the same
-  way, each right before itself; the short forms 4 to 6 stay as they are.
-  A scroll card, which wraps, names the day.
+- **Which wording.** "Last reporting day: Nov 17" replaces "Up to Nov 17"
+  and says the same date once (owner decision 2026-11-23; the first
+  proposal was to add it to the line, which would have said the date
+  twice). The other parts and their order are unchanged, also in the late
+  wording and under a warning. Per source it reads "App Store last
+  reporting day: Nov 17".
+- **Only where the whole line still fits.** Each candidate of the line
+  comes with the day named right before the same candidate without: "Last
+  reporting day: Nov 17 · fetched 10 min. ago", then "Up to Nov 17 ·
+  fetched 10 min. ago". A tile shows the named one only where it fits with
+  every part the tile shows with the plain wording, so a narrow tile shows
+  exactly what it showed before. Of the forms for several sources, 1 to 3
+  come named the same way, each right before itself; the short forms 4 to
+  6 stay as they are.
+- **As drawn, not as estimated.** The fit estimates widths; the rule holds
+  for what is drawn. On the web a measure tile's one-source line, whose
+  parts the stylesheet drops, measures both wordings in the browser and
+  names the day only when that shows as many parts; a footer or a
+  several-source form picked with the day named that the browser would
+  cut falls back to the same parts without. On netrics TV the estimates
+  cover the system font as drawn (tested with the named wording), and a
+  measure tile picks the first candidate that fits as drawn.
+- **Scroll cards** grow with their content and wrap: they name the day and
+  show the whole line, one source or several (form 2), on the web and on
+  netrics TV alike.
 - **Where not.** The warning notice ("Source unreachable · Up to Nov 14"),
   the overdue warning line, and lists that name the stream (a connection's
   page, a status board, the detail sheet) keep their wording.

@@ -226,7 +226,9 @@ export function ReviewWidgetView(input: ReviewWidgetViewProps) {
           {props.notice}
         </WidgetNotice>
       ) : footer ? (
-        <WidgetFooter size={small}>{footer}</WidgetFooter>
+        <WidgetFooter size={small} candidates={candidates}>
+          {footer}
+        </WidgetFooter>
       ) : null}
     </article>
   );

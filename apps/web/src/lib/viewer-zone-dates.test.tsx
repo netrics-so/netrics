@@ -284,8 +284,11 @@ describe("measure widget", () => {
     expect(losAngeles).toContain("Nov 16, 2026, 4:30 AM");
     expect(auckland).not.toContain("Oldest source refresh");
     // The next expected data: tomorrow just after midnight in Auckland.
-    expect(auckland).toMatch(/Up to Nov 15 · .*tomorrow ~12:30 AM/);
-    expect(losAngeles).toMatch(/Up to Nov 15 · .*~3:30 AM/);
+    // A card names the day: it is older than the day of the check (#791).
+    expect(auckland).toMatch(
+      /Last reporting day: Nov 15 · .*tomorrow ~12:30 AM/,
+    );
+    expect(losAngeles).toMatch(/Last reporting day: Nov 15 · .*~3:30 AM/);
     expect(losAngeles).not.toContain("tomorrow");
   });
 

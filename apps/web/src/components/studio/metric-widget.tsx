@@ -311,7 +311,9 @@ export function MetricWidgetView(input: MetricWidgetViewProps) {
         </WidgetNotice>
       ) : null}
       {layout.showSource && footer ? (
-        <WidgetFooter size={layout.sizes.small}>{footer}</WidgetFooter>
+        <WidgetFooter size={layout.sizes.small} candidates={candidates}>
+          {footer}
+        </WidgetFooter>
       ) : null}
     </article>
   );

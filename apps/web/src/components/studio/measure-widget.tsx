@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useDashboardData } from "./dashboard-data-provider";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useDrawnCut, useNamedParts } from "./drawn-fit";
 import {
   SOURCE_HISTORY_INCOMPLETE_WARNING,
   type DashboardWidget,
@@ -146,6 +147,8 @@ export function measureFreshnessLine(
   named: string[] | null;
   warning: boolean;
   levels: string[][];
+  /** For a level with the days named: the same form without (#791). */
+  plainOf: (level: readonly string[]) => string[] | null;
   /** Off a slide (scroll cards, which wrap): the several-source lines. */
   card: string[] | null;
 } | null {
@@ -168,38 +171,114 @@ export function measureFreshnessLine(
     form.named ? [form.named, form.lines] : [form.lines],
   );
   if (parts.length === 0 && levels.length === 0) return null;
-  const card = forms[Math.max(0, forms.length - 4)];
+  // A card wraps: every source's day and next time, without the fetch
+  // (form 2, ADR 0025 section 8), as on netrics TV.
+  const card = forms[Math.max(0, forms.length - 5)];
   return {
     parts,
     named: reportingDayParts(freshness, clock, { warning: failing }),
     warning: data.status === "stale" && freshness.late === true,
     levels,
+    plainOf: (level) =>
+      forms.find((form) => form.named === level)?.lines ?? null,
     card: card ? (card.named ?? card.lines) : null,
   };
 }
 
 /**
- * The named parts a tile has room for (#791): as many as it shows of the
- * plain ones, never fewer, measured as the several-source fit measures
- * (`freshnessLevelFit`). Null: the plain parts, as before.
+ * One source's freshness line on a tile: its parts on one line, those
+ * that do not fit dropped from the end by the stylesheet. Where the day
+ * is older than the day of the last check (`named`, #791) the line names
+ * it, but only when that shows as many parts as the plain wording does as
+ * the browser draws them (`useNamedParts`): the other wording is measured
+ * out of sight. Until measured, and without script, the plain line.
  */
-export function namedPartsThatFit(
-  parts: readonly string[],
-  named: readonly string[],
-  width: number,
-  fontScale: number,
-): string[] | null {
-  if (named.length !== parts.length || parts.length === 0) return null;
-  const line = (list: readonly string[], count: number) => [
-    list.slice(0, count).join(" · "),
-  ];
-  // Longest first: each count with the day named, then without.
-  const levels = parts.flatMap((_, index) => {
-    const count = parts.length - index;
-    return [line(named, count), line(parts, count)];
-  });
-  const level = freshnessLevelFit(levels, width, fontScale, "web");
-  return level % 2 === 0 ? named.slice(0, parts.length - level / 2) : null;
+function FreshnessPartsLine({
+  parts,
+  named,
+  warning,
+}: {
+  parts: readonly string[];
+  named: readonly string[] | null;
+  warning: boolean;
+}) {
+  const fit = useNamedParts(
+    named !== null,
+    `${parts.join("|")}|${named?.join("|") ?? ""}`,
+  );
+  const shown = fit.named && named ? named : parts;
+  const spans = (list: readonly string[]) =>
+    list.map((part, index) => (
+      <span key={index}>{index === 0 ? part : ` · ${part}`}</span>
+    ));
+  return (
+    <>
+      <p
+        ref={fit.line}
+        className={
+          warning
+            ? "sw-measure-freshness sw-measure-freshness--overdue"
+            : "sw-measure-freshness"
+        }
+        title={shown.join(" · ")}
+        suppressHydrationWarning
+      >
+        {/* Whole parts only: those that do not fit wrap out of sight,
+            so a narrow widget drops them from the end. */}
+        {spans(shown)}
+      </p>
+      {named ? (
+        <p
+          ref={fit.probe}
+          className="sw-measure-fresh-probe"
+          aria-hidden="true"
+          suppressHydrationWarning
+        >
+          {spans(fit.named ? parts : named)}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * A several-source freshness line on a tile: the form the fit picked, a
+ * line each. A form with the days named (#791) that the browser draws
+ * wider than the tile gives way to the same form without (`plain`).
+ */
+function FreshnessSourceLines({
+  lines,
+  plain,
+  wrap,
+  title,
+}: {
+  lines: readonly string[];
+  plain: readonly string[] | null;
+  wrap: boolean;
+  title: string;
+}) {
+  const drawn = useRef<(HTMLParagraphElement | null)[]>([]);
+  const cut = useDrawnCut(
+    plain && !wrap ? lines.join("\n") : null,
+    () => drawn.current,
+  );
+  return (cut && plain ? plain : lines).map((line, index) => (
+    <p
+      key={`freshness-${index}`}
+      ref={(element) => {
+        drawn.current[index] = element;
+      }}
+      className={
+        wrap
+          ? "sw-measure-freshness sw-measure-freshness--wrap"
+          : "sw-measure-freshness"
+      }
+      title={title}
+      suppressHydrationWarning
+    >
+      {line}
+    </p>
+  ));
 }
 
 export function MeasureWidgetView({
@@ -361,20 +440,13 @@ export function MeasureWidgetView({
         : // Off a slide cards grow: every source's day, wrapping.
           freshness.card
       : null;
-  // One source on a slide (#791): the day is named ("Last reporting day:
-  // Nov 17") where that fits the tile with the parts it shows anyway;
-  // else the line is as before, its parts dropped from the end.
-  const shownParts =
-    freshness && !sourceLines
-      ? ((placement && !freshness.warning && freshness.named
-          ? namedPartsThatFit(
-              freshness.parts,
-              freshness.named,
-              contentBox(placement, showHeader).width,
-              fontScale,
-            )
-          : null) ?? freshness.parts)
-      : [];
+  // One source off a slide (#791): a card wraps, so it names the day and
+  // shows the whole line, as on netrics TV. A provider overdue by a day
+  // keeps its one warning line.
+  const cardParts =
+    freshness && !sourceLines && !placement && !freshness.warning
+      ? (freshness.named ?? freshness.parts)
+      : null;
   const freshnessFooter: null[] = freshness
     ? (sourceLines ?? [null]).map(() => null)
     : [];
@@ -823,40 +895,28 @@ export function MeasureWidgetView({
         </p>
       ))}
       {freshness && sourceLines ? (
-        sourceLines.map((line, index) => (
-          <p
-            key={`freshness-${index}`}
-            className={[
-              "sw-measure-freshness",
-              placement ? "" : "sw-measure-freshness--wrap",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            title={freshness.levels[0]!.join(" · ")}
-            suppressHydrationWarning
-          >
-            {line}
-          </p>
-        ))
-      ) : freshness ? (
+        <FreshnessSourceLines
+          lines={sourceLines}
+          plain={freshness.plainOf(sourceLines)}
+          wrap={!placement}
+          title={freshness.levels[0]!.join(" · ")}
+        />
+      ) : freshness && cardParts ? (
         <p
-          className={
-            freshness.warning
-              ? "sw-measure-freshness sw-measure-freshness--overdue"
-              : "sw-measure-freshness"
-          }
-          title={(shownParts === freshness.parts
-            ? freshness.parts
-            : (freshness.named ?? shownParts)
-          ).join(" · ")}
+          className="sw-measure-freshness sw-measure-freshness--wrap"
+          title={cardParts.join(" · ")}
           suppressHydrationWarning
         >
-          {/* Whole parts only: those that do not fit wrap out of sight,
-              so a narrow widget drops them from the end. */}
-          {shownParts.map((part, index) => (
+          {cardParts.map((part, index) => (
             <span key={index}>{index === 0 ? part : ` · ${part}`}</span>
           ))}
         </p>
+      ) : freshness ? (
+        <FreshnessPartsLine
+          parts={freshness.parts}
+          named={freshness.warning ? null : freshness.named}
+          warning={freshness.warning}
+        />
       ) : null}
       {data?.exclusions.map((exclusion) => (
         <p className="sw-measure-scope" key={exclusion.filterId}>

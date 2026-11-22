@@ -5432,8 +5432,23 @@ a.button.primary:hover {
   overflow: hidden;
   color: var(--t-muted);
 }
-.sw-measure-freshness > span {
+.sw-measure-freshness > span,
+.sw-measure-fresh-probe > span {
   white-space: pre;
+}
+/* The line's other wording, measured out of sight (#791): the same type
+   and wrapping, at the line's width, taking no room. */
+.sw-measure-fresh-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: calc(var(--u, 1px) * 24 * var(--measure-scale, 1));
+  line-height: 1.3;
+  max-height: 1.3em;
+  overflow: hidden;
 }
 /* A provider overdue by a day: the stale warning (ADR 0025 section 8), in
    the theme's warning colour (at least 4.5:1 on the surface in every
