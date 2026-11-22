@@ -7,6 +7,7 @@ import {
   DATA_TYPES,
   DATA_FUNCTIONS,
   MODEL_WINDOW_LIMITS,
+  TIME_GRAINS,
   type DataExpression,
   type PreparationNode,
   type PreparationGraph,
@@ -415,6 +416,13 @@ export const modelListResponseSchema = z.object({
 export const modelQueryInputSchema = z.strictObject({
   measureIds: z.array(id).min(1).max(50),
   groupBy: z.array(id).max(10),
+  /**
+   * Per grouped date or timestamp dimension, the calendar bucket it is
+   * grouped into (#838, ADR 0028): day, ISO week (Monday) or month, a
+   * timestamp's days being the workspace time zone's. The group's value is
+   * the bucket's first day, a date.
+   */
+  groupByGrain: z.record(id, z.enum(TIME_GRAINS)).optional(),
   filter: dataExpressionSchema.optional(),
   limit: z.number().int().min(1).max(1000).optional(),
   offset: z

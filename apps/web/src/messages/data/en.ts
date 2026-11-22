@@ -93,6 +93,15 @@ export const dataEn = {
       splitBy: "Split by",
       splitByHelp:
         "Shows a line for each group, under their total where the measure adds up. Choose none for a single value.",
+      grain: {
+        label: "{name}: one group per",
+        none: "Each time",
+        day: "Day",
+        week: "Week",
+        month: "Month",
+        fixed:
+          "The chosen measures are calculated for each value of {name}, so it cannot be grouped into larger periods.",
+      },
       limit: "Maximum rows",
       widgetFilter: "Additional widget filter",
       formulaPlaceholder: '[Country] = "DE"',
@@ -650,6 +659,12 @@ export const dataEn = {
       },
     },
     errors: {
+      grainUnsupported:
+        "A measure of this widget is calculated for each value of a date or time the widget groups by week, month or day. Group by that dimension itself, or choose another measure.",
+      grainInvalid:
+        "A day, week or month can only be chosen for a date or time dimension the widget is grouped by.",
+      interactionGrain:
+        "Clicking cannot set a filter from a group of several days. Group by the dimension itself, or turn the interaction off.",
       window:
         "Check the rolling and comparison measures. Each needs a base measure, a date dimension on the provider reporting date and a length within the allowed range.",
       windowGrouping:

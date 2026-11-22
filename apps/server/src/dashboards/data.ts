@@ -43,6 +43,11 @@ import {
   type MeasureWidgetBinding,
   type SlideFilterScope,
   followsSlideScopeResource,
+  measureResultDimensions,
+  measureBindingGrains,
+  measureFixedGrainDimensions,
+  modelMeasureFixedGrainDimensions,
+  unsupportedMeasureGrain,
   type ProductApps,
   slideScopeResource,
   RESOURCE_DIMENSION,
@@ -140,12 +145,17 @@ export async function publishedModel(
         const { id, name } = measure;
         const requiredDimensions = measureRequiredDimensions(definition, [id]);
         const perDateDimensions = measurePerDateDimensions(definition, [id]);
+        const fixedGrainDimensions = modelMeasureFixedGrainDimensions(
+          definition,
+          [id],
+        );
         const unit = units.get(id);
         return {
           id,
           name,
           ...(requiredDimensions.length ? { requiredDimensions } : {}),
           ...(perDateDimensions.length ? { perDateDimensions } : {}),
+          ...(fixedGrainDimensions.length ? { fixedGrainDimensions } : {}),
           ...(measureIsPercentChange(definition, id)
             ? { percentChange: true as const }
             : {}),
@@ -342,18 +352,33 @@ export async function validateDashboardMeasure(
   tx: Transaction,
   workspaceId: string,
   filters: DashboardDataFilter[],
-  binding: MeasureWidgetBinding,
+  input: MeasureWidgetBinding,
   options: MeasureWidgetOptions,
   /** The scope of the widget's slide (#707): a range there can give a
    * window its period. */
   slideScope: SlideFilterScope = {},
-) {
-  validateMeasureView(options.view, binding);
+): Promise<{
+  metadata: Awaited<ReturnType<typeof publishedModel>>["metadata"];
+  /** The binding as it is stored. */
+  binding: MeasureWidgetBinding;
+}> {
+  validateMeasureView(options.view, input);
+  const model = await publishedModel(tx, workspaceId, input.modelId);
+  // Time grains in their one stored form (#838): "day" on a date is none.
+  const binding = measureBindingGrains(input, model.metadata);
+  // A grain may not bucket a dimension its measures are read per value of:
+  // the rule Studio offers its choices by.
+  const unsupported = unsupportedMeasureGrain(
+    binding,
+    model.metadata.dimensions,
+    measureFixedGrainDimensions(model.metadata.measures, binding.measureIds),
+  );
+  if (unsupported !== undefined)
+    throw new DataServiceError("dashboard_measure_grain_unsupported");
   // A declared click target must be a filter this widget follows, on a
   // dimension it is grouped by; otherwise clicking would silently do nothing.
   if (binding.interaction)
     measureInteractionDimension(filters, binding, options.view);
-  const model = await publishedModel(tx, workspaceId, binding.modelId);
   // A widget's own period (#784) reads the model's reporting-date dimension.
   if (
     options.period &&
@@ -425,7 +450,7 @@ export async function validateDashboardMeasure(
         throw new DataServiceError("dashboard_measure_time_required");
     }
   }
-  return model.metadata;
+  return { metadata: model.metadata, binding };
 }
 /**
  * A stored slide's scope (#707). Saves validate it against the dashboard's
@@ -599,7 +624,7 @@ export async function queryDashboardMeasure(
   );
   try {
     return await tx.transaction(async (savepoint) => {
-      const metadata = await validateDashboardMeasure(
+      const { metadata } = await validateDashboardMeasure(
         savepoint,
         workspaceId,
         filters,
@@ -794,7 +819,14 @@ export async function queryDashboardMeasure(
         // A provider overdue by a day is the existing warning (ADR 0025 §7).
         status: status === "ok" && fresh.overdue ? "stale" : status,
         widgetId: input.id,
-        metadata,
+        // A dimension grouped by a time grain holds dates (#838).
+        metadata: {
+          ...metadata,
+          dimensions: measureResultDimensions(
+            metadata.dimensions,
+            input.binding,
+          ),
+        },
         result,
         error: null,
         exclusions,

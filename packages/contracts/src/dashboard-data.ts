@@ -3,6 +3,7 @@ import {
   DATA_TYPES,
   DASHBOARD_MEASURE_VIEWS,
   PERIODS,
+  TIME_GRAINS,
   type DashboardDataFilter,
   type DashboardFilterValue,
   type ItemsWidgetBinding,
@@ -59,6 +60,13 @@ export const measureWidgetBindingSchema: z.ZodType<MeasureWidgetBinding> =
     modelId: z.uuid(),
     measureIds: z.array(id).min(1).max(10),
     groupBy: z.array(id).max(3),
+    /**
+     * Per grouped date or timestamp dimension, the calendar bucket it is
+     * grouped into (#838, ADR 0028): day, ISO week (Monday) or month. The
+     * group's value is the bucket's first day, a date; a timestamp's day
+     * is its day in the workspace time zone.
+     */
+    groupByGrain: z.record(id, z.enum(TIME_GRAINS)).optional(),
     filter: dataExpressionSchema.optional(),
     exclusions: z.array(dashboardFilterExclusionSchema).max(30).default([]),
     /** Selecting a category, point or row value sets this shared filter.
@@ -181,6 +189,10 @@ export const dashboardMeasureMetadataSchema = z.object({
        * rolling windows and day/week offsets): a filter fixing the date does
        * not give it a single value. */
       perDateDimensions: z.array(id).optional(),
+      /** The dimensions the measure is read per value of (#838): the
+       * required ones and the date of its windows and comparisons. A time
+       * grain may not bucket them (a date keeps "day"). */
+      fixedGrainDimensions: z.array(id).optional(),
       /** The value is a change ratio, (current − previous) / |previous|;
        * clients show it as a percentage. */
       percentChange: z.literal(true).optional(),

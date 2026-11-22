@@ -152,6 +152,20 @@ import Testing
     @Test func leavesValuesThatAreNoDateToTheCaller() {
         #expect(DataFormat.date("soon", type: "date", language: .en) == nil)
         #expect(DataFormat.date("2026-02-30", type: "date", language: .en) == nil)
+        // A time grain's bucket can be an early day (a source's zero time,
+        // #838): worded with the year it is, as on the web.
+        #expect(DataFormat.date("0001-01-01", type: "date", language: .en) == "Jan 1, 1")
+        #expect(DataFormat.date("0001-01-01", type: "date", language: .de) == "01.01.1")
+        #expect(DataFormat.date("0050-12-31", type: "date", language: .en) == "Dec 31, 50")
+        #expect(DataFormat.date("0099-02-28", type: "date", language: .de) == "28.02.99")
+        #expect(DataFormat.date("0500-11-02", type: "date", language: .en) == "Nov 2, 500")
+        // The year 0 has no wording of its own: shown as stored, as on the web.
+        #expect(DataFormat.date("0000-01-01", type: "date", language: .en) == nil)
+        // Foundation's Gregorian calendar has no 5 to 14 October 1582: those
+        // ten days are shown as stored (the web words them).
+        #expect(DataFormat.date("1582-10-04", type: "date", language: .en) == "Oct 4, 1582")
+        #expect(DataFormat.date("1582-10-10", type: "date", language: .en) == nil)
+        #expect(DataFormat.date("1582-10-15", type: "date", language: .en) == "Oct 15, 1582")
         #expect(DataFormat.date("42", type: "timestamp", language: .en) == nil)
         #expect(DataFormat.date("2026-01-07", type: "string", language: .en) == nil)
     }

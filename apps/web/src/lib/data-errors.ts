@@ -1,4 +1,17 @@
 export function dataErrorCodeKey(code: string) {
+  // Time grains (#838), before the patterns their codes would also match.
+  if (
+    code === "dashboard_measure_grain_unsupported" ||
+    code === "model_group_grain_window_unsupported"
+  )
+    return "grainUnsupported";
+  if (
+    code === "dashboard_measure_grain_invalid" ||
+    /^model_group_grain_(invalid|not_grouped|not_temporal)$/.test(code)
+  )
+    return "grainInvalid";
+  if (code === "dashboard_interaction_grain_unsupported")
+    return "interactionGrain";
   if (/measure_scope_required|measure_grain_invalid/.test(code)) return "scope";
   if (code === "model_filter_label_several_values") return "labelSeveral";
   if (/dimension_label/.test(code)) return "label";

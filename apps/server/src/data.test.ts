@@ -2847,12 +2847,15 @@ describe("rolling and period-offset model measures", () => {
           id: "kg_daily",
           name: "Weight per day",
           requiredDimensions: ["day"],
+          // Read per day: no week or month of it (#838).
+          fixedGrainDimensions: ["day"],
           unit: "kg",
         },
         expect.objectContaining({
           id: "pct_and_share",
           requiredDimensions: ["day"],
           perDateDimensions: ["day"],
+          fixedGrainDimensions: ["day"],
         }),
       ]),
     );
