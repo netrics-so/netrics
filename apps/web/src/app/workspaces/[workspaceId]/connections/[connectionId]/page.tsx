@@ -666,6 +666,7 @@ export default async function ConnectionDetailPage({
               connection={connection}
               connector={connector}
               synced={detail.resourceSelection}
+              canDelete={can(role, "connections:delete")}
             />
           ) : null}
         </div>

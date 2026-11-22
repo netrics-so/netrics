@@ -5,7 +5,7 @@ import type {
   ConnectorCatalogEntry,
   SelectedResource,
 } from "@netrics/contracts";
-import type { Locale } from "@netrics/domain";
+import { can, WORKSPACE_ROLES, type Locale } from "@netrics/domain";
 
 import { AppPicker } from "./app-picker";
 import {
@@ -378,7 +378,7 @@ describe("the synced projects up front, and at least one required (#854)", () =>
         "Save project selection",
       );
       expect(button).not.toBe("");
-      expect(button).not.toContain("disabled");
+      expect(button).not.toContain(' disabled=""');
       expect(button).not.toContain("aria-describedby");
     }
     // Unchanged: nothing to save.
@@ -403,7 +403,9 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     expect(en).toContain("at least one has to stay selected");
     // Reduced to one project it can still be saved.
     expect(en).toContain("prj_gone");
-    expect(saveButton(en, "Save project selection")).not.toContain("disabled");
+    expect(saveButton(en, "Save project selection")).not.toContain(
+      ' disabled=""',
+    );
     // Reduced to none it cannot.
     expect(
       saveButton(editor("en", [], { refusal }), "Save project selection"),
@@ -434,5 +436,105 @@ describe("the synced projects up front, and at least one required (#854)", () =>
       "en",
     );
     expect(html).not.toContain("cannot be saved");
+  });
+
+  describe("deleting is offered only to those who can (#854)", () => {
+    // What the connection's page renders for a role, by its permissions.
+    const page = (role: (typeof WORKSPACE_ROLES)[number], locale: Locale) =>
+      can(role, "connections:update")
+        ? renderI18n(
+            <ProjectSelection
+              workspaceId="w"
+              connection={
+                { id: "c", config: {} } as unknown as ConnectionDetail
+              }
+              connector={connector}
+              synced={[]}
+              canDelete={can(role, "connections:delete")}
+            />,
+            locale,
+          )
+        : renderI18n(<SyncedProjectsReadOnly selection={[]} />, locale);
+    const refused = (role: (typeof WORKSPACE_ROLES)[number], locale: Locale) =>
+      renderI18n(
+        <ProjectSelectionEditor
+          resources={[]}
+          hidden={0}
+          refusal="None of the projects has Web Analytics."
+          selection={["prj_a"]}
+          dirty={false}
+          pending={null}
+          canDelete={can(role, "connections:delete")}
+          onChange={() => {}}
+          onCancel={() => {}}
+        />,
+        locale,
+      );
+    const OWN = {
+      en: "Deleting the connection instead also deletes the data it collected.",
+      de: "Wenn du stattdessen die Verbindung löschst, werden auch ihre importierten Daten gelöscht.",
+    };
+    const OWN_REFUSED = {
+      en: "Deleting this connection instead also deletes the data it collected.",
+      de: "Wenn du stattdessen diese Verbindung löschst, werden auch ihre importierten Daten gelöscht.",
+    };
+    const ASK = {
+      en: "If the connection should be deleted instead, ask an owner or admin: deleting it also deletes the data it collected.",
+      de: "Soll die Verbindung stattdessen gelöscht werden, bitte einen Inhaber oder Admin darum: Dabei werden auch ihre importierten Daten gelöscht.",
+    };
+
+    it("the roles are the ones the permissions name", () => {
+      expect(
+        WORKSPACE_ROLES.map((role) => [
+          role,
+          can(role, "connections:update"),
+          can(role, "connections:delete"),
+        ]),
+      ).toEqual([
+        ["owner", true, true],
+        ["admin", true, true],
+        ["editor", true, false],
+        ["viewer", false, false],
+      ]);
+    });
+
+    for (const role of WORKSPACE_ROLES)
+      for (const locale of ["en", "de"] as const)
+        it(`${role}, ${locale}: a stored empty selection and a refused check`, () => {
+          const none = page(role, locale);
+          const help = refused(role, locale);
+          if (can(role, "connections:delete")) {
+            expect(none).toContain(OWN[locale]);
+            expect(none).not.toContain(ASK[locale]);
+            expect(help).toContain(OWN_REFUSED[locale]);
+            expect(help).not.toContain(ASK[locale]);
+          } else if (can(role, "connections:update")) {
+            // Can change the selection, has no Delete button: ask for it,
+            // and still learn that deleting removes the data.
+            expect(none).toContain(ASK[locale]);
+            expect(none).not.toContain(OWN[locale]);
+            expect(none).toContain(
+              locale === "de"
+                ? "„Projektauswahl ändern“"
+                : "“Change project selection”",
+            );
+            expect(help).toContain(ASK[locale]);
+            expect(help).not.toContain(OWN_REFUSED[locale]);
+            expect(help).toContain(
+              locale === "de"
+                ? "mindestens eines muss ausgewählt bleiben"
+                : "at least one has to stay selected",
+            );
+          } else {
+            // Cannot change it either: whom to ask, nothing about deleting.
+            expect(none).toContain(
+              locale === "de"
+                ? "Bitte einen Inhaber, Admin oder Bearbeiter dieses Workspace"
+                : "Ask an owner, admin or editor of this workspace",
+            );
+            expect(none).not.toContain(ASK[locale]);
+            expect(none).not.toContain(OWN[locale]);
+          }
+        });
   });
 });

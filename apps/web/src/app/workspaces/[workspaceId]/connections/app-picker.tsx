@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { DiscoveredResource } from "@netrics/contracts";
+import { holdsFocus } from "@/lib/focus-handoff";
 import { useT } from "@/lib/i18n/client";
 
 const PAGE_SIZE = 50;
@@ -49,9 +50,10 @@ export function AppPicker({
     (current + 1) * PAGE_SIZE,
   );
   // A selected resource the account no longer lists leaves the list when
-  // it is unticked, and its checkbox with it: the keyboard focus then goes
-  // to the checkbox that took its place (or the last one, or the search
-  // field), instead of being dropped to the page.
+  // it is unticked, and its checkbox with it: if that checkbox has the
+  // keyboard focus (`holdsFocus`), it goes to the checkbox that took its
+  // place (or the last one, or the search field), instead of being dropped
+  // to the page.
   const list = useRef<HTMLDivElement>(null);
   const searchField = useRef<HTMLInputElement>(null);
   const refocus = useRef<number | null>(null);
@@ -66,10 +68,10 @@ export function AppPicker({
       boxes?.[Math.min(index, (boxes?.length ?? 0) - 1)] ?? searchField.current
     )?.focus();
   });
-  function toggle(key: string) {
+  function toggle(key: string, box: HTMLInputElement) {
     if (selected.has(key)) {
       selected.delete(key);
-      if (missing.includes(key))
+      if (missing.includes(key) && holdsFocus(box))
         refocus.current = visible.findIndex((entry) => entry.id === key);
     } else selected.add(key);
     onChange([...selected]);
@@ -140,7 +142,7 @@ export function AppPicker({
                 <input
                   type="checkbox"
                   checked={selected.has(resource.id)}
-                  onChange={() => toggle(resource.id)}
+                  onChange={(event) => toggle(resource.id, event.currentTarget)}
                 />
                 <span>
                   {resource.name}

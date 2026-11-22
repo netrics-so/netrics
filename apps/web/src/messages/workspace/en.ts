@@ -283,6 +283,8 @@ export const workspaceEn = {
       syncedShowAll: "Show all {count}",
       syncedShowMore: "Show {count} more",
       syncedShowFewer: "Show fewer",
+      syncedNoneNoDelete:
+        "No project is selected, so this connection collects nothing new. Use “{action}” to choose at least one project (or all projects); the data already collected is kept. If the connection should be deleted instead, ask an owner or admin: deleting it also deletes the data it collected.",
       syncedNoneViewer:
         "No project is selected, so this connection collects nothing new. The data already collected is kept. Ask an owner, admin or editor of this workspace to choose at least one project (or all projects).",
       syncedNone:
@@ -298,6 +300,8 @@ export const workspaceEn = {
       accessFailed: "The project list could not be loaded.",
       refusedHelp:
         "If no project can be synced: enable Web Analytics for a project in Vercel and load the list again, or choose another project; the data already collected is kept either way. Deleting this connection instead also deletes the data it collected. You can still remove projects from the selection below; at least one has to stay selected.",
+      refusedHelpNoDelete:
+        "If no project can be synced: enable Web Analytics for a project in Vercel and load the list again, or choose another project; the data already collected is kept either way. If the connection should be deleted instead, ask an owner or admin: deleting it also deletes the data it collected. You can still remove projects from the selection below; at least one has to stay selected.",
       save: "Save project selection",
       cancel: "Cancel",
       saved:

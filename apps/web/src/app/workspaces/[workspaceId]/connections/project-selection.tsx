@@ -24,6 +24,7 @@ import {
   updateConnection,
 } from "@/lib/api";
 import { parseConfigSchema } from "@/lib/config-schema";
+import { holdsFocus } from "@/lib/focus-handoff";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 /** A project the connector could not sync: Web Analytics is not enabled. */
@@ -105,14 +106,19 @@ export function selectionSavable(selection: readonly string[] | null) {
  * do not have. A list longer than SYNCED_SHOWN is cut short and opens in
  * place, from the stored names and without a provider call, so it also
  * works when the token has expired; `initialLimit` is for tests.
+ * `canDelete` is false for someone who may change the selection but not
+ * delete the connection (an editor): deleting is then something to ask an
+ * owner or admin for, not a button to look for.
  */
 export function SyncedProjects({
   selection,
   canChange = true,
+  canDelete = true,
   initialLimit = SYNCED_SHOWN,
 }: {
   selection: readonly SelectedResource[] | null | undefined;
   canChange?: boolean;
+  canDelete?: boolean;
   initialLimit?: number;
 }) {
   const t = useT("connections.projects");
@@ -124,9 +130,11 @@ export function SyncedProjects({
   if (selection.length === 0)
     return (
       <p className="notice warning" role="status">
-        {canChange
-          ? t("syncedNone", { action: t("check") })
-          : t("syncedNoneViewer")}
+        {!canChange
+          ? t("syncedNoneViewer")
+          : t(canDelete ? "syncedNone" : "syncedNoneNoDelete", {
+              action: t("check"),
+            })}
       </p>
     );
   const { shown, rest, next, expanded } = syncedPage(selection, limit);
@@ -169,9 +177,9 @@ export function SyncedProjects({
             <button
               type="button"
               aria-controls={listId}
-              onClick={() => {
+              onClick={(event) => {
+                if (holdsFocus(event.currentTarget)) toggle.current?.focus();
                 setLimit(SYNCED_SHOWN);
-                toggle.current?.focus();
               }}
             >
               {t("syncedShowFewer")}
@@ -219,9 +227,12 @@ export function ProjectSelectionEditor({
   selection,
   dirty,
   pending,
+  canDelete = true,
   onChange,
   onCancel,
 }: {
+  /** Whether the user may delete the connection (see SyncedProjects). */
+  canDelete?: boolean;
   resources: DiscoveredResource[];
   hidden: number;
   refusal: string | null;
@@ -240,7 +251,7 @@ export function ProjectSelectionEditor({
       {refusal !== null ? (
         <div className="error" role="alert">
           <p>{refusal}</p>
-          <p>{t("refusedHelp")}</p>
+          <p>{t(canDelete ? "refusedHelp" : "refusedHelpNoDelete")}</p>
         </div>
       ) : null}
       <AppPicker
@@ -258,7 +269,11 @@ export function ProjectSelectionEditor({
         <button
           className="primary"
           type="submit"
-          disabled={pending !== null || !dirty || !savable}
+          disabled={!dirty || !savable}
+          // Not disabled while saving (the form ignores a second submit):
+          // a disabled button drops the keyboard focus, which is handed
+          // back to "Change project selection" when the picker closes.
+          aria-disabled={pending !== null}
           aria-describedby={savable ? undefined : hintId}
         >
           {pending === "save" ? common("saving") : t("save")}
@@ -283,7 +298,10 @@ export function ProjectSelection({
   connection,
   connector,
   synced,
+  canDelete = true,
 }: {
+  /** Whether the user may delete the connection (`connections:delete`). */
+  canDelete?: boolean;
   workspaceId: string;
   connection: ConnectionDetail;
   connector: ConnectorCatalogEntry;
@@ -309,14 +327,20 @@ export function ProjectSelection({
   // Opening and closing the picker replaces the control that had the
   // keyboard focus: it moves into the picker when the list has loaded, and
   // back to "Change project selection" when the picker closes (cancelled
-  // or saved), instead of being dropped to the page.
+  // or saved), instead of being dropped to the page. Only then: `handOn`
+  // is set just before such an update, and only if what it removes still
+  // has the focus (`holdsFocus`). Someone who tabbed elsewhere while the
+  // list loaded or the selection was saved stays where they are.
   const form = useRef<HTMLFormElement>(null);
   const change = useRef<HTMLButtonElement>(null);
+  const handOn = useRef(false);
   const open = resources !== null;
   const wasOpen = useRef(open);
   useEffect(() => {
     if (wasOpen.current === open) return;
     wasOpen.current = open;
+    if (!handOn.current) return;
+    handOn.current = false;
     if (open) {
       // The chosen mode's radio: "all projects" first, "choose" second.
       const modes = form.current?.querySelectorAll<HTMLElement>(
@@ -343,6 +367,8 @@ export function ProjectSelection({
         ),
       });
       const state = pickerState(result);
+      // The button is replaced by the picker.
+      handOn.current = holdsFocus(change.current);
       setHidden(state.hidden);
       setResources(state.resources);
       setSelection(state.selection);
@@ -358,7 +384,7 @@ export function ProjectSelection({
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectionSavable(selection)) return;
+    if (pending !== null || !selectionSavable(selection)) return;
     setPending("save");
     setError(null);
     setNotice(null);
@@ -366,6 +392,8 @@ export function ProjectSelection({
       await updateConnection(workspaceId, connection.id, {
         resources: selection,
       });
+      // The picker closes.
+      handOn.current = holdsFocus(form.current);
       setDirty(false);
       setResources(null);
       setRefusal(null);
@@ -384,7 +412,7 @@ export function ProjectSelection({
       <p className="muted">{t("intro")}</p>
       {resources === null ? (
         <>
-          <SyncedProjects selection={synced} />
+          <SyncedProjects selection={synced} canDelete={canDelete} />
           <div className="actions">
             <button
               ref={change}
@@ -408,11 +436,13 @@ export function ProjectSelection({
           selection={selection}
           dirty={dirty}
           pending={pending}
+          canDelete={canDelete}
           onChange={(value) => {
             setDirty(true);
             setSelection(value);
           }}
           onCancel={() => {
+            handOn.current = holdsFocus(form.current);
             setResources(null);
             setRefusal(null);
             setDirty(false);

@@ -515,3 +515,119 @@ test("a long selection opens in place, and a viewer sees what is selected", asyn
   await expect(items).toHaveCount(0);
   await expect(change).toHaveCount(0);
 });
+
+test("the focus is handed on only while the control still has it", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const t = messages(locale);
+  const common = (locale === "de" ? commonDe : commonEn)
+    .common as typeof commonEn.common;
+  const { workspaceId } = await startWorkspace(page, locale);
+  const connectionId = await seedConnection(workspaceId);
+  const path = `/v1/workspaces/${workspaceId}/connections/${connectionId}`;
+
+  // Both calls answer only when the test lets them: time to tab away.
+  let release = () => {};
+  const held = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  let answer = held();
+  await page.route(`**${path}/preview`, async (route) => {
+    await answer;
+    return route.fulfill({
+      json: {
+        check: { ok: true },
+        resources: PROJECTS.filter((project) => project.analytics).map(
+          (project) => ({
+            id: project.id,
+            name: project.name,
+            kind: "project",
+            metadata: { accountId: "team_fixture", webAnalytics: true },
+          }),
+        ),
+        selection: ["prj_alpha", "prj_beta"],
+      },
+    });
+  });
+  await page.route(`**${path}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    const body = route.request().postDataJSON() as { resources: string[] };
+    const current = await page.request.get(path);
+    await answer;
+    await saveSelection(connectionId, body.resources);
+    return route.fulfill({ json: await current.json() });
+  });
+
+  await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
+  const panel = page.locator("#project-selection");
+  const change = panel.getByRole("button", { name: t.projects.check });
+  const loading = panel.getByRole("button", { name: t.projects.checking });
+  const save = panel.getByRole("button", { name: t.projects.save });
+  const saving = panel.getByRole("button", { name: common.saving });
+  const mode = panel.getByRole("radio", { name: t.projects.choose });
+  const beta = panel.getByRole("checkbox", { name: /beta-site/ });
+
+  /** Tabs back out of the panel; answers whether the focus is still there. */
+  const tabAway = async () => {
+    await page.keyboard.press("Shift+Tab");
+    const where = await page.evaluate(() => {
+      const active = document.activeElement;
+      (window as unknown as { kept: Element | null }).kept = active;
+      return {
+        tag: active?.tagName,
+        inPanel: !!active?.closest("#project-selection button, fieldset"),
+      };
+    });
+    // Somewhere real, and not the control that is about to go.
+    expect(where.tag).not.toBe("BODY");
+    expect(where.inPanel).toBe(false);
+  };
+  const stayedThere = () =>
+    page.evaluate(
+      () =>
+        document.activeElement ===
+        (window as unknown as { kept: Element | null }).kept,
+    );
+
+  // Loading, and the user tabs away: the list opens, the focus stays put.
+  await change.focus();
+  await page.keyboard.press("Enter");
+  await expect(loading).toBeFocused();
+  await tabAway();
+  release();
+  await expect(beta).toBeChecked();
+  expect(await stayedThere()).toBe(true);
+  await expect(mode).not.toBeFocused();
+
+  // Saving, and the user tabs away: the picker closes, the focus stays put.
+  answer = held();
+  await beta.uncheck();
+  await save.focus();
+  await page.keyboard.press("Enter");
+  await expect(saving).toBeVisible();
+  await tabAway();
+  release();
+  await expect(panel.getByText(t.projects.saved)).toBeVisible();
+  await expect(change).toBeVisible();
+  expect(await stayedThere()).toBe(true);
+  await expect(change).not.toBeFocused();
+
+  // Staying on the control through a slow answer: the focus is handed on,
+  // into the picker when it opens and back to the button when it closes.
+  answer = held();
+  await change.focus();
+  await page.keyboard.press("Enter");
+  await expect(loading).toBeFocused();
+  release();
+  await expect(mode).toBeFocused();
+  answer = held();
+  await beta.uncheck();
+  await save.focus();
+  await page.keyboard.press("Enter");
+  await expect(saving).toBeVisible();
+  release();
+  await expect(panel.getByText(t.projects.saved)).toBeVisible();
+  await expect(change).toBeFocused();
+});

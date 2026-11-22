@@ -296,6 +296,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       syncedShowAll: "Alle {count} anzeigen",
       syncedShowMore: "{count} weitere anzeigen",
       syncedShowFewer: "Weniger anzeigen",
+      syncedNoneNoDelete:
+        "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Wähle über „{action}“ mindestens ein Projekt (oder alle Projekte) aus; bereits importierte Daten bleiben erhalten. Soll die Verbindung stattdessen gelöscht werden, bitte einen Inhaber oder Admin darum: Dabei werden auch ihre importierten Daten gelöscht.",
       syncedNoneViewer:
         "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Bereits importierte Daten bleiben erhalten. Bitte einen Inhaber, Admin oder Bearbeiter dieses Workspace, mindestens ein Projekt (oder alle Projekte) auszuwählen.",
       syncedNone:
@@ -311,6 +313,8 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       accessFailed: "Die Projektliste konnte nicht geladen werden.",
       refusedHelp:
         "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Wenn du stattdessen diese Verbindung löschst, werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
+      refusedHelpNoDelete:
+        "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Soll die Verbindung stattdessen gelöscht werden, bitte einen Inhaber oder Admin darum: Dabei werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
       save: "Projektauswahl speichern",
       cancel: "Abbrechen",
       saved:
