@@ -98,6 +98,13 @@ describe("time zones", () => {
     expect(civilDate(instant, "Europe/Berlin")).toBe("2026-09-28");
     expect(civilDate(instant, "America/Los_Angeles")).toBe("2026-09-27");
     expect(civilDate(instant, "Pacific/Kiritimati")).toBe("2026-09-28");
+    // Years before 1000 keep four digits (review of #852).
+    expect(civilDate(new Date("0500-11-02T08:00:00Z"), "Europe/Berlin")).toBe(
+      "0500-11-02",
+    );
+    expect(civilDate(new Date("0999-12-31T23:30:00Z"), "Europe/Berlin")).toBe(
+      "1000-01-01",
+    );
   });
 
   it("adds days across month and year ends", () => {

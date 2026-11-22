@@ -1,3 +1,4 @@
+import { dataFail, validateDataValue } from "./data-expression.js";
 import { civilDate } from "./metrics.js";
 
 /**
@@ -26,7 +27,10 @@ export function grainStart(date: string, grain: TimeGrain): string {
       Number(date.slice(8, 10)),
     );
     day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
-    return day.toISOString().slice(0, 10);
+    // The week holding the first day a date can be is cut at that day.
+    return day.getUTCFullYear() < 0
+      ? "0000-01-01"
+      : day.toISOString().slice(0, 10);
   }
   if (grain === "month") return date.slice(0, 8) + "01";
   return date;
@@ -51,27 +55,43 @@ export function timeGrainBucket(
   grain: TimeGrain,
   timeZone: string,
 ): (value: string) => string {
-  if (type === "date") return (value) => grainStart(value, grain);
-  if (timeZone === "UTC")
-    return (value) => grainStart(value.slice(0, 10), grain);
-  /** Per quarter hour, its bucket; null where its instants differ. */
-  const slots = new Map<number, string | null>();
-  const days = new Map<string, string>();
+  // Tables are validated before they are queried; a value that is no date
+  // or timestamp after all is the data error it would have been there,
+  // never a malformed group or a crash.
+  const days = new Map<unknown, string>();
   const bucketOf = (date: string) => {
     let bucket = days.get(date);
     if (bucket === undefined) {
+      validateDataValue("date", date, false);
       bucket = grainStart(date, grain);
-      days.set(date, bucket);
+      if (days.size < 200_000) days.set(date, bucket);
     }
     return bucket;
   };
+  if (type === "date") return bucketOf;
+  /** Whole seconds: the precision of a zone's offset. */
+  const instantOf = (value: string) => {
+    const instant =
+      typeof value === "string" && /^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(value)
+        ? Date.parse(value.slice(0, 19) + "Z")
+        : NaN;
+    return Number.isFinite(instant)
+      ? instant
+      : dataFail("data_timestamp_invalid");
+  };
+  if (timeZone === "UTC")
+    return (value) => {
+      instantOf(value);
+      return bucketOf(value.slice(0, 10));
+    };
+  /** Per quarter hour, its bucket; null where its instants differ. */
+  const slots = new Map<number, string | null>();
   return (value) => {
+    const instant = instantOf(value);
     const utc = value.slice(0, 10);
     // No zone has rules for the first century (a source's zero time stays
     // its UTC day), nor a day past the last date a result can carry.
     if (utc < "0100" || utc >= "9999-12-30") return bucketOf(utc);
-    // Whole seconds: the precision of a zone's offset.
-    const instant = Date.parse(value.slice(0, 19) + "Z");
     const slot = Math.floor(instant / SLOT_MS);
     let known = slots.get(slot);
     if (known === undefined) {

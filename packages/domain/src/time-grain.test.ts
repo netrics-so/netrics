@@ -448,6 +448,34 @@ describe("grouping a timestamp by a time grain (#838)", () => {
       }).rows.length,
     ).toBeGreaterThan(0);
   });
+
+  it("groups early years in a zone, and fails an invalid value as data (review of #852)", () => {
+    for (const grain of ["day", "week", "month"] as const)
+      expect(
+        groups(
+          run(["0500-11-02T08:00:00Z", "0001-01-01T00:00:00Z", null], {
+            groupBy: ["taken"],
+            groupByGrain: { taken: grain },
+            timeZone: "Europe/Berlin",
+          }),
+        ),
+      ).toEqual([
+        ["0001-01-01", 1],
+        [grain === "day" ? "0500-11-02" : "0500-11-01", 1],
+        [null, 1],
+      ]);
+    // What a table would never hold: the table's own validation answers.
+    for (const value of ["soon", "2026-13-45T99:00:00Z"])
+      expect(
+        code(() =>
+          run([value], {
+            groupBy: ["taken"],
+            groupByGrain: { taken: "week" },
+            timeZone: "Europe/Berlin",
+          }),
+        ),
+      ).toMatch(/^data_/);
+  });
 });
 
 describe("time grain buckets", () => {
@@ -493,5 +521,102 @@ describe("time grain buckets", () => {
         ).toBe(civilDate(instant, timeZone));
       }
     }
+  });
+
+  it("gives every parseable instant a well-formed bucket (review of #852)", () => {
+    // The reported case: a three-digit year in a zone other than UTC.
+    const berlin = (grain: "day" | "week" | "month") =>
+      timeGrainBucket("timestamp", grain, "Europe/Berlin");
+    expect(berlin("day")("0500-11-02T08:00:00Z")).toBe("0500-11-02");
+    expect(berlin("month")("0500-11-02T08:00:00Z")).toBe("0500-11-01");
+    // 2 November 500 is a Tuesday.
+    expect(berlin("week")("0500-11-02T08:00:00Z")).toBe("0500-11-01");
+
+    const zones = [
+      "UTC",
+      "Europe/Berlin",
+      "America/New_York",
+      "Asia/Kathmandu",
+      "Pacific/Kiritimati",
+      "Pacific/Pago_Pago",
+      "Australia/Lord_Howe",
+    ];
+    const years = [
+      0, 1, 2, 50, 99, 100, 101, 500, 999, 1000, 1582, 1883, 1900, 1969, 1970,
+      2026, 2038, 5000, 9998, 9999,
+    ];
+    const times = ["01-01T00:00:00Z", "06-15T12:34:56.789Z", "12-31T23:59:59Z"];
+    for (const timeZone of zones)
+      for (const grain of ["day", "week", "month"] as const) {
+        const bucket = timeGrainBucket("timestamp", grain, timeZone);
+        const day = timeGrainBucket("timestamp", "day", timeZone);
+        for (const year of years)
+          for (const time of times) {
+            const value = `${String(year).padStart(4, "0")}-${time}`;
+            const where = `${timeZone} ${grain} ${value}`;
+            const result = bucket(value);
+            expect(result, where).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+            expect(
+              new Date(result + "T00:00:00Z").toISOString().slice(0, 10),
+              where,
+            ).toBe(result);
+            // The bucket starts on or before the instant's own day there.
+            expect(result <= day(value), where).toBe(true);
+          }
+      }
+    // Dates too, down to the first one a date can be.
+    for (const grain of ["day", "week", "month"] as const) {
+      const bucket = timeGrainBucket("date", grain, "Europe/Berlin");
+      for (const date of [
+        "0000-01-01",
+        "0000-01-03",
+        "0001-01-01",
+        "0999-12-31",
+        "9999-12-31",
+      ]) {
+        expect(bucket(date), `${grain} ${date}`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(bucket(date) <= date, `${grain} ${date}`).toBe(true);
+      }
+    }
+    // The week holding the first day is cut at it.
+    expect(grainStart("0000-01-01", "week")).toBe("0000-01-01");
+    expect(grainStart("0000-01-03", "week")).toBe("0000-01-03");
+    expect(grainStart("0000-01-09", "week")).toBe("0000-01-03");
+  });
+
+  it("refuses what is no date or timestamp with a data error, never a crash", () => {
+    const failure = (action: () => unknown) => {
+      try {
+        action();
+      } catch (error) {
+        return error instanceof DataProcessingError ? error.code : error;
+      }
+      return null;
+    };
+    for (const timeZone of ["UTC", "Europe/Berlin"])
+      for (const grain of ["day", "week", "month"] as const) {
+        const bucket = timeGrainBucket("timestamp", grain, timeZone);
+        for (const value of [
+          "",
+          "soon",
+          "2026-13-45T99:00:00Z",
+          "2026-11-02",
+          7,
+          {},
+        ])
+          expect(
+            failure(() => bucket(value as string)),
+            String(value),
+          ).toBe("data_timestamp_invalid");
+        const date = timeGrainBucket("date", grain, timeZone);
+        for (const value of ["", "soon", "2026-02-30", "2026-11-02T08:00:00Z"])
+          expect(
+            failure(() => date(value as string)),
+            String(value),
+          ).toBe("data_date_invalid");
+        expect(failure(() => date(7 as unknown as string))).toBe(
+          "data_string_required",
+        );
+      }
   });
 });

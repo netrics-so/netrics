@@ -222,7 +222,8 @@ function offsetAt(instant: number, timeZone: string): number {
 /** The calendar date at `instant` in the zone. */
 export function civilDate(instant: Date, timeZone: string): CivilDate {
   const f = zonedFields(instant, timeZone);
-  return `${f.year}-${String(f.month).padStart(2, "0")}-${String(f.day).padStart(2, "0")}`;
+  // Four digits also before the year 1000, like every "YYYY-MM-DD".
+  return `${String(f.year).padStart(4, "0")}-${String(f.month).padStart(2, "0")}-${String(f.day).padStart(2, "0")}`;
 }
 
 function parseCivil(date: CivilDate): [number, number, number] {

@@ -63,8 +63,14 @@ A model query, and a measure widget's binding, carry an optional
 - **No click-to-filter**: a declared interaction on a bucketed dimension is
   refused (`dashboard_interaction_grain_unsupported`); a click would set the
   filter to the bucket's first day, not to a value of the dimension.
-- Instants before the year 100, and days past 9999-12-30, are read as their
-  UTC day: no zone has rules there (a source's zero time stays one day).
+- Every valid value has a bucket, a well-formed date. Instants before the
+  year 100, and days past 9999-12-30, are read as their UTC day: no zone
+  has rules there (a source's zero time stays one day); the week holding
+  0000-01-01 is cut at that day. A value that is no date or timestamp
+  cannot be in a table (tables are validated before a query reads them);
+  should one reach the bucketing, the query fails with the same data error
+  (`data_timestamp_invalid`, `data_date_invalid`), never with a malformed
+  group.
 
 ### 3. Where it is computed
 
