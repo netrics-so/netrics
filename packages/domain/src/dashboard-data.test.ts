@@ -7,6 +7,8 @@ import {
   formatDataDate,
   MEASURE_UNIT_FRACTION_DIGITS,
   roundDecimalText,
+  measureBindingGrains,
+  measureResultDimensions,
   measureInteractionDimension,
   measureInteractionSelected,
   measureInteractionValue,
@@ -1059,5 +1061,84 @@ describe("itemsModelQuery (#810)", () => {
         3,
       ),
     ).toThrow("items_dimension_unknown");
+  });
+});
+
+describe("a measure widget's time grains (#838)", () => {
+  const grouped: MeasureWidgetBinding = {
+    ...binding,
+    groupBy: ["day", "territory"],
+    groupByGrain: { day: "week" },
+    exclusions: [{ filterId: "country", reason: "all" }],
+  };
+  it("queries with the grains of its grouping, and none otherwise", () => {
+    expect(dashboardModelQuery(filters, {}, grouped).groupByGrain).toEqual({
+      day: "week",
+    });
+    expect(
+      "groupByGrain" in
+        dashboardModelQuery(filters, {}, { ...grouped, groupByGrain: {} }),
+    ).toBe(false);
+    expect("groupByGrain" in dashboardModelQuery(filters, {}, binding)).toBe(
+      false,
+    );
+  });
+  it("drops a grain with its dimension", () => {
+    expect(measureBindingGrains(grouped)).toEqual(grouped);
+    const without = measureBindingGrains({
+      ...grouped,
+      groupBy: ["territory"],
+    });
+    expect("groupByGrain" in without).toBe(false);
+    expect(without.groupBy).toEqual(["territory"]);
+    expect(
+      measureBindingGrains({
+        ...grouped,
+        groupByGrain: { day: "week", territory: "day" },
+        groupBy: ["day"],
+      }).groupByGrain,
+    ).toEqual({ day: "week" });
+  });
+  it("refuses a grain for a dimension the widget does not group by", () => {
+    expect(() => validateMeasureView("table", grouped)).not.toThrow();
+    expect(() =>
+      validateMeasureView("table", { ...grouped, groupBy: ["territory"] }),
+    ).toThrow("dashboard_measure_grain_invalid");
+    expect(() =>
+      validateMeasureView("table", {
+        ...grouped,
+        groupByGrain: { day: "hour" as "day" },
+      }),
+    ).toThrow("dashboard_measure_grain_invalid");
+  });
+  it("reports a bucketed timestamp as the date its groups carry", () => {
+    const dimensions = [
+      { id: "taken", name: "Taken", type: "timestamp" as const },
+      { id: "day", name: "Day", type: "date" as const },
+      { id: "kind", name: "Kind", type: "string" as const },
+    ];
+    expect(
+      measureResultDimensions(dimensions, {
+        groupByGrain: { taken: "day", day: "month" },
+      }).map((dimension) => dimension.type),
+    ).toEqual(["date", "date", "string"]);
+    expect(measureResultDimensions(dimensions, {})).toEqual(dimensions);
+  });
+  it("keeps a click from setting a filter to a bucket", () => {
+    const clickable = { ...grouped, exclusions: [], groupBy: ["day"] };
+    expect(
+      measureInteractionDimension(
+        filters,
+        { ...clickable, groupByGrain: {}, interaction: { filterId: "day" } },
+        "table",
+      ),
+    ).toBe("day");
+    expect(() =>
+      measureInteractionDimension(
+        filters,
+        { ...clickable, interaction: { filterId: "day" } },
+        "table",
+      ),
+    ).toThrow("dashboard_interaction_grain_unsupported");
   });
 });

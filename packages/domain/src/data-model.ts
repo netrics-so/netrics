@@ -40,6 +40,12 @@ import {
   type ModelWindowUnit,
   type WindowedMeasure,
 } from "./data-model-windows.js";
+import { isValidTimeZone } from "./metrics.js";
+import {
+  isTimeGrain,
+  timeGrainBucket,
+  type GroupByGrain,
+} from "./time-grain.js";
 
 export interface ModelRelationship {
   id: string;
@@ -89,6 +95,15 @@ export interface SemanticModelDefinition {
 export interface ModelQuery {
   measureIds: string[];
   groupBy: string[];
+  /**
+   * Per grouped date or timestamp dimension, the calendar bucket it is
+   * grouped into (#838, ADR 0028): the group's value is the bucket's first
+   * day, a date. A timestamp's day is its day in `timeZone`. Filters still
+   * compare the dimension's own values.
+   */
+  groupByGrain?: GroupByGrain;
+  /** The zone timestamp grains read days in (the workspace's); UTC if absent. */
+  timeZone?: string;
   filter?: DataExpression;
   now?: string;
   limit?: number;
@@ -791,6 +806,43 @@ export function querySemanticModel(
       dataFail("model_date_alignment_required");
     dimensionFields.push({ ...f, id: d.id, name: d.name, nullable: true });
   }
+  // Time grains (#838): a grouped date or timestamp read as the first day of
+  // its day, week or month. Groups are keyed, ordered and returned by that
+  // date; `dimensionFields` keeps the dimension's own type for filters.
+  const timeZone = query.timeZone ?? "UTC";
+  const grainBuckets = new Map<string, (value: string) => string>();
+  for (const [id, grain] of Object.entries(query.groupByGrain ?? {})) {
+    if (!isValidTimeZone(timeZone)) dataFail("model_time_zone_invalid");
+    if (!isTimeGrain(grain)) dataFail("model_group_grain_invalid", id);
+    if (!query.groupBy.includes(id))
+      dataFail("model_group_grain_not_grouped", id);
+    const type = dimensionFields.find((field) => field.id === id)!.type;
+    if (type !== "date" && type !== "timestamp")
+      dataFail("model_group_grain_not_temporal", id);
+    // A date is its own day.
+    if (type === "date" && grain === "day") continue;
+    grainBuckets.set(id, timeGrainBucket(type, grain, timeZone));
+  }
+  const groupFields = grainBuckets.size
+    ? dimensionFields.map((field) =>
+        grainBuckets.has(field.id)
+          ? { ...field, type: "date" as const }
+          : field,
+      )
+    : dimensionFields;
+  /** The row's dimension values as its group shows them. */
+  const groupedValues = (values: DataRow): DataRow => {
+    if (!grainBuckets.size) return values;
+    const bucketed = { ...values };
+    for (const [id, bucket] of grainBuckets) {
+      const value = values[id];
+      if (value !== null && value !== undefined) {
+        budget.tick();
+        bucketed[id] = bucket(value as string);
+      }
+    }
+    return bucketed;
+  };
   const resolved = query.filter
     ? resolveLabelLiterals(
         query.filter,
@@ -824,9 +876,12 @@ export function querySemanticModel(
       grain.some((dimension) => !dimensions.has(dimension))
     )
       dataFail("model_measure_grain_invalid");
+    // A week or month holds several of the dimension's values: only the
+    // dimension itself, or a filter fixing it, gives a measure its scope.
     const unscoped = grain.filter(
       (dimension) =>
-        !query.groupBy.includes(dimension) && !fixedDimensions.has(dimension),
+        (!query.groupBy.includes(dimension) || grainBuckets.has(dimension)) &&
+        !fixedDimensions.has(dimension),
     );
     // A display name of several values (two apps named alike) fixes none.
     const shared = unscoped.find((dimension) =>
@@ -884,6 +939,9 @@ export function querySemanticModel(
     const dimensionId = windowed[0]!.timeDimensionId;
     if (windowed.some((m) => m.timeDimensionId !== dimensionId))
       dataFail("model_window_time_dimension_conflict");
+    // Windows are evaluated per date of their dimension.
+    if (grainBuckets.has(dimensionId))
+      dataFail("model_group_grain_window_unsupported", dimensionId);
     const grouped = query.groupBy.includes(dimensionId);
     if (!grouped && windowed.some(windowNeedsTimeGrouping))
       dataFail("model_window_time_grouping_required", dimensionId);
@@ -1010,8 +1068,8 @@ export function querySemanticModel(
         )
           continue;
         const partition = dataKey(
-          dimensionFields,
-          values,
+          groupFields,
+          groupedValues(values),
           windowPlan.partitionBy,
         );
         if (date === null) {
@@ -1043,11 +1101,12 @@ export function querySemanticModel(
         }
       } else if (filter && filter.evaluate(values, budget).value !== true)
         continue;
-      const group = dataKey(dimensionFields, values, query.groupBy);
+      const shown = groupedValues(values);
+      const group = dataKey(groupFields, shown, query.groupBy);
       if (!groupValues.has(group))
         groupValues.set(
           group,
-          Object.fromEntries(query.groupBy.map((id) => [id, values[id]])),
+          Object.fromEntries(query.groupBy.map((id) => [id, shown[id]])),
         );
       if (windowPlan) continue;
       const members = groups.get(group) ?? [];
@@ -1077,7 +1136,7 @@ export function querySemanticModel(
       if (av === null && bv === null) continue;
       if (av === null) return 1;
       if (bv === null) return -1;
-      const type = dimensionFields.find((field) => field.id === id)!.type;
+      const type = groupFields.find((field) => field.id === id)!.type;
       const comparison = compareDataValues(type, av, bv);
       if (comparison) return comparison;
     }
@@ -1301,14 +1360,14 @@ export function querySemanticModel(
       : undefined;
     if (date === null) {
       const undatedResult = evaluateUndated(
-        dataKey(dimensionFields, values, w.partitionBy),
+        dataKey(groupFields, values, w.partitionBy),
         id,
       );
       if (shown) useDeferredRounding(budget, undatedResult);
       return undatedResult;
     }
     const windowed = evaluateWindowed(
-      dataKey(dimensionFields, values, w.partitionBy),
+      dataKey(groupFields, values, w.partitionBy),
       id,
       date ?? w.from!,
       date ?? w.to!,
@@ -1413,6 +1472,8 @@ export function querySemanticModel(
     const evaluate = evaluatorOf(key);
     const labels = Object.fromEntries(
       query.groupBy.flatMap((id) => {
+        // A bucket is a date, not one of the dimension's labelled values.
+        if (grainBuckets.has(id)) return [];
         const dimension = dimensions.get(id)!;
         const label = displayLabels
           .get(id)!

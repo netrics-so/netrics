@@ -100,6 +100,13 @@ export const dataDe: Catalog<typeof dataEn> = {
       splitBy: "Aufteilen nach",
       splitByHelp:
         "Zeigt eine Zeile pro Gruppe, darüber die Summe, wenn sich die Kennzahl addieren lässt. Ohne Auswahl bleibt es ein einzelner Wert.",
+      grain: {
+        label: "{name}: eine Gruppe pro",
+        none: "Zeitpunkt",
+        day: "Tag",
+        week: "Woche",
+        month: "Monat",
+      },
       limit: "Maximale Zeilen",
       widgetFilter: "Zusätzlicher Widget-Filter",
       formulaPlaceholder: '[Land] = "DE"',

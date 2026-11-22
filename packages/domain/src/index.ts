@@ -21,6 +21,7 @@ export * from "./data-expression.js";
 export * from "./data-expression-visual.js";
 export * from "./data-expression-choices.js";
 export * from "./data-preparation.js";
+export * from "./time-grain.js";
 export * from "./data-model.js";
 export {
   MODEL_WINDOW_LIMITS,

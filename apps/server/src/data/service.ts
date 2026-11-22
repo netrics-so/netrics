@@ -75,6 +75,7 @@ import {
   type Transaction,
   notDraftConnection,
   rethrowWorkspaceGone,
+  findWorkspace,
 } from "@netrics/database";
 import {
   collectDataImpact,
@@ -244,9 +245,24 @@ export interface DataActor {
   workspaceId: string;
   callerId: string;
 }
-export interface DataModelQuery extends Omit<ModelQuery, "now"> {
+export interface DataModelQuery extends Omit<ModelQuery, "now" | "timeZone"> {
   pageToken?: string;
   pinPages?: boolean;
+}
+/**
+ * The zone a query's time grains read days in (#838): the workspace's, never
+ * a request field. Part of the executed query, so snapshots and pinned pages
+ * of one zone are never served for another. Nothing without a grain.
+ */
+async function grainTimeZone(
+  tx: Transaction,
+  workspaceId: string,
+  query: Pick<DataModelQuery, "groupByGrain">,
+): Promise<{ timeZone?: string }> {
+  if (!Object.keys(query.groupByGrain ?? {}).length) return {};
+  return {
+    timeZone: (await findWorkspace(tx, workspaceId))?.timeZone ?? "UTC",
+  };
 }
 export type DataModelQueryResult = ReturnType<typeof querySemanticModel> & {
   receivedAt: string | null;
@@ -2298,7 +2314,11 @@ export function createDataService(
         const result = querySemanticModel(
           parsed,
           loader.tables,
-          { ...query, now: now.toISOString() },
+          {
+            ...query,
+            ...(await grainTimeZone(tx, actor.workspaceId, query)),
+            now: now.toISOString(),
+          },
           loader.budget,
         );
         return {
@@ -3552,7 +3572,11 @@ export async function queryDataModel(
     fail("data_page_preview_unsupported");
   if (continuation && query.offset !== undefined)
     fail("data_page_offset_conflict");
-  const { pageToken: _pageToken, pinPages: _pinPages, ...queryInputs } = query;
+  const { pageToken: _pageToken, pinPages: _pinPages, ...requested } = query;
+  const queryInputs = {
+    ...requested,
+    ...(await grainTimeZone(tx, workspaceId, query)),
+  };
   const executionQuery = {
     ...queryInputs,
     ...(continuation ? { offset: continuation.offset } : {}),

@@ -93,6 +93,13 @@ export const dataEn = {
       splitBy: "Split by",
       splitByHelp:
         "Shows a line for each group, under their total where the measure adds up. Choose none for a single value.",
+      grain: {
+        label: "{name}: one group per",
+        none: "Each time",
+        day: "Day",
+        week: "Week",
+        month: "Month",
+      },
       limit: "Maximum rows",
       widgetFilter: "Additional widget filter",
       formulaPlaceholder: '[Country] = "DE"',

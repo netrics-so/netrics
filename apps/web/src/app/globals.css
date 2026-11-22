@@ -5605,6 +5605,16 @@ a.button.primary:hover {
 .measure-fields fieldset {
   margin-block: 12px;
 }
+.group-by-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.group-by-choice select {
+  width: auto;
+  min-width: 0;
+}
 .dashboard-filter-browser {
   margin-bottom: 8px;
 }

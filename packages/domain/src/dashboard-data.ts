@@ -13,6 +13,7 @@ import type {
   ModelQueryOrder,
   SemanticModelDefinition,
 } from "./data-model.js";
+import { isTimeGrain, type TimeGrain } from "./time-grain.js";
 
 export type DashboardFilterType = Exclude<DataType, "json">;
 export type DashboardFilterValue =
@@ -46,6 +47,13 @@ export interface MeasureWidgetBinding {
   modelId: string;
   measureIds: string[];
   groupBy: string[];
+  /**
+   * Per grouped date or timestamp dimension, the calendar bucket it is
+   * grouped into (#838, ADR 0028): "new items per day" of a timestamp. The
+   * group's value is the bucket's first day, a date; a timestamp's day is
+   * its day in the workspace time zone. Absent: the dimension's own values.
+   */
+  groupByGrain?: Record<string, TimeGrain>;
   filter?: DataExpression;
   exclusions: DashboardFilterExclusion[];
   /** Declared chart-to-filter interaction: selecting a category, point or
@@ -449,6 +457,9 @@ export function dashboardModelQuery(
   return {
     measureIds: binding.measureIds,
     groupBy: binding.groupBy,
+    ...(binding.groupByGrain && Object.keys(binding.groupByGrain).length
+      ? { groupByGrain: binding.groupByGrain }
+      : {}),
     limit,
     ...(window === "last" ? { window } : {}),
     ...(order ? { orderBy: order } : {}),
@@ -610,6 +621,43 @@ export function measureOptionsForBinding<O extends MeasureTableOptions>(
   } as O;
 }
 
+/**
+ * A binding with the time grains its grouping still has (#838): a grain
+ * goes with its dimension, so one that is no longer grouped by (unticked, or
+ * dropped by a view that shows fewer dimensions) is removed with it.
+ */
+export function measureBindingGrains<
+  B extends Pick<MeasureWidgetBinding, "groupBy" | "groupByGrain">,
+>(binding: B): B {
+  const { groupByGrain, ...rest } = binding;
+  const kept = Object.entries(groupByGrain ?? {}).filter(([id]) =>
+    binding.groupBy.includes(id),
+  );
+  return (
+    kept.length ? { ...rest, groupByGrain: Object.fromEntries(kept) } : rest
+  ) as B;
+}
+
+/**
+ * A model's dimensions as a widget's result carries them (#838): one
+ * grouped by a time grain holds dates (the first day of each bucket),
+ * whatever the dimension's own type, so every client words, sorts and
+ * charts it as the date it is.
+ */
+export function measureResultDimensions<
+  D extends { id: string; type: DataType },
+>(
+  dimensions: readonly D[],
+  binding: Pick<MeasureWidgetBinding, "groupByGrain">,
+): D[] {
+  const grains = binding.groupByGrain ?? {};
+  return dimensions.map((dimension) =>
+    Object.hasOwn(grains, dimension.id) && dimension.type === "timestamp"
+      ? { ...dimension, type: "date" as const }
+      : dimension,
+  );
+}
+
 /** Time-ordered charts show the most recent `limit` points (still ascending);
  * tables and categorical charts show the first page of the ordered groups. */
 export function measureViewWindow(
@@ -633,6 +681,9 @@ export function validateMeasureView(
     new Set(binding.groupBy).size !== binding.groupBy.length
   )
     dataFail("dashboard_measure_binding_invalid");
+  for (const [id, grain] of Object.entries(binding.groupByGrain ?? {}))
+    if (!binding.groupBy.includes(id) || !isTimeGrain(grain))
+      dataFail("dashboard_measure_grain_invalid", id);
   // A value is one measure; grouped, it is a total with its split (#784).
   if (view === "value" && binding.measureIds.length !== 1)
     dataFail("dashboard_measure_value_grain_invalid");
@@ -669,6 +720,10 @@ export function measureInteractionDimension(
     !binding.groupBy.includes(mappings[0]!.dimensionId)
   )
     dataFail("dashboard_interaction_dimension_not_grouped", filterId);
+  // A click would set the filter to a bucket's first day, not to a value of
+  // the dimension (#838).
+  if (Object.hasOwn(binding.groupByGrain ?? {}, mappings[0]!.dimensionId))
+    dataFail("dashboard_interaction_grain_unsupported", filterId);
   return mappings[0]!.dimensionId;
 }
 

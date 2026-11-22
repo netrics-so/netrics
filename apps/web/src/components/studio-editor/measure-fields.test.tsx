@@ -230,3 +230,108 @@ describe("a line chart's maximum rows (#835)", () => {
     expect(limitForView("table", 50)).toBe(50);
   });
 });
+
+describe("a time grain next to a grouped time dimension (#838)", () => {
+  const photos: PublishedModelCatalog["models"] = [
+    {
+      modelId: "00000000-0000-4000-8000-000000000011",
+      modelName: "Photos",
+      measures: [{ id: "photos", name: "Photos" }],
+      dimensions: [
+        { id: "taken", name: "Taken", type: "timestamp" },
+        { id: "day", name: "Day", type: "date" },
+        { id: "album", name: "Album", type: "string" },
+      ],
+    },
+  ];
+  const grouped = (
+    view: "value" | "table" | "bar" | "line",
+    groupBy: string[],
+    groupByGrain?: Record<string, "day" | "week" | "month">,
+  ) => {
+    const base = widget(view, ["photos"], groupBy);
+    return {
+      ...base,
+      binding: {
+        ...base.binding,
+        modelId: photos[0]!.modelId,
+        ...(groupByGrain ? { groupByGrain } : {}),
+      },
+    };
+  };
+  const html = (
+    measure: ReturnType<typeof grouped>,
+    locale: "en" | "de" = "en",
+  ) =>
+    renderI18n(
+      <MeasureFields
+        widget={measure}
+        models={photos}
+        filters={[]}
+        dispatch={() => {}}
+        workspaceId="workspace"
+      />,
+      locale,
+    );
+  const grain = (markup: string, label: string) =>
+    markup.match(
+      new RegExp(`<select aria-label="${label}"[^>]*>.*?</select>`),
+    )?.[0] ?? "";
+
+  it("offers day, week and month for a grouped timestamp", () => {
+    const markup = html(grouped("table", ["taken", "album"]));
+    const select = grain(markup, "Taken: one group per");
+    expect(select).toContain('<option value="" selected="">Each time</option>');
+    expect(select).toContain('<option value="day">Day</option>');
+    expect(select).toContain('<option value="week">Week</option>');
+    expect(select).toContain('<option value="month">Month</option>');
+    // Only time dimensions the widget groups by have one.
+    expect(markup.match(/<select aria-label="[^"]*: one group per"/g)).toEqual([
+      '<select aria-label="Taken: one group per"',
+    ]);
+    const chosen = grain(
+      html(grouped("line", ["taken"], { taken: "day" })),
+      "Taken: one group per",
+    );
+    expect(chosen).toContain('<option value="day" selected="">Day</option>');
+  });
+
+  it("offers week and month for a date, which is its own day", () => {
+    const select = grain(
+      html(grouped("table", ["day"], { day: "week" })),
+      "Day: one group per",
+    );
+    expect(select).toContain('<option value="">Day</option>');
+    expect(select).not.toContain('value="day"');
+    expect(select).toContain('<option value="week" selected="">Week</option>');
+  });
+
+  it("words the choice in German", () => {
+    const select = grain(
+      html(grouped("value", ["taken"], { taken: "month" }), "de"),
+      "Taken: eine Gruppe pro",
+    );
+    expect(select).toContain('<option value="">Zeitpunkt</option>');
+    expect(select).toContain('<option value="day">Tag</option>');
+    expect(select).toContain('<option value="week">Woche</option>');
+    expect(select).toContain(
+      '<option value="month" selected="">Monat</option>',
+    );
+  });
+
+  it("keeps the grain across view switches, with its dimension", () => {
+    const table = grouped("table", ["taken", "album"], { taken: "day" });
+    for (const view of ["value", "bar", "line"] as const) {
+      const other = { ...table, ...patchForView(table, view, photos[0]) };
+      expect(other.binding.groupBy[0]).toBe("taken");
+      expect(other.binding.groupByGrain).toEqual({ taken: "day" });
+      const back = { ...other, ...patchForView(other, "table", photos[0]) };
+      expect(back.binding.groupByGrain).toEqual({ taken: "day" });
+    }
+    // A chart shows the first dimension only: the second's grain goes with it.
+    const two = grouped("table", ["album", "taken"], { taken: "week" });
+    const bar = patchForView(two, "bar", photos[0]);
+    expect(bar.binding.groupBy).toEqual(["album"]);
+    expect("groupByGrain" in bar.binding).toBe(false);
+  });
+});

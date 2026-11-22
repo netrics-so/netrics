@@ -15056,6 +15056,21 @@
                                 "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                               }
                             },
+                            "groupByGrain": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string",
+                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                              },
+                              "additionalProperties": {
+                                "type": "string",
+                                "enum": [
+                                  "day",
+                                  "week",
+                                  "month"
+                                ]
+                              }
+                            },
                             "filter": {
                               "$ref": "#/components/schemas/DataExpressionDepth16Input"
                             },
@@ -19583,6 +19598,21 @@
                                           "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                         }
                                       },
+                                      "groupByGrain": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "enum": [
+                                            "day",
+                                            "week",
+                                            "month"
+                                          ]
+                                        }
+                                      },
                                       "filter": {
                                         "$ref": "#/components/schemas/DataExpressionDepth16Input"
                                       },
@@ -22460,6 +22490,21 @@
                                               "items": {
                                                 "type": "string",
                                                 "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              }
+                                            },
+                                            "groupByGrain": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day",
+                                                  "week",
+                                                  "month"
+                                                ]
                                               }
                                             },
                                             "filter": {
@@ -25682,6 +25727,21 @@
                                                 "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                               }
                                             },
+                                            "groupByGrain": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day",
+                                                  "week",
+                                                  "month"
+                                                ]
+                                              }
+                                            },
                                             "filter": {
                                               "$ref": "#/components/schemas/DataExpressionDepth16"
                                             },
@@ -28826,6 +28886,21 @@
                                           "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
                                         }
                                       },
+                                      "groupByGrain": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "enum": [
+                                            "day",
+                                            "week",
+                                            "month"
+                                          ]
+                                        }
+                                      },
                                       "filter": {
                                         "$ref": "#/components/schemas/DataExpressionDepth16Input"
                                       },
@@ -31713,6 +31788,21 @@
                                               "items": {
                                                 "type": "string",
                                                 "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              }
+                                            },
+                                            "groupByGrain": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day",
+                                                  "week",
+                                                  "month"
+                                                ]
                                               }
                                             },
                                             "filter": {
@@ -35089,6 +35179,21 @@
                                               "items": {
                                                 "type": "string",
                                                 "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              }
+                                            },
+                                            "groupByGrain": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day",
+                                                  "week",
+                                                  "month"
+                                                ]
                                               }
                                             },
                                             "filter": {
@@ -50188,6 +50293,21 @@
                           "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                         }
                       },
+                      "groupByGrain": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "enum": [
+                            "day",
+                            "week",
+                            "month"
+                          ]
+                        }
+                      },
                       "filter": {
                         "$ref": "#/components/schemas/DataExpressionDepth16Input"
                       },
@@ -55106,6 +55226,21 @@
                       "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
                     }
                   },
+                  "groupByGrain": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "enum": [
+                        "day",
+                        "week",
+                        "month"
+                      ]
+                    }
+                  },
                   "filter": {
                     "$ref": "#/components/schemas/DataExpressionDepth16Input"
                   },
@@ -55662,6 +55797,21 @@
                     "items": {
                       "type": "string",
                       "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                    }
+                  },
+                  "groupByGrain": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]{0,99}$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "enum": [
+                        "day",
+                        "week",
+                        "month"
+                      ]
                     }
                   },
                   "filter": {
@@ -106042,6 +106192,21 @@
                                               "items": {
                                                 "type": "string",
                                                 "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              }
+                                            },
+                                            "groupByGrain": {
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "day",
+                                                  "week",
+                                                  "month"
+                                                ]
                                               }
                                             },
                                             "filter": {

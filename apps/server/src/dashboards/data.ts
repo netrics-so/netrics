@@ -43,6 +43,7 @@ import {
   type MeasureWidgetBinding,
   type SlideFilterScope,
   followsSlideScopeResource,
+  measureResultDimensions,
   type ProductApps,
   slideScopeResource,
   RESOURCE_DIMENSION,
@@ -794,7 +795,14 @@ export async function queryDashboardMeasure(
         // A provider overdue by a day is the existing warning (ADR 0025 §7).
         status: status === "ok" && fresh.overdue ? "stale" : status,
         widgetId: input.id,
-        metadata,
+        // A dimension grouped by a time grain holds dates (#838).
+        metadata: {
+          ...metadata,
+          dimensions: measureResultDimensions(
+            metadata.dimensions,
+            input.binding,
+          ),
+        },
         result,
         error: null,
         exclusions,

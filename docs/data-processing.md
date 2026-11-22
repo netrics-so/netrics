@@ -508,6 +508,30 @@ failure, with `stale: true`, the error code and a warning. Fallback re-authorize
 every source and cannot restore removed or expired data. Legacy observation
 snapshots cannot be reconstructed after their values change.
 
+### Time grains for grouped dates and timestamps
+
+A query can group a date or timestamp dimension into calendar buckets
+(ADR 0028): `groupByGrain` names, per grouped dimension, `day`, `week` (ISO,
+Monday) or `month`.
+
+```json
+{
+  "measureIds": ["photos"],
+  "groupBy": ["taken"],
+  "groupByGrain": { "taken": "day" }
+}
+```
+
+The group's value is the bucket's first day as a date (`2026-11-02`), so
+groups sort, page and read like any date; `limit`, `offset` and an order by
+a measure apply to the buckets. A timestamp's day is its day in the
+workspace time zone; a date is never shifted. Filters compare the
+dimension's own values. A grain on any other type, on a dimension that is
+not grouped by, or on the date a rolling or period-offset measure is read
+per is refused, and a week or month does not satisfy a measure's
+`requiredDimensions`. Measure widgets store the same field in their binding;
+Studio offers it next to a grouped time dimension.
+
 ## Data authoring workspace
 
 Workspace editors can open **Data & measures** to inspect typed datasets,

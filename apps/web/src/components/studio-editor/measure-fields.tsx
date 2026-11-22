@@ -7,10 +7,13 @@ import type {
 } from "@netrics/contracts";
 import {
   formatDataFormula,
+  measureBindingGrains,
   measureInteractionDimension,
   measureOptionsForBinding,
   parseDataFormula,
+  TIME_GRAINS,
   type DashboardDataFilter,
+  type TimeGrain,
 } from "@netrics/domain";
 import { dataErrorKey } from "@/lib/data-editing";
 import { useT } from "@/lib/i18n/client";
@@ -126,7 +129,8 @@ export function patchForView(
   view: MeasureView,
   model: CatalogModel | undefined,
 ) {
-  const binding = {
+  // A time grain stays with its dimension, like the grouping itself (#838).
+  const binding = measureBindingGrains({
     ...widget.binding,
     measureIds:
       view === "table"
@@ -135,7 +139,7 @@ export function patchForView(
           ? [valueViewMeasureId(model, widget.binding.measureIds)]
           : widget.binding.measureIds.slice(0, 1),
     groupBy: groupByForView(view, widget.binding.groupBy, model),
-  };
+  });
   return {
     binding,
     options: measureOptionsForBinding(binding, {
@@ -206,7 +210,7 @@ export function MeasureFields({
   // column labels it named (#768): a template's top N by a measure, or its
   // short heads, never outlive what the widget shows.
   const update = (patch: Partial<typeof widget.binding>) => {
-    const binding = { ...widget.binding, ...patch };
+    const binding = measureBindingGrains({ ...widget.binding, ...patch });
     dispatch({
       type: "updateWidget",
       widgetId: widget.id,
@@ -360,7 +364,9 @@ export function MeasureFields({
         view={widget.options.view}
         dimensions={model?.dimensions ?? []}
         groupBy={widget.binding.groupBy}
+        grains={widget.binding.groupByGrain ?? {}}
         onChange={(groupBy) => update({ groupBy })}
+        onGrainChange={(groupByGrain) => update({ groupByGrain })}
       />
       {/* A plain value has no rows; a split shows up to this many lines. */}
       {widget.options.view !== "value" || widget.binding.groupBy.length ? (
@@ -456,18 +462,23 @@ export function MeasureFields({
  * What the widget groups by. Every view has it (#788): a value view with a
  * grouping is its total with a line per group (#784), and without one a
  * single value. Its choices are the model's dimensions as the view can
- * show them; a control per chosen dimension would go next to its label.
+ * show them. A chosen date or timestamp dimension has its time grain next
+ * to it (#838): each value, or one group per day, week or month.
  */
 function GroupByField({
   view,
   dimensions,
   groupBy,
+  grains,
   onChange,
+  onGrainChange,
 }: {
   view: MeasureView;
   dimensions: CatalogModel["dimensions"];
   groupBy: string[];
+  grains: Record<string, TimeGrain>;
   onChange: (groupBy: string[]) => void;
+  onGrainChange: (grains: Record<string, TimeGrain>) => void;
 }) {
   const t = useT("data.dashboard"),
     id = useId();
@@ -482,23 +493,59 @@ function GroupByField({
     <fieldset aria-describedby={view === "value" ? `${id}-help` : undefined}>
       <legend>{t(view === "value" ? "splitBy" : "groupBy")}</legend>
       {offered.map((dimension) => (
-        <label key={dimension.id} className="check">
-          <input
-            type={several ? "checkbox" : "radio"}
-            name={`${id}-group`}
-            checked={groupBy.includes(dimension.id)}
-            onChange={(event) =>
-              onChange(
-                several
-                  ? event.target.checked
-                    ? [...groupBy, dimension.id]
-                    : groupBy.filter((id) => id !== dimension.id)
-                  : [dimension.id],
-              )
-            }
-          />
-          {dimension.name}
-        </label>
+        <div key={dimension.id} className="group-by-choice">
+          <label className="check">
+            <input
+              type={several ? "checkbox" : "radio"}
+              name={`${id}-group`}
+              checked={groupBy.includes(dimension.id)}
+              onChange={(event) =>
+                onChange(
+                  several
+                    ? event.target.checked
+                      ? [...groupBy, dimension.id]
+                      : groupBy.filter((id) => id !== dimension.id)
+                    : [dimension.id],
+                )
+              }
+            />
+            {dimension.name}
+          </label>
+          {groupBy.includes(dimension.id) &&
+          (dimension.type === "date" || dimension.type === "timestamp") ? (
+            <select
+              aria-label={t("grain.label", { name: dimension.name })}
+              // A date is its own day: "day" and no grain are one choice.
+              value={
+                dimension.type === "date" && grains[dimension.id] === "day"
+                  ? ""
+                  : (grains[dimension.id] ?? "")
+              }
+              onChange={(event) => {
+                const { [dimension.id]: _previous, ...rest } = grains;
+                onGrainChange(
+                  event.target.value
+                    ? {
+                        ...rest,
+                        [dimension.id]: event.target.value as TimeGrain,
+                      }
+                    : rest,
+                );
+              }}
+            >
+              <option value="">
+                {t(dimension.type === "date" ? "grain.day" : "grain.none")}
+              </option>
+              {TIME_GRAINS.filter(
+                (grain) => dimension.type !== "date" || grain !== "day",
+              ).map((grain) => (
+                <option key={grain} value={grain}>
+                  {t(`grain.${grain}`)}
+                </option>
+              ))}
+            </select>
+          ) : null}
+        </div>
       ))}
       {view === "value" ? (
         <p className="help" id={`${id}-help`}>

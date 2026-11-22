@@ -30,6 +30,7 @@ import {
 import { createCredentialKeyring, encryptCredentials } from "../credentials.js";
 import { canonicalSha256 } from "../custom-api/canonical-json.js";
 import { createDataService } from "../data/service.js";
+import { queryDashboardMeasure } from "../dashboards/data.js";
 import {
   ContinueJobError,
   createJobHandlers,
@@ -291,6 +292,89 @@ describe("custom-api on the sync engine", () => {
     expect(own.sources[0]!.name).toBe(
       sources.find((source) => source.connectionId === connectionId)?.name,
     );
+  });
+
+  it("groups a custom API timestamp per day of the workspace's calendar (#838)", async () => {
+    const connectionId = await connect(definition("pages"), null, { items: 3 });
+    expect(await run("connection.backfill", connectionId)).toBeUndefined();
+    const [user] = await owner<{ id: string }[]>`
+      select id from users where email = 'custom-api@example.com'`;
+    const actor = { workspaceId, callerId: user!.id };
+    const service = createDataService(appDb);
+    const { sources } = await service.listSources(actor, {}, { connectionId });
+    const source = sources[0]!;
+    expect(source.fields.find((field) => field.id === "created")?.type).toBe(
+      "timestamp",
+    );
+    const saved = await service.saveModel(actor, {
+      name: "Items",
+      definition: {
+        version: 1,
+        datasets: [source.id],
+        relationships: [],
+        dimensions: [
+          {
+            id: "created",
+            name: "Created",
+            datasetId: source.id,
+            fieldId: "created",
+          },
+        ],
+        measures: [
+          {
+            id: "items",
+            name: "New items",
+            kind: "aggregate",
+            datasetId: source.id,
+            aggregate: { id: "items", name: "New items", op: "count" },
+          },
+        ],
+      },
+    } as never);
+    await service.publishModel(actor, saved.model.id, 1);
+    // The fixture's 25 items were created hourly from 2024-01-01T01:00Z.
+    // Kolkata is UTC+05:30: its 2 January starts at 18:30Z.
+    await owner`update workspaces set time_zone = 'Asia/Kolkata'
+      where id = ${workspaceId}`;
+    const perDay = async (groupByGrain?: { created: "day" }) => {
+      const data = await withWorkspace(appDb, { workspaceId }, (tx) =>
+        queryDashboardMeasure(
+          tx,
+          workspaceId,
+          {
+            id: randomUUID(),
+            binding: {
+              modelId: saved.model.id as string,
+              measureIds: ["items"],
+              groupBy: ["created"],
+              ...(groupByGrain ? { groupByGrain } : {}),
+              exclusions: [],
+            },
+            options: { view: "table", limit: 100 },
+          },
+          [],
+          {},
+          new Date(),
+          DEFAULT_DATA_POLICY,
+        ),
+      );
+      expect(data.error).toBeNull();
+      return data.result!.rows.map((row) => [
+        row.dimensions.created,
+        row.measures.items?.value,
+      ]);
+    };
+    try {
+      // Without a grain: a row per item, each its own second.
+      expect(await perDay()).toHaveLength(25);
+      expect(await perDay({ created: "day" })).toEqual([
+        ["2024-01-01", 18],
+        ["2024-01-02", 7],
+      ]);
+    } finally {
+      await owner`update workspaces set time_zone = 'UTC'
+        where id = ${workspaceId}`;
+    }
   });
 
   it("keeps the last sync's skipped records per stream, by field path (#834 review)", async () => {
