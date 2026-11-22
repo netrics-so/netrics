@@ -1139,14 +1139,21 @@ export function querySemanticModel(
     dimensionLabels?: Record<string, string>;
     measures: Record<string, ModelMeasureResult>;
   }> = [];
+  // Display names of the dimensions that show or name values: the grouped
+  // ones and those the filter reads. A bucketed dimension shows dates, not
+  // its labelled values (#838), so only a filter on it reads its names; a
+  // scan of its rows nothing uses would be charged to the budget.
+  const filtered = new Set(queryFilter ? references(queryFilter) : []);
   const displayLabels = new Map(
-    [...required].map((id) => {
-      const dimension = dimensions.get(id)!;
-      return [
-        id,
-        dimensionValueLabels(dimension, table(dimension.datasetId), budget),
-      ] as const;
-    }),
+    [...required]
+      .filter((id) => !grainBuckets.has(id) || filtered.has(id))
+      .map((id) => {
+        const dimension = dimensions.get(id)!;
+        return [
+          id,
+          dimensionValueLabels(dimension, table(dimension.datasetId), budget),
+        ] as const;
+      }),
   );
   const orderedGroups = [...groupValues].sort(([, a], [, b]) => {
     budget.tick();
@@ -1546,7 +1553,7 @@ export function querySemanticModel(
     value: unknown;
     label: string;
   }> = [];
-  for (const id of queryFilter ? references(queryFilter) : []) {
+  for (const id of filtered) {
     const dimension = dimensions.get(id)!;
     if (!dimension.labelFieldId) continue;
     const source = table(dimension.datasetId),

@@ -72,7 +72,9 @@ A model query, and a measure widget's binding, carry an optional
   reason, and takes a grain back when such a measure is added. A grain for
   a dimension the widget does not group by is
   `dashboard_measure_grain_invalid`.
-- **No labels**: a bucket is not one of the dimension's labelled values.
+- **No labels**: a bucket is not one of the dimension's labelled values,
+  and the dimension's display names are not read at all unless the filter
+  names it (a filter's values keep their names).
 - **No click-to-filter**: a declared interaction on a bucketed dimension is
   refused (`dashboard_interaction_grain_unsupported`); a click would set the
   filter to the bucket's first day, not to a value of the dimension.
@@ -101,6 +103,12 @@ and one zone lookup per kept value (remembered per quarter hour of UTC)
 inside the existing operation budget and row limits. The engine evaluates
 loaded tables in the server process; there is no SQL statement to truncate
 in. Preparations are unchanged: their `to_date` remains the UTC day.
+
+Everything after the row pass (ordering, a chart's latest points, a top N
+by a measure, paging, windows, totals, remembered results) works on the
+buckets: a bucketed query costs what the same rows cost with the dimension
+already stored as dates, plus the one operation per kept value. Tests
+compare the two stage by stage.
 
 A value is checked with the tables' own validator before it is bucketed, so
 bucketing accepts exactly the dates and timestamps a table can hold.

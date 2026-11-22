@@ -9,6 +9,7 @@ import {
 import { type DataTable } from "./data-preparation.js";
 import {
   DataProcessingError,
+  ProcessingBudget,
   validateDataValue,
   type DataExpression,
 } from "./data-expression.js";
@@ -683,6 +684,328 @@ describe("what bucketing costs (review 3 of #852)", () => {
         },
       ),
     );
+  });
+});
+
+describe("a bucketed query costs what the same data in dates costs (review 4 of #852)", () => {
+  // The same rows twice: `at` as the instant, and already as its UTC day.
+  // Grouping the instants per day must cost what grouping the days costs,
+  // plus one operation per kept row for its bucket.
+  const DAYS = ["2026-11-02", "2026-11-03", "2026-11-04"];
+  const PER_DAY = 200;
+  const instants = DAYS.flatMap((date) =>
+    Array.from({ length: PER_DAY }, (_, index) => {
+      const minute = String(Math.floor(index / 60)).padStart(2, "0");
+      const second = String(index % 60).padStart(2, "0");
+      return `${date}T10:${minute}:${second}Z`;
+    }),
+  );
+  const tableOf = (
+    type: "timestamp" | "date",
+    values: readonly string[] = instants,
+  ): DataTable => ({
+    fields: [
+      { id: "at", name: "At", type, nullable: false },
+      { id: "label", name: "Label", type: "string", nullable: false },
+      { id: "day", name: "Day", type: "date", nullable: false },
+      { id: "n", name: "N", type: "integer", nullable: false },
+    ],
+    rows: values.map((value, index) => ({
+      at: type === "date" ? value.slice(0, 10) : value,
+      // One name per day, as a label of a date must be.
+      label: `Day ${value.slice(8, 10)}`,
+      day: value.slice(0, 10),
+      n: index % 7,
+    })),
+    provenance: [{ datasetId: "items", generationId: "items-1" }],
+  });
+  const modelOf = (labelled: boolean): SemanticModelDefinition => ({
+    version: 1,
+    datasets: ["items"],
+    relationships: [],
+    dimensions: [
+      {
+        id: "at",
+        name: "At",
+        datasetId: "items",
+        fieldId: "at",
+        timeAlignment: "reporting_date",
+        ...(labelled ? { labelFieldId: "label" } : {}),
+      },
+      {
+        id: "day",
+        name: "Day",
+        datasetId: "items",
+        fieldId: "day",
+        timeAlignment: "reporting_date",
+      },
+    ],
+    measures: [
+      {
+        id: "count",
+        name: "Items",
+        kind: "aggregate",
+        datasetId: "items",
+        aggregate: { id: "count", name: "Items", op: "count" },
+      },
+      {
+        id: "sum",
+        name: "Sum",
+        kind: "aggregate",
+        datasetId: "items",
+        aggregate: { id: "sum", name: "Sum", op: "sum", fieldId: "n" },
+      },
+      {
+        id: "rolling",
+        name: "Items, 2 days",
+        kind: "rolling",
+        baseMeasureId: "count",
+        timeDimensionId: "day",
+        window: { unit: "day", length: 2 },
+      },
+    ],
+  });
+  type Query = Partial<ModelQuery> & Pick<ModelQuery, "groupBy">;
+  const bucketed = (
+    query: Query,
+    labelled = false,
+    budget?: ProcessingBudget,
+  ) =>
+    querySemanticModel(
+      modelOf(labelled),
+      new Map([["items", tableOf("timestamp")]]),
+      {
+        measureIds: ["count"],
+        now: "2026-11-22T00:00:00Z",
+        groupByGrain: { at: "day" },
+        ...query,
+      },
+      budget,
+    );
+  const asDates = (query: Query, labelled = false) =>
+    querySemanticModel(
+      modelOf(labelled),
+      new Map([["items", tableOf("date")]]),
+      {
+        measureIds: ["count"],
+        now: "2026-11-22T00:00:00Z",
+        ...query,
+      },
+    );
+  const rowsOf = (result: ReturnType<typeof bucketed>) =>
+    result.rows.map((row) => ({
+      dimensions: row.dimensions,
+      measures: Object.fromEntries(
+        Object.entries(row.measures).map(([id, cell]) => [id, cell.value]),
+      ),
+    }));
+  /** Same rows; the bucketed query costs `kept` operations more. */
+  const same = (query: Query, kept: number, dateQuery: Query = query) => {
+    const a = bucketed(query),
+      b = asDates(dateQuery);
+    expect(rowsOf(a)).toEqual(rowsOf(b));
+    expect(a.totalRows).toBe(b.totalRows);
+    expect(a.operations - b.operations).toBe(kept);
+  };
+  const compare = (
+    fn: "gte" | "eq",
+    type: "timestamp" | "date",
+    value: string,
+  ): DataExpression => ({
+    kind: "call",
+    fn,
+    args: [
+      { kind: "field", fieldId: "at" },
+      { kind: "literal", type, value },
+    ],
+  });
+  const all = instants.length;
+
+  it("grouping, ordering and the first rows", () => {
+    same({ groupBy: ["at"] }, all);
+    same({ groupBy: ["at"], limit: 2 }, all);
+    same({ groupBy: ["at", "day"], measureIds: ["count", "sum"] }, all);
+  });
+
+  it("a chart's latest buckets and a later page", () => {
+    same({ groupBy: ["at"], limit: 2, window: "last" }, all);
+    same({ groupBy: ["at"], limit: 1, offset: 2 }, all);
+    expect(bucketed({ groupBy: ["at"], limit: 1, offset: 2 }).totalRows).toBe(
+      DAYS.length,
+    );
+  });
+
+  it("a table's top buckets by a measure", () => {
+    same(
+      {
+        groupBy: ["at"],
+        measureIds: ["count", "sum"],
+        limit: 2,
+        orderBy: { measureId: "sum", direction: "desc" },
+      },
+      all,
+    );
+  });
+
+  it("a filter on the bucketed dimension", () => {
+    // From 3 November on: the instants of two days.
+    same(
+      {
+        groupBy: ["at"],
+        filter: compare("gte", "timestamp", "2026-11-03T00:00:00Z"),
+      },
+      2 * PER_DAY,
+      { groupBy: ["at"], filter: compare("gte", "date", "2026-11-03") },
+    );
+  });
+
+  it("a rolling window over another date", () => {
+    const filter: DataExpression = {
+      kind: "call",
+      fn: "and",
+      args: [
+        {
+          kind: "call",
+          fn: "gte",
+          args: [
+            { kind: "field", fieldId: "day" },
+            { kind: "literal", type: "date", value: "2026-11-03" },
+          ],
+        },
+        {
+          kind: "call",
+          fn: "lte",
+          args: [
+            { kind: "field", fieldId: "day" },
+            { kind: "literal", type: "date", value: "2026-11-03" },
+          ],
+        },
+      ],
+    };
+    // 3 November shown, 2 November read as lookback, 4 November outside.
+    same(
+      { groupBy: ["day", "at"], measureIds: ["rolling"], filter },
+      2 * PER_DAY,
+    );
+  });
+
+  it("a label field costs nothing where no label is shown or asked for", () => {
+    const plain = bucketed({ groupBy: ["at"] });
+    const labelled = bucketed({ groupBy: ["at"] }, true);
+    expect(rowsOf(labelled)).toEqual(rowsOf(plain));
+    expect(labelled.rows.some((row) => row.dimensionLabels)).toBe(false);
+    expect(labelled.operations).toBe(plain.operations);
+    // The same grouping in dates shows its labels, and pays for them.
+    const dates = asDates({ groupBy: ["at"] }, true);
+    expect(dates.rows[0]!.dimensionLabels).toEqual({ at: "Day 02" });
+    expect(dates.operations - asDates({ groupBy: ["at"] }).operations).toBe(
+      all,
+    );
+    // Another labelled dimension next to the bucketed one keeps its labels.
+    const both = querySemanticModel(
+      {
+        ...modelOf(true),
+        dimensions: [
+          ...modelOf(true).dimensions,
+          {
+            id: "seen",
+            name: "Seen",
+            datasetId: "items",
+            fieldId: "day",
+            timeAlignment: "reporting_date",
+            labelFieldId: "label",
+          },
+        ],
+      },
+      new Map([["items", tableOf("timestamp")]]),
+      {
+        measureIds: ["count"],
+        groupBy: ["at", "seen"],
+        groupByGrain: { at: "day" },
+      },
+    );
+    expect(both.rows[0]!.dimensionLabels).toEqual({ seen: "Day 02" });
+  });
+
+  it("a filter on a labelled bucketed dimension still names its values", () => {
+    const instant = instants[0]!;
+    const result = bucketed(
+      { groupBy: ["at"], filter: compare("eq", "timestamp", instant) },
+      true,
+    );
+    expect(rowsOf(result)).toEqual([
+      { dimensions: { at: "2026-11-02" }, measures: { count: 1 } },
+    ]);
+    expect(result.filterValueLabels).toEqual([
+      { dimensionId: "at", value: instant, label: "Day 02" },
+    ]);
+    // What the filter's labels cost, and one bucket for the one kept row.
+    const dates = asDates(
+      { groupBy: ["at"], filter: compare("eq", "date", "2026-11-02") },
+      true,
+    );
+    const unlabelled = asDates({
+      groupBy: ["at"],
+      filter: compare("eq", "date", "2026-11-02"),
+    });
+    const labelCost = dates.operations - unlabelled.operations;
+    expect(
+      result.operations -
+        bucketed({
+          groupBy: ["at"],
+          filter: compare("eq", "timestamp", instant),
+        }).operations,
+    ).toBe(labelCost);
+  });
+
+  it("10,000 instants of one day are one row within a 65,000 budget, labelled or not", () => {
+    const day = Array.from({ length: 10_000 }, (_, index) => {
+      const hour = String(Math.floor(index / 3600)).padStart(2, "0");
+      const minute = String(Math.floor(index / 60) % 60).padStart(2, "0");
+      const second = String(index % 60).padStart(2, "0");
+      return `2026-11-02T${hour}:${minute}:${second}Z`;
+    });
+    const table = (labelled: boolean): DataTable => ({
+      fields: [
+        { id: "at", name: "At", type: "timestamp", nullable: false },
+        ...(labelled
+          ? [
+              {
+                id: "label",
+                name: "Label",
+                type: "string" as const,
+                nullable: false,
+              },
+            ]
+          : []),
+      ],
+      rows: day.map((at) => (labelled ? { at, label: at } : { at })),
+    });
+    for (const labelled of [false, true]) {
+      const result = querySemanticModel(
+        {
+          version: 1,
+          datasets: ["items"],
+          relationships: [],
+          dimensions: [
+            {
+              id: "at",
+              name: "At",
+              datasetId: "items",
+              fieldId: "at",
+              ...(labelled ? { labelFieldId: "label" } : {}),
+            },
+          ],
+          measures: [modelOf(false).measures[0]!],
+        },
+        new Map([["items", table(labelled)]]),
+        { measureIds: ["count"], groupBy: ["at"], groupByGrain: { at: "day" } },
+        new ProcessingBudget(65_000),
+      );
+      expect(rowsOf(result), String(labelled)).toEqual([
+        { dimensions: { at: "2026-11-02" }, measures: { count: 10_000 } },
+      ]);
+    }
   });
 });
 
