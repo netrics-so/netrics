@@ -91,6 +91,18 @@ produced one after the other.
 - Invitation acceptance and workspace creation do not take it: they only
   add memberships, and a deletion that misses one refuses where it could
   have passed.
+- A deletion that waits in the database holds a connection. So the API
+  queues deletion requests in its own process before it opens a
+  transaction (`apps/server/src/workspaces/deletion-gate.ts`): one deletion
+  at a time per process, in order of arrival. A burst of requests then
+  keeps at most one connection of a process's pool waiting, and the rest
+  wait holding only a timer. The 10 seconds are one budget: what a request
+  has left when it gets the gate is what the database may wait
+  (`app.workspace_delete_wait_ms`, which can only shorten the wait), and a
+  request that does not get the gate in time answers `workspace_busy`
+  without taking a connection. That timeout bounds the queue; there is no
+  separate limit on its length. The gate is an economy, not the guarantee:
+  the database lock is what orders deletions of several API processes.
 - Removing a member is not ordered with deletions. An owner who is removed
   from their other workspace while they delete this one can be left without
   a workspace. Not covered.

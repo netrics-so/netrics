@@ -60,6 +60,11 @@ import {
 import type { AuthService } from "../auth/index.js";
 import { conversionOptions } from "../metrics/query.js";
 import type { AddDemoContent } from "../onboarding.js";
+import {
+  createWorkspaceDeletionGate,
+  DELETION_GATE_BUSY,
+  type WorkspaceDeletionGate,
+} from "../workspaces/deletion-gate.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -71,6 +76,8 @@ export interface WorkspaceRouteDeps {
   addDemoContent?: AddDemoContent;
   /** NETRICS_EXCHANGE_RATES: whether a display currency can be set (#191). */
   exchangeRates?: boolean;
+  /** One deletion at a time in this process (#855); tests pass their own. */
+  deletionGate?: WorkspaceDeletionGate;
 }
 
 const memberParamsSchema = z.object({ userId: z.uuid() });
@@ -114,6 +121,7 @@ export function registerWorkspaceRoutes(
   deps: WorkspaceRouteDeps,
 ): void {
   const requireSession = createRequireSession(deps.authService);
+  const deletionGate = deps.deletionGate ?? createWorkspaceDeletionGate();
 
   void app.register(
     (scope, _opts, done) => {
@@ -472,18 +480,28 @@ export function registerWorkspaceRoutes(
           if (!body) {
             return;
           }
-          let outcome: Awaited<ReturnType<typeof deleteWorkspace>>;
+          let outcome:
+            | Awaited<ReturnType<typeof deleteWorkspace>>
+            | typeof DELETION_GATE_BUSY;
           try {
+            // One deletion at a time in this process, queued here before a
+            // connection is taken: a deletion that waits in the database
+            // (for the deletion before it, or for work in its workspace)
+            // holds its connection, and a burst of them must not use up
+            // the pool. What is left of the 10 seconds goes to the
+            // database's waits.
             // No fence of its own: delete_workspace() takes it exclusively.
             // Read committed by name, whatever the role or database
             // defaults to: the function counts the caller's other
             // workspaces after waiting for another deletion and refuses a
             // transaction whose snapshot could predate it.
-            outcome = await withWorkspace(
-              deps.db,
-              { workspaceId: access.workspaceId, userId: access.callerId },
-              (tx) => deleteWorkspace(tx, body.name),
-              { fence: "none", isolationLevel: "read committed" },
+            outcome = await deletionGate.run((waitMs) =>
+              withWorkspace(
+                deps.db,
+                { workspaceId: access.workspaceId, userId: access.callerId },
+                (tx) => deleteWorkspace(tx, body.name, { waitMs }),
+                { fence: "none", isolationLevel: "read committed" },
+              ),
             );
           } catch (error) {
             // Work for the workspace was still running after 10 seconds
@@ -495,6 +513,10 @@ export function registerWorkspaceRoutes(
               return sendError(reply, 409, "workspace_last");
             }
             throw error;
+          }
+          if (outcome === DELETION_GATE_BUSY) {
+            // Other deletions were still ahead after 10 seconds.
+            return sendError(reply, 409, "workspace_busy");
           }
           if (outcome === "not_found") {
             return sendError(reply, 404, "workspace_not_found");

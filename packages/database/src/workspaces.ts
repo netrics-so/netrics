@@ -382,7 +382,21 @@ export type DeleteWorkspaceOutcome =
 export async function deleteWorkspace(
   tx: Transaction,
   name: string,
+  options: {
+    /**
+     * How long the function may wait for its locks, at most and by default
+     * 10 seconds: what a caller that already waited has left. Afterwards
+     * it fails with 55P03 (lock_not_available) and nothing is deleted.
+     */
+    waitMs?: number;
+  } = {},
 ): Promise<DeleteWorkspaceOutcome> {
+  if (options.waitMs !== undefined) {
+    const waitMs = Math.max(1, Math.floor(options.waitMs));
+    await tx.execute(
+      sql`select set_config('app.workspace_delete_wait_ms', ${String(waitMs)}, true)`,
+    );
+  }
   const rows = await tx.execute<{ outcome: DeleteWorkspaceOutcome }>(
     sql`select delete_workspace(${name}) as outcome`,
   );

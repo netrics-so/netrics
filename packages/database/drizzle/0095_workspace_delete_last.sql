@@ -52,7 +52,11 @@
 --     scope here; the removal runs under that workspace's shared fence only.
 --
 -- The wait for both locks together stays within the 10 seconds of 0094
--- (55P03 afterwards, answered 409 workspace_busy).
+-- (55P03 afterwards, answered 409 workspace_busy). A caller that has already
+-- waited (the API queues deletion requests in its own process before it
+-- takes a connection, see apps/server/src/workspaces/deletion-gate.ts) says
+-- how much is left in app.workspace_delete_wait_ms, transaction-local; it
+-- can only shorten the wait, never extend it.
 CREATE OR REPLACE FUNCTION delete_workspace(p_name text)
 RETURNS text
 LANGUAGE plpgsql
@@ -64,7 +68,17 @@ DECLARE
   v_workspace_id uuid := nullif(current_setting('app.workspace_id', true), '')::uuid;
   v_user_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
   v_lock_timeout text := current_setting('lock_timeout');
-  v_deadline timestamptz := clock_timestamp() + interval '10 seconds';
+  v_wait_ms integer := least(
+    10000,
+    greatest(
+      1,
+      coalesce(
+        nullif(current_setting('app.workspace_delete_wait_ms', true), '')::integer,
+        10000
+      )
+    )
+  );
+  v_deadline timestamptz := clock_timestamp() + make_interval(secs => v_wait_ms / 1000.0);
   v_name text;
   v_role text;
   v_counts jsonb;
@@ -76,7 +90,7 @@ BEGIN
     RAISE EXCEPTION 'delete_workspace() needs a read committed transaction'
       USING ERRCODE = 'feature_not_supported';
   END IF;
-  PERFORM set_config('lock_timeout', '10s', true);
+  PERFORM set_config('lock_timeout', v_wait_ms::text || 'ms', true);
   PERFORM pg_advisory_xact_lock(hashtext('netrics.workspace_delete'), 0);
   -- What is left of the 10 seconds (0 would mean no timeout).
   PERFORM set_config(
