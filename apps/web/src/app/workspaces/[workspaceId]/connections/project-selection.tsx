@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useId, useMemo, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import type {
   ConnectionDetail,
   ConnectorCatalogEntry,
@@ -110,6 +117,7 @@ export function SyncedProjects({
 }) {
   const t = useT("connections.projects");
   const listId = useId();
+  const toggle = useRef<HTMLButtonElement>(null);
   const [limit, setLimit] = useState(initialLimit);
   if (selection === undefined) return null;
   if (selection === null) return <p>{t("syncedAll")}</p>;
@@ -133,26 +141,38 @@ export function SyncedProjects({
           <li className="muted">{t("syncedMore", { count: rest })}</li>
         ) : null}
       </ul>
-      {rest > 0 || expanded ? (
+      {selection.length > SYNCED_SHOWN ? (
         <div className="actions">
-          {rest > 0 ? (
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-controls={listId}
-              onClick={() => setLimit(shown.length + next)}
-            >
-              {next === rest
+          {/* One button for the whole list, mounted throughout: it shows
+              more while there is more and closes the list once all of it
+              is shown, so the keyboard focus that opened the list is still
+              on the control that closes it. */}
+          <button
+            ref={toggle}
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            onClick={() =>
+              setLimit(rest > 0 ? shown.length + next : SYNCED_SHOWN)
+            }
+          >
+            {rest === 0
+              ? t("syncedShowFewer")
+              : next === rest
                 ? t("syncedShowAll", { count: selection.length })
                 : t("syncedShowMore", { count: next })}
-            </button>
-          ) : null}
-          {expanded ? (
+          </button>
+          {/* Part of a very long list is open: closing it needs no walk
+              to its end. This button goes with the click, so the focus
+              moves to the one that stays. */}
+          {expanded && rest > 0 ? (
             <button
               type="button"
-              aria-expanded
               aria-controls={listId}
-              onClick={() => setLimit(SYNCED_SHOWN)}
+              onClick={() => {
+                setLimit(SYNCED_SHOWN);
+                toggle.current?.focus();
+              }}
             >
               {t("syncedShowFewer")}
             </button>
@@ -286,6 +306,26 @@ export function ProjectSelection({
   const [notice, setNotice] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const leaveDialog = useLeaveGuard(dirty, t("unsaved"));
+  // Opening and closing the picker replaces the control that had the
+  // keyboard focus: it moves into the picker when the list has loaded, and
+  // back to "Change project selection" when the picker closes (cancelled
+  // or saved), instead of being dropped to the page.
+  const form = useRef<HTMLFormElement>(null);
+  const change = useRef<HTMLButtonElement>(null);
+  const open = resources !== null;
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (wasOpen.current === open) return;
+    wasOpen.current = open;
+    if (open) {
+      // The chosen mode's radio: "all projects" first, "choose" second.
+      const modes = form.current?.querySelectorAll<HTMLElement>(
+        'fieldset input[type="radio"]',
+      );
+      modes?.[selection === null ? 0 : 1]?.focus();
+    } else change.current?.focus();
+    // Only when the picker opens or closes, with the selection it has then.
+  }, [open]);
 
   async function load() {
     setPending("load");
@@ -339,7 +379,7 @@ export function ProjectSelection({
   }
 
   return (
-    <form className="stack" id="project-selection" onSubmit={save}>
+    <form className="stack" id="project-selection" ref={form} onSubmit={save}>
       <h3>{t("heading")}</h3>
       <p className="muted">{t("intro")}</p>
       {resources === null ? (
@@ -347,9 +387,14 @@ export function ProjectSelection({
           <SyncedProjects selection={synced} />
           <div className="actions">
             <button
+              ref={change}
               type="button"
-              disabled={pending !== null}
-              onClick={() => void load()}
+              // Not disabled while loading: a disabled button drops the
+              // keyboard focus before the picker can take it.
+              aria-disabled={pending !== null}
+              onClick={() => {
+                if (pending === null) void load();
+              }}
             >
               {pending === "load" ? t("checking") : t("check")}
             </button>

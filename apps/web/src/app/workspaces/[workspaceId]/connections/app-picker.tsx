@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { DiscoveredResource } from "@netrics/contracts";
 import { useT } from "@/lib/i18n/client";
 
@@ -48,9 +48,30 @@ export function AppPicker({
     current * PAGE_SIZE,
     (current + 1) * PAGE_SIZE,
   );
+  // A selected resource the account no longer lists leaves the list when
+  // it is unticked, and its checkbox with it: the keyboard focus then goes
+  // to the checkbox that took its place (or the last one, or the search
+  // field), instead of being dropped to the page.
+  const list = useRef<HTMLDivElement>(null);
+  const searchField = useRef<HTMLInputElement>(null);
+  const refocus = useRef<number | null>(null);
+  useEffect(() => {
+    const index = refocus.current;
+    if (index === null) return;
+    refocus.current = null;
+    const boxes = list.current?.querySelectorAll<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
+    (
+      boxes?.[Math.min(index, (boxes?.length ?? 0) - 1)] ?? searchField.current
+    )?.focus();
+  });
   function toggle(key: string) {
-    if (selected.has(key)) selected.delete(key);
-    else selected.add(key);
+    if (selected.has(key)) {
+      selected.delete(key);
+      if (missing.includes(key))
+        refocus.current = visible.findIndex((entry) => entry.id === key);
+    } else selected.add(key);
     onChange([...selected]);
   }
   return (
@@ -83,6 +104,7 @@ export function AppPicker({
             <label htmlFor={`${id}-search`}>{t("search")}</label>
             <input
               id={`${id}-search`}
+              ref={searchField}
               type="search"
               value={search}
               onChange={(event) => {
@@ -112,7 +134,7 @@ export function AppPicker({
           <p className="muted" role="status">
             {t("selected", { count: value.length })}
           </p>
-          <div className="app-picker-list">
+          <div className="app-picker-list" ref={list}>
             {visible.map((resource) => (
               <label className="checkbox-row" key={resource.id}>
                 <input

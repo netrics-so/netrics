@@ -172,7 +172,14 @@ test("a Vercel connection names its projects and changes which are synced", asyn
     ),
   ).toBeVisible();
   await expect(synced).toHaveText(["alpha-site", "prj_beta"]);
-  await panel.getByRole("button", { name: t.projects.check }).click();
+  // Opened with the keyboard: the focus moves into the picker, onto the
+  // chosen mode, instead of being dropped with the button.
+  const change = panel.getByRole("button", { name: t.projects.check });
+  await change.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    panel.getByRole("radio", { name: t.projects.choose }),
+  ).toBeFocused();
 
   // The projects by name; one without Web Analytics is not offered.
   const alpha = panel.getByRole("checkbox", { name: /alpha-site/ });
@@ -220,9 +227,12 @@ test("a Vercel connection names its projects and changes which are synced", asyn
   await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
   await panel.getByRole("button", { name: t.projects.check }).click();
   await beta.uncheck();
-  await save.click();
+  await save.focus();
+  await page.keyboard.press("Enter");
   await expect(panel.getByText(t.projects.saved)).toBeVisible();
   expect(saved).toEqual([{ resources: ["prj_alpha"] }]);
+  // The picker closed: the focus is back on the button that opens it.
+  await expect(change).toBeFocused();
   // The page shows the new selection without another click.
   await expect(
     panel.getByText(
@@ -282,13 +292,27 @@ test("a refused check still lets the selection be reduced and saved", async ({
   await panel.getByRole("button", { name: t.projects.clear }).click();
   await expect(save).toBeDisabled();
   await expect(panel.getByText(t.projects.noneHelp)).toBeVisible();
-  await panel.getByRole("button", { name: t.projects.cancel }).click();
-  await panel.getByRole("button", { name: t.projects.check }).click();
+  // Cancelled with the keyboard: the focus returns to the button that
+  // opens the picker, and Enter opens it again.
+  const cancel = panel.getByRole("button", { name: t.projects.cancel });
+  const change = panel.getByRole("button", { name: t.projects.check });
+  await cancel.focus();
+  await page.keyboard.press("Enter");
+  await expect(change).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(beta).toBeChecked();
+  await expect(
+    panel.getByRole("radio", { name: t.projects.choose }),
+  ).toBeFocused();
 
-  // A project that is not listed leaves the list once it is unticked.
-  await beta.click();
+  // A project that is not listed leaves the list once it is unticked; the
+  // focus goes to the checkbox that is left, not to the page.
+  await beta.focus();
+  await page.keyboard.press("Space");
   await expect(beta).toHaveCount(0);
+  await expect(
+    panel.getByRole("checkbox", { name: /prj_alpha/ }),
+  ).toBeFocused();
   await save.click();
   await expect(panel.getByText(t.projects.saved)).toBeVisible();
   expect(saved).toEqual([{ resources: ["prj_alpha"] }]);
@@ -413,16 +437,57 @@ test("a long selection opens in place, and a viewer sees what is selected", asyn
     await expect(items).toHaveCount(25);
     await expect(items.last()).toHaveText("prj_23");
     await expect(showAll).toHaveCount(0);
+    // The focus is still on the control, which now closes the list: Enter
+    // again, without touching the mouse or tabbing back.
+    await expect(showFewer).toBeFocused();
+    await expect(showFewer).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Enter");
+    await expect(items).toHaveCount(21);
+    await expect(showAll).toBeFocused();
+  }
+
+  /** A very long list, in steps: the focus never leaves the controls. */
+  async function stepsThrough() {
+    const more = panel.getByRole("button", {
+      name: t.projects.syncedShowMore.replace("{count}", "500"),
+    });
+    const all = panel.getByRole("button", {
+      name: t.projects.syncedShowAll.replace("{count}", "540"),
+    });
+    await expect(items).toHaveCount(21);
+    await more.focus();
+    await page.keyboard.press("Enter");
+    // 520 shown, "and 20 more"; the same button now offers the rest.
+    await expect(items).toHaveCount(521);
+    await expect(all).toBeFocused();
+    // Closing half-way: that button goes, the focus moves to the other.
     await showFewer.focus();
     await page.keyboard.press("Enter");
     await expect(items).toHaveCount(21);
-    await expect(showAll).toBeVisible();
+    await expect(more).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(all).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(items).toHaveCount(540);
+    await expect(showFewer).toHaveCount(1);
+    await expect(showFewer).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(items).toHaveCount(21);
+    await expect(more).toBeFocused();
   }
 
   // Someone who can change the connection: the list, and the form.
   await page.goto(url);
   await opensAndCloses();
   await expect(change).toBeVisible();
+  const long = Array.from(
+    { length: 540 },
+    (_, index) => `prj_${String(index).padStart(3, "0")}`,
+  );
+  await saveSelection(connectionId, long);
+  await page.goto(url);
+  await stepsThrough();
+  await saveSelection(connectionId, selection);
 
   // A viewer may read the connection: the same list, without the form.
   await becomeViewer(workspaceId);
@@ -432,6 +497,9 @@ test("a long selection opens in place, and a viewer sees what is selected", asyn
   ).toBeVisible();
   await opensAndCloses();
   await expect(panel.getByText(t.projects.syncedHelpViewer)).toBeVisible();
+  await saveSelection(connectionId, long);
+  await page.goto(url);
+  await stepsThrough();
   await expect(change).toHaveCount(0);
   await expect(
     panel.getByRole("button", { name: t.projects.save }),
