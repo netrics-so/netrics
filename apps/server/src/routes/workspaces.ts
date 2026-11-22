@@ -475,11 +475,15 @@ export function registerWorkspaceRoutes(
           let outcome: Awaited<ReturnType<typeof deleteWorkspace>>;
           try {
             // No fence of its own: delete_workspace() takes it exclusively.
+            // Read committed by name, whatever the role or database
+            // defaults to: the function counts the caller's other
+            // workspaces after waiting for another deletion and refuses a
+            // transaction whose snapshot could predate it.
             outcome = await withWorkspace(
               deps.db,
               { workspaceId: access.workspaceId, userId: access.callerId },
               (tx) => deleteWorkspace(tx, body.name),
-              { fence: "none" },
+              { fence: "none", isolationLevel: "read committed" },
             );
           } catch (error) {
             // Work for the workspace was still running after 10 seconds

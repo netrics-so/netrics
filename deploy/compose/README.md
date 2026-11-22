@@ -578,7 +578,8 @@ User accounts are not deleted with a workspace.
 at the provider while a connection is purged, once, without retries. It is
 not revoked when
 
-- a connection of another workspace on this installation uses the same
+- it belongs to a built-in OAuth integration (such as Google) and a
+  connection of another workspace on this installation uses the same
   provider account: the grant is one and the same, so it is kept;
 - the provider offers no way to revoke, or a custom API with OAuth names no
   revoke URL;
@@ -589,7 +590,15 @@ not revoked when
 
 The second and third case count as `failed` below; the user can remove the
 access in their account at the provider. A custom API that signs in with
-client credentials has no user consent to withdraw and is not counted. API keys and other credentials you
+client credentials has no user consent to withdraw and is not counted.
+
+**Custom APIs with OAuth are not checked for sharing.** Each of their
+connections has a grant of its own, and its token is always sent to the
+revoke URL, also when a connection of another workspace was authorized by
+the same person for the same OAuth app. A provider that then withdraws the
+person's access to the app as a whole, not only that one token, also cuts
+off the other workspace's connection, which has to be connected again. The
+same holds for "Delete connection". API keys and other credentials you
 entered are deleted from netrics, and stay valid at their provider until
 you revoke them there.
 
@@ -606,8 +615,9 @@ docker compose exec postgres psql -U netrics -d netrics -c \
   (`target`), its **name**, and how many members, connections, dashboards
   and screens it had.
 - `workspace.purged`: the workspace's id, how many connections were removed,
-  and how many OAuth grants were `revoked`, `failed` or `kept`. A grant
-  that two connections of the deleted workspace shared counts as `kept` for
+  and how many OAuth grants were `revoked`, `failed` or `kept`. A built-in
+  integration's grant that two connections of the deleted workspace shared
+  counts as `kept` for
   the first and `revoked` for the last. **These counts are those of the
   attempt that finished the purge.** When the job was retried or the
   `worker` restarted on the way, connections removed in earlier attempts

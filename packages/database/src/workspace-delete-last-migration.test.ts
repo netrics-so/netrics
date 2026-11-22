@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { migrationsFolder } from "./index.js";
 import {
@@ -64,6 +64,19 @@ const deletedAt = async (workspaceId: string) => {
   return row!.deleted_at as Date | null;
 };
 
+/** Workspaces and memberships, as rows. */
+const state = async () => ({
+  workspaces: [
+    ...(await owner`select id, name, deleted_at from workspaces order by id`),
+  ],
+  memberships: [
+    ...(await owner`
+      select workspace_id, user_id, role from memberships order by id`),
+  ],
+});
+let before: Awaited<ReturnType<typeof state>>;
+let after: Awaited<ReturnType<typeof state>>;
+
 let single: { userId: string; only: string };
 let pair: { userId: string; gone: string; left: string };
 let both: { userId: string; a: string; b: string };
@@ -87,10 +100,12 @@ beforeAll(async () => {
   };
   // Deleted by the function as it was; its purge has not run.
   expect(await remove(pair.gone, pair.userId, "Gone")).toBe("deleted");
-}, TEST_DATABASE_SETUP_TIMEOUT_MS);
-
-// The test applies the remaining migrations.
-vi.setConfig({ testTimeout: TEST_DATABASE_SETUP_TIMEOUT_MS });
+  before = await state();
+  // The migration under test, here and not in a case: every case below
+  // runs against the new function, also when it runs alone.
+  await testDb.migrate();
+  after = await state();
+}, TEST_DATABASE_SETUP_TIMEOUT_MS * 2);
 
 afterAll(async () => {
   await owner?.end({ timeout: 5 }).catch(() => undefined);
@@ -99,18 +114,7 @@ afterAll(async () => {
 
 describe("the last-workspace migration", () => {
   it("changes no data and replaces the function for the same callers", async () => {
-    const before = await owner`
-      select id, name, deleted_at from workspaces order by id`;
-    const members = await owner`
-      select workspace_id, user_id, role from memberships order by id`;
-    await testDb.migrate();
-    expect(
-      await owner`select id, name, deleted_at from workspaces order by id`,
-    ).toEqual(before);
-    expect(
-      await owner`
-        select workspace_id, user_id, role from memberships order by id`,
-    ).toEqual(members);
+    expect(after).toEqual(before);
     const [grants] = await owner`
       select has_function_privilege('netrics_app', 'delete_workspace(text)', 'execute') as app,
              has_function_privilege('netrics_scheduler', 'delete_workspace(text)', 'execute') as scheduler,

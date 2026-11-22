@@ -20,9 +20,12 @@ import {
   type Sql,
 } from "@netrics/database";
 
+import { buildApp } from "./app.js";
+import { createAuthService } from "./auth/index.js";
 import { createConnectionService } from "./connections/service.js";
 import { createDefaultRegistry } from "./connectors.js";
 import { createCredentialKeyring } from "./credentials.js";
+import { loadConfig } from "./env.js";
 import { createJobHandlers } from "./jobs/handlers.js";
 import {
   capturingLogger,
@@ -905,4 +908,60 @@ describe("the owner's only workspace", () => {
     expect((await workspaceRow(first))!.deleted_at).toBeNull();
     expect(await inDatabase(first, email, "Snapshot one")).toBe("deleted");
   });
+
+  it.each(["repeatable read", "serializable"])(
+    "the API deletes and refuses as usual when the role's default isolation is %s",
+    async (isolation) => {
+      // An installation may set default_transaction_isolation for the
+      // application role or the database: the route must not inherit it
+      // into delete_workspace(), which needs read committed.
+      const email = `wsdelete-default-${isolation.replace(" ", "-")}@example.com`;
+      const cookie = await fixture.signUp(email);
+      const first = await createWorkspaceAs(cookie, "Default one");
+      const second = await createWorkspaceAs(cookie, "Default two");
+      await admin.unsafe(
+        `alter role netrics_app in database "${fixture.testDb.name}"
+           set default_transaction_isolation = '${isolation}'`,
+      );
+      // New connections, which start with the role's default.
+      const db = createDatabase(fixture.testDb.appUrl);
+      const config = loadConfig({
+        DATABASE_URL: fixture.testDb.appUrl,
+        LOG_LEVEL: "silent",
+        BETTER_AUTH_URL: "http://localhost:3001",
+        WEB_ORIGIN: "http://localhost:3000",
+      });
+      const app = await buildApp(config, {
+        db,
+        authService: createAuthService(config, db, {
+          logger: pino({ level: "silent" }),
+        }),
+        checkDb: async () => true,
+      });
+      const remove = (workspaceId: string, name: string) =>
+        app.inject({
+          method: "POST",
+          url: `/v1/workspaces/${workspaceId}/delete`,
+          headers: { cookie },
+          payload: { name },
+        });
+      try {
+        const [inherited] = await db.$client<{ level: string }[]>`
+          show transaction_isolation`;
+        expect(Object.values(inherited!)[0]).toBe(isolation);
+        const deleted = await remove(first, "Default one");
+        expect(deleted.statusCode, deleted.body).toBe(204);
+        expectError(await remove(second, "Default two"), 409, "workspace_last");
+        expect((await workspaceRow(first))!.deleted_at).not.toBeNull();
+        expect((await workspaceRow(second))!.deleted_at).toBeNull();
+      } finally {
+        await app.close();
+        await db.$client.end({ timeout: 5 });
+        await admin.unsafe(
+          `alter role netrics_app in database "${fixture.testDb.name}"
+             reset default_transaction_isolation`,
+        );
+      }
+    },
+  );
 });
