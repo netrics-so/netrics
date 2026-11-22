@@ -97,8 +97,8 @@ const vercelDe: ManifestTranslation = {
 
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
-  version: "0.1.3",
-  sdkVersion: "^0.2.13",
+  version: "0.1.4",
+  sdkVersion: "^0.2.19",
   category: "web",
   brandColor: "#000000",
   name: "Vercel Web Analytics",
@@ -205,6 +205,11 @@ export const vercelManifest: ConnectorManifest = {
   backfillDays: 366,
   outboundDomains: ["api.vercel.com"],
   resourceNoun: { singular: "project", plural: "projects" },
+  // The synced projects can be changed after connecting (#782).
+  supportsResourceSelection: true,
+  // Discovery is the project list, one cheap request: the host may name
+  // the projects before a first run's pages (SDK 0.2.19, #782).
+  discoversBeforeFirstSync: true,
   translations: { de: vercelDe },
   rateLimit: { maxRequests: 400, windowSeconds: 60 },
   // When the numbers arrive (ADR 0025): Vercel counts live, so every
@@ -276,10 +281,14 @@ function teamIdOf(context: ConnectionContext): string | undefined {
   return typeof teamId === "string" && teamId !== "" ? teamId : undefined;
 }
 
+/**
+ * The stored project selection. Undefined when none is stored (connections
+ * from before selections existed, and "all projects"): every project is
+ * collected. An explicit empty selection collects nothing (#782).
+ */
 function selectionOf(context: ConnectionContext): string[] | undefined {
   const selection = context.config.resourceSelection;
   return Array.isArray(selection) &&
-    selection.length > 0 &&
     selection.every((id) => typeof id === "string")
     ? (selection as string[])
     : undefined;
@@ -406,6 +415,12 @@ export function createVercelConnector(
         }
         throw error;
       }
+      const selection = selectionOf(context);
+      // Nothing is collected (#782): the token was accepted, and no
+      // project is asked for anything, so none can be missing.
+      if (selection?.length === 0) {
+        return { ok: true };
+      }
       if (projects.length === 0) {
         return {
           ok: false,
@@ -413,7 +428,6 @@ export function createVercelConnector(
             "The token cannot see any projects. Create it with the team (or project) that owns the site as its scope.",
         };
       }
-      const selection = selectionOf(context);
       if (selection) {
         const byId = new Map(projects.map((project) => [project.id, project]));
         const missing = selection.filter((id) => !byId.has(id));
@@ -480,7 +494,9 @@ export function createVercelConnector(
           runStartMs,
         ),
       ).toISOString();
-      if (startMs >= toMs) {
+      // An empty window, or an explicit empty selection (#782): nothing is
+      // read, and nothing is reported as checked.
+      if (startMs >= toMs || request.resources?.length === 0) {
         return {
           observations: [],
           nextCursor: resumeAt,

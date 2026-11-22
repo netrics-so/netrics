@@ -7,6 +7,7 @@ import { HealthBadge, RateLimitText } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
 import { OAuthOutcomeBanner } from "../oauth-outcome";
 import { ReconnectBanner } from "../reconnect-banner";
+import { ProjectSelection } from "../project-selection";
 import { StoreConnectionSettings } from "../store-connection-settings";
 import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
@@ -62,6 +63,8 @@ import {
 import { nextSyncLabel } from "@/lib/sync-schedule";
 
 export const dynamic = "force-dynamic";
+
+const GOOGLE_PLAY_CONNECTOR_ID = "google-play";
 
 interface ConnectionDetailPageProps {
   params: Promise<{ workspaceId: string; connectionId: string }>;
@@ -198,6 +201,10 @@ export default async function ConnectionDetailPage({
   const keyName = keyStrategy?.providerName ?? connection.connectorName;
   const appStore = connection.connectorId === APP_STORE_CONNECT_CONNECTOR_ID;
   const latestDay = appStore ? latestReportingDay(observations) : null;
+  // The stores choose their apps with their settings; other connectors with
+  // a selection (Vercel projects, #782) change it in a panel of its own.
+  const storeConnection =
+    appStore || connection.connectorId === GOOGLE_PLAY_CONNECTOR_ID;
   // Apple Ads (#375): one ad account per connection, with its currency and
   // time zone in the config.
   const appleAds = connection.connectorId === APPLE_ADS_CONNECTOR_ID;
@@ -262,7 +269,7 @@ export default async function ConnectionDetailPage({
       ) : null}
 
       {!connection.setupPending &&
-      (appStore || connection.connectorId === "google-play") &&
+      storeConnection &&
       can(role, "dashboards:create") &&
       can(role, "data:publish") ? (
         <div className="card stack">
@@ -631,7 +638,7 @@ export default async function ConnectionDetailPage({
               connectorName={connector?.name ?? connection.connectorName}
               mode="edit"
             />
-          ) : connector?.supportsResourceSelection ? (
+          ) : connector?.supportsResourceSelection && storeConnection ? (
             <StoreConnectionSettings
               workspaceId={workspaceId}
               connection={connection}
@@ -647,6 +654,19 @@ export default async function ConnectionDetailPage({
                 : {})}
             />
           )}
+          {/* A token connection that syncs chosen projects (#782): the
+              token and settings stay in the form above, the selection is
+              changed on its own. */}
+          {connector?.supportsResourceSelection &&
+          !storeConnection &&
+          !searchConsole &&
+          connection.hasCredentials ? (
+            <ProjectSelection
+              workspaceId={workspaceId}
+              connection={connection}
+              connector={connector}
+            />
+          ) : null}
         </div>
       ) : null}
 

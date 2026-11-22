@@ -43,13 +43,15 @@ describe.each(FIRST_PARTY.map((manifest) => [manifest.id, manifest] as const))(
   (_id, manifest) => {
     it("validate against the SDK version required by their capabilities", () => {
       expect(manifest.sdkVersion).toBe(
-        manifest.freshnessStreams?.length
-          ? "^0.2.13"
-          : manifest.id === "google-play"
-            ? "^0.2.12"
-            : manifest.datasets?.length
-              ? "^0.2.9"
-              : "^0.2.7",
+        manifest.discoversBeforeFirstSync
+          ? "^0.2.19"
+          : manifest.freshnessStreams?.length
+            ? "^0.2.13"
+            : manifest.id === "google-play"
+              ? "^0.2.12"
+              : manifest.datasets?.length
+                ? "^0.2.9"
+                : "^0.2.7",
       );
       expect(assertManifestCompatible(manifest).translations).toEqual(
         manifest.translations,

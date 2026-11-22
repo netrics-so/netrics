@@ -56,8 +56,8 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.18", () => {
-    expect(SDK_VERSION).toBe("0.2.18");
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.19", () => {
+    expect(SDK_VERSION).toBe("0.2.19");
     for (const sdkVersion of [
       "^0.2.0",
       "^0.2.1",
@@ -78,11 +78,24 @@ describe("assertManifestCompatible", () => {
       "^0.2.16",
       "^0.2.17",
       "^0.2.18",
+      "^0.2.19",
     ]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
       ).toBe("acme-analytics");
     }
+  });
+
+  it("keeps the optional discoversBeforeFirstSync, off by default (0.2.19)", () => {
+    expect(
+      assertManifestCompatible(validManifest()).discoversBeforeFirstSync,
+    ).toBeUndefined();
+    expect(
+      assertManifestCompatible({
+        ...validManifest(),
+        discoversBeforeFirstSync: true,
+      }).discoversBeforeFirstSync,
+    ).toBe(true);
   });
 
   it("keeps an optional catalogue category and brand colour (0.2.7)", () => {

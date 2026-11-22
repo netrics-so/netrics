@@ -56,6 +56,7 @@ import {
   projectFilterSql,
   type ProjectFilter,
   notDraftConnection,
+  collectsNoResources,
 } from "@netrics/database";
 import {
   createDataLoader,
@@ -232,7 +233,11 @@ async function modelSourceHealth(
     .select({
       id: schema.connections.id,
       name: schema.connections.name,
-      config: schema.connections.config,
+      // Collects nothing: an explicit empty selection (#782).
+      paused: collectsNoResources(
+        sql`${schema.connections.config}`,
+        sql`${schema.connections.connectorId}`,
+      ).mapWith(Boolean),
       setupPending: schema.connections.setupPending,
       authState: schema.connectionState.authState,
       failures: schema.connectionState.consecutiveFailures,
@@ -254,13 +259,12 @@ async function modelSourceHealth(
       ),
     );
   return rows.map((row) => {
-    const selection = (row.config as Record<string, unknown>).resourceSelection;
     const status: NonNullable<
       DashboardWidgetData["sourceHealth"]
     >[number]["status"] =
       row.authState && row.authState !== "ok"
         ? (row.authState as "auth_failed" | "needs_reauthorization" | "outage")
-        : Array.isArray(selection) && selection.length === 0
+        : row.paused
           ? "paused"
           : (row.failures ?? 0) > 0
             ? "outage"

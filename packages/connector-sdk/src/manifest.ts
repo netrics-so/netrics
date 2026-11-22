@@ -398,6 +398,15 @@ export const connectorManifestSchema = z
     /** Honors SyncRequest.resources as a multi-resource collection scope. */
     supportsResourceSelection: z.boolean().optional(),
     /**
+     * `discover` is one cheap listing that is safe before the first sync
+     * (SDK 0.2.19, #782): the host may call it before the pages of a
+     * connection's first run, to name the resources while a long first
+     * backfill runs. Optional, default off: without it the host discovers
+     * only after a run has succeeded. Do not set it when discovery makes
+     * many requests or learns names from the sync.
+     */
+    discoversBeforeFirstSync: z.boolean().optional(),
+    /**
      * Texts in other languages, by locale (SDK 0.2.6, ADR 0016). Optional;
      * hosts show the English values for anything not translated.
      */

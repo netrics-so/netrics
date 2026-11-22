@@ -295,6 +295,62 @@ describe("store product identity", { timeout: 20_000 }, () => {
     expect(await owner`select * from data_template_products`).toHaveLength(0);
   });
 
+  it("offers a selected project no sync has named yet, by its ID (#782)", async () => {
+    await owner`update connections
+      set config = ${owner.json({ resourceSelection: ["prj_site", "prj_new"] })}
+      where id = ${vercelId}`;
+    try {
+      const read = await products().read(actor(), requestId);
+      expect(read.websites[0]!.projects).toEqual([
+        { id: "prj_site", name: "example.com" },
+        { id: "prj_new", name: "prj_new" },
+      ]);
+      const linked = await products().update(actor(), requestId, {
+        products: [
+          {
+            productId: beta,
+            pricing: "auto",
+            website: { connectionId: vercelId, projectId: "prj_new" },
+          },
+        ],
+      });
+      expect(
+        linked.products.find((product) => product.website)?.website,
+      ).toMatchObject({ connectionId: vercelId, projectId: "prj_new" });
+      await products().update(actor(), requestId, {
+        products: [
+          {
+            productId: beta,
+            pricing: "auto",
+            website: null,
+          },
+        ],
+      });
+    } finally {
+      await owner`update connections set config = '{}'::jsonb
+        where id = ${vercelId}`;
+    }
+  });
+
+  it("offers no project of a connection that collects nothing (#782)", async () => {
+    // The catalog has the Vercel connector's manifest as migrate stores it.
+    await owner`update connectors
+      set manifest = manifest || '{"supportsResourceSelection":true}'::jsonb
+      where id = 'vercel'`;
+    await owner`update connections
+      set config = ${owner.json({ resourceSelection: [] })}
+      where id = ${vercelId}`;
+    try {
+      const read = await products().read(actor(), requestId);
+      expect(read.websites).toEqual([
+        { connectionId: vercelId, name: "Websites", projects: [] },
+      ]);
+    } finally {
+      await owner`update connections set config = '{}'::jsonb
+        where id = ${vercelId}`;
+    }
+  });
+
   it("lets the owner override auto, and back", async () => {
     const changed = await products().update(actor(), requestId, {
       products: [

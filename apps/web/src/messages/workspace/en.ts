@@ -249,6 +249,44 @@ export const workspaceEn = {
       saved:
         "Saved. The selected data is queued for import; existing history is kept.",
     },
+    projects: {
+      heading: "Synced projects",
+      intro:
+        "Choose which projects this connection syncs. A project you remove is no longer synced and no longer offered in pickers; the data already collected is kept. A project you add gets its history with the next import.",
+      unsaved: "Your project selection has not been saved. Leave this page?",
+      title: "Projects to sync",
+      all: "All current and future projects",
+      allHelp:
+        "New projects this token can see will be included automatically.",
+      choose: "Choose projects",
+      search: "Search projects by name or ID",
+      selectResults: "Select results ({count})",
+      clear: "Clear selection",
+      selected:
+        "{count, plural, one {# project selected} other {# projects selected}}",
+      unlisted: "Not currently listed",
+      unlistedHelp:
+        "The token does not list these selected projects, or Web Analytics is not enabled for them. Remove them from the selection, or restore access in Vercel. Their collected data is kept.",
+      empty: "No projects with Web Analytics found. Check the token’s scope.",
+      noResults: "No matching projects.",
+      noneHelp:
+        "No projects selected: nothing new is synced. The data already collected stays available.",
+      pages: "Project list pages",
+      previous: "Previous",
+      next: "Next",
+      page: "Page {page} of {pages}",
+      withoutAnalytics:
+        "{count, plural, one {# project is} other {# projects are}} not listed because Web Analytics is not enabled for {count, plural, one {it} other {them}} in Vercel.",
+      check: "Change project selection",
+      checking: "Loading projects…",
+      accessFailed: "The project list could not be loaded.",
+      refusedHelp:
+        "You can still remove projects from the selection below and save.",
+      save: "Save project selection",
+      cancel: "Cancel",
+      saved:
+        "Saved. The selected projects are queued for import; data already collected is kept.",
+    },
     newPage: {
       pageTitle: "Add connection · netrics",
       title: "Add connection",
