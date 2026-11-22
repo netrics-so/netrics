@@ -1189,14 +1189,27 @@ public enum StudioLayout {
         // The largest size from 84 down to 36 at which the total fits the
         // width on as few lines as the room holds: it wraps between its
         // amounts, so width never makes a group line give way.
+        // Below 24 pt the system font's em widths change with the size
+        // (#780, measureTVSmallSizes), and not always the same way.
+        let sized = font != .web && measureTVSmallSize(least * measurePoints(points)) != nil
         func value(_ room: Double) -> (size: Double, lines: Int)? {
             guard let total else { return room >= -1e-9 ? (0, 0) : nil }
             for lines in 1...8 {
                 let tall = (room - pixelUnits * Double(lines)) / (Double(lines) * v.valueLineHeight)
                 if tall < least - 1e-9 { return nil }
                 var size = Swift.min(most, tall)
-                // Its width per unit of size, at the points `size` is drawn
-                // at: where to start; the steps below find a size that fits.
+                if sized {
+                    // Every candidate is checked at its own size, down to the
+                    // smallest: a width at one size says nothing about another.
+                    while size > least + 1e-9 {
+                        if totalLines(size) <= lines { return (size, lines) }
+                        size -= 0.5 * scale
+                    }
+                    if totalLines(least) <= lines { return (least, lines) }
+                    continue
+                }
+                // As wide in em at every size from here down: one line's
+                // largest size follows from its width per unit of size.
                 let oneLine = measureTextWidth(
                     total, fontSize: 1, weight: .semibold, font: font, points: size * measurePoints(points))
                 if lines == 1 && oneLine > 0 { size = Swift.min(size, (width - pixelUnits) / oneLine) }

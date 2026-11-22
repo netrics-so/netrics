@@ -88011,7 +88011,7 @@
       "points": 0.44,
       "pixel": 1.1363636363636365,
       "font": "tv",
-      "valueSize": 37.01793444650587,
+      "valueSize": 37,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -88039,7 +88039,7 @@
       "points": 0.622,
       "pixel": 0.8038585209003215,
       "font": "tv",
-      "valueSize": 38.040553842115614,
+      "valueSize": 38,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -88070,6 +88070,102 @@
       "valueSize": 38.04743260621184,
       "valueLines": 1,
       "shown": 2,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 67,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 66.5,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 66.5,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 66.44963602002804,
+      "valueLines": 1,
+      "shown": 1,
       "rowsLine": null,
       "fits": true
     },
@@ -88523,6 +88619,102 @@
     },
     {
       "label": "Downloads and user installs",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 66.94999999999963,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 66.29999999999963,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 66.93753189838397,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 560,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 66.29963602002803,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
       "width": 420,
       "height": 600,
       "fontScale": 1,
@@ -88655,7 +88847,7 @@
       "points": 0.3,
       "pixel": 1.6666666666666667,
       "font": "tv",
-      "valueSize": 82.82188345542136,
+      "valueSize": 82.5,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -88683,7 +88875,7 @@
       "points": 0.44,
       "pixel": 1.1363636363636365,
       "font": "tv",
-      "valueSize": 82.92687316642969,
+      "valueSize": 82.5,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -88711,7 +88903,7 @@
       "points": 0.622,
       "pixel": 0.8038585209003215,
       "font": "tv",
-      "valueSize": 82.49270272799438,
+      "valueSize": 82.5,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -88973,6 +89165,102 @@
       "label": "Downloads and user installs",
       "width": 420,
       "height": 600,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 49,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 420,
+      "height": 600,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 50.5,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 420,
+      "height": 600,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 50,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 420,
+      "height": 600,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 49.691196948924365,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 420,
+      "height": 600,
       "fontScale": 1.3,
       "total": "635",
       "lines": [
@@ -89103,7 +89391,7 @@
       "points": 0.3,
       "pixel": 1.6666666666666667,
       "font": "tv",
-      "valueSize": 82.82188345542136,
+      "valueSize": 82.54999999999977,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -89131,7 +89419,7 @@
       "points": 0.44,
       "pixel": 1.1363636363636365,
       "font": "tv",
-      "valueSize": 82.92687316642969,
+      "valueSize": 82.54999999999977,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -89419,6 +89707,102 @@
     },
     {
       "label": "Downloads and user installs",
+      "width": 420,
+      "height": 600,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 48.749999999999645,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 420,
+      "height": 600,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 50.04999999999964,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 420,
+      "height": 600,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 49.52909282728031,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 420,
+      "height": 600,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 49.541196948924366,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
       "width": 404,
       "height": 414.2,
       "fontScale": 1,
@@ -89551,7 +89935,7 @@
       "points": 0.3,
       "pixel": 1.6666666666666667,
       "font": "tv",
-      "valueSize": 79.65419388899888,
+      "valueSize": 79.5,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -89579,7 +89963,7 @@
       "points": 0.44,
       "pixel": 1.1363636363636365,
       "font": "tv",
-      "valueSize": 79.7591836000072,
+      "valueSize": 79.5,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -89607,7 +89991,7 @@
       "points": 0.622,
       "pixel": 0.8038585209003215,
       "font": "tv",
-      "valueSize": 79.82501316157189,
+      "valueSize": 79.5,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -89869,6 +90253,102 @@
       "label": "Downloads and user installs",
       "width": 404,
       "height": 414.2,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 46.5,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 48.5,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 48,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 48.27594676936966,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 404,
+      "height": 414.2,
       "fontScale": 1.3,
       "total": "635",
       "lines": [
@@ -89999,7 +90479,7 @@
       "points": 0.3,
       "pixel": 1.6666666666666667,
       "font": "tv",
-      "valueSize": 79.65419388899888,
+      "valueSize": 79.94999999999975,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -90027,7 +90507,7 @@
       "points": 0.44,
       "pixel": 1.1363636363636365,
       "font": "tv",
-      "valueSize": 79.7591836000072,
+      "valueSize": 79.29999999999974,
       "valueLines": 1,
       "shown": 2,
       "rowsLine": null,
@@ -90315,6 +90795,102 @@
     },
     {
       "label": "Downloads and user installs",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 48.099999999999646,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 47.613842647725605,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 404,
+      "height": 414.2,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 48.27594676936966,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
       "width": 1808,
       "height": 892.4,
       "fontScale": 1,
@@ -90765,6 +91341,102 @@
       "label": "Downloads and user installs",
       "width": 1808,
       "height": 892.4,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 84,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 84,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 84,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 84,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 1808,
+      "height": 892.4,
       "fontScale": 1.3,
       "total": "635",
       "lines": [
@@ -91206,6 +91878,102 @@
       "valueSize": 109.2,
       "valueLines": 1,
       "shown": 2,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 109.2,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 109.2,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 109.2,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 1808,
+      "height": 892.4,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 109.2,
+      "valueLines": 1,
+      "shown": 1,
       "rowsLine": null,
       "fits": true
     },
@@ -91655,6 +92423,102 @@
       "valueLines": 4,
       "shown": 0,
       "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 200,
+      "height": 100,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 200,
+      "height": 100,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 200,
+      "height": 100,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 200,
+      "height": 100,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
       "fits": false
     },
     {
@@ -92103,6 +92967,1190 @@
       "valueLines": 4,
       "shown": 0,
       "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 200,
+      "height": 100,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 3,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 200,
+      "height": 100,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 200,
+      "height": 100,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 200,
+      "height": 100,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "635",
+      "lines": [
+        [
+          "App Store",
+          "412"
+        ],
+        [
+          "Google Play",
+          "223"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 64.30303030303028,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "635",
+      "lines": [
+        [
+          "App Store",
+          "412"
+        ],
+        [
+          "Google Play",
+          "223"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 64.78512396694214,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "635",
+      "lines": [
+        [
+          "App Store",
+          "412"
+        ],
+        [
+          "Google Play",
+          "223"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 65.08740134463606,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "635",
+      "lines": [
+        [
+          "App Store",
+          "412"
+        ],
+        [
+          "Google Play",
+          "223"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 65.17932664664919,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "1.234.567",
+      "lines": [
+        [
+          "App Store",
+          "1.000.000"
+        ],
+        [
+          "Google Play",
+          "234.567"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 58.80303030303028,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "1.234.567",
+      "lines": [
+        [
+          "App Store",
+          "1.000.000"
+        ],
+        [
+          "Google Play",
+          "234.567"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 58.78512396694214,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "1.234.567",
+      "lines": [
+        [
+          "App Store",
+          "1.000.000"
+        ],
+        [
+          "Google Play",
+          "234.567"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 59.08740134463606,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "1.234.567",
+      "lines": [
+        [
+          "App Store",
+          "1.000.000"
+        ],
+        [
+          "Google Play",
+          "234.567"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 59.25505034870602,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": null,
+      "lines": [
+        [
+          "App Store",
+          "12,00 EUR"
+        ],
+        [
+          "Google Play",
+          "3,40 USD"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 0,
+      "valueLines": 0,
+      "shown": 1,
+      "rowsLine": "Showing 1 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": null,
+      "lines": [
+        [
+          "App Store",
+          "12,00 EUR"
+        ],
+        [
+          "Google Play",
+          "3,40 USD"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 0,
+      "valueLines": 0,
+      "shown": 2,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": null,
+      "lines": [
+        [
+          "App Store",
+          "12,00 EUR"
+        ],
+        [
+          "Google Play",
+          "3,40 USD"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 0,
+      "valueLines": 0,
+      "shown": 2,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": null,
+      "lines": [
+        [
+          "App Store",
+          "12,00 EUR"
+        ],
+        [
+          "Google Play",
+          "3,40 USD"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 0,
+      "valueLines": 0,
+      "shown": 2,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "1.234,56 EUR · 789,00 USD",
+      "lines": [
+        [
+          "App Store",
+          "1.000,00 EUR · 789,00 USD"
+        ],
+        [
+          "Google Play",
+          "234,56 EUR"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "1.234,56 EUR · 789,00 USD",
+      "lines": [
+        [
+          "App Store",
+          "1.000,00 EUR · 789,00 USD"
+        ],
+        [
+          "Google Play",
+          "234,56 EUR"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "1.234,56 EUR · 789,00 USD",
+      "lines": [
+        [
+          "App Store",
+          "1.000,00 EUR · 789,00 USD"
+        ],
+        [
+          "Google Play",
+          "234,56 EUR"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "1.234,56 EUR · 789,00 USD",
+      "lines": [
+        [
+          "App Store",
+          "1.000,00 EUR · 789,00 USD"
+        ],
+        [
+          "Google Play",
+          "234,56 EUR"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 1,
+      "shown": 1,
+      "rowsLine": null,
+      "fits": true
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 36,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "635",
+      "lines": [
+        [
+          "App Store",
+          "412"
+        ],
+        [
+          "Google Play",
+          "223"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "635",
+      "lines": [
+        [
+          "App Store",
+          "412"
+        ],
+        [
+          "Google Play",
+          "223"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "635",
+      "lines": [
+        [
+          "App Store",
+          "412"
+        ],
+        [
+          "Google Play",
+          "223"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "635",
+      "lines": [
+        [
+          "App Store",
+          "412"
+        ],
+        [
+          "Google Play",
+          "223"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "1.234.567",
+      "lines": [
+        [
+          "App Store",
+          "1.000.000"
+        ],
+        [
+          "Google Play",
+          "234.567"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "1.234.567",
+      "lines": [
+        [
+          "App Store",
+          "1.000.000"
+        ],
+        [
+          "Google Play",
+          "234.567"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "1.234.567",
+      "lines": [
+        [
+          "App Store",
+          "1.000.000"
+        ],
+        [
+          "Google Play",
+          "234.567"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "1.234.567",
+      "lines": [
+        [
+          "App Store",
+          "1.000.000"
+        ],
+        [
+          "Google Play",
+          "234.567"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 1,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": null,
+      "lines": [
+        [
+          "App Store",
+          "12,00 EUR"
+        ],
+        [
+          "Google Play",
+          "3,40 USD"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 0,
+      "valueLines": 0,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": null,
+      "lines": [
+        [
+          "App Store",
+          "12,00 EUR"
+        ],
+        [
+          "Google Play",
+          "3,40 USD"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 0,
+      "valueLines": 0,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": null,
+      "lines": [
+        [
+          "App Store",
+          "12,00 EUR"
+        ],
+        [
+          "Google Play",
+          "3,40 USD"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 0,
+      "valueLines": 0,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": null,
+      "lines": [
+        [
+          "App Store",
+          "12,00 EUR"
+        ],
+        [
+          "Google Play",
+          "3,40 USD"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 0,
+      "valueLines": 0,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "1.234,56 EUR · 789,00 USD",
+      "lines": [
+        [
+          "App Store",
+          "1.000,00 EUR · 789,00 USD"
+        ],
+        [
+          "Google Play",
+          "234,56 EUR"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 4,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "1.234,56 EUR · 789,00 USD",
+      "lines": [
+        [
+          "App Store",
+          "1.000,00 EUR · 789,00 USD"
+        ],
+        [
+          "Google Play",
+          "234,56 EUR"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 4,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "1.234,56 EUR · 789,00 USD",
+      "lines": [
+        [
+          "App Store",
+          "1.000,00 EUR · 789,00 USD"
+        ],
+        [
+          "Google Play",
+          "234,56 EUR"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 4,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "1.234,56 EUR · 789,00 USD",
+      "lines": [
+        [
+          "App Store",
+          "1.000,00 EUR · 789,00 USD"
+        ],
+        [
+          "Google Play",
+          "234,56 EUR"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 4,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 2 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.3,
+      "pixel": 1.6666666666666667,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.44,
+      "pixel": 1.1363636363636365,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.622,
+      "pixel": 0.8038585209003215,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
+      "fits": false
+    },
+    {
+      "label": "Downloads and user installs",
+      "width": 300,
+      "height": 250,
+      "fontScale": 1.3,
+      "total": "-12,222,222,222",
+      "lines": [
+        [
+          "App Store",
+          "100"
+        ]
+      ],
+      "footer": [
+        null
+      ],
+      "points": 0.7115,
+      "pixel": 0.7027406886858749,
+      "font": "tv",
+      "valueSize": 46.800000000000004,
+      "valueLines": 2,
+      "shown": 0,
+      "rowsLine": "Showing 0 of 1 groups.",
       "fits": false
     }
   ],

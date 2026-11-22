@@ -762,9 +762,17 @@ export function buildStudioLayoutVectors() {
       })),
     ),
   );
-  const measureSplitLayoutsPoints = measureBoxes.flatMap((box) =>
+  const measureSplitLayoutsPoints = [
+    ...measureBoxes,
+    // A total wider per unit of size at the room's size than at 36 units,
+    // where it fits (the #780 review).
+    { width: 300, height: 250 },
+  ].flatMap((box) =>
     [1, 1.3].flatMap((fontScale) =>
-      splitInputs.flatMap((split) =>
+      [
+        ...splitInputs,
+        { total: "-12,222,222,222", lines: [["App Store", "100"]] } as const,
+      ].flatMap((split) =>
         TOUCH_POINTS.map((points) => {
           const input = {
             label: "Downloads and user installs",

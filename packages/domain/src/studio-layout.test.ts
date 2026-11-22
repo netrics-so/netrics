@@ -48,6 +48,7 @@ import {
   measureTableRowsShown,
   measureTableColumnWidths,
   measureTableLayout,
+  MEASURE_SPLIT_METRICS,
   MEASURE_TABLE_METRICS,
 } from "./studio-layout.js";
 
@@ -1089,6 +1090,62 @@ describe("measure text at an iPad's or iPhone's sizes (#780)", () => {
     ).toBeGreaterThan(room);
     expect(measureTableRowsShown(input).shown).toBe(12);
     expect(measureTableRowsShown({ ...input, points: 12 / 28 }).shown).toBe(8);
+  });
+});
+
+describe("measureSplitLayout at an iPad's or iPhone's sizes (#780)", () => {
+  const input = {
+    label: "Downloads",
+    width: 300,
+    height: 200,
+    total: "-12,222,222,222",
+    lines: [["App Store", "100"]] as [string, string][],
+    footer: [null],
+    font: "tv" as const,
+    points: 0.622,
+    pixel: 0.804,
+    rowsLine: (shown: number, all: number) => `${shown} of ${all}`,
+  };
+
+  it("checks a total's width at the size it would be drawn at", () => {
+    // Below 24 pt the system font's em widths change with the size, and
+    // not always the same way: this total is wider per unit of size at the
+    // size the room allows than at 36 units, where it fits the width. The
+    // fit must not rule 36 out with the width measured at the larger size.
+    const least = MEASURE_SPLIT_METRICS.valueMin;
+    expect(
+      measureTextWidth(input.total, least, "semibold", "tv", input.points),
+    ).toBeLessThanOrEqual(input.width - input.pixel);
+    const fit = measureSplitLayout(input);
+    expect(fit).toMatchObject({ shown: 1, fits: true, valueLines: 1 });
+    expect(fit.valueSize).toBeGreaterThanOrEqual(least);
+    // The size it chose fits the width at that size.
+    expect(
+      measureTextWidth(
+        input.total,
+        fit.valueSize,
+        "semibold",
+        "tv",
+        input.points,
+      ),
+    ).toBeLessThanOrEqual(input.width - input.pixel);
+  });
+
+  it("is as before at a TV's sizes: the largest size that fits exactly", () => {
+    const tv = measureSplitLayout({ ...input, points: undefined, pixel: 1 });
+    const one = measureTextWidth(input.total, 1, "semibold", "tv", 100);
+    // Too wide for one line at 36 units: two lines, at the room's size.
+    expect(one * 36).toBeGreaterThan(299);
+    expect(tv.valueLines).toBe(2);
+    const wide = measureSplitLayout({
+      ...input,
+      width: 900,
+      height: 400,
+      points: 1,
+      pixel: 1,
+    });
+    expect(wide.valueLines).toBe(1);
+    expect(wide.valueSize).toBeCloseTo(Math.min(84, 899 / one), 9);
   });
 });
 

@@ -1767,6 +1767,11 @@ export function measureSplitLayout(
   // which it fits the width on as few lines as the room holds. Width is
   // never a reason for a group line to give way: the total wraps between
   // its amounts instead.
+  // Below 24 pt the system font's em widths change with the size (#780,
+  // `MEASURE_TV_SMALL_SIZES`), and not always the same way.
+  const sized =
+    input.font !== "web" &&
+    measureTvSmallSize(least * measurePoints(input.points)) !== null;
   const value = (room: number): { size: number; lines: number } | null => {
     if (total === null) return room >= -1e-9 ? { size: 0, lines: 0 } : null;
     for (let lines = 1; lines <= 8; lines++) {
@@ -1774,9 +1779,16 @@ export function measureSplitLayout(
       if (tall < least - 1e-9) return null;
       // The largest size at most `tall` whose text takes `lines` lines.
       let size = Math.min(most, tall);
-      // Its width per unit of size, at the points `size` is drawn at (the
-      // system font's em widths change with the size below 24 pt): where
-      // to start; the steps below find a size that fits.
+      if (sized) {
+        // Every candidate is checked at its own size, down to the
+        // smallest: a width at one size says nothing about another.
+        for (; size > least + 1e-9; size -= 0.5 * scale)
+          if (totalLines(size) <= lines) return { size, lines };
+        if (totalLines(least) <= lines) return { size: least, lines };
+        continue;
+      }
+      // As wide in em at every size from here down: one line's largest
+      // size follows from its width per unit of size.
       const oneLine = measureTextWidth(
         total,
         1,
