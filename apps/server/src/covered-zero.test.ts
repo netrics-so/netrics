@@ -22,6 +22,8 @@ import {
   type Sql,
 } from "@netrics/database";
 
+import { connectionResourceKey } from "@netrics/domain";
+
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
 import { buildDeviceDashboardV2 } from "./devices/dashboard.js";
@@ -607,6 +609,168 @@ describe("goals and breakdowns of an inactive account on screens (#799)", () => 
         value: null,
         progress: null,
       });
+    }
+  });
+});
+
+// A slide scoped to a linked product (#777) reads the product's app of
+// the widget's connection: a scoped widget, outside the rule like one
+// fixed to an app, although the whole account was read and quiet.
+describe("a product-scoped slide of an inactive account (#799)", () => {
+  let dashboardId: string;
+
+  beforeAll(async () => {
+    const data = `/v1/workspaces/${workspaceId}/data`;
+    const mapping = await call("POST", `${data}/manual`, {
+      definition: {
+        key: "store_mapping",
+        name: "Mapping",
+        version: 1,
+        mode: "snapshot",
+        grain: "One product per source app",
+        keyFields: ["app_key"],
+        retentionDays: null,
+        fields: ["app_key", "product_id"].map((id) => ({
+          id,
+          name: id,
+          type: "string",
+          nullable: false,
+          classification: "internal",
+        })),
+      },
+      records: [
+        {
+          values: {
+            app_key: connectionResourceKey(inactive, "app-9"),
+            product_id: "product:quiet",
+          },
+        },
+      ],
+    });
+    expect(mapping.statusCode, mapping.body).toBe(200);
+    const datasetId = (mapping.json() as { datasetId: string }).datasetId;
+    const model = await call("POST", `${data}/models`, {
+      name: "Products",
+      definition: {
+        version: 1,
+        datasets: [datasetId],
+        relationships: [],
+        dimensions: [
+          { id: "app", name: "App", datasetId, fieldId: "product_id" },
+        ],
+        measures: [
+          {
+            id: "apps",
+            name: "Apps",
+            kind: "aggregate",
+            datasetId,
+            aggregate: { id: "apps", name: "apps", op: "count" },
+          },
+        ],
+      },
+    });
+    expect(model.statusCode, model.body).toBe(200);
+    const modelId = (model.json() as { model: { id: string } }).model.id;
+    const published = await call("POST", `${data}/models/${modelId}/publish`, {
+      version: 1,
+    });
+    expect(published.statusCode, published.body).toBe(200);
+    await admin`
+      insert into data_template_installs (workspace_id, request_id,
+        request_hash, result)
+      values (${workspaceId}, gen_random_uuid(), ${"0".repeat(64)},
+        ${admin.json({ mappingDatasetId: datasetId })})`;
+    const [dashboard] = await admin`
+      insert into dashboards (workspace_id, name, data_filters)
+      values (${workspaceId}, 'Product', ${admin.json([
+        {
+          id: "app",
+          name: "App",
+          type: "string",
+          mode: "values",
+          mappings: [{ modelId, dimensionId: "app" }],
+          defaultValue: null,
+        },
+      ] as never)}) returning id`;
+    dashboardId = dashboard!.id as string;
+    const slide = async (position: number, scope: unknown) => {
+      const [row] = await admin`
+        insert into dashboard_slides (dashboard_id, workspace_id, position,
+          scope)
+        values (${dashboardId}, ${workspaceId}, ${position},
+          ${admin.json(scope as never)}) returning id`;
+      return row!.id as string;
+    };
+    const widgets = async (slideId: string, prefix: string) => {
+      const kinds = [
+        { type: "metric", options: {} },
+        { type: "bar", options: { groupBy: "country" } },
+        { type: "table", options: { groupBy: "country" } },
+      ];
+      for (const [index, kind] of kinds.entries()) {
+        await admin`
+          insert into dashboard_widgets ${admin({
+            slide_id: slideId,
+            dashboard_id: dashboardId,
+            workspace_id: workspaceId,
+            x: index * 4,
+            y: 0,
+            w: 4,
+            h: 1,
+            type: kind.type,
+            title: `${prefix} ${kind.type}`,
+            connection_id: inactive,
+            metric_key: INSTALLS,
+            aggregation: "sum",
+            period: "last_30_days",
+            dimensions: admin.json({} as never),
+            options: admin.json(kind.options as never),
+          } as never)}`;
+      }
+    };
+    await widgets(
+      await slide(0, { app: { kind: "values", values: ["product:quiet"] } }),
+      "Product",
+    );
+    await widgets(await slide(1, {}), "Account");
+  }, 120_000);
+
+  it("keeps no data on the product's slide and 0 on the account's", async () => {
+    const found = deviceDashboardV2ResponseSchema.parse(
+      await withWorkspace(db, { workspaceId }, (tx) =>
+        buildDeviceDashboardV2(tx, workspaceId, dashboardId, {
+          now: NOW,
+          freshness: registry,
+        }),
+      ),
+    );
+    const dataOf = (label: string) => {
+      const widget = found.slides
+        .flatMap((slide) => slide.widgets)
+        .find((entry) => "label" in entry && entry.label === label);
+      if (!widget) throw new Error(`no widget ${label}`);
+      return (widget as Extract<DeviceWidget, { data: unknown }>)
+        .data as Record<string, unknown>;
+    };
+    // The same widgets without the scope: the control.
+    expect(dataOf("Account metric")).toMatchObject({ status: "ok", value: 0 });
+    expect(dataOf("Account bar")).toMatchObject({
+      status: "no_data",
+      noActivity: true,
+    });
+    expect(dataOf("Account table")).toMatchObject({
+      status: "no_data",
+      noActivity: true,
+    });
+    // Scoped to the product's app: no 0, no "no activity".
+    expect(dataOf("Product metric")).toMatchObject({
+      status: "no_data",
+      value: null,
+    });
+    for (const label of ["Product bar", "Product table"]) {
+      const data = dataOf(label);
+      expect(data.status, label).toBe("no_data");
+      expect("noActivity" in data, label).toBe(false);
     }
   });
 });
