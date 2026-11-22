@@ -15,6 +15,7 @@ import {
 } from "@netrics/domain";
 
 import { createDataService, queryDataModel } from "../data/service.js";
+import { createDashboardService } from "./service.js";
 import {
   createTestDatabase,
   TEST_DATABASE_SETUP_TIMEOUT_MS,
@@ -27,6 +28,7 @@ import { queryDashboardMeasure } from "./data.js";
 const NOW = new Date("2026-11-22T12:00:00Z");
 let testDb: Awaited<ReturnType<typeof createTestDatabase>>;
 let db: Database, owner: Sql, workspaceId: string, modelId: string;
+let actor: { workspaceId: string; callerId: string };
 
 // Berlin days: UTC+1 in November, so 23:30Z belongs to the next day.
 const TAKEN = [
@@ -53,7 +55,7 @@ beforeAll(async () => {
   await owner`update workspaces set time_zone = 'Europe/Berlin'
     where id = ${workspaceId}`;
   const service = createDataService(db, () => NOW);
-  const actor = { workspaceId, callerId: user!.id };
+  actor = { workspaceId, callerId: user!.id };
   const table = await service.saveManual(actor, {
     definition: {
       key: "photos",
@@ -66,6 +68,7 @@ beforeAll(async () => {
       fields: [
         { id: "id", type: "integer" as const, nullable: false },
         { id: "taken_at", type: "timestamp" as const, nullable: true },
+        { id: "day", type: "date" as const, nullable: true },
         { id: "album", type: "string" as const, nullable: false },
       ].map((field) => ({
         ...field,
@@ -75,9 +78,14 @@ beforeAll(async () => {
     },
     records: [
       ...TAKEN.map((taken_at, id) => ({
-        values: { id, taken_at, album: id % 2 ? "b" : "a" },
+        values: {
+          id,
+          taken_at,
+          day: taken_at.slice(0, 10),
+          album: id % 2 ? "b" : "a",
+        },
       })),
-      { values: { id: 99, taken_at: null, album: "a" } },
+      { values: { id: 99, taken_at: null, day: null, album: "a" } },
     ],
   });
   const saved = await service.saveModel(actor, {
@@ -99,6 +107,13 @@ beforeAll(async () => {
           datasetId: table.datasetId,
           fieldId: "album",
         },
+        {
+          id: "day",
+          name: "Day",
+          datasetId: table.datasetId,
+          fieldId: "day",
+          timeAlignment: "reporting_date",
+        },
       ],
       measures: [
         {
@@ -107,6 +122,23 @@ beforeAll(async () => {
           kind: "aggregate",
           datasetId: table.datasetId,
           aggregate: { id: "photos", name: "Photos", op: "count" },
+        },
+        {
+          id: "photos7",
+          name: "Photos, 7 days",
+          kind: "rolling",
+          baseMeasureId: "photos",
+          timeDimensionId: "day",
+          window: { unit: "day", length: 7 },
+        },
+        {
+          id: "previous_month",
+          name: "Photos, previous month",
+          kind: "period_offset",
+          baseMeasureId: "photos",
+          timeDimensionId: "day",
+          offset: { unit: "month", length: 1 },
+          output: "value",
         },
       ],
     },
@@ -289,5 +321,118 @@ describe("a measure widget grouped by a time grain (#838)", () => {
       await owner`update workspaces set time_zone = 'Europe/Berlin'
         where id = ${workspaceId}`;
     }
+  });
+
+  const dayFilter = {
+    id: "day",
+    name: "Day",
+    type: "date" as const,
+    mode: "range" as const,
+    mappings: [{ modelId: "", dimensionId: "day" }],
+    defaultValue: {
+      kind: "range" as const,
+      from: "2026-11-01",
+      to: "2026-11-30",
+    },
+  };
+  const save = (binding: Partial<MeasureWidgetBinding>) =>
+    createDashboardService({ db }).create(actor, {
+      name: "Photos",
+      settings: {
+        dataFilters: [
+          { ...dayFilter, mappings: [{ modelId, dimensionId: "day" }] },
+        ],
+      },
+      slides: [
+        {
+          widgets: [
+            {
+              type: "measure",
+              x: 0,
+              y: 0,
+              w: 6,
+              h: 4,
+              title: null,
+              binding: {
+                modelId,
+                measureIds: ["photos"],
+                groupBy: ["day"],
+                exclusions: [],
+                ...binding,
+              },
+              options: { view: "table", limit: 20 },
+            },
+          ],
+        },
+      ],
+    } as never);
+  const stored = async (id: string) =>
+    (
+      await owner<{ model_binding: MeasureWidgetBinding }[]>`
+        select model_binding from dashboard_widgets where dashboard_id = ${id}`
+    )[0]!.model_binding;
+
+  it("stores a date grouped per day as the date itself (review 2 of #852)", async () => {
+    // "day" changes nothing on a date: one stored form, and click-to-filter
+    // works as without it.
+    const saved = await save({
+      groupByGrain: { day: "day" },
+      interaction: { filterId: "day" },
+    });
+    expect(saved.ok, JSON.stringify(saved)).toBe(true);
+    if (!saved.ok) return;
+    const binding = await stored(saved.value.id);
+    expect("groupByGrain" in binding).toBe(false);
+    expect(binding.interaction).toEqual({ filterId: "day" });
+    // A week is another value than the filter's: no click-to-filter.
+    const week = await save({
+      groupByGrain: { day: "week" },
+      interaction: { filterId: "day" },
+    });
+    expect(week).toMatchObject({
+      ok: false,
+      error: "dashboard_interaction_grain_unsupported",
+    });
+    // Without the interaction it is saved as chosen.
+    const plain = await save({ groupByGrain: { day: "week" } });
+    expect(plain.ok).toBe(true);
+    if (plain.ok)
+      expect((await stored(plain.value.id)).groupByGrain).toEqual({
+        day: "week",
+      });
+  });
+
+  it("refuses a week or month of the date a windowed measure is read per (review 2 of #852)", async () => {
+    for (const measureId of ["photos7", "previous_month"])
+      for (const grain of ["week", "month"] as const)
+        expect(
+          await save({
+            measureIds: [measureId],
+            groupByGrain: { day: grain },
+          }),
+          `${measureId} ${grain}`,
+        ).toMatchObject({
+          ok: false,
+          error: "dashboard_measure_grain_unsupported",
+        });
+    // Its own day is no bucket: saved, without the grain.
+    const day = await save({
+      measureIds: ["photos7"],
+      groupByGrain: { day: "day" },
+    });
+    expect(day.ok, JSON.stringify(day)).toBe(true);
+    // The catalog tells Studio which dimensions take no grain.
+    const data = await read({ groupBy: ["album"] });
+    const fixed = Object.fromEntries(
+      data.metadata!.measures.map((measure) => [
+        measure.id,
+        measure.fixedGrainDimensions,
+      ]),
+    );
+    expect(fixed).toEqual({
+      photos: undefined,
+      photos7: ["day"],
+      previous_month: ["day"],
+    });
   });
 });

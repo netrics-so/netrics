@@ -37,6 +37,10 @@ export function grainStart(date: string, grain: TimeGrain): string {
 }
 
 const SLOT_MS = 15 * 60 * 1000;
+/** From here on an instant is read in the zone; before, as its UTC day. */
+const FIRST_ZONED_INSTANT = Date.parse("0100-01-01T00:00:00Z");
+const LAST_INSTANT = Date.parse("9999-12-31T23:59:59Z");
+const LAST_DAY = "9999-12-31";
 
 /**
  * A bucketing function for one dimension: a date stays the calendar day it
@@ -44,11 +48,17 @@ const SLOT_MS = 15 * 60 * 1000;
  * of its instant in `timeZone` (a 23- or 25-hour day is still one day).
  * The result is the first day of the bucket, a date.
  *
+ * A timestamp is bucketed from its parsed instant, never from its text
+ * ("…T24:00:00Z" is the next day), and UTC is a zone like any other. Two
+ * edges, where no zone has rules or no date exists: an instant before the
+ * year 100 is its UTC day (a source's zero time stays one day), and a day
+ * past 9999-12-31 in the zone is 9999-12-31.
+ *
  * Asking the zone for every row would dominate a query, so days are
- * remembered per quarter hour of UTC: where a quarter hour starts and ends
- * on the same day in the zone (all but the one holding its midnight, or a
- * clock change across it), every instant in it is that day; the others are
- * asked one by one.
+ * remembered per quarter hour of UTC: where a quarter hour and the next
+ * start on the same day in the zone (all but the one before its midnight,
+ * or a clock change across it), every instant in it is that day; the
+ * others are asked one by one.
  */
 export function timeGrainBucket(
   type: "date" | "timestamp",
@@ -58,48 +68,44 @@ export function timeGrainBucket(
   // Tables are validated before they are queried; a value that is no date
   // or timestamp after all is the data error it would have been there,
   // never a malformed group or a crash.
-  const days = new Map<unknown, string>();
+  const buckets = new Map<unknown, string>();
   const bucketOf = (date: string) => {
-    let bucket = days.get(date);
+    let bucket = buckets.get(date);
     if (bucket === undefined) {
       validateDataValue("date", date, false);
       bucket = grainStart(date, grain);
-      if (days.size < 200_000) days.set(date, bucket);
+      if (buckets.size < 200_000) buckets.set(date, bucket);
     }
     return bucket;
   };
   if (type === "date") return bucketOf;
-  /** Whole seconds: the precision of a zone's offset. */
-  const instantOf = (value: string) => {
+  /** The instant's calendar day in the zone. */
+  const dayAt = (instant: number): string => {
+    if (instant > LAST_INSTANT) return LAST_DAY;
+    if (instant < FIRST_ZONED_INSTANT)
+      return new Date(instant).toISOString().slice(0, 10);
+    const day = civilDate(new Date(instant), timeZone);
+    return day.length === 10 ? day : LAST_DAY;
+  };
+  /** Per quarter hour, the day it starts on. */
+  const starts = new Map<number, string>();
+  const startOf = (slot: number) => {
+    let day = starts.get(slot);
+    if (day === undefined) {
+      day = dayAt(slot * SLOT_MS);
+      if (starts.size < 200_000) starts.set(slot, day);
+    }
+    return day;
+  };
+  return (value) => {
+    // Whole seconds: the precision of a zone's offset.
     const instant =
       typeof value === "string" && /^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(value)
         ? Date.parse(value.slice(0, 19) + "Z")
         : NaN;
-    return Number.isFinite(instant)
-      ? instant
-      : dataFail("data_timestamp_invalid");
-  };
-  if (timeZone === "UTC")
-    return (value) => {
-      instantOf(value);
-      return bucketOf(value.slice(0, 10));
-    };
-  /** Per quarter hour, its bucket; null where its instants differ. */
-  const slots = new Map<number, string | null>();
-  return (value) => {
-    const instant = instantOf(value);
-    const utc = value.slice(0, 10);
-    // No zone has rules for the first century (a source's zero time stays
-    // its UTC day), nor a day past the last date a result can carry.
-    if (utc < "0100" || utc >= "9999-12-30") return bucketOf(utc);
+    if (!Number.isFinite(instant)) dataFail("data_timestamp_invalid");
     const slot = Math.floor(instant / SLOT_MS);
-    let known = slots.get(slot);
-    if (known === undefined) {
-      const first = civilDate(new Date(slot * SLOT_MS), timeZone);
-      const last = civilDate(new Date((slot + 1) * SLOT_MS - 1000), timeZone);
-      known = first === last ? bucketOf(first) : null;
-      if (slots.size < 200_000) slots.set(slot, known);
-    }
-    return known ?? bucketOf(civilDate(new Date(instant), timeZone));
+    const day = startOf(slot);
+    return bucketOf(day === startOf(slot + 1) ? day : dayAt(instant));
   };
 }

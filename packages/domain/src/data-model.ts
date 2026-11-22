@@ -407,23 +407,27 @@ function singleValueDimensions(expression?: DataExpression): Set<string> {
 function measureScope(
   model: SemanticModelDefinition,
   measureIds: readonly string[],
-): { grain: Set<string>; perDate: Set<string> } {
+): { grain: Set<string>; perDate: Set<string>; window: Set<string> } {
   const measures = new Map(model.measures.map((m) => [m.id, m]));
   const seen = new Set<string>(),
     grain = new Set<string>(),
-    perDate = new Set<string>();
+    perDate = new Set<string>(),
+    window = new Set<string>();
   const visit = (id: string) => {
     const measure = measures.get(id);
     if (!measure || seen.has(id)) return;
     seen.add(id);
     for (const dimension of measure.requiredDimensions ?? [])
       grain.add(dimension);
-    if (isWindowedMeasure(measure) && windowNeedsTimeGrouping(measure))
-      perDate.add(measure.timeDimensionId);
+    if (isWindowedMeasure(measure)) {
+      window.add(measure.timeDimensionId);
+      if (windowNeedsTimeGrouping(measure))
+        perDate.add(measure.timeDimensionId);
+    }
     measureDependencies(measure).forEach(visit);
   };
   measureIds.forEach(visit);
-  return { grain, perDate };
+  return { grain, perDate, window };
 }
 const inModelOrder = (model: SemanticModelDefinition, ids: Set<string>) =>
   model.dimensions.map((d) => d.id).filter((id) => ids.has(id));
@@ -441,6 +445,21 @@ export function modelMeasureScope(
 ): string[] {
   const { grain, perDate } = measureScope(model, measureIds);
   return inModelOrder(model, new Set([...grain, ...perDate]));
+}
+
+/**
+ * The dimensions these measures are read per value of (#838): what they
+ * require (modelMeasureScope) and the date their rolling windows and period
+ * comparisons run on. A time grain that buckets such a dimension (a week,
+ * a month, a timestamp's day) is refused by the query, so a widget's
+ * validation and Studio's choices both read this one rule.
+ */
+export function modelMeasureFixedGrainDimensions(
+  model: SemanticModelDefinition,
+  measureIds: readonly string[],
+): string[] {
+  const { grain, perDate, window } = measureScope(model, measureIds);
+  return inModelOrder(model, new Set([...grain, ...perDate, ...window]));
 }
 
 /** The part of modelMeasureScope only grouping satisfies: window dates. */

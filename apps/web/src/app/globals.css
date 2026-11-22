@@ -5607,9 +5607,14 @@ a.button.primary:hover {
 }
 .group-by-choice {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+.group-by-choice > .help {
+  flex-basis: 100%;
+  margin: 0;
 }
 .group-by-choice select {
   width: auto;

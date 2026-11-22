@@ -3,6 +3,10 @@ import type {
   DashboardWidget,
   PublishedModelCatalog,
 } from "@netrics/contracts";
+import {
+  measureBindingGrains,
+  measureFixedGrainDimensions,
+} from "@netrics/domain";
 import { renderI18n } from "@/lib/i18n/test-render";
 import {
   LINE_VIEW_LIMIT,
@@ -333,5 +337,150 @@ describe("a time grain next to a grouped time dimension (#838)", () => {
     const bar = patchForView(two, "bar", photos[0]);
     expect(bar.binding.groupBy).toEqual(["album"]);
     expect("groupByGrain" in bar.binding).toBe(false);
+  });
+
+  // A model whose measures are read per value of a date (review 2 of #852).
+  const windowed: PublishedModelCatalog["models"] = [
+    {
+      modelId: "00000000-0000-4000-8000-000000000012",
+      modelName: "Sales",
+      measures: [
+        { id: "revenue", name: "Revenue" },
+        {
+          id: "revenue7",
+          name: "Revenue, 7 days",
+          requiredDimensions: ["day"],
+          perDateDimensions: ["day"],
+          fixedGrainDimensions: ["day"],
+        },
+        // A comparison with the previous month: groupable by its date or
+        // not, but never by weeks or months of it.
+        {
+          id: "previous",
+          name: "Revenue, previous month",
+          fixedGrainDimensions: ["day"],
+        },
+        {
+          id: "perSale",
+          name: "Revenue per sale",
+          requiredDimensions: ["sold"],
+          fixedGrainDimensions: ["sold"],
+        },
+      ],
+      dimensions: [
+        { id: "day", name: "Day", type: "date" },
+        { id: "sold", name: "Sold at", type: "timestamp" },
+      ],
+    },
+  ];
+  const sales = (
+    measureIds: string[],
+    groupBy: string[],
+    groupByGrain?: Record<string, "day" | "week" | "month">,
+  ) => {
+    const base = widget("table", measureIds, groupBy);
+    return {
+      ...base,
+      binding: {
+        ...base.binding,
+        modelId: windowed[0]!.modelId,
+        ...(groupByGrain ? { groupByGrain } : {}),
+      },
+    };
+  };
+  const salesHtml = (
+    measure: ReturnType<typeof sales>,
+    locale: "en" | "de" = "en",
+  ) =>
+    renderI18n(
+      <MeasureFields
+        widget={measure}
+        models={windowed}
+        filters={[]}
+        dispatch={() => {}}
+        workspaceId="workspace"
+      />,
+      locale,
+    );
+
+  it("offers only the grains the chosen measures can be grouped by", () => {
+    // Without a windowed measure: every grain.
+    const free = grain(
+      salesHtml(sales(["revenue"], ["day"])),
+      "Day: one group per",
+    );
+    expect(free).toContain('<option value="week">Week</option>');
+    expect(free).toContain('<option value="month">Month</option>');
+    for (const measureId of ["revenue7", "previous"]) {
+      const markup = salesHtml(sales(["revenue", measureId], ["day"]));
+      const select = grain(markup, "Day: one group per");
+      expect(select, measureId).toContain(
+        '<option value="" selected="">Day</option>',
+      );
+      expect(select, measureId).toContain(
+        '<option value="week" disabled="">Week</option>',
+      );
+      expect(select, measureId).toContain(
+        '<option value="month" disabled="">Month</option>',
+      );
+      expect(markup, measureId).toContain(
+        "The chosen measures are calculated for each value of Day, so it cannot be grouped into larger periods.",
+      );
+    }
+    // A timestamp a measure is read per value of takes no grain at all.
+    const sold = grain(
+      salesHtml(sales(["perSale"], ["sold"])),
+      "Sold at: one group per",
+    );
+    expect(sold).toContain('<option value="" selected="">Each time</option>');
+    for (const value of ["day", "week", "month"])
+      expect(sold).toContain(`<option value="${value}" disabled=""`);
+    expect(salesHtml(sales(["revenue", "revenue7"], ["day"]), "de")).toContain(
+      "Die gewählten Kennzahlen werden für jeden Wert von Day berechnet; größere Zeiträume sind deshalb nicht möglich.",
+    );
+  });
+
+  it("drops a grain the measures no longer allow when one is added", () => {
+    const markup = renderI18n(
+      <MeasureFields
+        widget={sales(["revenue"], ["day"], { day: "week" })}
+        models={windowed}
+        filters={[]}
+        dispatch={() => {}}
+        workspaceId="workspace"
+      />,
+    );
+    expect(grain(markup, "Day: one group per")).toContain(
+      '<option value="week" selected="">Week</option>',
+    );
+    // What ticking "Revenue, 7 days" dispatches.
+    const next = measureBindingGrains(
+      {
+        ...sales(["revenue"], ["day"], { day: "week" }).binding,
+        measureIds: ["revenue", "revenue7"],
+      },
+      {
+        dimensions: windowed[0]!.dimensions,
+        reset: measureFixedGrainDimensions(windowed[0]!.measures, [
+          "revenue",
+          "revenue7",
+        ]),
+      },
+    );
+    expect("groupByGrain" in next).toBe(false);
+    // A view switch that keeps a windowed measure does the same.
+    const switched = patchForView(
+      sales(["revenue7"], ["day"], { day: "month" }),
+      "line",
+      windowed[0],
+    );
+    expect("groupByGrain" in switched.binding).toBe(false);
+    // A date stored per day reads as the date it is.
+    const perDay = patchForView(
+      sales(["revenue"], ["day"], { day: "day" }),
+      "bar",
+      windowed[0],
+    );
+    expect("groupByGrain" in perDay.binding).toBe(false);
   });
 });

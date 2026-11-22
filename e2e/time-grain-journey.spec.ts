@@ -33,6 +33,7 @@ test("a timestamp grouped per day in Studio shows one row per day", async ({
     fields: [
       { id: "id", name: "ID", type: "integer", nullable: false },
       { id: "taken_at", name: "Taken at", type: "timestamp", nullable: false },
+      { id: "day", name: "Day", type: "date", nullable: false },
     ],
     rows: [
       "2026-11-01T23:30:00Z",
@@ -40,7 +41,7 @@ test("a timestamp grouped per day in Studio shows one row per day", async ({
       "2026-11-02T08:00:01Z",
       "2026-11-03T12:00:00Z",
       "2026-11-09T12:00:00Z",
-    ].map((taken_at, id) => ({ id, taken_at })),
+    ].map((taken_at, id) => ({ id, taken_at, day: taken_at.slice(0, 10) })),
   });
   const definition: SemanticModelDefinition = {
     version: 1,
@@ -48,6 +49,13 @@ test("a timestamp grouped per day in Studio shows one row per day", async ({
     relationships: [],
     dimensions: [
       { id: "taken", name: "Taken", datasetId, fieldId: "taken_at" },
+      {
+        id: "day",
+        name: "Upload day",
+        datasetId,
+        fieldId: "day",
+        timeAlignment: "reporting_date",
+      },
     ],
     measures: [
       {
@@ -56,6 +64,14 @@ test("a timestamp grouped per day in Studio shows one row per day", async ({
         kind: "aggregate",
         datasetId,
         aggregate: { id: "photos", name: "Photos", op: "count" },
+      },
+      {
+        id: "photos7",
+        name: "Photos in 7 days",
+        kind: "rolling",
+        baseMeasureId: "photos",
+        timeDimensionId: "day",
+        window: { unit: "day", length: 7 },
       },
     ],
   };
@@ -148,6 +164,51 @@ test("a timestamp grouped per day in Studio shows one row per day", async ({
   await expect(grain).toHaveValue("week");
   await expect(rows).toHaveCount(2);
 
+  // A rolling measure is calculated per day of its date: Studio offers no
+  // week or month of that date with it, and takes one back when the
+  // measure is added, so the widget never becomes one the server refuses.
+  const measures = fields.getByRole("group", {
+    name: t.measures,
+    exact: true,
+  });
+  const uploadDay = group.getByRole("checkbox", { name: "Upload day" });
+  const dayGrain = fields.getByRole("combobox", {
+    name: t.grain.label.replace("{name}", "Upload day"),
+    exact: true,
+  });
+  const fixedHelp = fields.getByText(
+    t.grain.fixed.replace("{name}", "Upload day"),
+  );
+  await uploadDay.check();
+  await dayGrain.selectOption({ label: t.grain.month });
+  await expect(dayGrain).toHaveValue("month");
+  await expect(fixedHelp).toHaveCount(0);
+  await measures.getByRole("checkbox", { name: "Photos in 7 days" }).check();
+  await expect(dayGrain).toHaveValue("");
+  await expect(
+    dayGrain.getByRole("option", { name: t.grain.week }),
+  ).toBeDisabled();
+  await expect(
+    dayGrain.getByRole("option", { name: t.grain.month }),
+  ).toBeDisabled();
+  await expect(fixedHelp).toBeVisible();
+  // The preview still has its rows, with the new column.
+  await expect(canvas.locator("thead th")).toHaveCount(4);
+  await expect(rows.first()).toBeVisible();
+  // No refusal in place of the table (a short history is only a notice).
+  await expect(canvas.locator('.sw-notice[role="status"]')).toHaveCount(0);
+  // The timestamp next to it keeps every choice.
+  await expect(
+    grain.getByRole("option", { name: t.grain.month }),
+  ).toBeEnabled();
+  await measures.getByRole("checkbox", { name: "Photos in 7 days" }).uncheck();
+  await expect(
+    dayGrain.getByRole("option", { name: t.grain.week }),
+  ).toBeEnabled();
+  await uploadDay.uncheck();
+  await expect(dayGrain).toHaveCount(0);
+  await expect(rows).toHaveCount(2);
+
   // Saved with the widget: viewers and screens get a row per day.
   await grain.selectOption({ label: t.grain.day });
   await expect(rows).toHaveCount(3);
@@ -191,6 +252,7 @@ test("a timestamp grouped per day in Studio shows one row per day", async ({
   ]);
   expect(widget!.metadata.dimensions).toEqual([
     expect.objectContaining({ id: "taken", type: "date" }),
+    expect.objectContaining({ id: "day", type: "date" }),
   ]);
 
   // The viewer's page words the days too.

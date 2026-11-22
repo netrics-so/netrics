@@ -1420,14 +1420,17 @@ async function validateDataBindings(
           );
         if (!unchanged)
           try {
-            await validateDashboardMeasure(
-              tx,
-              workspaceId,
-              filters,
-              binding,
-              options,
-              scope,
-            );
+            // Stored in its one form (#838): "day" on a date is no grain.
+            widget.modelBinding = (
+              await validateDashboardMeasure(
+                tx,
+                workspaceId,
+                filters,
+                binding,
+                options,
+                scope,
+              )
+            ).binding;
           } catch (error) {
             // With its saved defaults this comparison has no period: ask the
             // editor for a range filter with a default range. A viewer who

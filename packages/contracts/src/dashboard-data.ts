@@ -189,6 +189,10 @@ export const dashboardMeasureMetadataSchema = z.object({
        * rolling windows and day/week offsets): a filter fixing the date does
        * not give it a single value. */
       perDateDimensions: z.array(id).optional(),
+      /** The dimensions the measure is read per value of (#838): the
+       * required ones and the date of its windows and comparisons. A time
+       * grain may not bucket them (a date keeps "day"). */
+      fixedGrainDimensions: z.array(id).optional(),
       /** The value is a change ratio, (current − previous) / |previous|;
        * clients show it as a percentage. */
       percentChange: z.literal(true).optional(),

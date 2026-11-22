@@ -49,26 +49,42 @@ A model query, and a measure widget's binding, carry an optional
   dashboard filter on the same timestamp still means instants.
 - **Limits apply to buckets**: `limit`, `offset`, `window: "last"` and an
   order by a measure page and rank the buckets, not the rows.
-- **Refused**: a grain on a dimension that is neither a date nor a timestamp
-  (`model_group_grain_not_temporal`), on a dimension the query does not
-  group by (`model_group_grain_not_grouped`; on a widget
-  `dashboard_measure_grain_invalid`), an unknown grain
-  (`model_group_grain_invalid`), and a grain on the date a rolling or
-  period-offset measure is evaluated per
+- **A date per day is no grain.** `day` on a date dimension changes
+  nothing, so it has one stored form: none. Saving a widget drops it, and
+  such a widget behaves exactly like one without the field (click-to-filter
+  included). The query accepts it and ignores it.
+- **Refused by the query**: a grain on a dimension that is neither a date
+  nor a timestamp (`model_group_grain_not_temporal`), on a dimension the
+  query does not group by (`model_group_grain_not_grouped`), an unknown
+  grain (`model_group_grain_invalid`), and a bucketing grain on the date a
+  rolling or period-offset measure runs on
   (`model_group_grain_window_unsupported`).
 - **A bucket is no scope**: a measure with `requiredDimensions` needs that
   dimension itself (or a filter fixing it); grouped by week or month it is
   refused as unscoped, since a bucket holds several of its values.
+- **One rule for widgets and Studio.** The dimensions a measure is read per
+  value of are its required dimensions and the date of its windows and
+  comparisons (`modelMeasureFixedGrainDimensions`; in the published catalog
+  each measure's `fixedGrainDimensions`). A widget may not bucket such a
+  dimension with any of its measures: saving refuses it
+  (`dashboard_measure_grain_unsupported`), and Studio offers only the
+  remaining choices (`allowedTimeGrains`), disables the others with a
+  reason, and takes a grain back when such a measure is added. A grain for
+  a dimension the widget does not group by is
+  `dashboard_measure_grain_invalid`.
 - **No labels**: a bucket is not one of the dimension's labelled values.
 - **No click-to-filter**: a declared interaction on a bucketed dimension is
   refused (`dashboard_interaction_grain_unsupported`); a click would set the
   filter to the bucket's first day, not to a value of the dimension.
-- Every valid value has a bucket, a well-formed date. Instants before the
-  year 100, and days past 9999-12-30, are read as their UTC day: no zone
-  has rules there (a source's zero time stays one day); the week holding
-  0000-01-01 is cut at that day. A value that is no date or timestamp
-  cannot be in a table (tables are validated before a query reads them);
-  should one reach the bucketing, the query fails with the same data error
+- **Every valid value has a bucket**, a well-formed date, computed from the
+  parsed instant, never from the value's text (`…T24:00:00Z` is the next
+  day), with UTC a zone like any other. Two edges, where no zone has rules
+  or no date exists: an instant before 0100-01-01T00:00:00Z is read as its
+  UTC day (a source's zero time stays one day), and a day past 9999-12-31
+  in the zone is 9999-12-31. The week holding 0000-01-01 is cut at that
+  day. A value that is no date or timestamp cannot be in a table (tables
+  are validated before a query reads them); should one reach the
+  bucketing, the query fails with the same data error
   (`data_timestamp_invalid`, `data_date_invalid`), never with a malformed
   group.
 

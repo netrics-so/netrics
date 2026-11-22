@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  modelMeasureFixedGrainDimensions,
+  modelMeasureScope,
   querySemanticModel,
   type ModelQuery,
   type SemanticModelDefinition,
 } from "./data-model.js";
 import { type DataTable } from "./data-preparation.js";
-import { DataProcessingError, type DataExpression } from "./data-expression.js";
+import {
+  DataProcessingError,
+  validateDataValue,
+  type DataExpression,
+} from "./data-expression.js";
 import { civilDate } from "./metrics.js";
 import { grainStart, timeGrainBucket } from "./time-grain.js";
 
@@ -404,6 +410,40 @@ describe("grouping a timestamp by a time grain (#838)", () => {
     ).toBe("model_measure_scope_required");
   });
 
+  it("lists the dimensions the measures are read per value of", () => {
+    expect(modelMeasureFixedGrainDimensions(model, ["count"])).toEqual([]);
+    expect(modelMeasureFixedGrainDimensions(model, ["perTime"])).toEqual([
+      "taken",
+    ]);
+    expect(modelMeasureFixedGrainDimensions(model, ["rolling"])).toEqual([
+      "day",
+    ]);
+    expect(
+      modelMeasureFixedGrainDimensions(model, ["count", "rolling", "perTime"]),
+    ).toEqual(["taken", "day"]);
+    // A comparison with the previous month needs no grouping by its date,
+    // but is still read per value of it.
+    const compared: SemanticModelDefinition = {
+      ...model,
+      measures: [
+        ...model.measures,
+        {
+          id: "previous",
+          name: "Previous month",
+          kind: "period_offset",
+          baseMeasureId: "count",
+          timeDimensionId: "day",
+          offset: { unit: "month", length: 1 },
+          output: "value",
+        },
+      ],
+    };
+    expect(modelMeasureScope(compared, ["previous"])).toEqual([]);
+    expect(modelMeasureFixedGrainDimensions(compared, ["previous"])).toEqual([
+      "day",
+    ]);
+  });
+
   it("refuses a grain on the date a windowed measure is read per", () => {
     const taken = ["2026-11-02T08:00:00Z"];
     const range: DataExpression = {
@@ -540,6 +580,8 @@ describe("time grain buckets", () => {
       "Pacific/Kiritimati",
       "Pacific/Pago_Pago",
       "Australia/Lord_Howe",
+      "Etc/GMT-14",
+      "Etc/GMT+12",
     ];
     const years = [
       0, 1, 2, 50, 99, 100, 101, 500, 999, 1000, 1582, 1883, 1900, 1969, 1970,
@@ -618,5 +660,115 @@ describe("time grain buckets", () => {
           "data_string_required",
         );
       }
+  });
+
+  it("buckets every spelling of an instant alike, UTC being a zone like others (review 2 of #852)", () => {
+    // to_timestamp keeps "24:00:00", the first instant of the next day:
+    // Sunday 1 November 24:00 is Monday 2 November.
+    for (const timeZone of ["UTC", "Etc/UTC", "Africa/Abidjan"]) {
+      const of = (grain: "day" | "week" | "month", value: string) =>
+        timeGrainBucket("timestamp", grain, timeZone)(value);
+      expect(of("day", "2026-11-01T24:00:00Z"), timeZone).toBe("2026-11-02");
+      expect(of("week", "2026-11-01T24:00:00Z"), timeZone).toBe("2026-11-02");
+      expect(of("month", "2026-11-30T24:00:00Z"), timeZone).toBe("2026-12-01");
+      expect(of("day", "2026-12-31T24:00:00.000Z"), timeZone).toBe(
+        "2027-01-01",
+      );
+    }
+    // Every form the timestamp type accepts (validateDataValue): whole
+    // seconds, one to nine fraction digits, and hour 24.
+    const forms = (day: string) => [
+      `${day}T00:00:00Z`,
+      `${day}T12:34:56Z`,
+      `${day}T23:59:59Z`,
+      `${day}T23:59:59.9Z`,
+      `${day}T23:59:59.999Z`,
+      `${day}T23:59:59.999999999Z`,
+      `${day}T24:00:00Z`,
+      `${day}T24:00:00.0Z`,
+      `${day}T24:00:00.000000000Z`,
+    ];
+    const days = [
+      "0001-01-01",
+      "0099-12-31",
+      "0100-01-01",
+      "1999-12-31",
+      "2024-02-29",
+      "2026-11-01",
+      "2026-11-30",
+      "9999-12-30",
+      "9999-12-31",
+    ];
+    for (const grain of ["day", "week", "month"] as const) {
+      const zones = ["UTC", "Etc/UTC", "Etc/GMT"].map(
+        (timeZone) =>
+          [timeZone, timeGrainBucket("timestamp", grain, timeZone)] as const,
+      );
+      for (const day of days)
+        for (const value of forms(day)) {
+          validateDataValue("timestamp", value, false);
+          const results = zones.map(([, bucket]) => bucket(value));
+          expect(new Set(results).size, `${grain} ${value} ${results}`).toBe(1);
+          // And as the instant says, whatever its spelling.
+          const instant = new Date(
+            Math.min(
+              Date.parse(value.slice(0, 19) + "Z"),
+              Date.parse("9999-12-31T23:59:59Z"),
+            ),
+          );
+          expect(results[0], `${grain} ${value}`).toBe(
+            grainStart(instant.toISOString().slice(0, 10), grain),
+          );
+        }
+    }
+  });
+
+  it("reads the zone's day up to the last and from the first day a date can be (review 2 of #852)", () => {
+    // Fixed offsets (named zones had local mean time in the year 100):
+    // the most positive, UTC+14, and UTC−11.
+    const east = timeGrainBucket("timestamp", "day", "Etc/GMT-14");
+    const west = timeGrainBucket("timestamp", "day", "Etc/GMT+11");
+    // The last representable day is a day like any other in the zone.
+    expect(east("9999-12-30T09:59:59Z")).toBe("9999-12-30");
+    expect(east("9999-12-30T10:00:00Z")).toBe("9999-12-31");
+    expect(east("9999-12-30T23:00:00Z")).toBe("9999-12-31");
+    expect(east("9999-12-31T09:59:59Z")).toBe("9999-12-31");
+    // Past it in the zone (already the year 10000 there): the last day.
+    expect(east("9999-12-31T10:00:00Z")).toBe("9999-12-31");
+    expect(east("9999-12-31T23:59:59Z")).toBe("9999-12-31");
+    expect(east("9999-12-31T24:00:00Z")).toBe("9999-12-31");
+    expect(west("9999-12-31T10:59:59Z")).toBe("9999-12-30");
+    expect(west("9999-12-31T11:00:00Z")).toBe("9999-12-31");
+    expect(west("9999-12-31T24:00:00Z")).toBe("9999-12-31");
+    // Before the year 100 an instant is its UTC day; from then on the zone's.
+    expect(east("0099-12-31T23:59:59Z")).toBe("0099-12-31");
+    expect(east("0099-12-31T24:00:00Z")).toBe("0100-01-01");
+    expect(east("0100-01-01T00:00:00Z")).toBe("0100-01-01");
+    expect(east("0100-01-01T10:00:00Z")).toBe("0100-01-02");
+    expect(west("0099-12-31T23:59:59Z")).toBe("0099-12-31");
+    expect(west("0100-01-01T00:00:00Z")).toBe("0099-12-31");
+    expect(west("0100-01-01T10:59:59Z")).toBe("0099-12-31");
+    expect(west("0100-01-01T11:00:00Z")).toBe("0100-01-01");
+    // Buckets never go back as instants go on, across both edges.
+    for (const bucket of [east, west]) {
+      let previous = "";
+      for (const value of [
+        "0099-12-30T12:00:00Z",
+        "0099-12-31T23:59:59Z",
+        "0100-01-01T00:00:00Z",
+        "0100-01-01T12:00:00Z",
+        "0100-01-02T12:00:00Z",
+        "9999-12-29T12:00:00Z",
+        "9999-12-30T12:00:00Z",
+        "9999-12-31T12:00:00Z",
+        "9999-12-31T24:00:00Z",
+      ]) {
+        const day = bucket(value);
+        expect(day >= previous, `${value}: ${day} after ${previous}`).toBe(
+          true,
+        );
+        previous = day;
+      }
+    }
   });
 });

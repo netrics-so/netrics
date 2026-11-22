@@ -13,7 +13,7 @@ import type {
   ModelQueryOrder,
   SemanticModelDefinition,
 } from "./data-model.js";
-import { isTimeGrain, type TimeGrain } from "./time-grain.js";
+import { isTimeGrain, TIME_GRAINS, type TimeGrain } from "./time-grain.js";
 
 export type DashboardFilterType = Exclude<DataType, "json">;
 export type DashboardFilterValue =
@@ -622,20 +622,97 @@ export function measureOptionsForBinding<O extends MeasureTableOptions>(
 }
 
 /**
- * A binding with the time grains its grouping still has (#838): a grain
- * goes with its dimension, so one that is no longer grouped by (unticked, or
- * dropped by a view that shows fewer dimensions) is removed with it.
+ * Whether a grain changes a dimension's values (#838): a date is its own
+ * day, so "day" on a date is no grain at all.
+ */
+export function timeGrainBuckets(type: DataType, grain: TimeGrain): boolean {
+  return !(type === "date" && grain === "day");
+}
+
+/**
+ * The dimensions the chosen measures are read per value of, from the
+ * published catalog (`fixedGrainDimensions`, the model's
+ * modelMeasureFixedGrainDimensions): a grain may not bucket them.
+ */
+export function measureFixedGrainDimensions(
+  measures: readonly { id: string; fixedGrainDimensions?: string[] }[],
+  measureIds: readonly string[],
+): Set<string> {
+  return new Set(
+    measures
+      .filter((measure) => measureIds.includes(measure.id))
+      .flatMap((measure) => measure.fixedGrainDimensions ?? []),
+  );
+}
+
+/**
+ * The grains a grouped dimension can take with these measures (#838), for
+ * Studio's choices and the server's validation alike: none unless it is a
+ * date or timestamp; none that would bucket a dimension the measures are
+ * read per value of (a date keeps "day", which is the date itself).
+ */
+export function allowedTimeGrains(
+  dimension: { id: string; type: DataType },
+  fixed: ReadonlySet<string>,
+): TimeGrain[] {
+  const { type } = dimension;
+  if (type !== "date" && type !== "timestamp") return [];
+  return TIME_GRAINS.filter(
+    (grain) => !fixed.has(dimension.id) || !timeGrainBuckets(type, grain),
+  );
+}
+
+/**
+ * A binding with its time grains in their one stored form (#838). A grain
+ * goes with its dimension, so one that is no longer grouped by (unticked,
+ * or dropped by a view that shows fewer dimensions) is removed with it.
+ * With the model's `dimensions`: "day" on a date, which changes nothing, is
+ * no grain. With `reset`, the dimensions the chosen measures are read per
+ * value of: a grain they no longer allow is removed (Studio, when such a
+ * measure is added); without it, such a grain stays for validation to
+ * refuse.
  */
 export function measureBindingGrains<
   B extends Pick<MeasureWidgetBinding, "groupBy" | "groupByGrain">,
->(binding: B): B {
+>(
+  binding: B,
+  model?: {
+    dimensions: readonly { id: string; type: DataType }[];
+    reset?: ReadonlySet<string>;
+  },
+): B {
   const { groupByGrain, ...rest } = binding;
-  const kept = Object.entries(groupByGrain ?? {}).filter(([id]) =>
-    binding.groupBy.includes(id),
-  );
+  const kept = Object.entries(groupByGrain ?? {}).filter(([id, grain]) => {
+    if (!binding.groupBy.includes(id)) return false;
+    const dimension = model?.dimensions.find((entry) => entry.id === id);
+    if (!dimension) return true;
+    if (!timeGrainBuckets(dimension.type, grain)) return false;
+    return (
+      !model?.reset || allowedTimeGrains(dimension, model.reset).includes(grain)
+    );
+  });
   return (
     kept.length ? { ...rest, groupByGrain: Object.fromEntries(kept) } : rest
   ) as B;
+}
+
+/**
+ * The first grain of a binding its measures do not allow (#838), if any: a
+ * dimension that is no date or timestamp is left to the query's own check.
+ */
+export function unsupportedMeasureGrain(
+  binding: Pick<MeasureWidgetBinding, "groupByGrain">,
+  dimensions: readonly { id: string; type: DataType }[],
+  fixed: ReadonlySet<string>,
+): string | undefined {
+  return Object.entries(binding.groupByGrain ?? {}).find(([id, grain]) => {
+    const dimension = dimensions.find((entry) => entry.id === id);
+    return (
+      dimension !== undefined &&
+      (dimension.type === "date" || dimension.type === "timestamp") &&
+      !allowedTimeGrains(dimension, fixed).includes(grain)
+    );
+  })?.[0];
 }
 
 /**

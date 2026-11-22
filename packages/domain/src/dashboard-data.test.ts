@@ -7,7 +7,10 @@ import {
   formatDataDate,
   MEASURE_UNIT_FRACTION_DIGITS,
   roundDecimalText,
+  allowedTimeGrains,
   measureBindingGrains,
+  measureFixedGrainDimensions,
+  unsupportedMeasureGrain,
   measureResultDimensions,
   measureInteractionDimension,
   measureInteractionSelected,
@@ -1140,5 +1143,101 @@ describe("a measure widget's time grains (#838)", () => {
         "table",
       ),
     ).toThrow("dashboard_interaction_grain_unsupported");
+  });
+  describe("with the model's dimensions and measures (review 2 of #852)", () => {
+    const dimensions = [
+      { id: "taken", name: "Taken", type: "timestamp" as const },
+      { id: "day", name: "Day", type: "date" as const },
+      { id: "kind", name: "Kind", type: "string" as const },
+    ];
+    const measures = [
+      { id: "count" },
+      { id: "rolling", fixedGrainDimensions: ["day"] },
+      { id: "perTime", fixedGrainDimensions: ["taken"] },
+    ];
+    it("has one stored form: a date per day is the date itself", () => {
+      const perDay = {
+        ...binding,
+        groupBy: ["day", "taken"],
+        groupByGrain: { day: "day" as const, taken: "day" as const },
+      };
+      // A timestamp's day is a bucket; a date's is not.
+      expect(measureBindingGrains(perDay, { dimensions }).groupByGrain).toEqual(
+        { taken: "day" },
+      );
+      expect(
+        "groupByGrain" in
+          measureBindingGrains(
+            { ...perDay, groupByGrain: { day: "day" } },
+            { dimensions },
+          ),
+      ).toBe(false);
+      // So a click on such a table sets its filter as without the grain.
+      expect(
+        measureInteractionDimension(
+          filters,
+          measureBindingGrains(
+            {
+              ...binding,
+              groupBy: ["day"],
+              groupByGrain: { day: "day" },
+              interaction: { filterId: "day" },
+            },
+            { dimensions },
+          ),
+          "table",
+        ),
+      ).toBe("day");
+    });
+    it("allows only grains that leave the measures' dimensions as they are", () => {
+      const none = new Set<string>();
+      const fixed = measureFixedGrainDimensions(measures, ["count", "rolling"]);
+      expect([...fixed]).toEqual(["day"]);
+      expect(allowedTimeGrains(dimensions[1]!, none)).toEqual([
+        "day",
+        "week",
+        "month",
+      ]);
+      expect(allowedTimeGrains(dimensions[1]!, fixed)).toEqual(["day"]);
+      expect(allowedTimeGrains(dimensions[0]!, fixed)).toEqual([
+        "day",
+        "week",
+        "month",
+      ]);
+      expect(
+        allowedTimeGrains(
+          dimensions[0]!,
+          measureFixedGrainDimensions(measures, ["perTime"]),
+        ),
+      ).toEqual([]);
+      expect(allowedTimeGrains(dimensions[2]!, none)).toEqual([]);
+    });
+    it("names the grain the measures refuse, and resets it on request", () => {
+      const weekly = {
+        ...binding,
+        measureIds: ["count", "rolling"],
+        groupBy: ["day", "taken"],
+        groupByGrain: { day: "week" as const, taken: "month" as const },
+      };
+      const fixed = measureFixedGrainDimensions(measures, weekly.measureIds);
+      expect(unsupportedMeasureGrain(weekly, dimensions, fixed)).toBe("day");
+      expect(
+        unsupportedMeasureGrain(weekly, dimensions, new Set()),
+      ).toBeUndefined();
+      expect(
+        unsupportedMeasureGrain(
+          { groupByGrain: { day: "day" } },
+          dimensions,
+          fixed,
+        ),
+      ).toBeUndefined();
+      // Kept for validation to refuse, unless asked to reset.
+      expect(measureBindingGrains(weekly, { dimensions }).groupByGrain).toEqual(
+        weekly.groupByGrain,
+      );
+      expect(
+        measureBindingGrains(weekly, { dimensions, reset: fixed }).groupByGrain,
+      ).toEqual({ taken: "month" });
+    });
   });
 });

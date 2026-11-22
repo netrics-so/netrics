@@ -527,10 +527,12 @@ groups sort, page and read like any date; `limit`, `offset` and an order by
 a measure apply to the buckets. A timestamp's day is its day in the
 workspace time zone; a date is never shifted. Filters compare the
 dimension's own values. A grain on any other type, on a dimension that is
-not grouped by, or on the date a rolling or period-offset measure is read
-per is refused, and a week or month does not satisfy a measure's
-`requiredDimensions`. Measure widgets store the same field in their binding;
-Studio offers it next to a grouped time dimension.
+not grouped by, or on the date a rolling or period-offset measure runs on
+is refused, and a week or month does not satisfy a measure's
+`requiredDimensions`. `day` on a date changes nothing and is not stored.
+Measure widgets store the same field in their binding; Studio offers it next
+to a grouped time dimension, limited to what the widget's measures allow
+(each catalog measure lists its `fixedGrainDimensions`).
 
 ## Data authoring workspace
 

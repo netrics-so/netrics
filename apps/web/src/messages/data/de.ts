@@ -106,6 +106,8 @@ export const dataDe: Catalog<typeof dataEn> = {
         day: "Tag",
         week: "Woche",
         month: "Monat",
+        fixed:
+          "Die gewählten Kennzahlen werden für jeden Wert von {name} berechnet; größere Zeiträume sind deshalb nicht möglich.",
       },
       limit: "Maximale Zeilen",
       widgetFilter: "Zusätzlicher Widget-Filter",
@@ -667,6 +669,12 @@ export const dataDe: Catalog<typeof dataEn> = {
       },
     },
     errors: {
+      grainUnsupported:
+        "Eine Kennzahl dieses Widgets wird für jeden Wert eines Datums oder Zeitpunkts berechnet, den das Widget nach Woche, Monat oder Tag gruppiert. Gruppiere nach der Dimension selbst oder wähle eine andere Kennzahl.",
+      grainInvalid:
+        "Tag, Woche oder Monat lassen sich nur für eine Datums- oder Zeitdimension wählen, nach der das Widget gruppiert ist.",
+      interactionGrain:
+        "Ein Klick kann keinen Filter aus einer Gruppe mehrerer Tage setzen. Gruppiere nach der Dimension selbst oder schalte die Interaktion aus.",
       window:
         "Prüfe die gleitenden und vergleichenden Kennzahlen. Jede braucht eine Ausgangskennzahl, eine Datumsdimension mit dem Berichtsdatum des Anbieters und eine Länge im erlaubten Bereich.",
       windowGrouping:
