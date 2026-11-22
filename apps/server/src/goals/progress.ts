@@ -8,7 +8,7 @@ import {
   type Locale,
 } from "@netrics/domain";
 
-import { queryMetric } from "../metrics/query.js";
+import { queryMetric, type MetricCoverage } from "../metrics/query.js";
 
 /**
  * A goal's metric read now and where the goal stands (ADR 0019 sections 4
@@ -26,14 +26,20 @@ export interface GoalReading {
  * read leaves the caller's transaction usable) and computes its progress.
  * Null when the metric cannot be read, or when a converted goal cannot be
  * read in its currency (without exchange rates its target would mean
- * something else).
+ * something else). With `coverage` (the read days of the goal's metric,
+ * ADR 0025 section 9), a period the source read and found quiet stands at
+ * 0 rather than without a value (#799): the metric query's own rule.
  */
 export async function readGoal(
   tx: Transaction,
   workspaceId: string,
   goal: GoalRow,
   at: Date,
-  options: { exchangeRates: boolean; locale: Locale },
+  options: {
+    exchangeRates: boolean;
+    locale: Locale;
+    coverage?: MetricCoverage | undefined;
+  },
 ): Promise<GoalReading | null> {
   try {
     const result = await tx.transaction((inner) =>
@@ -51,7 +57,11 @@ export async function readGoal(
             : {}),
         },
         at,
-        options,
+        {
+          exchangeRates: options.exchangeRates,
+          locale: options.locale,
+          ...(options.coverage ? { coverage: options.coverage } : {}),
+        },
       ),
     );
     if (!result.ok) {

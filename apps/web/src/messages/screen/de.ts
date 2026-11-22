@@ -66,6 +66,7 @@ export const screenDe: Catalog<typeof screenEn> = {
       compareNoRatio: "–",
       noDataYet: "Noch keine Daten für diesen Zeitraum",
       noDataShort: "Noch keine Daten",
+      noActivity: "Keine Aktivität in diesem Zeitraum",
       noComparison: "Keine Daten zum Vergleich ({comparison})",
       noComparisonShort: "Kein Vergleich",
       notEnoughData: "Noch nicht genug Daten für ein Diagramm",

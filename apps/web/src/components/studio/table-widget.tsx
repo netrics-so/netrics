@@ -49,6 +49,12 @@ export interface TableWidgetViewProps {
   updatedAt?: string | null;
   /** How far the numbers reach (ADR 0025); absent: the updatedAt footer. */
   freshness?: WidgetFreshness | null;
+  /**
+   * Nothing to rank because the source was read over the whole period and
+   * reported no activity (#799): "No activity in this period" instead of
+   * "No data yet".
+   */
+  noActivity?: boolean;
   placement: StudioPlacement;
   showHeader: boolean;
   fontScale: number;
@@ -101,6 +107,9 @@ export function TableWidgetView(input: TableWidgetViewProps) {
         placement={props.placement}
         showHeader={props.showHeader}
         fontScale={props.fontScale}
+        {...(surface === "no_data" && props.noActivity
+          ? { emptyText: t("noActivity") }
+          : {})}
       />
     );
   }
@@ -185,7 +194,7 @@ export function TableWidgetView(input: TableWidgetViewProps) {
         </>
       ) : reading ? (
         <p className="sw-muted" style={{ fontSize: u(small) }}>
-          {t("noDataYet")}
+          {t(props.noActivity ? "noActivity" : "noDataYet")}
         </p>
       ) : (
         <p
@@ -265,6 +274,7 @@ export function useLiveTable(
     updatedAt:
       env.connections[widget.connectionId]?.state.lastSuccessAt ?? null,
     freshness: data?.freshness ?? null,
+    noActivity: data?.noActivity === true,
     loading,
   };
 }

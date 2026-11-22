@@ -251,6 +251,22 @@ public enum DataSurface: String, Sendable, Equatable {
             return (nil, KitStrings.text(.loadingHistory, language))
         }
     }
+
+    /**
+     * A breakdown's lines (bar, table; #799): under the skeleton "No
+     * activity in this period" when the source was read over the whole
+     * period and reported nothing (`noActivity`), else the surface's own.
+     */
+    public func breakdownTexts(noActivity: Bool?, language: ScreenLanguage) -> (headline: String?, hint: String) {
+        self == .noData && noActivity == true
+            ? (nil, KitStrings.text(.noActivity, language))
+            : texts(source: nil, language: language)
+    }
+
+    /** A breakdown without rows that keeps its widget: "No activity in this period", else "No data for this period yet". */
+    public static func emptyBreakdownText(noActivity: Bool?, language: ScreenLanguage) -> String {
+        KitStrings.text(noActivity == true ? .noActivity : .noDataForPeriod, language)
+    }
 }
 
 // MARK: - Latest review (ADR 0019 section 12)

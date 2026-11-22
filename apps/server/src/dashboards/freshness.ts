@@ -10,6 +10,7 @@ import {
   type ConnectionFreshnessRow,
   type Transaction,
   notDraftConnection,
+  findConnectionHistory,
 } from "@netrics/database";
 import {
   DEFAULT_DATA_POLICY,
@@ -318,6 +319,25 @@ export function readCoverage(
     return undefined;
   }
   return { from: history.historyFrom.toISOString().slice(0, 10), through };
+}
+
+/**
+ * The read days of a live query's or goal's metric (#378, #799), from the
+ * freshness it answers with and its connection's history: one path for
+ * metric queries, breakdowns and goals.
+ */
+export async function liveReadCoverage(
+  tx: Transaction,
+  workspaceId: string,
+  connectionId: string,
+  live: { freshness?: WidgetFreshness | undefined },
+): Promise<{ from: string; through: string } | undefined> {
+  return live.freshness
+    ? readCoverage(
+        live,
+        await findConnectionHistory(tx, workspaceId, connectionId),
+      )
+    : undefined;
 }
 
 /**

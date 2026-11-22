@@ -148,6 +148,7 @@ export function deviceBarReading(
     status: data.status,
     updatedAt: data.updatedAt,
     freshness: data.freshness ?? null,
+    noActivity: data.noActivity === true,
   };
 }
 
@@ -183,6 +184,7 @@ export function deviceTableReading(
     status: data.status,
     updatedAt: data.updatedAt,
     freshness: data.freshness ?? null,
+    noActivity: data.noActivity === true,
   };
 }
 

@@ -5,9 +5,17 @@ import type { DeviceWidget } from "@netrics/contracts";
 import { renderI18n } from "@/lib/i18n/test-render";
 import { rowRiseProgress } from "@/lib/enter-motion";
 import { tableWidgetLayout, type TableReading } from "@/lib/studio-table";
-import { ScrollTableCard } from "@/components/scroll/scroll-widgets";
+import {
+  ScrollBarCard,
+  ScrollTableCard,
+} from "@/components/scroll/scroll-widgets";
 
-import { DeviceWidgetView, deviceTableReading } from "./device-widget";
+import { BarWidgetView } from "./bar-widget";
+import {
+  DeviceWidgetView,
+  deviceBarReading,
+  deviceTableReading,
+} from "./device-widget";
 import { TableWidgetView } from "./table-widget";
 
 // The table widget (ADR 0019 section 6, #332).
@@ -206,6 +214,189 @@ describe("table widget", () => {
       />,
     );
     expect(later).not.toContain("sw-table");
+  });
+});
+
+// A breakdown the source read and found quiet (#799): the no-data surface
+// and the empty card say so; a window that is not covered stays as it was.
+describe("no activity in the period (#799)", () => {
+  const empty = { ...reading(0), others: null };
+  const bar = {
+    label: "Spend by country",
+    reading: { unit: "EUR_minor", groups: [], others: null },
+    notice: null,
+    placement: { x: 0, y: 0, w: 4, h: 4 },
+    showHeader: true,
+    fontScale: 1,
+  };
+
+  it("words a covered, empty table and bar chart", () => {
+    const table = renderI18n(
+      <TableWidgetView
+        {...props}
+        reading={empty}
+        status="no_data"
+        noActivity
+      />,
+    );
+    expect(table).toContain("sw-table sw--empty");
+    expect(table).toContain(">No activity in this period</p>");
+    expect(table).not.toContain("No data");
+    const chart = renderI18n(
+      <BarWidgetView {...bar} status="no_data" noActivity />,
+    );
+    expect(chart).toContain("sw-bar sw--empty");
+    expect(chart).toContain(">No activity in this period</p>");
+    expect(chart).not.toContain("No data");
+    expect(
+      renderI18n(
+        <TableWidgetView
+          {...props}
+          reading={empty}
+          status="no_data"
+          noActivity
+        />,
+        "de",
+      ),
+    ).toContain(">Keine Aktivität in diesem Zeitraum</p>");
+    expect(
+      renderI18n(<BarWidgetView {...bar} status="no_data" noActivity />, "de"),
+    ).toContain(">Keine Aktivität in diesem Zeitraum</p>");
+  });
+
+  it("keeps No data yet for a window that is not covered", () => {
+    const table = renderI18n(
+      <TableWidgetView {...props} reading={empty} status="no_data" />,
+    );
+    expect(table).toContain(">No data yet</p>");
+    expect(table).not.toContain("No activity");
+    const chart = renderI18n(<BarWidgetView {...bar} status="no_data" />);
+    expect(chart).toContain(">No data yet</p>");
+    expect(chart).not.toContain("No activity");
+    expect(
+      renderI18n(<BarWidgetView {...bar} status="no_data" />, "de"),
+    ).toContain(">Noch keine Daten</p>");
+  });
+
+  it("keeps the other surfaces whatever the flag says", () => {
+    const loading = renderI18n(
+      <BarWidgetView {...bar} status="backfilling" noActivity />,
+    );
+    expect(loading).toContain("Loading history");
+    expect(loading).not.toContain("No activity");
+    const failed = renderI18n(
+      <TableWidgetView
+        {...props}
+        reading={empty}
+        status="auth_failed"
+        noActivity
+      />,
+    );
+    expect(failed).toContain("sw--auth");
+    expect(failed).not.toContain("No activity");
+  });
+
+  it("words the scroll view cards", () => {
+    const size = { width: 360, rootPx: 16 };
+    const table = (noActivity: boolean) =>
+      renderI18n(
+        <ScrollTableCard
+          {...props}
+          reading={empty}
+          status="no_data"
+          noActivity={noActivity}
+          {...size}
+        />,
+      );
+    expect(table(true)).toContain("No activity in this period");
+    expect(table(true)).not.toContain("No data");
+    expect(table(false)).toContain("No data for this period yet");
+    const chart = (noActivity: boolean) =>
+      renderI18n(
+        <ScrollBarCard
+          {...bar}
+          status="no_data"
+          noActivity={noActivity}
+          {...size}
+        />,
+      );
+    expect(chart(true)).toContain("No activity in this period");
+    expect(chart(false)).toContain("No data for this period yet");
+    expect(chart(false)).not.toContain("No activity");
+  });
+
+  it("reads the flag from a payload, and its absence as No data yet", () => {
+    const data = {
+      period: "last_30_days",
+      aggregation: "sum",
+      unit: "count",
+      conversion: null,
+      kind: "delta",
+      granularity: "day",
+      better: "higher",
+      status: "no_data",
+      updatedAt: "2026-10-04T09:00:00.000Z",
+      groupBy: "country",
+      others: null,
+    } as const;
+    const place = {
+      id: "00000000-0000-4000-8000-000000000001",
+      x: 0,
+      y: 0,
+      w: 4,
+      h: 4,
+    };
+    const table = (noActivity: boolean) =>
+      ({
+        type: "table",
+        ...place,
+        label: "Installs by country",
+        options: {
+          groupBy: "country",
+          limit: 5,
+          showChange: true,
+          showOthers: false,
+        },
+        data: {
+          ...data,
+          columns: { label: "Country", value: "Installs" },
+          rows: [],
+          ...(noActivity ? { noActivity: true } : {}),
+        },
+      }) as const satisfies DeviceWidget;
+    const chart = (noActivity: boolean) =>
+      ({
+        type: "bar",
+        ...place,
+        label: "Installs by country",
+        options: { groupBy: "country", limit: 5 },
+        data: {
+          ...data,
+          bars: [],
+          ...(noActivity ? { noActivity: true } : {}),
+        },
+      }) as const satisfies DeviceWidget;
+    expect(deviceTableReading(table(true), "en").noActivity).toBe(true);
+    expect(deviceTableReading(table(false), "en").noActivity).toBe(false);
+    expect(deviceBarReading(chart(true), "en").noActivity).toBe(true);
+    expect(deviceBarReading(chart(false), "en").noActivity).toBe(false);
+    const env = {
+      timeZone: "UTC",
+      fontScale: 1,
+      showHeader: true,
+      images: new Map(),
+    };
+    for (const widget of [table, chart]) {
+      const quiet = renderI18n(
+        <DeviceWidgetView widget={widget(true)} env={env} />,
+      );
+      expect(quiet).toContain(">No activity in this period</p>");
+      const unread = renderI18n(
+        <DeviceWidgetView widget={widget(false)} env={env} />,
+      );
+      expect(unread).toContain(">No data yet</p>");
+      expect(unread).not.toContain("No activity");
+    }
   });
 });
 

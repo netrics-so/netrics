@@ -383,7 +383,7 @@ export function ScrollBarCard(input: BarReadingProps & ScrollCardSize) {
         </ol>
       ) : reading ? (
         <p className="sw-muted" style={{ fontSize: u(SCROLL_TYPE.small) }}>
-          {t("noDataYet")}
+          {t(props.noActivity ? "noActivity" : "noDataYet")}
         </p>
       ) : (
         <p
@@ -614,7 +614,7 @@ export function ScrollTableCard(input: TableReadingProps & ScrollCardSize) {
         </div>
       ) : reading ? (
         <p className="sw-muted" style={{ fontSize: u(SCROLL_TYPE.small) }}>
-          {t("noDataYet")}
+          {t(props.noActivity ? "noActivity" : "noDataYet")}
         </p>
       ) : (
         <p

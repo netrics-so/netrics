@@ -1695,6 +1695,13 @@ export const metricBreakdownResponseSchema = z.object({
       groups: z.number().int().nonnegative(),
     })
     .nullable(),
+  /**
+   * Only when nothing is ranked because nothing happened (#799): the
+   * source was read over the whole window and reported no activity (ADR
+   * 0025 section 9, the rule of a metric query's 0). Absent otherwise,
+   * also for an empty window that was not read: "no data yet".
+   */
+  noActivity: z.literal(true).optional(),
   ...liveFreshnessShape,
 });
 export type MetricBreakdownResponse = z.infer<
@@ -3486,6 +3493,13 @@ export const deviceBarDataSchema = z.object({
       groups: z.number().int().nonnegative(),
     })
     .nullable(),
+  /**
+   * Only with status `no_data`, when the source was read over the whole
+   * window and reported no activity (#799, ADR 0025 section 9): screens
+   * say "No activity in this period" instead of "No data yet". Absent
+   * otherwise; screens that do not know it show "No data yet" as before.
+   */
+  noActivity: z.literal(true).optional(),
 });
 export type DeviceBarData = z.infer<typeof deviceBarDataSchema>;
 
@@ -3520,6 +3534,8 @@ export const deviceTableDataSchema = z.object({
       groups: z.number().int().nonnegative(),
     })
     .nullable(),
+  /** As a bar widget's (#799). */
+  noActivity: z.literal(true).optional(),
 });
 export type DeviceTableData = z.infer<typeof deviceTableDataSchema>;
 

@@ -41,6 +41,30 @@ private func slides(_ widgets: String) -> String {
 }
 
 @Suite struct TableWidgetDecodingTests {
+    // "No activity" (#799): an optional flag of bar and table data; absent, null or not a boolean is nil.
+    @Test func readsNoActivityOnlyWhenTrue() throws {
+        func empty(_ type: String, _ id: String, _ extra: String) -> String {
+            let list = type == "bar" ? "bars" : "rows"
+            return #"{"id": "\#(id)", "type": "\#(type)", "x": 0, "y": 0, "w": 4, "h": 3, "data": {"\#(list)": [], "others": null, "status": "no_data", "updatedAt": null\#(extra)}}"#
+        }
+        let widgets = [
+            empty("bar", "b1", #", "noActivity": true"#), empty("table", "t1", #", "noActivity": true"#),
+            empty("bar", "b2", ""), empty("table", "t2", #", "noActivity": null"#),
+            empty("bar", "b3", #", "noActivity": false"#), empty("table", "t3", #", "noActivity": "yes""#),
+        ]
+        let payload = v3Payload(primaryFormat: "16x9", slides: slides(widgets.joined(separator: ",")))
+        let flags: [Bool?] = try #require(payload.slides.first?.widgets).map { widget in
+            switch widget.content {
+            case .bar(_, let data): return data.noActivity
+            case .table(_, let data): return data.noActivity
+            default: return false
+            }
+        }
+        #expect(flags == [true, true, nil, nil, nil, nil])
+        // The status is unchanged: a build without the flag shows "No data yet".
+        #expect(payload.slides.first?.widgets.count == 6)
+    }
+
     @Test func decodesATable() throws {
         let payload = v3Payload(primaryFormat: "16x9", slides: slides(table("t")))
         let widget = try #require(payload.slides.first?.widgets.first)

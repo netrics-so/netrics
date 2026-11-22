@@ -64,6 +64,7 @@ export function registerGoalRoutes(
     db: deps.db,
     exchangeRates: deps.exchangeRates ?? false,
     ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.registry ? { registry: deps.registry } : {}),
   });
 
   async function authorize(

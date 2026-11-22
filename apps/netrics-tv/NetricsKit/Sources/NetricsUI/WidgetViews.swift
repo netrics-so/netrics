@@ -670,12 +670,13 @@ struct BarWidgetView: View {
         if let surface = DataSurface(data.status) {
             DataStateView(
                 surface: surface, type: .bar, label: layout.label, small: layout.small, updatedAt: data.updatedAt, freshness: data.freshness,
-                placement: placement, env: env, now: now)
+                placement: placement, env: env, now: now,
+                texts: surface.breakdownTexts(noActivity: data.noActivity, language: env.language))
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 WidgetLabelView(layout: layout.label, env: env)
                 if bars.rows.isEmpty {
-                    Text(data.unit == nil ? "—" : KitStrings.text(.noDataForPeriod, env.language))
+                    Text(data.unit == nil ? "—" : DataSurface.emptyBreakdownText(noActivity: data.noActivity, language: env.language))
                         .font(env.font(layout.small))
                         .foregroundStyle(env.colors.muted)
                     Spacer(minLength: 0)
@@ -825,7 +826,8 @@ struct TableWidgetView: View {
         if let surface = DataSurface(data.status) {
             DataStateView(
                 surface: surface, type: .table, label: labelLayout, small: small, updatedAt: data.updatedAt, freshness: data.freshness,
-                placement: placement, env: env, now: now)
+                placement: placement, env: env, now: now,
+                texts: surface.breakdownTexts(noActivity: data.noActivity, language: language))
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 WidgetLabelView(layout: labelLayout, env: env)
@@ -841,7 +843,7 @@ struct TableWidgetView: View {
                     label: data.columns.label, value: data.columns.value, showChange: options.showChange,
                     layout: layout, env: env)
                 if rows.isEmpty {
-                    Text(data.unit == nil ? "—" : KitStrings.text(.noDataForPeriod, language))
+                    Text(data.unit == nil ? "—" : DataSurface.emptyBreakdownText(noActivity: data.noActivity, language: language))
                         .font(env.font(small))
                         .foregroundStyle(env.colors.muted)
                         .padding(.top, env.pt(StudioLayout.TableSpacing.rowGap))
