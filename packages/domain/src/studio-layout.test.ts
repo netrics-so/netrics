@@ -998,6 +998,98 @@ describe("measureTableColumnWidths (#780)", () => {
     ).toBe(1);
     expect(measureTableLayout(input).headLines).toBe(2);
   });
+
+  it("counts a widened column's head word on one line", () => {
+    // The column is as wide as the word needs; the rounding of the sums
+    // (the word, the padding and a screen's pixel) must not count the word
+    // as a hair too wide and break it.
+    let widened = 0;
+    for (const font of ["web", "tv"] as const)
+      for (const fontScale of [1, 1.15, 1.3])
+        for (const head of ["Nutzerinstallationen", "Bewertungsland"])
+          for (let scale = 0.3; scale < 3; scale += 0.07) {
+            const input = {
+              label: "Downloads",
+              width: 760,
+              height: 400,
+              fontScale,
+              font,
+              // Units per pixel of a screen `scale` pixels per unit.
+              pixel: 1 / scale,
+              columns: ["App", "Store", head],
+              wholeHeadWords: true,
+            };
+            const widths = measureTableColumnWidths(input);
+            if (widths[2]! <= widths[0]!) continue;
+            widened++;
+            expect(
+              measureTableLayout(input).headLines,
+              `${font} ${fontScale} ${head} ${scale}`,
+            ).toBe(1);
+          }
+    expect(widened).toBeGreaterThan(100);
+  });
+});
+
+describe("measure text at an iPad's or iPhone's sizes (#780)", () => {
+  const text = "Habit Tracker";
+  it("counts netrics TV's text as on a TV from 24 pt, and without points", () => {
+    for (const weight of ["regular", "semibold"] as const) {
+      const tv = measureTextWidth(text, 28, weight, "tv");
+      for (const points of [undefined, 24 / 28, 1, 2, 0, -1, Number.NaN])
+        expect(measureTextWidth(text, 28, weight, "tv", points)).toBe(tv);
+    }
+  });
+
+  it("counts it wider below 24 pt, most at 6 pt and below", () => {
+    const at = (points: number) =>
+      measureTextWidth(text, 28, "regular", "tv", points / 28);
+    const tv = measureTextWidth(text, 28, "regular", "tv");
+    // #780 measured 7 % over the TV count at 12 pt; with the margins, 10 %.
+    expect(at(12) / tv).toBeGreaterThan(1.06);
+    expect(at(12) / tv).toBeLessThan(1.11);
+    expect(at(17)).toBeGreaterThan(tv);
+    expect(at(17)).toBeLessThan(at(12));
+    expect(at(8)).toBeGreaterThan(at(12));
+    expect(at(6)).toBeGreaterThan(at(8));
+    expect(at(3)).toBe(at(6));
+    // No jump where the small sizes begin.
+    expect(at(23.99) / tv).toBeGreaterThan(0.99);
+    expect(at(23.99) / tv).toBeLessThan(1.02);
+  });
+
+  it("leaves web text as wide in em at every size", () => {
+    const web = measureTextWidth(text, 28, "regular", "web");
+    expect(measureTextWidth(text, 28, "regular", "web", 0.4)).toBe(web);
+    // The wider of the two counts the system font at its size.
+    expect(measureTextWidth(text, 28, "regular", "any", 0.4)).toBe(
+      Math.max(web, measureTextWidth(text, 28, "regular", "tv", 0.4)),
+    );
+  });
+
+  it("fits fewer rows where a cell wraps at the smaller size", () => {
+    const input = {
+      label: "Downloads",
+      width: 404,
+      height: 892.4,
+      columns: ["App", "Store"],
+      rows: Array.from({ length: 12 }, () => ["Habit Tracker", "App Store"]),
+      total: 12,
+      footer: [null],
+      font: "tv" as const,
+      rowsLine: (shown: number, total: number) => `${shown} of ${total}`,
+    };
+    // "Habit Tracker" fits half of 404 units on a TV, not at 12 pt.
+    const room = 404 / 2 - MEASURE_TABLE_METRICS.cellPadding - 1;
+    expect(measureTextWidth("Habit Tracker", 28, "regular", "tv")).toBeLessThan(
+      room,
+    );
+    expect(
+      measureTextWidth("Habit Tracker", 28, "regular", "tv", 12 / 28),
+    ).toBeGreaterThan(room);
+    expect(measureTableRowsShown(input).shown).toBe(12);
+    expect(measureTableRowsShown({ ...input, points: 12 / 28 }).shown).toBe(8);
+  });
 });
 
 describe("measureTableRowsShown (#768)", () => {

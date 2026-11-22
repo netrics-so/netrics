@@ -29,9 +29,10 @@ import Testing
         let data = try JSONDecoder().decode(MeasureWidgetData.self, from: Data(json.utf8))
         let rowsOf = data.result!.rows
         func fit(_ box: (width: Double, height: Double)?, rows: [MeasureResultRow]) -> (shown: Int, rowsLine: String?) {
-            data.tableFit(
+            let fit = data.tableFit(
                 label: "Downloads", measureIds: ["downloads"], groupBy: ["app"], rows: rows, box: box,
                 fontScale: 1, now: Date(timeIntervalSince1970: 0), language: .en)
+            return (fit.shown, fit.rowsLine)
         }
         let small = fit((560, 414.2), rows: rowsOf)
         #expect(small.shown > 0 && small.shown < 20)
@@ -42,6 +43,37 @@ import Testing
         // Scroll cards (no box): every row, the line only for groups not received.
         #expect(fit(nil, rows: rowsOf) == (20, nil))
         #expect(fit((560, 892.4), rows: Array(rowsOf.prefix(2))).rowsLine == "2 of 20 groups")
+    }
+    /// A fitted table's columns (#780, as the web): even shares, unless a
+    /// head's word is wider than one ("Downloads" at font scale 1.3 in a
+    /// third of a 16:9 screen); then that column is as wide as the word
+    /// needs and the others share the rest, so the head is not broken
+    /// inside the word. On an iPad or iPhone the system font is wider, and
+    /// so is the column.
+    @Test func widensAColumnForItsHeadsWord() throws {
+        let rows = (1...3).map { #"{"dimensions":{"app":"App \#($0)","store":"App Store"},"measures":{"downloads":{"value":\#(100 - $0),"type":"integer","status":"ok"}}}"# }
+        let json = #"{"metadata":{"modelId":"m","modelName":"Downloads","measures":[{"id":"downloads","name":"Downloads"}],"dimensions":[{"id":"app","name":"App"},{"id":"store","name":"Store"}]},"result":{"rows":["# + rows.joined(separator: ",") + #"],"totalRows":3,"warnings":[],"provenance":[],"stale":false},"exclusions":[]}"#
+        let data = try JSONDecoder().decode(MeasureWidgetData.self, from: Data(json.utf8))
+        func widths(_ box: (width: Double, height: Double)?, fontScale: Double, points: Double? = nil) -> [Double]? {
+            data.tableFit(
+                label: "Downloads", measureIds: ["downloads"], groupBy: ["app", "store"], rows: data.result!.rows,
+                box: box, fontScale: fontScale, pixel: 1, points: points, now: Date(timeIntervalSince1970: 0),
+                language: .en
+            ).columnWidths
+        }
+        let third = 560.0 / 3
+        #expect(widths((560, 414.2), fontScale: 1) == [third, third, third])
+        let widened = try #require(widths((560, 414.2), fontScale: 1.3))
+        let word = StudioLayout.measureTextWidth("Downloads", fontSize: 28 * 1.3, weight: .semibold, font: .tv)
+        #expect(word + 21 > third)
+        #expect(abs(widened[2] - (word + 21)) < 1e-9)
+        #expect(abs(widened[0] - (560 - widened[2]) / 2) < 1e-9 && widened[0] == widened[1])
+        #expect(abs(widened.reduce(0, +) - 560) < 1e-9)
+        // At an iPhone's size the word is wider, and its column with it.
+        let touch = try #require(widths((560, 414.2), fontScale: 1.3, points: 0.45))
+        #expect(touch[2] > widened[2] + 5)
+        // Scroll cards (no box) keep their own columns.
+        #expect(widths(nil, fontScale: 1.3) == nil)
     }
     @Test func decodesAndCachesTypedPublishedResultsAndExpiresThemOffline() throws {
         let json =

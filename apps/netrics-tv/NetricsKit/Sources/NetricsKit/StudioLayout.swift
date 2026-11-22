@@ -739,7 +739,9 @@ public enum StudioLayout {
     /// regular and semibold, per renderer (MEASURE_GLYPH_CHARS and
     /// MEASURE_GLYPH_EMS in the TypeScript): IBM Plex Sans on the web, the
     /// system font here (tabular digits, at the drawn sizes, plus 0.5 % for
-    /// its tracking at small sizes), rounded up.
+    /// the few pairs kerning widens), rounded up. `TVSmall` is the system
+    /// font at 17 pt, the smallest of its optical sizes, with the same
+    /// 0.5 % (#780).
     public static let measureGlyphChars: String = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ·★€£¥–—…’‘“”•"
     public static let measureGlyphEmsWebRegular: [Double] = [
         0.236, 0.284, 0.419, 0.713, 0.598, 0.927, 0.694, 0.242, 0.335, 0.335,
@@ -817,6 +819,58 @@ public enum StudioLayout {
         0.575, 0.575, 0.575, 0.575, 0.536, 0.594, 0.536, 0.254, 1.053, 0.649,
         0.649, 0.649, 0.575, 0.869, 0.701, 0.254, 0.254, 0.43, 0.43, 0.453,
     ]
+    public static let measureGlyphEmsTVSmallRegular: [Double] = [
+        0.258, 0.288, 0.455, 0.608, 0.608, 0.905, 0.69, 0.273, 0.359, 0.359,
+        0.449, 0.608, 0.273, 0.449, 0.273, 0.281, 0.608, 0.608, 0.608, 0.608,
+        0.608, 0.608, 0.608, 0.608, 0.608, 0.608, 0.273, 0.273, 0.608, 0.608,
+        0.608, 0.49, 0.898, 0.652, 0.635, 0.694, 0.705, 0.574, 0.55, 0.725,
+        0.721, 0.244, 0.516, 0.637, 0.546, 0.853, 0.721, 0.75, 0.613, 0.75,
+        0.632, 0.615, 0.612, 0.716, 0.652, 0.948, 0.657, 0.634, 0.64, 0.359,
+        0.281, 0.359, 0.608, 0.561, 0.477, 0.529, 0.592, 0.537, 0.592, 0.549,
+        0.339, 0.587, 0.566, 0.223, 0.223, 0.521, 0.229, 0.849, 0.561, 0.569,
+        0.588, 0.587, 0.358, 0.501, 0.34, 0.561, 0.52, 0.753, 0.502, 0.521,
+        0.517, 0.359, 0.235, 0.359, 0.608, 0.652, 0.652, 0.652, 0.652, 0.652,
+        0.652, 0.94, 0.694, 0.574, 0.574, 0.574, 0.574, 0.244, 0.244, 0.244,
+        0.244, 0.735, 0.721, 0.75, 0.75, 0.75, 0.75, 0.75, 0.747, 0.716,
+        0.716, 0.716, 0.716, 0.634, 0.603, 0.6, 0.529, 0.529, 0.529, 0.529,
+        0.529, 0.529, 0.882, 0.537, 0.549, 0.549, 0.549, 0.549, 0.223, 0.223,
+        0.223, 0.223, 0.56, 0.561, 0.569, 0.569, 0.569, 0.569, 0.569, 0.569,
+        0.561, 0.561, 0.561, 0.561, 0.521, 0.588, 0.521, 0.273, 0.996, 0.608,
+        0.608, 0.608, 0.561, 0.853, 0.784, 0.273, 0.273, 0.436, 0.436, 0.449,
+    ]
+    public static let measureGlyphEmsTVSmallSemibold: [Double] = [
+        0.243, 0.316, 0.513, 0.634, 0.634, 0.975, 0.711, 0.306, 0.389, 0.389,
+        0.457, 0.634, 0.306, 0.457, 0.306, 0.3, 0.634, 0.634, 0.634, 0.634,
+        0.634, 0.634, 0.634, 0.634, 0.634, 0.634, 0.306, 0.306, 0.634, 0.634,
+        0.634, 0.519, 0.903, 0.689, 0.658, 0.711, 0.718, 0.59, 0.566, 0.734,
+        0.747, 0.276, 0.556, 0.669, 0.563, 0.874, 0.737, 0.76, 0.638, 0.76,
+        0.658, 0.639, 0.629, 0.731, 0.682, 0.974, 0.689, 0.667, 0.649, 0.389,
+        0.3, 0.389, 0.634, 0.589, 0.477, 0.554, 0.616, 0.555, 0.616, 0.568,
+        0.368, 0.61, 0.594, 0.249, 0.248, 0.558, 0.256, 0.889, 0.589, 0.587,
+        0.612, 0.612, 0.392, 0.528, 0.371, 0.589, 0.546, 0.8, 0.538, 0.555,
+        0.534, 0.389, 0.261, 0.389, 0.634, 0.689, 0.689, 0.689, 0.689, 0.689,
+        0.689, 0.969, 0.711, 0.59, 0.59, 0.59, 0.59, 0.276, 0.276, 0.276,
+        0.276, 0.747, 0.737, 0.76, 0.76, 0.76, 0.76, 0.76, 0.756, 0.731,
+        0.731, 0.731, 0.731, 0.667, 0.634, 0.638, 0.554, 0.554, 0.554, 0.554,
+        0.554, 0.554, 0.896, 0.555, 0.568, 0.568, 0.568, 0.568, 0.249, 0.249,
+        0.249, 0.249, 0.585, 0.589, 0.587, 0.587, 0.587, 0.587, 0.587, 0.587,
+        0.589, 0.589, 0.589, 0.589, 0.555, 0.612, 0.555, 0.306, 1.014, 0.653,
+        0.634, 0.634, 0.589, 0.874, 0.879, 0.306, 0.306, 0.496, 0.496, 0.457,
+    ]
+
+    /// The system font below 24 pt (MEASURE_TV_SMALL_SIZES in the
+    /// TypeScript, #780), where iPad and iPhone draw (a unit is less than a
+    /// point there): points, blend and tracking, read linearly between two
+    /// rows; under the first row, the first row. A glyph is then
+    /// `small + blend × (tv − small) + tracking` em wide: the font's optical
+    /// size runs from its 17 pt design to its 28 pt one, and under 17 pt
+    /// every glyph is tracked wider by the same amount. From 24 pt, the TV
+    /// table alone.
+    public static let measureTVSmallSizes: [[Double]] = [
+        [6, 0, 0.0665], [7, 0, 0.0595], [8, 0, 0.0515], [9, 0, 0.0445], [10, 0, 0.038], [11, 0, 0.032],
+        [12, 0, 0.026], [13, 0, 0.0205], [14, 0, 0.0155], [15, 0, 0.0105], [16, 0, 0.0065], [17, 0, 0.0005],
+        [19, 0.0909, -0.001], [20, 0.2363, -0.005], [24, 0.8182, -0.003],
+    ]
 
     /// Whose text a measure table counts (MeasureFont in the TypeScript).
     public enum MeasureFont: String, Sendable { case web, tv, any }
@@ -828,20 +882,48 @@ public enum StudioLayout {
     private static let webSemibold = glyphs(measureGlyphEmsWebSemibold)
     private static let tvRegular = glyphs(measureGlyphEmsTVRegular)
     private static let tvSemibold = glyphs(measureGlyphEmsTVSemibold)
+    private static let tvSmallRegular = glyphs(measureGlyphEmsTVSmallRegular)
+    private static let tvSmallSemibold = glyphs(measureGlyphEmsTVSmallSemibold)
 
-    /// A measure table's text width in units (measureTextWidth in the TypeScript).
+    /// Points per unit a fit counts with (default 1, see `points`).
+    private static func measurePoints(_ points: Double?) -> Double {
+        points.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 1
+    }
+
+    /// The system font's blend and tracking at a size in points
+    /// (measureTVSmallSizes); nil from 24 pt, where the TV table alone counts.
+    private static func measureTVSmallSize(_ points: Double) -> (blend: Double, tracking: Double)? {
+        let rows = measureTVSmallSizes
+        guard points < rows[rows.count - 1][0] else { return nil }
+        if points <= rows[0][0] { return (rows[0][1], rows[0][2]) }
+        let next = rows.firstIndex { points <= $0[0] }!
+        let from = rows[next - 1], to = rows[next]
+        let share = (points - from[0]) / (to[0] - from[0])
+        return (from[1] + (to[1] - from[1]) * share, from[2] + (to[2] - from[2]) * share)
+    }
+
+    /// A measure table's text width in units (measureTextWidth in the
+    /// TypeScript). `points`: the points a unit is drawn at (default 1, a
+    /// TV); iPad and iPhone pass their smaller unit, and the system font is
+    /// counted as wide as it draws at that size (#780).
     public static func measureTextWidth(
-        _ text: String, fontSize: Double, weight: StudioFontWeight = .regular, font: MeasureFont = .any
+        _ text: String, fontSize: Double, weight: StudioFontWeight = .regular, font: MeasureFont = .any,
+        points: Double? = nil
     ) -> Double {
-        let tables: ([Unicode.Scalar: Double], [Unicode.Scalar: Double])? =
+        let tables: ([Unicode.Scalar: Double], [Unicode.Scalar: Double], [Unicode.Scalar: Double])? =
             switch weight {
-            case .regular: (webRegular, tvRegular)
-            case .semibold: (webSemibold, tvSemibold)
+            case .regular: (webRegular, tvRegular, tvSmallRegular)
+            case .semibold: (webSemibold, tvSemibold, tvSmallSemibold)
             default: nil
             }
+        let small = font == .web || tables == nil ? nil : measureTVSmallSize(fontSize * measurePoints(points))
         return text.unicodeScalars.reduce(0) { width, scalar in
-            guard let tables, let web = tables.0[scalar], let tv = tables.1[scalar] else {
+            guard let tables, let web = tables.0[scalar], let large = tables.1[scalar] else {
                 return width + estimateTextWidth(String(scalar), fontSize: fontSize, weight: weight)
+            }
+            var tv = large
+            if let small, let little = tables.2[scalar] {
+                tv = little + small.blend * (large - little) + small.tracking
             }
             let em =
                 switch font {
@@ -862,24 +944,92 @@ public enum StudioLayout {
         public var rowCapacity: Int
     }
 
+    /**
+     * A measure table's column widths in units, padding included
+     * (measureTableColumnWidths in the TypeScript, #780): an even share
+     * each, unless a column head has a word wider than that. Then, where
+     * every head's widest word fits the box side by side, such a column is
+     * as wide as its widest word needs and the others share the rest
+     * evenly, so no head breaks inside a word. Where even that does not
+     * fit, the shares stay even and a word breaks: nothing is ever cut.
+     */
+    public static func measureTableColumnWidths(
+        width inputWidth: Double, columns: [String], fontScale: Double? = nil, pixel: Double? = nil,
+        font: MeasureFont = .any, points: Double? = nil
+    ) -> [Double] {
+        let count = columns.count
+        if count == 0 { return [] }
+        let m = MeasureTableMetrics.self
+        let width = Swift.max(0, inputWidth)
+        let cell = m.cell * effectiveFontScale(fontScale)
+        let side = m.cellPadding + measurePixel(pixel)
+        let even = width / Double(count)
+        // What each column needs for its head's widest word, padding included.
+        let needs = columns.map { head in
+            head.unicodeScalars.split(separator: " ", omittingEmptySubsequences: false)
+                .map {
+                    measureTextWidth(
+                        String(String.UnicodeScalarView($0)), fontSize: cell, weight: .semibold, font: font,
+                        points: points)
+                }
+                .reduce(0) { Swift.max($0, $1) } + side
+        }
+        if needs.allSatisfy({ $0 <= even + 1e-9 }) || needs.reduce(0, +) > width + 1e-9 {
+            return needs.map { _ in even }
+        }
+        // Columns that need more than a share take what they need; the
+        // others share the rest, which may put another column over its share.
+        var wide: [Int] = []
+        var share = even
+        while true {
+            let taken = wide.reduce(0) { $0 + needs[$1] }
+            share = (width - taken) / Double(count - wide.count)
+            guard let over = needs.indices.first(where: { !wide.contains($0) && needs[$0] > share + 1e-9 }) else {
+                break
+            }
+            wide.append(over)
+        }
+        return needs.indices.map { wide.contains($0) ? needs[$0] : share }
+    }
+
+    /// Units per screen pixel a line keeps room for (default 1).
+    private static func measurePixel(_ pixel: Double?) -> Double {
+        pixel.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 1
+    }
+
     private struct MeasureTableParts {
         var titleLines: Int
         var headLines: Int
         var head: Double
-        var columnWidth: Double
+        /// Every column's even share of the width.
+        var even: Double
+        /// The widths that keep the heads' words whole (`wholeHeadWords`).
+        var columnWidths: [Double]?
         var cell: Double
         var footerSize: Double
         var width: Double
         var pixel: Double
         var font: MeasureFont
+        var points: Double?
 
         func wrap(_ text: String, _ room: Double, _ size: Double, _ weight: StudioFontWeight = .regular) -> Int {
             StudioLayout.wrappedLineCount(
                 text, maxWidth: Swift.max(0, room), fontSize: size, weight: weight,
-                widthOf: { [font] in StudioLayout.measureTextWidth($0, fontSize: $1, weight: $2, font: font) })
+                widthOf: { [font, points] in
+                    StudioLayout.measureTextWidth($0, fontSize: $1, weight: $2, font: font, points: points)
+                })
         }
+        /// A pixel less than the column: glyphs at small sizes may round wider.
+        func room(_ column: Int) -> Double {
+            let share = columnWidths.flatMap { $0.indices.contains(column) ? $0[column] : nil } ?? even
+            return share - MeasureTableMetrics.cellPadding - pixel
+        }
+        /// A widened column's room is its head's widest word but for the
+        /// rounding of the sums, which must not count that word as too wide.
         func lines(_ texts: [String], weight: StudioFontWeight) -> Int {
-            Swift.max(1, texts.map { wrap($0, columnWidth, cell, weight) }.max() ?? 1)
+            let rounding = columnWidths == nil ? 0 : 1e-9
+            return Swift.max(
+                1, texts.enumerated().map { wrap($0.element, room($0.offset) + rounding, cell, weight) }.max() ?? 1)
         }
         func row(_ count: Int) -> Double {
             Double(count) * (cell * MeasureTableMetrics.lineHeight + pixel) + MeasureTableMetrics.cellPadding
@@ -895,7 +1045,7 @@ public enum StudioLayout {
 
     private static func measureTableParts(
         label: String, width inputWidth: Double, fontScale: Double?, columns: [String]?, pixel: Double?,
-        font: MeasureFont
+        font: MeasureFont, points: Double? = nil, wholeHeadWords: Bool = false
     ) -> MeasureTableParts {
         let scale = effectiveFontScale(fontScale)
         let m = MeasureTableMetrics.self
@@ -907,15 +1057,22 @@ public enum StudioLayout {
                 1,
                 wrappedLineCount(
                     label, maxWidth: width, fontSize: title, weight: .semibold,
-                    widthOf: { measureTextWidth($0, fontSize: $1, weight: $2, font: font) })))
+                    widthOf: { measureTextWidth($0, fontSize: $1, weight: $2, font: font, points: points) })))
         let cols = (columns?.isEmpty ?? true) ? nil : columns
-        let pixelUnits = pixel.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 1
-        // A pixel less than the column: glyphs at small sizes may round wider.
-        let columnWidth = width / Double(cols?.count ?? 1) - m.cellPadding - pixelUnits
+        let pixelUnits = measurePixel(pixel)
+        // Every column an even share, or the widths that keep the heads'
+        // words whole (#780).
+        let columnWidths = cols.flatMap {
+            wholeHeadWords
+                ? measureTableColumnWidths(
+                    width: width, columns: $0, fontScale: fontScale, pixel: pixel, font: font, points: points)
+                : nil
+        }
         var parts = MeasureTableParts(
-            titleLines: titleLines, headLines: 1, head: 0, columnWidth: columnWidth, cell: cell,
+            titleLines: titleLines, headLines: 1, head: 0, even: width / Double(cols?.count ?? 1),
+            columnWidths: columnWidths, cell: cell,
             footerSize: m.footer * scale, width: width,
-            pixel: pixelUnits, font: font)
+            pixel: pixelUnits, font: font, points: points)
         parts.headLines = cols.map { parts.lines($0, weight: .semibold) } ?? 1
         parts.head = Double(titleLines) * title * m.lineHeight + m.gap + parts.row(parts.headLines)
         return parts
@@ -924,11 +1081,16 @@ public enum StudioLayout {
     /** The readability estimate of a measure table (measureTableLayout in the TypeScript). */
     public static func measureTableLayout(
         label: String, width: Double, height: Double, fontScale: Double? = nil, columns: [String]? = nil,
-        footer: [String?]? = nil, pixel: Double? = nil, font: MeasureFont = .any
+        footer: [String?]? = nil, pixel: Double? = nil, font: MeasureFont = .any, points: Double? = nil,
+        wholeHeadWords: Bool = false
     ) -> MeasureTableLayout {
         let parts = measureTableParts(
-            label: label, width: width, fontScale: fontScale, columns: columns, pixel: pixel, font: font)
-        let rowLines = (columns?.isEmpty ?? true) ? 1 : parts.lines([measureTableCellSample], weight: .regular)
+            label: label, width: width, fontScale: fontScale, columns: columns, pixel: pixel, font: font,
+            points: points, wholeHeadWords: wholeHeadWords)
+        // In its narrowest column (the shares are even unless `wholeHeadWords`).
+        let rowLines =
+            (columns?.isEmpty ?? true)
+            ? 1 : parts.lines(columns!.map { _ in measureTableCellSample }, weight: .regular)
         let rowPitch = parts.row(rowLines)
         let fixedHeight = parts.head + (footer ?? measureTableFooterSamples).reduce(0) { $0 + parts.footerLine($1) }
         return MeasureTableLayout(
@@ -940,15 +1102,18 @@ public enum StudioLayout {
      * The rows a measure table shows on a screen (measureTableRowsShown in
      * the TypeScript): the first rows, each as tall as its cells wrap, above
      * the footer lines; rows give way first, and the "N of M" line joins the
-     * footer when rows are left out.
+     * footer when rows are left out. `wholeHeadWords`: counted with, and
+     * returning, the column widths that keep the heads' words whole (#780).
      */
     public static func measureTableRowsShown(
         label: String, width: Double, height: Double, fontScale: Double? = nil, columns: [String]? = nil,
         rows: [[String]], total inputTotal: Int, footer: [String?], pixel: Double? = nil, font: MeasureFont = .any,
+        points: Double? = nil, wholeHeadWords: Bool = false,
         rowsLine: (Int, Int) -> String
-    ) -> (shown: Int, rowsLine: String?) {
+    ) -> (shown: Int, rowsLine: String?, columnWidths: [Double]?) {
         let parts = measureTableParts(
-            label: label, width: width, fontScale: fontScale, columns: columns, pixel: pixel, font: font)
+            label: label, width: width, fontScale: fontScale, columns: columns, pixel: pixel, font: font,
+            points: points, wholeHeadWords: wholeHeadWords)
         let total = Swift.max(inputTotal, rows.count)
         func fit(_ lines: [String?]) -> Int {
             var room = height - parts.head - lines.reduce(0) { $0 + parts.footerLine($1) }
@@ -961,9 +1126,9 @@ public enum StudioLayout {
             return shown
         }
         let all = fit(footer)
-        if all >= total { return (total, nil) }
+        if all >= total { return (total, nil, parts.columnWidths) }
         let shown = fit(footer + [rowsLine(all, total)])
-        return (shown, rowsLine(shown, total))
+        return (shown, rowsLine(shown, total), parts.columnWidths)
     }
 
     /**
@@ -972,11 +1137,14 @@ public enum StudioLayout {
      * line fits the width on one line at the footer size; else the last.
      */
     public static func freshnessLevelFit(
-        levels: [[String]], width: Double, fontScale: Double? = nil, font: MeasureFont = .any
+        levels: [[String]], width: Double, fontScale: Double? = nil, font: MeasureFont = .any,
+        points: Double? = nil
     ) -> Int {
         let size = MeasureTableMetrics.footer * effectiveFontScale(fontScale)
         let index = levels.firstIndex { lines in
-            lines.allSatisfy { measureTextWidth($0, fontSize: size, weight: .regular, font: font) <= width + 1e-9 }
+            lines.allSatisfy {
+                measureTextWidth($0, fontSize: size, weight: .regular, font: font, points: points) <= width + 1e-9
+            }
         }
         return index ?? Swift.max(0, levels.count - 1)
     }
@@ -997,10 +1165,12 @@ public enum StudioLayout {
     public static func measureSplitLayout(
         label: String, width inputWidth: Double, height: Double, fontScale: Double? = nil, total: String?,
         lines: [(String, String)], footer: [String?], pixel: Double? = nil, font: MeasureFont = .any,
+        points: Double? = nil,
         rowsLine: ((Int, Int) -> String)? = nil
     ) -> (valueSize: Double, valueLines: Int, shown: Int, rowsLine: String?, fits: Bool) {
         let parts = measureTableParts(
-            label: label, width: inputWidth, fontScale: fontScale, columns: nil, pixel: pixel, font: font)
+            label: label, width: inputWidth, fontScale: fontScale, columns: nil, pixel: pixel, font: font,
+            points: points)
         let scale = effectiveFontScale(fontScale)
         let m = MeasureTableMetrics.self, v = MeasureSplitMetrics.self
         let width = Swift.max(0, inputWidth)
@@ -1025,7 +1195,10 @@ public enum StudioLayout {
                 let tall = (room - pixelUnits * Double(lines)) / (Double(lines) * v.valueLineHeight)
                 if tall < least - 1e-9 { return nil }
                 var size = Swift.min(most, tall)
-                let oneLine = measureTextWidth(total, fontSize: 1, weight: .semibold, font: font)
+                // Its width per unit of size, at the points `size` is drawn
+                // at: where to start; the steps below find a size that fits.
+                let oneLine = measureTextWidth(
+                    total, fontSize: 1, weight: .semibold, font: font, points: size * measurePoints(points))
                 if lines == 1 && oneLine > 0 { size = Swift.min(size, (width - pixelUnits) / oneLine) }
                 while size >= least - 1e-9 {
                     if totalLines(size) <= lines { return (size, lines) }

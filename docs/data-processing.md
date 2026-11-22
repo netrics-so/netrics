@@ -897,16 +897,16 @@ result follows from the payload and the tile's size alone, so nothing is
 measured after drawing; scroll views, whose cards grow with their content,
 show every row.
 
-Column heads keep their words whole on web screens
+Column heads keep their words whole on web screens and in netrics TV
 ([#780](https://github.com/netrics-so/netrics/issues/780)): where a head
 has a word wider than an even share of the table ("Downloads" at font scale
 1.3 in a third of a screen) and every head's widest word fits side by side,
 that column is as wide as the word needs and the others share the rest
 (`measureTableColumnWidths`, the `wholeHeadWords` input of the fit). The
 rows are counted with those widths. Where the words cannot all fit, the
-shares stay even and a word breaks, as before; nothing is cut. netrics TV
-still draws even columns until it is ported; the test vectors for it are in
-`studio-layout.json` (`measureColumnWidths`, `measureRowsShownWholeHeads`).
+shares stay even and a word breaks, as before; nothing is cut. Scroll
+cards keep their own columns. Both renderers are checked against the same
+test vectors (`measureColumnWidths`, `measureRowsShownWholeHeads`).
 
 The readability check estimates the same layout with sample lines: fewer
 rows than the `limit` is `rows_cut` as info; not even one row (or no room
@@ -931,7 +931,21 @@ tabular digits on netrics TV, regular and semibold; the readability check
 counts the wider), draws row lines inside the rows, and keeps a screen
 pixel of rounding room per line and per column. netrics TV draws the
 tile's texts at the line heights the fit counts, and its footer lines
-never shrink. A version 4 install sees "… · App Store" on its screens
+never shrink.
+
+On iPad and iPhone netrics TV draws a unit at less than a point, so its
+text is smaller than a TV's 24 pt and more, and the system font is wider
+there: its optical size changes between 28 pt and 17 pt, and below 17 pt
+every glyph is tracked wider ("Habit Tracker" by 7 % at 12 pt). The fit
+takes the points a unit is drawn at (`points`) and counts the system font
+as it draws at that size: a second table at 17 pt (`tvSmall`) and a short
+table of blend and tracking by size (`MEASURE_TV_SMALL_SIZES`), measured
+with Core Text ([#780](https://github.com/netrics-so/netrics/issues/780)).
+From 24 pt, and without `points`, the widths are the TV's as before. Web
+screens draw IBM Plex Sans, whose glyphs are as wide in em at every size,
+so a phone's browser needs none of this.
+
+A version 4 install sees "… · App Store" on its screens
 once the update's data drafts are published, before the dashboard copy is
 swapped in.
 

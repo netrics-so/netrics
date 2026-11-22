@@ -263,6 +263,64 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                         font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!),
                     double(c["width"])), "\(c)")
         }
+        // The system font below 24 pt (#780).
+        let small = g["tvSmall"] as! [String: Any]
+        #expect(StudioLayout.measureGlyphEmsTVSmallRegular == (small["regular"] as! [Any]).map { double($0) })
+        #expect(StudioLayout.measureGlyphEmsTVSmallSemibold == (small["semibold"] as! [Any]).map { double($0) })
+        #expect(
+            StudioLayout.measureTVSmallSizes == (g["tvSmallSizes"] as! [[Any]]).map { $0.map { double($0) } })
+        let widths = g["smallWidths"] as! [[String: Any]]
+        #expect(!widths.isEmpty)
+        for c in widths {
+            #expect(
+                close(
+                    StudioLayout.measureTextWidth(
+                        c["text"] as! String, fontSize: double(c["fontSize"]), weight: weight(c["weight"]),
+                        font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!, points: double(c["points"])),
+                    double(c["width"])), "\(c)")
+        }
+    }
+
+    /// Column widths that keep the heads' words whole (#780), on a TV and
+    /// at the points of an iPad or iPhone.
+    @Test func measureColumnWidths() {
+        for key in ["measureColumnWidths", "measureColumnWidthsPoints"] {
+            let cases = StudioVectors.cases(key)
+            #expect(!cases.isEmpty)
+            for c in cases {
+                let widths = StudioLayout.measureTableColumnWidths(
+                    width: double(c["width"]), columns: c["columns"] as! [String], fontScale: double(c["fontScale"]),
+                    pixel: double(c["pixel"]), font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!,
+                    points: c["points"].map { double($0) })
+                let expected = (c["widths"] as! [Any]).map { double($0) }
+                #expect(widths.count == expected.count, "\(c)")
+                for (width, e) in zip(widths, expected) { #expect(close(width, e), "\(c)") }
+            }
+        }
+    }
+
+    /// The rows counted with those widths, and with the system font's
+    /// widths at an iPad's or iPhone's sizes (#780).
+    @Test func measureRowsShownWholeHeadsAndPoints() {
+        for key in ["measureRowsShownWholeHeads", "measureRowsShownPoints"] {
+            let cases = StudioVectors.cases(key)
+            #expect(!cases.isEmpty)
+            for c in cases {
+                let fit = StudioLayout.measureTableRowsShown(
+                    label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
+                    fontScale: double(c["fontScale"]), columns: c["columns"] as? [String],
+                    rows: c["rows"] as! [[String]], total: int(c["total"]),
+                    footer: (c["footer"] as! [Any]).map { $0 as? String }, pixel: double(c["pixel"]),
+                    font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!,
+                    points: c["points"].map { double($0) }, wholeHeadWords: bool(c["wholeHeadWords"]),
+                    rowsLine: { "Showing \($0) of \($1) groups." })
+                #expect(fit.shown == int(c["shown"]), "\(c)")
+                #expect(fit.rowsLine == c["rowsLine"] as? String, "\(c)")
+                let expected = (c["columnWidths"] as? [Any])?.map { double($0) }
+                #expect(fit.columnWidths?.count == expected?.count, "\(c)")
+                for (width, e) in zip(fit.columnWidths ?? [], expected ?? []) { #expect(close(width, e), "\(c)") }
+            }
+        }
     }
 
     @Test func measureRowsShown() {
@@ -278,23 +336,25 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                 rowsLine: { "Showing \($0) of \($1) groups." })
             #expect(fit.shown == int(c["shown"]), "\(c)")
             #expect(fit.rowsLine == c["rowsLine"] as? String, "\(c)")
+            #expect(fit.columnWidths == nil, "\(c)")
         }
     }
 
     @Test func freshnessLevelFits() {
-        let cases = StudioVectors.cases("freshnessLevelFits")
-        #expect(!cases.isEmpty)
+        let cases = StudioVectors.cases("freshnessLevelFits") + StudioVectors.cases("freshnessLevelFitsPoints")
+        #expect(cases.contains { $0["points"] != nil } && cases.contains { $0["points"] == nil })
         for c in cases {
             let level = StudioLayout.freshnessLevelFit(
                 levels: c["levels"] as! [[String]], width: double(c["width"]), fontScale: double(c["fontScale"]),
-                font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!)
+                font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!,
+                points: c["points"].map { double($0) })
             #expect(level == int(c["level"]), "\(c)")
         }
     }
 
     @Test func measureSplitLayouts() {
-        let cases = StudioVectors.cases("measureSplitLayouts")
-        #expect(!cases.isEmpty)
+        let cases = StudioVectors.cases("measureSplitLayouts") + StudioVectors.cases("measureSplitLayoutsPoints")
+        #expect(cases.contains { $0["points"] != nil } && cases.contains { $0["points"] == nil })
         for c in cases {
             let fit = StudioLayout.measureSplitLayout(
                 label: c["label"] as! String, width: double(c["width"]), height: double(c["height"]),
@@ -302,6 +362,7 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                 lines: (c["lines"] as! [[String]]).map { ($0[0], $0[1]) },
                 footer: (c["footer"] as! [Any]).map { $0 as? String }, pixel: double(c["pixel"]),
                 font: StudioLayout.MeasureFont(rawValue: c["font"] as! String)!,
+                points: c["points"].map { double($0) },
                 rowsLine: { "Showing \($0) of \($1) groups." })
             #expect(close(fit.valueSize, double(c["valueSize"])), "\(c)")
             #expect(fit.valueLines == int(c["valueLines"]), "\(c)")
@@ -562,6 +623,73 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                         }
                     }
                 }
+            }
+        }
+
+        static func drawn(_ text: String, _ font: CTFont) -> Double {
+            CTLineGetTypographicBounds(
+                CTLineCreateWithAttributedString(
+                    NSAttributedString(string: text, attributes: [kCTFontAttributeName as NSAttributedString.Key: font])),
+                nil, nil, nil)
+        }
+
+        /// iPad and iPhone draw a unit at less than a point (#780), down to
+        /// about 10 pt and below, where the system font is wider than on a
+        /// TV: its smaller optical sizes under 28 pt, and tracking under
+        /// 17 pt. With the points a unit is drawn at, the widths cover every
+        /// character and the sample texts at every such size, and stay
+        /// within 5 % of the texts as drawn (kerning narrows them), so rows are not lost to it.
+        @Test func coverTheSystemFontAtTouchSizes() {
+            let texts = [
+                "Apple App Store", "App Store", "Google Play", "Focus · App Store", "Habit Tracker", "Weather Now",
+                "Downloads", "Erlöse", "Anzahl", "Bewertung", "Land", "Country", "Ratings", "Currency", "Währung",
+                "Oldest source refresh: Nov 18, 2026, 11:40 PM", "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
+                "8 of 40 groups", "8 von 40 Gruppen", "1,000", "1.111", "11,200 JPY", "7.00 USD", "4.8 ★",
+                "WWW MMM mmm", "Performance", "Portfolio", "Country · Party",
+            ]
+            let characters = StudioLayout.measureGlyphChars.unicodeScalars.map { String($0) }
+            for semibold in [false, true] {
+                let weight: StudioFontWeight = semibold ? .semibold : .regular
+                for base in [24.0, 28.0, 36.0] {
+                    for scale in [1.0, 1.15, 1.3] {
+                        // From a slim iPad window (0.15) to a full TV unit.
+                        for step in 15...100 {
+                            let points = Double(step) / 100
+                            let units = base * scale
+                            let font = Self.font(CGFloat(units * points), semibold: semibold)
+                            for text in characters + texts {
+                                let drawn = Self.drawn(text, font)
+                                let counted =
+                                    StudioLayout.measureTextWidth(
+                                        text, fontSize: units, weight: weight, font: .tv, points: points) * points
+                                #expect(
+                                    drawn <= counted + 1e-6,
+                                    "\(text) at \(units) × \(points), semibold \(semibold): \(drawn) > \(counted)")
+                                if text.unicodeScalars.count > 1 && units * points < 24 {
+                                    #expect(
+                                        counted <= drawn * 1.05,
+                                        "\(text) at \(units) × \(points), semibold \(semibold): \(counted) ≫ \(drawn)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// What #780 reported: counted as on a TV, a cell at an iPhone's
+        /// 12 pt is drawn about 7 % wider than counted, and wraps.
+        @Test func theTVWidthsFallShortAtTouchSizes() {
+            let drawn = Self.drawn("Habit Tracker", Self.font(12, semibold: false))
+            let asOnTV = StudioLayout.measureTextWidth("Habit Tracker", fontSize: 28, font: .tv) * 12 / 28
+            let atItsSize = StudioLayout.measureTextWidth("Habit Tracker", fontSize: 28, font: .tv, points: 12.0 / 28) * 12 / 28
+            #expect(drawn > asOnTV * 1.05)
+            #expect(drawn <= atItsSize && atItsSize <= drawn * 1.03)
+            // From 24 pt the widths are the TV's, as before.
+            for points in [24.0 / 28, 1, 2] {
+                #expect(
+                    StudioLayout.measureTextWidth("Habit Tracker", fontSize: 28, font: .tv, points: points)
+                        == StudioLayout.measureTextWidth("Habit Tracker", fontSize: 28, font: .tv))
             }
         }
     }

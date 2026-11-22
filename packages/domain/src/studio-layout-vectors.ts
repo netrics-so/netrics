@@ -34,6 +34,7 @@ import {
   measureTextWidth,
   MEASURE_GLYPH_CHARS,
   MEASURE_GLYPH_EMS,
+  MEASURE_TV_SMALL_SIZES,
   legacyLayout,
   meetsMinimumSize,
   parseTextWidget,
@@ -691,6 +692,100 @@ export function buildStudioLayoutVectors() {
       ),
     ),
   );
+  // netrics TV on iPad and iPhone (#780): a unit is less than a point, and
+  // the system font is wider at its small sizes (`points`).
+  const TOUCH_POINTS = [0.3, 0.44, 0.622, 0.7115];
+  const touch = (points: number) =>
+    ({ points, pixel: 1 / (points * 2), font: "tv" }) as const;
+  const measureRowsShownPoints = measureBoxes.flatMap((box) =>
+    [1, 1.3].flatMap((fontScale) =>
+      [40].flatMap((total) =>
+        [false, true].flatMap((wholeHeadWords) =>
+          // A head whose one word widens its column to exactly its width.
+          ["Downloads", "Nutzerinstallationen"].flatMap((head) =>
+            TOUCH_POINTS.map((points) => {
+              const input = {
+                label: "Downloads",
+                ...box,
+                fontScale,
+                columns: ["App", "Store", head],
+                rows: rowsWithHeads,
+                total,
+                footer: [null],
+                ...touch(points),
+                wholeHeadWords,
+              };
+              return {
+                ...input,
+                ...measureTableRowsShown({
+                  ...input,
+                  rowsLine: (shown, all) =>
+                    `Showing ${shown} of ${all} groups.`,
+                }),
+              };
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
+  const measureColumnWidthsPoints = [300, 404, 560, 760].flatMap((width) =>
+    [1, 1.3].flatMap((fontScale) =>
+      measureColumns.slice(1).flatMap((columns) =>
+        TOUCH_POINTS.map((points) => {
+          const input = {
+            width,
+            fontScale,
+            columns: columns!,
+            ...touch(points),
+          };
+          return { ...input, widths: measureTableColumnWidths(input) };
+        }),
+      ),
+    ),
+  );
+  const freshnessLevelFitsPoints = [300, 404, 560, 760, 1100].flatMap((width) =>
+    [1, 1.3].flatMap((fontScale) =>
+      TOUCH_POINTS.map((points) => ({
+        width,
+        fontScale,
+        font: "tv" as const,
+        points,
+        levels: freshnessLevels,
+        level: freshnessLevelFit(
+          freshnessLevels,
+          width,
+          fontScale,
+          "tv",
+          points,
+        ),
+      })),
+    ),
+  );
+  const measureSplitLayoutsPoints = measureBoxes.flatMap((box) =>
+    [1, 1.3].flatMap((fontScale) =>
+      splitInputs.flatMap((split) =>
+        TOUCH_POINTS.map((points) => {
+          const input = {
+            label: "Downloads and user installs",
+            ...box,
+            fontScale,
+            total: split.total,
+            lines: split.lines.map(([a, b]) => [a, b] as [string, string]),
+            footer: [null],
+            ...touch(points),
+          };
+          return {
+            ...input,
+            ...measureSplitLayout({
+              ...input,
+              rowsLine: (shown, all) => `Showing ${shown} of ${all} groups.`,
+            }),
+          };
+        }),
+      ),
+    ),
+  );
   const tableRowLabels = [
     "/pricing",
     "/blog/how-we-built-a-dashboard-for-the-office-tv",
@@ -1221,6 +1316,10 @@ export function buildStudioLayoutVectors() {
     measureRowsShownWholeHeads,
     freshnessLevelFits,
     measureSplitLayouts,
+    measureRowsShownPoints,
+    measureColumnWidthsPoints,
+    freshnessLevelFitsPoints,
+    measureSplitLayoutsPoints,
     measureGlyphs: {
       chars: MEASURE_GLYPH_CHARS.join(""),
       web: MEASURE_GLYPH_EMS.web,
@@ -1238,6 +1337,32 @@ export function buildStudioLayoutVectors() {
             font,
             width: measureTextWidth(text, 28, weight, font),
           })),
+        ),
+      ),
+      // The system font below 24 pt (#780): sizes in units at the points
+      // a unit is drawn at.
+      tvSmall: MEASURE_GLYPH_EMS.tvSmall,
+      tvSmallSizes: MEASURE_TV_SMALL_SIZES,
+      smallWidths: [
+        "Focus · App Store",
+        "Habit Tracker",
+        "Älteste Quellenaktualisierung: 18.11.2026, 23:58",
+        "4.8 ★",
+        "日本",
+      ].flatMap((text) =>
+        (["regular", "semibold"] as const).flatMap((weight) =>
+          (["tv", "any"] as const).flatMap((font) =>
+            [24, 36.4].flatMap((fontSize) =>
+              [0.1, 0.3, 0.44, 0.5, 0.622, 0.7115, 0.86, 1].map((points) => ({
+                text,
+                weight,
+                font,
+                fontSize,
+                points,
+                width: measureTextWidth(text, fontSize, weight, font, points),
+              })),
+            ),
+          ),
         ),
       ),
     },

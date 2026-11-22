@@ -47,26 +47,30 @@ struct MeasureWidgetView: View {
     }
     /// Units per screen pixel: each line may round up to a pixel.
     private var pixel: Double? { env.u > 0 ? 1 / Double(env.u * Swift.max(1, env.displayScale)) : nil }
-    private var fit: (shown: Int, rowsLine: String?) {
+    /// Points per unit: under a point (iPad, iPhone) the system font draws
+    /// wider than on a TV, and the fit counts it so (#780).
+    private var points: Double? { env.u > 0 ? Double(env.u) : nil }
+    private var fit: (shown: Int, rowsLine: String?, columnWidths: [Double]?) {
         if split {
             let fit = splitFit
-            return (fit.shown, fit.rowsLine)
+            return (fit.shown, fit.rowsLine, nil)
         }
         return data.tableFit(
             label: label, measureIds: measureIds, groupBy: groupBy, rows: rows, box: fitsTile ? box : nil,
-            fontScale: env.fontScale, labels: options.labels, pixel: pixel, now: now, language: env.language)
+            fontScale: env.fontScale, labels: options.labels, pixel: pixel, points: points, now: now,
+            language: env.language)
     }
     private var splitFit: (valueSize: Double, valueLines: Int?, shown: Int, rowsLine: String?) {
         data.splitFit(
             label: label, measureIds: measureIds, groupBy: groupBy, rows: rows, box: fitsSplit ? box : nil,
-            fontScale: env.fontScale, pixel: pixel, now: now, language: env.language)
+            fontScale: env.fontScale, pixel: pixel, points: points, now: now, language: env.language)
     }
     /// A freshness line over several sources (#784): the form that fits
     /// the tile, a line each; nil for one source.
     private var sourceLayout: MeasureWidgetData.FreshnessSourceLayout? {
         data.freshnessSourceLayout(
-            width: fitsLayout ? box?.width : nil, scroll: scroll, fontScale: env.fontScale, now: now,
-            language: env.language)
+            width: fitsLayout ? box?.width : nil, scroll: scroll, fontScale: env.fontScale, points: points,
+            now: now, language: env.language)
     }
     /// A line of `size` units as the fit counts it (#768): the system font's
     /// own lines are taller (1.18 em) than the 1.15 the web draws.
@@ -80,7 +84,7 @@ struct MeasureWidgetView: View {
     }
     var body: some View {
         let fitted = self.fit
-        let fit = (shown: rowsDrawn ?? fitted.shown, rowsLine: fitted.rowsLine)
+        let fit = (shown: rowsDrawn ?? fitted.shown, rowsLine: fitted.rowsLine, columnWidths: fitted.columnWidths)
         VStack(alignment: .leading, spacing: env.pt(12)) {
             Text(label).font(font(36, .semibold)).foregroundStyle(env.colors.label).lineLimit(
                 scroll ? nil : 2
@@ -101,9 +105,10 @@ struct MeasureWidgetView: View {
             } else if rows.isEmpty {
                 Text(KitStrings.text(.noDataYet, env.language)).font(font(28))
             } else if fitsTile {
-                // A fitted table (#768): even columns that wrap, no scrolling;
-                // none when not even a row fits ("0 of N" says so).
-                if fit.shown > 0 { table(Array(rows.prefix(fit.shown)), even: true) }
+                // A fitted table (#768): columns that wrap, no scrolling; none
+                // when not even a row fits ("0 of N" says so). Their widths are
+                // the fit's: even, or what keeps the heads' words whole (#780).
+                if fit.shown > 0 { table(Array(rows.prefix(fit.shown)), even: true, widths: fit.columnWidths) }
             } else {
                 ScrollView([.vertical, .horizontal]) {
                     VStack(alignment: .leading, spacing: env.pt(12)) {
@@ -244,38 +249,57 @@ struct MeasureWidgetView: View {
             }
         }
     }
-    private func table(_ rows: [MeasureResultRow], even: Bool = false) -> some View {
+    private func table(_ rows: [MeasureResultRow], even: Bool = false, widths: [Double]? = nil) -> some View {
         // A fitted table's rows are as tall as the fit counts them: the
         // lines plus 10 units above and below (MeasureTableMetrics).
-        // Fitted: even columns with 10 units of padding on each side, as the
-        // web's cells and the fit count them.
-        Grid(alignment: .leading, horizontalSpacing: env.pt(even ? 0 : 20), verticalSpacing: env.pt(even ? 0 : 12)) {
+        // Fitted: columns with 10 units of padding on each side, as the
+        // web's cells and the fit count them; `widths` in units, padding
+        // included (nil: even shares).
+        let dimensions = groupBy.count
+        // A column's width, where the fit set one for every column.
+        let width = { (column: Int) -> Double? in
+            widths.flatMap { $0.count == dimensions + measureIds.count ? $0[column] : nil }
+        }
+        return Grid(
+            alignment: .leading, horizontalSpacing: env.pt(even ? 0 : 20), verticalSpacing: env.pt(even ? 0 : 12)
+        ) {
             GridRow {
-                ForEach(groupBy, id: \.self) {
-                    cell(Text(name($0, dimension: true)).font(font(28, .semibold)), even: even)
+                ForEach(Array(groupBy.enumerated()), id: \.element) { column, id in
+                    cell(Text(name(id, dimension: true)).font(font(28, .semibold)), even: even, width: width(column))
                 }
-                ForEach(measureIds, id: \.self) { cell(Text(name($0)).font(font(28, .semibold)), even: even) }
+                ForEach(Array(measureIds.enumerated()), id: \.element) { column, id in
+                    cell(Text(name(id)).font(font(28, .semibold)), even: even, width: width(dimensions + column))
+                }
             }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 GridRow {
-                    ForEach(groupBy, id: \.self) {
-                        cell(Text(data.dimensionText(row, dimension: $0, language: env.language)), even: even)
-                    }
-                    ForEach(measureIds, id: \.self) {
+                    ForEach(Array(groupBy.enumerated()), id: \.element) { column, id in
                         cell(
-                            Text(data.text(row.measures[$0], measure: $0, language: env.language)).monospacedDigit(),
-                            even: even)
+                            Text(data.dimensionText(row, dimension: id, language: env.language)), even: even,
+                            width: width(column))
+                    }
+                    ForEach(Array(measureIds.enumerated()), id: \.element) { column, id in
+                        cell(
+                            Text(data.text(row.measures[id], measure: id, language: env.language)).monospacedDigit(),
+                            even: even, width: width(dimensions + column))
                     }
                 }.font(font(28))
             }
         }
     }
-    /// A cell of a fitted table: an even share of the width, wrapping.
-    @ViewBuilder private func cell(_ text: some View, even: Bool) -> some View {
+    /// A cell of a fitted table, wrapping: `width` units wide with its
+    /// padding, or (nil) an even share of the table.
+    @ViewBuilder private func cell(_ text: some View, even: Bool, width: Double? = nil) -> some View {
         if even {
-            text.modifier(MeasureLineHeight(points: line(28), fixed: false))
-                .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-                .padding(env.pt(10))
+            let lines = text.modifier(MeasureLineHeight(points: line(28), fixed: false))
+            if let width {
+                lines.frame(width: Swift.max(0, env.pt(width - 20)), alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(env.pt(10))
+            } else {
+                lines.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    .padding(env.pt(10))
+            }
         } else {
             text
         }
