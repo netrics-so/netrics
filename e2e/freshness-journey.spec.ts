@@ -115,7 +115,10 @@ async function seedConnection(workspaceId: string, now: number) {
  * so the dashboards word the same line on every run. The connection's own
  * state stays on the real clock, which its status and the scheduler go by.
  */
-async function pinFreshness(connectionId: string) {
+async function pinFreshness(
+  connectionId: string,
+  reportingDay: string = REPORTING_DAY,
+) {
   const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
   try {
     const checked = new Date(CLOCK - 10 * MINUTE);
@@ -125,7 +128,7 @@ async function pinFreshness(connectionId: string) {
       where connection_id = ${connectionId}`;
     await sql`
       update connection_freshness
-      set data_through = ${REPORTING_DAY},
+      set data_through = ${reportingDay},
         next_expected_at = ${new Date(CLOCK + 3 * HOUR)}
       where connection_id = ${connectionId} and stream = 'sales'`;
   } finally {
@@ -190,7 +193,9 @@ const wording = {
     periodic:
       /^Last reporting day: \w{3} \d{1,2} · fetched 10 min\. ago · next ~\d/,
     metricDay: /^(?:Last reporting day:|Up to) \w{3} \d{1,2}/,
+    scrollView: "Scroll view",
     named: /^Last reporting day: /,
+    cardDay: /^Last reporting day: Sep 30 · fetched 10 min\. ago · next ~\d/,
     plainDay: "Up to ",
     continuous: /^Checked \d+ min\. ago · next check [^~]*~/,
     metric:
@@ -205,7 +210,10 @@ const wording = {
     periodic:
       /^Letzter Berichtstag: \d{1,2}\. \S+ · abgerufen vor 10 Min\. · nächste ~\d/,
     metricDay: /^(?:Letzter Berichtstag:|Bis) \d{1,2}\. \S+/,
+    scrollView: "Scroll-Ansicht",
     named: /^Letzter Berichtstag: /,
+    cardDay:
+      /^Letzter Berichtstag: 30\. Sept\. · abgerufen vor 10 Min\. · nächste ~\d/,
     plainDay: "Bis ",
     continuous: /^Geprüft vor \d+ Min\. · nächste Prüfung [^~]*~/,
     metric:
@@ -406,17 +414,58 @@ async function journey(
       }),
     ).toBeLessThanOrEqual(0.5);
     // A named footer the browser would cut gives way to the plain line of
-    // the same parts, and comes back when there is room again.
+    // the same parts, and comes back when there is room again: when its
+    // box gets narrower, and when its font gets larger in the same box (a
+    // theme with a larger font scale, a larger default font size). Each
+    // change settles in a bounded number of redraws.
     const text = (await footer.textContent()) ?? "";
     if (!w.named.test(text)) return false;
+    const plain = text.replace(w.named, w.plainDay);
     await footer.evaluate((element) => {
-      element.style.width = "150px";
+      const counter = { redraws: 0 };
+      new MutationObserver((records) => {
+        counter.redraws += records.length;
+      }).observe(element, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+      (window as unknown as { footerRedraws: typeof counter }).footerRedraws =
+        counter;
     });
-    await expect(footer).toHaveText(text.replace(w.named, w.plainDay));
-    await footer.evaluate((element) => {
-      element.style.width = "";
-    });
-    await expect(footer).toHaveText(text);
+    const redraws = () =>
+      page.evaluate(() => {
+        const counter = (
+          window as unknown as { footerRedraws: { redraws: number } }
+        ).footerRedraws;
+        const count = counter.redraws;
+        counter.redraws = 0;
+        return count;
+      });
+    for (const [property, value] of [
+      ["width", "150px"],
+      ["fontSize", "64px"],
+    ] as const) {
+      await footer.evaluate(
+        (element, [property, value]) => {
+          element.style[property] = value;
+        },
+        [property, value] as const,
+      );
+      await expect(footer, property).toHaveText(plain);
+      await page.waitForTimeout(250);
+      expect(await redraws(), `redraws after ${property}`).toBeLessThanOrEqual(
+        3,
+      );
+      await footer.evaluate((element, property) => {
+        element.style[property] = "";
+      }, property);
+      await expect(footer, property).toHaveText(text);
+      await page.waitForTimeout(250);
+      expect(await redraws(), `redraws after ${property}`).toBeLessThanOrEqual(
+        3,
+      );
+    }
     return true;
   };
 
@@ -515,6 +564,58 @@ async function journey(
   );
   expect(await drawnAsBefore(), "a named footer at this scale").toBe(true);
   await testInfo.attach(`dashboard-large-${locale}`, {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
+
+  // The scroll view on a narrow phone with a large default font: a card
+  // wraps, also inside a part, so "Letzter Berichtstag: 30. Sept." is
+  // never cut where "Bis 30. Sept." fit.
+  await pinFreshness(seeded.connectionId, "2025-09-30");
+  const session = await page.context().newCDPSession(page);
+  await session.send("Page.setFontSizes", {
+    fontSizes: { standard: 32, fixed: 26 },
+  });
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto(`/workspaces/${workspaceId}/dashboards/${dashboardId}`);
+  await page.getByRole("button", { name: w.scrollView, exact: true }).click();
+  // The three measure cards with a line (two periodic, one continuous)
+  // and the metric card's footer.
+  const cardLines = page.locator(".sw-measure-freshness");
+  await expect(cardLines).toHaveCount(3);
+  await expect(page.locator(".sw-footer")).toHaveCount(1);
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.documentElement).fontSize,
+    ),
+  ).toBe("32px");
+  for (const line of [...(await cardLines.all()), page.locator(".sw-footer")]) {
+    await expect(line).toBeVisible();
+    const drawn = await line.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const text = range.getBoundingClientRect();
+      const cardBox = element.closest("article")!.getBoundingClientRect();
+      return {
+        text: element.textContent,
+        // The text is inside its line, and the line inside its card. A
+        // space that ends a wrapped line hangs past the edge unseen.
+        space: parseFloat(getComputedStyle(element).fontSize) * 0.35,
+        cutRight: text.right - box.right,
+        cutBottom: text.bottom - box.bottom,
+        outside: box.right - cardBox.right,
+        scroll: element.scrollWidth - element.clientWidth,
+      };
+    });
+    const where = JSON.stringify(drawn);
+    expect(drawn.cutRight, where).toBeLessThanOrEqual(drawn.space);
+    expect(drawn.cutBottom, where).toBeLessThanOrEqual(0.5);
+    expect(drawn.outside, where).toBeLessThanOrEqual(0.5);
+    expect(drawn.scroll, where).toBeLessThanOrEqual(1);
+  }
+  await expect(cardLines.first()).toHaveText(w.cardDay);
+  await testInfo.attach(`scroll-320-${locale}`, {
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });

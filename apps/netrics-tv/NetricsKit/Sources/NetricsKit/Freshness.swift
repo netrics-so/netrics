@@ -315,6 +315,17 @@ public struct FreshnessText: Sendable {
     }
 
     /**
+     * Whether a footer line names the last reporting day (#791), in any
+     * screen language and also mid-line ("derived · last reporting day: …").
+     */
+    public static func namesReportingDay(_ line: String) -> Bool {
+        let lowered = line.lowercased()
+        return [ScreenLanguage.en, .de].contains { language in
+            lowered.contains(KitStrings.text(.freshReportingDay, language, arguments: [""]).lowercased())
+        }
+    }
+
+    /**
      * "Up to Nov 15"; with `reportingDay`, "Last reporting day: Nov 15"
      * where the day is older than the day of the last check (#791).
      */

@@ -488,17 +488,22 @@ the two differ:
   exactly what it showed before. Of the forms for several sources, 1 to 3
   come named the same way, each right before itself; the short forms 4 to
   6 stay as they are.
-- **As drawn, not as estimated.** The fit estimates widths; the rule holds
-  for what is drawn. On the web a measure tile's one-source line, whose
-  parts the stylesheet drops, measures both wordings in the browser and
-  names the day only when that shows as many parts; a footer or a
-  several-source form picked with the day named that the browser would
-  cut falls back to the same parts without. On netrics TV the estimates
-  cover the system font as drawn (tested with the named wording), and a
-  measure tile picks the first candidate that fits as drawn.
-- **Scroll cards** grow with their content and wrap: they name the day and
-  show the whole line, one source or several (form 2), on the web and on
-  netrics TV alike.
+- **As drawn, not as estimated, at the width it is drawn in.** The fit
+  estimates widths; the rule holds for what is drawn, wherever the line
+  is drawn. On the web a measure tile's one-source line, whose parts the
+  stylesheet drops, measures both wordings in the browser and names the
+  day only when that shows as many parts; a footer or a several-source
+  form picked with the day named that the browser would cut falls back to
+  the same parts without, checked again whenever the line's box or font
+  size changes (a resized tile, another font scale, the browser's default
+  font size). On netrics TV the estimates cover the system font as drawn
+  (tested with the named wording in every footer layout), a gauge beside
+  its ring fits the named line to its text column, and a measure tile
+  picks the first candidate that fits as drawn.
+- **Scroll cards** grow with their content and wrap, also inside a part,
+  so nothing is cut on a narrow screen with a large font: they name the
+  day and show the whole line, one source or several (form 2), on the web
+  and on netrics TV alike.
 - **Where not.** The warning notice ("Source unreachable · Up to Nov 14"),
   the overdue warning line, and lists that name the stream (a connection's
   page, a status board, the detail sheet) keep their wording.

@@ -5481,9 +5481,16 @@ a.button.primary:hover {
   gap: 0.3em;
   overflow-wrap: anywhere;
 }
-/* Off a slide (scroll cards) a several-source freshness line wraps. */
+/* Off a slide (scroll cards) a freshness line wraps, also inside a part:
+   a part wider than a narrow card ("Letzter Berichtstag: 30. Sept." at a
+   large default font size, #791) breaks at its spaces, never cut. */
 .sw-measure .sw-measure-freshness--wrap {
   max-height: none;
+}
+.sw-measure .sw-measure-freshness--wrap > span {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .sw-measure-table-scroll {
   overflow: auto;

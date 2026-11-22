@@ -415,17 +415,31 @@ public enum WidgetFooter {
      * The first candidate that fits on one line of the widget at its
      * smallest readable size, so it never wraps; nil when none does.
      */
+    ///
+    /// `drawnWidth`: the width the line is drawn in when that is narrower
+    /// than the widget's content (a gauge's column beside its ring). A
+    /// candidate that names the last reporting day (#791) must fit there:
+    /// else the plain candidate of the same parts, right after it, is the
+    /// line, as before the day was named. Naming the day never cuts a line
+    /// that was whole.
     public static func line(
         _ candidates: [String], type: StudioWidgetType, placement: StudioPlacement, showHeader: Bool,
-        fontScale: Double, unitBox: StudioCanvas? = nil
+        fontScale: Double, unitBox: StudioCanvas? = nil, drawnWidth: Double? = nil
     ) -> String? {
         let box = StudioRender.contentBox(placement, showHeader: showHeader, unitBox: unitBox)
         let size =
             StudioLayout.typeScale(type, placement: placement, fontScale: fontScale, showHeader: showHeader)[.any]
             ?? StudioLayout.Minimum.any
-        return candidates.first {
-            !$0.isEmpty && StudioLayout.wrappedLineCount($0, maxWidth: box.width, fontSize: size) <= 1
+        func fits(_ line: String, _ width: Double) -> Bool {
+            StudioLayout.wrappedLineCount(line, maxWidth: width, fontSize: size) <= 1
         }
+        guard let index = candidates.firstIndex(where: { !$0.isEmpty && fits($0, box.width) }) else { return nil }
+        let chosen = candidates[index]
+        guard let drawnWidth, drawnWidth < box.width, FreshnessText.namesReportingDay(chosen),
+            !fits(chosen, drawnWidth), index + 1 < candidates.count,
+            !FreshnessText.namesReportingDay(candidates[index + 1])
+        else { return chosen }
+        return candidates[index + 1]
     }
 
     /**

@@ -678,6 +678,117 @@ private func weight(_ any: Any?) -> StudioFontWeight {
             }
         }
 
+        /// Every tile that draws a freshness footer, at the width it draws
+        /// it in (#791): a footer that names the last reporting day is
+        /// never drawn wider than that. Metric, line, bar, table, compare
+        /// and review tiles and a stacked gauge draw it across the tile's
+        /// content; a gauge beside its ring draws it in the narrower text
+        /// column, where the named line picked for the whole tile gives
+        /// way to the plain one of the same parts.
+        @Test func aFooterThatNamesTheDayFitsWhereItIsDrawn() {
+            let berlin = TimeZone(identifier: "Europe/Berlin")!
+            let now = ISODate.parse("2026-11-19T09:00:00Z")!
+            let fresh = WidgetFreshness(
+                kind: .periodic, stream: "Sales", fetchedAt: "2026-11-19T08:50:00Z", dataThrough: "2026-11-17",
+                nextExpectedAt: "2026-11-19T20:00:00Z")
+            var late = fresh
+            late.late = true
+            late.nextExpectedAt = "2026-11-18T20:00:00Z"
+            late.nextCheckAt = "2026-11-19T09:20:00Z"
+            let types: [StudioWidgetType] = [.metric, .line, .bar, .table, .compare, .review, .gauge]
+            var named = 0
+            var gaveWay = 0
+            for language in [ScreenLanguage.en, .de] {
+                let region = Locale(identifier: language == .en ? "en_US" : "de_DE")
+                let text = FreshnessText(language: language, timeZone: berlin, region: region)
+                for freshness in [fresh, late] {
+                    let plain = text.footer(freshness, now: now)
+                    // A compare tile's line follows "derived · ".
+                    let derived = plain.map { "derived · \(FreshnessText.midLine($0))" }
+                    for type in types {
+                        let candidates = type == .compare ? derived : plain
+                        for w in 3...12 {
+                            for h in 2...6 {
+                                for scale in [1.0, 1.15, 1.3] {
+                                    let placement = StudioPlacement(x: 0, y: 0, w: w, h: h)
+                                    let box = StudioRender.contentBox(placement, showHeader: true)
+                                    let size =
+                                        StudioLayout.typeScale(type, placement: placement, fontScale: scale)[.any]
+                                        ?? StudioLayout.Minimum.any
+                                    // The column a gauge beside its ring draws its text in.
+                                    let gauge = StudioLayout.gaugeLayout(
+                                        label: "Monthly proceeds", width: box.width, height: box.height,
+                                        fontScale: scale,
+                                        value: StudioLayout.TableValueText(full: "62", compact: "62"), suffix: "%",
+                                        progress: "752 to go · 14 days left")
+                                    let column = type == .gauge && gauge.orientation == .side ? gauge.textWidth : nil
+                                    let whole = WidgetFooter.line(
+                                        candidates, type: type, placement: placement, showHeader: true,
+                                        fontScale: scale)
+                                    let line = WidgetFooter.line(
+                                        candidates, type: type, placement: placement, showHeader: true,
+                                        fontScale: scale, drawnWidth: column)
+                                    guard let line, let whole else { continue }
+                                    let width = column ?? box.width
+                                    for screen in [1.0, 2.0] {
+                                        let font = Self.font(CGFloat(size * screen), semibold: false)
+                                        if FreshnessText.namesReportingDay(line) {
+                                            #expect(
+                                                Self.drawn(line, font) <= width * screen + 1e-6,
+                                                "\(type) \(w)x\(h) at \(scale): \(line)")
+                                        }
+                                    }
+                                    if FreshnessText.namesReportingDay(line) { named += 1 }
+                                    if line != whole {
+                                        // The named line picked for the whole tile would
+                                        // be cut in the column; the plain one is the line
+                                        // the tile showed before the day was named.
+                                        gaveWay += 1
+                                        #expect(FreshnessText.namesReportingDay(whole))
+                                        #expect(!FreshnessText.namesReportingDay(line))
+                                        #expect(candidates.firstIndex(of: line) == candidates.firstIndex(of: whole)! + 1)
+                                        #expect(StudioLayout.estimateTextWidth(whole, fontSize: size) > width)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            #expect(named > 0)
+            #expect(gaveWay > 0)
+        }
+
+        @Test func aGaugeBesideItsRingKeepsTheLineItShowedBefore() {
+            // The reported tile: a 6×3 gauge, whose text column is narrower
+            // than the tile. "Up to Nov 17 · fetched 10 min. ago · next
+            // ~21:00" was the line; the named one picked for the whole
+            // tile would lose its end there.
+            let text = FreshnessText(
+                language: .en, timeZone: TimeZone(identifier: "Europe/Berlin")!,
+                region: Locale(identifier: "en_US@hours=h23"))
+            let fresh = WidgetFreshness(
+                kind: .periodic, stream: "Sales", fetchedAt: "2026-11-19T08:50:00Z", dataThrough: "2026-11-17",
+                nextExpectedAt: "2026-11-19T20:00:00Z")
+            let candidates = text.footer(fresh, now: ISODate.parse("2026-11-19T09:00:00Z")!)
+            let placement = StudioPlacement(x: 0, y: 0, w: 6, h: 3)
+            let box = StudioRender.contentBox(placement, showHeader: true)
+            let gauge = StudioLayout.gaugeLayout(
+                label: "Monthly proceeds", width: box.width, height: box.height, fontScale: 1,
+                value: StudioLayout.TableValueText(full: "62", compact: "62"), suffix: "%",
+                progress: "752 to go · 14 days left")
+            #expect(gauge.orientation == .side)
+            let whole = WidgetFooter.line(candidates, type: .gauge, placement: placement, showHeader: true, fontScale: 1)
+            let line = WidgetFooter.line(
+                candidates, type: .gauge, placement: placement, showHeader: true, fontScale: 1,
+                drawnWidth: gauge.textWidth)
+            #expect(whole == "Last reporting day: Nov 17 · fetched 10 min. ago · next ~21:00")
+            #expect(line == "Up to Nov 17 · fetched 10 min. ago · next ~21:00")
+            let font = Self.font(24, semibold: false)
+            #expect(Self.drawn(whole!, font) > gauge.textWidth)
+            #expect(Self.drawn(line!, font) <= gauge.textWidth)
+        }
+
         static func drawn(_ text: String, _ font: CTFont) -> Double {
             CTLineGetTypographicBounds(
                 CTLineCreateWithAttributedString(
