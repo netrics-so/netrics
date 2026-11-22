@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import postgres from "postgres";
 
@@ -68,6 +69,25 @@ async function seedConnection(
         from metric_definitions m
         where m.connector_id = 'vercel' and m.key = 'vercel.visitors'`;
     return id;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/** Makes the signed-in owner a viewer; another account keeps the workspace. */
+async function becomeViewer(workspaceId: string): Promise<void> {
+  const sql = postgres(ownerUrl(), { max: 1, onnotice: () => {} });
+  try {
+    const [other] = await sql<{ id: string }[]>`
+      insert into users (email, display_name)
+      values (${`e2e-owner-${randomUUID()}@example.com`}, 'Other owner')
+      returning id`;
+    await sql`
+      insert into memberships (workspace_id, user_id, role)
+      values (${workspaceId}, ${other!.id}, 'owner')`;
+    await sql`
+      update memberships set role = 'viewer'
+      where workspace_id = ${workspaceId} and user_id <> ${other!.id}`;
   } finally {
     await sql.end({ timeout: 5 });
   }
@@ -345,4 +365,85 @@ test("a connection without a selected project says so and is repaired by choosin
   expect(saved).toEqual([{ resources: ["prj_alpha"] }]);
   await expect(panel.getByText(none)).toHaveCount(0);
   await expect(panel.getByRole("listitem")).toHaveText(["alpha-site"]);
+});
+
+test("a long selection opens in place, and a viewer sees what is selected", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const de = locale === "de";
+  const t = messages(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  // 25 selected projects; only prj_alpha has a stored name. No route is
+  // stubbed: nothing here asks Vercel (the stored token is not even valid).
+  const selection = [
+    "prj_alpha",
+    ...Array.from(
+      { length: 24 },
+      (_, index) => `prj_${String(index).padStart(2, "0")}`,
+    ),
+  ];
+  const connectionId = await seedConnection(workspaceId, selection);
+  const url = `/workspaces/${workspaceId}/connections/${connectionId}`;
+  const panel = page.locator("#project-selection");
+  const items = panel.getByRole("listitem");
+  const heading = panel.getByText(
+    de ? "Ausgewählte Projekte (25):" : "Selected projects (25):",
+  );
+  const showAll = panel.getByRole("button", {
+    name: t.projects.syncedShowAll.replace("{count}", "25"),
+  });
+  const showFewer = panel.getByRole("button", {
+    name: t.projects.syncedShowFewer,
+  });
+  const change = panel.getByRole("button", { name: t.projects.check });
+
+  /** The compact list, opened with the keyboard and closed again. */
+  async function opensAndCloses() {
+    await expect(heading).toBeVisible();
+    // 20 projects and "and 5 more".
+    await expect(items).toHaveCount(21);
+    await expect(items.first()).toHaveText("alpha-site");
+    await expect(items.last()).toHaveText(
+      t.projects.syncedMore.replace("{count}", "5"),
+    );
+    await expect(showAll).toHaveAttribute("aria-expanded", "false");
+    await showAll.focus();
+    await page.keyboard.press("Enter");
+    await expect(items).toHaveCount(25);
+    await expect(items.last()).toHaveText("prj_23");
+    await expect(showAll).toHaveCount(0);
+    await showFewer.focus();
+    await page.keyboard.press("Enter");
+    await expect(items).toHaveCount(21);
+    await expect(showAll).toBeVisible();
+  }
+
+  // Someone who can change the connection: the list, and the form.
+  await page.goto(url);
+  await opensAndCloses();
+  await expect(change).toBeVisible();
+
+  // A viewer may read the connection: the same list, without the form.
+  await becomeViewer(workspaceId);
+  await page.goto(url);
+  await expect(
+    panel.getByRole("heading", { name: t.projects.heading }),
+  ).toBeVisible();
+  await opensAndCloses();
+  await expect(panel.getByText(t.projects.syncedHelpViewer)).toBeVisible();
+  await expect(change).toHaveCount(0);
+  await expect(
+    panel.getByRole("button", { name: t.projects.save }),
+  ).toHaveCount(0);
+  await expect(page.locator("#edit-connection")).toHaveCount(0);
+
+  // A stored empty selection: why nothing syncs, and whom to ask.
+  await saveSelection(connectionId, []);
+  await page.goto(url);
+  await expect(panel.getByRole("status")).toHaveText(
+    t.projects.syncedNoneViewer,
+  );
+  await expect(items).toHaveCount(0);
+  await expect(change).toHaveCount(0);
 });

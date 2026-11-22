@@ -13,7 +13,11 @@ import {
   ProjectSelectionEditor,
   pickerState,
   selectionSavable,
+  SYNCED_SHOWN,
+  SYNCED_STEP,
   SyncedProjects,
+  SyncedProjectsReadOnly,
+  syncedPage,
 } from "./project-selection";
 import { apiErrorMessage, ApiError } from "@/lib/api";
 import { renderI18n } from "@/lib/i18n/test-render";
@@ -218,9 +222,110 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     expect(en).toContain("Selected projects (23):");
     expect(en.match(/<li>site-/g)).toHaveLength(20);
     expect(en).toContain("and 3 more");
-    expect(renderI18n(<SyncedProjects selection={many} />, "de")).toContain(
-      "und 3 weitere",
+    const de = renderI18n(<SyncedProjects selection={many} />, "de");
+    expect(de).toContain("und 3 weitere");
+    // The rest opens in place: a button that names the list it controls.
+    const listId = en.match(/<ul id="([^"]+)">/)![1];
+    expect(en).toContain(
+      `<button type="button" aria-expanded="false" aria-controls="${listId}">Show all 23</button>`,
     );
+    expect(en).not.toContain("Show fewer");
+    expect(de).toContain(">Alle 23 anzeigen</button>");
+    // A short list has nothing to open.
+    const short = renderI18n(
+      <SyncedProjects selection={many.slice(0, SYNCED_SHOWN)} />,
+      "en",
+    );
+    expect(short).not.toContain("<button");
+    expect(short).not.toContain("more");
+  });
+
+  it("opens the whole stored list, by stored names, and closes it again", () => {
+    const many = Array.from({ length: 23 }, (_, index) => ({
+      id: `prj_${index}`,
+      name: index === 22 ? null : `site-${index}`,
+    }));
+    // What "Show all 23" leaves on the page.
+    const en = renderI18n(
+      <SyncedProjects selection={many} initialLimit={23} />,
+      "en",
+    );
+    expect(en.match(/<li>/g)).toHaveLength(23);
+    expect(en).toContain("<li>site-21</li>");
+    expect(en).toContain("<li>prj_22</li>");
+    expect(en).not.toContain("and 0 more");
+    expect(en).not.toContain("Show all");
+    expect(en).toContain('aria-expanded="true"');
+    expect(en).toContain(">Show fewer</button>");
+    expect(
+      renderI18n(<SyncedProjects selection={many} initialLimit={23} />, "de"),
+    ).toContain(">Weniger anzeigen</button>");
+  });
+
+  it("a very long list opens in steps, never all at once", () => {
+    const huge = Array.from({ length: 70_000 }, (_, index) => index);
+    const closed = syncedPage(huge, SYNCED_SHOWN);
+    expect(closed.shown).toHaveLength(SYNCED_SHOWN);
+    expect(closed).toMatchObject({
+      rest: 70_000 - SYNCED_SHOWN,
+      next: SYNCED_STEP,
+      expanded: false,
+    });
+    const once = syncedPage(huge, SYNCED_SHOWN + closed.next);
+    expect(once.shown).toHaveLength(SYNCED_SHOWN + SYNCED_STEP);
+    expect(once.expanded).toBe(true);
+    // The last step shows what is left.
+    const last = syncedPage(huge, 69_900);
+    expect(last).toMatchObject({ rest: 100, next: 100 });
+    expect(syncedPage(huge, 70_000)).toMatchObject({ rest: 0, next: 0 });
+    // The button says how many the step adds, not "all".
+    const selection = huge.map((index) => ({ id: `prj_${index}`, name: null }));
+    const en = renderI18n(<SyncedProjects selection={selection} />, "en");
+    expect(en.match(/<li>/g)).toHaveLength(SYNCED_SHOWN);
+    expect(en).toContain(">Show 500 more</button>");
+    expect(
+      renderI18n(<SyncedProjects selection={selection} />, "de"),
+    ).toContain(">500 weitere anzeigen</button>");
+  });
+
+  it("someone who cannot change the connection sees the selection too", () => {
+    const viewer = (
+      locale: Locale,
+      selection: SelectedResource[] | null | undefined,
+    ) => renderI18n(<SyncedProjectsReadOnly selection={selection} />, locale);
+    const en = viewer("en", [
+      { id: "prj_a", name: "alpha-site" },
+      { id: "prj_b", name: null },
+    ]);
+    expect(en).toContain("Synced projects");
+    expect(en).toContain("Selected projects (2):");
+    expect(en).toContain("<li>alpha-site</li>");
+    expect(en).toContain("<li>prj_b</li>");
+    expect(en).toContain(
+      "A selected project is only synced while the token can see it and Web Analytics is enabled for it.",
+    );
+    // No form, and no pointer at a button they do not have.
+    expect(en).not.toContain("Change project selection");
+    expect(en).not.toContain("<form");
+    expect(viewer("de", [{ id: "prj_a", name: "alpha-site" }])).toContain(
+      "Ausgewähltes Projekt (1):",
+    );
+    expect(viewer("en", null)).toContain(
+      "Selection: all current and future projects.",
+    );
+    // A stored empty selection: why nothing syncs, and whom to ask.
+    const none = viewer("en", []);
+    expect(none).toContain('role="status"');
+    expect(none).toContain(
+      "No project is selected, so this connection collects nothing new. The data already collected is kept. Ask an owner, admin or editor of this workspace to choose at least one project (or all projects).",
+    );
+    expect(none).not.toContain("Change project selection");
+    expect(none).not.toContain("delet");
+    expect(viewer("de", [])).toContain(
+      "Bitte einen Inhaber, Admin oder Bearbeiter dieses Workspace, mindestens ein Projekt (oder alle Projekte) auszuwählen.",
+    );
+    // Unknown (an older API): no card at all.
+    expect(viewer("en", undefined)).toBe("");
   });
 
   const editor = (

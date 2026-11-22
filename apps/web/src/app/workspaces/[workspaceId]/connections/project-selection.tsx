@@ -48,8 +48,32 @@ export function pickerState(result: StoredConnectionPreviewResponse): {
   };
 }
 
-/** Most synced projects named before "and N more". */
-const SYNCED_SHOWN = 20;
+/** Most selected projects named before "and N more". */
+export const SYNCED_SHOWN = 20;
+/**
+ * Most projects one "show more" adds: a stored selection has no length
+ * limit, and tens of thousands of list items at once would stall the page.
+ */
+export const SYNCED_STEP = 500;
+
+/**
+ * The part of a stored selection the list shows with `limit` entries, and
+ * what its buttons offer: how many the next step adds (all that is left,
+ * at most SYNCED_STEP), and whether the list can be made short again.
+ */
+export function syncedPage<T>(
+  selection: readonly T[],
+  limit: number,
+): { shown: readonly T[]; rest: number; next: number; expanded: boolean } {
+  const shown = selection.slice(0, Math.max(limit, SYNCED_SHOWN));
+  const rest = selection.length - shown.length;
+  return {
+    shown,
+    rest,
+    next: Math.min(rest, SYNCED_STEP),
+    expanded: shown.length > SYNCED_SHOWN,
+  };
+}
 
 /**
  * Whether a selection can be saved (#854): all projects (null) or at least
@@ -68,37 +92,98 @@ export function selectionSavable(selection: readonly string[] | null) {
  * the list is loaded, and the text says so. A connection that still stores
  * an empty selection (from before one was required) collects nothing and
  * says how to change that. Nothing while the selection is unknown.
+ *
+ * `canChange` is false for someone who may read the connection but not
+ * change it (a viewer): the same facts, without pointing at a button they
+ * do not have. A list longer than SYNCED_SHOWN is cut short and opens in
+ * place, from the stored names and without a provider call, so it also
+ * works when the token has expired; `initialLimit` is for tests.
  */
 export function SyncedProjects({
+  selection,
+  canChange = true,
+  initialLimit = SYNCED_SHOWN,
+}: {
+  selection: readonly SelectedResource[] | null | undefined;
+  canChange?: boolean;
+  initialLimit?: number;
+}) {
+  const t = useT("connections.projects");
+  const listId = useId();
+  const [limit, setLimit] = useState(initialLimit);
+  if (selection === undefined) return null;
+  if (selection === null) return <p>{t("syncedAll")}</p>;
+  if (selection.length === 0)
+    return (
+      <p className="notice warning" role="status">
+        {canChange
+          ? t("syncedNone", { action: t("check") })
+          : t("syncedNoneViewer")}
+      </p>
+    );
+  const { shown, rest, next, expanded } = syncedPage(selection, limit);
+  return (
+    <>
+      <p>{t("syncedList", { count: selection.length })}</p>
+      <ul id={listId}>
+        {shown.map((resource) => (
+          <li key={resource.id}>{resource.name ?? resource.id}</li>
+        ))}
+        {rest > 0 ? (
+          <li className="muted">{t("syncedMore", { count: rest })}</li>
+        ) : null}
+      </ul>
+      {rest > 0 || expanded ? (
+        <div className="actions">
+          {rest > 0 ? (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={listId}
+              onClick={() => setLimit(shown.length + next)}
+            >
+              {next === rest
+                ? t("syncedShowAll", { count: selection.length })
+                : t("syncedShowMore", { count: next })}
+            </button>
+          ) : null}
+          {expanded ? (
+            <button
+              type="button"
+              aria-expanded
+              aria-controls={listId}
+              onClick={() => setLimit(SYNCED_SHOWN)}
+            >
+              {t("syncedShowFewer")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <p className="help">
+        {canChange
+          ? t("syncedHelp", { action: t("check") })
+          : t("syncedHelpViewer")}
+      </p>
+    </>
+  );
+}
+
+/**
+ * The selection for someone who may read the connection but not change it
+ * (#854): the panel's heading and what is selected, without the form.
+ */
+export function SyncedProjectsReadOnly({
   selection,
 }: {
   selection: readonly SelectedResource[] | null | undefined;
 }) {
   const t = useT("connections.projects");
   if (selection === undefined) return null;
-  if (selection === null) return <p>{t("syncedAll")}</p>;
-  if (selection.length === 0)
-    return (
-      <p className="notice warning" role="status">
-        {t("syncedNone", { action: t("check") })}
-      </p>
-    );
-  const shown = selection.slice(0, SYNCED_SHOWN);
   return (
-    <>
-      <p>{t("syncedList", { count: selection.length })}</p>
-      <ul>
-        {shown.map((resource) => (
-          <li key={resource.id}>{resource.name ?? resource.id}</li>
-        ))}
-        {selection.length > shown.length ? (
-          <li className="muted">
-            {t("syncedMore", { count: selection.length - shown.length })}
-          </li>
-        ) : null}
-      </ul>
-      <p className="help">{t("syncedHelp", { action: t("check") })}</p>
-    </>
+    <div className="card stack" id="project-selection">
+      <h2>{t("heading")}</h2>
+      <SyncedProjects selection={selection} canChange={false} />
+    </div>
   );
 }
 

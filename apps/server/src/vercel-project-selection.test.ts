@@ -446,6 +446,62 @@ describe("the synced projects are shown, and at least one is required (#854)", (
     await storeSelection(["prj_alpha"]);
   });
 
+  it("a stored name that only repeats the ID is no name", async () => {
+    // A discovery that could not resolve a title stores the ID (#623).
+    await owner`
+      insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${connectionId}, ${workspaceId}, 'aaa.placeholder',
+        'aaa.placeholder', 'project')`;
+    await storeSelection(["aaa.placeholder", "prj_alpha", "prj_beta"]);
+    try {
+      // Unnamed, so after the named ones, although its ID sorts first.
+      expect((await detail()).resourceSelection).toEqual([
+        { id: "prj_alpha", name: "alpha-site" },
+        { id: "prj_beta", name: "beta-site" },
+        { id: "aaa.placeholder", name: null },
+      ]);
+    } finally {
+      await storeSelection(["prj_alpha"]);
+      await owner`
+        delete from connection_resources
+        where connection_id = ${connectionId}
+          and resource_id = 'aaa.placeholder'`;
+    }
+  });
+
+  it("every role that may read the connection gets the selection", async () => {
+    const [member] = await owner`
+      select m.user_id from memberships m
+      where m.workspace_id = ${workspaceId}`;
+    // Another owner keeps the workspace while this one changes roles.
+    const [other] = await owner`
+      select id from users where email = 'projects-outsider@example.com'`;
+    await owner`
+      insert into memberships (workspace_id, user_id, role)
+      values (${workspaceId}, ${other!.id}, 'owner')`;
+    try {
+      for (const role of ["owner", "admin", "editor", "viewer"]) {
+        await owner`
+          update memberships set role = ${role}
+          where workspace_id = ${workspaceId} and user_id = ${member!.user_id}`;
+        expect((await detail()).resourceSelection, role).toEqual([
+          { id: "prj_alpha", name: "alpha-site" },
+        ]);
+      }
+      // A viewer reads it and cannot change it.
+      expect((await select(["prj_beta"])).statusCode).toBe(403);
+      expect(await storedSelection()).toEqual(["prj_alpha"]);
+    } finally {
+      await owner`
+        update memberships set role = 'owner'
+        where workspace_id = ${workspaceId} and user_id = ${member!.user_id}`;
+      await owner`
+        delete from memberships
+        where workspace_id = ${workspaceId} and user_id = ${other!.id}`;
+    }
+  });
+
   it("a selection far beyond the SQL parameter limit still reads", async () => {
     // Nothing caps a stored selection's length: the names are looked up
     // with the IDs as one parameter, not one each (65,535 at most).

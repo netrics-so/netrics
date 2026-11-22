@@ -277,7 +277,14 @@ export const workspaceEn = {
         "{count, plural, one {Selected project (#):} other {Selected projects (#):}}",
       syncedHelp:
         "A selected project is only synced while the token can see it and Web Analytics is enabled for it. “{action}” loads the current list and marks selected projects that are not listed.",
+      syncedHelpViewer:
+        "A selected project is only synced while the token can see it and Web Analytics is enabled for it.",
       syncedMore: "and {count} more",
+      syncedShowAll: "Show all {count}",
+      syncedShowMore: "Show {count} more",
+      syncedShowFewer: "Show fewer",
+      syncedNoneViewer:
+        "No project is selected, so this connection collects nothing new. The data already collected is kept. Ask an owner, admin or editor of this workspace to choose at least one project (or all projects).",
       syncedNone:
         "No project is selected, so this connection collects nothing new. Use “{action}” to choose at least one project (or all projects); the data already collected is kept. Deleting the connection instead also deletes the data it collected.",
       pages: "Project list pages",

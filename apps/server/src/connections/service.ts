@@ -892,7 +892,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
    * sync engine reads it with (`selectedResourcesOf`): undefined for a
    * connector without a selection, null when none is stored (every
    * resource), else its members with the names discovery stored, named
-   * ones first. An empty list collects nothing.
+   * ones first. An empty list collects nothing. A stored name that only
+   * repeats the ID (a discovery that could not resolve a title, #623) is
+   * no name: null, as the contract says.
    */
   async function storedResourceSelection(
     tx: Transaction,
@@ -913,10 +915,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       selected.map((resourceId) => ({ connectionId, resourceId })),
     );
     return [...new Set(selected)]
-      .map((id) => ({
-        id,
-        name: names.get(resourceNameKey(connectionId, id)) ?? null,
-      }))
+      .map((id) => {
+        const name = names.get(resourceNameKey(connectionId, id));
+        return { id, name: name === undefined || name === id ? null : name };
+      })
       .sort(
         (a, b) =>
           Number(a.name === null) - Number(b.name === null) ||

@@ -290,7 +290,14 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "{count, plural, one {Ausgewähltes Projekt (#):} other {Ausgewählte Projekte (#):}}",
       syncedHelp:
         "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist. „{action}“ lädt die aktuelle Liste und kennzeichnet ausgewählte Projekte, die nicht aufgelistet sind.",
+      syncedHelpViewer:
+        "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist.",
       syncedMore: "und {count} weitere",
+      syncedShowAll: "Alle {count} anzeigen",
+      syncedShowMore: "{count} weitere anzeigen",
+      syncedShowFewer: "Weniger anzeigen",
+      syncedNoneViewer:
+        "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Bereits importierte Daten bleiben erhalten. Bitte einen Inhaber, Admin oder Bearbeiter dieses Workspace, mindestens ein Projekt (oder alle Projekte) auszuwählen.",
       syncedNone:
         "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Wähle über „{action}“ mindestens ein Projekt (oder alle Projekte) aus; bereits importierte Daten bleiben erhalten. Wenn du stattdessen die Verbindung löschst, werden auch ihre importierten Daten gelöscht.",
       pages: "Seiten der Projektliste",
