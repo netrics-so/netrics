@@ -442,6 +442,7 @@ export {
   addMembership,
   createProject,
   deleteWorkspace,
+  isDeletionOutOfTime,
   enqueueWorkspacePurges,
   WORKSPACE_PURGE_JOB,
   type DeleteWorkspaceOutcome,

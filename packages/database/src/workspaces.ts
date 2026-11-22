@@ -1,7 +1,7 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
-import { createWorkspaceInTransaction } from "./context.js";
+import { createWorkspaceInTransaction, hasSqlstate } from "./context.js";
 import * as schema from "./schema.js";
 
 export type Membership = typeof schema.memberships.$inferSelect;
@@ -384,17 +384,24 @@ export async function deleteWorkspace(
   name: string,
   options: {
     /**
-     * How long the function may wait for its locks, at most and by default
-     * 10 seconds: what a caller that already waited has left. Afterwards
-     * it fails with 55P03 (lock_not_available) and nothing is deleted.
+     * What is left of the caller's deadline, at most and by default 10
+     * seconds. The function measures every lock wait against it (55P03,
+     * lock_not_available, when it runs out), and the call as a whole is
+     * cancelled at that point (57014, query_canceled) should it still be
+     * working. Either way nothing is deleted: isDeletionOutOfTime(). Sets
+     * statement_timeout for the rest of the transaction, which should end
+     * with this call.
      */
     waitMs?: number;
   } = {},
 ): Promise<DeleteWorkspaceOutcome> {
   if (options.waitMs !== undefined) {
-    const waitMs = Math.max(1, Math.floor(options.waitMs));
+    const waitMs = String(
+      Math.min(10_000, Math.max(1, Math.floor(options.waitMs))),
+    );
     await tx.execute(
-      sql`select set_config('app.workspace_delete_wait_ms', ${String(waitMs)}, true)`,
+      sql`select set_config('app.workspace_delete_wait_ms', ${waitMs}, true),
+            set_config('statement_timeout', ${waitMs}, true)`,
     );
   }
   const rows = await tx.execute<{ outcome: DeleteWorkspaceOutcome }>(
@@ -405,6 +412,14 @@ export async function deleteWorkspace(
     throw new Error("delete_workspace returned no row");
   }
   return outcome;
+}
+
+/**
+ * Whether a deleteWorkspace() call ended because its time ran out, waiting
+ * for a lock (55P03) or still working (57014): nothing was deleted.
+ */
+export function isDeletionOutOfTime(error: unknown): boolean {
+  return hasSqlstate(error, "55P03") || hasSqlstate(error, "57014");
 }
 
 /** The job that removes a deleted workspace's data (#839). */

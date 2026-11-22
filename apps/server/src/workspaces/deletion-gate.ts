@@ -13,28 +13,35 @@
 // deletions of several processes (and of anything else that calls the
 // function) take turns.
 //
-// A request waits at most `budgetMs` in total: what is left when it gets
-// the gate is the time its database waits may take (deleteWorkspace's
-// `waitMs`), so the gate adds nothing to the 10 seconds a deletion may wait.
-// A request that does not get the gate in time is told so and never takes a
-// connection. That timeout is also what bounds the queue: nobody waits
-// longer than the budget, whatever the holder does, and the holder's own
-// waits end within its budget.
+// A request has ONE deadline, an instant fixed when it arrives at the gate:
+// `budgetMs` later. Everything it then waits for is measured against that
+// instant, not given time of its own: the gate, a free connection of the
+// pool, and the locks of delete_workspace() (which is told what is left,
+// see deleteWithinDeadline in routes/workspaces.ts). A request that does
+// not get the gate by its deadline is told so and never takes a
+// connection. The deadline is also what bounds the queue: nobody waits
+// longer, whatever the holder does, and the holder is bound by its own.
 
-/** How long a deletion may wait in all: the gate, then the database. */
+/** How long a deletion request may take to start deleting, in all. */
 export const WORKSPACE_DELETION_BUDGET_MS = 10_000;
 
 /** The gate was not free within the budget. */
 export const DELETION_GATE_BUSY = Symbol("deletion gate busy");
 
+/** The instant by which a deletion request must have started deleting. */
+export interface DeletionDeadline {
+  /** Whole milliseconds left; 0 or less once it has passed. */
+  remainingMs(): number;
+}
+
 export interface WorkspaceDeletionGate {
   /**
-   * Runs `work` alone, with the milliseconds left of the budget, or answers
-   * DELETION_GATE_BUSY without running it. The gate is released when `work`
-   * settles, also when it throws.
+   * Runs `work` alone, with the request's deadline, or answers
+   * DELETION_GATE_BUSY without running it when the gate is not free by
+   * then. The gate is released when `work` settles, also when it throws.
    */
   run<T>(
-    work: (remainingMs: number) => Promise<T>,
+    work: (deadline: DeletionDeadline) => Promise<T>,
   ): Promise<T | typeof DELETION_GATE_BUSY>;
   /** Requests waiting for the gate (tests). */
   readonly waiting: number;
@@ -50,8 +57,8 @@ export function createWorkspaceDeletionGate(
   // In order of arrival; each entry hands the gate to its request.
   const queue: Array<() => void> = [];
 
-  /** Resolves true with the gate held, false when the budget ran out. */
-  function acquire(): Promise<boolean> {
+  /** Resolves true with the gate held, false when the deadline passed. */
+  function acquire(deadline: DeletionDeadline): Promise<boolean> {
     if (!held) {
       held = true;
       return Promise.resolve(true);
@@ -61,11 +68,14 @@ export function createWorkspaceDeletionGate(
         clearTimeout(timer);
         resolve(true);
       };
-      const timer = setTimeout(() => {
-        const at = queue.indexOf(grant);
-        if (at >= 0) queue.splice(at, 1);
-        resolve(false);
-      }, budgetMs);
+      const timer = setTimeout(
+        () => {
+          const at = queue.indexOf(grant);
+          if (at >= 0) queue.splice(at, 1);
+          resolve(false);
+        },
+        Math.max(0, deadline.remainingMs()),
+      );
       queue.push(grant);
     });
   }
@@ -79,13 +89,15 @@ export function createWorkspaceDeletionGate(
 
   return {
     async run(work) {
-      const started = performance.now();
-      if (!(await acquire())) return DELETION_GATE_BUSY;
+      const at = performance.now() + budgetMs;
+      const deadline: DeletionDeadline = {
+        remainingMs: () => Math.floor(at - performance.now()),
+      };
+      if (!(await acquire(deadline))) return DELETION_GATE_BUSY;
       try {
-        const remaining = Math.floor(budgetMs - (performance.now() - started));
-        // Granted in the budget's last instant: no time for the database.
-        if (remaining < 1) return DELETION_GATE_BUSY;
-        return await work(remaining);
+        // Granted in the last instant: no time left for anything.
+        if (deadline.remainingMs() < 1) return DELETION_GATE_BUSY;
+        return await work(deadline);
       } finally {
         release();
       }

@@ -75,9 +75,10 @@ describe("the workspace deletion gate (#855)", () => {
   it("gives up after the budget without running, and leaves the queue", async () => {
     const deletions = createWorkspaceDeletionGate({ budgetMs: 40 });
     const hold = gate();
-    const holder = deletions.run(async (remainingMs) => {
+    const holder = deletions.run(async (deadline) => {
+      const granted = deadline.remainingMs();
       await hold.opened;
-      return remainingMs;
+      return granted;
     });
     let ran = 0;
     const waiters = Array.from({ length: 5 }, () =>
@@ -101,11 +102,11 @@ describe("the workspace deletion gate (#855)", () => {
     expect(await deletions.run(async () => "free again")).toBe("free again");
   });
 
-  it("hands a waiter what is left of the budget, not a new one", async () => {
+  it("measures a waiter against the deadline fixed on arrival, not a new one", async () => {
     const deletions = createWorkspaceDeletionGate({ budgetMs: 10_000 });
     const hold = gate();
     const holder = deletions.run(() => hold.opened);
-    const waiter = deletions.run(async (remainingMs) => remainingMs);
+    const waiter = deletions.run(async (deadline) => deadline.remainingMs());
     const started = performance.now();
     // Real time passes while it waits (a timer, not a sleep for a state).
     await new Promise((resolve) => setTimeout(resolve, 60));

@@ -30,9 +30,9 @@ import {
   findMembership,
   findProject,
   findWorkspace,
-  hasSqlstate,
   insertAuditEvent,
   isLastOwnerError,
+  isDeletionOutOfTime,
   isLastWorkspaceError,
   listAuditEvents,
   listMembers,
@@ -45,6 +45,7 @@ import {
   updateMembershipRole,
   withWorkspace,
   type Database,
+  type DeleteWorkspaceOutcome,
   type MemberDetails,
   type Project,
   type Workspace,
@@ -82,6 +83,67 @@ export interface WorkspaceRouteDeps {
 
 const memberParamsSchema = z.object({ userId: z.uuid() });
 const projectParamsSchema = z.object({ projectId: z.uuid() });
+
+/**
+ * Deletes a workspace within one deadline (#855). The request waits, in
+ * this order, for the process's deletion gate (one deletion at a time, so
+ * a burst does not use up the pool), for a connection of the pool, and in
+ * delete_workspace() for the installation's deletion lock, the workspace's
+ * fence and row locks. All of it is measured against the deadline the gate
+ * fixes on arrival: DELETION_GATE_BUSY when it passes before the deletion
+ * could start, an error (isDeletionOutOfTime) when it passes in the
+ * database. In neither case is anything deleted, then or later.
+ */
+function deleteWithinDeadline(
+  gate: WorkspaceDeletionGate,
+  db: Database,
+  ctx: { workspaceId: string; userId: string },
+  name: string,
+): Promise<DeleteWorkspaceOutcome | typeof DELETION_GATE_BUSY> {
+  return new Promise((resolve, reject) => {
+    void gate
+      .run(async (deadline) => {
+        // postgres.js has no limit on the wait for a pooled connection, so
+        // the wait is given up here: the request is answered at the
+        // deadline, and the transaction, when its turn comes, finds itself
+        // abandoned and does nothing. The gate stays held until then, so
+        // at most one such transaction of this process is ever queued.
+        let started = false;
+        let abandoned = false;
+        const timer = setTimeout(
+          () => {
+            if (started) return;
+            abandoned = true;
+            resolve(DELETION_GATE_BUSY);
+          },
+          Math.max(0, deadline.remainingMs()),
+        );
+        try {
+          // No fence of its own: delete_workspace() takes it exclusively.
+          // Read committed by name, whatever the role or database defaults
+          // to: the function counts the caller's other workspaces after
+          // waiting for another deletion and refuses a transaction whose
+          // snapshot could predate it.
+          return await withWorkspace(
+            db,
+            ctx,
+            async (tx) => {
+              // With a connection, right before the call: what is left now.
+              const waitMs = deadline.remainingMs();
+              if (abandoned || waitMs < 1) return DELETION_GATE_BUSY;
+              started = true;
+              return deleteWorkspace(tx, name, { waitMs });
+            },
+            { fence: "none", isolationLevel: "read committed" },
+          );
+        } finally {
+          clearTimeout(timer);
+        }
+      })
+      // After an abandoned request was answered these settle nothing.
+      .then(resolve, reject);
+  });
+}
 
 function toWorkspace(workspace: Workspace) {
   return {
@@ -480,33 +542,19 @@ export function registerWorkspaceRoutes(
           if (!body) {
             return;
           }
-          let outcome:
-            | Awaited<ReturnType<typeof deleteWorkspace>>
-            | typeof DELETION_GATE_BUSY;
+          let outcome: Awaited<ReturnType<typeof deleteWithinDeadline>>;
           try {
-            // One deletion at a time in this process, queued here before a
-            // connection is taken: a deletion that waits in the database
-            // (for the deletion before it, or for work in its workspace)
-            // holds its connection, and a burst of them must not use up
-            // the pool. What is left of the 10 seconds goes to the
-            // database's waits.
-            // No fence of its own: delete_workspace() takes it exclusively.
-            // Read committed by name, whatever the role or database
-            // defaults to: the function counts the caller's other
-            // workspaces after waiting for another deletion and refuses a
-            // transaction whose snapshot could predate it.
-            outcome = await deletionGate.run((waitMs) =>
-              withWorkspace(
-                deps.db,
-                { workspaceId: access.workspaceId, userId: access.callerId },
-                (tx) => deleteWorkspace(tx, body.name, { waitMs }),
-                { fence: "none", isolationLevel: "read committed" },
-              ),
+            outcome = await deleteWithinDeadline(
+              deletionGate,
+              deps.db,
+              { workspaceId: access.workspaceId, userId: access.callerId },
+              body.name,
             );
           } catch (error) {
-            // Work for the workspace was still running after 10 seconds
-            // (lock_not_available): nothing was deleted, try again.
-            if (hasSqlstate(error, "55P03")) {
+            // The deadline passed while the database waited for a lock
+            // (work for the workspace, another deletion, a row a worker
+            // holds) or was still working: nothing was deleted, try again.
+            if (isDeletionOutOfTime(error)) {
               return sendError(reply, 409, "workspace_busy");
             }
             if (isLastWorkspaceError(error)) {
@@ -515,7 +563,8 @@ export function registerWorkspaceRoutes(
             throw error;
           }
           if (outcome === DELETION_GATE_BUSY) {
-            // Other deletions were still ahead after 10 seconds.
+            // The deadline passed before the deletion could start: other
+            // deletions were still ahead, or no connection was free.
             return sendError(reply, 409, "workspace_busy");
           }
           if (outcome === "not_found") {

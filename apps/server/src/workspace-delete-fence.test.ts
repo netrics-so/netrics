@@ -13,6 +13,7 @@ import {
   deleteWorkspace,
   createRawSqlClient,
   enqueueSyncJob,
+  isDeletionOutOfTime,
   isWorkspaceDeleted,
   listDueConnections,
   setConnectionNextDue,
@@ -688,8 +689,8 @@ describe("deletion requests queue without a database connection (#855)", () => {
   const REQUESTS = 6;
 
   /** An API of its own on the fixture's database, with a small pool. */
-  async function apiWith(deletions: WorkspaceDeletionGate) {
-    const db = createDatabase(fixture.testDb.appUrl, { max: 2 });
+  async function apiWith(deletions: WorkspaceDeletionGate, max = 2) {
+    const db = createDatabase(fixture.testDb.appUrl, { max });
     const config = loadConfig({
       DATABASE_URL: fixture.testDb.appUrl,
       LOG_LEVEL: "silent",
@@ -706,6 +707,7 @@ describe("deletion requests queue without a database connection (#855)", () => {
     });
     return {
       app,
+      db,
       close: async () => {
         await app.close();
         await db.$client.end({ timeout: 5 });
@@ -888,6 +890,278 @@ describe("deletion requests queue without a database connection (#855)", () => {
     }
   });
 
+  // One deadline, fixed when the request reaches the gate: whatever a
+  // deletion request then waits for, it is answered by the deadline (plus
+  // the time to answer), with 204 or workspace_busy, and a request that was
+  // answered workspace_busy deletes nothing, then or later.
+  describe("one deadline for everything a deletion request waits for", () => {
+    const BUDGET_MS = 600;
+    const TOLERANCE_MS = 500;
+    let holders: Sql;
+
+    beforeAll(() => {
+      // Sessions that hold locks open (the admin client has one connection).
+      holders = createRawSqlClient(fixture.testDb.adminUrl, {
+        max: 2,
+        onnotice: () => undefined,
+      });
+    });
+    afterAll(async () => {
+      await holders?.end({ timeout: 5 }).catch(() => undefined);
+    });
+
+    /** Holds what `take` locks in an open transaction until released. */
+    async function holdOpen(
+      take: (tx: Sql) => Promise<unknown>,
+    ): Promise<() => Promise<void>> {
+      const taken = gate();
+      const let_go = gate();
+      const done = holders.begin(async (tx) => {
+        await take(tx as unknown as Sql);
+        taken.open();
+        await let_go.opened;
+      });
+      await taken.opened;
+      return async () => {
+        let_go.open();
+        await done;
+      };
+    }
+
+    type Api = Awaited<ReturnType<typeof apiWith>>;
+    interface Contention {
+      /** Before the request is sent; answers how to end the contention. */
+      before?: (
+        workspaceId: string,
+        api: Api,
+        deletions: WorkspaceDeletionGate,
+      ) => Promise<() => Promise<void>>;
+      /** With the request waiting at the gate (held for this by the test). */
+      atGate?: (api: Api) => Promise<() => Promise<void>>;
+    }
+
+    const kinds: Array<[string, Contention]> = [
+      [
+        "the gate (another deletion of this process)",
+        {
+          before: async (_workspaceId, _api, deletions) => {
+            const hold = gate();
+            const holder = deletions.run(() => hold.opened);
+            return async () => {
+              hold.open();
+              await holder;
+            };
+          },
+        },
+      ],
+      [
+        "the pool (its only connection is in use)",
+        {
+          atGate: async (api) => {
+            const inside = gate();
+            const hold = gate();
+            const user = api.db.transaction(async (tx) => {
+              await tx.execute(sql`select 1`);
+              inside.open();
+              await hold.opened;
+            });
+            await inside.opened;
+            return async () => {
+              hold.open();
+              await user;
+            };
+          },
+        },
+      ],
+      [
+        "the installation's deletion lock (a deletion of another process)",
+        {
+          before: () =>
+            holdOpen(
+              (tx) => tx`select pg_advisory_xact_lock(
+                hashtext('netrics.workspace_delete'), 0)`,
+            ),
+        },
+      ],
+      [
+        "the fence (work in the workspace)",
+        {
+          before: async (workspaceId) => {
+            const inside = gate();
+            const hold = gate();
+            const work = withWorkspace(
+              fixture.db,
+              { workspaceId },
+              async () => {
+                inside.open();
+                await hold.opened;
+              },
+            );
+            await inside.opened;
+            return async () => {
+              hold.open();
+              await work;
+            };
+          },
+        },
+      ],
+      [
+        "a row lock (a worker holds a job of the workspace)",
+        {
+          before: async (workspaceId) => {
+            await admin`
+              insert into jobs (kind, workspace_id, payload)
+              values ('netrics.noop', ${workspaceId},
+                ${admin.json({ workspace_id: workspaceId, connection_id: null })})`;
+            return holdOpen(
+              (tx) => tx`select id from jobs
+                where workspace_id = ${workspaceId} for update`,
+            );
+          },
+        },
+      ],
+    ];
+
+    it.each(kinds)("held up by %s", async (label, contention) => {
+      const deletions = createWorkspaceDeletionGate({ budgetMs: BUDGET_MS });
+      const api = await apiWith(deletions, 1);
+      try {
+        const slug = `deadline-${kinds.findIndex(([name]) => name === label)}`;
+        const user = await userWith(slug, 2);
+        const workspaceId = user.workspaces[0]!;
+        const remove = () =>
+          api.app.inject({
+            method: "POST",
+            url: `/v1/workspaces/${workspaceId}/delete`,
+            headers: { cookie: user.cookie },
+            payload: { name: `${slug} 0` },
+          });
+        const state = async () => {
+          const [row] = await admin<{ deleted: boolean; events: number }[]>`
+            select w.deleted_at is not null as deleted,
+              (select count(*)::int from audit_events
+               where action = 'workspace.deleted' and target = w.id::text) as events
+            from workspaces w where w.id = ${workspaceId}`;
+          return row;
+        };
+        const untilFree = async () => {
+          const deadline = Date.now() + 15_000;
+          while (deletions.held || deletions.waiting > 0) {
+            if (Date.now() > deadline) throw new Error("the gate stayed held");
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+        };
+
+        let release = contention.before
+          ? await contention.before(workspaceId, api, deletions)
+          : async () => {};
+        let started: number;
+        let pending: ReturnType<typeof remove>;
+        if (contention.atGate) {
+          // The contention begins after the request passed its access
+          // check: it is held at the gate meanwhile.
+          const hold = gate();
+          const holder = deletions.run(() => hold.opened);
+          started = performance.now();
+          pending = remove();
+          await untilQueued(deletions, 1);
+          release = await contention.atGate(api);
+          hold.open();
+          await holder;
+        } else {
+          started = performance.now();
+          pending = remove();
+        }
+
+        // Answered by the deadline, and told that nothing was deleted.
+        const response = await pending;
+        const took = performance.now() - started;
+        expect(response.statusCode, response.body).toBe(409);
+        expect(response.json()).toEqual({ error: "workspace_busy" });
+        expect(took).toBeLessThan(BUDGET_MS + TOLERANCE_MS);
+        expect(await state()).toEqual({ deleted: false, events: 0 });
+
+        // The contention ends after the deadline: still nothing is deleted,
+        // by whatever of the request was left waiting.
+        await release();
+        await untilFree();
+        expect(await fenceWaiters()).toBe(0);
+        expect(await state()).toEqual({ deleted: false, events: 0 });
+
+        // Without contention the same request deletes, within the budget.
+        const again = performance.now();
+        const deleted = await remove();
+        expect(deleted.statusCode, deleted.body).toBe(204);
+        expect(performance.now() - again).toBeLessThan(
+          BUDGET_MS + TOLERANCE_MS,
+        );
+        expect(await state()).toEqual({ deleted: true, events: 1 });
+      } finally {
+        await api.close();
+      }
+    });
+  });
+
+  it("a row lock held past the deadline ends the deletion and frees the deletion lock for others", async () => {
+    const workspaceId = await newWorkspace("Row held");
+    const other = await newWorkspace("Row free");
+    await admin`
+      insert into jobs (kind, workspace_id, payload)
+      values ('netrics.noop', ${workspaceId},
+        ${admin.json({ workspace_id: workspaceId, connection_id: null })})`;
+    const held = gate();
+    const go = gate();
+    const worker = appRaw.begin(async (tx) => {
+      await tx`select set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`select id from jobs where workspace_id = ${workspaceId}
+        for update`;
+      held.open();
+      await go.opened;
+    });
+    await held.opened;
+    const remove = (id: string, name: string, waitMs: number) =>
+      withWorkspace(
+        fixture.db,
+        { workspaceId: id, userId: ownerId },
+        (tx) => deleteWorkspace(tx, name, { waitMs }),
+        { fence: "none", isolationLevel: "read committed" },
+      );
+    const started = performance.now();
+    const failure = await remove(workspaceId, "Row held", 100).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(isDeletionOutOfTime(failure), String(failure)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(2_000);
+    // Rolled back whole: not marked, members and the job as they were.
+    const [row] = await admin`
+      select deleted_at from workspaces where id = ${workspaceId}`;
+    expect(row!.deleted_at).toBeNull();
+    expect(await count("memberships", workspaceId)).toBe(1);
+    expect(await liveJobs(workspaceId)).toBe(1);
+    // The deletion lock went with it: another workspace's deletion runs
+    // while the row is still held.
+    expect(await remove(other, "Row free", 5_000)).toBe("deleted");
+    go.open();
+    await worker;
+    expect(await remove(workspaceId, "Row held", 5_000)).toBe("deleted");
+  });
+
+  it("gives the caller's lock_timeout back when it returns", async () => {
+    const workspaceId = await newWorkspace("Timeouts");
+    const outcome = await appRaw.begin(async (tx) => {
+      await tx`select set_config('app.workspace_id', ${workspaceId}, true),
+        set_config('app.user_id', ${ownerId}, true),
+        set_config('lock_timeout', '1234ms', true)`;
+      const [wrong] = await tx<{ outcome: string }[]>`
+        select delete_workspace('not its name') as outcome`;
+      const [after] = await tx<{ value: string }[]>`
+        select current_setting('lock_timeout') as value`;
+      return { wrong: wrong!.outcome, lockTimeout: after!.value };
+    });
+    expect(outcome).toEqual({ wrong: "name_mismatch", lockTimeout: "1234ms" });
+  });
+
   it("the database waits only as long as its caller has left", async () => {
     const workspaceId = await newWorkspace("Left over");
     const inside = gate();
@@ -898,16 +1172,18 @@ describe("deletion requests queue without a database connection (#855)", () => {
     });
     await inside.opened;
     const started = Date.now();
-    await expect(
-      withWorkspace(
-        fixture.db,
-        { workspaceId, userId: ownerId },
-        (tx) => deleteWorkspace(tx, "Left over", { waitMs: 50 }),
-        { fence: "none", isolationLevel: "read committed" },
-      ),
-    ).rejects.toMatchObject({
-      cause: expect.objectContaining({ code: "55P03" }),
-    });
+    // The lock wait (55P03) or the call as a whole (57014), whichever
+    // timer of the same deadline fires first.
+    const failure = await withWorkspace(
+      fixture.db,
+      { workspaceId, userId: ownerId },
+      (tx) => deleteWorkspace(tx, "Left over", { waitMs: 50 }),
+      { fence: "none", isolationLevel: "read committed" },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(isDeletionOutOfTime(failure), String(failure)).toBe(true);
     expect(Date.now() - started).toBeLessThan(5_000);
     go.open();
     await work;
