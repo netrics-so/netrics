@@ -19,6 +19,7 @@ import {
   pruneOAuthAuthorizations,
   prunePendingKeys,
   pruneDraftConnections,
+  enqueueWorkspacePurges,
   enqueueExpiredDraftGrants,
   pruneRevokedDevices,
   pruneCustomApiItemImages,
@@ -315,6 +316,14 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
       const draftsDeleted = await pruneDraftConnections(schedulerDb, now());
       if (draftsDeleted > 0) {
         logger.info({ draftsDeleted }, "pruned draft connections");
+      }
+    });
+    // Deleted workspaces whose purge job is gone before they are (#839):
+    // a new job, so a purge always resumes.
+    await runTask("workspace_purges", async () => {
+      const workspacePurgeJobs = await enqueueWorkspacePurges(schedulerDb);
+      if (workspacePurgeJobs > 0) {
+        logger.info({ workspacePurgeJobs }, "queued workspace purges");
       }
     });
     // Review text (ADR 0019 §11): per app the newest 50, none older than

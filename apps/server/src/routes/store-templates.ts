@@ -1,3 +1,4 @@
+import { rethrowWorkspaceGone } from "@netrics/database";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { can, DataProcessingError, type DataPolicy } from "@netrics/domain";
@@ -146,6 +147,7 @@ export function registerStoreTemplateRoutes(
               await service.options(access),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(
               reply,
               error instanceof DataServiceError ? error.status : 503,
@@ -185,6 +187,7 @@ export function registerStoreTemplateRoutes(
               await service.install(access, input),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(
               reply,
               error instanceof DataServiceError
@@ -222,6 +225,7 @@ export function registerStoreTemplateRoutes(
               await updates.list(access),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, ...failed(error));
           }
         },
@@ -251,6 +255,7 @@ export function registerStoreTemplateRoutes(
               await updates.plan(access, params.data.requestId),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, ...failed(error));
           }
         },
@@ -294,6 +299,7 @@ export function registerStoreTemplateRoutes(
               await updates.apply(access, params.data.requestId, input),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return applyError(reply, error);
           }
         },
@@ -323,6 +329,7 @@ export function registerStoreTemplateRoutes(
               await updates.scope(access, params.data.requestId),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, ...failed(error));
           }
         },
@@ -353,6 +360,7 @@ export function registerStoreTemplateRoutes(
               await products.read(access, params.data.requestId),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, ...failed(error));
           }
         },
@@ -382,6 +390,7 @@ export function registerStoreTemplateRoutes(
               await products.retryIcons(access, params.data.requestId),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, ...failed(error));
           }
         },
@@ -418,6 +427,7 @@ export function registerStoreTemplateRoutes(
               await products.update(access, params.data.requestId, input),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, ...failed(error));
           }
         },
@@ -450,6 +460,7 @@ export function registerStoreTemplateRoutes(
               await updates.scopePlan(access, params.data.requestId, choice),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, ...failed(error));
           }
         },
@@ -493,6 +504,7 @@ export function registerStoreTemplateRoutes(
               await updates.changeScope(access, params.data.requestId, input),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return applyError(reply, error);
           }
         },
@@ -526,6 +538,7 @@ export function registerStoreTemplateRoutes(
             );
             return reply.code(204).send();
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return sendError(reply, ...failed(error));
           }
         },
@@ -604,6 +617,7 @@ export function registerStoreTemplateRoutes(
                   : await updates.swapBack(access, updateId, key),
               );
             } catch (error) {
+              rethrowWorkspaceGone(error);
               return dashboardError(reply, error);
             }
           },
@@ -647,6 +661,7 @@ export function registerStoreTemplateRoutes(
               ),
             );
           } catch (error) {
+            rethrowWorkspaceGone(error);
             return dashboardError(reply, error);
           }
         },

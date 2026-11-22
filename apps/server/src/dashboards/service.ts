@@ -73,6 +73,7 @@ import {
   type Transaction,
   type WidgetInput,
   type ProjectFilter,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   CURRENCY_DIMENSION,
@@ -1504,6 +1505,7 @@ async function validateDataBindings(
     }
     return ok(null);
   } catch (error) {
+    rethrowWorkspaceGone(error);
     return fail(400, safeDataError(error));
   }
 }

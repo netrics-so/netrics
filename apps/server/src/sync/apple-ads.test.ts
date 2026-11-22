@@ -598,8 +598,13 @@ describe("Apple Ads campaign report sync", () => {
     );
     expect([...own]).toEqual([[BRAND, "Wurfel – Brand"]]);
     const other = randomUUID();
-    const underOther = await withWorkspace(db, { workspaceId: other }, (tx) =>
-      findDimensionValueNames(tx, query),
+    // (Without the workspace fence, which refuses an unknown workspace
+    // before any read, #839: this is about RLS.)
+    const underOther = await withWorkspace(
+      db,
+      { workspaceId: other },
+      (tx) => findDimensionValueNames(tx, query),
+      { fence: "none" },
     );
     expect(underOther.size).toBe(0);
     const otherPredicate = await withWorkspace(db, { workspaceId }, (tx) =>

@@ -155,6 +155,7 @@ import {
   projectListResponseSchema,
   projectResponseSchema,
   renameWorkspaceRequestSchema,
+  deleteWorkspaceRequestSchema,
   updateMeRequestSchema,
   setupStatusResponseSchema,
   startOAuthAuthorizationRequestSchema,
@@ -806,6 +807,24 @@ export function renameWorkspace(
     `/v1/workspaces/${workspaceId}`,
     renameWorkspaceRequestSchema.parse({ name }),
   );
+}
+
+/**
+ * Deletes the workspace for good (#839, owners only). `name` is its name as
+ * the user typed it to confirm; the server compares it again.
+ */
+export async function deleteWorkspace(
+  workspaceId: string,
+  name: string,
+): Promise<void> {
+  const response = await fetch(`/v1/workspaces/${workspaceId}/delete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(deleteWorkspaceRequestSchema.parse({ name })),
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorCode(response));
+  }
 }
 
 export function createInvitation(

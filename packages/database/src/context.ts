@@ -46,11 +46,22 @@ export async function withWorkspace<T>(
      * covers only the lock, not the rest of the transaction.
      */
     lockTables?: TableLocks;
+    /**
+     * How the transaction stands to a deletion of the workspace (#839;
+     * workspace_fence, migration 0094). Default "live": it takes the fence
+     * and fails with WorkspaceDeletedError when the workspace is deleted, so
+     * no work that started before a deletion writes after it. "any" takes
+     * the fence but also runs for a deleted workspace: only its purge.
+     * "none" takes no fence: only the transaction that calls
+     * delete_workspace(), which takes it exclusively itself.
+     */
+    fence?: "live" | "any" | "none";
   },
 ): Promise<T> {
   const workspaceId = uuidSchema.parse(ctx.workspaceId);
   const userId = ctx.userId ? uuidSchema.parse(ctx.userId) : undefined;
   const { lockTables, isolationLevel, accessMode } = options ?? {};
+  const fence = options?.fence ?? "live";
   // drizzle sends a config without values as an invalid bare SET TRANSACTION.
   const config =
     isolationLevel || accessMode
@@ -61,14 +72,91 @@ export async function withWorkspace<T>(
       : undefined;
   return db.transaction(async (tx) => {
     if (lockTables) await lockTablesFirst(tx, lockTables);
-    await tx.execute(
-      sql`select set_config('app.workspace_id', ${workspaceId}, true)`,
-    );
+    if (fence === "none") {
+      await tx.execute(
+        sql`select set_config('app.workspace_id', ${workspaceId}, true)`,
+      );
+    } else {
+      // One statement: the tenant context and the fence, the transaction's
+      // first lock for the workspace. Under repeatable read or serializable
+      // the fence answers from this transaction's snapshot, which may
+      // predate a deletion the lock just waited for; there it also locks
+      // the workspace row, which fails (40001) on a row changed since the
+      // snapshot. Read-only transactions cannot lock rows and write
+      // nothing; they read their snapshot.
+      const lockRow =
+        fence === "live" &&
+        isolationLevel !== undefined &&
+        isolationLevel !== "read committed" &&
+        accessMode !== "read only";
+      const [row] = await tx.execute<{ state: WorkspaceState }>(
+        sql`select set_config('app.workspace_id', ${workspaceId}, true),
+              workspace_fence(${workspaceId}::uuid, ${lockRow}) as state`,
+      );
+      // A workspace that is gone altogether (purged, or never there) is
+      // refused like a deleted one: nothing can be written for it, and a
+      // request that resolved its access before the purge gets the same
+      // answer as one that came before it.
+      if (fence === "live" && row?.state !== "live") {
+        throw new WorkspaceDeletedError(workspaceId);
+      }
+    }
     if (userId) {
       await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
     }
     return fn(tx);
   }, config);
+}
+
+/** What workspace_fence() says about a workspace. */
+export type WorkspaceState = "live" | "deleted" | "missing";
+
+/** SQLSTATE the database raises for work on a deleted workspace (0094). */
+export const WORKSPACE_DELETED_SQLSTATE = "WS001";
+
+/**
+ * A transaction was asked to act for a deleted workspace (#839). The API
+ * answers it like an unknown workspace; a job ends without retries.
+ */
+export class WorkspaceDeletedError extends Error {
+  readonly code = WORKSPACE_DELETED_SQLSTATE;
+  constructor(readonly workspaceId: string) {
+    super(`workspace ${workspaceId} is deleted`);
+    this.name = "WorkspaceDeletedError";
+  }
+}
+
+/**
+ * Whether an error (or one it wraps) says the workspace is deleted: the
+ * fence in withWorkspace, or the database's own refusal.
+ */
+export function isWorkspaceDeleted(error: unknown): boolean {
+  return hasSqlstate(error, WORKSPACE_DELETED_SQLSTATE);
+}
+
+/**
+ * For a catch that turns unknown errors into something else (a result, a
+ * redacted error, a log line): called first, it lets "the workspace is
+ * deleted" through as it is, so the API still answers it like an unknown
+ * workspace and a job still ends. A test scans the server for catches
+ * without it (workspace-gone-catches.test.ts).
+ */
+export function rethrowWorkspaceGone(error: unknown): void {
+  if (isWorkspaceDeleted(error)) throw error;
+}
+
+/**
+ * The state of a workspace under the fence, for a caller that has no tenant
+ * transaction yet (access resolution): the fence is held until `tx` ends.
+ */
+export async function workspaceState(
+  tx: Db | Transaction,
+  workspaceId: string,
+): Promise<WorkspaceState> {
+  const [row] = await tx.execute<{ state: WorkspaceState }>(
+    sql`select workspace_fence(${uuidSchema.parse(workspaceId)}::uuid) as state`,
+  );
+  return row?.state ?? "missing";
 }
 
 /** Lock modes withWorkspace takes before the snapshot. */

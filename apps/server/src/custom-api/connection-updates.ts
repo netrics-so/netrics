@@ -49,6 +49,7 @@ import {
   type CustomApiDefinitionWithVersion,
   type Database,
   type Transaction,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import type { Locale } from "@netrics/domain";
 import { and, eq, sql } from "drizzle-orm";
@@ -366,7 +367,8 @@ export function createCustomApiConnectionUpdateService(deps: {
       // The target must pass today's rules; the pinned one only has to read.
       to = upgradeCustomApiDefinition(current.version.document);
       from = readStoredCustomApiDefinition(pinned.document);
-    } catch {
+    } catch (caught) {
+      rethrowWorkspaceGone(caught);
       return fail(409, "custom_api_definition_invalid");
     }
     return { ok: true, value: { existing, current, from, to } };
@@ -404,7 +406,8 @@ export function createCustomApiConnectionUpdateService(deps: {
           connectionId: existing.row.id,
         }),
       ) as Record<string, unknown>;
-    } catch {
+    } catch (caught) {
+      rethrowWorkspaceGone(caught);
       return null;
     }
   }

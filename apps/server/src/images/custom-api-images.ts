@@ -24,6 +24,7 @@ import {
   withWorkspace,
   type Database,
   type ImageQuota,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 
 import type { ResolvedConnector } from "../custom-api/connectors.js";
@@ -270,7 +271,8 @@ export async function ingestCustomApiImages(
           counted = stored
             ? () => (outcome.stored += 1)
             : () => skip("quota_exceeded");
-        } catch {
+        } catch (caught) {
+          rethrowWorkspaceGone(caught);
           counted = () => skip("fetch_failed");
         }
         count(index, counted);
@@ -335,7 +337,8 @@ export async function ingestCustomApiImages(
                 ),
             ),
           );
-        } catch {
+        } catch (caught) {
+          rethrowWorkspaceGone(caught);
           // The budget ran out or the call failed as a whole: the images
           // not handled yet wait for the next run.
         }
@@ -345,6 +348,7 @@ export async function ingestCustomApiImages(
       closed = true;
       skip("fetch_failed", missing.length - finished.size);
     } catch (error) {
+      rethrowWorkspaceGone(error);
       input.log("item images of a stream not checked", {
         stream: stream.key,
         error: error instanceof Error ? error.name : "unknown",
@@ -365,6 +369,7 @@ export async function ingestCustomApiImages(
         }),
       );
     } catch (error) {
+      rethrowWorkspaceGone(error);
       input.log("item images outcome not recorded", {
         stream: stream.key,
         error: error instanceof Error ? error.name : "unknown",

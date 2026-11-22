@@ -74,6 +74,7 @@ import {
   type TableLocks,
   type Transaction,
   notDraftConnection,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   collectDataImpact,
@@ -765,6 +766,7 @@ function checkRestoredModelBindings(
         loader.budget,
       );
     } catch (error) {
+      rethrowWorkspaceGone(error);
       throw withoutStep(error);
     }
     for (const [input, dependencies] of inputs) {
@@ -1193,6 +1195,7 @@ export function createDataLoader(
         try {
           execution = executePreparation(graph, inputs, budget);
         } catch (error) {
+          rethrowWorkspaceGone(error);
           throw withoutStep(error);
         }
         execution.warnings.forEach((w) => warnings.add(w));
@@ -1679,6 +1682,7 @@ export function createDataService(
         isTransactionHandle(handle) ? { attempts: 1 } : {},
       );
     } catch (error) {
+      rethrowWorkspaceGone(error);
       // Before the store's codes: an exhausted conflict is a conflict, also
       // when the dataset store redacted it to dataset_storage_failed.
       // A composed service leaves it to the caller's retry as it is.
@@ -1950,6 +1954,7 @@ export function createDataService(
         try {
           inputs.set(n.datasetId, await loader.load(n.datasetId));
         } catch (error) {
+          rethrowWorkspaceGone(error);
           if (error instanceof DataServiceError && error.nodeId === undefined)
             throw new DataServiceError(error.code, error.status, n.id);
           throw attributeDataError(error, n.id);
@@ -3378,6 +3383,7 @@ export function createDataService(
           { timeoutMs, queue: pageAdmissions },
         );
       } catch (error) {
+        rethrowWorkspaceGone(error);
         if (!(error instanceof SessionLockTimeoutError)) throw error;
         return run(actor, execute(false));
       }
@@ -3496,6 +3502,7 @@ async function cacheWrite<T>(
   try {
     return await tx.transaction((savepoint) => write(savepoint));
   } catch (error) {
+    rethrowWorkspaceGone(error);
     if (
       !hasSqlstate(error, "40001") &&
       !hasSqlstate(error, "40P01") &&
@@ -3771,6 +3778,7 @@ export async function queryDataModel(
   try {
     execution = await evaluate();
   } catch (error) {
+    rethrowWorkspaceGone(error);
     // No SQL failures or removed sources are hidden by a previous snapshot.
     // The source IDs are re-authorized by the loader on every fallback.
     const recoverable =

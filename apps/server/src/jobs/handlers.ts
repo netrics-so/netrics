@@ -16,6 +16,11 @@ import {
   DRAFT_EXPIRED_JOB,
 } from "../custom-api/draft-cleanup.js";
 import { createSyncJobHandlers } from "../sync/engine.js";
+import {
+  createWorkspacePurgeHandler,
+  WORKSPACE_PURGE_JOB,
+  type PurgeConnection,
+} from "../workspaces/purge.js";
 
 export interface JobHandlerContext {
   /** The claimed job (status running, locked to this worker). */
@@ -111,6 +116,11 @@ export interface JobHandlerDeps {
   imageQuota?: ImageQuota;
   /** The workspace quota of custom API item images (#809). */
   customApiImageQuota?: ImageQuota;
+  /**
+   * Removes a connection of a deleted workspace like "Delete connection"
+   * (#839); with it the worker handles `workspace.purge`.
+   */
+  purgeConnection?: PurgeConnection;
 }
 
 /**
@@ -131,6 +141,11 @@ export function createJobHandlers(
       ...(deps.oauthTokens ? { oauthTokens: deps.oauthTokens } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });
+    if (deps.purgeConnection) {
+      handlers[WORKSPACE_PURGE_JOB] = createWorkspacePurgeHandler({
+        purgeConnection: deps.purgeConnection,
+      });
+    }
   }
   return handlers;
 }

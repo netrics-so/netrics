@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
 import { createWorkspaceInTransaction } from "./context.js";
@@ -363,4 +363,47 @@ export async function listAuditEvents(
     .where(eq(schema.auditEvents.workspaceId, workspaceId))
     .orderBy(desc(schema.auditEvents.createdAt))
     .limit(limit);
+}
+
+export type DeleteWorkspaceOutcome =
+  "deleted" | "not_found" | "forbidden" | "name_mismatch";
+
+/**
+ * Deletes the transaction's workspace as its user (#839; call inside
+ * withWorkspace with a userId): delete_workspace() checks under the
+ * workspace row lock that the user is an owner and `name` is the
+ * workspace's name, then ends every way into the workspace, records an
+ * installation-level audit event and queues the `workspace.purge` job that
+ * removes the data (migration 0094).
+ */
+export async function deleteWorkspace(
+  tx: Transaction,
+  name: string,
+): Promise<DeleteWorkspaceOutcome> {
+  const rows = await tx.execute<{ outcome: DeleteWorkspaceOutcome }>(
+    sql`select delete_workspace(${name}) as outcome`,
+  );
+  const outcome = rows[0]?.outcome;
+  if (!outcome) {
+    throw new Error("delete_workspace returned no row");
+  }
+  return outcome;
+}
+
+/** The job that removes a deleted workspace's data (#839). */
+export const WORKSPACE_PURGE_JOB = "workspace.purge";
+
+/**
+ * Queues a purge for every deleted workspace that has no live one (scheduler
+ * role; enqueue_workspace_purges is SECURITY DEFINER, migration 0094).
+ * Returns the number of jobs queued.
+ */
+export async function enqueueWorkspacePurges(
+  schedulerDb: Db | Transaction,
+  batch = 100,
+): Promise<number> {
+  const [row] = await schedulerDb.execute<{ queued: number }>(
+    sql`select enqueue_workspace_purges(${batch}) as queued`,
+  );
+  return row?.queued ?? 0;
 }

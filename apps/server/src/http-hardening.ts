@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyError, FastifyInstance, FastifyRequest } from "fastify";
 
 import { errorResponseSchema } from "@netrics/contracts";
-import { isLostConnection } from "@netrics/database";
+import { isLostConnection, isWorkspaceDeleted } from "@netrics/database";
 
 import type { Config } from "./env.js";
 
@@ -93,6 +93,17 @@ export function registerHttpHardening(
       typeof error.statusCode === "number" && error.statusCode >= 400
         ? error.statusCode
         : 500;
+    if (isWorkspaceDeleted(error)) {
+      // The workspace was deleted under the request (#839): the answer of
+      // an unknown workspace, or for a screen that of a revoked one.
+      return request.principal?.kind === "device"
+        ? reply
+            .code(401)
+            .send(errorResponseSchema.parse({ error: "unauthorized" }))
+        : reply
+            .code(404)
+            .send(errorResponseSchema.parse({ error: "workspace_not_found" }));
+    }
     if (status >= 500 && isLostConnection(error)) {
       // The database session ended under the request (failover, restart,
       // pg_terminate_backend): transient, so clients may retry (#538).

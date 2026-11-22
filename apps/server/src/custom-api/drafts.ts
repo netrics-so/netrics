@@ -51,6 +51,7 @@ import {
   type ConnectionRow,
   type Database,
   type Transaction,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 
 import {
@@ -652,7 +653,8 @@ export function createCustomApiDraftService(deps: CustomApiDraftDeps) {
         let definition: CustomApiDefinition;
         try {
           definition = upgradeCustomApiDefinition(version.document);
-        } catch {
+        } catch (caught) {
+          rethrowWorkspaceGone(caught);
           return fail(400, "custom_api_definition_invalid");
         }
         const environmentId = state.environmentId;

@@ -1,3 +1,4 @@
+import { rethrowWorkspaceGone } from "./context.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, sql, isNull, or } from "drizzle-orm";
 import {
@@ -295,7 +296,8 @@ async function ingestPage(
   let page: DatasetPage;
   try {
     page = validateDatasetPage(definition, input.page);
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return fail("dataset_page_invalid");
   }
   const { workspaceId, connectionId } = input;
@@ -708,6 +710,7 @@ export async function ingestDatasetPage(
   try {
     return await ingestPage(tx, input, scope);
   } catch (error) {
+    rethrowWorkspaceGone(error);
     failed = true;
     if (error instanceof DatasetStoreError) throw error;
     const sqlstate = SERIALIZATION_RETRY_SQLSTATES.find((code) =>

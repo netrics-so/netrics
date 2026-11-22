@@ -745,6 +745,86 @@ describe("callback validation", () => {
     expect(fixture.isActive(revoked[0]!)).toBe(false);
   });
 
+  it("revokes the grant of a code exchange the workspace's deletion overtook (#839)", async () => {
+    const doomed = createWorkspaceResponseSchema.parse(
+      (await post("/v1/workspaces", cookies.owner, { name: "Doomed" })).json(),
+    ).workspace.id;
+    const account = { sub: "doomed-sub", email: "doomed@example.com" };
+    const url = await startUrl(cookies.owner, {}, doomed);
+    const revokedBefore = fixture.revoked.length;
+    // The provider holds its answer to the code exchange.
+    let reached!: () => void;
+    let answer!: () => void;
+    const exchanging = new Promise<void>((resolve) => (reached = resolve));
+    const held = new Promise<void>((resolve) => (answer = resolve));
+    fixture.onCodeExchange = () => {
+      reached();
+      return held;
+    };
+    const pending = callback(cookies.owner, fixture.consent(url, { account }));
+    await exchanging;
+    // Meanwhile the workspace is deleted.
+    const deleted = await post(
+      `/v1/workspaces/${doomed}/delete`,
+      cookies.owner,
+      {
+        name: "Doomed",
+      },
+    );
+    expect(deleted.statusCode, deleted.body).toBe(204);
+    answer();
+    const result = await pending;
+    expect(result.outcome).toBe("failed");
+    // The grant the provider just issued is revoked, and nothing is stored.
+    const revoked = fixture.revoked.slice(revokedBefore);
+    expect(revoked).toHaveLength(1);
+    expect(fixture.isActive(revoked[0]!)).toBe(false);
+    const [stored] = await admin<{ connections: number; grants: number }[]>`
+      select
+        (select count(*)::int from connections where workspace_id = ${doomed}) as connections,
+        (select count(*)::int from connection_oauth where workspace_id = ${doomed}) as grants`;
+    expect(stored).toEqual({ connections: 0, grants: 0 });
+    // Provider and outcome in the log, no token.
+    const line = logLines.find((entry) =>
+      entry.includes("unstored oauth grant revoked"),
+    );
+    expect(line).toBeDefined();
+    expect(JSON.parse(line!)).toMatchObject({
+      provider: "google",
+      revocation: "revoked",
+    });
+    expect(line).not.toContain(revoked[0]!);
+  });
+
+  it("revokes the grant when the member lost the role during the code exchange", async () => {
+    const account = { sub: "demoted-sub", email: "demoted@example.com" };
+    const url = await startUrl(cookies.editor);
+    const revokedBefore = fixture.revoked.length;
+    let reached!: () => void;
+    let answer!: () => void;
+    const exchanging = new Promise<void>((resolve) => (reached = resolve));
+    const held = new Promise<void>((resolve) => (answer = resolve));
+    fixture.onCodeExchange = () => {
+      reached();
+      return held;
+    };
+    const pending = callback(cookies.editor, fixture.consent(url, { account }));
+    await exchanging;
+    await admin`
+      update memberships set role = 'viewer'
+      where workspace_id = ${workspaceId} and user_id = ${editorUserId}`;
+    answer();
+    try {
+      expect((await pending).outcome).toBe("forbidden");
+      expect(fixture.revoked.slice(revokedBefore)).toHaveLength(1);
+      await nothingStored();
+    } finally {
+      await admin`
+        update memberships set role = 'editor'
+        where workspace_id = ${workspaceId} and user_id = ${editorUserId}`;
+    }
+  });
+
   it("does not revoke a partial grant of an account other connections use", async () => {
     // FIXTURE_ACCOUNT already backs connections from the tests above.
     const revokedBefore = fixture.revoked.length;

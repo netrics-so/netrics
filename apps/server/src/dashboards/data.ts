@@ -57,6 +57,7 @@ import {
   type ProjectFilter,
   notDraftConnection,
   collectsNoResources,
+  rethrowWorkspaceGone,
 } from "@netrics/database";
 import {
   createDataLoader,
@@ -176,12 +177,14 @@ export function measureUnits(
   try {
     const cells = probe(definition, tables, ids);
     return new Map(ids.map((id) => [id, unitOf(cells.get(id))]));
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return new Map(
       ids.map((id) => {
         try {
           return [id, unitOf(probe(definition, tables, [id]).get(id))];
-        } catch {
+        } catch (caught) {
+          rethrowWorkspaceGone(caught);
           return [id, undefined];
         }
       }),
@@ -523,7 +526,8 @@ export async function dashboardProductApps(
         [...apps].filter(([product]) => !only || only.has(product)),
       );
     });
-  } catch {
+  } catch (caught) {
+    rethrowWorkspaceGone(caught);
     return new Map();
   }
 }
@@ -799,6 +803,7 @@ export async function queryDashboardMeasure(
       };
     });
   } catch (error) {
+    rethrowWorkspaceGone(error);
     const code = safeDataError(error);
     return {
       ...(sourceHealth ? { sourceHealth } : {}),
