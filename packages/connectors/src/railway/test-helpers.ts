@@ -53,6 +53,10 @@ export interface FakeRailwayOptions {
   projects?: FakeProject[];
   /** Workspaces whose usage the token may not read. */
   usageDenied?: string[];
+  /** Workspaces whose estimated usage the token may not read. */
+  estimateDenied?: string[];
+  /** Projects deleted since the listing (mutable between sync pages). */
+  gone?: Set<string>;
   /** Answers queued ahead of the normal ones (429s, 5xx, …). */
   failures?: Array<{
     status: number;
@@ -298,6 +302,42 @@ export function createFakeRailway(
   const projects = options.projects ?? fakeProjects();
   const failures = [...(options.failures ?? [])];
   const requests: FakeRailway["requests"] = [];
+
+  function instancesOf(
+    project: FakeProject,
+    environmentId: string,
+    first: number,
+    after: string | null,
+  ) {
+    const { slice, pageInfo } = page(
+      project.instances.filter(
+        (instance) => instance.environmentId === environmentId,
+      ),
+      first,
+      after,
+      1_000,
+    );
+    return {
+      pageInfo,
+      edges: slice.map((instance) => ({
+        node: {
+          serviceId: instance.serviceId,
+          serviceName:
+            project.services.find(
+              (service) => service.id === instance.serviceId,
+            )?.name ?? instance.serviceId,
+          environmentId: instance.environmentId,
+          latestDeployment: instance.latest
+            ? { ...instance.latest, statusUpdatedAt: instance.latest.createdAt }
+            : null,
+          activeDeployments: instance.active.map((status, index) => ({
+            id: `${instance.serviceId}-active-${index}`,
+            status,
+          })),
+        },
+      })),
+    };
+  }
   let remaining = options.window?.remaining ?? 0;
 
   function windowHeaders(): Record<string, string> {
@@ -373,9 +413,24 @@ export function createFakeRailway(
         const project = projects.find(
           (entry) => entry.id === variables.projectId,
         );
-        if (!project || !workspaceVisible(project.workspaceId)) {
+        if (
+          !project ||
+          !workspaceVisible(project.workspaceId) ||
+          options.gone?.has(project.id)
+        ) {
           return notFound("Project");
         }
+        // Railway's defaults when the query names no page size.
+        const environments = project.environments.filter(
+          (environment) =>
+            variables.ephemeral !== false || !environment.isEphemeral,
+        );
+        const envPage = page(
+          environments,
+          Number(variables.envFirst ?? 50),
+          variables.envAfter as string | null,
+          1_000,
+        );
         return {
           data: {
             project: {
@@ -383,39 +438,50 @@ export function createFakeRailway(
               name: project.name,
               services: { edges: project.services.map((node) => ({ node })) },
               environments: {
-                edges: project.environments.map((environment) => ({
+                pageInfo: envPage.pageInfo,
+                edges: envPage.slice.map((environment) => ({
                   node: {
                     id: environment.id,
                     name: environment.name,
                     isEphemeral: environment.isEphemeral ?? false,
-                    serviceInstances: {
-                      edges: project.instances
-                        .filter(
-                          (instance) =>
-                            instance.environmentId === environment.id,
-                        )
-                        .map((instance) => ({
-                          node: {
-                            serviceId: instance.serviceId,
-                            environmentId: instance.environmentId,
-                            latestDeployment: instance.latest
-                              ? {
-                                  ...instance.latest,
-                                  statusUpdatedAt: instance.latest.createdAt,
-                                }
-                              : null,
-                            activeDeployments: instance.active.map(
-                              (status, index) => ({
-                                id: `${instance.serviceId}-active-${index}`,
-                                status,
-                              }),
-                            ),
-                          },
-                        })),
-                    },
+                    serviceInstances: instancesOf(
+                      project,
+                      environment.id,
+                      Number(variables.instFirst ?? 100),
+                      null,
+                    ),
                   },
                 })),
               },
+            },
+          },
+        };
+      }
+      case "netricsEnvironmentInstances": {
+        const project = projects.find(
+          (entry) => entry.id === variables.projectId,
+        );
+        const environment = project?.environments.find(
+          (entry) => entry.id === variables.environmentId,
+        );
+        if (
+          !project ||
+          !environment ||
+          !workspaceVisible(project.workspaceId) ||
+          options.gone?.has(project.id)
+        ) {
+          return notFound("Project");
+        }
+        return {
+          data: {
+            environment: {
+              id: environment.id,
+              serviceInstances: instancesOf(
+                project,
+                environment.id,
+                Number(variables.first ?? 100),
+                variables.after as string | null,
+              ),
             },
           },
         };
@@ -424,7 +490,11 @@ export function createFakeRailway(
         const project = projects.find(
           (entry) => entry.id === variables.projectId,
         );
-        if (!project || !workspaceVisible(project.workspaceId)) {
+        if (
+          !project ||
+          !workspaceVisible(project.workspaceId) ||
+          options.gone?.has(project.id)
+        ) {
           return notAuthorized("deployments");
         }
         const { slice, pageInfo } = page(
@@ -458,7 +528,9 @@ export function createFakeRailway(
         const workspaceId = variables.workspaceId as string;
         if (
           !workspaceVisible(workspaceId) ||
-          options.usageDenied?.includes(workspaceId)
+          options.usageDenied?.includes(workspaceId) ||
+          (operation === "netricsEstimatedUsage" &&
+            options.estimateDenied?.includes(workspaceId))
         ) {
           return notAuthorized(
             operation === "netricsUsage" ? "usage" : "estimatedUsage",

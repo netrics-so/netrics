@@ -62,8 +62,10 @@ Datasets:
   FAILED and SKIPPED: for later statuses (REMOVED when a newer deployment
   replaced it, CRASHED, SLEEPING) Railway's `statusUpdatedAt` is no longer
   the end of the deployment.
-- `service_states` (snapshot): one row per service and non-ephemeral
-  environment with its latest deployment and a `state`:
+- `service_states` (snapshot): one row per service and lasting
+  environment (PR environments are left out by Railway's `isEphemeral:
+false` filter; environments and service instances are read page by page)
+  with its latest deployment and a `state`:
   - `building`: the latest deployment is queued, waiting, needs approval,
     initializing, building or deploying;
   - `up`: a deployment is running (an active SUCCESS deployment), even when
@@ -74,7 +76,13 @@ Datasets:
 - `project_usage` (snapshot): per project this calendar month (UTC): CPU
   (vCPU minutes), memory (GB minutes), egress (GB), volume storage (GB
   minutes), the estimated cost so far and Railway's estimate for the billing
-  period, in USD.
+  period, in USD. It is replaced only when today's usage of every workspace
+  was read; otherwise the stored snapshot stays. The estimate column is
+  empty when Railway refused the estimate.
+
+Deployment rows of PR environments carry their environment ID; their name
+is empty, as the state reads lasting environments only. Discovery names
+them.
 
 ### Freshness (ADR 0025)
 
@@ -82,10 +90,25 @@ Datasets:
   reads the current state; deployments of the last two days are read again
   on every sync, so their status follows Railway (building → success).
   Older deployment rows keep the status they had then; `service_states` is
-  always current.
+  always current. A project deleted during a sync leaves the stream
+  unreported for that sync.
 - **Cost** (`cost`, periodic, UTC days): Railway counts usage continuously,
   so a UTC day is complete at midnight UTC. A sync reports the day before
-  today as the last complete day.
+  today as the last complete day, only when every workspace's usage was
+  read.
+- **Cost estimate** (`cost_estimate`, continuous): Railway's estimate,
+  reported when every workspace's estimate was read.
+
+### How a sync proceeds
+
+A sync is a run of steps that each send one request: the workspaces, a page
+of projects, a page of a project's environments or of an environment's
+service instances, a page of its deployments, one day's usage of one
+workspace, one workspace's estimate. A sync page runs at most ten requests
+and checkpoints the next step in its cursor, so a failure or a rate limit
+repeats one step, not a page of them. The cursor belongs to the connection
+and its workspace ID: after a change of the workspace ID the next sync
+starts a new run. Snapshots are completed by the run's last page only.
 
 ## How cost is estimated
 
@@ -146,7 +169,8 @@ before the first.
   query. The connector's queries were validated against the live schema on
   2026-11-23 (Railway validates a query before it checks the token).
 
-A sync with N projects sends about 4 + 2N requests plus one usage request
-per day read and workspace (an incremental sync reads three days: the two
-lookback days and today), so a five-minute interval needs the Hobby plan
-or larger for more than a few projects.
+A sync with N projects (each with up to ten lasting environments) sends
+about 2 + 2N requests, plus per workspace one usage request per day read
+and one for the day before (an incremental sync reads three days) and one
+estimate: about 7 + 2N for one workspace. A five-minute interval needs the
+Hobby plan or larger for more than a few projects.

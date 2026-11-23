@@ -35,6 +35,7 @@ import {
   WORKSPACE_DENIED_CODE,
   createRailwayConnector,
   railwayManifest,
+  MAX_REQUESTS_PER_PAGE,
 } from "./index.js";
 import { deploymentsSchema } from "./queries.js";
 import {
@@ -43,6 +44,8 @@ import {
   deploymentsEvery,
   fakeProjects,
   fixture,
+  notAuthorized,
+  type FakeProject,
   type FakeRailwayOptions,
 } from "./test-helpers.js";
 
@@ -657,8 +660,8 @@ describe("request budget", () => {
     );
     // The day before the window, then the end of each of its three days.
     expect(usage.map((request) => request.variables.endDate)).toEqual([
-      "2024-01-09T00:00:00.000Z",
       "2024-01-08T00:00:00.000Z",
+      "2024-01-09T00:00:00.000Z",
       "2024-01-10T00:00:00.000Z",
       NOW,
     ]);
@@ -680,5 +683,325 @@ describe("contract window", () => {
         Date.parse(NOW) + DAY_MS,
       );
     }
+  });
+});
+
+// ─── Review round 1 (#881): sync state, snapshots and budgets ───────────────
+
+/** A second workspace with one project of its own. */
+function withSecondWorkspace(): {
+  projects: FakeProject[];
+  workspaces: Array<{ id: string; name: string }>;
+} {
+  const projects = fakeProjects();
+  projects.push({
+    id: "prj-b",
+    name: "b-app",
+    workspaceId: "ws-b",
+    services: [{ id: "svc-b", name: "b-web" }],
+    environments: [{ id: "env-b-production", name: "production" }],
+    instances: [
+      {
+        serviceId: "svc-b",
+        environmentId: "env-b-production",
+        latest: {
+          id: "dep-b-0000",
+          status: "SUCCESS",
+          createdAt: "2024-01-09T08:00:00.000Z",
+        },
+        active: ["SUCCESS"],
+      },
+    ],
+    deployments: deploymentsEvery({
+      prefix: "dep-b",
+      count: 3,
+      newest: "2024-01-09T08:00:00.000Z",
+      stepMs: DAY_MS,
+      serviceId: "svc-b",
+      environmentId: "env-b-production",
+    }),
+    rates: { cpu: 0.2, memory: 0.5, egress: 0, disk: 0 },
+  });
+  return {
+    projects,
+    workspaces: [
+      { id: "ws-fixture", name: "Fixture team" },
+      { id: "ws-b", name: "B team" },
+    ],
+  };
+}
+
+/** Runs the pages of one sync from `cursor`, counting requests per page. */
+async function runPages(
+  fakeRailway: ReturnType<typeof fake>,
+  request: SyncRequest,
+  ctx: ConnectionContext,
+  options: { cursor?: string; between?: (page: number) => void } = {},
+) {
+  const pages: SyncResult[] = [];
+  const requestsPerPage: number[] = [];
+  let cursor = options.cursor;
+  for (let guard = 0; guard < 400; guard += 1) {
+    const before = fakeRailway.requests.length;
+    const page = await connector().sync(
+      ctx,
+      { ...request, ...(cursor ? { cursor } : {}) },
+      fakeRailway.runtime,
+    );
+    requestsPerPage.push(fakeRailway.requests.length - before);
+    pages.push(page);
+    if (page.done) break;
+    cursor = page.nextCursor;
+    options.between?.(pages.length);
+  }
+  return {
+    pages,
+    requestsPerPage,
+    observations: pages.flatMap((page) => page.observations),
+    datasetPages: pages.flatMap((page) => page.datasetPages ?? []),
+    last: pages.at(-1)!,
+  };
+}
+
+describe("review round 1", () => {
+  it("restarts a run when the workspace ID changed since the checkpoint", async () => {
+    const setup = withSecondWorkspace();
+    const railway = fake(setup);
+    const first = await connector().sync(
+      context({ config: { workspaceId: "ws-fixture" } }),
+      WINDOW,
+      railway.runtime,
+    );
+    expect(first.done).toBe(false);
+    const rest = await runPages(
+      railway,
+      WINDOW,
+      context({ config: { workspaceId: "ws-b" } }),
+      { cursor: first.nextCursor! },
+    );
+    const resources = new Set(
+      rest.observations.map((observation) => observation.dimensions.resource),
+    );
+    expect([...resources]).toEqual(["prj-b"]);
+    for (const page of rest.datasetPages) {
+      for (const record of page.records) {
+        expect(record.values.project_id).toBe("prj-b");
+      }
+    }
+  });
+
+  it("does not hand a deleted project's cursor or counts to the next project", async () => {
+    const projects = fakeProjects();
+    projects[0]!.deployments = deploymentsEvery({
+      prefix: "dep-busy",
+      count: 1_200,
+      newest: "2024-01-10T11:00:00.000Z",
+      stepMs: 10 * 60 * 1000,
+      serviceId: "svc-web",
+      environmentId: "env-production",
+    });
+    const gone = new Set<string>();
+    const railway = fake({ projects, gone });
+    const run = await runPages(railway, WINDOW, context(), {
+      // prj-api is deleted while its deployments are read.
+      between: (page) => {
+        if (page === 2) gone.add("prj-api");
+      },
+    });
+    const site = rowsOf(run.datasetPages, "deployments").filter(
+      (row) => row.project_id === "prj-site",
+    );
+    expect(site.map((row) => row.deployment_id).sort()).toEqual([
+      "dep-site-new",
+      "dep-site-old",
+    ]);
+    const siteCounts = [...latest(run.observations)].filter(
+      ([key]) =>
+        key.startsWith(`["${METRICS.deployments}"`) && key.includes("prj-site"),
+    );
+    expect(siteCounts.reduce((sum, [, value]) => sum + value, 0)).toBe(2);
+    expect(freshnessEntry(run.last, DEPLOYS_STREAM)).toBeUndefined();
+  });
+
+  it("bounds the requests of every page, cost backfill included", async () => {
+    const setup = withSecondWorkspace();
+    const run = await runPages(
+      fake(setup),
+      { mode: "backfill", from: "2023-12-01T00:00:00.000Z", to: NOW },
+      context(),
+    );
+    expect(Math.max(...run.requestsPerPage)).toBeLessThanOrEqual(
+      MAX_REQUESTS_PER_PAGE,
+    );
+    // Every day of both months, for every project of both workspaces.
+    const cost = run.observations.filter(
+      (observation) => observation.metricKey === METRICS.cost,
+    );
+    expect(new Set(cost.map((item) => item.sourceTimestamp)).size).toBe(41);
+    expect(cost).toHaveLength(41 * 4);
+    expect(freshnessEntry(run.last, COST_STREAM)).toBeDefined();
+  });
+
+  it("keeps the usage snapshot when a workspace's usage was not read", async () => {
+    const setup = withSecondWorkspace();
+    const run = await runPages(
+      fake({ ...setup, usageDenied: ["ws-b"] }),
+      WINDOW,
+      context(),
+    );
+    expect(
+      run.datasetPages.filter((page) => page.datasetKey === "project_usage"),
+    ).toEqual([]);
+    expect(run.last.receivedDatasets).not.toContain("project_usage");
+    // The days read are kept.
+    expect(
+      run.observations.some(
+        (item) =>
+          item.metricKey === METRICS.cost &&
+          item.dimensions.resource === "prj-api",
+      ),
+    ).toBe(true);
+    expect(freshnessEntry(run.last, COST_STREAM)).toBeUndefined();
+  });
+
+  it("splits a large state snapshot into valid pages", async () => {
+    const projects = fakeProjects();
+    const big = projects[2]!;
+    big.services = Array.from({ length: 1_200 }, (_, index) => ({
+      id: `svc-many-${index}`,
+      name: `service-${index}`,
+    }));
+    big.instances = big.services.map((service) => ({
+      serviceId: service.id,
+      environmentId: "env-empty-production",
+      latest: null,
+      active: [],
+    }));
+    const run = await runPages(fake({ projects }), WINDOW, context());
+    const schemas = new Map(
+      RAILWAY_DATASETS.map((dataset) => [dataset.key, dataset]),
+    );
+    for (const page of run.datasetPages) {
+      expect(() =>
+        validateDatasetPage(schemas.get(page.datasetKey)!, page),
+      ).not.toThrow();
+    }
+    for (const page of run.pages) {
+      expect(page.datasetPages?.length ?? 0).toBeLessThanOrEqual(20);
+    }
+    const states = rowsOf(run.datasetPages, "service_states").filter(
+      (row) => row.project_id === "prj-empty",
+    );
+    expect(states).toHaveLength(1_200);
+  });
+
+  it("reads every lasting environment behind many PR environments", async () => {
+    const projects = fakeProjects();
+    const api = projects[0]!;
+    api.environments = [
+      ...Array.from({ length: 60 }, (_, index) => ({
+        id: `env-pr-${index}`,
+        name: `pr-${index}`,
+        isEphemeral: true,
+      })),
+      { id: "env-production", name: "production" },
+    ];
+    const run = await runPages(fake({ projects }), WINDOW, context());
+    const states = rowsOf(run.datasetPages, "service_states").filter(
+      (row) => row.project_id === "prj-api",
+    );
+    expect(states.map((row) => row.environment_name)).toEqual([
+      "production",
+      "production",
+    ]);
+  });
+
+  it("reports no estimate freshness when the estimate was not read", async () => {
+    const run = await runPages(
+      fake({ estimateDenied: ["ws-fixture"] }),
+      WINDOW,
+      context(),
+    );
+    const estimateStream = railwayManifest.freshnessStreams!.find((stream) =>
+      stream.metrics?.includes(METRICS.estimatedCost),
+    )!;
+    expect(freshnessEntry(run.last, estimateStream.key)).toBeUndefined();
+    expect(
+      run.observations.some((item) => item.metricKey === METRICS.estimatedCost),
+    ).toBe(false);
+    // The measured cost was read completely: it stays fresh, and the
+    // snapshot says the estimate is unknown.
+    expect(freshnessEntry(run.last, COST_STREAM)).toBeDefined();
+    const usage = rowsOf(run.datasetPages, "project_usage");
+    expect(usage).toHaveLength(3);
+    expect(usage.every((row) => row.estimated_cost_usd === null)).toBe(true);
+  });
+
+  it("continues a failed page from its checkpoint with the same result", async () => {
+    const whole = await runPages(fake(), WINDOW, context());
+    // The same run, with a page that fails half way through.
+    const railway = fake();
+    let calls = 0;
+    const failing: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        calls += 1;
+        if (calls === 7) throw new Error("connection reset");
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const pages: SyncResult[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 100; guard += 1) {
+      const page = await connector()
+        .sync(context(), { ...WINDOW, ...(cursor ? { cursor } : {}) }, failing)
+        .catch(() => null);
+      if (page === null) continue; // the host retries the same checkpoint
+      pages.push(page);
+      if (page.done) break;
+      cursor = page.nextCursor;
+    }
+    expect(calls).toBeGreaterThan(7);
+    expect(latest(pages.flatMap((page) => page.observations))).toEqual(
+      latest(whole.observations),
+    );
+    const rows = (key: string) =>
+      rowsOf(
+        pages.flatMap((page) => page.datasetPages ?? []),
+        key,
+      );
+    expect(rows("deployments")).toEqual(
+      rowsOf(whole.datasetPages, "deployments"),
+    );
+    expect(rows("service_states")).toEqual(
+      rowsOf(whole.datasetPages, "service_states"),
+    );
+  });
+
+  it("fails, rather than skips, a project that still exists but refuses deployments", async () => {
+    const railway = fake();
+    const refusing: ConnectorRuntime = {
+      ...railway.runtime,
+      fetch: async (url, init) => {
+        const body = JSON.parse(init?.body ?? "{}") as { query: string };
+        if (body.query.includes("query netricsDeployments")) {
+          return {
+            status: 200,
+            headers: {},
+            text: () => JSON.stringify(notAuthorized("deployments")),
+            json: () => notAuthorized("deployments"),
+            bytes: () => new Uint8Array(),
+          };
+        }
+        return railway.runtime.fetch(url, init);
+      },
+    };
+    const error = await runPages(
+      { ...railway, runtime: refusing },
+      WINDOW,
+      context(),
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConnectorError);
+    expect((error as ConnectorError).code).toBe(TOKEN_REJECTED_CODE);
   });
 });

@@ -47,30 +47,49 @@ export const PROJECTS_QUERY = `query netricsProjects($workspaceId: String!, $fir
   }
 }`;
 
-/** One project's current state: every service instance's deployments. */
-export const PROJECT_STATE_QUERY = `query netricsProjectState($projectId: String!) {
+const SERVICE_INSTANCE_FIELDS = `pageInfo { hasNextPage endCursor }
+            edges {
+              node {
+                serviceId
+                serviceName
+                environmentId
+                latestDeployment { id status createdAt statusUpdatedAt }
+                activeDeployments { id status }
+              }
+            }`;
+
+/**
+ * One page of a project's lasting environments (PR environments are left
+ * out by Railway, `isEphemeral: false`) with the first page of each one's
+ * service instances. An environment with more instances continues with
+ * ENVIRONMENT_INSTANCES_QUERY.
+ */
+export const PROJECT_STATE_QUERY = `query netricsProjectState($projectId: String!, $envFirst: Int!, $envAfter: String, $instFirst: Int!, $ephemeral: Boolean!) {
   project(id: $projectId) {
     id
     name
-    services(first: 100) { edges { node { id name } } }
-    environments(first: 50) {
+    environments(first: $envFirst, after: $envAfter, isEphemeral: $ephemeral) {
+      pageInfo { hasNextPage endCursor }
       edges {
         node {
           id
           name
           isEphemeral
-          serviceInstances(first: 100) {
-            edges {
-              node {
-                serviceId
-                environmentId
-                latestDeployment { id status createdAt statusUpdatedAt }
-                activeDeployments { id status }
-              }
-            }
+          serviceInstances(first: $instFirst) {
+            ${SERVICE_INSTANCE_FIELDS}
           }
         }
       }
+    }
+  }
+}`;
+
+/** The next page of one environment's service instances. */
+export const ENVIRONMENT_INSTANCES_QUERY = `query netricsEnvironmentInstances($environmentId: String!, $projectId: String!, $first: Int!, $after: String) {
+  environment(id: $environmentId, projectId: $projectId) {
+    id
+    serviceInstances(first: $first, after: $after) {
+      ${SERVICE_INSTANCE_FIELDS}
     }
   }
 }`;
@@ -117,6 +136,7 @@ export const ALL_QUERIES = [
   WORKSPACE_QUERY,
   PROJECTS_QUERY,
   PROJECT_STATE_QUERY,
+  ENVIRONMENT_INSTANCES_QUERY,
   DEPLOYMENTS_QUERY,
   USAGE_QUERY,
   ESTIMATED_USAGE_QUERY,
@@ -169,33 +189,48 @@ const statusSchema = z.enum(DEPLOYMENT_STATUSES);
  */
 const deploymentStatus = z.union([statusSchema, z.string().min(1)]);
 
+const serviceInstanceSchema = z.object({
+  serviceId: id,
+  serviceName: z.string().nullish(),
+  environmentId: id,
+  latestDeployment: z
+    .object({
+      id,
+      status: deploymentStatus,
+      createdAt: instant,
+      statusUpdatedAt: instant.nullish(),
+    })
+    .nullish(),
+  activeDeployments: z
+    .array(z.object({ id, status: deploymentStatus }))
+    .nullish(),
+});
+export type RailwayServiceInstance = z.infer<typeof serviceInstanceSchema>;
+
+const serviceInstancesSchema = z.object({
+  pageInfo,
+  edges: z.array(z.object({ node: serviceInstanceSchema })),
+});
+
 export const projectStateSchema = z.object({
   project: z.object({
     id,
     name: z.string(),
-    services: connection(namedSchema),
-    environments: connection(
-      environmentSchema.extend({
-        serviceInstances: connection(
-          z.object({
-            serviceId: id,
-            environmentId: id,
-            latestDeployment: z
-              .object({
-                id,
-                status: deploymentStatus,
-                createdAt: instant,
-                statusUpdatedAt: instant.nullish(),
-              })
-              .nullish(),
-            activeDeployments: z
-              .array(z.object({ id, status: deploymentStatus }))
-              .nullish(),
+    environments: z.object({
+      pageInfo,
+      edges: z.array(
+        z.object({
+          node: environmentSchema.extend({
+            serviceInstances: serviceInstancesSchema,
           }),
-        ),
-      }),
-    ),
+        }),
+      ),
+    }),
   }),
+});
+
+export const environmentInstancesSchema = z.object({
+  environment: z.object({ id, serviceInstances: serviceInstancesSchema }),
 });
 
 export const deploymentSchema = z.object({
