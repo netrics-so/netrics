@@ -365,6 +365,9 @@ export const workspaceEn = {
       appStoreTiming:
         "Sales arrive the next morning, Pacific Time (Apple publishes a day’s report by about 8 a.m. PT); App Store analytics follow about two days later. Reporting days are Pacific Time days, not your workspace’s time zone. Proceeds are kept in each currency Apple reports.",
       moreAboutConnector: "More about the connector",
+      hetznerCloudAbout: "Access to Hetzner Cloud",
+      hetznerCloudReadOnly:
+        "netrics only reads from Hetzner Cloud: servers, volumes, IPs, load balancers, snapshots, prices and metrics. It never starts, stops or changes anything, so a token with Read permission is enough. Hetzner does not tell whether a token can also write: if this one has Read & Write, replace it with a Read token.",
       searchConsoleAbout: "About Search Console data",
       searchConsoleTiming:
         "Search Console data appears with a 2–3 day delay; the newest days are filled in once Google finalises them, so today and yesterday are usually empty. Click-through rate and average position are daily values: over several days they are not added up.",

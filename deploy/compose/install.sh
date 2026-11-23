@@ -153,7 +153,7 @@ NETRICS_SIGNUP=closed
 # NETRICS_DEFAULT_LOCALE=de
 
 # Preview connectors (not final yet) to turn on, comma-separated; currently
-# railway and posthog.
+# railway, posthog and hetzner-cloud.
 # NETRICS_PREVIEW_CONNECTORS=
 
 # Custom APIs on your own network (README): hosts they may reach, and a CA

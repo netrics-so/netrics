@@ -25,6 +25,7 @@ import { ConnectionItemImages } from "./connection-item-images";
 import { ConnectionRecordSkips } from "./connection-record-skips";
 import { SyncRunError } from "./sync-run-error";
 import { ConnectionRefresh } from "./connection-refresh";
+import { connectorAccessNote, HETZNER_CLOUD_DOCS_URL } from "./connector-note";
 import { waitsForSync } from "./wait-for-sync";
 import { CustomApiConnectionLogin } from "@/components/custom-api/connection-login";
 import { CustomApiConnectionRequests } from "@/components/custom-api/connection-requests";
@@ -196,6 +197,8 @@ export default async function ConnectionDetailPage({
     : undefined;
   const oauth = connection.oauth;
   const searchConsole = connection.connectorId === SEARCH_CONSOLE_CONNECTOR_ID;
+  // Hetzner Cloud (#872): netrics only reads; a Read token is enough.
+  const accessNote = connectorAccessNote(connection.connectorId);
   const returnPath = `/workspaces/${workspaceId}/connections/${connection.id}`;
   // A connection with an uploaded key (ADR 0014): rotation and revocation.
   const keyStrategy = oauth ? null : signedKeyStrategyOf(connector);
@@ -598,6 +601,18 @@ export default async function ConnectionDetailPage({
               target="_blank"
               rel="noreferrer"
             >
+              {t("moreAboutConnector")}
+            </a>
+          </p>
+        </div>
+      ) : null}
+
+      {accessNote ? (
+        <div className="card" id="connector-access">
+          <h2>{t("hetznerCloudAbout")}</h2>
+          <p className="muted">
+            {t(accessNote)}{" "}
+            <a href={HETZNER_CLOUD_DOCS_URL} target="_blank" rel="noreferrer">
               {t("moreAboutConnector")}
             </a>
           </p>

@@ -804,6 +804,7 @@ describe("catalog sync", () => {
       "flaky-pages",
       "google-play",
       "google-search-console",
+      "hetzner-cloud",
       "leaky",
       "learning",
       "logging",

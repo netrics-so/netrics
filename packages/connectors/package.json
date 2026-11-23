@@ -36,6 +36,10 @@
       "types": "./dist/google-play/index.d.ts",
       "default": "./dist/google-play/index.js"
     },
+    "./hetzner-cloud": {
+      "types": "./dist/hetzner-cloud/index.d.ts",
+      "default": "./dist/hetzner-cloud/index.js"
+    },
     "./posthog": {
       "types": "./dist/posthog/index.d.ts",
       "default": "./dist/posthog/index.js"

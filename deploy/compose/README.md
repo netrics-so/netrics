@@ -165,8 +165,8 @@ and the `web` app).
 
 Connectors that are not finished yet ship in the images as previews and
 stay off: the catalogue does not list them, and nothing can connect or sync
-them. Currently those are Railway (`railway`) and PostHog (`posthog`), both
-milestone 13.1; every other connector in the images is available without a
+them. Currently those are Railway (`railway`), PostHog (`posthog`) and
+Hetzner Cloud (`hetzner-cloud`), all milestone 13.1; every other connector in the images is available without a
 setting. To try a preview,
 name it in `NETRICS_PREVIEW_CONNECTORS` in `.env` (comma-separated IDs) and run
 `docker compose up -d`. It applies to `migrate` (the connector catalog),

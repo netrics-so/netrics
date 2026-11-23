@@ -1,0 +1,92 @@
+{
+  "primary_ips": [
+    {
+      "id": 5001,
+      "name": "primary_ip-42-v4",
+      "ip": "203.0.113.10",
+      "type": "ipv4",
+      "assignee_id": 42,
+      "assignee_type": "server",
+      "auto_delete": true,
+      "blocked": false,
+      "created": "2023-01-10T08:30:00+00:00",
+      "dns_ptr": [],
+      "labels": {},
+      "protection": {
+        "delete": false
+      },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
+      }
+    },
+    {
+      "id": 5002,
+      "name": "primary_ip-42-v6",
+      "ip": "2001:db8::/64",
+      "type": "ipv6",
+      "assignee_id": 42,
+      "assignee_type": "server",
+      "auto_delete": true,
+      "blocked": false,
+      "created": "2023-01-10T08:30:00+00:00",
+      "dns_ptr": [],
+      "labels": {},
+      "protection": {
+        "delete": false
+      },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
+      }
+    },
+    {
+      "id": 5003,
+      "name": "reserved",
+      "ip": "203.0.113.99",
+      "type": "ipv4",
+      "assignee_id": null,
+      "assignee_type": "unassigned",
+      "auto_delete": false,
+      "blocked": false,
+      "created": "2023-02-10T08:30:00+00:00",
+      "dns_ptr": [],
+      "labels": {},
+      "protection": {
+        "delete": false
+      },
+      "location": {
+        "id": 3,
+        "name": "hel1",
+        "description": "Helsinki DC Park 1",
+        "country": "FI",
+        "city": "Helsinki",
+        "latitude": 60.169855,
+        "longitude": 24.938379,
+        "network_zone": "eu-central"
+      }
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "per_page": 50,
+      "previous_page": null,
+      "next_page": null,
+      "last_page": 1,
+      "total_entries": 3
+    }
+  }
+}

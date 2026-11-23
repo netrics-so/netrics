@@ -1,0 +1,39 @@
+{
+  "floating_ips": [
+    {
+      "id": 6001,
+      "name": "web-vip",
+      "description": "",
+      "ip": "198.51.100.5",
+      "type": "ipv4",
+      "server": 43,
+      "dns_ptr": [],
+      "home_location": {
+        "id": 2,
+        "name": "nbg1",
+        "description": "Nuremberg DC Park 1",
+        "country": "DE",
+        "city": "Nuremberg",
+        "latitude": 49.452102,
+        "longitude": 11.076665,
+        "network_zone": "eu-central"
+      },
+      "blocked": false,
+      "protection": {
+        "delete": false
+      },
+      "labels": {},
+      "created": "2023-03-10T08:30:00+00:00"
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "per_page": 50,
+      "previous_page": null,
+      "next_page": null,
+      "last_page": 1,
+      "total_entries": 1
+    }
+  }
+}

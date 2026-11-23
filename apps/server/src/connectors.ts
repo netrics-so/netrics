@@ -7,6 +7,7 @@ import {
   createAppleAdsConnector,
   createDemoConnector,
   createGooglePlayConnector,
+  createHetznerCloudConnector,
   createPostHogConnector,
   createRailwayConnector,
   createSearchConsoleConnector,
@@ -41,8 +42,9 @@ export interface DefaultRegistryOptions {
 /**
  * The connector bundle compiled into this server image: the demo connector,
  * Vercel Web Analytics, Google Search Console, App Store Connect, Google
- * Play, Apple Ads, Railway and PostHog. A preview connector
- * (PREVIEW_CONNECTORS, currently Railway and PostHog) is registered outside
+ * Play, Apple Ads, Railway, PostHog and Hetzner Cloud. A preview connector
+ * (PREVIEW_CONNECTORS, currently Railway, PostHog and Hetzner Cloud) is
+ * registered outside
  * production, and in production only when listed in
  * NETRICS_PREVIEW_CONNECTORS. Reviewed connectors join here
  * per the architecture's distribution workflow. The runtime only knows the
@@ -70,6 +72,7 @@ export function createDefaultRegistry(
     createAppleAdsConnector(),
     createRailwayConnector(),
     createPostHogConnector(),
+    createHetznerCloudConnector(),
   ];
   for (const connector of connectors) {
     const id = connector.manifest.id;

@@ -7,7 +7,8 @@
  * them, and its catalog has no rows for them. An opted-in preview connector
  * is marked as a preview in the catalog (`preview: true`).
  *
- * Currently Railway (#870) and PostHog (#873), both milestone 13.1, until
+ * Currently Railway (#870), PostHog (#873) and Hetzner Cloud (#872), all
+ * milestone 13.1, until
  * the milestone's exit gate (#877) passes. Apple Ads (milestone 10) left
  * this set when its exit gate (#378) passed on the hosted service and on a
  * self-hosted install, and is available everywhere since. A variable that still names a finished
@@ -20,6 +21,7 @@
 export const PREVIEW_CONNECTORS: ReadonlySet<string> = new Set<string>([
   "railway",
   "posthog",
+  "hetzner-cloud",
 ]);
 
 /**
@@ -38,4 +40,5 @@ export const BUNDLE_CONNECTORS: ReadonlySet<string> = new Set([
   "apple-ads",
   "railway",
   "posthog",
+  "hetzner-cloud",
 ]);

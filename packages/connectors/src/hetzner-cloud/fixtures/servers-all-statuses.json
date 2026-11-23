@@ -1,0 +1,542 @@
+{
+  "servers": [
+    {
+      "id": 42,
+      "name": "server-running",
+      "status": "running",
+      "created": "2023-01-10T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5001,
+          "ip": "203.0.113.10",
+          "blocked": false,
+          "dns_ptr": "static.10.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 104,
+        "name": "cx22",
+        "description": "CX22",
+        "cores": 2,
+        "memory": 4,
+        "disk": 40,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "x86",
+        "category": "cost_optimized"
+      },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": "22-02",
+      "outgoing_traffic": 123456789,
+      "ingoing_traffic": 98765432,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {
+        "environment": "production",
+        "app": "shop"
+      },
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 40,
+      "placement_group": null
+    },
+    {
+      "id": 43,
+      "name": "server-initializing",
+      "status": "initializing",
+      "created": "2023-02-11T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5002,
+          "ip": "203.0.113.11",
+          "blocked": false,
+          "dns_ptr": "static.11.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 105,
+        "name": "cpx31",
+        "description": "CPX31",
+        "cores": 4,
+        "memory": 8,
+        "disk": 160,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "x86",
+        "category": "regular_purpose"
+      },
+      "location": {
+        "id": 2,
+        "name": "nbg1",
+        "description": "Nuremberg DC Park 1",
+        "country": "DE",
+        "city": "Nuremberg",
+        "latitude": 49.452102,
+        "longitude": 11.076665,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": null,
+      "outgoing_traffic": 246913578,
+      "ingoing_traffic": 197530864,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {
+        "environment": "staging",
+        "app": "shop"
+      },
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 160,
+      "placement_group": null
+    },
+    {
+      "id": 44,
+      "name": "server-starting",
+      "status": "starting",
+      "created": "2023-03-12T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5003,
+          "ip": "203.0.113.12",
+          "blocked": false,
+          "dns_ptr": "static.12.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 45,
+        "name": "cax11",
+        "description": "CAX11",
+        "cores": 2,
+        "memory": 4,
+        "disk": 40,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "arm",
+        "category": "cost_optimized"
+      },
+      "location": {
+        "id": 3,
+        "name": "hel1",
+        "description": "Helsinki DC Park 1",
+        "country": "FI",
+        "city": "Helsinki",
+        "latitude": 60.169855,
+        "longitude": 24.938379,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": null,
+      "outgoing_traffic": 370370367,
+      "ingoing_traffic": 296296296,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {
+        "environment": "production",
+        "app": "shop"
+      },
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 40,
+      "placement_group": null
+    },
+    {
+      "id": 45,
+      "name": "server-stopping",
+      "status": "stopping",
+      "created": "2023-04-13T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5004,
+          "ip": "203.0.113.13",
+          "blocked": false,
+          "dns_ptr": "static.13.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 104,
+        "name": "cx22",
+        "description": "CX22",
+        "cores": 2,
+        "memory": 4,
+        "disk": 40,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "x86",
+        "category": "cost_optimized"
+      },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": null,
+      "outgoing_traffic": 493827156,
+      "ingoing_traffic": 395061728,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {
+        "environment": "staging",
+        "app": "shop"
+      },
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 40,
+      "placement_group": null
+    },
+    {
+      "id": 46,
+      "name": "server-off",
+      "status": "off",
+      "created": "2023-05-14T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5005,
+          "ip": "203.0.113.14",
+          "blocked": false,
+          "dns_ptr": "static.14.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 105,
+        "name": "cpx31",
+        "description": "CPX31",
+        "cores": 4,
+        "memory": 8,
+        "disk": 160,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "x86",
+        "category": "regular_purpose"
+      },
+      "location": {
+        "id": 2,
+        "name": "nbg1",
+        "description": "Nuremberg DC Park 1",
+        "country": "DE",
+        "city": "Nuremberg",
+        "latitude": 49.452102,
+        "longitude": 11.076665,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": "22-02",
+      "outgoing_traffic": 617283945,
+      "ingoing_traffic": 493827160,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {
+        "environment": "production",
+        "app": "shop"
+      },
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 160,
+      "placement_group": null
+    },
+    {
+      "id": 47,
+      "name": "server-deleting",
+      "status": "deleting",
+      "created": "2023-06-15T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5006,
+          "ip": "203.0.113.15",
+          "blocked": false,
+          "dns_ptr": "static.15.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 45,
+        "name": "cax11",
+        "description": "CAX11",
+        "cores": 2,
+        "memory": 4,
+        "disk": 40,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "arm",
+        "category": "cost_optimized"
+      },
+      "location": {
+        "id": 3,
+        "name": "hel1",
+        "description": "Helsinki DC Park 1",
+        "country": "FI",
+        "city": "Helsinki",
+        "latitude": 60.169855,
+        "longitude": 24.938379,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": null,
+      "outgoing_traffic": 740740734,
+      "ingoing_traffic": 592592592,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {},
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 40,
+      "placement_group": null
+    },
+    {
+      "id": 48,
+      "name": "server-migrating",
+      "status": "migrating",
+      "created": "2023-07-16T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5007,
+          "ip": "203.0.113.16",
+          "blocked": false,
+          "dns_ptr": "static.16.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 104,
+        "name": "cx22",
+        "description": "CX22",
+        "cores": 2,
+        "memory": 4,
+        "disk": 40,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "x86",
+        "category": "cost_optimized"
+      },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": null,
+      "outgoing_traffic": 864197523,
+      "ingoing_traffic": 691358024,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {},
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 40,
+      "placement_group": null
+    },
+    {
+      "id": 49,
+      "name": "server-rebuilding",
+      "status": "rebuilding",
+      "created": "2023-08-17T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5008,
+          "ip": "203.0.113.17",
+          "blocked": false,
+          "dns_ptr": "static.17.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 105,
+        "name": "cpx31",
+        "description": "CPX31",
+        "cores": 4,
+        "memory": 8,
+        "disk": 160,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "x86",
+        "category": "regular_purpose"
+      },
+      "location": {
+        "id": 2,
+        "name": "nbg1",
+        "description": "Nuremberg DC Park 1",
+        "country": "DE",
+        "city": "Nuremberg",
+        "latitude": 49.452102,
+        "longitude": 11.076665,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": null,
+      "outgoing_traffic": 987654312,
+      "ingoing_traffic": 790123456,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {},
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 160,
+      "placement_group": null
+    },
+    {
+      "id": 50,
+      "name": "server-unknown",
+      "status": "unknown",
+      "created": "2023-09-18T08:30:00+00:00",
+      "public_net": {
+        "ipv4": {
+          "id": 5009,
+          "ip": "203.0.113.18",
+          "blocked": false,
+          "dns_ptr": "static.18.113.0.203.example"
+        },
+        "ipv6": null,
+        "floating_ips": [],
+        "firewalls": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 45,
+        "name": "cax11",
+        "description": "CAX11",
+        "cores": 2,
+        "memory": 4,
+        "disk": 40,
+        "storage_type": "local",
+        "cpu_type": "shared",
+        "architecture": "arm",
+        "category": "cost_optimized"
+      },
+      "location": {
+        "id": 3,
+        "name": "hel1",
+        "description": "Helsinki DC Park 1",
+        "country": "FI",
+        "city": "Helsinki",
+        "latitude": 60.169855,
+        "longitude": 24.938379,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": null,
+      "outgoing_traffic": 1111111101,
+      "ingoing_traffic": 888888888,
+      "included_traffic": 21990232555520,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {},
+      "volumes": [],
+      "load_balancers": [],
+      "primary_disk_size": 40,
+      "placement_group": null
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "per_page": 50,
+      "previous_page": null,
+      "next_page": null,
+      "last_page": 1,
+      "total_entries": 9
+    }
+  }
+}

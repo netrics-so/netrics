@@ -170,6 +170,9 @@ export const PROVIDER_MESSAGE_CODES = {
   "posthog.insights_invalid": "providerMessages.posthog.insightsInvalid",
   "posthog.projects_required": "providerMessages.posthog.projectsRequired",
   "posthog.projects_invalid": "providerMessages.posthog.projectsInvalid",
+  "hetzner_cloud.token_rejected": "providerMessages.hetznerCloud.tokenRejected",
+  "hetzner_cloud.token_forbidden":
+    "providerMessages.hetznerCloud.tokenForbidden",
   "connection.credentials_host_changed":
     "providerMessages.connection.credentialsHostChanged",
   // The stored message keeps the stream, the HTTP status and the number of

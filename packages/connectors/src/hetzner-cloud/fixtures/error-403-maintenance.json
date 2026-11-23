@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "maintenance",
+    "message": "cannot perform operation due to maintenance",
+    "details": {}
+  }
+}

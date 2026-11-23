@@ -1,0 +1,89 @@
+{
+  "images": [
+    {
+      "id": 8001,
+      "type": "snapshot",
+      "status": "available",
+      "name": null,
+      "description": "before upgrade",
+      "image_size": 2.3,
+      "disk_size": 40,
+      "created": "2023-06-01T10:00:00+00:00",
+      "created_from": {
+        "id": 42,
+        "name": "server-running"
+      },
+      "bound_to": null,
+      "os_flavor": "ubuntu",
+      "os_version": null,
+      "rapid_deploy": false,
+      "protection": {
+        "delete": false
+      },
+      "deprecated": null,
+      "deleted": null,
+      "labels": {},
+      "architecture": "x86"
+    },
+    {
+      "id": 8002,
+      "type": "snapshot",
+      "status": "available",
+      "name": null,
+      "description": "old web server",
+      "image_size": 10,
+      "disk_size": 40,
+      "created": "2023-06-01T10:00:00+00:00",
+      "created_from": {
+        "id": 999,
+        "name": "web-old"
+      },
+      "bound_to": null,
+      "os_flavor": "ubuntu",
+      "os_version": null,
+      "rapid_deploy": false,
+      "protection": {
+        "delete": false
+      },
+      "deprecated": null,
+      "deleted": null,
+      "labels": {},
+      "architecture": "x86"
+    },
+    {
+      "id": 8003,
+      "type": "backup",
+      "status": "available",
+      "name": null,
+      "description": "nightly",
+      "image_size": 1.5,
+      "disk_size": 40,
+      "created": "2023-06-01T10:00:00+00:00",
+      "created_from": {
+        "id": 42,
+        "name": "server-running"
+      },
+      "bound_to": 42,
+      "os_flavor": "ubuntu",
+      "os_version": null,
+      "rapid_deploy": false,
+      "protection": {
+        "delete": false
+      },
+      "deprecated": null,
+      "deleted": null,
+      "labels": {},
+      "architecture": "x86"
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "per_page": 50,
+      "previous_page": null,
+      "next_page": null,
+      "last_page": 1,
+      "total_entries": 3
+    }
+  }
+}
