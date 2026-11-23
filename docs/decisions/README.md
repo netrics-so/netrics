@@ -34,3 +34,4 @@ product is built.
 | [0027](./0027-custom-api-connector.md)                  | The custom API connector: a manifest per connection, credentials bound to the environment host |
 | [0028](./0028-group-by-time-grain.md)                   | Time grain for grouped dates and timestamps: a per-query choice, dates in the workspace zone   |
 | [0029](./0029-workspace-deletion.md)                    | Workspace deletion: two steps behind a fence on every tenant transaction                       |
+| [0030](./0030-custom-api-read-only-post.md)             | Read-only POST and GraphQL in the custom API connector                                         |
