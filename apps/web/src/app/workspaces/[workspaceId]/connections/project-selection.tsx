@@ -20,30 +20,28 @@ import { parseConfigSchema } from "@/lib/config-schema";
 import { useFocusKeeper } from "@/lib/focus-handoff";
 import { useLocale, useT } from "@/lib/i18n/client";
 
-/** A project the connector could not sync: Web Analytics is not enabled. */
-function withoutAnalytics(resource: DiscoveredResource): boolean {
+/**
+ * A project without Web Analytics: it is synced for its deployments only
+ * (#871), and its analytics stay empty.
+ */
+export function withoutAnalytics(resource: DiscoveredResource): boolean {
   return resource.metadata?.webAnalytics === false;
 }
 
 /**
- * What the picker shows for a loaded project list. A refused check (no
- * project with Web Analytics is left, say) still opens the picker with the
- * refusal and what can be done about it: the stored selection can be
- * reduced, to at least one project (#854). Projects without Web Analytics
- * are not offered; a selected one stays in the selection, as not listed, so
- * it can be removed.
+ * What the picker shows for a loaded project list. A refused check (a
+ * selected project the token no longer lists, say) still opens the picker
+ * with the refusal and what can be done about it: the stored selection can
+ * be reduced, to at least one project (#854). Every listed project is
+ * offered, with or without Web Analytics (#871).
  */
 export function pickerState(result: StoredConnectionPreviewResponse): {
   resources: DiscoveredResource[];
-  hidden: number;
   selection: string[] | null;
   refusal: string | null;
 } {
   return {
-    resources: result.resources.filter(
-      (resource) => !withoutAnalytics(resource),
-    ),
-    hidden: result.resources.filter(withoutAnalytics).length,
+    resources: result.resources,
     selection: result.selection,
     refusal: result.check.ok ? null : (result.check.message ?? ""),
   };
@@ -234,7 +232,6 @@ export function SyncedProjectsReadOnly({
  */
 export function ProjectSelectionEditor({
   resources,
-  hidden,
   refusal,
   selection,
   dirty,
@@ -246,7 +243,6 @@ export function ProjectSelectionEditor({
   /** Whether the user may delete the connection (see SyncedProjects). */
   canDelete?: boolean;
   resources: DiscoveredResource[];
-  hidden: number;
   refusal: string | null;
   selection: string[] | null;
   dirty: boolean;
@@ -273,10 +269,10 @@ export function ProjectSelectionEditor({
         onChange={onChange}
         disabled={pending !== null}
         noneHelpId={hintId}
+        describe={(resource) =>
+          withoutAnalytics(resource) ? t("withoutAnalytics") : null
+        }
       />
-      {hidden > 0 ? (
-        <p className="help">{t("withoutAnalytics", { count: hidden })}</p>
-      ) : null}
       <div className="actions">
         <button
           className="primary"
@@ -328,7 +324,6 @@ export function ProjectSelection({
     [connector],
   );
   const [resources, setResources] = useState<DiscoveredResource[] | null>(null);
-  const [hidden, setHidden] = useState(0);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [selection, setSelection] = useState<string[] | null>(null);
   const [pending, setPending] = useState<"load" | "save" | null>(null);
@@ -396,7 +391,6 @@ export function ProjectSelection({
         ),
       });
       const state = pickerState(result);
-      setHidden(state.hidden);
       setResources(state.resources);
       setSelection(state.selection);
       setRefusal(
@@ -456,7 +450,6 @@ export function ProjectSelection({
       ) : (
         <ProjectSelectionEditor
           resources={resources}
-          hidden={hidden}
           refusal={refusal}
           selection={selection}
           dirty={dirty}

@@ -65,18 +65,17 @@ describe("project selection (#782)", () => {
   });
 
   it("a refused check still opens the picker, so failing projects can be removed", () => {
-    // Web Analytics was turned off on the last enabled project: Vercel's
-    // check refuses, and the stored selection must stay reachable.
+    // The token no longer lists the selected project: Vercel's check
+    // refuses, and the stored selection must stay reachable.
     const refused = pickerState({
-      check: { ok: false, message: "None of the projects has Web Analytics." },
+      check: { ok: false, message: "The token no longer has access." },
       resources: [],
       selection: ["prj_a"],
     });
     expect(refused).toEqual({
       resources: [],
-      hidden: 0,
       selection: ["prj_a"],
-      refusal: "None of the projects has Web Analytics.",
+      refusal: "The token no longer has access.",
     });
     // The picker lists the stored project as not listed, to be unticked.
     const html = renderI18n(
@@ -93,7 +92,7 @@ describe("project selection (#782)", () => {
     expect(html).toContain("Clear selection");
   });
 
-  it("a selected project without Web Analytics stays removable, others are not offered", () => {
+  it("offers a project without Web Analytics, marked as deployments only (#871)", () => {
     const state = pickerState({
       check: { ok: true },
       resources: [
@@ -108,9 +107,32 @@ describe("project selection (#782)", () => {
       selection: ["prj_a", "prj_g"],
     });
     expect(state.refusal).toBeNull();
-    expect(state.resources.map((resource) => resource.id)).toEqual(["prj_a"]);
-    expect(state.hidden).toBe(1);
+    expect(state.resources.map((resource) => resource.id)).toEqual([
+      "prj_a",
+      "prj_g",
+    ]);
     expect(state.selection).toEqual(["prj_a", "prj_g"]);
+    for (const [locale, note] of [
+      ["en", "Deployments only: Web Analytics is not enabled"],
+      ["de", "Nur Deployments: Web Analytics ist nicht aktiviert"],
+    ] as const) {
+      const html = renderI18n(
+        <ProjectSelectionEditor
+          resources={state.resources}
+          refusal={null}
+          selection={state.selection}
+          dirty={false}
+          pending={null}
+          onChange={() => {}}
+          onCancel={() => {}}
+        />,
+        locale,
+      );
+      expect(html).toContain("gamma-docs");
+      expect(html).toContain(note);
+      // Only the project without Web Analytics carries the note.
+      expect(html.split(note)).toHaveLength(2);
+    }
   });
 
   it("the picker names projects, with their IDs beside the names", () => {
@@ -147,9 +169,9 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     const en = render("en", {}, synced);
     expect(en).toContain("Selected projects (2):");
     // The configured selection, not a promise of data: a project is only
-    // synced while the token sees it and it has Web Analytics.
+    // synced while the token sees it; its analytics while enabled.
     expect(en).toContain(
-      "A selected project is only synced while the token can see it and Web Analytics is enabled for it.",
+      "A selected project is only synced while the token can see it; its Web Analytics only while they are enabled.",
     );
     expect(en).not.toContain("are synced");
     expect(en).toContain("<li>alpha-site</li>");
@@ -160,7 +182,7 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     const de = render("de", {}, synced);
     expect(de).toContain("Ausgewählte Projekte (2):");
     expect(de).toContain(
-      "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist.",
+      "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann; seine Web Analytics nur, solange sie aktiviert sind.",
     );
     expect(de).toContain("<li>alpha-site</li>");
     expect(render("en", {}, [synced[0]!])).toContain("Selected project (1):");
@@ -170,15 +192,17 @@ describe("the synced projects up front, and at least one required (#854)", () =>
   });
 
   it("says all projects when no selection is stored", () => {
-    // Qualified: the team of the settings, and only with Web Analytics.
+    // Qualified: the team of the settings; without Web Analytics, deployments only (#871).
     const en = render("en", {}, null);
     expect(en).toContain("Selection: all current and future projects.");
     expect(en).toContain(
-      "Synced are the projects the token lists (for the Team ID in the settings, if one is set) that have Web Analytics enabled; projects without it are skipped.",
+      "Synced are the projects the token lists (for the Team ID in the settings, if one is set); projects without Web Analytics are synced for their deployments only.",
     );
     const de = render("de", {}, null);
     expect(de).toContain("Auswahl: alle aktuellen und zukünftigen Projekte.");
-    expect(de).toContain("Projekte ohne Web Analytics werden übersprungen.");
+    expect(de).toContain(
+      "von Projekten ohne Web Analytics nur die Deployments.",
+    );
   });
 
   it("says nothing about the selection while it is unknown", () => {
@@ -304,7 +328,7 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     expect(en).toContain("<li>alpha-site</li>");
     expect(en).toContain("<li>prj_b</li>");
     expect(en).toContain(
-      "A selected project is only synced while the token can see it and Web Analytics is enabled for it.",
+      "A selected project is only synced while the token can see it; its Web Analytics only while they are enabled.",
     );
     // No form, and no pointer at a button they do not have.
     expect(en).not.toContain("Change project selection");
@@ -338,7 +362,6 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     renderI18n(
       <ProjectSelectionEditor
         resources={[{ id: "prj_a", name: "alpha-site", kind: "project" }]}
-        hidden={0}
         refusal={options.refusal ?? null}
         selection={selection}
         dirty={options.dirty ?? true}
@@ -393,11 +416,11 @@ describe("the synced projects up front, and at least one required (#854)", () =>
   });
 
   it("a refused check explains the options and keeps the picker", () => {
-    const refusal = "None of the projects has Web Analytics.";
+    const refusal = "The token no longer has access to a selected project.";
     const en = editor("en", ["prj_a", "prj_gone"], { refusal });
     expect(en).toContain(refusal);
     expect(en).toContain(
-      "enable Web Analytics for a project in Vercel and load the list again, or choose another project; the data already collected is kept either way.",
+      "restore the token’s access to it in Vercel and load the list again, or choose another project; the data already collected is kept either way.",
     );
     expect(en).toContain(
       "Deleting this connection instead also deletes the data it collected.",
@@ -414,7 +437,7 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     ).toContain('disabled=""');
     const de = editor("de", ["prj_a"], { refusal });
     expect(de).toContain(
-      "Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt",
+      "Stelle den Zugriff des Tokens darauf in Vercel wieder her und lade die Liste neu, oder wähle ein anderes Projekt",
     );
     expect(de).toContain(
       "Wenn du stattdessen diese Verbindung löschst, werden auch ihre importierten Daten gelöscht.",
@@ -461,8 +484,7 @@ describe("the synced projects up front, and at least one required (#854)", () =>
       renderI18n(
         <ProjectSelectionEditor
           resources={[]}
-          hidden={0}
-          refusal="None of the projects has Web Analytics."
+          refusal="The token no longer has access to a selected project."
           selection={["prj_a"]}
           dirty={false}
           pending={null}

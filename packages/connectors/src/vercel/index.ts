@@ -5,48 +5,69 @@ import type {
   ConnectorManifest,
   ManifestTranslation,
   ConnectorRuntime,
-  Observation,
   Resource,
   SyncRequest,
   SyncResult,
 } from "@netrics/connector-sdk";
-import { z } from "zod";
-
-import { boundFreshness } from "../freshness.js";
-import { pageCursor, readPageCursor } from "../page-cursor.js";
 
 import {
   VercelApiError,
   createVercelClient,
   type ClientOptions,
-  type Query,
-  type VercelGet,
 } from "./api.js";
+import {
+  VERCEL_DATASETS,
+  billingChargesDataset,
+  deploymentsDataset,
+  productionDeploymentsDataset,
+} from "./datasets.js";
+import {
+  listProjects,
+  selectionOf,
+  teamIdOf,
+  tokenOf,
+  type VercelProject,
+} from "./reading.js";
+import {
+  ANALYTICS_STREAM,
+  BILLING_STREAM,
+  DEPLOYS_STREAM,
+  METRICS,
+  TOP_LIMIT,
+  emptyRun,
+  syncPage,
+} from "./sync.js";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-/** Days re-read on every incremental sync: Vercel keeps counting today. */
-const INCREMENTAL_LOOKBACK_DAYS = 1;
-/** Top routes, countries and events kept per calendar month; the rest is "Others". */
-export const TOP_LIMIT = 10;
-const MAX_PROJECT_PAGES = 10;
-
-/** The freshness stream of every Vercel metric (ADR 0025): continuous. */
-export const TRAFFIC_STREAM = "traffic";
+export {
+  ANALYTICS_STREAM,
+  BILLING_STREAM,
+  DEPLOYMENTS_BACKFILL_DAYS,
+  DEPLOYS_STREAM,
+  INCREMENTAL_LOOKBACK_DAYS,
+  MAX_REQUESTS_PER_PAGE,
+  METRICS,
+  TOP_LIMIT,
+} from "./sync.js";
+export {
+  DEPLOYMENT_STATES,
+  productionState,
+  type ProductionState,
+} from "./datasets.js";
 
 /**
  * German texts of the manifest (ADR 0016, #257): "du" where the text
  * addresses the reader; product names and stored values stay as they are.
  */
 const vercelDe: ManifestTranslation = {
-  name: "Vercel Web Analytics",
+  name: "Vercel",
   description:
-    "Besucher, Seitenaufrufe und eigene Events aus Vercel Web Analytics, pro Projekt.",
+    "Deployments, der Zustand der Produktion und Web Analytics (Besucher, Seitenaufrufe, eigene Events) deiner Vercel-Projekte, dazu die Kosten dieses Monats.",
   resourceNoun: { singular: "Projekt", plural: "Projekte" },
   credentials: {
     token: {
       title: "Vercel-Zugriffstoken",
       description:
-        "netrics liest damit nur Projektdetails und Web Analytics. Das Token wird verschlüsselt gespeichert und nie wieder angezeigt.",
+        "netrics liest damit nur Projekte, Deployments, Web Analytics und Abrechnungsdaten und ändert nichts. Das Token wird verschlüsselt gespeichert und nie wieder angezeigt.",
     },
   },
   // Vercel's own interface is English: its labels stay as they appear there.
@@ -64,26 +85,36 @@ const vercelDe: ManifestTranslation = {
     },
   },
   metrics: {
-    "vercel.pageviews": {
+    [METRICS.pageviews]: {
       name: "Seitenaufrufe",
       description: "Seitenaufrufe pro Tag und Projekt.",
     },
-    "vercel.visitors": {
+    [METRICS.visitors]: {
       name: "Tägliche Besucher",
       description:
         "Eindeutige Besucher pro Tag und Projekt. Über mehrere Tage summiert zählt ein wiederkehrender Besucher einmal pro Tag.",
     },
-    "vercel.route_pageviews": {
+    [METRICS.routePageviews]: {
       name: "Seitenaufrufe nach Route",
       description: `Seitenaufrufe pro Tag für die ${TOP_LIMIT} meistbesuchten Routen jedes Kalendermonats; andere Routen werden als „Others“ zusammengefasst.`,
     },
-    "vercel.country_visitors": {
+    [METRICS.countryVisitors]: {
       name: "Besucher nach Land",
       description: `Eindeutige Besucher pro Tag für die ${TOP_LIMIT} größten Länder jedes Kalendermonats (ISO-Codes); andere Länder werden als „Others“ zusammengefasst.`,
     },
-    "vercel.events": {
+    [METRICS.events]: {
       name: "Eigene Events",
       description: `Eigene Events pro Tag für die ${TOP_LIMIT} häufigsten Event-Namen jedes Kalendermonats; andere Events werden als „Others“ zusammengefasst.`,
+    },
+    [METRICS.deployments]: {
+      name: "Deployments",
+      description:
+        "Deployments pro Tag (UTC), Projekt und Umgebung (production oder preview), nach ihrem Erstellungszeitpunkt.",
+    },
+    [METRICS.failedDeployments]: {
+      name: "Fehlgeschlagene Deployments",
+      description:
+        "Deployments pro Tag (UTC), Projekt und Umgebung, die fehlgeschlagen sind (Zustand ERROR).",
     },
   },
   dimensions: {
@@ -91,20 +122,25 @@ const vercelDe: ManifestTranslation = {
     route: "Route",
     country: "Land",
     event: "Event",
+    target: "Umgebung",
   },
-  freshnessStreams: { [TRAFFIC_STREAM]: "Besucher und Seitenaufrufe" },
+  freshnessStreams: {
+    [ANALYTICS_STREAM]: "Besucher und Seitenaufrufe",
+    [DEPLOYS_STREAM]: "Deployments",
+    [BILLING_STREAM]: "Kosten",
+  },
 };
 
 export const vercelManifest: ConnectorManifest = {
   id: "vercel",
-  version: "0.1.4",
+  version: "0.2.0",
   sdkVersion: "^0.2.19",
   category: "web",
   brandColor: "#000000",
-  name: "Vercel Web Analytics",
+  name: "Vercel",
   description:
-    "Visitors, page views and custom events from Vercel Web Analytics, per project.",
-  url: "https://vercel.com/docs/analytics",
+    "Deployments, the production state and Web Analytics (visitors, page views, custom events) of your Vercel projects, plus this month's charges.",
+  url: "https://vercel.com",
   docsUrl:
     "https://github.com/netrics-so/netrics/blob/main/docs/connectors/vercel.md",
   authStrategies: [
@@ -117,7 +153,7 @@ export const vercelManifest: ConnectorManifest = {
             type: "string",
             title: "Vercel access token",
             description:
-              "netrics only reads project details and Web Analytics with it. It is stored encrypted and never shown again.",
+              "netrics only reads projects, deployments, Web Analytics and billing charges with it and changes nothing. It is stored encrypted and never shown again.",
           },
         },
         required: ["token"],
@@ -146,9 +182,10 @@ export const vercelManifest: ConnectorManifest = {
     },
     additionalProperties: false,
   },
+  datasets: [...VERCEL_DATASETS],
   metrics: [
     {
-      key: "vercel.pageviews",
+      key: METRICS.pageviews,
       name: "Page views",
       description: "Page views per day and project.",
       kind: "delta",
@@ -158,7 +195,7 @@ export const vercelManifest: ConnectorManifest = {
       aggregations: ["sum", "avg", "min", "max"],
     },
     {
-      key: "vercel.visitors",
+      key: METRICS.visitors,
       name: "Daily visitors",
       description:
         "Unique visitors per day and project. Summed over several days, a visitor who returns counts once per day.",
@@ -169,7 +206,7 @@ export const vercelManifest: ConnectorManifest = {
       aggregations: ["sum", "avg", "min", "max"],
     },
     {
-      key: "vercel.route_pageviews",
+      key: METRICS.routePageviews,
       name: "Page views by route",
       description: `Page views per day for the ${TOP_LIMIT} busiest routes of each calendar month; other routes are grouped as "Others".`,
       kind: "delta",
@@ -179,7 +216,7 @@ export const vercelManifest: ConnectorManifest = {
       aggregations: ["sum", "avg", "min", "max"],
     },
     {
-      key: "vercel.country_visitors",
+      key: METRICS.countryVisitors,
       name: "Visitors by country",
       description: `Unique visitors per day for the ${TOP_LIMIT} largest countries of each calendar month (ISO codes); other countries are grouped as "Others".`,
       kind: "delta",
@@ -189,7 +226,7 @@ export const vercelManifest: ConnectorManifest = {
       aggregations: ["sum", "avg", "min", "max"],
     },
     {
-      key: "vercel.events",
+      key: METRICS.events,
       name: "Custom events",
       description: `Custom events per day for the ${TOP_LIMIT} most frequent event names of each calendar month; other events are grouped as "Others".`,
       kind: "delta",
@@ -198,10 +235,34 @@ export const vercelManifest: ConnectorManifest = {
       dimensions: ["resource", "event"],
       aggregations: ["sum", "avg", "min", "max"],
     },
+    {
+      key: METRICS.deployments,
+      name: "Deployments",
+      description:
+        "Deployments per day (UTC), project and environment (production or preview), by when they were created.",
+      kind: "delta",
+      unit: "deployments",
+      granularity: "day",
+      dimensions: ["resource", "target"],
+      aggregations: ["sum", "avg", "min", "max"],
+    },
+    {
+      key: METRICS.failedDeployments,
+      name: "Failed deployments",
+      description:
+        "Deployments per day (UTC), project and environment that failed (state ERROR).",
+      kind: "delta",
+      unit: "deployments",
+      granularity: "day",
+      dimensions: ["resource", "target"],
+      aggregations: ["sum", "avg", "min", "max"],
+      better: "lower",
+    },
   ],
   minRefreshIntervalSeconds: 900,
   supportsBackfill: true,
-  // Pro plans keep 366 days; smaller plans are clamped at sync time.
+  // Web Analytics: Pro plans keep 366 days; smaller plans are clamped at
+  // sync time. Deployments are read back DEPLOYMENTS_BACKFILL_DAYS.
   backfillDays: 366,
   outboundDomains: ["api.vercel.com"],
   resourceNoun: { singular: "project", plural: "projects" },
@@ -212,161 +273,59 @@ export const vercelManifest: ConnectorManifest = {
   discoversBeforeFirstSync: true,
   translations: { de: vercelDe },
   rateLimit: { maxRequests: 400, windowSeconds: 60 },
-  // When the numbers arrive (ADR 0025): Vercel counts live, so every
-  // metric is one continuous stream, "read" by each completed sync.
+  // When the numbers arrive (ADR 0025): every stream is continuous, "read"
+  // by each completed sync. Web Analytics and deployments are reported per
+  // project, so a project without Web Analytics never claims its numbers
+  // (#871); charges for the connection.
   freshnessStreams: [
     {
-      key: TRAFFIC_STREAM,
+      key: ANALYTICS_STREAM,
       name: "Visitors and page views",
       kind: "continuous",
       metrics: [
-        "vercel.pageviews",
-        "vercel.visitors",
-        "vercel.route_pageviews",
-        "vercel.country_visitors",
-        "vercel.events",
+        METRICS.pageviews,
+        METRICS.visitors,
+        METRICS.routePageviews,
+        METRICS.countryVisitors,
+        METRICS.events,
       ],
+    },
+    {
+      key: DEPLOYS_STREAM,
+      name: "Deployments",
+      kind: "continuous",
+      metrics: [METRICS.deployments, METRICS.failedDeployments],
+      datasets: [deploymentsDataset.key, productionDeploymentsDataset.key],
+    },
+    {
+      key: BILLING_STREAM,
+      name: "Charges",
+      kind: "continuous",
+      datasets: [billingChargesDataset.key],
     },
   ],
 };
-
-// ─── Response shapes (a changed shape fails parsing, and the tests) ─────────
-
-const projectSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  accountId: z.string().min(1),
-  webAnalytics: z
-    .object({ enabledAt: z.number().optional() })
-    .loose()
-    .nullish(),
-});
-const projectsPageSchema = z.object({
-  projects: z.array(projectSchema.loose()),
-  pagination: z
-    .object({ next: z.union([z.number(), z.string()]).nullish() })
-    .loose()
-    .optional(),
-});
-const bucketSchema = z.object({ timestamp: z.iso.datetime() }).loose();
-const visitsSchema = z.object({
-  data: z.array(
-    bucketSchema.extend({ visitors: z.number(), pageviews: z.number() }),
-  ),
-});
-const eventsSchema = z.object({
-  data: z.array(
-    bucketSchema.extend({ eventName: z.string(), count: z.number() }),
-  ),
-});
-
-interface VercelProject {
-  id: string;
-  name: string;
-  accountId: string;
-  analytics: boolean;
-}
-
-// ─── Configuration ──────────────────────────────────────────────────────────
-
-function tokenOf(context: ConnectionContext): string | undefined {
-  const token = context.credentials.token;
-  return typeof token === "string" && token.trim() !== ""
-    ? token.trim()
-    : undefined;
-}
-
-function teamIdOf(context: ConnectionContext): string | undefined {
-  const teamId = context.config.teamId;
-  return typeof teamId === "string" && teamId !== "" ? teamId : undefined;
-}
-
-/**
- * The stored project selection. Undefined when none is stored (connections
- * from before selections existed, and "all projects"): every project is
- * collected. An explicit empty selection collects nothing (#782).
- */
-function selectionOf(context: ConnectionContext): string[] | undefined {
-  const selection = context.config.resourceSelection;
-  return Array.isArray(selection) &&
-    selection.every((id) => typeof id === "string")
-    ? (selection as string[])
-    : undefined;
-}
-
-/** Requests on behalf of a team need its id; personal accounts do not. */
-function ownerQuery(accountId: string): Query {
-  return accountId.startsWith("team_") ? { teamId: accountId } : {};
-}
-
-async function listProjects(
-  get: VercelGet,
-  teamId: string | undefined,
-): Promise<VercelProject[]> {
-  const projects: VercelProject[] = [];
-  let from: string | undefined;
-  for (let page = 0; page < MAX_PROJECT_PAGES; page += 1) {
-    const body = projectsPageSchema.parse(
-      await get("/v10/projects", { limit: "100", teamId, from }),
-    );
-    for (const project of body.projects) {
-      projects.push({
-        id: project.id,
-        name: project.name,
-        accountId: project.accountId,
-        analytics: typeof project.webAnalytics?.enabledAt === "number",
-      });
-    }
-    const next = body.pagination?.next;
-    if (next === null || next === undefined) break;
-    from = String(next);
-  }
-  return projects;
-}
-
-// ─── Time windows ───────────────────────────────────────────────────────────
-
-function startOfUtcDay(ms: number): number {
-  const date = new Date(ms);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-}
-
-function startOfNextUtcMonth(ms: number): number {
-  const date = new Date(ms);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
-}
-
-function startOfUtcMonth(ms: number): number {
-  const date = new Date(ms);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
-}
-
-function day(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
-/** "the pro plan only grants access to the latest 366 days of data" */
-function planWindowDays(error: VercelApiError): number | null {
-  if (error.status !== 400) return null;
-  const match = /latest (\d+) (day|month)s?/i.exec(error.message);
-  if (!match) return null;
-  const count = Number(match[1]);
-  return match[2]!.toLowerCase() === "month" ? count * 28 : count;
-}
 
 // ─── Connector ──────────────────────────────────────────────────────────────
 
 export type VercelConnectorOptions = ClientOptions;
 
 /**
- * Vercel Web Analytics. Resources are projects; every metric is a daily
- * delta stamped at UTC midnight of Vercel's reporting day (ADR 0008).
+ * Vercel (#871; Web Analytics since milestone 05). Resources are projects,
+ * every one the token lists, with or without Web Analytics.
  *
- * Each sync page covers at most one calendar month. Vercel ranks the top
- * routes, countries and events over the queried range, so every query spans
- * the whole month (up to today) and only the days inside the requested
- * window are emitted: the ranking, and with it every value, is the same
- * whichever window asks for a day.
+ * A sync is a resumable run of single-request steps (sync.ts): the
+ * projects; per project its production deployment (the
+ * `production_deployments` snapshot), its deployments created in the
+ * window (the `deployments` dataset and daily counts) and, with Web
+ * Analytics enabled, its daily visits, top routes, countries and events;
+ * per team this month's billing charges (`billing_charges`).
+ *
+ * Web Analytics metrics are daily deltas stamped at UTC midnight of
+ * Vercel's reporting day (ADR 0008). Vercel ranks the top routes, countries
+ * and events over the queried range, so every query spans a whole calendar
+ * month (up to today) and only the days inside the window are emitted: the
+ * ranking, and with it every value, is the same whichever window asks.
  */
 export function createVercelConnector(
   options: VercelConnectorOptions = {},
@@ -429,29 +388,16 @@ export function createVercelConnector(
         };
       }
       if (selection) {
-        const byId = new Map(projects.map((project) => [project.id, project]));
-        const missing = selection.filter((id) => !byId.has(id));
+        // Every listed project can be synced: its deployments always, its
+        // Web Analytics where enabled (#871).
+        const listed = new Set(projects.map((project) => project.id));
+        const missing = selection.filter((id) => !listed.has(id));
         if (missing.length > 0) {
           return {
             ok: false,
             message: `The token no longer has access to ${missing.length === 1 ? "a selected project" : `${missing.length} selected projects`} (${missing.join(", ")}). Use a token that covers them, or change the selection.`,
           };
         }
-        const disabled = selection
-          .map((id) => byId.get(id)!)
-          .filter((project) => !project.analytics);
-        if (disabled.length > 0) {
-          return {
-            ok: false,
-            message: `Web Analytics is not enabled for ${disabled.map((project) => project.name).join(", ")}. Enable it in the project's Analytics tab in Vercel.`,
-          };
-        }
-      } else if (!projects.some((project) => project.analytics)) {
-        return {
-          ok: false,
-          message:
-            "None of the projects this token can see has Web Analytics enabled. Enable it in the project's Analytics tab in Vercel.",
-        };
       }
       return { ok: true };
     },
@@ -473,181 +419,14 @@ export function createVercelConnector(
     },
 
     async sync(context, request: SyncRequest, runtime): Promise<SyncResult> {
-      const get = client(context, runtime);
-      const toMs = Date.parse(request.to);
-      const resumed = readPageCursor(request.cursor);
-      const startMs = startOfUtcDay(Date.parse(resumed.at ?? request.from));
-      // Where this run started reading: the first page's start, carried in
-      // the page cursors. A later page starts at a month boundary, and a
-      // checkpoint may come back in a later run with a later window (#765).
-      const runStartMs = Math.min(
-        Date.parse(request.from),
-        startMs,
-        resumed.runStartMs ?? startMs,
-      );
-      // Where the next incremental sync starts: recent days keep changing.
-      // Never later than where this run started reading (a checkpoint before
-      // `from`, #758), so the lookback days are always re-read.
-      const resumeAt = new Date(
-        Math.max(
-          startOfUtcDay(toMs) - INCREMENTAL_LOOKBACK_DAYS * DAY_MS,
-          runStartMs,
-        ),
-      ).toISOString();
       // An empty window, or an explicit empty selection (#782): nothing is
       // read, and nothing is reported as checked.
-      if (startMs >= toMs || request.resources?.length === 0) {
-        return {
-          observations: [],
-          nextCursor: resumeAt,
-          nextFrom: resumeAt,
-          done: true,
-        };
-      }
-      const chunkEnd = Math.min(startOfNextUtcMonth(startMs), toMs);
-      const monthStart = startOfUtcMonth(startMs);
-      // The month is ranked up to today (never beyond: Vercel rejects the future).
-      const todayMs = startOfUtcDay(now());
-      const monthLastDay = Math.min(
-        startOfNextUtcMonth(startMs) - DAY_MS,
-        todayMs,
-      );
-
-      const projects = (await listProjects(get, teamIdOf(context))).filter(
-        (project) =>
-          project.analytics &&
-          (!request.resources || request.resources.includes(project.id)),
-      );
-
-      // Freshness only when every selected project is read (ADR 0025): a
-      // project without Web Analytics, or one the token no longer lists,
-      // is skipped, and the connection entry would cover it too.
-      const everySelectedRead =
-        request.resources === undefined ||
-        request.resources.every((id) =>
-          projects.some((project) => project.id === id),
-        );
-
-      const observations: Observation[] = [];
-      let planStart: number | null = null;
-      const inWindow = (timestamp: string) => {
-        const ms = Date.parse(timestamp);
-        return ms >= startMs && ms < chunkEnd;
-      };
-
-      for (const project of projects) {
-        const query = async (
-          path: string,
-          by: string[],
-          extra: Query = {},
-        ): Promise<unknown> => {
-          const since = Math.max(monthStart, planStart ?? monthStart);
-          if (since > monthLastDay) return { data: [] };
-          try {
-            return await get(path, {
-              ...ownerQuery(project.accountId),
-              projectId: project.id,
-              since: day(since),
-              until: day(monthLastDay),
-              by,
-              ...extra,
-            });
-          } catch (error) {
-            const days =
-              error instanceof VercelApiError ? planWindowDays(error) : null;
-            if (days === null || planStart !== null) throw error;
-            // The plan keeps fewer days than the backfill asks for.
-            planStart = todayMs - (days - 1) * DAY_MS;
-            return query(path, by, extra);
-          }
-        };
-
-        const visits = visitsSchema.parse(
-          await query("/v1/query/web-analytics/visits/aggregate", ["day"]),
-        );
-        for (const row of visits.data) {
-          if (!inWindow(row.timestamp)) continue;
-          const dimensions = { resource: project.id };
-          const sourceTimestamp = new Date(row.timestamp).toISOString();
-          observations.push(
-            {
-              metricKey: "vercel.pageviews",
-              sourceTimestamp,
-              value: row.pageviews,
-              dimensions,
-            },
-            {
-              metricKey: "vercel.visitors",
-              sourceTimestamp,
-              value: row.visitors,
-              dimensions,
-            },
-          );
-        }
-
-        for (const [dimension, key, field, metricKey] of [
-          ["route", "route", "pageviews", "vercel.route_pageviews"],
-          ["country", "country", "visitors", "vercel.country_visitors"],
-        ] as const) {
-          const body = visitsSchema.parse(
-            await query(
-              "/v1/query/web-analytics/visits/aggregate",
-              ["day", dimension],
-              { limit: String(TOP_LIMIT) },
-            ),
-          );
-          for (const row of body.data) {
-            const value = row[dimension];
-            if (!inWindow(row.timestamp) || typeof value !== "string") continue;
-            observations.push({
-              metricKey,
-              sourceTimestamp: new Date(row.timestamp).toISOString(),
-              value: row[field],
-              dimensions: { resource: project.id, [key]: value },
-            });
-          }
-        }
-
-        const events = eventsSchema.parse(
-          await query(
-            "/v1/query/web-analytics/events/aggregate",
-            ["day", "eventName"],
-            { limit: String(TOP_LIMIT) },
-          ),
-        );
-        for (const row of events.data) {
-          if (!inWindow(row.timestamp)) continue;
-          observations.push({
-            metricKey: "vercel.events",
-            sourceTimestamp: new Date(row.timestamp).toISOString(),
-            value: row.count,
-            dimensions: { resource: project.id, event: row.eventName },
-          });
-        }
-      }
-
-      // Older months than the plan keeps have nothing to read: skip ahead.
-      const next =
-        planStart !== null && planStart > chunkEnd ? planStart : chunkEnd;
-      if (next < toMs) {
-        return {
-          observations,
-          nextCursor: pageCursor(next, runStartMs),
-          done: false,
-        };
-      }
-      // Every selected project's numbers were read up to today (ADR 0025):
-      // the continuous stream is fresh as of this run.
-      const freshness = boundFreshness(
-        everySelectedRead ? [{ stream: TRAFFIC_STREAM }] : [],
-      );
-      return {
-        observations,
-        nextCursor: resumeAt,
-        nextFrom: resumeAt,
-        ...(freshness.length > 0 ? { freshness } : {}),
-        done: true,
-      };
+      const empty = emptyRun(request);
+      if (empty) return empty;
+      return syncPage(client(context, runtime), context, request, {
+        now,
+        log: runtime.log,
+      });
     },
   };
 }

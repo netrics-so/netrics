@@ -192,7 +192,11 @@ the provider publishes at:
   connection is one ad account, and its `resource` dimension is the
   promoted app (`packages/connectors/src/apple-ads/index.ts:375`), whose
   days all follow the account's zone.
-- Vercel and continuous streams in general: one connection entry.
+- Continuous streams in general: one connection entry. Vercel (since
+  #871) reports Web Analytics per project, because projects without it
+  have no numbers, and deployments per project plus the connection; its
+  stream key changed from `traffic` to `web_analytics`, so stored
+  `traffic` rows are ignored (section 4).
 
 ### 4. Storage
 

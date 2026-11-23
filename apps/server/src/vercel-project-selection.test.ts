@@ -301,46 +301,32 @@ describe("Vercel project selection after connecting (#782)", () => {
     expect((await select(["prj_alpha"])).statusCode).toBe(200);
   });
 
-  it("refuses a project the token does not list, or one without Web Analytics", async () => {
+  it("refuses a project the token does not list", async () => {
     const unknown = await select(["prj_alpha", "prj_elsewhere"]);
     expect(unknown.statusCode).toBe(400);
     expect(unknown.body).not.toContain(TOKEN);
-    const disabled = await select(["prj_alpha", "prj_gamma"]);
-    expect(disabled.statusCode).toBe(400);
-    expect(disabled.body).toContain("Web Analytics is not enabled");
+    expect(unknown.body).toContain("prj_elsewhere");
     expect(await storedSelection()).toEqual(["prj_alpha"]);
   });
 
-  it("repairs a selection whose project lost Web Analytics: without it saves, with it is refused", async () => {
-    // Web Analytics is turned off on a synced project after connecting.
-    await select(["prj_alpha", "prj_beta"]);
+  it("selects a project without Web Analytics: its deployments are synced (#871)", async () => {
+    const response = await select(["prj_alpha", "prj_gamma"]);
+    expect(response.statusCode, response.body).toBe(200);
+    expect(await storedSelection()).toEqual(["prj_alpha", "prj_gamma"]);
+    expect((await names()).prj_gamma).toBe("gamma-docs");
+    // A project that loses Web Analytics later stays selectable too.
     const beta = PROJECTS.find((project) => project.id === "prj_beta")!;
     beta.analytics = false;
     try {
-      // The list is still served, with the stored selection to edit.
-      const listed = storedConnectionPreviewResponseSchema.parse(
-        (
-          await call("POST", `${connectionUrl()}/preview`, { config: {} })
-        ).json(),
-      );
-      expect(listed.check.ok).toBe(true);
-      expect(listed.selection).toEqual(["prj_alpha", "prj_beta"]);
-      expect(listed.resources.map((resource) => resource.id)).toContain(
-        "prj_beta",
-      );
-      // The check on save sees the NEW selection, not the stored one.
       const kept = await select(["prj_alpha", "prj_beta"]);
-      expect(kept.statusCode).toBe(400);
-      expect(kept.body).toContain("Web Analytics is not enabled");
-      const repaired = await select(["prj_alpha"]);
-      expect(repaired.statusCode, repaired.body).toBe(200);
-      expect(await storedSelection()).toEqual(["prj_alpha"]);
+      expect(kept.statusCode, kept.body).toBe(200);
     } finally {
       beta.analytics = true;
     }
+    expect((await select(["prj_alpha"])).statusCode).toBe(200);
   });
 
-  it("with no analytics project left the check refuses, and the selection stays as it is (#854)", async () => {
+  it("with no analytics project left the check still passes; an empty selection is refused (#854, #871)", async () => {
     const enabled = PROJECTS.filter((project) => project.analytics);
     for (const project of enabled) project.analytics = false;
     try {
@@ -349,24 +335,18 @@ describe("Vercel project selection after connecting (#782)", () => {
           await call("POST", `${connectionUrl()}/preview`, { config: {} })
         ).json(),
       );
-      expect(listed.check.ok).toBe(false);
+      expect(listed.check.ok).toBe(true);
       expect(listed.selection).toEqual(["prj_alpha"]);
-      // Clearing it is no way out any more: nothing would be collected.
+      // Clearing it is no way out: nothing would be collected.
       const cleared = await select([]);
       expect(cleared.statusCode, cleared.body).toBe(400);
       expect(errorResponseSchema.parse(cleared.json()).error).toBe(
         "resource_selection_empty",
       );
-      // Nor is a project without Web Analytics: the provider's reason.
-      const kept = await select(["prj_alpha"]);
-      expect(kept.statusCode).toBe(400);
-      expect(kept.body).toContain("Web Analytics is not enabled");
-      expect(await storedSelection()).toEqual(["prj_alpha"]);
+      expect((await select(["prj_alpha", "prj_beta"])).statusCode).toBe(200);
     } finally {
       for (const project of enabled) project.analytics = true;
     }
-    // Web Analytics enabled again: the selection saves.
-    expect((await select(["prj_alpha", "prj_beta"])).statusCode).toBe(200);
     expect((await select(["prj_alpha"])).statusCode).toBe(200);
   });
 
