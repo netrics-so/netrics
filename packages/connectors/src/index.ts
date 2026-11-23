@@ -55,6 +55,14 @@ export {
   searchConsoleManifest,
 } from "./google-search-console/index.js";
 export {
+  createHetznerCloudConnector,
+  hetznerCloudManifest,
+  TOKEN_FORBIDDEN_CODE as HETZNER_CLOUD_TOKEN_FORBIDDEN_CODE,
+  TOKEN_FORBIDDEN_MESSAGE as HETZNER_CLOUD_TOKEN_FORBIDDEN_MESSAGE,
+  TOKEN_REJECTED_CODE as HETZNER_CLOUD_TOKEN_REJECTED_CODE,
+  TOKEN_REJECTED_MESSAGE as HETZNER_CLOUD_TOKEN_REJECTED_MESSAGE,
+} from "./hetzner-cloud/index.js";
+export {
   createPostHogConnector,
   posthogManifest,
   HOST_INVALID_CODE as POSTHOG_HOST_INVALID_CODE,

@@ -183,6 +183,18 @@ export const sharedEn = {
         "netrics could not read every project ID with this key. Enter the numeric IDs of projects the key may read (PostHog: Project settings → Project ID), separated by spaces or commas, at most 50.",
     },
     /**
+     * The Hetzner Cloud connector's failed checks (#872), equal to the
+     * TOKEN_*_MESSAGE constants in @netrics/connectors/hetzner-cloud.
+     */
+    hetznerCloud: {
+      /** Hetzner answered 401. */
+      tokenRejected:
+        "Hetzner Cloud did not accept the API token: it is wrong or was deleted. Create a token in the Hetzner Console (your project → Security → API tokens) with Read permission and enter it again.",
+      /** Hetzner answered 403 `forbidden` on a listing. */
+      tokenForbidden:
+        "Hetzner Cloud accepted the API token but refused to let it read the project's servers or prices. Create a new token in the Hetzner Console (your project → Security → API tokens) with Read permission.",
+    },
+    /**
      * The runtime's refusal of credentials whose bound host differs from
      * the configuration (SDK 0.2.20 configuredHosts, #884 review), equal
      * to CREDENTIAL_HOST_MISMATCH_MESSAGE in @netrics/connector-runtime.

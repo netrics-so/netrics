@@ -116,6 +116,12 @@ export const sharedDe: Catalog<SharedMessages> = {
       projectsInvalid:
         "netrics konnte nicht jede Projekt-ID mit diesem Key lesen. Trag die numerischen IDs von Projekten ein, die der Key lesen darf (PostHog: Project settings → Project ID), getrennt durch Leerzeichen oder Kommas, höchstens 50.",
     },
+    hetznerCloud: {
+      tokenRejected:
+        "Hetzner Cloud hat das API-Token nicht akzeptiert: Es ist falsch oder wurde gelöscht. Erstell in der Hetzner Console (dein Projekt → Security → API tokens) ein Token mit Leserechten (Read) und gib es erneut ein.",
+      tokenForbidden:
+        "Hetzner Cloud hat das API-Token akzeptiert, lässt es aber die Server oder Preise des Projekts nicht lesen. Erstell in der Hetzner Console (dein Projekt → Security → API tokens) ein neues Token mit Leserechten (Read).",
+    },
     connection: {
       credentialsHostChanged:
         "Die gespeicherten Zugangsdaten wurden für einen anderen Host eingegeben. Gib sie für diesen Host erneut ein, in einer neuen Verbindung.",

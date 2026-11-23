@@ -9,6 +9,7 @@ import { appleAdsManifest } from "./apple-ads/index.js";
 import { demoManifest } from "./demo/index.js";
 import { searchConsoleManifest } from "./google-search-console/index.js";
 import { googlePlayManifest } from "./google-play/index.js";
+import { hetznerCloudManifest } from "./hetzner-cloud/index.js";
 import { posthogManifest } from "./posthog/index.js";
 import { railwayManifest } from "./railway/index.js";
 import { vercelManifest } from "./vercel/index.js";
@@ -26,6 +27,7 @@ const FIRST_PARTY: ConnectorManifest[] = [
   googlePlayManifest,
   railwayManifest,
   posthogManifest,
+  hetznerCloudManifest,
 ];
 
 const LOCALES = ["de"] as const;
