@@ -133,15 +133,10 @@ export function SyncedProjects({
   return (
     <>
       <p>{t("syncedList", { count: selection.length })}</p>
-      <ul id={listId}>
-        {shown.map((resource) => (
-          <li key={resource.id}>{resource.name ?? resource.id}</li>
-        ))}
-        {rest > 0 ? (
-          <li className="muted">{t("syncedMore", { count: rest })}</li>
-        ) : null}
-      </ul>
       {selection.length > SYNCED_SHOWN ? (
+        // Before the list, which grows below them: a button that opens 500
+        // more rows stays where it is, in view, instead of being pushed
+        // down by them. Read in order: the count, the buttons, the list.
         // The list's buttons can go while one has the keyboard focus (the
         // extra "Show fewer"; both when a shorter saved selection arrives):
         // whoever renders this list keeps the focus (`syncedFocusZone`).
@@ -179,6 +174,14 @@ export function SyncedProjects({
           ) : null}
         </div>
       ) : null}
+      <ul id={listId}>
+        {shown.map((resource) => (
+          <li key={resource.id}>{resource.name ?? resource.id}</li>
+        ))}
+        {rest > 0 ? (
+          <li className="muted">{t("syncedMore", { count: rest })}</li>
+        ) : null}
+      </ul>
       <p className="help">
         {canChange
           ? t("syncedHelp", { action: t("check") })
@@ -208,11 +211,17 @@ export function SyncedProjectsReadOnly({
 }) {
   const t = useT("connections.projects");
   const card = useRef<HTMLDivElement>(null);
-  useFocusKeeper(card, () => syncedToggle(card.current));
+  const heading = useRef<HTMLHeadingElement>(null);
+  // A button of the list that goes hands the focus to the list's toggle;
+  // when a shorter selection arrives and the toggle goes too, to the
+  // card's heading (there is no button under the list here).
+  useFocusKeeper(card, () => syncedToggle(card.current) ?? heading.current);
   if (selection === undefined) return null;
   return (
     <div className="card stack" id="project-selection" ref={card}>
-      <h2>{t("heading")}</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        {t("heading")}
+      </h2>
       <SyncedProjects selection={selection} canChange={false} />
     </div>
   );

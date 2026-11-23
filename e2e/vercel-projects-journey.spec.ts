@@ -107,6 +107,9 @@ async function focusIsSomewhere(page: Page): Promise<void> {
       }),
     )
     .toBe(true);
+  // And where it can be seen: an update must not push the focused control
+  // out of view (rows added above it, say).
+  await expect(page.locator(":focus")).toBeInViewport();
 }
 
 async function saveSelection(connectionId: string, selection: string[]) {
@@ -523,6 +526,22 @@ test("a long selection opens in place, and a viewer sees what is selected", asyn
   await page.goto(url);
   await stepsThrough();
   await expect(change).toHaveCount(0);
+
+  // The page refreshes by itself while it waits for a first sync. With
+  // the focus on the list's button, a selection short enough to need none
+  // arrives: a viewer has no button under the list, so the focus goes to
+  // the card's heading, not to the page.
+  await panel
+    .getByRole("button", {
+      name: t.projects.syncedShowMore.replace("{count}", "500"),
+    })
+    .focus();
+  await saveSelection(connectionId, ["prj_alpha"]);
+  await expect(items).toHaveText(["alpha-site"], { timeout: 20_000 });
+  await expect(
+    panel.getByRole("heading", { name: t.projects.heading }),
+  ).toBeFocused();
+  await focusIsSomewhere(page);
   await expect(
     panel.getByRole("button", { name: t.projects.save }),
   ).toHaveCount(0);
