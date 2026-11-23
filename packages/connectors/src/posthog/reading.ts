@@ -54,7 +54,7 @@ export const REGIONS = ["us", "eu", "self-hosted"] as const;
 export type Region = (typeof REGIONS)[number];
 
 export function apiKeyOf(context: ConnectionContext): string | undefined {
-  const key = context.credentials.apiKey;
+  const key = context.credentials.token;
   return typeof key === "string" && key.trim() !== "" ? key.trim() : undefined;
 }
 

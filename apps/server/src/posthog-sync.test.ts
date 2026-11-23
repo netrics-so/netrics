@@ -156,7 +156,7 @@ async function syncThroughHost(
   const context: ConnectionContext = {
     connectionId: "posthog-host-test",
     config: { region: "us", insights: "1000/Signup1" },
-    credentials: { apiKey: KEY },
+    credentials: { token: KEY },
   };
   const results: SyncResult[] = [];
   let cursor: string | undefined;

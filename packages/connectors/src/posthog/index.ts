@@ -83,7 +83,7 @@ const posthogDe: ManifestTranslation = {
     "Events, Seitenaufrufe und aktive Nutzer pro Tag aus PostHog, pro Projekt, dazu die Ergebnisse ausgewählter gespeicherter Insights.",
   resourceNoun: { singular: "Projekt", plural: "Projekte" },
   credentials: {
-    apiKey: {
+    token: {
       title: "Personal API Key",
       description:
         "Ein Personal API Key mit den Lese-Scopes Organization, Project, Query und Insight. netrics liest damit nur und ändert nichts. Der Key wird verschlüsselt gespeichert und nie wieder angezeigt.",
@@ -171,14 +171,14 @@ export const posthogManifest: ConnectorManifest = {
       credentialsSchema: {
         type: "object",
         properties: {
-          apiKey: {
+          token: {
             type: "string",
             title: "Personal API key",
             description:
               "A personal API key with the read scopes Organization, Project, Query and Insight. netrics only reads with it and changes nothing. It is stored encrypted and never shown again.",
           },
         },
-        required: ["apiKey"],
+        required: ["token"],
         additionalProperties: false,
       },
       setup: {

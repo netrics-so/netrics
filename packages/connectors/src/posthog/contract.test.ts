@@ -98,7 +98,7 @@ function context(
   return {
     connectionId: "posthog-test",
     config,
-    credentials: { apiKey: FAKE_KEY },
+    credentials: { token: FAKE_KEY },
     ...overrides,
   };
 }
@@ -200,6 +200,15 @@ describe("PostHog manifest", () => {
     expect(posthogManifest.configuredHosts).toEqual(["host"]);
     expect(posthogManifest.supportsResourceSelection).toBe(true);
     expect(posthogManifest.sdkVersion).toBe("^0.2.20");
+    // The connect form sends a token strategy's secret as `token`.
+    const [strategy] = posthogManifest.authStrategies;
+    expect(
+      strategy?.strategy === "token"
+        ? Object.keys(
+            (strategy.credentialsSchema as { properties: object }).properties,
+          )
+        : [],
+    ).toEqual(["token"]);
   });
 });
 
@@ -425,7 +434,7 @@ describe("PostHog check", () => {
 
   it("names a wrong key without echoing it", async () => {
     const result = await connector().check(
-      context({}, { credentials: { apiKey: "phx_wrong" } }),
+      context({}, { credentials: { token: "phx_wrong" } }),
       fake().runtime,
     );
     expect(result).toEqual({
@@ -539,7 +548,7 @@ describe("PostHog discover", () => {
   it("refuses a revoked key with the check's reason code", async () => {
     const error = await connector()
       .discover(
-        context({}, { credentials: { apiKey: "phx_revoked" } }),
+        context({}, { credentials: { token: "phx_revoked" } }),
         fake().runtime,
       )
       .catch((caught: unknown) => caught);
@@ -711,7 +720,7 @@ describe("PostHog sync", () => {
   it("refuses a revoked key and a missing scope with the check's reason codes", async () => {
     const revoked = await connector()
       .sync(
-        context({}, { credentials: { apiKey: "phx_revoked" } }),
+        context({}, { credentials: { token: "phx_revoked" } }),
         WINDOW,
         fake().runtime,
       )
@@ -896,7 +905,7 @@ describe("PostHog sync", () => {
     const first = await connector().sync(context(), WINDOW, posthog.runtime);
     expect(first.done).toBe(false);
     const restarts: Array<[ConnectionContext, SyncRequest]> = [
-      [context({}, { credentials: { apiKey: `${FAKE_KEY}-rotated` } }), WINDOW],
+      [context({}, { credentials: { token: `${FAKE_KEY}-rotated` } }), WINDOW],
       [context({ region: "eu" }), WINDOW],
       [context(), { ...WINDOW, resources: ["1001"] }],
       [context({ insights: "1000/AbCd" }), WINDOW],
@@ -905,7 +914,7 @@ describe("PostHog sync", () => {
       const recorder = fake({
         projects: fakeProjects(2),
         host: ctx.config.region === "eu" ? "eu.posthog.com" : "us.posthog.com",
-        key: String(ctx.credentials.apiKey),
+        key: String(ctx.credentials.token),
       });
       await connector().sync(
         ctx,
