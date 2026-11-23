@@ -8,7 +8,7 @@ import {
   type SyncRequest,
 } from "@netrics/connector-sdk";
 import type { CustomApiDefinition } from "@netrics/connector-sdk/custom-api";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import {
   CUSTOM_API_GRAPHQL_ERRORS,
@@ -160,6 +160,27 @@ describe("GraphQL error envelopes on other statuses", () => {
     expect(
       await connector(at("/graphql/errors-400")).check(context, runtime),
     ).toEqual({ ok: false, message: error!.message });
+  });
+
+  it("reads no error body of a stream that is not GraphQL (review round 2)", async () => {
+    const text = vi.fn(() => '{"errors":[{"message":"x"}]}');
+    const failing = {
+      ...runtime,
+      fetch: async () => ({
+        status: 500,
+        headers: {},
+        text,
+        json: () => JSON.parse(text()) as unknown,
+        bytes: () => new Uint8Array(),
+      }),
+    };
+    for (const name of ["pages", "json_offset"] as const) {
+      text.mockClear();
+      await expect(
+        connector(def(name)).sync(context, REQUEST, failing),
+      ).rejects.toThrow(/^HTTP 500 from /);
+      expect(text).not.toHaveBeenCalled();
+    }
   });
 
   it("keeps auth and rate-limit handling first", async () => {

@@ -1,6 +1,9 @@
 "use client";
 
-import { CUSTOM_API_LIMITS } from "@netrics/contracts";
+import {
+  CUSTOM_API_LIMITS,
+  type CustomApiDefinition,
+} from "@netrics/contracts";
 
 import {
   definitionHosts,
@@ -24,12 +27,17 @@ export function StepSchedule({
   state,
   update,
   onGoTo,
-}: StepProps & { onGoTo: (step: BuilderStep) => void }) {
+  original,
+}: StepProps & {
+  onGoTo: (step: BuilderStep) => void;
+  /** The saved document an edit saves against (as saveAndConnect does). */
+  original?: CustomApiDefinition;
+}) {
   const t = useT("customApi.review");
   const all = useT("customApi");
   const locale = useLocale();
   const window = state.stream.window;
-  const issues = definitionIssues(state);
+  const issues = definitionIssues(state, original);
   const hosts = definitionHosts(state);
   const key = state.stream.fields
     .filter((f) => state.stream.keyFields.includes(f.id))

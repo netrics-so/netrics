@@ -273,7 +273,8 @@ export function createCustomApiConnector(
     // A GraphQL error envelope on another status (a 400 for a bad query):
     // the same fixed graphql_errors failure, after auth, redirects and
     // rate limits.
-    if (response.status !== 429) {
+    // Only a GraphQL stream's error body is read at all.
+    if (response.status !== 429 && stream.request.body?.kind === "graphql") {
       const count = graphqlErrorCount(stream, readJsonQuietly(response));
       if (count > 0)
         throw new CustomApiGraphqlError(stream.key, response.status, count);

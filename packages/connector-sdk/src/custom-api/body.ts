@@ -262,25 +262,43 @@ export function renderCustomApiBody(
   // Rendered strings are counted as they come, so a template that grows
   // with its values stops at the limit instead of being built whole.
   let rendered = 0;
-  const clone = (value: CustomApiJsonValue): CustomApiJsonValue => {
+  // Leaves a page value replaces or removes (ADR 0030 §3) are not
+  // interpolated: their template is never sent, so it cannot fail a send.
+  const key = (path: readonly (string | number)[]) => JSON.stringify(path);
+  const written = new Set(
+    writes.map((write) =>
+      key(
+        write.path.map((segment) =>
+          "index" in segment ? segment.index : segment.key,
+        ),
+      ),
+    ),
+  );
+  const clone = (
+    value: CustomApiJsonValue,
+    path: (string | number)[],
+  ): CustomApiJsonValue => {
     if (typeof value === "string") {
+      if (written.has(key(path))) return value;
       const text = render(value);
       rendered += utf8ByteLength(text);
       if (rendered > CUSTOM_API_BODY_LIMITS.renderedBytes) throw tooLarge();
       return text;
     }
-    if (Array.isArray(value)) return value.map(clone);
+    if (Array.isArray(value))
+      return value.map((item, index) => clone(item, [...path, index]));
     if (value !== null && typeof value === "object") {
       const out: Record<string, CustomApiJsonValue> = Object.create(null);
-      for (const key of Object.keys(value)) out[key] = clone(value[key]!);
+      for (const name of Object.keys(value))
+        out[name] = clone(value[name]!, [...path, name]);
       return out;
     }
     return value;
   };
   const root: CustomApiJsonValue =
     body.kind === "json"
-      ? clone(body.value)
-      : { query: body.query, variables: clone(body.variables) };
+      ? clone(body.value, [])
+      : { query: body.query, variables: clone(body.variables, ["variables"]) };
   for (const write of writes) {
     if (customApiBodyPathProblem(body, write.path, { omit: "omit" in write }))
       throw new CustomApiBodyError(

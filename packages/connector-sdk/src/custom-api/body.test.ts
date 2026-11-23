@@ -515,6 +515,29 @@ describe("renderCustomApiBody", () => {
     expect(customApiTemplateNames("{{ broken")).toEqual([]);
   });
 
+  it("does not interpolate a leaf a page value replaces or removes (review round 2)", () => {
+    const body: CustomApiBody = {
+      kind: "graphql",
+      query: "query Q($after: String) { a }",
+      variables: { after: "{{missing}}", keep: "{{x}}" },
+    };
+    const render = (template: string) => {
+      if (template.includes("missing")) throw new Error("No value");
+      return template.replace("{{x}}", "X");
+    };
+    const path = [{ key: "variables" }, { key: "after" }];
+    expect(
+      JSON.parse(renderCustomApiBody(body, render, [{ path, value: 7 }]))
+        .variables,
+    ).toEqual({ after: 7, keep: "X" });
+    expect(
+      JSON.parse(renderCustomApiBody(body, render, [{ path, omit: true }]))
+        .variables,
+    ).toEqual({ keep: "X" });
+    // Without the write, the leaf is rendered (and here fails).
+    expect(() => renderCustomApiBody(body, render)).toThrow("No value");
+  });
+
   it("refuses a write into the query", () => {
     expect(() =>
       renderCustomApiBody(graphql, (t) => t, [

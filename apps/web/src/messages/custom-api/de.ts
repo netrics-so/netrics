@@ -288,6 +288,13 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       fixFirst: "Behebe zuerst:",
     },
     test: {
+      readOnly: {
+        title: "Liest diese Anfrage nur Daten?",
+        help: "Dieser Test sendet einen JSON-Body per POST. netrics kann nicht prüfen, was eine solche Anfrage bei der API bewirkt: Bestätige, dass sie nur Daten liest, bevor sie gesendet wird. Jede Änderung an der Anfrage fragt erneut.",
+        confirm: "Diese Anfrage liest nur Daten.",
+        send: "Test senden",
+        cancel: "Abbrechen",
+      },
       title: "Test",
       ok: "Die Anfrage hat funktioniert.",
       running: "Wird gesendet …",

@@ -281,6 +281,13 @@ export const customApiEn = {
       fixFirst: "Fix these first:",
     },
     test: {
+      readOnly: {
+        title: "Does this request only read data?",
+        help: "This test sends a JSON body with POST. netrics can't check what such a request does at the API: confirm that it only reads data before it is sent. Any change to the request asks again.",
+        confirm: "This request only reads data.",
+        send: "Send the test",
+        cancel: "Cancel",
+      },
       title: "Test",
       ok: "The request worked.",
       running: "Sending…",

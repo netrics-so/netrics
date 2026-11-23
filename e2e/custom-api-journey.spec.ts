@@ -565,3 +565,94 @@ test("a connection shows its POST and GraphQL requests", async ({
   await expect(json).toContainText('"kind": "ItemsQuery"');
   await noToken(page);
 });
+
+/**
+ * ADR 0030 §2 in the editor: testing a saved JSON-body POST stream shows
+ * the exact request and sends it only after "this request only reads
+ * data"; the method and body stay POST.
+ */
+test("a member confirms a JSON-body POST test before it is sent", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const c = labels(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  const base = `/v1/workspaces/${workspaceId}/custom-api/definitions`;
+  const created = await page.request.post(base, {
+    headers: { origin: ORIGIN },
+    data: {
+      document: {
+        schemaVersion: 2,
+        name: "Query API",
+        environments: [
+          { id: "production", name: "Production", baseUrl: CUSTOM_API_ORIGIN },
+        ],
+        auth: { type: "none" },
+        streams: [
+          {
+            key: "query_items",
+            name: "Query items",
+            request: {
+              method: "POST",
+              path: "/query",
+              body: {
+                kind: "json",
+                value: { kind: "ItemsQuery", page: { offset: 0, limit: 0 } },
+                readOnlyConfirmed: true,
+              },
+            },
+            pagination: {
+              type: "offset",
+              offsetBodyPath: "page.offset",
+              limitBodyPath: "page.limit",
+              limit: 10,
+            },
+            records: "items",
+            fields: [
+              {
+                id: "id",
+                name: "ID",
+                path: "id",
+                type: "integer",
+                nullable: false,
+              },
+            ],
+            keyFields: ["id"],
+            mode: "snapshot",
+          },
+        ],
+      },
+    },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const definitionId = (
+    (await created.json()) as { definition: { id: string } }
+  ).definition.id;
+
+  await page.goto(`/workspaces/${workspaceId}/custom-apis/${definitionId}`);
+  await page
+    .locator(".custom-api-stepper")
+    .getByRole("button", { name: c.steps.request })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: c.steps.request }),
+  ).toBeVisible();
+  await expect(page.getByTestId("custom-api-post-kept")).toBeVisible();
+  await page.getByRole("button", { name: c.request.send }).click();
+
+  // Nothing is sent before the confirmation.
+  const confirm = page.getByTestId("custom-api-read-only");
+  await expect(confirm).toContainText(c.test.readOnly.title);
+  await expect(confirm).toContainText("POST /query");
+  await expect(confirm).toContainText('"kind": "ItemsQuery"');
+  const send = confirm.getByRole("button", { name: c.test.readOnly.send });
+  await expect(send).toBeDisabled();
+  await confirm.getByLabel(c.test.readOnly.confirm).check();
+  await send.click();
+
+  await expect(page.getByText(c.test.ok)).toBeVisible();
+  const log = page.locator(".custom-api-log-entry");
+  await expect(log).toHaveCount(1);
+  await expect(log.first().locator("td").nth(2)).toHaveText("200");
+  await expect(page.getByTestId("custom-api-read-only")).toHaveCount(0);
+});

@@ -1,10 +1,10 @@
 "use client";
 
-import type { ConnectionCustomApiView } from "@netrics/contracts";
+import type { ConnectionCustomApiRequest } from "@netrics/contracts";
 
 import { useT } from "@/lib/i18n/client";
 
-type Request = ConnectionCustomApiView["requests"][number];
+type Request = ConnectionCustomApiRequest;
 
 /**
  * What a custom-api connection sends (ADR 0030 §2), shown to everyone who

@@ -176,6 +176,34 @@ describe("custom API builder state", () => {
     );
   });
 
+  it("lets a name-only edit of a saved JSON POST definition be saved (review round 2)", () => {
+    const json = {
+      ...SHOP.streams[0]!,
+      request: {
+        ...SHOP.streams[0]!.request,
+        method: "POST" as const,
+        body: {
+          kind: "json" as const,
+          value: { q: "{{window.start}}" },
+          readOnlyConfirmed: true,
+        },
+      },
+    };
+    const saved: CustomApiDefinition = { ...SHOP, streams: [json] };
+    const state = { ...stateFromDefinition(saved), name: "Renamed shop" };
+    // The review checks the document the save sends: against the original,
+    // the confirmation holds.
+    expect(
+      stepIssues(state, "review", { editing: true, original: saved }),
+    ).toEqual([]);
+    expect(definitionIssues(state, saved)).toEqual([]);
+    // A changed request drops it, and the review says so.
+    const changed = { ...state, stream: { ...state.stream, path: "/other" } };
+    expect(
+      stepIssues(changed, "review", { editing: true, original: saved }),
+    ).toContain("issues.definitionInvalid");
+  });
+
   it("keeps the other streams of an edited definition", () => {
     const second = { ...SHOP.streams[0]!, key: "orders", name: "Orders" };
     const two: CustomApiDefinition = {

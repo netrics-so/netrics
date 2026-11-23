@@ -39,8 +39,46 @@ const MIN_SECRET_LENGTH = 4;
 /** Every form of every secret, each at least 4 characters, longest first, and one pattern matching them all. */
 export interface SecretSet {
   values: readonly string[];
-  /** Percent-escapes match in either hex case. Null without secrets. */
+  /**
+   * Percent-escapes match in either hex case. Null without secrets, or
+   * when one pattern would be too large: then `fallback` holds them.
+   */
   pattern: RegExp | null;
+  /**
+   * Rendered request bodies (ADR 0030 §4), raw and JSON-escaped, longest
+   * first: matched by plain search before the pattern, never compiled
+   * into it (a 128 KiB body, percent-encoded, would outgrow V8's limit).
+   */
+  rendered: readonly string[];
+  /** The secret forms by plain search, both hex cases, when `pattern` is null. */
+  fallback: readonly string[];
+}
+
+/**
+ * Longest pattern source compiled into one RegExp. V8 refuses far larger
+ * ones with a SyntaxError whose message repeats the source, that is the
+ * secrets: past this, plain search is used and nothing is compiled.
+ */
+const MAX_PATTERN_CHARS = 262_144;
+
+/** A form as it is, and with its percent-escapes in lower and upper hex case. */
+function hexCases(form: string): string[] {
+  const lower = form.replace(/%[0-9A-Fa-f]{2}/g, (e) => e.toLowerCase());
+  const upper = form.replace(/%[0-9A-Fa-f]{2}/g, (e) => e.toUpperCase());
+  return [form, lower, upper];
+}
+
+const longestFirst = (values: Iterable<string>): string[] =>
+  [...new Set(values)]
+    .filter((value) => value.length >= MIN_SECRET_LENGTH)
+    .sort((a, b) => b.length - a.length);
+
+/** Replaces every occurrence of each value, in order, by plain search. */
+function replacePlain(text: string, values: readonly string[]): string {
+  let out = text;
+  for (const value of values)
+    if (out.includes(value)) out = out.split(value).join(REDACTED);
+  return out;
 }
 
 function forms(value: string): string[] {
@@ -94,6 +132,8 @@ export function secretSetOf(
   credentials: Record<string, unknown>,
   secretVariables: Record<string, string>,
   extra: readonly string[] = [],
+  /** Request bodies as sent: no secrets in them, but never shown back. */
+  rendered: readonly string[] = [],
 ): SecretSet {
   const set = new Set<string>();
   const {
@@ -105,19 +145,41 @@ export function secretSetOf(
   collect(secrets, set);
   collect(secretVariables, set);
   collect([...extra], set);
-  const values = [...set]
-    .filter((value) => value.length >= MIN_SECRET_LENGTH)
-    .sort((a, b) => b.length - a.length);
+  const values = longestFirst(set);
+  const bodies = longestFirst(
+    rendered.flatMap((body) => {
+      const json = JSON.stringify(body).slice(1, -1);
+      return [body, json, json.replaceAll("/", "\\/")];
+    }),
+  );
+  const source = values.map(formPattern).join("|");
+  let pattern: RegExp | null = null;
+  if (values.length > 0 && source.length <= MAX_PATTERN_CHARS) {
+    try {
+      pattern = new RegExp(source, "g");
+    } catch (caught) {
+      rethrowWorkspaceGone(caught);
+      // A SyntaxError is never rethrown: its message repeats the secrets.
+      pattern = null;
+    }
+  }
   return {
     values,
-    pattern: values.length
-      ? new RegExp(values.map(formPattern).join("|"), "g")
-      : null,
+    pattern,
+    rendered: bodies,
+    fallback:
+      values.length > 0 && pattern === null
+        ? longestFirst(values.flatMap(hexCases))
+        : [],
   };
 }
 
 export function redactText(text: string, secrets: SecretSet): string {
-  return secrets.pattern ? text.replace(secrets.pattern, REDACTED) : text;
+  // Bodies first: a secret-looking value inside an echoed body must not
+  // break the body's match.
+  let out = replacePlain(text, secrets.rendered);
+  if (secrets.pattern) out = out.replace(secrets.pattern, REDACTED);
+  return replacePlain(out, secrets.fallback);
 }
 
 /**

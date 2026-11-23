@@ -252,7 +252,20 @@ describe("connections from a custom API definition", () => {
         )
       ).json(),
     ).connection;
-    expect(seen.customApi?.requests).toEqual([
+    // The workspace list stays light: no templates there (review round 2).
+    const listed = await call(
+      "GET",
+      `/v1/workspaces/${workspaceId}/connections`,
+      owner,
+    );
+    expect(listed.statusCode).toBe(200);
+    const inList = (
+      listed.json() as { connections: Record<string, unknown>[] }
+    ).connections.find((connection) => connection.id === id)!;
+    expect(inList).not.toHaveProperty("customApiRequests");
+    expect(inList.customApi).not.toHaveProperty("requests");
+    expect(listed.body).not.toContain("ItemsQuery");
+    expect(seen.customApiRequests).toEqual([
       {
         stream: "items",
         name: "items",

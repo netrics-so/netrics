@@ -227,36 +227,39 @@ export const connectionCustomApiViewSchema = z.object({
    * to be entered again (custom OAuth: the client, then a sign-in).
    */
   loginMissing: z.boolean(),
-  /**
-   * What each stream of the pinned version sends (ADR 0030 §2), shown to
-   * everyone who can see the connection: the method, path and, for POST,
-   * the body template. Bodies hold no secrets (secret variables are only
-   * allowed in auth headers), only `{{ placeholders }}`. A JSON body's
-   * read-only promise is its author's; netrics cannot verify it.
-   */
-  requests: z.array(
-    z.object({
-      stream: z.string(),
-      name: z.string(),
-      method: z.enum(["GET", "POST"]),
-      path: z.string(),
-      body: z
-        .discriminatedUnion("kind", [
-          z.object({
-            kind: z.literal("json"),
-            value: z.json(),
-            readOnlyConfirmed: z.boolean(),
-          }),
-          z.object({
-            kind: z.literal("graphql"),
-            query: z.string(),
-            variables: z.record(z.string(), z.json()),
-          }),
-        ])
-        .nullable(),
-    }),
-  ),
 });
 export type ConnectionCustomApiView = z.infer<
   typeof connectionCustomApiViewSchema
+>;
+
+/**
+ * What each stream of a custom-api connection's pinned version sends
+ * (ADR 0030 §2), shown to everyone who can see the connection: the method,
+ * path and, for POST, the body template. Bodies hold no secrets (secret
+ * variables are only allowed in auth headers), only `{{ placeholders }}`.
+ * A JSON body's read-only promise is its author's; netrics cannot verify
+ * it. Only on single-connection responses: the list stays light.
+ */
+export const connectionCustomApiRequestSchema = z.object({
+  stream: z.string(),
+  name: z.string(),
+  method: z.enum(["GET", "POST"]),
+  path: z.string(),
+  body: z
+    .discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("json"),
+        value: z.json(),
+        readOnlyConfirmed: z.boolean(),
+      }),
+      z.object({
+        kind: z.literal("graphql"),
+        query: z.string(),
+        variables: z.record(z.string(), z.json()),
+      }),
+    ])
+    .nullable(),
+});
+export type ConnectionCustomApiRequest = z.infer<
+  typeof connectionCustomApiRequestSchema
 >;

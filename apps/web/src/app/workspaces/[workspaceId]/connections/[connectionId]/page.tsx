@@ -374,8 +374,8 @@ export default async function ConnectionDetailPage({
         </div>
       ) : null}
 
-      {customApi ? (
-        <CustomApiConnectionRequests requests={customApi.requests} />
+      {connection.customApiRequests ? (
+        <CustomApiConnectionRequests requests={connection.customApiRequests} />
       ) : null}
 
       <div className="card">

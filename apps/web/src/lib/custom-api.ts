@@ -53,6 +53,11 @@ export class CustomApiRequestError extends ApiError {
     readonly issues: { path: string; code: string; message: string }[] = [],
     /** Seconds from Retry-After (429), else null. */
     readonly retryAfterSeconds: number | null = null,
+    /**
+     * 400 custom_api_read_only_unconfirmed (ADR 0030): the server's
+     * confirmation of exactly the refused test request, else null.
+     */
+    readonly readOnlyConfirmation: string | null = null,
   ) {
     super(status, code);
     this.name = "CustomApiRequestError";
@@ -73,10 +78,12 @@ async function send<T>(
   if (!response.ok) {
     let code = "request_failed";
     let issues: CustomApiRequestError["issues"] = [];
+    let readOnlyConfirmation: string | null = null;
     try {
       const parsed = customApiErrorResponseSchema.parse(await response.json());
       code = parsed.error;
       issues = parsed.issues ?? [];
+      readOnlyConfirmation = parsed.readOnlyConfirmation ?? null;
     } catch {
       // Not the error shape: keep the generic code.
     }
@@ -88,6 +95,7 @@ async function send<T>(
       response.status === 429 && Number.isFinite(retry) && retry > 0
         ? Math.ceil(retry)
         : null,
+      readOnlyConfirmation,
     );
   }
   if (schema === null) return undefined as T;

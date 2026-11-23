@@ -895,6 +895,41 @@ describe("read-only POST test requests (ADR 0030)", () => {
     expect(JSON.stringify(body.log)).not.toContain("ItemsQuery");
   });
 
+  it("redacts a large non-ASCII body it sent without a 500 (review round 2)", async () => {
+    const id = await newDraft();
+    const window = {
+      start: "2024-03-01T00:00:00.000Z",
+      end: "2024-03-02T00:00:00.000Z",
+    };
+    const definition = windowedDraft("/query-echo");
+    // About 60 KB of non-ASCII text, just inside the template limit.
+    const text = "ü€ö".repeat(2_800);
+    (definition.stream.request.body.value as Record<string, unknown>).notes = [
+      text,
+      text,
+      text,
+    ];
+    const unconfirmed = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+    });
+    expect(unconfirmed.statusCode, unconfirmed.body).toBe(400);
+    const { readOnlyConfirmation } = unconfirmed.json() as {
+      readOnlyConfirmation: string;
+    };
+    const res = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+      readOnlyConfirmation,
+    });
+    const body = parsed(res);
+    expect(body.ok, JSON.stringify(body.error)).toBe(true);
+    expect(body.response!.body).toMatchObject({ echo: "[redacted]" });
+    expect(res.body).not.toContain(text);
+  });
+
   it("answers graphql_errors for an error envelope on a 400", async () => {
     const id = await newDraft();
     const body = parsed(

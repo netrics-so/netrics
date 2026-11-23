@@ -503,13 +503,16 @@ export function createCustomApiTestRequestService(
             ? (envelope.variables as Record<string, string>)
             : {};
         // The bodies actually sent join the redaction set after the run
-        // (ADR 0030 §4); they never enter the public trace.
+        // (ADR 0030 §4), matched by plain search apart from the secrets'
+        // pattern; they never enter the public trace.
         const sentBodies = new Set<string>();
-        const secretsWith = (extra: Iterable<string>): SecretSet =>
-          secretSetOf(envelope, secretVariables, [
-            ...customApiSecretValues(definition, credentials, body.variables),
-            ...extra,
-          ]);
+        const secretsWith = (rendered: Iterable<string>): SecretSet =>
+          secretSetOf(
+            envelope,
+            secretVariables,
+            customApiSecretValues(definition, credentials, body.variables),
+            [...rendered],
+          );
         const controller = new AbortController();
         const egress = customApiEgress(
           deps.privateHosts,
