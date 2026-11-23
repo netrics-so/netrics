@@ -142,10 +142,24 @@ export default async function WorkspaceSettingsPage({
         <div className="card" id="delete-workspace">
           <h2>{t("deletion.title")}</h2>
           <p className="muted">{t("deletion.hint")}</p>
-          <DeleteWorkspace
-            workspaceId={workspaceId}
-            name={workspaceResult.workspace.name}
-          />
+          {workspaces.length > 1 ? (
+            <DeleteWorkspace
+              workspaceId={workspaceId}
+              name={workspaceResult.workspace.name}
+            />
+          ) : (
+            // The user's only workspace is not deleted (#855): say why
+            // instead of asking. The server decides; this only spares the
+            // dialog that would end in its refusal.
+            <>
+              <p id="delete-workspace-unavailable">
+                {t("deletion.onlyWorkspace")}
+              </p>
+              <p>
+                <Link href="/?new=1">{t("deletion.createAnother")}</Link>
+              </p>
+            </>
+          )}
         </div>
       ) : null}
     </div>

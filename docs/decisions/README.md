@@ -33,3 +33,4 @@ product is built.
 | [0026](./0026-dataset-contract-v1.md)                   | Dataset contract v1: the frozen dataset transport for connectors                               |
 | [0027](./0027-custom-api-connector.md)                  | The custom API connector: a manifest per connection, credentials bound to the environment host |
 | [0028](./0028-group-by-time-grain.md)                   | Time grain for grouped dates and timestamps: a per-query choice, dates in the workspace zone   |
+| [0029](./0029-workspace-deletion.md)                    | Workspace deletion: two steps behind a fence on every tenant transaction                       |

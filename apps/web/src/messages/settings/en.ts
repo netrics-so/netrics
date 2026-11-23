@@ -50,6 +50,9 @@ export const settingsEn = {
         "The workspace and everything in it is deleted for all members, and its screens stop showing dashboards. This cannot be undone.",
       typeLabel: "Type the workspace name “{workspace}” to confirm",
       confirm: "Delete workspace",
+      onlyWorkspace:
+        "This is your only workspace, so you cannot delete it. Create another workspace first; then you can delete this one.",
+      createAnother: "Create another workspace",
     },
     screenLanguage: {
       label: "Screen language",

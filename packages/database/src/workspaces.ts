@@ -1,7 +1,7 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import type { Db, Transaction } from "./context.js";
-import { createWorkspaceInTransaction } from "./context.js";
+import { createWorkspaceInTransaction, hasSqlstate } from "./context.js";
 import * as schema from "./schema.js";
 
 export type Membership = typeof schema.memberships.$inferSelect;
@@ -374,12 +374,55 @@ export type DeleteWorkspaceOutcome =
  * workspace row lock that the user is an owner and `name` is the
  * workspace's name, then ends every way into the workspace, records an
  * installation-level audit event and queues the `workspace.purge` job that
- * removes the data (migration 0094).
+ * removes the data (migration 0094). It needs a read committed transaction,
+ * and fails (isLastWorkspaceError) when the workspace is the user's only
+ * one: no membership, in any role, of another workspace that is not
+ * deleted (#855, migration 0095).
  */
 export async function deleteWorkspace(
   tx: Transaction,
   name: string,
+  options: {
+    /**
+     * What is left of the caller's deadline now, in milliseconds (at most
+     * 10 seconds count). One statement turns it into an instant on the
+     * database's clock, which delete_workspace() then measures against:
+     * it starts no statement after that instant, so it does not mark the
+     * workspace deleted after it, and each of its lock waits ends by it
+     * (55P03, lock_not_available). The same statement sets
+     * statement_timeout to the same remainder, which ends the call should
+     * it still be working (57014, query_canceled), and stays set for the
+     * rest of the transaction, which should end with this call. Either
+     * way nothing is deleted: isDeletionOutOfTime().
+     *
+     * The slack is the two round trips involved, nothing else: the instant
+     * is fixed when that statement reaches the database (not when
+     * `remainingMs` was read), and the statement timeout counts from when
+     * the call reaches it, one round trip later.
+     */
+    remainingMs?: number;
+  } = {},
 ): Promise<DeleteWorkspaceOutcome> {
+  if (options.remainingMs !== undefined) {
+    const remainingMs = Math.min(
+      10_000,
+      Math.max(1, Math.floor(options.remainingMs)),
+    );
+    // One statement, on the database's clock at one moment: the instant
+    // (microseconds since the epoch, a number that reads back the same
+    // under every DateStyle and TimeZone) and the statement timeout. The
+    // call follows at once; the round trip between the two is the slack.
+    await tx.execute(
+      sql`select set_config(
+              'app.workspace_delete_deadline',
+              (floor(extract(epoch from t.now) * 1000000)::bigint
+                + ${remainingMs}::bigint * 1000)::text,
+              true
+            ),
+            set_config('statement_timeout', ${remainingMs}::integer::text, true)
+          from (select clock_timestamp() as now) t`,
+    );
+  }
   const rows = await tx.execute<{ outcome: DeleteWorkspaceOutcome }>(
     sql`select delete_workspace(${name}) as outcome`,
   );
@@ -388,6 +431,14 @@ export async function deleteWorkspace(
     throw new Error("delete_workspace returned no row");
   }
   return outcome;
+}
+
+/**
+ * Whether a deleteWorkspace() call ended because its time ran out, waiting
+ * for a lock (55P03) or still working (57014): nothing was deleted.
+ */
+export function isDeletionOutOfTime(error: unknown): boolean {
+  return hasSqlstate(error, "55P03") || hasSqlstate(error, "57014");
 }
 
 /** The job that removes a deleted workspace's data (#839). */

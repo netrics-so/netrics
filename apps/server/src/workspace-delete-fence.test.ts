@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import pino from "pino";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { workspaceResponseSchema } from "@netrics/contracts";
 import {
@@ -9,8 +10,10 @@ import {
   adminSetDataPolicy,
   createDatabase,
   createInvitation,
+  deleteWorkspace,
   createRawSqlClient,
   enqueueSyncJob,
+  isDeletionOutOfTime,
   isWorkspaceDeleted,
   listDueConnections,
   setConnectionNextDue,
@@ -20,10 +23,17 @@ import {
   type Sql,
 } from "@netrics/database";
 
+import { buildApp } from "./app.js";
+import { createAuthService } from "./auth/index.js";
+import { loadConfig } from "./env.js";
 import { TEST_DATABASE_SETUP_TIMEOUT_MS } from "./test-db.js";
 import { createItemsFixture, type ItemsFixture } from "./test-items.js";
 import { hashToken } from "./tokens.js";
 import { createWorker } from "./worker.js";
+import {
+  createWorkspaceDeletionGate,
+  type WorkspaceDeletionGate,
+} from "./workspaces/deletion-gate.js";
 
 // #839: nothing that acts for a workspace crosses its deletion. Work that
 // resolved its access or read its input before the deletion committed and
@@ -45,14 +55,45 @@ function schedulerUrlOf(adminUrl: string): string {
   return url.toString();
 }
 
-/** A promise settled from outside. */
+/**
+ * A promise settled from outside. Everything a test holds open on a side
+ * connection (a transaction, a lock, the deletion gate) waits for one of
+ * these, and the afterEach below opens them all: a test that fails or
+ * times out before it lets go must not leave a lock behind, least of all
+ * the installation's deletion lock, for the tests after it.
+ */
+const openGates: Array<() => void> = [];
 function gate() {
   let open!: () => void;
   const opened = new Promise<void>((resolve) => {
     open = resolve;
   });
+  openGates.push(open);
   return { open, opened };
 }
+
+/** Sessions of this database, other than the asking one, not at rest. */
+async function busyOthers(): Promise<number> {
+  const [row] = await admin<{ busy: number }[]>`
+    select count(*)::int as busy from pg_stat_activity
+    where datname = current_database() and pid <> pg_backend_pid()
+      and state <> 'idle'`;
+  return row!.busy;
+}
+
+// Lets go of whatever the test still held, on success, failure and timeout
+// alike, and waits until the transactions that were held have ended.
+afterEach(async () => {
+  for (const open of openGates.splice(0)) open();
+  if (!admin) return;
+  const deadline = Date.now() + 20_000;
+  while ((await busyOthers()) > 0) {
+    if (Date.now() > deadline) {
+      throw new Error("a transaction of the last test is still open");
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+});
 
 /** Sessions of this database waiting for an advisory lock (the fence). */
 async function fenceWaiters(): Promise<number> {
@@ -429,6 +470,929 @@ describe("transactions of other isolation levels", () => {
     await expect(outcome).rejects.toMatchObject({ code: "55P03" });
     go.open();
     await holder;
+    expect(await count("memberships", workspaceId)).toBe(1);
+  });
+});
+
+// #855: an owner's only workspace is not deleted. Each deletion holds only
+// its own workspace's fence, so two deletions by one user, of that user's
+// last two workspaces (or by two co-owners of the same two), are ordered by
+// one lock for all deletions, taken before the fence: exactly one deletes,
+// the other is refused, and neither waits for something the other needs.
+describe("deletions that depend on each other's workspace (#855)", () => {
+  /** A new user with exactly two workspaces. */
+  async function userWithTwo(label: string) {
+    const email = `wsfence-${label}@example.com`;
+    const cookie = await fixture.signUp(email);
+    const [user] = await admin<{ id: string }[]>`
+      select id from users where email = ${email}`;
+    const create = async (name: string) => {
+      const created = await fixture.app.inject({
+        method: "POST",
+        url: "/v1/workspaces",
+        headers: { cookie },
+        payload: { name },
+      });
+      expect(created.statusCode, created.body).toBe(200);
+      return workspaceResponseSchema.parse(created.json()).workspace.id;
+    };
+    return {
+      cookie,
+      userId: user!.id,
+      a: await create(`${label} A`),
+      b: await create(`${label} B`),
+    };
+  }
+
+  /**
+   * delete_workspace() as `userId` in an open transaction: `outcome`
+   * settles when the function answers, the transaction ends with `finish`.
+   */
+  function openDeletion(userId: string, workspaceId: string, name: string) {
+    const answered = gate();
+    const end = gate();
+    let outcome: string | undefined;
+    let rollBack = false;
+    const done = appRaw
+      .begin(async (tx) => {
+        await tx`select set_config('app.workspace_id', ${workspaceId}, true),
+          set_config('app.user_id', ${userId}, true)`;
+        try {
+          const [row] = await tx<{ outcome: string }[]>`
+            select delete_workspace(${name}) as outcome`;
+          outcome = row!.outcome;
+        } finally {
+          answered.open();
+        }
+        await end.opened;
+        if (rollBack) throw new Error("rolled back by the test");
+      })
+      .then(
+        () => ({ outcome, error: null as unknown }),
+        (error: unknown) => ({ outcome, error }),
+      );
+    return {
+      answered: answered.opened,
+      finish: async (how: "commit" | "rollback" = "commit") => {
+        rollBack = how === "rollback";
+        end.open();
+        return done;
+      },
+      done,
+    };
+  }
+
+  const live = async (userId: string) => {
+    const rows = await admin<{ id: string }[]>`
+      select w.id from memberships m join workspaces w on w.id = m.workspace_id
+      where m.user_id = ${userId} and w.deleted_at is null`;
+    return rows.map((row) => row.id);
+  };
+
+  it("the second waits for the first to commit and is then refused; it does not hold its workspace's fence while it waits", async () => {
+    const user = await userWithTwo("pair");
+    const first = openDeletion(user.userId, user.a, "pair A");
+    await first.answered;
+    // Uncommitted: for everyone else both workspaces are still live.
+    expect((await live(user.userId)).sort()).toEqual([user.a, user.b].sort());
+
+    const second = openDeletion(user.userId, user.b, "pair B");
+    // It waits for the deletion lock ...
+    await untilFenceWaiters(1);
+    // ... and not on, or with, the fence of its own workspace: work for
+    // that workspace goes on meanwhile.
+    await withWorkspace(fixture.db, { workspaceId: user.b }, (tx) =>
+      tx.execute(sql`select 1`),
+    );
+    expect(await fenceWaiters()).toBe(1);
+
+    expect((await first.finish()).error).toBeNull();
+    await second.answered;
+    const refused = await second.finish();
+    expect(refused.outcome).toBeUndefined();
+    expect(refused.error).toMatchObject({ code: "WS002" });
+    expect(await live(user.userId)).toEqual([user.b]);
+    expect(await fenceWaiters()).toBe(0);
+  });
+
+  it("the second deletes when the first rolls back", async () => {
+    const user = await userWithTwo("undo");
+    const first = openDeletion(user.userId, user.a, "undo A");
+    await first.answered;
+    const second = openDeletion(user.userId, user.b, "undo B");
+    await untilFenceWaiters(1);
+    expect((await first.finish("rollback")).error).not.toBeNull();
+    await second.answered;
+    expect(await second.finish()).toEqual({ outcome: "deleted", error: null });
+    expect(await live(user.userId)).toEqual([user.a]);
+  });
+
+  it("a deletion that waits for work in its workspace does not let the other one through", async () => {
+    // The first holds the deletion lock while it waits for its fence; the
+    // second queues behind it and is refused once the first has deleted.
+    const user = await userWithTwo("held");
+    const inside = gate();
+    const go = gate();
+    const work = withWorkspace(
+      fixture.db,
+      { workspaceId: user.a },
+      async () => {
+        inside.open();
+        await go.opened;
+      },
+    );
+    await inside.opened;
+    const first = openDeletion(user.userId, user.a, "held A");
+    await untilFenceWaiters(1);
+    const second = openDeletion(user.userId, user.b, "held B");
+    await untilFenceWaiters(2);
+    go.open();
+    await work;
+    await first.answered;
+    expect(await first.finish()).toEqual({ outcome: "deleted", error: null });
+    expect((await second.finish()).error).toMatchObject({ code: "WS002" });
+    expect(await live(user.userId)).toEqual([user.b]);
+  });
+
+  /** Two users who own the same two workspaces and nothing else. */
+  async function coOwners(label: string) {
+    const one = await userWithTwo(`${label}-one`);
+    const email = `wsfence-${label}-two@example.com`;
+    const cookie = await fixture.signUp(email);
+    const [user] = await admin<{ id: string }[]>`
+      select id from users where email = ${email}`;
+    await admin`
+      insert into memberships (workspace_id, user_id, role)
+      values (${one.a}, ${user!.id}, 'owner'), (${one.b}, ${user!.id}, 'owner')`;
+    return { one, two: { cookie, userId: user!.id }, a: one.a, b: one.b };
+  }
+
+  it("two co-owners of the same two workspaces each delete a different one: the second waits and is refused", async () => {
+    // Without an order between them each would count the other's
+    // workspace as live, both would delete, and both would be left with
+    // none: a result neither order of the two deletions allows.
+    const pair = await coOwners("co");
+    const first = openDeletion(pair.one.userId, pair.a, "co-one A");
+    await first.answered;
+    const second = openDeletion(pair.two.userId, pair.b, "co-one B");
+    await untilFenceWaiters(1);
+    // It waits holding nothing: its workspace is not stalled.
+    await withWorkspace(fixture.db, { workspaceId: pair.b }, (tx) =>
+      tx.execute(sql`select 1`),
+    );
+    expect(await fenceWaiters()).toBe(1);
+    expect(await first.finish()).toEqual({ outcome: "deleted", error: null });
+    await second.answered;
+    const refused = await second.finish();
+    expect(refused.outcome).toBeUndefined();
+    expect(refused.error).toMatchObject({ code: "WS002" });
+    expect(await live(pair.one.userId)).toEqual([pair.b]);
+    expect(await live(pair.two.userId)).toEqual([pair.b]);
+    expect(await fenceWaiters()).toBe(0);
+  });
+
+  it("two co-owners through the API: one 204, the other workspace_last", async () => {
+    const pair = await coOwners("co-api");
+    const request = (cookie: string, workspaceId: string, name: string) =>
+      fixture.app.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/delete`,
+        headers: { cookie },
+        payload: { name },
+      });
+    const responses = await Promise.all([
+      request(pair.one.cookie, pair.a, "co-api-one A"),
+      request(pair.two.cookie, pair.b, "co-api-one B"),
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([
+      204, 409,
+    ]);
+    const refused = responses.find((response) => response.statusCode === 409)!;
+    expect(refused.json()).toEqual({ error: "workspace_last" });
+    const left = await live(pair.one.userId);
+    expect(left).toHaveLength(1);
+    expect(await live(pair.two.userId)).toEqual(left);
+  });
+
+  it("deletions by users who share nothing queue too, and both delete", async () => {
+    // One order for every deletion of the installation: the second waits
+    // for the first to end, then finds its own other workspace live.
+    const one = await userWithTwo("apart-one");
+    const two = await userWithTwo("apart-two");
+    const first = openDeletion(one.userId, one.a, "apart-one A");
+    await first.answered;
+    const second = openDeletion(two.userId, two.a, "apart-two A");
+    await untilFenceWaiters(1);
+    expect(await first.finish()).toEqual({ outcome: "deleted", error: null });
+    await second.answered;
+    expect(await second.finish()).toEqual({ outcome: "deleted", error: null });
+    expect(await live(one.userId)).toEqual([one.b]);
+    expect(await live(two.userId)).toEqual([two.b]);
+  });
+
+  it("through the API: exactly one of the two requests deletes", async () => {
+    const user = await userWithTwo("api");
+    const request = (workspaceId: string, name: string) =>
+      fixture.app.inject({
+        method: "POST",
+        url: `/v1/workspaces/${workspaceId}/delete`,
+        headers: { cookie: user.cookie },
+        payload: { name },
+      });
+    const responses = await Promise.all([
+      request(user.a, "api A"),
+      request(user.b, "api B"),
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([
+      204, 409,
+    ]);
+    const refused = responses.find((response) => response.statusCode === 409)!;
+    expect(refused.json()).toEqual({ error: "workspace_last" });
+    expect(await live(user.userId)).toHaveLength(1);
+  });
+});
+
+// #855: deletions take turns (one lock for the installation), and one that
+// waits holds its database connection. The API therefore queues deletion
+// requests in its own process BEFORE it takes a connection: however many
+// arrive, at most one connection of the pool waits for a deletion.
+describe("deletion requests queue without a database connection (#855)", () => {
+  const REQUESTS = 6;
+
+  /** An API of its own on the fixture's database, with a small pool. */
+  async function apiWith(deletions: WorkspaceDeletionGate, max = 2) {
+    const db = createDatabase(fixture.testDb.appUrl, { max });
+    const config = loadConfig({
+      DATABASE_URL: fixture.testDb.appUrl,
+      LOG_LEVEL: "silent",
+      BETTER_AUTH_URL: "http://localhost:3001",
+      WEB_ORIGIN: "http://localhost:3000",
+    });
+    const app = await buildApp(config, {
+      db,
+      authService: createAuthService(config, db, {
+        logger: pino({ level: "silent" }),
+      }),
+      checkDb: async () => true,
+      workspaceDeletionGate: deletions,
+    });
+    return {
+      app,
+      db,
+      close: async () => {
+        await app.close();
+        await db.$client.end({ timeout: 5 });
+      },
+    };
+  }
+
+  /** A new user with `count` workspaces named "<label> 0", "<label> 1", ... */
+  async function userWith(label: string, count: number) {
+    const email = `wsfence-${label}@example.com`;
+    const cookie = await fixture.signUp(email);
+    const [user] = await admin<{ id: string }[]>`
+      select id from users where email = ${email}`;
+    const workspaces: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const created = await fixture.app.inject({
+        method: "POST",
+        url: "/v1/workspaces",
+        headers: { cookie },
+        payload: { name: `${label} ${index}` },
+      });
+      expect(created.statusCode, created.body).toBe(200);
+      workspaces.push(
+        workspaceResponseSchema.parse(created.json()).workspace.id,
+      );
+    }
+    return { cookie, userId: user!.id, workspaces };
+  }
+
+  /** The application role's sessions that are doing or holding something. */
+  async function busySessions(): Promise<number> {
+    const [row] = await admin<{ busy: number }[]>`
+      select count(*)::int as busy from pg_stat_activity
+      where datname = current_database() and usename = 'netrics_app'
+        and state <> 'idle'`;
+    return row!.busy;
+  }
+
+  async function untilQueued(deletions: WorkspaceDeletionGate, count: number) {
+    const deadline = Date.now() + 15_000;
+    while (deletions.waiting < count) {
+      if (Date.now() > deadline) throw new Error("requests did not queue");
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
+  const liveOf = async (userId: string) => {
+    const [row] = await admin<{ live: number }[]>`
+      select count(*)::int as live from memberships m
+      join workspaces w on w.id = m.workspace_id
+      where m.user_id = ${userId} and w.deleted_at is null`;
+    return row!.live;
+  };
+
+  it("with the gate held, waiting requests hold no connection, other requests are answered, and the waiters give up after the budget", async () => {
+    const deletions = createWorkspaceDeletionGate({ budgetMs: 400 });
+    const api = await apiWith(deletions);
+    try {
+      const user = await userWith("gate", REQUESTS + 1);
+      const remove = (index: number) =>
+        api.app.inject({
+          method: "POST",
+          url: `/v1/workspaces/${user.workspaces[index]}/delete`,
+          headers: { cookie: user.cookie },
+          payload: { name: `gate ${index}` },
+        });
+      const hold = gate();
+      const holder = deletions.run(() => hold.opened);
+      const waiting = Array.from({ length: REQUESTS }, (_, index) =>
+        remove(index),
+      );
+      await untilQueued(deletions, REQUESTS);
+      // More requests wait than the pool has connections, and none of them
+      // holds one: nothing of the application runs or waits in the database.
+      expect(await busySessions()).toBe(0);
+      expect(await fenceWaiters()).toBe(0);
+      for (let index = 0; index < 4; index += 1) {
+        const read = await api.app.inject({
+          method: "GET",
+          url: "/v1/workspaces",
+          headers: { cookie: user.cookie },
+        });
+        expect(read.statusCode, read.body).toBe(200);
+      }
+      const responses = await Promise.all(waiting);
+      for (const response of responses) {
+        expect(response.statusCode, response.body).toBe(409);
+        expect(response.json()).toEqual({ error: "workspace_busy" });
+      }
+      expect(deletions.waiting).toBe(0);
+      expect(await liveOf(user.userId)).toBe(REQUESTS + 1);
+      // Free again: the next request deletes.
+      hold.open();
+      await holder;
+      expect((await remove(0)).statusCode).toBe(204);
+      expect(deletions.held).toBe(false);
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("while one deletion waits for work in its workspace, the others wait outside the database and then all delete", async () => {
+    const deletions = createWorkspaceDeletionGate();
+    const api = await apiWith(deletions);
+    try {
+      const user = await userWith("burst", REQUESTS + 2);
+      const remove = (index: number) =>
+        api.app.inject({
+          method: "POST",
+          url: `/v1/workspaces/${user.workspaces[index]}/delete`,
+          headers: { cookie: user.cookie },
+          payload: { name: `burst ${index}` },
+        });
+      // Work in the first workspace, on a connection of another pool.
+      const inside = gate();
+      const go = gate();
+      const work = withWorkspace(
+        fixture.db,
+        { workspaceId: user.workspaces[0]! },
+        async () => {
+          inside.open();
+          await go.opened;
+        },
+      );
+      await inside.opened;
+      const first = remove(0);
+      await untilFenceWaiters(1);
+      const others = Array.from({ length: REQUESTS }, (_, index) =>
+        remove(index + 1),
+      );
+      await untilQueued(deletions, REQUESTS);
+      // One session waits in the database (the first deletion, for its
+      // fence); the six behind it wait in the process.
+      expect(await fenceWaiters()).toBe(1);
+      // The pool of two still serves requests that are no deletion.
+      for (let index = 0; index < 4; index += 1) {
+        const read = await api.app.inject({
+          method: "GET",
+          url: `/v1/workspaces/${user.workspaces[REQUESTS + 1]}`,
+          headers: { cookie: user.cookie },
+        });
+        expect(read.statusCode, read.body).toBe(200);
+      }
+      expect(await fenceWaiters()).toBe(1);
+      go.open();
+      await work;
+      for (const response of [await first, ...(await Promise.all(others))]) {
+        expect(response.statusCode, response.body).toBe(204);
+      }
+      expect(await liveOf(user.userId)).toBe(1);
+      expect(deletions.held).toBe(false);
+    } finally {
+      await api.close();
+    }
+  });
+
+  it("the gate is free again after a deletion that was refused", async () => {
+    const deletions = createWorkspaceDeletionGate();
+    const api = await apiWith(deletions);
+    try {
+      const user = await userWith("refused", 2);
+      const remove = (index: number, name: string) =>
+        api.app.inject({
+          method: "POST",
+          url: `/v1/workspaces/${user.workspaces[index]}/delete`,
+          headers: { cookie: user.cookie },
+          payload: { name },
+        });
+      expect((await remove(0, "wrong")).statusCode).toBe(400);
+      expect(deletions.held).toBe(false);
+      expect((await remove(0, "refused 0")).statusCode).toBe(204);
+      // The database's refusal is an error inside the gate.
+      const last = await remove(1, "refused 1");
+      expect(last.statusCode).toBe(409);
+      expect(last.json()).toEqual({ error: "workspace_last" });
+      expect(deletions.held).toBe(false);
+      expect(deletions.waiting).toBe(0);
+    } finally {
+      await api.close();
+    }
+  });
+
+  // One deadline, fixed when the request reaches the gate: whatever a
+  // deletion request then waits for, it is answered by the deadline (plus
+  // the time to answer), with 204 or workspace_busy, and a request that was
+  // answered workspace_busy deletes nothing, then or later.
+  describe("one deadline for everything a deletion request waits for", () => {
+    const BUDGET_MS = 600;
+    const TOLERANCE_MS = 500;
+    let holders: Sql;
+
+    beforeAll(() => {
+      // Sessions that hold locks open (the admin client has one connection).
+      holders = createRawSqlClient(fixture.testDb.adminUrl, {
+        max: 2,
+        onnotice: () => undefined,
+      });
+    });
+    afterAll(async () => {
+      await holders?.end({ timeout: 5 }).catch(() => undefined);
+    });
+
+    /** Holds what `take` locks in an open transaction until released. */
+    async function holdOpen(
+      take: (tx: Sql) => Promise<unknown>,
+    ): Promise<() => Promise<void>> {
+      const taken = gate();
+      const let_go = gate();
+      const done = holders.begin(async (tx) => {
+        await take(tx as unknown as Sql);
+        taken.open();
+        await let_go.opened;
+      });
+      await taken.opened;
+      return async () => {
+        let_go.open();
+        await done;
+      };
+    }
+
+    type Api = Awaited<ReturnType<typeof apiWith>>;
+    interface Contention {
+      /** Before the request is sent; answers how to end the contention. */
+      before?: (
+        workspaceId: string,
+        api: Api,
+        deletions: WorkspaceDeletionGate,
+      ) => Promise<() => Promise<void>>;
+      /** With the request waiting at the gate (held for this by the test). */
+      atGate?: (api: Api) => Promise<() => Promise<void>>;
+    }
+
+    const kinds: Array<[string, Contention]> = [
+      [
+        "the gate (another deletion of this process)",
+        {
+          before: async (_workspaceId, _api, deletions) => {
+            const hold = gate();
+            const holder = deletions.run(() => hold.opened);
+            return async () => {
+              hold.open();
+              await holder;
+            };
+          },
+        },
+      ],
+      [
+        "the pool (its only connection is in use)",
+        {
+          atGate: async (api) => {
+            const inside = gate();
+            const hold = gate();
+            const user = api.db.transaction(async (tx) => {
+              await tx.execute(sql`select 1`);
+              inside.open();
+              await hold.opened;
+            });
+            await inside.opened;
+            return async () => {
+              hold.open();
+              await user;
+            };
+          },
+        },
+      ],
+      [
+        "the installation's deletion lock (a deletion of another process)",
+        {
+          before: () =>
+            holdOpen(
+              (tx) => tx`select pg_advisory_xact_lock(
+                hashtext('netrics.workspace_delete'), 0)`,
+            ),
+        },
+      ],
+      [
+        "the fence (work in the workspace)",
+        {
+          before: async (workspaceId) => {
+            const inside = gate();
+            const hold = gate();
+            const work = withWorkspace(
+              fixture.db,
+              { workspaceId },
+              async () => {
+                inside.open();
+                await hold.opened;
+              },
+            );
+            await inside.opened;
+            return async () => {
+              hold.open();
+              await work;
+            };
+          },
+        },
+      ],
+      [
+        "a row lock (a worker holds a job of the workspace)",
+        {
+          before: async (workspaceId) => {
+            await admin`
+              insert into jobs (kind, workspace_id, payload)
+              values ('netrics.noop', ${workspaceId},
+                ${admin.json({ workspace_id: workspaceId, connection_id: null })})`;
+            return holdOpen(
+              (tx) => tx`select id from jobs
+                where workspace_id = ${workspaceId} for update`,
+            );
+          },
+        },
+      ],
+    ];
+
+    it.each(kinds)("held up by %s", async (label, contention) => {
+      const deletions = createWorkspaceDeletionGate({ budgetMs: BUDGET_MS });
+      const api = await apiWith(deletions, 1);
+      try {
+        const slug = `deadline-${kinds.findIndex(([name]) => name === label)}`;
+        const user = await userWith(slug, 2);
+        const workspaceId = user.workspaces[0]!;
+        const remove = () =>
+          api.app.inject({
+            method: "POST",
+            url: `/v1/workspaces/${workspaceId}/delete`,
+            headers: { cookie: user.cookie },
+            payload: { name: `${slug} 0` },
+          });
+        const state = async () => {
+          const [row] = await admin<{ deleted: boolean; events: number }[]>`
+            select w.deleted_at is not null as deleted,
+              (select count(*)::int from audit_events
+               where action = 'workspace.deleted' and target = w.id::text) as events
+            from workspaces w where w.id = ${workspaceId}`;
+          return row;
+        };
+        const untilFree = async () => {
+          const deadline = Date.now() + 15_000;
+          while (deletions.held || deletions.waiting > 0) {
+            if (Date.now() > deadline) throw new Error("the gate stayed held");
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+        };
+
+        let release = contention.before
+          ? await contention.before(workspaceId, api, deletions)
+          : async () => {};
+        let started: number;
+        let pending: ReturnType<typeof remove>;
+        if (contention.atGate) {
+          // The contention begins after the request passed its access
+          // check: it is held at the gate meanwhile.
+          const hold = gate();
+          const holder = deletions.run(() => hold.opened);
+          started = performance.now();
+          pending = remove();
+          await untilQueued(deletions, 1);
+          release = await contention.atGate(api);
+          hold.open();
+          await holder;
+        } else {
+          started = performance.now();
+          pending = remove();
+        }
+
+        // Answered by the deadline, and told that nothing was deleted.
+        const response = await pending;
+        const took = performance.now() - started;
+        expect(response.statusCode, response.body).toBe(409);
+        expect(response.json()).toEqual({ error: "workspace_busy" });
+        expect(took).toBeLessThan(BUDGET_MS + TOLERANCE_MS);
+        expect(await state()).toEqual({ deleted: false, events: 0 });
+
+        // The contention ends after the deadline: still nothing is deleted,
+        // by whatever of the request was left waiting.
+        await release();
+        await untilFree();
+        expect(await fenceWaiters()).toBe(0);
+        expect(await state()).toEqual({ deleted: false, events: 0 });
+
+        // Without contention the same request deletes, within the budget.
+        const again = performance.now();
+        const deleted = await remove();
+        expect(deleted.statusCode, deleted.body).toBe(204);
+        expect(performance.now() - again).toBeLessThan(
+          BUDGET_MS + TOLERANCE_MS,
+        );
+        expect(await state()).toEqual({ deleted: true, events: 1 });
+      } finally {
+        await api.close();
+      }
+    });
+  });
+
+  it("a row lock held past the deadline ends the deletion and frees the deletion lock for others", async () => {
+    const workspaceId = await newWorkspace("Row held");
+    const other = await newWorkspace("Row free");
+    await admin`
+      insert into jobs (kind, workspace_id, payload)
+      values ('netrics.noop', ${workspaceId},
+        ${admin.json({ workspace_id: workspaceId, connection_id: null })})`;
+    const held = gate();
+    const go = gate();
+    const worker = appRaw.begin(async (tx) => {
+      await tx`select set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`select id from jobs where workspace_id = ${workspaceId}
+        for update`;
+      held.open();
+      await go.opened;
+    });
+    await held.opened;
+    const remove = (id: string, name: string, waitMs: number) =>
+      withWorkspace(
+        fixture.db,
+        { workspaceId: id, userId: ownerId },
+        (tx) => deleteWorkspace(tx, name, { remainingMs: waitMs }),
+        { fence: "none", isolationLevel: "read committed" },
+      );
+    const started = performance.now();
+    const failure = await remove(workspaceId, "Row held", 100).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(isDeletionOutOfTime(failure), String(failure)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(2_000);
+    // Rolled back whole: not marked, members and the job as they were.
+    const [row] = await admin`
+      select deleted_at from workspaces where id = ${workspaceId}`;
+    expect(row!.deleted_at).toBeNull();
+    expect(await count("memberships", workspaceId)).toBe(1);
+    expect(await liveJobs(workspaceId)).toBe(1);
+    // The deletion lock went with it: another workspace's deletion runs
+    // while the row is still held.
+    expect(await remove(other, "Row free", 5_000)).toBe("deleted");
+    go.open();
+    await worker;
+    expect(await remove(workspaceId, "Row held", 5_000)).toBe("deleted");
+  });
+
+  it("gives the caller's lock_timeout back when it returns", async () => {
+    const workspaceId = await newWorkspace("Timeouts");
+    const outcome = await appRaw.begin(async (tx) => {
+      await tx`select set_config('app.workspace_id', ${workspaceId}, true),
+        set_config('app.user_id', ${ownerId}, true),
+        set_config('lock_timeout', '1234ms', true)`;
+      const [wrong] = await tx<{ outcome: string }[]>`
+        select delete_workspace('not its name') as outcome`;
+      const [after] = await tx<{ value: string }[]>`
+        select current_setting('lock_timeout') as value`;
+      return { wrong: wrong!.outcome, lockTimeout: after!.value };
+    });
+    expect(outcome).toEqual({ wrong: "name_mismatch", lockTimeout: "1234ms" });
+  });
+
+  it("requests for a workspace whose fence a deletion holds wait at the gate, not on connections", async () => {
+    // Access is resolved without the fence on this route: with it, every
+    // request would wait for the deletion in progress on a connection of
+    // its own before it reached the gate.
+    const deletions = createWorkspaceDeletionGate();
+    const api = await apiWith(deletions);
+    try {
+      const user = await userWith("same", 2);
+      const workspaceId = user.workspaces[0]!;
+      // A deletion of another process, not yet committed: it holds the
+      // installation's deletion lock and the workspace's exclusive fence.
+      const committed = gate();
+      const commit = gate();
+      const elsewhere = appRaw.begin(async (tx) => {
+        await tx`select set_config('app.workspace_id', ${workspaceId}, true),
+          set_config('app.user_id', ${user.userId}, true)`;
+        const [row] = await tx<{ outcome: string }[]>`
+          select delete_workspace('same 0') as outcome`;
+        expect(row!.outcome).toBe("deleted");
+        committed.open();
+        await commit.opened;
+      });
+      await committed.opened;
+      const requests = Array.from({ length: REQUESTS }, () =>
+        api.app.inject({
+          method: "POST",
+          url: `/v1/workspaces/${workspaceId}/delete`,
+          headers: { cookie: user.cookie },
+          payload: { name: "same 0" },
+        }),
+      );
+      await untilQueued(deletions, REQUESTS - 1);
+      await untilFenceWaiters(1);
+      // One of the six waits in the database; the pool of two still answers.
+      expect(await fenceWaiters()).toBe(1);
+      for (let index = 0; index < 4; index += 1) {
+        const read = await api.app.inject({
+          method: "GET",
+          url: `/v1/workspaces/${user.workspaces[1]}`,
+          headers: { cookie: user.cookie },
+        });
+        expect(read.statusCode, read.body).toBe(200);
+      }
+      expect(await fenceWaiters()).toBe(1);
+      commit.open();
+      await elsewhere;
+      // Each in turn finds the workspace gone.
+      for (const response of await Promise.all(requests)) {
+        expect(response.statusCode, response.body).toBe(404);
+        expect(response.json()).toEqual({ error: "workspace_not_found" });
+      }
+      expect(deletions.held).toBe(false);
+    } finally {
+      await api.close();
+    }
+  });
+
+  /** delete_workspace() as the owner with the deadline setting as given. */
+  const callWithDeadline = (
+    workspaceId: string,
+    name: string,
+    /** SQL for the setting's value (microseconds since the epoch). */
+    deadline: string,
+    pause = 0,
+  ) =>
+    appRaw
+      .begin(async (tx) => {
+        await tx`select set_config('app.workspace_id', ${workspaceId}, true),
+          set_config('app.user_id', ${ownerId}, true)`;
+        await tx.unsafe(
+          `select set_config('app.workspace_delete_deadline', (${deadline})::text, true)`,
+        );
+        // The round trip between fixing the instant and the call.
+        await tx`select pg_sleep(${pause})`;
+        const [row] = await tx<{ outcome: string }[]>`
+          select delete_workspace(${name}) as outcome`;
+        return row!.outcome;
+      })
+      .then(
+        (outcome) => ({ outcome, code: null as string | null }),
+        (error: { code?: string }) => ({ outcome: null, code: error.code }),
+      );
+  const MICROS =
+    "floor(extract(epoch from clock_timestamp()) * 1000000)::bigint";
+  const refusedLate = { outcome: null, code: "55P03" };
+
+  it("measures against an instant: a call that arrives after it is refused, with nothing in its way", async () => {
+    const workspaceId = await newWorkspace("Instant");
+    const call = (deadline: string, pause = 0) =>
+      callWithDeadline(workspaceId, "Instant", deadline, pause);
+    expect(await call(`${MICROS} - 1000`)).toEqual(refusedLate);
+    expect(await call(`${MICROS} + 50000`, 0.2)).toEqual(refusedLate);
+    const [row] = await admin`
+      select deleted_at from workspaces where id = ${workspaceId}`;
+    expect(row!.deleted_at).toBeNull();
+    expect(await count("memberships", workspaceId)).toBe(1);
+    // A later instant than the function's own 10 seconds is no extension,
+    // and in time it deletes.
+    expect(await call(`${MICROS} + 3600::bigint * 1000000`)).toEqual({
+      outcome: "deleted",
+      code: null,
+    });
+  });
+
+  it("an instant far away, either way, is 'passed' or 'the 10 seconds', never another error", async () => {
+    const YEAR = "365::bigint * 86400 * 1000000";
+    for (const past of [`${MICROS} - ${YEAR}`, "0", "-1e30", "'-1e30'"]) {
+      const workspaceId = await newWorkspace("Far past");
+      expect(
+        await callWithDeadline(workspaceId, "Far past", past),
+        past,
+      ).toEqual(refusedLate);
+    }
+    for (const future of [`${MICROS} + ${YEAR}`, "1e30"]) {
+      const workspaceId = await newWorkspace("Far future");
+      expect(
+        await callWithDeadline(workspaceId, "Far future", future),
+        future,
+      ).toEqual({ outcome: "deleted", code: null });
+    }
+    // The helper on its own (owner role; the application cannot call it).
+    await expect(
+      admin`select workspace_delete_wait(clock_timestamp() - interval '1 year')`,
+    ).rejects.toMatchObject({ code: "55P03" });
+    await expect(
+      admin`select workspace_delete_wait('-infinity'::timestamptz)`,
+    ).rejects.toMatchObject({ code: "55P03" });
+    for (const far of ["clock_timestamp() + interval '1 year'", "'infinity'"]) {
+      const [row] = await admin.begin(async (tx) => {
+        await tx.unsafe(`select workspace_delete_wait((${far})::timestamptz)`);
+        return tx<{ value: string }[]>`
+          select current_setting('lock_timeout') as value`;
+      });
+      expect(row!.value, far).toBe("10s");
+    }
+    await expect(
+      appRaw`select workspace_delete_wait(clock_timestamp())`,
+    ).rejects.toMatchObject({ code: "42501" });
+  });
+
+  it.each([
+    ["Postgres, MDY", "Europe/Dublin"],
+    ["SQL, DMY", "Asia/Kolkata"],
+    ["German", "Australia/Lord_Howe"],
+    ["ISO, YMD", "America/St_Johns"],
+  ])(
+    "the instant does not depend on how the session prints time (DateStyle %s, TimeZone %s)",
+    async (dateStyle, timeZone) => {
+      // Dublin prints its summer time as IST, Kolkata its time as IST all
+      // year, and neither reads back as itself: the deadline travels as a
+      // number.
+      const workspaceId = await newWorkspace("Styled");
+      const settings = async (tx: Parameters<typeof deleteWorkspace>[0]) => {
+        await tx.execute(
+          sql`select set_config('DateStyle', ${dateStyle}, true),
+            set_config('TimeZone', ${timeZone}, true),
+            set_config('IntervalStyle', 'sql_standard', true),
+            set_config('extra_float_digits', '-15', true)`,
+        );
+      };
+      const remove = (name: string, remainingMs: number) =>
+        withWorkspace(
+          fixture.db,
+          { workspaceId, userId: ownerId },
+          async (tx) => {
+            await settings(tx);
+            return deleteWorkspace(tx, name, { remainingMs });
+          },
+          { fence: "none", isolationLevel: "read committed" },
+        );
+      expect(await remove("not its name", 5_000)).toBe("name_mismatch");
+      expect(await remove("Styled", 5_000)).toBe("deleted");
+    },
+  );
+
+  it("the database waits only as long as its caller has left", async () => {
+    const workspaceId = await newWorkspace("Left over");
+    const inside = gate();
+    const go = gate();
+    const work = withWorkspace(fixture.db, { workspaceId }, async () => {
+      inside.open();
+      await go.opened;
+    });
+    await inside.opened;
+    const started = Date.now();
+    // The lock wait (55P03) or the call as a whole (57014), whichever
+    // timer of the same deadline fires first.
+    const failure = await withWorkspace(
+      fixture.db,
+      { workspaceId, userId: ownerId },
+      (tx) => deleteWorkspace(tx, "Left over", { remainingMs: 50 }),
+      { fence: "none", isolationLevel: "read committed" },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(isDeletionOutOfTime(failure), String(failure)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    go.open();
+    await work;
     expect(await count("memberships", workspaceId)).toBe(1);
   });
 });

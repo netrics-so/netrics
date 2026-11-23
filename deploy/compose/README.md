@@ -545,3 +545,109 @@ cosign verify-attestation --type spdxjson \
   `docker compose run --rm migrate node dist/admin-cli.js backfill-connection --workspace <workspace id> --connection <connection id>`.
   Both ids are in the connection's URL in the web app. Stored values stay
   until the backfill overwrites them.
+
+### Deleting a workspace
+
+An owner deletes a workspace in its settings, by typing its name. Only
+owners can, and nobody can delete their own only workspace: the owner must
+be a member of another workspace first (any role counts). Other members are
+not considered. Someone whose only workspace is deleted by its owner keeps
+their account, and is asked to create a workspace at the next visit.
+
+It happens in two steps.
+
+1. **At once, in the request.** The workspace is marked deleted, and nobody
+   reaches it any more: memberships and open invitations are removed, its
+   screens are refused from their next request on, like a removed screen,
+   running and waiting syncs end, and no new ones are planned. If work for the workspace
+   is still running after 10 seconds, nothing is deleted and the owner is
+   asked to try again.
+2. **In the background, by the `worker`.** A `workspace.purge` job removes
+   the data: every connection with its stored credentials and collected
+   data, then datasets, models, dashboards and images, then the workspace
+   itself with everything left (projects, themes, goals, screens, its own
+   audit log). It works in small steps, so a restart continues where it
+   stopped. If the job is lost, the `scheduler` queues it again as part of
+   its hourly maintenance, at most 100 workspaces per pass, so a backlog
+   takes several passes. **Without a running `worker` the data stays in the database**,
+   unreachable but not removed. A finished purge logs `workspace purged`
+   (`docker compose logs worker`).
+
+User accounts are not deleted with a workspace.
+
+**Access granted through OAuth** (for example a Google account) is revoked
+at the provider while a connection is purged, once, without retries. It is
+not revoked when
+
+- it belongs to a built-in OAuth integration (such as Google) and a
+  connection of another workspace on this installation uses the same
+  provider account: the grant is one and the same, so it is kept;
+- the provider offers no way to revoke, or a custom API with OAuth names no
+  revoke URL;
+- the provider refuses or does not answer in time, the stored credential
+  can no longer be decrypted, or a custom API no longer points at the host
+  the credential was entered for (it is never sent anywhere else). The
+  connection is removed all the same.
+
+The second and third case count as `failed` below; the user can remove the
+access in their account at the provider. A custom API that signs in with
+client credentials has no user consent to withdraw and is not counted.
+
+**Custom APIs with OAuth are not checked for sharing.** Each of their
+connections has a grant of its own, and its token is always sent to the
+revoke URL, also when a connection of another workspace was authorized by
+the same person for the same OAuth app. A provider that then withdraws the
+person's access to the app as a whole, not only that one token, also cuts
+off the other workspace's connection, which has to be connected again. The
+same holds for "Delete connection". API keys and other credentials you
+entered are deleted from netrics, and stay valid at their provider until
+you revoke them there.
+
+**What stays.** Two audit entries that belong to the installation, not to a
+workspace: no workspace member can read them, and the API does not return
+them. Read them in the database:
+
+```sh
+docker compose exec postgres psql -U netrics -d netrics -c \
+  "select created_at, action, target, actor_user_id, metadata from audit_events where workspace_id is null and action like 'workspace.%' order by created_at"
+```
+
+- `workspace.deleted`: who deleted it (`actor_user_id`), the workspace's id
+  (`target`), its **name**, and how many members, connections, dashboards
+  and screens it had.
+- `workspace.purged`: the workspace's id, how many connections were removed,
+  and how many OAuth grants were `revoked`, `failed` or `kept`. A built-in
+  integration's grant that two connections of the deleted workspace shared
+  counts as `kept` for
+  the first and `revoked` for the last. **These counts are those of the
+  attempt that finished the purge.** When the job was retried or the
+  `worker` restarted on the way, connections removed in earlier attempts
+  are missing, so `failed: 0` does not prove that every revocation worked.
+  The `worker` log has a line per connection with an OAuth grant
+  (`oauth grant of a purged connection`: workspace id, connection id,
+  provider and outcome, never a token), written in whichever attempt
+  removed the connection, after the provider answered. One case leaves no
+  record at all: a connection is deleted first and the provider is called
+  afterwards, so a `worker` that stops between the two has removed the
+  connection without an outcome, and the next attempt finds nothing to
+  retry. When a connection with an OAuth grant has no such line, check the
+  access at the provider and revoke it there.
+
+They are deleted after 12 months, like every audit entry. Container logs
+keep the workspace's id for as long as you keep logs.
+
+**Backups are not rewritten.** A dump taken before the deletion still holds
+the workspace with all its data and encrypted credentials, until the dump is
+deleted (the `backup` service keeps 14 days; copies you made elsewhere stay
+until you remove them). Restoring such a dump brings the workspace back as
+it was, with its members, and without the two audit entries. If the deletion
+has to hold, have an owner delete the workspace again after the restore.
+That can be refused: if the owner created their second workspace after the
+dump was taken, the restored installation has only the first again, and
+deleting it answers "this is your only workspace" (`409 workspace_last`).
+The owner then has to create or join another workspace first. Do the
+repeated deletion, and check that it went through, before you let users
+back in.
+OAuth access that was revoked stays revoked: those connections fail until
+they are connected again. A dump taken between the two steps holds the
+workspace marked as deleted, and the purge continues after the restore.

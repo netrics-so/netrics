@@ -72,6 +72,8 @@ export const apiErrorsEn = {
     last_owner: "The last owner of a workspace cannot be demoted or removed.",
     workspace_busy:
       "The workspace is busy right now. Nothing was deleted; try again in a moment.",
+    workspace_last:
+      "This is your only workspace, so it cannot be deleted. Nothing was deleted. Create another workspace first.",
     workspace_name_mismatch:
       "That is not the name of this workspace. Nothing was deleted.",
     membership_exists: "That person is already a member of this workspace.",
