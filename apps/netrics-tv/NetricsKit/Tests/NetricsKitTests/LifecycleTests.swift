@@ -37,8 +37,11 @@ func credentialsFor(_ name: String, accessExpiresIn: TimeInterval = 3600, at now
     )
 }
 
-/** Polls `condition` in real time until it holds or `timeout` passes. */
-func eventually(timeout: Duration = .seconds(5), _ condition: () async -> Bool) async -> Bool {
+/**
+ Polls `condition` in real time until it holds or `timeout` passes. The timeout is generous on
+ purpose: CPU-heavy tests run beside these and can hold every thread for seconds on a small runner.
+ */
+func eventually(timeout: Duration = .seconds(30), _ condition: () async -> Bool) async -> Bool {
     let deadline = ContinuousClock.now + timeout
     while ContinuousClock.now < deadline {
         if await condition() { return true }
@@ -152,7 +155,9 @@ func versionedDashboard(_ version: @escaping @Sendable () -> String) -> Handler 
     }
 
     @Test func resumeAfterAnExpiredAccessTokenRefreshesThenPollsThenSendsAHeartbeat() async throws {
-        let r = RunningClient(accessExpiresIn: 3600, platform: .ipados) { clock in
+        // Eight hours of token life are 28.8 real seconds on the fast clock: enough that a stalled
+        // test run cannot expire the token before the app goes to the background.
+        let r = RunningClient(accessExpiresIn: 8 * 3600, platform: .ipados) { clock in
             [
                 tokenRoute: { _ in
                     json(RefreshDeviceTokenResponse(credentials: credentialsFor("new", at: clock.now)))
@@ -166,8 +171,8 @@ func versionedDashboard(_ version: @escaping @Sendable () -> String) -> Handler 
         try await Task.sleep(for: .milliseconds(30))
         #expect(r.count(tokenRoute) == 0)
 
-        // A night away: the access token expired hours ago.
-        r.clock.jump(seconds: 10 * 3600)
+        // A day away: the access token expired hours ago.
+        r.clock.jump(seconds: 24 * 3600)
         let before = r.api.calls.count
         await r.client.enterForeground()
         #expect(await eventually { r.count(heartbeatRoute) >= 1 && r.routes(from: before).count >= 3 })
