@@ -258,6 +258,14 @@ describe.each(MOMENTS)(
       const local = await createItemsFixture(`wsgone-${moment}`);
       try {
         const { token } = await local.pairScreen(null);
+        // An owner's only workspace is not deleted (#855).
+        const spare = await local.app.inject({
+          method: "POST",
+          url: "/v1/workspaces",
+          headers: { cookie: local.owner },
+          payload: { name: "Spare" },
+        });
+        expect(spare.statusCode, spare.body).toBe(200);
         between.next = async () => {
           const deleted = await local.app.inject({
             method: "POST",

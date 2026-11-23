@@ -230,7 +230,10 @@ export type RenameWorkspaceRequest = z.infer<
  * workspace_name_mismatch when it is not. Answers 204 once nobody can reach
  * the workspace any more; its data is removed in the background. 409
  * workspace_busy when work for the workspace did not finish within ten
- * seconds: nothing was deleted, the request can be repeated.
+ * seconds: nothing was deleted, the request can be repeated. 409
+ * workspace_last when it is the caller's only workspace (#855): the caller
+ * is in no other workspace, in any role, that is not itself deleted. Other
+ * members are not considered; they may be left without a workspace.
  */
 export const deleteWorkspaceRequestSchema = z.object({
   name: z.string().max(200),

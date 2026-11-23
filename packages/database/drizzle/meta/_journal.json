@@ -666,6 +666,13 @@
       "when": 1795306298149,
       "tag": "0094_workspace_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1795359590425,
+      "tag": "0095_workspace_delete_last",
+      "breakpoints": true
     }
   ]
 }

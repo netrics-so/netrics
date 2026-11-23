@@ -221,6 +221,12 @@ defense-in-depth boundary:
 RLS complements application authorization; it does not replace permission
 checks for owner, admin, editor, and viewer actions.
 
+Deleting a workspace ends all access in one transaction and removes the data
+in a background job; every tenant transaction takes a shared lock that the
+deletion takes exclusively, so no work crosses it (ADR 0029). What an
+operator should know is in the self-hosting guide
+(`deploy/compose/README.md`, "Deleting a workspace").
+
 ## Connector architecture
 
 ### Artifact versus connection
