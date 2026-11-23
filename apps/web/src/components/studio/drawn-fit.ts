@@ -14,8 +14,34 @@ export interface DrawnBox {
   bottom: number;
 }
 
-/** Sub-pixel layout: an edge may sit half a pixel outside its line. */
+/**
+ * Sub-pixel layout: an edge may sit half a pixel outside its line. A
+ * LAYOUT pixel: the browser wraps a part and ends a text with an ellipsis
+ * by its layout, before any transform.
+ */
 const EDGE = 0.5;
+
+/**
+ * Drawn pixels per layout pixel, across and down: 1 unless a transform
+ * scales the element (Studio's device preview draws a slide at a fifth of
+ * its size and less).
+ */
+export interface DrawnScale {
+  x: number;
+  y: number;
+}
+
+const UNSCALED: DrawnScale = { x: 1, y: 1 };
+
+/** The scale an element is drawn at: its drawn box over its layout box. */
+function drawnScale(element: HTMLElement): DrawnScale {
+  const box = element.getBoundingClientRect();
+  const { offsetWidth, offsetHeight } = element;
+  return {
+    x: offsetWidth > 0 && box.width > 0 ? box.width / offsetWidth : 1,
+    y: offsetHeight > 0 && box.height > 0 ? box.height / offsetHeight : 1,
+  };
+}
 
 /**
  * Whether a piece of a line (a part, or its text as laid out) is fully
@@ -23,13 +49,24 @@ const EDGE = 0.5;
  * that runs past the right edge is cut (clipped, or ended by an
  * ellipsis); one wrapped onto a further line, or taller than the line, is
  * cut at the bottom. The one definition for every drawn check here.
+ *
+ * Both boxes are drawn rects (`getBoundingClientRect`) of elements under
+ * the same transform; `scale` is what that transform draws a layout pixel
+ * at, so the half pixel of tolerance is a layout one on every side. At a
+ * fifth of the size, two layout pixels over are 0.4 drawn pixels and cut.
  */
-export function fullyVisible(piece: DrawnBox, line: DrawnBox): boolean {
+export function fullyVisible(
+  piece: DrawnBox,
+  line: DrawnBox,
+  scale: DrawnScale = UNSCALED,
+): boolean {
+  const x = EDGE * scale.x;
+  const y = EDGE * scale.y;
   return (
-    piece.left >= line.left - EDGE &&
-    piece.right <= line.right + EDGE &&
-    piece.top >= line.top - EDGE &&
-    piece.bottom <= line.bottom + EDGE
+    piece.left >= line.left - x &&
+    piece.right <= line.right + x &&
+    piece.top >= line.top - y &&
+    piece.bottom <= line.bottom + y
   );
 }
 
@@ -52,8 +89,9 @@ export function namedKeepsEveryPart(
 /** Which parts (children) of a line of parts are fully visible. */
 function visibleParts(line: HTMLElement): boolean[] {
   const box = line.getBoundingClientRect();
+  const scale = drawnScale(line);
   return [...line.children].map((part) =>
-    fullyVisible(part.getBoundingClientRect(), box),
+    fullyVisible(part.getBoundingClientRect(), box, scale),
   );
 }
 
@@ -92,23 +130,43 @@ function textVisible(element: HTMLElement): boolean {
   const text = textExtent(
     [...range.getClientRects()].filter((run) => run.width > 0),
   );
-  return text === null || fullyVisible(text, element.getBoundingClientRect());
+  return (
+    text === null ||
+    fullyVisible(text, element.getBoundingClientRect(), drawnScale(element))
+  );
 }
 
 /** Whether an element's text is drawn cut: past its box, or on more lines. */
 const overflows = (element: HTMLElement) => !textVisible(element);
 
 /**
- * How a line is drawn, as far as it decides whether a text fits: its box
- * (a change of font size changes the line box's height) and its font size.
+ * How lines are drawn, as far as it decides whether a text fits: each
+ * line's box and its font size. The font size is part of it on its own
+ * account: a short tile's layout can hold a line's box while its font
+ * grows, and the same box is then a different size to fit a text in.
  */
-function drawnSize(lines: readonly HTMLElement[]): string {
+export function sizeKey(
+  lines: readonly { width: number; height: number; fontSize: string }[],
+): string {
   return lines
-    .map((line) => {
-      const box = line.getBoundingClientRect();
-      return `${box.width.toFixed(1)}x${box.height.toFixed(1)}@${getComputedStyle(line).fontSize}`;
-    })
+    .map(
+      (line) =>
+        `${line.width.toFixed(1)}x${line.height.toFixed(1)}@${line.fontSize}`,
+    )
     .join("|");
+}
+
+function drawnSize(lines: readonly HTMLElement[]): string {
+  return sizeKey(
+    lines.map((line) => {
+      const box = line.getBoundingClientRect();
+      return {
+        width: box.width,
+        height: box.height,
+        fontSize: getComputedStyle(line).fontSize,
+      };
+    }),
+  );
 }
 
 /**
@@ -149,15 +207,21 @@ export function retryAtSize(seen: Set<string>, size: string): boolean {
  * is shown anyway; `elements` are the lines as drawn. Checked before paint
  * and whenever a line's box or font size changes (a resized tile, another
  * theme or font scale, the browser's default font size) or the fonts load.
+ * `sentinel` is an element out of sight whose size follows the lines' font
+ * (`.sw-font-sentinel`): a line's own box need not change when its font
+ * does, and then only the sentinel tells.
  */
 export function useDrawnCut(
   named: string | null,
   elements: () => readonly (HTMLElement | null)[],
+  sentinel?: () => HTMLElement | null,
 ): boolean {
   const [cut, setCut] = useState<string | null>(null);
   const fallback = named !== null && cut === named;
   const get = useRef(elements);
   get.current = elements;
+  const getSentinel = useRef(sentinel);
+  getSentinel.current = sentinel;
   // The drawn sizes already decided for this text (`retryAtSize`).
   const seen = useRef<{ named: string | null; sizes: Set<string> }>({
     named: null,
@@ -192,6 +256,8 @@ export function useDrawnCut(
         ? null
         : new ResizeObserver(changed);
     for (const line of lines) observer?.observe(line);
+    const watched = getSentinel.current?.();
+    if (watched) observer?.observe(watched);
     // Loaded fonts change the widths, not the box: one more try.
     void document.fonts?.ready.then(() => {
       if (!alive) return;
@@ -248,6 +314,9 @@ export function useNamedParts(
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
     observer?.observe(drawn);
+    // The probe's height is a line at the font in use: it changes with the
+    // font also where the tile's layout holds the line's own box.
+    observer?.observe(other);
     void document.fonts?.ready.then(check);
     return () => {
       alive = false;

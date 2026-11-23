@@ -262,27 +262,37 @@ function FreshnessSourceLines({
   title: string;
 }) {
   const drawn = useRef<(HTMLParagraphElement | null)[]>([]);
+  const sentinel = useRef<HTMLSpanElement>(null);
+  const checked = plain !== null && !wrap;
   const cut = useDrawnCut(
-    plain && !wrap ? lines.join("\n") : null,
+    checked ? lines.join("\n") : null,
     () => drawn.current,
+    () => sentinel.current,
   );
-  return (cut && plain ? plain : lines).map((line, index) => (
-    <p
-      key={`freshness-${index}`}
-      ref={(element) => {
-        drawn.current[index] = element;
-      }}
-      className={
-        wrap
-          ? "sw-measure-freshness sw-measure-freshness--wrap"
-          : "sw-measure-freshness"
-      }
-      title={title}
-      suppressHydrationWarning
-    >
-      {line}
-    </p>
-  ));
+  return (
+    <>
+      {(cut && plain ? plain : lines).map((line, index) => (
+        <p
+          key={`freshness-${index}`}
+          ref={(element) => {
+            drawn.current[index] = element;
+          }}
+          className={
+            wrap
+              ? "sw-measure-freshness sw-measure-freshness--wrap"
+              : "sw-measure-freshness"
+          }
+          title={title}
+          suppressHydrationWarning
+        >
+          {line}
+        </p>
+      ))}
+      {checked ? (
+        <span ref={sentinel} className="sw-font-sentinel" aria-hidden="true" />
+      ) : null}
+    </>
+  );
 }
 
 export function MeasureWidgetView({

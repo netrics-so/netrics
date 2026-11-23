@@ -167,16 +167,33 @@ export function WidgetFooter({
   const line = useRef<HTMLParagraphElement>(null);
   const text = typeof children === "string" ? children : null;
   const plain = candidates ? plainTwin(candidates, text, locale) : null;
-  const cut = useDrawnCut(plain === null ? null : text, () => [line.current]);
+  const sentinel = useRef<HTMLSpanElement>(null);
+  const cut = useDrawnCut(
+    plain === null ? null : text,
+    () => [line.current],
+    () => sentinel.current,
+  );
   return (
-    <p
-      ref={line}
-      className="sw-muted sw-source sw-footer"
-      style={{ fontSize: u(size) }}
-      suppressHydrationWarning
-    >
-      {cut ? plain : children}
-    </p>
+    <>
+      <p
+        ref={line}
+        className="sw-muted sw-source sw-footer"
+        style={{ fontSize: u(size) }}
+        suppressHydrationWarning
+      >
+        {cut ? plain : children}
+      </p>
+      {plain === null ? null : (
+        // Out of sight, a line high at the footer's font: its size tells
+        // when the font changes in a box that stays as it is.
+        <span
+          ref={sentinel}
+          className="sw-font-sentinel"
+          style={{ fontSize: u(size) }}
+          aria-hidden="true"
+        />
+      )}
+    </>
   );
 }
 

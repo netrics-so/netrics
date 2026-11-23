@@ -5442,6 +5442,21 @@ a.button.primary:hover {
 .sw-measure-fresh-probe > span {
   white-space: pre;
 }
+/* Out of sight, one line high at the font of the line it stands by
+   (#791): its size changes when that font does, also where a tile's
+   layout holds the line's own box, so the drawn check runs again. */
+.sw-font-sentinel {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  width: 1px;
+  height: 1em;
+  height: 1lh;
+}
+.sw-measure .sw-font-sentinel {
+  font-size: calc(var(--u, 1px) * 24 * var(--measure-scale, 1));
+  line-height: 1.3;
+}
 /* The line with its other wording, measured out of sight (#791): the
    same type and wrapping, laid over the line in this box, so it has the
    line's width by layout and takes no room. */

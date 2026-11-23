@@ -249,13 +249,20 @@ async function visibleParts(
     (element, { named, namedDay, plainDay }) => {
       const visible = (p: Element) => {
         const box = p.getBoundingClientRect();
+        // Half a layout pixel, as the browser lays out: in a scaled
+        // preview a drawn pixel is several of them.
+        const layout = p as HTMLElement;
+        const x =
+          0.5 * (layout.offsetWidth ? box.width / layout.offsetWidth : 1);
+        const y =
+          0.5 * (layout.offsetHeight ? box.height / layout.offsetHeight : 1);
         return ([...p.children] as HTMLElement[]).map((part) => {
           const rect = part.getBoundingClientRect();
           return (
-            rect.left >= box.left - 0.5 &&
-            rect.right <= box.right + 0.5 &&
-            rect.top >= box.top - 0.5 &&
-            rect.bottom <= box.bottom + 0.5
+            rect.left >= box.left - x &&
+            rect.right <= box.right + x &&
+            rect.top >= box.top - y &&
+            rect.bottom <= box.bottom + y
           );
         });
       };
@@ -525,6 +532,31 @@ async function journey(
         3,
       );
     }
+    // The font grows while the footer's box stays as it is (a short tile
+    // whose flex layout holds the line's size): the named line no longer
+    // fits and gives way, though nothing about the box changed.
+    await footer.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      element.style.width = `${box.width}px`;
+      element.style.height = `${box.height}px`;
+      element.style.flex = "none";
+    });
+    const larger = await page.addStyleTag({
+      content:
+        "article.sw-metric .sw-footer, article.sw-metric .sw-font-sentinel" +
+        " { font-size: 48px !important; }",
+    });
+    expect(
+      await footer.evaluate((element) => getComputedStyle(element).fontSize),
+    ).toBe("48px");
+    await expect(footer, "a larger font in the same box").toHaveText(plain);
+    await larger.evaluate((style) => (style as HTMLElement).remove());
+    await expect(footer, "the font as before").toHaveText(text);
+    await footer.evaluate((element) => {
+      element.style.width = "";
+      element.style.height = "";
+      element.style.flex = "";
+    });
     return true;
   };
 
@@ -584,36 +616,96 @@ async function journey(
   // Studio's device preview: the slide at a device's real size, scaled
   // into its frame by a transform. The wording is the one that screen
   // shows: both are measured at the same width, whatever the scale.
-  await page.goto(
-    `/workspaces/${workspaceId}/dashboards/${dashboardId}/studio`,
-  );
-  for (const target of ["21x9", "4x3"]) {
-    await page.locator(`[role="tab"][data-target="${target}"]`).click();
-    const viewport = page.locator(".device-viewport");
-    await expect(viewport).toBeVisible();
-    const scale = await viewport.evaluate(
-      (element) =>
-        element.getBoundingClientRect().width /
-        (element as HTMLElement).offsetWidth,
-    );
-    expect(scale, target).toBeLessThan(0.95);
-    expect(scale, target).toBeGreaterThan(0);
-    const previewLines = viewport.locator(
-      "article.sw-measure .sw-measure-freshness",
-    );
-    await expect(previewLines.first()).toHaveAttribute("title", /~\d/);
-    let periodicLines = 0;
-    for (const line of await previewLines.all()) {
-      if (!/~\d/.test((await line.getAttribute("title")) ?? "")) continue;
-      if ((await line.locator("span").count()) < 3) continue;
-      periodicLines += 1;
-      expectNothingLost(
-        await visibleParts(line, w),
-        `${target} preview at scale ${scale.toFixed(2)}`,
+  let footersSqueezed = 0;
+  const previews = async (id: string) => {
+    await page.goto(`/workspaces/${workspaceId}/dashboards/${id}/studio`);
+    for (const target of ["21x9", "4x3"]) {
+      await page.locator(`[role="tab"][data-target="${target}"]`).click();
+      const viewport = page.locator(".device-viewport");
+      await expect(viewport).toBeVisible();
+      const scale = await viewport.evaluate(
+        (element) =>
+          element.getBoundingClientRect().width /
+          (element as HTMLElement).offsetWidth,
       );
+      expect(scale, target).toBeLessThan(0.95);
+      expect(scale, target).toBeGreaterThan(0);
+      const previewLines = viewport.locator(
+        "article.sw-measure .sw-measure-freshness",
+      );
+      await expect(previewLines.first()).toHaveAttribute("title", /~\d/);
+      let periodicLines = 0;
+      for (const line of await previewLines.all()) {
+        if (!/~\d/.test((await line.getAttribute("title")) ?? "")) continue;
+        if ((await line.locator("span").count()) < 3) continue;
+        periodicLines += 1;
+        const where = `${target} preview at scale ${scale.toFixed(2)}`;
+        const drawn = await visibleParts(line, w);
+        expectNothingLost(drawn, where);
+        if (!drawn.isNamed || drawn.shown.includes(false)) continue;
+        // The named line a layout pixel and a half too narrow for its last
+        // part: less than half a drawn pixel at this scale, but the browser
+        // lays out in layout pixels and drops the part. The plain wording
+        // still shows all three, so the tile goes back to it.
+        const named = (await line.getAttribute("title"))!;
+        await line.evaluate((element) => {
+          const layout = element as HTMLElement;
+          const scale =
+            element.getBoundingClientRect().width / layout.offsetWidth;
+          const parts = [...element.children].reduce(
+            (sum, part) => sum + part.getBoundingClientRect().width / scale,
+            0,
+          );
+          element.parentElement!.style.width = `${parts - 1.5}px`;
+        });
+        await expect(line, where).not.toHaveAttribute("title", w.named);
+        const narrow = await visibleParts(line, w);
+        expect(narrow.plain, where).toEqual([true, true, true]);
+        expect(narrow.named[2], where).toBe(false);
+        expectNothingLost(narrow, where);
+        await line.evaluate((element) => {
+          element.parentElement!.style.width = "";
+        });
+        await expect(line, where).toHaveAttribute("title", named);
+      }
+      expect(periodicLines, target).toBeGreaterThan(0);
+      // The same for a footer, which the browser ends with an ellipsis: a
+      // named footer two layout pixels too narrow is less than half a drawn
+      // pixel over at this scale, and still cut. The plain one fits.
+      const previewFooter = viewport.locator("article.sw-metric .sw-footer");
+      await expect(previewFooter).toHaveText(w.metricDay);
+      const footerText = (await previewFooter.textContent()) ?? "";
+      if (w.named.test(footerText)) {
+        footersSqueezed += 1;
+        const over = await previewFooter.evaluate((element) => {
+          const layout = element as HTMLElement;
+          const box = element.getBoundingClientRect();
+          const scale = box.width / layout.offsetWidth;
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          const text = range.getBoundingClientRect().width / scale;
+          // Up to two layout pixels over, and under half a drawn pixel.
+          const layoutPixels = Math.min(2, 0.45 / scale);
+          layout.style.width = `${text - layoutPixels}px`;
+          layout.style.flex = "none";
+          return { scale, layoutPixels, drawn: layoutPixels * scale };
+        });
+        expect(over.layoutPixels, JSON.stringify(over)).toBeGreaterThanOrEqual(
+          1,
+        );
+        expect(over.drawn, JSON.stringify(over)).toBeLessThan(0.5);
+        await expect(previewFooter, target).toHaveText(
+          footerText.replace(w.named, w.plainDay),
+        );
+        await previewFooter.evaluate((element) => {
+          (element as HTMLElement).style.width = "";
+          (element as HTMLElement).style.flex = "";
+        });
+        await expect(previewFooter, target).toHaveText(footerText);
+      }
     }
-    expect(periodicLines, target).toBeGreaterThan(0);
-  }
+  };
+  await previews(dashboardId);
 
   // The same slide at font scale 1.3, where the estimate and the drawn
   // widths differ most: the rule holds as drawn.
@@ -661,6 +753,10 @@ async function journey(
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });
+  // The previews again at this font scale, where the metric footer names
+  // the day.
+  await previews(largeId);
+  expect(footersSqueezed, "a named footer in a preview").toBeGreaterThan(0);
 
   // The scroll view on a narrow phone with a large default font: a card
   // wraps, also inside a part, so "Letzter Berichtstag: 30. Sept." is

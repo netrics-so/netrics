@@ -5,6 +5,7 @@ import {
   namedKeepsEveryPart,
   namedMeasured,
   retryAtSize,
+  sizeKey,
   textExtent,
   type DrawnBox,
 } from "./drawn-fit";
@@ -142,6 +143,26 @@ describe("the named line's drawn check settles (#791)", () => {
     }
   });
 
+  it("the font grows in a box that stays the same: a new size, measured again", () => {
+    // A short tile's layout holds the footer's box; only the font differs.
+    const small = sizeKey([{ width: 282, height: 18, fontSize: "16px" }]);
+    const large = sizeKey([{ width: 282, height: 18, fontSize: "48px" }]);
+    expect(large).not.toBe(small);
+    const seen = new Set<string>();
+    const cut = (size: string) => size === large;
+    let shows: "named" | "plain" = "named";
+    for (let round = 0; round < 2; round += 1) {
+      const up = settle({ size: () => large, cut, seen, start: shows });
+      expect(up, `up ${round}`).toMatchObject({ shows: "plain" });
+      expect(up.passes).toBeLessThanOrEqual(4);
+      shows = up.shows;
+      const down = settle({ size: () => small, cut, seen, start: shows });
+      expect(down, `down ${round}`).toMatchObject({ shows: "named" });
+      expect(down.passes).toBeLessThanOrEqual(4);
+      shows = down.shows;
+    }
+  });
+
   it("within a cycle a size is tried once, also when every swap changes the box", () => {
     const seen = new Set<string>();
     const swapping = settle({
@@ -214,6 +235,24 @@ describe("fully visible parts (#791)", () => {
     ).toBe(false);
     // Neither wording is whole there: the plain line stays.
     expect(namedKeepsEveryPart([false, false], [false, false])).toBe(false);
+  });
+
+  it("the tolerance is half a layout pixel, also in a scaled preview", () => {
+    // A slide drawn at a fifth of its size: the 180 px line is 36 drawn
+    // pixels wide. A footer two layout pixels over is 0.4 drawn pixels
+    // over: inside half a drawn pixel, but the browser cuts it.
+    const scale = { x: 0.2, y: 0.2 };
+    const drawn: DrawnBox = { left: 20, right: 56, top: 10, bottom: 14.8 };
+    expect(fullyVisible({ ...drawn, right: 56.4 }, drawn)).toBe(true);
+    expect(fullyVisible({ ...drawn, right: 56.4 }, drawn, scale)).toBe(false);
+    // Half a layout pixel (0.1 drawn) is still tolerance, on every side.
+    expect(fullyVisible({ ...drawn, right: 56.09 }, drawn, scale)).toBe(true);
+    expect(fullyVisible({ ...drawn, left: 19.91 }, drawn, scale)).toBe(true);
+    expect(fullyVisible({ ...drawn, top: 9.91 }, drawn, scale)).toBe(true);
+    expect(fullyVisible({ ...drawn, bottom: 14.89 }, drawn, scale)).toBe(true);
+    expect(fullyVisible({ ...drawn, left: 19.8 }, drawn, scale)).toBe(false);
+    expect(fullyVisible({ ...drawn, top: 9.8 }, drawn, scale)).toBe(false);
+    expect(fullyVisible({ ...drawn, bottom: 15 }, drawn, scale)).toBe(false);
   });
 
   // Text lines (a footer, a several-source form): the rects of the
