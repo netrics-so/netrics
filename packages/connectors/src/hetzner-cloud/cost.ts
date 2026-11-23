@@ -2,12 +2,11 @@
 // estimates a month's cost from what the project holds now and Hetzner's
 // own price list (`GET /pricing`, in the project owner's currency, net and
 // gross of VAT): every server (by type and location), its backups (a
-// percentage of the server price), volumes (per GB), primary IPs and
-// floating IPs (by type and location) and load balancers (by type and
-// location), each at its monthly price.
+// percentage of the server price), volumes (per GB), snapshots (per GB),
+// primary IPs and floating IPs (by type and location) and load balancers
+// (by type and location), each at its monthly price.
 //
-// Not included: traffic beyond the included volume, snapshots and images,
-// object storage, storage boxes, dedicated servers, anything created or
+// Not included: traffic beyond the included volume, object storage, storage boxes, dedicated servers, anything created or
 // deleted during the month (Hetzner bills hourly up to the monthly price),
 // discounts and credits. docs/connectors/hetzner-cloud.md says the same.
 //
@@ -18,6 +17,7 @@ import { currencyExponent } from "../currency.js";
 
 import type {
   HetznerFloatingIp,
+  HetznerImage,
   HetznerLoadBalancer,
   HetznerPricing,
   HetznerPrimaryIp,
@@ -69,6 +69,8 @@ export interface PriceBook {
   backupPercent: string;
   /** Volumes: [net, gross] per GB and month. */
   volumePerGb: [string, string];
+  /** Snapshots: [net, gross] per GB and month. */
+  imagePerGb: [string, string];
   prices: Record<string, [string, string]>;
 }
 
@@ -103,6 +105,10 @@ export function priceBook(pricing: HetznerPricing): PriceBook {
       pricing.volume.price_per_gb_month.net,
       pricing.volume.price_per_gb_month.gross,
     ],
+    imagePerGb: [
+      pricing.image.price_per_gb_month.net,
+      pricing.image.price_per_gb_month.gross,
+    ],
     prices,
   };
 }
@@ -114,6 +120,7 @@ export type CostKind =
   | "server"
   | "server_backup"
   | "volume"
+  | "snapshot"
   | "primary_ip"
   | "floating_ip"
   | "load_balancer";
@@ -203,13 +210,68 @@ export function volumeItem(book: PriceBook, volume: HetznerVolume): CostItem {
     kind: "volume",
     id: String(volume.id),
     name: volume.name,
-    resource: volume.server ? serverResource(volume.server) : UNATTACHED,
+    resource: volumeResource(volume),
     location: volume.location.name,
     basis: `${size} GB`,
     monthly: [
       units(book.volumePerGb[0]) * size,
       units(book.volumePerGb[1]) * size,
     ],
+  };
+}
+
+/**
+ * What a volume is attached to: its `assignee`, or the deprecated `server`
+ * only when the answer has no `assignee` at all.
+ */
+function volumeResource(volume: HetznerVolume): string {
+  if (volume.assignee !== undefined) {
+    const assignee = volume.assignee;
+    if (assignee === null) return UNATTACHED;
+    if (assignee.type === "server") return serverResource(assignee.id);
+    if (assignee.type === "load_balancer") {
+      return loadBalancerResource(assignee.id);
+    }
+    return UNATTACHED;
+  }
+  return volume.server ? serverResource(volume.server) : UNATTACHED;
+}
+
+/** Decimal GB ("2.3") as units, from a JSON number. */
+function gigabytes(size: number): bigint {
+  const text = size.toFixed(6);
+  return units(text);
+}
+
+/**
+ * A snapshot, per GB of `image_size`. It belongs to the server it was taken
+ * from when that server is still in the project (`servers`), otherwise to
+ * `unattached`. A snapshot still being created has no size yet: unpriced.
+ */
+export function snapshotItem(
+  book: PriceBook,
+  image: HetznerImage,
+  servers: ReadonlySet<number>,
+): CostItem {
+  const source = image.created_from?.id;
+  const size = image.image_size;
+  return {
+    kind: "snapshot",
+    id: String(image.id),
+    name: image.description || `snapshot ${image.id}`,
+    resource:
+      source !== undefined && servers.has(source)
+        ? serverResource(source)
+        : UNATTACHED,
+    location: "",
+    basis: size === null ? "size unknown" : `${size} GB`,
+    monthly:
+      size === null
+        ? null
+        : [
+            divide(units(book.imagePerGb[0]) * gigabytes(size), SCALE),
+            divide(units(book.imagePerGb[1]) * gigabytes(size), SCALE),
+          ],
   };
 }
 

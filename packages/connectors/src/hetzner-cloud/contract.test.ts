@@ -125,9 +125,10 @@ async function syncAll(
   request: SyncRequest = WINDOW,
   ctx = context(),
   now: () => number = clock,
+  start?: string,
 ) {
   const pages: SyncResult[] = [];
-  let cursor: string | undefined;
+  let cursor: string | undefined = start;
   for (let guard = 0; guard < 500; guard += 1) {
     const page = await connector(now).sync(
       ctx,
@@ -206,6 +207,7 @@ describe("Hetzner Cloud check", () => {
         primary_ips: [],
         floating_ips: [],
         load_balancers: [],
+        images: [],
       },
     });
     expect(await connector().check(context(), runtime)).toEqual({ ok: true });
@@ -320,7 +322,9 @@ describe("Hetzner Cloud sync", () => {
 
     // Cost: every item at its monthly price, net, in cents of EUR.
     expect(costOf(observations)).toEqual({
-      "42": 945, // cx22 3.79 + backups 0.758 + 100 GB 4.40 + IPv4 0.50 (+ IPv6 0)
+      // cx22 3.79 + backups 0.758 + 100 GB 4.40 + IPv4 0.50 (+ IPv6 0)
+      // + a 2.3 GB snapshot 0.0253
+      "42": 947,
       "43": 1610, // cpx31 13.10 + floating IPv4 3.00
       "44": 379,
       "45": 379,
@@ -330,7 +334,9 @@ describe("Hetzner Cloud sync", () => {
       "49": 1310,
       "50": 379,
       "lb-7001": 539,
-      unattached: 94, // 10 GB 0.44 + unassigned IPv4 0.50
+      // 10 GB 0.44 + unassigned IPv4 0.50 + a 10 GB snapshot of a server
+      // that no longer exists 0.11
+      unattached: 105,
     });
     const cost = observations.find(
       (observation) => observation.metricKey === METRICS.monthlyCost,
@@ -338,7 +344,25 @@ describe("Hetzner Cloud sync", () => {
     expect(cost.sourceTimestamp).toBe("2024-01-11T00:00:00.000Z");
     expect(cost.dimensions.currency).toBe("EUR");
     const items = rowsOf(datasetPages, "cost_items");
-    expect(items).toHaveLength(9 + 2 + 2 + 3 + 1 + 1);
+    expect(items).toHaveLength(9 + 2 + 2 + 3 + 1 + 1 + 2);
+    // Snapshots only (backups are priced as a share of the server), each
+    // with its source server when that server is in the project.
+    expect(
+      items
+        .filter((row) => row.item_kind === "snapshot")
+        .map((row) => [
+          row.item_id,
+          row.resource_id,
+          row.basis,
+          row.monthly_net,
+        ]),
+    ).toEqual([
+      ["8001", "42", "2.3 GB", "0.025300"],
+      ["8002", "unattached", "10 GB", "0.110000"],
+    ]);
+    expect(
+      requests.find((request) => request.path === "/images")!.params,
+    ).toMatchObject({ type: "snapshot", sort: "id:asc" });
     expect(
       items.find(
         (row) => row.item_kind === "server_backup" && row.item_id === "42",
@@ -351,7 +375,8 @@ describe("Hetzner Cloud sync", () => {
       currency: "EUR",
     });
 
-    // Metrics: one value an hour per server, CPU of all vCPUs.
+    // Metrics: one value an hour per server; CPU as Hetzner reports it,
+    // per vCPU (a resize must not rescale history).
     const cpu = observations.filter(
       (observation) =>
         observation.metricKey === METRICS.cpu &&
@@ -359,12 +384,11 @@ describe("Hetzner Cloud sync", () => {
     );
     expect(cpu).toHaveLength(48);
     expect(cpu[0]).toEqual({
-      metricKey: METRICS.cpu,
+      metricKey: "hetzner-cloud.cpu_vcpu_percent",
       sourceTimestamp: "2024-01-09T00:00:00.000Z",
       value:
-        Math.round(
-          (fakeCpu(43, Date.parse("2024-01-09T00:00:00.000Z")) / 4) * 1e6,
-        ) / 1e6,
+        Math.round(fakeCpu(43, Date.parse("2024-01-09T00:00:00.000Z")) * 1e6) /
+        1e6,
       dimensions: { resource: "43" },
     });
     expect(cpu.at(-1)!.sourceTimestamp).toBe("2024-01-10T23:00:00.000Z");
@@ -420,9 +444,11 @@ describe("Hetzner Cloud sync", () => {
       false,
     );
     expect(last.nextFrom).toBe("2024-01-11T00:00:00.000Z");
+    // Nothing was read, so no server's metrics are reported fresh
+    // (ADR 0025 §2); the stored freshness stays.
     expect(
       last.freshness?.filter((entry) => entry.stream === METRICS_STREAM),
-    ).toHaveLength(9);
+    ).toEqual([]);
   });
 
   it("reads 30 days of metrics in requests of at most 500 samples", async () => {
@@ -465,6 +491,7 @@ describe("Hetzner Cloud sync", () => {
         primary_ips: [],
         floating_ips: [],
         load_balancers: [],
+        images: [],
       },
     });
     const { observations, datasetPages, last } = await syncAll(runtime);
@@ -859,6 +886,9 @@ describe("checkpoints and snapshots", () => {
     // No server row twice, whatever the shift did.
     const ids = rowsOf(datasetPages, "servers").map((row) => row.server_id);
     expect(new Set(ids).size).toBe(ids.length);
+    // A server the shift left out has unread hours: the next window starts
+    // where this one did.
+    expect(last.nextFrom).toBe(WINDOW.from);
   });
 
   it("reports no cost for a resource the price list has no price for", async () => {
@@ -870,7 +900,7 @@ describe("checkpoints and snapshots", () => {
     const { runtime } = fake({ data });
     const { last, observations, datasetPages } = await syncAll(runtime);
     expect(costOf(observations)["44"]).toBeUndefined();
-    expect(costOf(observations)["42"]).toBe(945);
+    expect(costOf(observations)["42"]).toBe(947);
     expect(
       rowsOf(datasetPages, "cost_items").find((row) => row.item_id === "44"),
     ).toMatchObject({ monthly_net: null, monthly_gross: null });
@@ -950,6 +980,123 @@ describe("checkpoints and snapshots", () => {
             Date.parse("2024-01-10T23:00:00.000Z"),
         ),
     ).toBe(true);
+  });
+});
+
+describe("review round 1 (#890)", () => {
+  it("reports zero for a resource whose items left since the last run", async () => {
+    const { runtime, data } = fake();
+    const first = await syncAll(runtime);
+    expect(costOf(first.observations).unattached).toBe(105);
+    // Everything unattached is gone, and server 50 was deleted.
+    data.volumes = data.volumes.filter((volume) => volume.id !== 4712);
+    data.primary_ips = data.primary_ips.filter((ip) => ip.id !== 5003);
+    data.images = data.images.filter((image) => image.id !== 8002);
+    data.servers = data.servers.filter((server) => server.id !== 50);
+    const second = await syncAll(
+      runtime,
+      {
+        mode: "incremental",
+        from: first.last.nextFrom!,
+        to: NOW,
+      },
+      context(),
+      clock,
+      first.last.nextCursor,
+    );
+    const cost = costOf(second.observations);
+    expect(cost.unattached).toBe(0);
+    expect(cost["50"]).toBe(0);
+    expect(cost["42"]).toBe(947);
+  });
+
+  it("keeps an unpriced resource unknown, not zero", async () => {
+    const { runtime, data } = fake();
+    const first = await syncAll(runtime);
+    expect(costOf(first.observations)["44"]).toBe(379);
+    data.servers[2] = {
+      ...data.servers[2]!,
+      location: { id: 9, name: "sin", city: "Singapore", country: "SG" },
+    };
+    const second = await syncAll(
+      runtime,
+      {
+        mode: "incremental",
+        from: first.last.nextFrom!,
+        to: NOW,
+      },
+      context(),
+      clock,
+      first.last.nextCursor,
+    );
+    expect(costOf(second.observations)).not.toHaveProperty("44");
+  });
+
+  it("forgets the reported resources when the token changes", async () => {
+    const { runtime } = fake();
+    const first = await syncAll(runtime);
+    const other = fake({
+      token: "other-token",
+      data: {
+        servers: [],
+        volumes: [],
+        primary_ips: [],
+        floating_ips: [],
+        load_balancers: [],
+        images: [],
+      },
+    });
+    const second = await syncAll(
+      other.runtime,
+      { mode: "incremental", from: first.last.nextFrom!, to: NOW },
+      context({ credentials: { token: "other-token" } }),
+      clock,
+      first.last.nextCursor,
+    );
+    expect(costOf(second.observations)).toEqual({});
+  });
+
+  it("gives up waiting for the rate limit within the check's deadline", async () => {
+    const reset = String(Math.floor(clock() / 1000) + 3600);
+    const { runtime, requests } = fake({
+      rateHeaders: {
+        "ratelimit-limit": "3600",
+        "ratelimit-remaining": "10",
+        "ratelimit-reset": reset,
+      },
+    });
+    const waits: number[] = [];
+    const check = createHetznerCloudConnector({
+      now: clock,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    }).check(context(), runtime);
+    // Ten requests short of the floor refill in ten seconds: more than a
+    // check may wait (the host gives it 15 s for everything).
+    await expect(check).rejects.toBeInstanceOf(RateLimitedError);
+    expect(waits).toEqual([]);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("reads a volume's assignee, and `server` only without one", async () => {
+    const data = fixtureData();
+    const { server: _, ...withoutServer } = data.volumes[0]!;
+    data.volumes[0] = {
+      ...withoutServer,
+      assignee: { id: 43, type: "server" },
+    };
+    data.volumes[1] = { ...data.volumes[1]!, server: 44 };
+    delete data.volumes[1]!.assignee;
+    const { runtime } = fake({ data });
+    const { datasetPages } = await syncAll(runtime);
+    const volumes = rowsOf(datasetPages, "cost_items").filter(
+      (row) => row.item_kind === "volume",
+    );
+    expect(volumes.map((row) => [row.item_id, row.resource_id])).toEqual([
+      ["4711", "43"],
+      ["4712", "44"],
+    ]);
   });
 });
 

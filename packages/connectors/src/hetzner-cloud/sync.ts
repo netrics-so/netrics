@@ -5,8 +5,9 @@
 //   1. pricing: the price list (`/pricing`), kept in the cursor until the
 //      listings are priced;
 //   2. listings: one page (50 items, by ID) of servers, volumes, primary
-//      IPs, floating IPs, then load balancers. Each page's servers go out
-//      as `servers` rows, and every item as a `cost_items` row at once;
+//      IPs, floating IPs, load balancers, then snapshots. Each page's
+//      servers go out as `servers` rows, and every item as a `cost_items`
+//      row at once;
 //   3. metrics: one server's CPU, disk and network samples at a one-hour
 //      step for up to 20 days of the window.
 //
@@ -17,6 +18,10 @@
 // salted, shortened hash of the token (never the token). Snapshots are
 // completed only by the last page of a run, which carries nothing else,
 // and only when every part of them was read in one consistent listing.
+//
+// A finished run leaves a cursor of its own (`hetzner-cloud.done1:`): the
+// resources whose cost it reported, so the next run reports zero for one
+// that no longer holds anything, instead of leaving its last value.
 
 import { createHash } from "node:crypto";
 
@@ -44,6 +49,7 @@ import {
   primaryIpItem,
   serverItems,
   serverResource,
+  snapshotItem,
   volumeItem,
   type CostItem,
   type PriceBook,
@@ -57,6 +63,7 @@ import {
 import {
   checkPagination,
   floatingIpsPageSchema,
+  imagesPageSchema,
   loadBalancersPageSchema,
   metricsSchema,
   parse,
@@ -110,7 +117,12 @@ export const METRICS_STREAM = "metrics";
 export const COST_STREAM = "cost";
 
 export const METRICS = {
-  cpu: "hetzner-cloud.cpu",
+  /**
+   * Hetzner's own CPU value: percent of one vCPU (a 4-vCPU server reaches
+   * 400). Not divided by the cores: the API has no history of them, and a
+   * resize would rescale every earlier hour.
+   */
+  cpu: "hetzner-cloud.cpu_vcpu_percent",
   diskRead: "hetzner-cloud.disk_read",
   diskWrite: "hetzner-cloud.disk_write",
   networkIn: "hetzner-cloud.network_in",
@@ -150,6 +162,7 @@ export const LISTINGS = [
   "primary_ips",
   "floating_ips",
   "load_balancers",
+  "images",
 ] as const;
 type ListingKind = (typeof LISTINGS)[number];
 
@@ -179,8 +192,15 @@ interface RunState {
   currency?: string;
   listing?: ListingProgress;
   listed?: boolean;
-  /** Servers in reading order: [id, vCPUs]. */
-  servers: Array<[number, number]>;
+  /** Server IDs in reading order. */
+  servers: number[];
+  /**
+   * The server listing changed while it was read: a server may be left
+   * out, so the metrics window is not advanced past this run's.
+   */
+  serversShifted?: boolean;
+  /** Resources whose cost the previous finished run reported. */
+  previous: string[];
   /** Monthly cost per resource: [net, gross] in 10^-12 units, as strings. */
   totals: Record<string, [string, string]>;
   /** Resources with an item the price list has no price for. */
@@ -211,6 +231,45 @@ interface RunState {
 }
 
 const CURSOR_PREFIX = "hetzner-cloud.v1:";
+const DONE_PREFIX = "hetzner-cloud.done1:";
+
+/** What a finished run hands to the next one. */
+interface DoneState {
+  v: 1;
+  connection: string;
+  scope: string;
+  /** Resources with a reported cost (or a stored one not yet replaced). */
+  reported: string[];
+}
+
+function encodeDone(state: DoneState): string {
+  return DONE_PREFIX + Buffer.from(JSON.stringify(state)).toString("base64url");
+}
+
+/** The last finished run's state, of this connection and token only. */
+function decodeDone(
+  cursor: string | undefined,
+  connection: string,
+  scope: string,
+): DoneState | null {
+  if (!cursor?.startsWith(DONE_PREFIX)) return null;
+  try {
+    const state = JSON.parse(
+      Buffer.from(cursor.slice(DONE_PREFIX.length), "base64url").toString(
+        "utf8",
+      ),
+    ) as DoneState;
+    return state.v === 1 &&
+      state.connection === connection &&
+      state.scope === scope &&
+      Array.isArray(state.reported) &&
+      state.reported.every((resource) => typeof resource === "string")
+      ? state
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** A salted, shortened hash of the token: another token starts a new run. */
 export function scopeOf(connectionId: string, token: string): string {
@@ -361,6 +420,8 @@ export async function syncPage(
       metricsFrom,
       metricsTo,
       servers: [],
+      previous:
+        decodeDone(request.cursor, context.connectionId, scope)?.reported ?? [],
       totals: {},
       unpriced: [],
       metricsIndex: 0,
@@ -411,6 +472,9 @@ export async function syncPage(
       page,
       per_page: PER_PAGE,
       sort: "id:asc",
+      // Backups are priced as a share of their server; system and app
+      // images are Hetzner's own.
+      ...(kind === "images" ? { type: "snapshot" } : {}),
     });
     switch (kind) {
       case "servers": {
@@ -421,7 +485,7 @@ export async function syncPage(
           apply: (book, checkedAt) =>
             answer.servers.flatMap((server) => {
               if (run.listing!.seen.includes(server.id)) return [];
-              run.servers.push([server.id, server.server_type.cores]);
+              run.servers.push(server.id);
               out.servers.push(serverRecord(server, checkedAt));
               return serverItems(book, server);
             }),
@@ -475,6 +539,18 @@ export async function syncPage(
               .map((balancer) => loadBalancerItem(book, balancer)),
         };
       }
+      case "images": {
+        const answer = parse(imagesPageSchema, json, "the snapshots");
+        const servers = new Set(run.servers);
+        return {
+          pagination: answer.meta.pagination,
+          ids: answer.images.map((image) => image.id),
+          apply: (book) =>
+            answer.images
+              .filter((image) => !run.listing!.seen.includes(image.id))
+              .map((image) => snapshotItem(book, image, servers)),
+        };
+      }
     }
   }
 
@@ -501,7 +577,10 @@ export async function syncPage(
     if (repeated || moved) {
       log?.info("listing changed while it was read", { listing: listing.kind });
       run.costPartial = true;
-      if (listing.kind === "servers") run.serversPartial = true;
+      if (listing.kind === "servers") {
+        run.serversPartial = true;
+        run.serversShifted = true;
+      }
     }
     const checkedAt = iso(now());
     for (const item of answer.apply(book, checkedAt)) {
@@ -538,7 +617,7 @@ export async function syncPage(
   }
 
   async function metricsStep() {
-    const [serverId, cores] = run.servers[run.metricsIndex]!;
+    const serverId = run.servers[run.metricsIndex]!;
     const from = run.metrics?.from ?? run.metricsFrom;
     const to = Math.min(from + METRICS_CHUNK_HOURS * HOUR_MS, run.metricsTo);
     let answer;
@@ -584,7 +663,7 @@ export async function syncPage(
         const hour = floorHour(seconds * 1000);
         if (hour < from || hour >= to) continue;
         const bucket = hours.get(hour) ?? { sum: 0, count: 0 };
-        bucket.sum += metricKey === METRICS.cpu ? value / cores : value;
+        bucket.sum += value;
         bucket.count += 1;
         hours.set(hour, bucket);
       }
@@ -690,15 +769,24 @@ export async function syncPage(
   if (!step && !run.finishing) {
     if (costComplete) {
       const currency = run.currency!;
-      for (const [resource, [net]] of Object.entries(run.totals).sort()) {
-        // A resource with an unpriced item would be understated.
-        if (run.unpriced.includes(resource)) continue;
+      const observe = (resource: string, value: number) =>
         out.observations.push({
           metricKey: METRICS.monthlyCost,
           sourceTimestamp: iso(today),
-          value: minorOf(BigInt(net), currency),
+          value,
           dimensions: { resource, currency },
         });
+      for (const [resource, [net]] of Object.entries(run.totals).sort()) {
+        // A resource with an unpriced item would be understated: its cost
+        // is unknown, not zero.
+        if (run.unpriced.includes(resource)) continue;
+        observe(resource, minorOf(BigInt(net), currency));
+      }
+      // Reported before, holding nothing now (an IP assigned elsewhere, a
+      // deleted server): zero, so its last value does not count on.
+      for (const resource of [...run.previous].sort()) {
+        if (resource in run.totals || run.unpriced.includes(resource)) continue;
+        observe(resource, 0);
       }
     }
     run.finishing = true;
@@ -726,13 +814,9 @@ export async function syncPage(
 
   const freshness: FreshnessEntry[] = [];
   if (!run.serversPartial) freshness.push({ stream: SERVERS_STREAM });
-  // An empty metrics window (no hour completed since the last sync) leaves
-  // every server as current as it can be.
-  const metricsFresh =
-    run.metricsFrom < run.metricsTo
-      ? run.metricsRead
-      : run.servers.map(([id]) => id);
-  for (const id of metricsFresh) {
+  // Only servers whose metrics this run read (ADR 0025 §2): not a refused
+  // one, and none when no hour completed since the last sync.
+  for (const id of run.metricsRead) {
     freshness.push({ stream: METRICS_STREAM, resource: serverResource(id) });
   }
   if (costComplete && run.unpriced.length === 0) {
@@ -740,19 +824,41 @@ export async function syncPage(
   }
   const bounded = boundFreshness(
     freshness,
-    run.servers.map(([id]) => serverResource(id)),
+    run.servers.map((id) => serverResource(id)),
   );
 
-  // The next window starts with the first hour not read yet.
+  // The next window starts with the first hour not read yet. A server
+  // listing that shifted may have left a server out, whose hours are all
+  // unread: the window stays where it was.
   const resumeAt = iso(
-    Math.min(Date.parse(request.to), Math.max(run.metricsTo, run.metricsFrom)),
+    Math.min(
+      Date.parse(request.to),
+      run.serversShifted
+        ? run.metricsFrom
+        : Math.max(run.metricsTo, run.metricsFrom),
+    ),
   );
+  // The resources with a cost the dashboards hold now: those reported, and
+  // the earlier ones this run could not price (their value stays stored).
+  const reported = costComplete
+    ? [
+        ...Object.keys(run.totals).filter(
+          (resource) => !run.unpriced.includes(resource),
+        ),
+        ...run.previous.filter((resource) => run.unpriced.includes(resource)),
+      ].sort()
+    : run.previous;
   return {
     observations: [],
     datasetPages,
     receivedDatasets: received,
     ...(bounded.length > 0 ? { freshness: bounded } : {}),
-    nextCursor: resumeAt,
+    nextCursor: encodeDone({
+      v: 1,
+      connection: run.connection,
+      scope: run.scope,
+      reported,
+    }),
     nextFrom: resumeAt,
     done: true,
   };

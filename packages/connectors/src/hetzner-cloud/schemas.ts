@@ -71,6 +71,14 @@ export const volumeSchema = z.object({
   id,
   name: z.string().min(1),
   size: z.number().nonnegative(),
+  /**
+   * What the volume is attached to. `server` is deprecated for it and
+   * removed on 2027-10-27 (changelog 2026-10-27).
+   */
+  assignee: z
+    .object({ id, type: z.string().min(1) })
+    .nullable()
+    .optional(),
   server: id.nullable().optional(),
   location,
 });
@@ -94,6 +102,20 @@ export const floatingIpSchema = z.object({
   home_location: location,
 });
 export type HetznerFloatingIp = z.infer<typeof floatingIpSchema>;
+
+/** A snapshot (`GET /images?type=snapshot`). */
+export const imageSchema = z.object({
+  id,
+  type: z.string().min(1),
+  description: z.string().nullable().optional(),
+  /** GB in Hetzner's storage: what a snapshot is billed by. Null while created. */
+  image_size: z.number().nonnegative().nullable(),
+  created_from: z
+    .object({ id: z.number().int(), name: z.string() })
+    .nullable()
+    .optional(),
+});
+export type HetznerImage = z.infer<typeof imageSchema>;
 
 export const loadBalancerSchema = z.object({
   id,
@@ -119,6 +141,10 @@ export const floatingIpsPageSchema = z.object({
   floating_ips: z.array(floatingIpSchema),
   meta,
 });
+export const imagesPageSchema = z.object({
+  images: z.array(imageSchema),
+  meta,
+});
 export const loadBalancersPageSchema = z.object({
   load_balancers: z.array(loadBalancerSchema),
   meta,
@@ -135,6 +161,7 @@ export const pricingSchema = z.object({
     vat_rate: decimal.optional(),
     server_backup: z.object({ percentage: decimal }),
     volume: z.object({ price_per_gb_month: price }),
+    image: z.object({ price_per_gb_month: price }),
     server_types: z.array(
       z.object({ name: z.string().min(1), prices: z.array(locationPrice) }),
     ),

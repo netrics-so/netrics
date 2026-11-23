@@ -11,6 +11,7 @@ import {
 } from "@netrics/connector-sdk";
 
 import {
+  CHECK_MAX_WAIT_MS,
   HETZNER_HOST,
   HetznerApiError,
   createHetznerClient,
@@ -117,9 +118,9 @@ const hetznerDe: ManifestTranslation = {
   ],
   metrics: {
     [METRICS.cpu]: {
-      name: "CPU-Auslastung",
+      name: "CPU-Auslastung (pro vCPU)",
       description:
-        "Durchschnittliche CPU-Auslastung eines Servers pro Stunde in Prozent aller seiner vCPUs (100 % = alle voll ausgelastet).",
+        "Durchschnittliche CPU-Auslastung eines Servers pro Stunde, wie Hetzner sie meldet: in Prozent einer vCPU (100 % = eine vCPU voll ausgelastet, ein Server mit 4 vCPUs erreicht 400 %).",
     },
     [METRICS.diskRead]: {
       name: "Festplatte gelesen",
@@ -144,7 +145,7 @@ const hetznerDe: ManifestTranslation = {
     [METRICS.monthlyCost]: {
       name: "Geschätzte Kosten pro Monat",
       description:
-        "Eine Schätzung: der Monatspreis laut Hetzners Preisliste (netto, ohne MwSt.) für das, was das Projekt gerade hat, pro Server oder Load Balancer, mit zugeordneten Volumes, IPs und Backups. Ohne zusätzlichen Traffic, Snapshots und alles, was nur einen Teil des Monats bestand. Hetzners API hat keine Rechnungen.",
+        "Eine Schätzung: der Monatspreis laut Hetzners Preisliste (netto, ohne MwSt.) für das, was das Projekt gerade hat, pro Server oder Load Balancer, mit zugeordneten Volumes, IPs, Backups und Snapshots. Ohne zusätzlichen Traffic und alles, was nur einen Teil des Monats bestand. Hetzners API hat keine Rechnungen.",
     },
   },
   dimensions: {
@@ -214,9 +215,9 @@ export const hetznerCloudManifest: ConnectorManifest = {
     {
       ...hourlyGauge,
       key: METRICS.cpu,
-      name: "CPU usage",
+      name: "CPU usage (per vCPU)",
       description:
-        "A server's average CPU usage per hour, in percent of all its vCPUs (100 % = all of them fully used).",
+        "A server's average CPU usage per hour as Hetzner reports it: in percent of one vCPU (100 % = one vCPU fully used; a server with 4 vCPUs reaches 400 %).",
       unit: "percent",
       aggregations: [...hourlyGauge.aggregations],
       dimensions: [...hourlyGauge.dimensions],
@@ -266,7 +267,7 @@ export const hetznerCloudManifest: ConnectorManifest = {
       key: METRICS.monthlyCost,
       name: "Estimated monthly cost",
       description:
-        "An estimate: the monthly price on Hetzner's price list (net, without VAT) of what the project holds now, per server or load balancer, with the volumes, IPs and backups attached to it. Without extra traffic, snapshots and anything that existed for part of the month only. Hetzner's API has no invoices.",
+        "An estimate: the monthly price on Hetzner's price list (net, without VAT) of what the project holds now, per server or load balancer, with the volumes, IPs, backups and snapshots attached to it. Without extra traffic and anything that existed for part of the month only. Hetzner's API has no invoices.",
       kind: "gauge",
       unit: "currency_minor",
       granularity: "day",
@@ -369,12 +370,19 @@ export function createHetznerCloudConnector(
   function client(
     context: ConnectionContext,
     runtime: Parameters<Connector["check"]>[1],
+    maxWaitMs?: number,
   ): { get: HetznerGet; token: string } {
     const token = tokenOf(context);
     if (!token) {
       throw new Error("Hetzner Cloud connection has no API token");
     }
-    return { get: createHetznerClient(runtime, token, options), token };
+    return {
+      get: createHetznerClient(runtime, token, {
+        ...options,
+        ...(maxWaitMs !== undefined ? { maxWaitMs } : {}),
+      }),
+      token,
+    };
   }
 
   return {
@@ -388,7 +396,8 @@ export function createHetznerCloudConnector(
         };
       }
       try {
-        const { get } = client(context, runtime);
+        // Waits for the rate limit must fit the host's check deadline.
+        const { get } = client(context, runtime, CHECK_MAX_WAIT_MS);
         // The cheapest reads of what a sync needs: one server, the prices.
         parse(
           serversPageSchema,

@@ -22,7 +22,11 @@
       },
       "labels": {},
       "status": "available",
-      "format": "ext4"
+      "format": "ext4",
+      "assignee": {
+        "id": 42,
+        "type": "server"
+      }
     },
     {
       "id": 4712,
@@ -46,7 +50,8 @@
       },
       "labels": {},
       "status": "available",
-      "format": null
+      "format": null,
+      "assignee": null
     }
   ],
   "meta": {

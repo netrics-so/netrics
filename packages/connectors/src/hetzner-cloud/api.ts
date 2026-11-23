@@ -168,6 +168,7 @@ const READABLE_PATHS = [
   /^\/primary_ips$/,
   /^\/floating_ips$/,
   /^\/load_balancers$/,
+  /^\/images$/,
 ];
 
 /**
@@ -186,7 +187,15 @@ export interface ClientOptions {
   /** Waits between retries; replaced in tests. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   now?: () => number;
+  /**
+   * Longest wait for the rate limit within this client's calls. The check
+   * passes a short one: the host gives it 15 s for everything.
+   */
+  maxWaitMs?: number;
 }
+
+/** What a connection check may wait for the rate limit, all in all. */
+export const CHECK_MAX_WAIT_MS = 3_000;
 
 export type HetznerGet = (
   path: string,
@@ -207,12 +216,16 @@ export function createHetznerClient(
 ): HetznerGet {
   const sleep = options.sleep ?? abortableSleep;
   const now = options.now ?? Date.now;
+  const maxWait = Math.min(
+    options.maxWaitMs ?? MAX_RATE_LIMIT_WAIT_MS,
+    MAX_RATE_LIMIT_WAIT_MS,
+  );
   let window: ReturnType<typeof rateWindow> = null;
 
   async function pace(): Promise<void> {
     if (!window || window.remaining >= MIN_REMAINING_REQUESTS) return;
     const wait = refillMs(window, MIN_REMAINING_REQUESTS, now());
-    if (wait > MAX_RATE_LIMIT_WAIT_MS) {
+    if (wait > maxWait) {
       throw new RateLimitedError(
         "Hetzner Cloud's API rate limit is nearly used up. netrics continues once it refills.",
         new Date(now() + wait),
@@ -246,7 +259,7 @@ export function createHetznerClient(
         const wait = reported
           ? Math.max(1_000, refillMs(reported, 1, now()))
           : BASE_BACKOFF_MS * 2 ** (attempt - 1);
-        if (attempt >= MAX_ATTEMPTS || wait > MAX_RATE_LIMIT_WAIT_MS) {
+        if (attempt >= MAX_ATTEMPTS || wait > maxWait) {
           const retry = reported
             ? Math.max(wait, refillMs(reported, MIN_REMAINING_REQUESTS, now()))
             : DEFAULT_RETRY_MS;

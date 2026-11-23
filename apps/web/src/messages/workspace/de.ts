@@ -377,6 +377,9 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       appStoreTiming:
         "Verkäufe kommen am nächsten Morgen pazifischer Zeit (Apple veröffentlicht den Bericht eines Tages bis etwa 8 Uhr PT); App-Store-Analysen folgen etwa zwei Tage später. Berichtstage sind Tage in pazifischer Zeit, nicht in der Zeitzone deines Workspaces. Erlöse werden in jeder Währung aufbewahrt, die Apple meldet.",
       moreAboutConnector: "Mehr über den Connector",
+      hetznerCloudAbout: "Zugriff auf Hetzner Cloud",
+      hetznerCloudReadOnly:
+        "netrics liest nur aus Hetzner Cloud: Server, Volumes, IPs, Load Balancer, Snapshots, Preise und Metriken. Es startet, stoppt oder ändert nie etwas, daher reicht ein Token mit Leserechten (Read). Hetzner verrät nicht, ob ein Token auch schreiben kann: Hat dieses Read & Write, ersetz es durch ein Token mit Read.",
       searchConsoleAbout: "Über die Daten aus der Search Console",
       searchConsoleTiming:
         "Daten der Search Console erscheinen mit 2–3 Tagen Verzögerung; die neuesten Tage werden ergänzt, sobald Google sie abschließt, daher sind heute und gestern meist leer. Klickrate und durchschnittliche Position sind Tageswerte: Über mehrere Tage werden sie nicht addiert.",

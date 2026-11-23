@@ -55,6 +55,7 @@ const PRICING = {
     vat_rate: "19.00",
     server_backup: { percentage: "20.00" },
     volume: { price_per_gb_month: { net: "0.0440", gross: "0.0524" } },
+    image: { price_per_gb_month: { net: "0.0110", gross: "0.0131" } },
     server_types: [{ name: "cx22", prices: price("3.7900") }],
     load_balancer_types: [{ name: "lb11", prices: price("5.3900") }],
     primary_ips: [{ type: "ipv4", prices: price("0.5000") }],
@@ -83,6 +84,13 @@ function fakeHetzner(count: number, labels: Record<string, string>) {
     size: 10,
     server: server.id,
     location,
+  }));
+  const snapshots = servers.slice(0, 3).map((server) => ({
+    id: 8_000 + server.id,
+    type: "snapshot",
+    description: `before upgrade ${server.id}`,
+    image_size: 2.5,
+    created_from: { id: server.id, name: server.name },
   }));
   const listing = (key: string, items: unknown[], params: URLSearchParams) => {
     const page = Number(params.get("page") ?? "1");
@@ -113,6 +121,10 @@ function fakeHetzner(count: number, labels: Record<string, string>) {
         return answer(200, listing("servers", servers, params));
       if (path === "/volumes")
         return answer(200, listing("volumes", volumes, params));
+      if (path === "/images") {
+        expect(params.get("type")).toBe("snapshot");
+        return answer(200, listing("images", snapshots, params));
+      }
       if (
         path === "/primary_ips" ||
         path === "/floating_ips" ||
@@ -199,7 +211,8 @@ describe("Hetzner Cloud syncs through the host's validation (#872)", () => {
     const last = results.at(-1)!;
     expect(last.receivedDatasets).toEqual(["servers", "cost_items"]);
     expect(rows(results, "servers")).toHaveLength(3);
-    expect(rows(results, "cost_items")).toHaveLength(3 + 2 + 3);
+    // 3 servers, 2 backups, 3 volumes, 3 snapshots.
+    expect(rows(results, "cost_items")).toHaveLength(3 + 2 + 3 + 3);
     expect(last.nextFrom).toBe("2024-01-31T00:00:00.000Z");
   });
 
@@ -226,7 +239,7 @@ describe("Hetzner Cloud syncs through the host's validation (#872)", () => {
         .flatMap((result) => result.observations)
         .filter(
           (observation) =>
-            observation.metricKey === "hetzner-cloud.cpu" &&
+            observation.metricKey === "hetzner-cloud.cpu_vcpu_percent" &&
             observation.dimensions.resource === "100",
         ),
     ).toHaveLength(30 * 24);

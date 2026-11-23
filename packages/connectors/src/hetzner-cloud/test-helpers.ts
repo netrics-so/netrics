@@ -31,6 +31,8 @@ export interface FakeData {
   primary_ips: Item[];
   floating_ips: Item[];
   load_balancers: Item[];
+  /** Every image type; the fake filters by the `type` parameter. */
+  images: Item[];
 }
 
 export function fixtureData(): FakeData {
@@ -42,6 +44,7 @@ export function fixtureData(): FakeData {
     primary_ips: list("primary-ips.json", "primary_ips"),
     floating_ips: list("floating-ips.json", "floating_ips"),
     load_balancers: list("load-balancers.json", "load_balancers"),
+    images: list("images-all-types.json", "images"),
   };
 }
 
@@ -133,7 +136,9 @@ export function createFakeHetzner(
       maxPerPage,
       Math.max(1, Number(params.per_page ?? "25") || 25),
     );
-    const items = [...data[key]].sort((a, b) => a.id - b.id);
+    const items = [...data[key]]
+      .filter((item) => !params.type || item.type === params.type)
+      .sort((a, b) => a.id - b.id);
     const lastPage = Math.max(1, Math.ceil(items.length / perPage));
     const slice = items.slice((page - 1) * perPage, page * perPage);
     return {

@@ -25,12 +25,16 @@ token to GET requests
 ([Generating an API token](https://docs.hetzner.com/cloud/api/getting-started/generating-api-token)).
 The API has no endpoint that tells a token's permission, so the connection
 check cannot say whether a token can also write; netrics never sends
-anything but GET, and the setup steps ask for a Read token. The token is
+anything but GET. The setup steps ask for a Read token, and the connection
+page says, for as long as the connection exists, that netrics only reads
+and a Read token is enough (in English and German). The token is
 stored encrypted (AES-GCM, bound to the connection) and is never shown or
 logged.
 
 The connection check reads one server (`GET /servers?per_page=1`) and the
-price list (`GET /pricing`). It fails with a reason when:
+price list (`GET /pricing`). It waits at most three seconds for the rate
+limit to refill (the host gives a check 15 seconds in all); a longer wait
+goes to the host as a rate limit. It fails with a reason when:
 
 | Code                            | When                                                              |
 | ------------------------------- | ----------------------------------------------------------------- |
@@ -50,23 +54,32 @@ on Hetzner often runs several products, which is why servers are the unit
 that links. Labels are in the `servers` dataset, so a preparation can also
 map servers to workspace projects by label. Load balancers are resources
 too (`lb-<id>`, as Hetzner numbers them apart from servers), for their cost;
-volumes and IPs attached to neither are the `unattached` resource.
+volumes, IPs and snapshots attached to neither are the `unattached`
+resource.
 
 Metrics:
 
-| Key                          | What                                                                                  |
-| ---------------------------- | ------------------------------------------------------------------------------------- |
-| `hetzner-cloud.cpu`          | Average CPU usage per hour, percent of all the server's vCPUs                         |
-| `hetzner-cloud.disk_read`    | Average bytes per second read from the first disk, per hour                           |
-| `hetzner-cloud.disk_write`   | Average bytes per second written to the first disk, per hour                          |
-| `hetzner-cloud.network_in`   | Average bytes per second received on the public interface, per hour                   |
-| `hetzner-cloud.network_out`  | Average bytes per second sent on the public interface, per hour                       |
-| `hetzner-cloud.monthly_cost` | Estimated monthly cost per server or load balancer (net, minor units of the currency) |
+| Key                              | What                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------- |
+| `hetzner-cloud.cpu_vcpu_percent` | Average CPU usage per hour, percent of one vCPU (Hetzner's own value)                 |
+| `hetzner-cloud.disk_read`        | Average bytes per second read from the first disk, per hour                           |
+| `hetzner-cloud.disk_write`       | Average bytes per second written to the first disk, per hour                          |
+| `hetzner-cloud.network_in`       | Average bytes per second received on the public interface, per hour                   |
+| `hetzner-cloud.network_out`      | Average bytes per second sent on the public interface, per hour                       |
+| `hetzner-cloud.monthly_cost`     | Estimated monthly cost per server or load balancer (net, minor units of the currency) |
 
-Hetzner's CPU value is per vCPU (100 is one vCPU fully used); the connector
-divides it by the server's vCPUs, so 100 % is the whole server. Samples are
-read at Hetzner's one-hour step and stamped at the start of the UTC hour
-their timestamp falls in; an hour is read once it ended ten minutes ago.
+Hetzner's CPU value is per vCPU: 100 is one vCPU fully used, and a server
+with four vCPUs reaches 400. The connector stores it as Hetzner reports it
+and names the metric for it (`cpu_vcpu_percent`): the API has no history of
+a server's vCPUs, so dividing by today's count would rescale every hour
+before a resize. The `servers` dataset has the current vCPUs for a
+preparation that wants a share of the whole server.
+
+Samples are read at Hetzner's one-hour step. Hetzner does not document
+whether a sample at that step is the average of the hour or a reading at
+its time; netrics stores each sample at the start of the UTC hour its
+timestamp falls in (averaging samples that fall in one hour) and calls the
+value the hour's average. An hour is read once it ended ten minutes ago.
 
 Datasets:
 
@@ -90,7 +103,8 @@ Datasets:
 
 - `cost_items` (snapshot): every billable item at its monthly list price,
   net and gross, with the server or load balancer it belongs to: servers,
-  their backups, volumes, primary IPs, floating IPs, load balancers. A
+  their backups, volumes, snapshots, primary IPs, floating IPs, load
+  balancers. A
   price the list does not have (a type or location missing from it) is
   empty.
 
@@ -101,10 +115,11 @@ Each stream is one read that can fail on its own:
 - **Servers** (`servers`, continuous): reported when the whole server list
   was read in one consistent listing (see below) and no server disappeared
   during the run.
-- **Metrics** (`metrics`, continuous, per server): reported for each server
-  whose metrics window was read whole. A server whose metrics are refused
-  (403) is skipped and only that server goes stale. When no hour completed
-  since the last sync, nothing is read and every server is current.
+- **Metrics** (`metrics`, continuous, per server): reported only for each
+  server whose metrics this run read, its whole window. A server whose
+  metrics are refused (403) is skipped and only that server goes stale.
+  When no hour completed since the last sync, nothing is read and nothing
+  is reported: the stored freshness stays.
 - **Cost estimate** (`cost`, continuous): reported when the price list and
   every listing were read consistently and every item had a price.
 
@@ -112,7 +127,7 @@ Each stream is one read that can fail on its own:
 
 A sync is a run of steps that each send one request: the price list; a
 page (50 items, by ID) of servers, volumes, primary IPs, floating IPs, load
-balancers; one server's metrics for up to 20 days. A sync page runs at most
+balancers, snapshots; one server's metrics for up to 20 days. A sync page runs at most
 ten requests and 20 seconds, and checkpoints the next step in its cursor.
 A failure in the first step of a page fails the page (the host retries
 it); a failure after successful steps returns what was read, and the next
@@ -131,7 +146,10 @@ Hetzner pages by position. An item created or deleted between two pages of
 a listing shifts the rest, so a page may repeat an item or leave one out:
 the connector drops a repeated item and, when an item repeats or
 `total_entries` changes between pages, does not complete the snapshot (the
-stored one stays) and reports no freshness for it. A server that answers
+stored one stays) and reports no freshness for it. When the server list
+shifted, a server may have been left out with all its hours unread, so the
+next window starts where this one did (`nextFrom` does not advance). A
+server that answers
 404 to its metrics was deleted during the run: neither snapshot is
 completed, so its row never stays in a completed one. A listing whose
 pagination is inconsistent (more pages announced but no next page, a
@@ -148,20 +166,37 @@ currency, net and gross of VAT) of what the project holds now:
 | Server        | `server_types[name].prices[location].price_monthly`                                   |
 | Backups       | `server_backup.percentage` of the server's monthly price, when `backup_window` is set |
 | Volume        | size (GB) × `volume.price_per_gb_month`                                               |
+| Snapshot      | `image_size` (GB) × `image.price_per_gb_month`                                        |
 | Primary IP    | `primary_ips[type].prices[location].price_monthly` (IPv6 is listed at 0)              |
 | Floating IP   | `floating_ips[type].prices[home_location].price_monthly`                              |
 | Load balancer | `load_balancer_types[name].prices[location].price_monthly`                            |
 
-The metric is the net amount per server (with its backups, attached
-volumes and IPs), load balancer and `unattached`, in minor units of the
-currency, stamped on the UTC day the run started. Amounts are computed
+A volume belongs to its `assignee` (a server, or a load balancer should
+Hetzner allow it); the deprecated `server` field is read only when an answer
+has no `assignee`, as Hetzner removes it on 2027-10-27
+([changelog](https://docs.hetzner.cloud/changelog#2026-10-27-volumes-allow-generic-resource-targets)).
+A snapshot (`GET /images?type=snapshot`; backups are priced as a share of
+their server) belongs to the server it was taken from (`created_from`) while
+that server is in the project, otherwise to `unattached`. A snapshot still
+being created has no size yet and is unpriced.
+
+The metric is the net amount (VAT excluded) per server (with its backups,
+attached volumes, IPs and snapshots), load balancer and `unattached`, in
+minor units of the currency, stamped on the UTC day the run started: the
+monthly price of what the project holds that day. Amounts are computed
 exactly (decimal strings, no floating point) and rounded half up to the
-minor unit once per resource. A resource with an item the price list has no
-price for gets no value, and the run reports no cost freshness.
+minor unit once per resource.
+
+A resource with an item the price list has no price for gets no value (its
+cost is unknown, not zero), and the run reports no cost freshness. A
+resource that had a value before and holds nothing now (an unattached IP
+assigned to a server, a deleted server) gets zero, so its last value does
+not count on: a finished run hands the resources it reported to the next
+one in its cursor (bound to the connection and token like the run's).
 
 Not included: traffic beyond what a server or load balancer includes
-(`servers` shows the traffic so far), snapshots and images
-(`image.price_per_gb_month`), Object Storage, Storage Boxes and dedicated
+(`servers` shows the traffic so far), Object Storage, Storage Boxes and
+dedicated
 servers (not in the Cloud API), resources that existed for part of the
 month only (Hetzner bills by the hour up to the monthly price), discounts
 and credits. Hourly prices are not used.
@@ -211,6 +246,12 @@ its [OpenAPI document](https://docs.hetzner.cloud/cloud.spec.json):
   for volumes and images, and the backup percentage. Traffic prices are per
   type and location since 2024
   ([changelog](https://docs.hetzner.cloud/changelog#2024-07-25-cloud-api-returns-traffic-information-in-different-format)).
+- Volumes: `assignee` (`{ id, type }`) replaces the deprecated `server`,
+  removed on 2027-10-27
+  ([changelog](https://docs.hetzner.cloud/changelog#2026-10-27-volumes-allow-generic-resource-targets)).
+- Snapshots (`GET /images?type=snapshot`): `image_size` is the GB a snapshot
+  is billed by (null while it is created), `created_from` the server it was
+  taken from.
 - Token permission (Read or Read & Write) is not readable through the API.
 
 The fixtures in `packages/connectors/src/hetzner-cloud/fixtures/` follow
@@ -219,9 +260,10 @@ project.
 
 ## Request budget
 
-A sync with S servers, V volumes, P primary IPs, F floating IPs and L load
-balancers sends 1 + ⌈S/50⌉ + ⌈V/50⌉ + ⌈P/50⌉ + ⌈F/50⌉ + ⌈L/50⌉ requests,
+A sync with S servers, V volumes, P primary IPs, F floating IPs, L load
+balancers and N snapshots sends 1 + ⌈S/50⌉ + ⌈V/50⌉ + ⌈P/50⌉ + ⌈F/50⌉ +
+⌈L/50⌉ + ⌈N/50⌉ requests,
 plus one metrics request per server when an hour completed since the last
 sync (two per server on a first sync of 30 days). At a five-minute interval
-a project with 50 servers uses about 12 × 6 + 50 = 122 requests an hour,
+a project with 50 servers uses about 12 × 7 + 50 = 134 requests an hour,
 well inside Hetzner's 3,600.

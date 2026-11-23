@@ -80,7 +80,7 @@ export const costItemsDataset: SourceDatasetDefinition = {
   mode: "snapshot",
   keyFields: ["item_kind", "item_id"],
   grain:
-    "One billable Hetzner Cloud item (server, backups, volume, IP, load balancer) at its monthly list price",
+    "One billable Hetzner Cloud item (server, backups, volume, snapshot, IP, load balancer) at its monthly list price",
   retentionDays: 30,
   fields: [
     field("item_kind", "Kind", "string"),
