@@ -131,6 +131,9 @@ export const screenEn = {
     freshness: {
       upTo: "Up to {date}",
       streamUpTo: "{stream} up to {date}",
+      /** The day named where it is older than the day of the last check (#791). */
+      reportingDay: "Last reporting day: {date}",
+      streamReportingDay: "{stream} last reporting day: {date}",
       fetched: "fetched {time}",
       fetchedOn: "fetched {date}",
       next: "next {when}",

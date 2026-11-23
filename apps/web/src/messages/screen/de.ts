@@ -113,6 +113,8 @@ export const screenDe: Catalog<typeof screenEn> = {
     freshness: {
       upTo: "Bis {date}",
       streamUpTo: "{stream} bis {date}",
+      reportingDay: "Letzter Berichtstag: {date}",
+      streamReportingDay: "{stream} letzter Berichtstag: {date}",
       fetched: "abgerufen {time}",
       fetchedOn: "abgerufen am {date}",
       next: "nächste {when}",

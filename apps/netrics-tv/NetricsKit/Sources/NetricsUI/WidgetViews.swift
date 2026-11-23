@@ -1520,7 +1520,9 @@ struct GaugeWidgetView: View {
             : WidgetFooter.line(
                 WidgetFooter.candidates(updatedAt: data.updatedAt, freshness: data.freshness, status: data.status, source: nil, now: now, language: language),
                 type: .gauge, placement: placement.cells, showHeader: env.showHeader, fontScale: env.fontScale,
-                unitBox: placement.unitBox)
+                unitBox: placement.unitBox,
+                // Beside the ring the line is drawn in the text column (#791).
+                drawnWidth: layout.orientation == .side ? layout.textWidth : nil)
         let shown = layout.compact ? compact : full
 
         if data.goal == nil {

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
 import type { DeviceTileStatus, WidgetFreshness } from "@netrics/contracts";
 import type { StudioPlacement } from "@netrics/domain";
@@ -7,6 +7,7 @@ import {
   freshnessCandidates,
   freshnessNotice,
   isWarningStatus,
+  plainTwin,
   type FreshnessClock,
 } from "@/lib/freshness";
 import type { WebTranslator } from "@/lib/i18n/catalogs";
@@ -21,6 +22,7 @@ import {
 import { useViewerTimeZone } from "@/lib/viewer-time-zone";
 
 import { useNow } from "./clock-widget";
+import { useDrawnCut } from "./drawn-fit";
 
 /**
  * A title or resource line: wrapped to at most two lines at its fitted
@@ -143,22 +145,55 @@ export function useFreshnessNotice<
   };
 }
 
-/** The freshness footer: one muted line at the bottom of the widget. */
+/**
+ * The freshness footer: one muted line at the bottom of the widget.
+ *
+ * With `candidates` (the list the footer was picked from) a footer that
+ * names the last reporting day (#791) is checked as drawn: the layout
+ * picked it by estimated widths, and where the browser cuts it with an
+ * ellipsis the widget shows the plain line of the same parts instead, as
+ * before. Scroll cards wrap and pass none.
+ */
 export function WidgetFooter({
   size,
   children,
+  candidates,
 }: {
   size: number;
   children: ReactNode;
+  candidates?: readonly (string | null)[];
 }) {
+  const locale = useLocale();
+  const line = useRef<HTMLParagraphElement>(null);
+  const text = typeof children === "string" ? children : null;
+  const plain = candidates ? plainTwin(candidates, text, locale) : null;
+  const sentinel = useRef<HTMLSpanElement>(null);
+  const cut = useDrawnCut(
+    plain === null ? null : text,
+    () => [line.current],
+    () => sentinel.current,
+  );
   return (
-    <p
-      className="sw-muted sw-source sw-footer"
-      style={{ fontSize: u(size) }}
-      suppressHydrationWarning
-    >
-      {children}
-    </p>
+    <>
+      <p
+        ref={line}
+        className="sw-muted sw-source sw-footer"
+        style={{ fontSize: u(size) }}
+        suppressHydrationWarning
+      >
+        {cut ? plain : children}
+      </p>
+      {plain === null ? null : (
+        // Out of sight, a line high at the footer's font: its size tells
+        // when the font changes in a box that stays as it is.
+        <span
+          ref={sentinel}
+          className="sw-font-sentinel"
+          style={{ fontSize: u(size) }}
+          aria-hidden="true"
+        />
+      )}
+    </>
   );
 }
 
@@ -304,7 +339,11 @@ export function DataStateWidget({
             {reconnectHint ?? t("reconnectHint")}
           </p>
         </div>
-        {footer ? <WidgetFooter size={small}>{footer}</WidgetFooter> : null}
+        {footer ? (
+          <WidgetFooter size={small} candidates={candidates}>
+            {footer}
+          </WidgetFooter>
+        ) : null}
       </article>
     );
   }

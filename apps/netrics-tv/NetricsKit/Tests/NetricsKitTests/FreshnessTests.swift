@@ -35,6 +35,15 @@ private func continuous(fetched: String = "2026-11-16T12:50:00Z", check: String?
     WidgetFreshness(kind: .continuous, stream: "Reviews", fetchedAt: fetched, nextCheckAt: check)
 }
 
+extension [String] {
+    /// The candidates as they were before a day older than its check was
+    /// named (#791): those tests below word the line itself. The named
+    /// ones are in ReportingDayTests.
+    fileprivate var plain: [String] {
+        filter { !$0.hasPrefix("Last reporting day: ") && !$0.hasPrefix("Letzter Berichtstag: ") }
+    }
+}
+
 private func text(_ language: ScreenLanguage = .en, zone: TimeZone = berlin, region: Locale = us24) -> FreshnessText {
     FreshnessText(language: language, timeZone: zone, region: region)
 }
@@ -44,20 +53,20 @@ private func text(_ language: ScreenLanguage = .en, zone: TimeZone = berlin, reg
 
     @Test func periodicWithNextInBothLanguages() {
         #expect(
-            text().footer(periodic(), now: now) == [
+            text().footer(periodic(), now: now).plain == [
                 "Up to Nov 15 · fetched 10 min. ago · next ~21:00",
                 "Up to Nov 15 · fetched 10 min. ago",
                 "Up to Nov 15",
             ])
         #expect(
-            text(.de, region: germany).footer(periodic(), now: now).first
+            text(.de, region: germany).footer(periodic(), now: now).plain.first
                 == "Bis 15. Nov. · abgerufen vor 10 Min. · nächste ~21:00")
     }
 
     @Test func periodicWithoutNext() {
         let f = periodic(through: "2026-11-13", next: nil)
-        #expect(text().footer(f, now: now).first == "Up to Nov 13 · fetched 10 min. ago")
-        #expect(text(.de, region: germany).footer(f, now: now).first == "Bis 13. Nov. · abgerufen vor 10 Min.")
+        #expect(text().footer(f, now: now).plain.first == "Up to Nov 13 · fetched 10 min. ago")
+        #expect(text(.de, region: germany).footer(f, now: now).plain.first == "Bis 13. Nov. · abgerufen vor 10 Min.")
     }
 
     @Test func aMonthlyStreamNamesTheMonth() {
@@ -75,13 +84,13 @@ private func text(_ language: ScreenLanguage = .en, zone: TimeZone = berlin, reg
     @Test func aLateProviderInTheMutedFooter() {
         let f = periodic(through: "2026-11-14", late: true)
         #expect(
-            text().footer(f, now: now) == [
+            text().footer(f, now: now).plain == [
                 "Up to Nov 14 · Nov 15 not published yet · checking again ~15:10",
                 "Up to Nov 14 · Nov 15 not published yet",
                 "Up to Nov 14",
             ])
         #expect(
-            text(.de, region: germany).footer(f, now: now).first
+            text(.de, region: germany).footer(f, now: now).plain.first
                 == "Bis 14. Nov. · 15. Nov. noch nicht veröffentlicht · erneut prüfen ~15:10")
         // Late is no warning: an ok widget gets no notice.
         #expect(TileNotices.notice(status: .ok, updatedAt: nil, freshness: f, now: now, region: us24) == nil)
@@ -109,7 +118,7 @@ private func text(_ language: ScreenLanguage = .en, zone: TimeZone = berlin, reg
                 status: .stale, updatedAt: "2026-11-16T12:50:00Z", freshness: f, now: now, language: .de, region: germany)
                 == "Bis 14. Nov. · 15. Nov. noch nicht veröffentlicht")
         // The footer keeps only the day, never "next" or "checking again".
-        #expect(text().footer(f, status: .stale, now: now) == ["Up to Nov 14"])
+        #expect(text().footer(f, status: .stale, now: now).plain == ["Up to Nov 14"])
     }
 
     @Test func aFailingSourceKeepsItsNoticeAndOnlyTheDay() {
@@ -120,7 +129,7 @@ private func text(_ language: ScreenLanguage = .en, zone: TimeZone = berlin, reg
         #expect(
             TileNotices.notice(status: .stale, updatedAt: "2026-11-16T10:00:00Z", freshness: f, now: now, region: us24)
                 == "Last sync 3 hours ago · Up to Nov 15")
-        #expect(text().footer(f, status: .authFailed, now: now) == ["Up to Nov 15"])
+        #expect(text().footer(f, status: .authFailed, now: now).plain == ["Up to Nov 15"])
         #expect(text().footer(continuous(), status: .outage, now: now) == ["Checked 10 min. ago"])
         // A continuous stream adds nothing to the notice.
         #expect(
@@ -134,7 +143,7 @@ private func text(_ language: ScreenLanguage = .en, zone: TimeZone = berlin, reg
         #expect(
             WidgetFooter.candidates(
                 updatedAt: updated, freshness: periodic(), source: nil, now: now, timeZone: berlin, region: us24
-            ).first?
+            ).plain.first?
                 .hasPrefix("Up to Nov 15 · fetched 10 min. ago") == true)
         #expect(TileNotices.notice(status: .outage, updatedAt: nil, now: now) == "Source unreachable")
     }
@@ -143,9 +152,9 @@ private func text(_ language: ScreenLanguage = .en, zone: TimeZone = berlin, reg
 
     @Test func anExpectedTimeAlreadyPastReadsAnyMinute() {
         let f = periodic(next: "2026-11-16T12:30:00Z")
-        #expect(text().footer(f, now: now).first == "Up to Nov 15 · fetched 10 min. ago · next any minute")
+        #expect(text().footer(f, now: now).plain.first == "Up to Nov 15 · fetched 10 min. ago · next any minute")
         #expect(
-            text(.de, region: germany).footer(f, now: now).first
+            text(.de, region: germany).footer(f, now: now).plain.first
                 == "Bis 15. Nov. · abgerufen vor 10 Min. · nächste in Kürze")
         let due = continuous(check: "2026-11-16T12:59:00Z")
         #expect(text().footer(due, now: now).first == "Checked 10 min. ago · next check any minute")
@@ -208,13 +217,13 @@ private func text(_ language: ScreenLanguage = .en, zone: TimeZone = berlin, reg
         #expect(text(.de, region: germany).footer(checked, now: now) == ["Geprüft am 12. Nov."])
         // A fetch a little ahead of this device's clock is "now", never in the future.
         let ahead = periodic(fetched: "2026-11-16T13:05:00Z", next: nil)
-        #expect(text().footer(ahead, now: now).first == "Up to Nov 15 · fetched now")
+        #expect(text().footer(ahead, now: now).plain.first == "Up to Nov 15 · fetched now")
     }
 
     @Test func relativeTimesFollowTheDeviceClock() {
         let f = periodic(next: nil)
-        #expect(text().footer(f, now: now).first == "Up to Nov 15 · fetched 10 min. ago")
-        #expect(text().footer(f, now: now.addingTimeInterval(3600)).first == "Up to Nov 15 · fetched 1 hr. ago")
+        #expect(text().footer(f, now: now).plain.first == "Up to Nov 15 · fetched 10 min. ago")
+        #expect(text().footer(f, now: now.addingTimeInterval(3600)).plain.first == "Up to Nov 15 · fetched 1 hr. ago")
     }
 
     @Test func datesFollowTheScreenLanguageAndTimesTheDevicesClock() {
@@ -544,7 +553,7 @@ private func metricData(_ payload: DeviceDashboardV2) -> MetricWidgetData? {
         #expect(late.freshnessStatus == .ok)
         let muted = late.freshnessLines(now: now, language: .en, timeZone: berlin, region: us24)
         #expect(muted.warning == nil)
-        #expect(muted.footer.first == "Up to Nov 14 · Nov 15 not published yet · checking again ~15:10")
+        #expect(muted.footer.plain.first == "Up to Nov 14 · Nov 15 not published yet · checking again ~15:10")
         // A server before the field, and an unknown value: the sources decide.
         #expect(try measure(status: nil).freshnessStatus == .ok)
         #expect(try measure(status: "melting").freshnessStatus == .ok)

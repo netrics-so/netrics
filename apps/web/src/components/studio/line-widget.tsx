@@ -208,7 +208,9 @@ export function LineWidgetView(input: LineWidgetViewProps) {
           {props.notice}
         </WidgetNotice>
       ) : footer ? (
-        <WidgetFooter size={layout.sizes.small}>{footer}</WidgetFooter>
+        <WidgetFooter size={layout.sizes.small} candidates={candidates}>
+          {footer}
+        </WidgetFooter>
       ) : null}
     </article>
   );

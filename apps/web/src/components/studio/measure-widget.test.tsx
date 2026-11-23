@@ -626,10 +626,10 @@ describe("the oldest source refresh next to the freshness line (#769)", () => {
 
   it("shows only the freshness line when the widget has one, as on tvOS", () => {
     const en = view(true);
-    expect(en).toContain("Up to Nov 15");
+    expect(en).toContain("Last reporting day: Nov 15");
     expect(en).not.toContain("Oldest source refresh");
     const de = view(true, "de");
-    expect(de).toContain("Bis 15. Nov.");
+    expect(de).toContain("Letzter Berichtstag: 15. Nov.");
     expect(de).not.toContain("Älteste Quellenaktualisierung");
   });
 
@@ -666,7 +666,7 @@ describe("the oldest source refresh next to the freshness line (#769)", () => {
     expect(view(continuous)).not.toContain("Oldest source refresh");
     // A periodic stream with its covered day and ok: the line only.
     const ok = view(periodic, "en", { status: "ok" });
-    expect(ok).toContain("Up to Nov 15");
+    expect(ok).toContain("Last reporting day: Nov 15");
     expect(ok).not.toContain("Oldest source refresh");
   });
 });
@@ -925,16 +925,86 @@ describe("a total with its split, and freshness per source (#784)", () => {
   });
 
   it("lists every store's day in the freshness line, in the form that fits", () => {
-    // A wide tile: each store's day and next time.
+    // A wide tile: each store's day and next time, the days named
+    // (#791: both are older than the day of the check).
     const wide = text(view(data(), { w: 12, h: 3 }));
     expect(wide).toMatch(
-      /App Store up to Nov 17 · next (?:tomorrow )?~[^|]+ · Google Play up to Nov 11/,
+      /App Store last reporting day: Nov 17 · next (?:tomorrow )?~[^|]+ · Google Play last reporting day: Nov 11 · fetched 10 min\. ago\|/,
+    );
+    // Half the width: no room to name them, the line as it was.
+    const half = text(view(data(), { w: 6, h: 3 }));
+    expect(half).not.toContain("last reporting day");
+    expect(half).toMatch(/App Store up to Nov 17 · .*Google Play up to Nov 11/);
+    // A card that grows wraps: every store's day and next time without
+    // the fetch (form 2, as on netrics TV), the days named.
+    expect(text(view(data()))).toMatch(
+      /\|App Store last reporting day: Nov 17 · next (?:tomorrow )?~[^|·]+ · Google Play last reporting day: Nov 11\|/,
     );
     // A third of the width: the days only, or shorter, never a store less.
     const narrow = text(view(data(), { w: 4, h: 3 }, "de"));
     expect(narrow).toContain("App Store bis");
     expect(narrow).toContain("Google Play bis");
     expect(narrow).not.toContain("nächste");
+  });
+
+  it("one source: a tile measures the named day as drawn, a card names it and wraps (#791)", () => {
+    const single = (dataThrough: string, extra: object = {}) =>
+      data({
+        freshness: {
+          kind: "periodic",
+          stream: "Installs",
+          fetchedAt: sources[1]!.fetchedAt,
+          dataThrough,
+          nextExpectedAt: sources[0]!.nextExpectedAt,
+          ...extra,
+        },
+      } as Partial<DashboardWidgetData>);
+    const paragraph = (html: string, name: string) => {
+      const match = new RegExp(`<p class="${name}"[^>]*>(.*?)</p>`).exec(html);
+      return match
+        ? match[1]!.replace(/<[^>]+>/g, "").replace(/\u202f/g, " ")
+        : null;
+    };
+    const line = (html: string) => paragraph(html, "sw-measure-freshness");
+    const probe = (html: string) => paragraph(html, "sw-measure-fresh-probe");
+    // A tile: the line as before until the browser has measured that the
+    // named wording shows as many parts; the named one waits out of sight.
+    for (const w of [4, 12]) {
+      const tile = view(single("2026-11-11"), { w, h: 3 });
+      expect(line(tile)).toMatch(
+        /^Up to Nov 11 · fetched 10 min\. ago · next /,
+      );
+      expect(probe(tile)).toMatch(
+        /^Last reporting day: Nov 11 · fetched 10 min\. ago · next /,
+      );
+    }
+    expect(probe(view(single("2026-11-11"), { w: 12, h: 3 }, "de"))).toMatch(
+      /^Letzter Berichtstag: 11\. Nov\. · abgerufen vor 10 Min\. · /,
+    );
+    // The day of the check itself: nothing to name, nothing to measure.
+    const today = new Date().toISOString().slice(0, 10);
+    const same = view(single(today), { w: 12, h: 3 });
+    expect(line(same)).toMatch(/^Up to /);
+    expect(same).not.toContain("sw-measure-fresh-probe");
+    // A card that grows names the day and wraps, as on netrics TV.
+    const wrapping = "sw-measure-freshness sw-measure-freshness--wrap";
+    const card = view(single("2026-11-11"));
+    expect(paragraph(card, wrapping)).toMatch(
+      /^Last reporting day: Nov 11 · fetched 10 min\. ago · next /,
+    );
+    expect(card).not.toContain("sw-measure-fresh-probe");
+    expect(paragraph(view(single(today)), wrapping)).toMatch(/^Up to /);
+    // A provider overdue by a day keeps its one warning line, on a tile
+    // and on a card.
+    const overdue = single("2026-11-11", { late: true });
+    for (const placement of [{ w: 12, h: 3 }, undefined]) {
+      const html = view({ ...overdue, status: "stale" }, placement);
+      expect(
+        paragraph(html, "sw-measure-freshness sw-measure-freshness--overdue"),
+      ).toBe("Up to Nov 11 · Nov 12 not published yet");
+      expect(html).not.toContain("sw-measure-fresh-probe");
+      expect(html).not.toContain("Last reporting day");
+    }
   });
 
   it("counts every freshness line when a table fits its rows", () => {

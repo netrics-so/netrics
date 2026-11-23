@@ -394,7 +394,15 @@ extension MeasureWidgetData {
     ) -> [String]? {
         let levels = freshnessSourceLevels(now: now, language: language, timeZone: timeZone, region: region)
         guard !levels.isEmpty else { return nil }
-        guard let width else { return levels[Swift.min(1, levels.count - 1)] }
+        guard let width else {
+            // A card wraps: the form without "fetched", its days named (#791).
+            guard let freshness else { return nil }
+            let forms = FreshnessText(language: language, timeZone: timeZone, region: region)
+                .sourceForms(freshness, status: freshnessStatus, now: now)
+            guard !forms.isEmpty else { return nil }
+            let form = forms[Swift.min(1, forms.count - 1)]
+            return form.named ?? form.lines
+        }
         return levels[
             StudioLayout.freshnessLevelFit(
                 levels: levels, width: width, fontScale: fontScale, font: .tv, points: points)]

@@ -297,9 +297,44 @@ public struct FreshnessText: Sendable {
         return text(since.relative ? .freshChecked : .freshCheckedOn, since.text)
     }
 
-    private func upTo(_ f: WidgetFreshness, stream: String?, now: Date) -> String? {
+    /**
+     * Whether the last day a report covers is older than the day netrics
+     * last checked (#791, ADR 0025 section 8; web: `reportingDayBeforeCheck`):
+     * the provider's day, as written, against the calendar day of
+     * `fetchedAt` on this device. A report that lags by its normal cadence
+     * counts. Never for a continuous stream, a monthly one (it names a
+     * month) or a stream without a day yet.
+     */
+    public func reportingDayBeforeCheck(_ f: WidgetFreshness) -> Bool {
+        guard f.kind == .periodic, !f.monthly, let through = f.dataThrough.flatMap(CalendarDay.init),
+            let checked = ISODate.parse(f.fetchedAt)
+        else { return false }
+        let local = calendar.dateComponents([.year, .month, .day], from: checked)
+        guard let year = local.year, let month = local.month, let day = local.day else { return false }
+        return (through.year, through.month, through.day) < (year, month, day)
+    }
+
+    /**
+     * Whether a footer line names the last reporting day (#791), in any
+     * screen language and also mid-line ("derived · last reporting day: …").
+     */
+    public static func namesReportingDay(_ line: String) -> Bool {
+        let lowered = line.lowercased()
+        return [ScreenLanguage.en, .de].contains { language in
+            lowered.contains(KitStrings.text(.freshReportingDay, language, arguments: [""]).lowercased())
+        }
+    }
+
+    /**
+     * "Up to Nov 15"; with `reportingDay`, "Last reporting day: Nov 15"
+     * where the day is older than the day of the last check (#791).
+     */
+    private func upTo(_ f: WidgetFreshness, stream: String?, now: Date, reportingDay: Bool = false) -> String? {
         guard let through = f.dataThrough.flatMap(CalendarDay.init) else { return nil }
         let shown = day(through, monthly: f.monthly, now: now)
+        if reportingDay && reportingDayBeforeCheck(f) {
+            return stream.map { text(.freshStreamReportingDay, $0, shown) } ?? text(.freshReportingDay, shown)
+        }
         return stream.map { text(.freshStreamUpTo, $0, shown) } ?? text(.freshUpTo, shown)
     }
 
@@ -327,10 +362,14 @@ public struct FreshnessText: Sendable {
         }
     }
 
-    /** The line's parts, most important first; narrow widgets drop them from the end. */
+    /**
+     * The line's parts, most important first; narrow widgets drop them from
+     * the end. `reportingDay` names the day where it is older than the day
+     * of the last check (#791); the other parts are the same.
+     */
     func parts(
         _ f: WidgetFreshness, status: DeviceTileStatus, stream: String? = nil, now: Date, paused: Bool = false,
-        fetched includeFetched: Bool = false
+        fetched includeFetched: Bool = false, reportingDay: Bool = false
     ) -> [String] {
         let mode = Self.mode(f, status: status)
         // Paused syncs: no next time of any kind.
@@ -344,7 +383,7 @@ public struct FreshnessText: Sendable {
                 checked, next(f.nextCheckAt, now: now, key: .freshNextCheck, soon: .freshNextCheckSoon),
             ].compactMap { $0 }
         }
-        let upTo = upTo(f, stream: stream, now: now)
+        let upTo = upTo(f, stream: stream, now: now, reportingDay: reportingDay)
         switch mode {
         case .failing:
             // netrics may not fetch it: the day only, never "next".
@@ -368,10 +407,21 @@ public struct FreshnessText: Sendable {
      * The footer's candidates, longest first: "Up to Nov 15 · fetched 10
      * min. ago · next ~21:00", "Up to Nov 15 · fetched 10 min. ago", "Up to
      * Nov 15". Under a failing or stale connection only the day.
+     *
+     * Where the last reporting day is older than the day of the last check
+     * (#791), each candidate comes with the day named right before it:
+     * "Last reporting day: Nov 15 · fetched 10 min. ago", then "Up to Nov 15
+     * · fetched 10 min. ago". A widget without room for the longer wording
+     * shows exactly what it showed before.
      */
     public func footer(_ f: WidgetFreshness, status: DeviceTileStatus = .ok, now: Date = Date()) -> [String] {
         let parts = parts(f, status: status, now: now)
-        return (0..<parts.count).reversed().map { parts[0...$0].joined(separator: " · ") }
+        let named = reportingDayBeforeCheck(f) ? self.parts(f, status: status, now: now, reportingDay: true) : parts
+        let naming = named.count == parts.count && named != parts
+        return (0..<parts.count).reversed().flatMap { count -> [String] in
+            let plain = parts[0...count].joined(separator: " · ")
+            return naming ? [named[0...count].joined(separator: " · "), plain] : [plain]
+        }
     }
 
     /** A provider's day in numbers ("11/17", "17.11."); a month keeps its name. */
@@ -384,28 +434,43 @@ public struct FreshnessText: Sendable {
         return format(date, template: "Md", zone: utc)
     }
 
+    /** One form of a several-source line: its lines, and the same with the days named. */
+    public struct SourceForm: Sendable, Equatable {
+        public var lines: [String]
+        /**
+         * The form with "last reporting day" for every source whose day is
+         * older than its last check (#791); nil when no source's is, and
+         * for the short forms.
+         */
+        public var named: [String]?
+    }
+
     /**
      * The forms of a freshness line that lists several sources (#784, ADR
      * 0025 section 8), longest first, each form its lines: every source's
      * day and next time with "fetched" at the end; without "fetched"; each
-     * source's day only; with numeric days; a line per source. Screens show
-     * the first form that fits (StudioLayout.freshnessLevelFit). Under a
+     * source's day only; with numeric days; a line per source. Under a
      * failing or stale connection a source keeps its day (and "not
      * published yet" when late), never "next". Empty without `sources`.
+     *
+     * The first three forms also come `named` (#791): "App Store last
+     * reporting day: Nov 17 · …" for each source whose day is older than
+     * the day of its last check.
      */
-    public func sourceLevels(
+    public func sourceForms(
         _ f: WidgetFreshness, status: DeviceTileStatus = .ok, now: Date = Date(), paused: Bool = false
-    ) -> [[String]] {
+    ) -> [SourceForm] {
         guard f.sources.count >= 2 else { return [] }
         let warning = Self.mode(f, status: status) == .failing
-        let sources = f.sources.map { entry -> (parts: [String], short: String?, shortest: String?) in
+        typealias Source = (parts: [String], named: [String], short: String?, shortest: String?)
+        let sources = f.sources.map { entry -> Source in
             let s = entry.freshness, name = entry.source
             if s.kind == .continuous {
                 let parts =
                     warning
                     ? [checked(s, stream: name, now: now)].compactMap { $0 }
                     : self.parts(s, status: .ok, stream: name, now: now, paused: paused)
-                return (parts, parts.first, parts.first)
+                return (parts, parts, parts.first, parts.first)
             }
             let short = s.dataThrough.flatMap(CalendarDay.init).map {
                 text(.freshStreamUpTo, name, shortDay($0, monthly: s.monthly, now: now))
@@ -417,28 +482,51 @@ public struct FreshnessText: Sendable {
                 : s.dataThrough.flatMap(CalendarDay.init).map { "\(name) \(shortDay($0, monthly: false, now: now))" }
                     ?? short
             if warning {
-                let parts = [
-                    upTo(s, stream: name, now: now), s.late ? notPublished(s, now: now) : nil,
-                ].compactMap { $0 }
-                return (parts, short ?? parts.first, shortest ?? parts.first)
+                let rest = [s.late ? notPublished(s, now: now) : nil]
+                let parts = ([upTo(s, stream: name, now: now)] + rest).compactMap { $0 }
+                let named = ([upTo(s, stream: name, now: now, reportingDay: true)] + rest).compactMap { $0 }
+                return (parts, named, short ?? parts.first, shortest ?? parts.first)
             }
             let parts = self.parts(s, status: .ok, stream: name, now: now, paused: paused)
-            return (parts, short ?? parts.first, shortest ?? parts.first)
+            let named = self.parts(s, status: .ok, stream: name, now: now, paused: paused, reportingDay: true)
+            return (parts, named, short ?? parts.first, shortest ?? parts.first)
         }.filter { !$0.parts.isEmpty }
         guard !sources.isEmpty else { return [] }
         let all = sources.flatMap(\.parts)
         let firsts = sources.map { $0.parts[0] }
         let shorts = sources.map { $0.short ?? $0.parts[0] }
         let shortests = sources.map { $0.shortest ?? $0.parts[0] }
-        let fetched = warning ? nil : fetched(f, now: now)
+        let fetched = (warning ? nil : fetched(f, now: now)).map { [$0] } ?? []
+        // Named: only where a source's day is older than its check.
+        let namedAll = sources.flatMap(\.named)
+        let naming = namedAll != all
+        func form(_ line: [String], _ named: [String]) -> SourceForm {
+            SourceForm(
+                lines: [line.joined(separator: " · ")], named: naming ? [named.joined(separator: " · ")] : nil)
+        }
         return [
-            [(all + (fetched.map { [$0] } ?? [])).joined(separator: " · ")],
-            [all.joined(separator: " · ")],
-            [firsts.joined(separator: " · ")],
-            [shorts.joined(separator: " · ")],
-            [shortests.joined(separator: " · ")],
-            shorts,
+            form(all + fetched, namedAll + fetched),
+            form(all, namedAll),
+            form(firsts, sources.map { $0.named[0] }),
+            SourceForm(lines: [shorts.joined(separator: " · ")]),
+            SourceForm(lines: [shortests.joined(separator: " · ")]),
+            SourceForm(lines: shorts),
         ]
+    }
+
+    /**
+     * The forms as the levels a screen picks from, the first that fits
+     * (StudioLayout.freshnessLevelFit): each form with the days named
+     * (#791) right before the same form without. Naming the day so never
+     * costs a part a tile shows today: it is the first thing a narrower
+     * tile drops.
+     */
+    public func sourceLevels(
+        _ f: WidgetFreshness, status: DeviceTileStatus = .ok, now: Date = Date(), paused: Bool = false
+    ) -> [[String]] {
+        sourceForms(f, status: status, now: now, paused: paused).flatMap { form in
+            form.named.map { [$0, form.lines] } ?? [form.lines]
+        }
     }
 
     /**

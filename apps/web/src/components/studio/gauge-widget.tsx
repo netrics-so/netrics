@@ -264,7 +264,9 @@ export function GaugeWidgetView(input: GaugeWidgetViewProps) {
       {props.notice}
     </WidgetNotice>
   ) : footer ? (
-    <WidgetFooter size={gauge.sizes.footer}>{footer}</WidgetFooter>
+    <WidgetFooter size={gauge.sizes.footer} candidates={candidates}>
+      {footer}
+    </WidgetFooter>
   ) : null;
   const target =
     gauge.showTarget && texts ? (

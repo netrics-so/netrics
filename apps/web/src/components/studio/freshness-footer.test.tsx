@@ -12,6 +12,8 @@ import { BUILTIN_THEMES, contrastRatio } from "@netrics/domain";
 
 import { renderI18n } from "@/lib/i18n/test-render";
 import { ScrollMetricCard } from "@/components/scroll/scroll-widgets";
+import { freshnessParts, partsCandidates } from "@/lib/freshness";
+import { footerLine } from "@/lib/studio-render";
 
 import { deviceMetricReading } from "./device-widget";
 import { LineWidgetView } from "./line-widget";
@@ -112,22 +114,75 @@ describe("metric widget footer", () => {
     const html = renderI18n(
       <MetricWidgetView {...metric} freshness={periodic} />,
     );
+    // The day is older than the day of the check, and the tile has room
+    // to name it (#791).
     expect(footer(html)).toBe(
-      "Up to Nov 15 · fetched 10 min. ago · next any minute",
+      "Last reporting day: Nov 15 · fetched 10 min. ago · next any minute",
     );
     const de = renderI18n(
       <MetricWidgetView {...metric} freshness={periodic} />,
       "de",
     );
     expect(footer(de)).toBe(
-      "Bis 15. Nov. · abgerufen vor 10 Min. · nächste in Kürze",
+      "Letzter Berichtstag: 15. Nov. · abgerufen vor 10 Min. · nächste in Kürze",
     );
+  });
+
+  it("a day that is the day of the check keeps the line as it was (#791)", () => {
+    const today = { ...periodic, dataThrough: "2026-11-16" };
+    expect(
+      footer(renderI18n(<MetricWidgetView {...metric} freshness={today} />)),
+    ).toBe("Up to Nov 16 · fetched 10 min. ago · next any minute");
+    expect(
+      footer(
+        renderI18n(<MetricWidgetView {...metric} freshness={today} />, "de"),
+      ),
+    ).toBe("Bis 16. Nov. · abgerufen vor 10 Min. · nächste in Kürze");
+  });
+
+  it("a tile without room for the named day shows what it showed before (#791)", () => {
+    const clock = { locale: "en" as const, now: NOW, timeZone: "UTC" };
+    const before = partsCandidates(freshnessParts(periodic, clock));
+    const named = partsCandidates(
+      freshnessParts(periodic, clock, { reportingDay: true }),
+    );
+    const seen = { named: 0, plain: 0 };
+    for (let w = 1; w <= 12; w++) {
+      const placement = { x: 0, y: 0, w, h: 4 };
+      const line = footer(
+        renderI18n(
+          <MetricWidgetView
+            {...metric}
+            placement={placement}
+            freshness={periodic}
+          />,
+        ),
+      );
+      // What the tile showed before the day was named.
+      const was = footerLine(before, {
+        type: "metric",
+        placement,
+        showHeader: true,
+        fontScale: 1,
+      });
+      if (was === null) {
+        expect(line).toBeNull();
+        continue;
+      }
+      // The same parts, with the day named or exactly as before: naming
+      // it never costs a part.
+      const index = before.indexOf(text(was));
+      expect([named[index], before[index]]).toContain(line);
+      seen[line === before[index] ? "plain" : "named"] += 1;
+    }
+    expect(seen.named).toBeGreaterThan(0);
+    expect(seen.plain).toBeGreaterThan(0);
   });
 
   it("a late provider is the muted footer, not a warning", () => {
     const html = renderI18n(<MetricWidgetView {...metric} freshness={late} />);
     expect(footer(html)).toBe(
-      "Up to Nov 14 · Nov 15 not published yet · checking again any minute",
+      "Last reporting day: Nov 14 · Nov 15 not published yet · checking again any minute",
     );
     expect(notice(html)).toBeNull();
     expect(html).not.toContain("sw--stale");
@@ -181,7 +236,9 @@ describe("metric widget footer", () => {
       <MetricWidgetView {...metric} status="auth_failed" freshness={late} />,
     );
     expect(html).toContain("sw--auth");
-    expect(footer(html)).toBe("Up to Nov 14 · Nov 15 not published yet");
+    expect(footer(html)).toBe(
+      "Last reporting day: Nov 14 · Nov 15 not published yet",
+    );
   });
 
   it("a narrow widget drops parts from the end", () => {
@@ -203,6 +260,10 @@ describe("metric widget footer", () => {
         full,
         "Up to Nov 15 · fetched 10 min. ago",
         "Up to Nov 15",
+        // With the day named where that fits (#791).
+        "Last reporting day: Nov 15 · fetched 10 min. ago · next any minute",
+        "Last reporting day: Nov 15 · fetched 10 min. ago",
+        "Last reporting day: Nov 15",
       ]).toContain(line);
       shown.add(line);
     }
@@ -280,7 +341,7 @@ describe("payload widgets carry their freshness", () => {
       />,
     );
     expect(footer(html)).toBe(
-      "Up to Nov 15 · fetched 10 min. ago · next any minute",
+      "Last reporting day: Nov 15 · fetched 10 min. ago · next any minute",
     );
   });
 });
@@ -378,16 +439,33 @@ describe("measure widget footer", () => {
         data={data({ freshness: periodic })}
       />,
     );
+    // A card (no tile to fit) names the day and wraps (#791).
     expect(line(html)).toBe(
-      "Up to Nov 15 · fetched 10 min. ago · next any minute",
+      "Last reporting day: Nov 15 · fetched 10 min. ago · next any minute",
     );
+    expect(html).toContain("sw-measure-freshness--wrap");
+    // The day of the check itself: the line as it was.
+    expect(
+      line(
+        renderI18n(
+          <MeasureWidgetView
+            widget={widget}
+            data={data({
+              freshness: { ...periodic, dataThrough: "2026-11-16" },
+            })}
+          />,
+        ),
+      ),
+    ).toBe("Up to Nov 16 · fetched 10 min. ago · next any minute");
   });
 
   it("a late provider is muted; an overdue one is the warning", () => {
     const muted = renderI18n(
       <MeasureWidgetView widget={widget} data={data({ freshness: late })} />,
     );
-    expect(muted).toContain('class="sw-measure-freshness"');
+    expect(muted).toContain(
+      'class="sw-measure-freshness sw-measure-freshness--wrap"',
+    );
     expect(muted).toContain("Nov 15 not published yet");
     const overdue = renderI18n(
       <MeasureWidgetView
@@ -437,7 +515,7 @@ describe("measure widget footer", () => {
         })}
       />,
     );
-    expect(line(html)).toBe("Up to Nov 15");
+    expect(line(html)).toBe("Last reporting day: Nov 15");
     expect(html).not.toContain("next any minute");
   });
 
