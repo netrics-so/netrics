@@ -1,28 +1,38 @@
 // Pagination styles of a custom API stream: the parameters of a page and
 // the decision whether (and where) another page follows. Stops on an empty
 // page, a short page, a missing or repeated cursor and a missing or repeated
-// next URL; a next URL on another host fails the run.
+// next URL; a next URL on another host fails the run. A POST stream may
+// place page values in its body instead of URL parameters (ADR 0030 §3).
 
 import {
   CUSTOM_API_LIMITS,
   parseDataPath,
   readDataPath,
+  type CustomApiBodyWrite,
   type CustomApiPagination,
 } from "@netrics/connector-sdk/custom-api";
 
 import { CustomApiResponseError } from "./errors.js";
 import { CUSTOM_API_MESSAGES } from "./messages.js";
 
+/**
+ * A cursor keeps the JSON type the response gave it (a number stays a
+ * number) for a body path; a URL parameter or a template gets its text.
+ */
+export type CursorValue = string | number;
+
 export type PageState =
   | { type: "first" }
   | { type: "page_number"; number: number }
   | { type: "offset"; offset: number }
-  | { type: "cursor"; cursor: string }
+  | { type: "cursor"; cursor: CursorValue }
   | { type: "next_url"; url: string };
 
 export interface PageParams {
   params: Record<string, string>;
   placeholders: Record<string, string>;
+  /** Page values written into the body (POST streams with body paths). */
+  bodyWrites: CustomApiBodyWrite[];
   nextUrl?: string;
 }
 
@@ -39,39 +49,69 @@ function pageNumberParams(
     placeholders["page.size"] = String(p.size);
     placeholders["page.offset"] = String((number - p.start) * p.size);
   }
-  return { params, placeholders };
+  return { params, placeholders, bodyWrites: [] };
 }
 
 function offsetParams(
   p: Extract<CustomApiPagination, { type: "offset" }>,
   offset: number,
 ): PageParams {
+  const params: Record<string, string> = {};
+  const bodyWrites: CustomApiBodyWrite[] = [];
+  if (p.offsetParam !== undefined) params[p.offsetParam] = String(offset);
+  if (p.offsetBodyPath !== undefined)
+    bodyWrites.push({ path: parseDataPath(p.offsetBodyPath), value: offset });
+  if (p.limitParam !== undefined) params[p.limitParam] = String(p.limit);
+  if (p.limitBodyPath !== undefined)
+    bodyWrites.push({ path: parseDataPath(p.limitBodyPath), value: p.limit });
   return {
-    params: {
-      [p.offsetParam]: String(offset),
-      [p.limitParam]: String(p.limit),
-    },
+    params,
     placeholders: {
       "page.offset": String(offset),
       "page.size": String(p.limit),
     },
+    bodyWrites,
   };
 }
 
-export function firstPageParams(p: CustomApiPagination): {
-  params: Record<string, string>;
-  placeholders: Record<string, string>;
-} {
+function cursorParams(
+  p: Extract<CustomApiPagination, { type: "cursor" }>,
+  cursor: CursorValue | null,
+): PageParams {
+  const params: Record<string, string> = {};
+  const bodyWrites: CustomApiBodyWrite[] = [];
+  // The first page has no cursor yet: no URL parameter, and a template
+  // that names it gets "". A body path sends JSON null or leaves the
+  // property out; an empty string is never sent as a cursor.
+  if (p.param !== undefined && cursor !== null)
+    params[p.param] = String(cursor);
+  if (p.bodyPath !== undefined) {
+    const path = parseDataPath(p.bodyPath);
+    bodyWrites.push(
+      cursor !== null
+        ? { path, value: cursor }
+        : p.firstPage === "omit"
+          ? { path, omit: true }
+          : { path, value: null },
+    );
+  }
+  return {
+    params,
+    placeholders: { "page.cursor": cursor === null ? "" : String(cursor) },
+    bodyWrites,
+  };
+}
+
+export function firstPageParams(p: CustomApiPagination): PageParams {
   switch (p.type) {
     case "page_number":
       return pageNumberParams(p, p.start);
     case "offset":
       return offsetParams(p, 0);
     case "cursor":
-      // The first page has no cursor yet; a template that names it gets "".
-      return { params: {}, placeholders: { "page.cursor": "" } };
+      return cursorParams(p, null);
     default:
-      return { params: {}, placeholders: {} };
+      return { params: {}, placeholders: {}, bodyWrites: [] };
   }
 }
 
@@ -85,12 +125,9 @@ export function pageParams(
   if (p.type === "offset" && state.type === "offset")
     return offsetParams(p, state.offset);
   if (p.type === "cursor" && state.type === "cursor")
-    return {
-      params: { [p.param]: state.cursor },
-      placeholders: { "page.cursor": state.cursor },
-    };
+    return cursorParams(p, state.cursor);
   if (p.type === "next_url" && state.type === "next_url")
-    return { params: {}, placeholders: {}, nextUrl: state.url };
+    return { params: {}, placeholders: {}, bodyWrites: [], nextUrl: state.url };
   // A stored state from another pagination type: start over.
   return firstPageParams(p);
 }
@@ -108,9 +145,10 @@ export function linkHeaderNext(header: string | undefined): string | undefined {
   return undefined;
 }
 
-function cursorValue(value: unknown): string | undefined {
+/** A string or finite number as the response gave it; "" is no cursor. */
+export function cursorValue(value: unknown): CursorValue | undefined {
   if (typeof value === "string") return value === "" ? undefined : value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "number" && Number.isFinite(value)) return value;
   return undefined;
 }
 

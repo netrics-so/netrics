@@ -151,6 +151,43 @@ describe("custom API call options", () => {
     expect(bundled.timeoutMs).toBe(5);
   });
 
+  it("redacts a POST stream's rendered body like rendered headers (ADR 0030 §4)", async () => {
+    const post = customApiFixture("v2-post") as Record<string, unknown>;
+    const custom = connectorFor(
+      registry,
+      conn({
+        versionId: "post",
+        environmentId: "prod",
+        document: post,
+        datasetVersions: { deployments: 1, events: 1 },
+      }),
+    )!;
+    const credentials = { host: "api.example.com", token: "tok-123456" };
+    const config = { project_id: "proj-42" };
+    const options = callOptionsFor(
+      custom,
+      {},
+      { credentials, privateHosts: [], config },
+    );
+    const body = JSON.stringify({
+      query: (post.streams as { request: { body: { query: string } } }[])[0]!
+        .request.body.query,
+      variables: { project: "proj-42", after: null },
+    });
+    expect(options.redactValues).toContain(body);
+    // An error that quotes the body comes out without it.
+    const quoting = {
+      ...custom.connector,
+      check: async () => ({ ok: false, message: `sent ${body}` }),
+    };
+    const checked = await executeCheck(
+      quoting,
+      { connectionId: "c1", config, credentials },
+      options,
+    );
+    expect(checked.message).toBe("sent [redacted]");
+  });
+
   it("redacts derived secrets in a custom-api call, and refuses look-alike options", async () => {
     const shop = customApiFixture("v1-shop") as Record<string, unknown>;
     const custom = connectorFor(

@@ -171,6 +171,10 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     custom_api_records_not_array: "Das ist keine Liste von Einträgen.",
     custom_api_http_error:
       "Die API hat mit einem Fehler geantwortet. Prüf den Anfragepfad und die Werte.",
+    custom_api_graphql_errors:
+      "Die GraphQL-API hat mit Fehlern geantwortet. Prüf die Abfrage und ihre Variablen.",
+    custom_api_read_only_unconfirmed:
+      "Bestätige vor dem Test, dass diese Anfrage nur Daten liest.",
     custom_api_response_invalid:
       "Die Antwort der API ließ sich nicht lesen. Prüf die Basis-URL und den Anfragepfad.",
     custom_api_request_invalid:

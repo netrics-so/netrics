@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  CUSTOM_API_LIMITS,
   CUSTOM_API_SCHEMA_VERSION,
   CUSTOM_API_UPGRADES,
   CustomApiDefinitionError,
@@ -21,14 +22,46 @@ const fixturesFor = (version: number) =>
 
 describe("upgradeCustomApiDefinition", () => {
   it("returns a current document unchanged except defaults", () =>
-    expect(upgradeCustomApiDefinition(fixture("v1-shop"))).toEqual(
-      customApiDefinitionSchema.parse(fixture("v1-shop")),
+    expect(upgradeCustomApiDefinition(fixture("v2-post"))).toEqual(
+      customApiDefinitionSchema.parse(fixture("v2-post")),
     ));
 
   it("refuses a newer schema version", () =>
     expect(() =>
-      upgradeCustomApiDefinition({ ...fixture("v1-shop"), schemaVersion: 2 }),
+      upgradeCustomApiDefinition({ ...fixture("v1-shop"), schemaVersion: 3 }),
     ).toThrow(expect.objectContaining({ code: "unsupported_schema_version" })));
+
+  it("upgrades version 1 by changing only the version (ADR 0030 §5)", () => {
+    for (const name of fixturesFor(1)) {
+      const raw = fixture(name);
+      const upgraded = CUSTOM_API_UPGRADES[1]!(raw);
+      expect(upgraded).toEqual({ ...raw, schemaVersion: 2 });
+      // No method or any other default is written into a stream.
+      const parsed = upgradeCustomApiDefinition(raw);
+      for (const stream of parsed.streams) {
+        expect(stream.request).not.toHaveProperty("method");
+        expect(stream.request).not.toHaveProperty("body");
+      }
+    }
+  });
+
+  it("fits a boundary-sized version 1 document after the upgrade", () => {
+    const raw = fixture("v1-boundary");
+    const bytes = (value: unknown) =>
+      Buffer.byteLength(JSON.stringify(value), "utf8");
+    expect(bytes(raw)).toBe(CUSTOM_API_LIMITS.documentBytes);
+    const upgraded = upgradeCustomApiDefinition(raw);
+    expect(upgraded.schemaVersion).toBe(2);
+    // As large as the original: the version digit is the only change.
+    expect(bytes(upgraded)).toBe(CUSTOM_API_LIMITS.documentBytes);
+    expect(upgraded).toEqual({ ...raw, schemaVersion: 2 });
+    // One byte more is over the limit, before and after the upgrade.
+    const over = structuredClone(raw);
+    over.name = `${String(over.name)}x`;
+    expect(() => upgradeCustomApiDefinition(over)).toThrow(
+      expect.objectContaining({ code: "invalid" }),
+    );
+  });
 
   it.each<[unknown, string, string]>([
     [null, "not_an_object", ""],

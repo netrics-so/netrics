@@ -134,7 +134,7 @@ describe("custom API export", () => {
     const file = customApiExportSchema.parse(res.json());
     expect(file).toMatchObject({
       format: CUSTOM_API_EXPORT_FORMAT,
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
     expect(file.definition).toEqual(definition.document);
     for (const secret of [
@@ -285,15 +285,15 @@ describe("custom API import", () => {
     for (const file of [
       {
         format: CUSTOM_API_EXPORT_FORMAT,
-        schemaVersion: 2,
+        schemaVersion: 3,
         exportedAt: new Date().toISOString(),
-        definition: { ...bearer(), schemaVersion: 2 },
+        definition: { ...bearer(), schemaVersion: 3 },
       },
       {
         format: CUSTOM_API_EXPORT_FORMAT,
         schemaVersion: 1,
         exportedAt: new Date().toISOString(),
-        definition: { ...bearer(), schemaVersion: 2 },
+        definition: { ...bearer(), schemaVersion: 3 },
       },
     ]) {
       const res = await importFile(file);

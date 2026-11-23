@@ -579,6 +579,22 @@ export const customApiDe: Catalog<typeof customApiEn> = {
           "Daten mit Bildern brauchen ein Zeitfeld, um die neuesten Einträge zu finden.",
         variable_reserved:
           "Ein geheimer Verbindungswert darf nicht wie eine Anmeldeangabe heißen.",
+        method_body:
+          "Eine POST-Anfrage braucht einen Body, und nur eine POST-Anfrage sendet einen.",
+        post_next_url:
+          "Eine POST-Anfrage bleibt bei ihrem Endpunkt: Sie kann die Adresse der nächsten Seite nicht aus einer Antwort übernehmen.",
+        placeholder_page_in_body:
+          "Seitenwerte kommen nur über die Body-Pfade der Seitenart in einen Body.",
+        graphql_operation:
+          "Die GraphQL-Abfrage muss genau eine Query sein: keine Mutation, keine Subscription, keine zweite Operation und keine Fragment-Definition.",
+        graphql_query_placeholder:
+          "Die GraphQL-Abfrage wird so gesendet, wie sie ist: Werte in geschweiften Klammern gehören in die Variablen.",
+        graphql_param_reserved:
+          "Eine GraphQL-Anfrage kann die URL-Parameter query, operationName, variables und extensions nicht verwenden.",
+        body_path_invalid: "Ein Body-Pfad zeigt auf keinen Wert des Bodys.",
+        pagination_placement:
+          "Wähle entweder einen URL-Parameter oder einen Body-Pfad.",
+        read_only_unconfirmed: "Bestätige, dass diese Anfrage nur Daten liest.",
         invalid: "Ein Wert fehlt oder ist ungültig.",
       },
     },

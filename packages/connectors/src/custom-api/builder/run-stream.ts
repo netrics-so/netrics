@@ -17,11 +17,12 @@ import { CUSTOM_API_MESSAGES } from "../messages.js";
 import { nextPage, pageParams, type PageState } from "../pagination.js";
 import { jsonTooDeep, mapRecords, selectRecords } from "../records.js";
 import { buildRequest } from "../request.js";
+import { checkGraphqlErrors, sendCustomApiRequest } from "../connector.js";
 import { windowPlaceholders, type Chunk } from "../windows.js";
 
 export interface CustomApiPageTrace {
   page: number;
-  method: "GET";
+  method: "GET" | "POST";
   /** BuiltRequest.redactedUrl. */
   url: string;
   status: number | null;
@@ -35,8 +36,15 @@ export interface CustomApiPageTrace {
 
 /** A non-2xx answer other than 401/403; the trace holds its body. */
 export class CustomApiHttpError extends Error {
-  constructor(readonly status: number) {
-    super(`The API answered HTTP ${status}.`);
+  constructor(
+    readonly status: number,
+    method: "GET" | "POST" = "GET",
+  ) {
+    super(
+      method === "POST" && status >= 300 && status < 400
+        ? `The API answered HTTP ${status}, a redirect. A POST request follows no redirects.`
+        : `The API answered HTTP ${status}.`,
+    );
     this.name = "CustomApiHttpError";
   }
 }
@@ -67,7 +75,7 @@ export async function runCustomApiTestStream(input: {
   >;
   stream: Pick<
     CustomApiStream,
-    "request" | "pagination" | "records" | "window"
+    "key" | "request" | "pagination" | "records" | "window"
   > &
     Pick<Partial<CustomApiStream>, "keyFields"> & {
       fields: CustomApiStream["fields"];
@@ -111,12 +119,13 @@ export async function runCustomApiTestStream(input: {
       credentials: input.credentials,
       placeholders: { ...window, ...params.placeholders },
       pageParams: params.params,
+      bodyWrites: params.bodyWrites,
       ...(params.nextUrl !== undefined ? { nextUrl: params.nextUrl } : {}),
     });
     const started = now();
     const trace: CustomApiPageTrace = {
       page,
-      method: "GET",
+      method: built.method,
       url: built.redactedUrl,
       status: null,
       durationMs: 0,
@@ -127,7 +136,7 @@ export async function runCustomApiTestStream(input: {
     };
     let response: Awaited<ReturnType<ConnectorRuntime["fetch"]>>;
     try {
-      response = await input.fetch(built.url, { headers: built.headers });
+      response = await sendCustomApiRequest(input.fetch, built);
     } catch (error) {
       trace.durationMs = Math.max(0, Math.round(now() - started));
       input.onPage?.(trace);
@@ -153,7 +162,7 @@ export async function runCustomApiTestStream(input: {
     }
     if (response.status < 200 || response.status >= 300) {
       input.onPage?.(trace);
-      throw new CustomApiHttpError(response.status);
+      throw new CustomApiHttpError(response.status, built.method);
     }
     if (!body.json) {
       input.onPage?.(trace);
@@ -161,6 +170,7 @@ export async function runCustomApiTestStream(input: {
     }
     let selected: unknown[];
     try {
+      checkGraphqlErrors(stream, response.status, body.value);
       selected = selectRecords(body.value, stream.records);
     } catch (error) {
       input.onPage?.(trace);

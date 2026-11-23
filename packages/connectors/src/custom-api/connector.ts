@@ -36,6 +36,7 @@ import {
 import {
   CustomApiAuthError,
   CustomApiConfigError,
+  CustomApiGraphqlError,
   CustomApiLimitError,
   CustomApiResponseError,
 } from "./errors.js";
@@ -55,6 +56,7 @@ import {
 } from "./records.js";
 import {
   buildRequest,
+  redactRenderedBody,
   stripCustomApiSecrets,
   type BuiltRequest,
 } from "./request.js";
@@ -112,6 +114,49 @@ function readJson(response: ConnectorResponse): unknown {
   } catch {
     throw new CustomApiResponseError(CUSTOM_API_MESSAGES.notJson);
   }
+}
+
+/**
+ * Sends a built request: a POST with its JSON body. An error of the fetch
+ * (egress, timeout) never carries the rendered body (ADR 0030 §4).
+ */
+export async function sendCustomApiRequest(
+  fetch: ConnectorRuntime["fetch"],
+  built: BuiltRequest,
+): Promise<ConnectorResponse> {
+  try {
+    return await fetch(
+      built.url,
+      built.method === "POST"
+        ? { method: "POST", headers: built.headers, body: built.body! }
+        : { headers: built.headers },
+    );
+  } catch (error) {
+    if (error instanceof Error && built.body !== undefined)
+      error.message = redactRenderedBody(error.message, built);
+    throw error;
+  }
+}
+
+const send = (runtime: ConnectorRuntime, built: BuiltRequest) =>
+  sendCustomApiRequest((url, init) => runtime.fetch(url, init), built);
+
+/**
+ * A GraphQL stream's response with a non-empty top-level `errors` array
+ * fails with CustomApiGraphqlError: stream, status and count only.
+ */
+export function checkGraphqlErrors(
+  stream: Pick<CustomApiStream, "key" | "request">,
+  status: number,
+  body: unknown,
+): void {
+  if (stream.request.body?.kind !== "graphql") return;
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return;
+  const errors = Object.hasOwn(body, "errors")
+    ? (body as { errors: unknown }).errors
+    : undefined;
+  if (Array.isArray(errors) && errors.length > 0)
+    throw new CustomApiGraphqlError(stream.key, status, errors.length);
 }
 
 function sha256(...parts: string[]): string {
@@ -173,6 +218,7 @@ export function createCustomApiConnector(
         ...params.placeholders,
       },
       pageParams: params.params,
+      bodyWrites: params.bodyWrites,
       ...(params.nextUrl !== undefined ? { nextUrl: params.nextUrl } : {}),
     });
   }
@@ -188,6 +234,16 @@ export function createCustomApiConnector(
     if (response.status === 403)
       throw new CustomApiAuthError(CUSTOM_API_MESSAGES.forbidden);
     const where = `stream ${stream.key}`;
+    // The host follows no redirect of a POST request (ADR 0030 §2): the
+    // 3xx arrives here and fails the run.
+    if (
+      built.method === "POST" &&
+      response.status >= 300 &&
+      response.status < 400
+    )
+      throw new Error(
+        `HTTP ${response.status} from ${built.redactedUrl} (${where}): a POST request follows no redirects`,
+      );
     if (response.status === 429) {
       const at = retryAt(response, now());
       if (at)
@@ -228,7 +284,7 @@ export function createCustomApiConnector(
         return { ok: false, message: error.message };
       throw error;
     }
-    const response = await runtime.fetch(built.url, { headers: built.headers });
+    const response = await send(runtime, built);
     if (response.status === 401)
       return { ok: false, message: CUSTOM_API_MESSAGES.unauthorized };
     if (response.status === 403)
@@ -236,9 +292,12 @@ export function createCustomApiConnector(
     if (response.status < 200 || response.status >= 300)
       refuse(response, built, stream);
     try {
-      readJson(response);
+      checkGraphqlErrors(stream, response.status, readJson(response));
     } catch (error) {
-      if (error instanceof CustomApiResponseError)
+      if (
+        error instanceof CustomApiResponseError ||
+        error instanceof CustomApiGraphqlError
+      )
         return { ok: false, message: error.message };
       throw error;
     }
@@ -309,12 +368,11 @@ export function createCustomApiConnector(
       sha256(stream.key, JSON.stringify(chunk), request.from, request.to);
 
     const built = build(context, stream, chunk, cursor.page);
-    const response = await runtime.fetch(built.url, {
-      headers: built.headers,
-    });
+    const response = await send(runtime, built);
     if (response.status < 200 || response.status >= 300)
       refuse(response, built, stream);
     const body = readJson(response);
+    checkGraphqlErrors(stream, response.status, body);
     const raws = selectRecords(body, stream.records);
     const mapped = mapRecords(stream, raws, timeZone);
     const nulledFields = Object.entries(mapped.nulled);

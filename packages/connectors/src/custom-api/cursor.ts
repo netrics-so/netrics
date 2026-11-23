@@ -58,7 +58,11 @@ function isPageState(value: unknown): value is PageState {
     case "offset":
       return count(page.offset);
     case "cursor":
-      return text(page.cursor) && page.cursor !== "";
+      // A body-path cursor keeps its JSON type: a number stays a number.
+      return (
+        (text(page.cursor) && page.cursor !== "") ||
+        (typeof page.cursor === "number" && Number.isFinite(page.cursor))
+      );
     case "next_url":
       return text(page.url) && page.url !== "";
     default:

@@ -95,6 +95,31 @@ function presentCustomApi(
       definition !== undefined &&
       !customApiNeedsNoSecrets(definition) &&
       loaded.row.credentialsEncrypted == null,
+    // The method and body of each stream (ADR 0030 §2): templates only,
+    // never a rendered value or a secret.
+    requests: (definition?.streams ?? []).map((stream) => {
+      const body = stream.request.body;
+      return {
+        stream: stream.key,
+        name: stream.name,
+        method: stream.request.method ?? "GET",
+        path: stream.request.path,
+        body:
+          body === undefined
+            ? null
+            : body.kind === "json"
+              ? {
+                  kind: "json" as const,
+                  value: body.value,
+                  readOnlyConfirmed: body.readOnlyConfirmed === true,
+                }
+              : {
+                  kind: "graphql" as const,
+                  query: body.query,
+                  variables: body.variables,
+                },
+      };
+    }),
   };
 }
 

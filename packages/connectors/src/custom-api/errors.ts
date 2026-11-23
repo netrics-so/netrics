@@ -2,6 +2,8 @@
 // runtime's redaction (it keeps `error.name`), so the host classifies them
 // by name; messages are fixed sentences that never carry a value.
 
+import { ConnectorError } from "@netrics/connector-sdk";
+
 import type { CUSTOM_API_MESSAGES } from "./messages.js";
 
 type Messages = typeof CUSTOM_API_MESSAGES;
@@ -32,6 +34,27 @@ export class CustomApiResponseError extends Error {
   constructor(message: Messages[keyof Messages]) {
     super(message);
     this.name = "CustomApiResponseError";
+  }
+}
+
+export const CUSTOM_API_GRAPHQL_ERRORS = "custom_api.graphql_errors";
+
+/**
+ * A GraphQL response with a non-empty `errors` array (ADR 0030 §2). The
+ * message is fixed apart from the stream key, the HTTP status and the
+ * number of errors: no text of the response, `errors[].message` included.
+ */
+export class CustomApiGraphqlError extends ConnectorError {
+  constructor(
+    readonly stream: string,
+    readonly status: number,
+    readonly count: number,
+  ) {
+    super(
+      `The GraphQL API answered with errors (graphql_errors): stream ${stream}, HTTP ${status}, ${count} ${count === 1 ? "error" : "errors"}.`,
+      CUSTOM_API_GRAPHQL_ERRORS,
+    );
+    this.name = "CustomApiGraphqlError";
   }
 }
 

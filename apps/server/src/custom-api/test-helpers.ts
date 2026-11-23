@@ -26,7 +26,7 @@ const FIXTURES = new URL(
 );
 
 export function customApiFixture(
-  name: "v1-shop" | "v1-all-auth" | "v1-images",
+  name: "v1-shop" | "v1-all-auth" | "v1-images" | "v2-post",
 ): Record<string, unknown> {
   return JSON.parse(
     readFileSync(new URL(`${name}.json`, FIXTURES), "utf8"),

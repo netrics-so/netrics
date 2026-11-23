@@ -166,6 +166,10 @@ export const apiErrorsEn = {
     custom_api_records_not_array: "This is not a list of records.",
     custom_api_http_error:
       "The API answered with an error. Check the request path and the values.",
+    custom_api_graphql_errors:
+      "The GraphQL API answered with errors. Check the query and its variables.",
+    custom_api_read_only_unconfirmed:
+      "Confirm that this request only reads data before testing it.",
     custom_api_response_invalid:
       "The API answer could not be read. Check the base URL and the request path.",
     custom_api_request_invalid:

@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 2,
+  "name": "Read-only POST API",
+  "environments": [
+    { "id": "prod", "name": "Production", "baseUrl": "https://api.example.com" }
+  ],
+  "variables": [{ "id": "project_id", "label": "Project ID", "secret": false }],
+  "auth": { "type": "bearer" },
+  "streams": [
+    {
+      "key": "deployments",
+      "name": "Deployments",
+      "request": {
+        "method": "POST",
+        "path": "/graphql",
+        "body": {
+          "kind": "graphql",
+          "query": "query Deployments($project: String!, $after: String) { deployments(project: $project, first: 50, after: $after) { edges { node { id status createdAt } } pageInfo { endCursor } } }",
+          "variables": { "project": "{{project_id}}", "after": null }
+        }
+      },
+      "pagination": {
+        "type": "cursor",
+        "cursorPath": "data.deployments.pageInfo.endCursor",
+        "bodyPath": "variables.after"
+      },
+      "records": "data.deployments.edges",
+      "fields": [
+        {
+          "id": "id",
+          "name": "ID",
+          "path": "node.id",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "id": "status",
+          "name": "Status",
+          "path": "node.status",
+          "type": "string"
+        },
+        {
+          "id": "created_at",
+          "name": "Created",
+          "path": "node.createdAt",
+          "type": "timestamp",
+          "nullable": false
+        }
+      ],
+      "keyFields": ["id"],
+      "mode": "upsert",
+      "reportingField": "created_at"
+    },
+    {
+      "key": "events",
+      "name": "Events",
+      "request": {
+        "method": "POST",
+        "path": "/query",
+        "body": {
+          "kind": "json",
+          "value": {
+            "query": {
+              "kind": "EventsQuery",
+              "project": "{{project_id}}",
+              "after": "{{window.start}}",
+              "before": "{{window.end}}"
+            },
+            "offset": 0,
+            "limit": 100
+          },
+          "readOnlyConfirmed": true
+        }
+      },
+      "pagination": {
+        "type": "offset",
+        "offsetBodyPath": "offset",
+        "limitBodyPath": "limit",
+        "limit": 100
+      },
+      "records": "results",
+      "fields": [
+        {
+          "id": "id",
+          "name": "ID",
+          "path": "id",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "id": "day",
+          "name": "Day",
+          "path": "day",
+          "type": "date",
+          "nullable": false
+        }
+      ],
+      "keyFields": ["id"],
+      "mode": "append",
+      "reportingField": "day",
+      "window": {
+        "type": "date",
+        "stepDays": 1,
+        "backfillDays": 30,
+        "paramFormat": "date"
+      }
+    }
+  ]
+}

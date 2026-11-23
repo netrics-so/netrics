@@ -1,4 +1,5 @@
-// Custom API definition document, schema version 1 (milestone 13, ADR 0027).
+// Custom API definition document, schema version 2 (milestone 13, ADR 0027;
+// POST and GraphQL bodies since version 2, ADR 0030).
 //
 // Internal to netrics: reached through the `@netrics/connector-sdk/custom-api`
 // subpath, not re-exported from the SDK's index and not part of the SDK
@@ -17,7 +18,23 @@ import {
   datasetFieldTypeSchema,
 } from "../datasets.js";
 import { utf8ByteLength } from "../utf8.js";
-import { DATA_PATH_MAX_LENGTH, DataPathError, parseDataPath } from "./path.js";
+import {
+  CUSTOM_API_BODY_LIMITS,
+  customApiBodyPathProblem,
+  customApiBodyStringLeaves,
+  customApiGraphqlProblem,
+  isCustomApiGraphqlReservedParam,
+  isCustomApiJsonTemplate,
+  isPlainJsonObject,
+  type CustomApiBody,
+  type CustomApiJsonValue,
+} from "./body.js";
+import {
+  DATA_PATH_MAX_LENGTH,
+  DataPathError,
+  parseDataPath,
+  type DataPathSegment,
+} from "./path.js";
 import {
   PAGE_PLACEHOLDERS,
   PlaceholderSyntaxError,
@@ -25,12 +42,14 @@ import {
   WINDOW_PLACEHOLDERS,
   parsePlaceholders,
   type PagePlaceholder,
+  type PlaceholderRef,
 } from "./placeholders.js";
 
+export * from "./body.js";
 export * from "./path.js";
 export * from "./placeholders.js";
 
-export const CUSTOM_API_SCHEMA_VERSION = 1;
+export const CUSTOM_API_SCHEMA_VERSION = 2;
 
 export const CUSTOM_API_LIMITS = {
   documentBytes: 262_144,
@@ -90,6 +109,15 @@ export const CUSTOM_API_ISSUE_CODES = [
   "document_too_large",
   "image_stream_needs_reporting_field",
   "variable_reserved",
+  "method_body",
+  "post_next_url",
+  "placeholder_page_in_body",
+  "graphql_operation",
+  "graphql_query_placeholder",
+  "graphql_param_reserved",
+  "body_path_invalid",
+  "pagination_placement",
+  "read_only_unconfirmed",
 ] as const;
 export type CustomApiIssueCode = (typeof CUSTOM_API_ISSUE_CODES)[number];
 
@@ -471,16 +499,25 @@ export const customApiPaginationSchema = z.discriminatedUnion("type", [
     sizeParam: paramName.optional(),
     size: pageSize.optional(),
   }),
+  // Offset and limit each go to a URL parameter or, for a POST stream, to
+  // a body path (ADR 0030 §3); exactly one of the two is a document rule.
   z.strictObject({
     type: z.literal("offset"),
-    offsetParam: paramName,
-    limitParam: paramName,
+    offsetParam: paramName.optional(),
+    limitParam: paramName.optional(),
+    offsetBodyPath: dataPath.min(1).optional(),
+    limitBodyPath: dataPath.min(1).optional(),
     limit: pageSize,
   }),
+  // The cursor goes to a URL parameter or a body path. `firstPage` names
+  // what a body path sends before there is a cursor: JSON null (absent:
+  // the default, never written) or no property at all.
   z.strictObject({
     type: z.literal("cursor"),
     cursorPath: dataPath.min(1),
-    param: paramName,
+    param: paramName.optional(),
+    bodyPath: dataPath.min(1).optional(),
+    firstPage: z.enum(["null", "omit"]).optional(),
   }),
   z.discriminatedUnion("source", [
     z.strictObject({
@@ -531,10 +568,33 @@ function requestPathOk(value: string): boolean {
   );
 }
 
+/** A body template (ADR 0030 §1): plain JSON within CUSTOM_API_BODY_LIMITS. */
+const jsonTemplate = z.custom<CustomApiJsonValue>(isCustomApiJsonTemplate, {
+  message: `Expected a JSON value of at most ${CUSTOM_API_BODY_LIMITS.bytes} bytes and ${CUSTOM_API_BODY_LIMITS.depth} levels`,
+});
+
+export const customApiBodySchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("json"),
+    value: jsonTemplate,
+    readOnlyConfirmed: z.boolean().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("graphql"),
+    query: z.string().min(1).max(CUSTOM_API_BODY_LIMITS.graphqlQueryLength),
+    variables: z.custom<Record<string, CustomApiJsonValue>>(
+      (value) => isPlainJsonObject(value) && isCustomApiJsonTemplate(value),
+      { message: "GraphQL variables are a JSON object" },
+    ),
+  }),
+]);
+
 export const customApiStreamSchema = z.strictObject({
   key: datasetId,
   name,
   request: z.strictObject({
+    // Absent means GET: neither the upgrade nor the parser writes it.
+    method: z.enum(["GET", "POST"]).optional(),
     path: template.refine(requestPathOk, {
       message:
         'The path starts with "/" and has no query, fragment, backslash, empty or dot segments',
@@ -545,6 +605,7 @@ export const customApiStreamSchema = z.strictObject({
       CUSTOM_API_LIMITS.queryParams,
     ).default({}),
     headers: headerRecord().default({}),
+    body: customApiBodySchema.optional(),
   }),
   pagination: customApiPaginationSchema.default({ type: "none" }),
   records: dataPath.default(""),
@@ -611,6 +672,7 @@ export type CustomApiPagination = z.output<typeof customApiPaginationSchema>;
 export type CustomApiWindow = z.output<typeof customApiWindowSchema>;
 export type CustomApiStream = z.output<typeof customApiStreamSchema>;
 export type CustomApiImages = z.output<typeof imagesSchema>;
+export type CustomApiStreamRequest = CustomApiStream["request"];
 export type CustomApiDefinition = z.output<typeof documentSchema>;
 
 // ---------------------------------------------------------- document rules
@@ -652,28 +714,306 @@ export function customApiPagePlaceholders(
 function paginationParams(
   pagination: CustomApiPagination,
 ): [property: string, param: string][] {
+  const params: [string, string | undefined][] = [];
   switch (pagination.type) {
     case "page_number":
-      return pagination.sizeParam === undefined
-        ? [["param", pagination.param]]
-        : [
-            ["param", pagination.param],
-            ["sizeParam", pagination.sizeParam],
-          ];
+      params.push(["param", pagination.param]);
+      params.push(["sizeParam", pagination.sizeParam]);
+      break;
     case "offset":
-      return [
-        ["offsetParam", pagination.offsetParam],
-        ["limitParam", pagination.limitParam],
-      ];
+      params.push(["offsetParam", pagination.offsetParam]);
+      params.push(["limitParam", pagination.limitParam]);
+      break;
     case "cursor":
-      return [["param", pagination.param]];
-    default:
-      return [];
+      params.push(["param", pagination.param]);
+      break;
   }
+  return params.filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+}
+
+/** Body paths a pagination type writes, with the property naming each. */
+function paginationBodyPaths(
+  pagination: CustomApiPagination,
+): [property: string, path: string, omit: boolean][] {
+  const paths: [string, string | undefined, boolean][] = [];
+  if (pagination.type === "offset") {
+    paths.push(["offsetBodyPath", pagination.offsetBodyPath, false]);
+    paths.push(["limitBodyPath", pagination.limitBodyPath, false]);
+  } else if (pagination.type === "cursor")
+    paths.push([
+      "bodyPath",
+      pagination.bodyPath,
+      pagination.firstPage === "omit",
+    ]);
+  return paths.filter(
+    (entry): entry is [string, string, boolean] => entry[1] !== undefined,
+  );
 }
 
 const WINDOW_NAMES = new Set<string>(WINDOW_PLACEHOLDERS);
 const PAGE_NAMES = new Set<string>(PAGE_PLACEHOLDERS);
+
+const GRAPHQL_PROBLEMS = {
+  syntax: "The GraphQL query does not parse",
+  not_query:
+    "Only a GraphQL query operation is sent: no mutation or subscription",
+  several_definitions:
+    "The GraphQL document holds exactly one query operation: no second operation and no fragment definitions",
+} as const;
+
+const BODY_PATH_PROBLEMS = {
+  missing: "The body path does not name a value of the body",
+  not_leaf: "The body path names a list or an object, not a value",
+  outside_variables: "A GraphQL body path points under variables",
+  omit_array_element:
+    'Only an object property can be left out on the first page ("omit")',
+} as const;
+
+/** The parts of a stream its request is built from. */
+export type CustomApiRequestStream = Pick<
+  CustomApiStream,
+  "request" | "pagination" | "window"
+>;
+
+/** What a stream's request rules read from the rest of the definition. */
+export interface CustomApiRequestScope {
+  variables: readonly Pick<CustomApiVariable, "id" | "secret">[];
+  auth: CustomApiAuth;
+}
+
+/** Receives one issue; `code` undefined is a plain (code "invalid") issue. */
+export type CustomApiIssueSink = (
+  path: Path,
+  code: CustomApiIssueCode | undefined,
+  message: string,
+) => void;
+
+/**
+ * The rules of one stream's request (ADR 0027, ADR 0030): placeholders in
+ * the path, query, headers and body; query parameter clashes; the method
+ * and body; the GraphQL read-only guard and its reserved URL parameters;
+ * POST streams without next_url pagination; pagination placement and body
+ * paths. One implementation for saved definitions (the document rules) and
+ * the builder's draft test request, so the two cannot drift.
+ *
+ * `paths` prefixes the issues: where the stream and the auth sit in the
+ * input. A draft passes `confirmation: "draft"`: its JSON-body confirmation
+ * is the server's hash of the exact request, not the stored flag.
+ */
+export function checkCustomApiStreamRequest(
+  stream: CustomApiRequestStream,
+  scope: CustomApiRequestScope,
+  add: CustomApiIssueSink,
+  options: {
+    paths: { stream: Path; auth: Path };
+    confirmation?: "stored" | "draft";
+  },
+): void {
+  const at = (...path: Path): Path => [...options.paths.stream, ...path];
+  const variables = new Map(scope.variables.map((v) => [v.id, v]));
+  const pages = customApiPagePlaceholders(stream.pagination);
+  const request = stream.request;
+  const method = request.method ?? "GET";
+  const body: CustomApiBody | undefined = request.body;
+  const auth = scope.auth;
+
+  const checkRef = (name: string, path: Path, inBody: boolean) => {
+    if (WINDOW_NAMES.has(name)) {
+      if (stream.window.type === "none")
+        add(
+          path,
+          "placeholder_window_without_window",
+          "Window placeholders need a window",
+        );
+    } else if (PAGE_NAMES.has(name)) {
+      if (inBody)
+        add(
+          path,
+          "placeholder_page_in_body",
+          "Page values reach a body only through the pagination's body paths",
+        );
+      else if (!pages.has(name as PagePlaceholder))
+        add(
+          path,
+          "placeholder_page_without_pagination",
+          "This page placeholder needs a matching pagination type",
+        );
+    } else {
+      const variable = variables.get(name);
+      if (!variable) add(path, "placeholder_unknown", "Unknown placeholder");
+      else if (variable.secret)
+        add(
+          path,
+          "placeholder_secret_outside_auth",
+          "Secret variables can only be used in auth headers",
+        );
+    }
+  };
+  const checkTemplate = (value: string, path: Path) => {
+    for (const ref of placeholdersOf(value)) checkRef(ref.name, path, false);
+  };
+  checkTemplate(request.path, at("request", "path"));
+  for (const [key, value] of Object.entries(request.query))
+    checkTemplate(value, at("request", "query", key));
+  for (const [key, value] of Object.entries(request.headers))
+    checkTemplate(value, at("request", "headers", key));
+
+  // Method and body (ADR 0030 §1, §2).
+  if (method === "POST" && body === undefined)
+    add(at("request", "body"), "method_body", "A POST request needs a body");
+  if (method !== "POST" && body !== undefined)
+    add(
+      at("request", "body"),
+      "method_body",
+      "Only a POST request sends a body",
+    );
+  if (body !== undefined) {
+    const base =
+      body.kind === "json"
+        ? at("request", "body", "value")
+        : at("request", "body");
+    for (const leaf of customApiBodyStringLeaves(body)) {
+      const path = [...base, ...leaf.path];
+      let refs: PlaceholderRef[];
+      try {
+        refs = parsePlaceholders(leaf.value);
+      } catch (error) {
+        if (!(error instanceof PlaceholderSyntaxError)) throw error;
+        add(path, "placeholder_syntax", "Invalid placeholder syntax");
+        continue;
+      }
+      for (const ref of refs) checkRef(ref.name, path, true);
+    }
+    if (body.kind === "graphql") {
+      if (body.query.includes("{{"))
+        add(
+          at("request", "body", "query"),
+          "graphql_query_placeholder",
+          "The GraphQL query is sent as written: placeholders go into variables",
+        );
+      const problem = customApiGraphqlProblem(body.query);
+      if (problem)
+        add(
+          at("request", "body", "query"),
+          "graphql_operation",
+          GRAPHQL_PROBLEMS[problem],
+        );
+    } else if (
+      (options.confirmation ?? "stored") === "stored" &&
+      body.readOnlyConfirmed !== true
+    )
+      add(
+        at("request", "body", "readOnlyConfirmed"),
+        "read_only_unconfirmed",
+        "Confirm that this request only reads data",
+      );
+  }
+  if (method === "POST" && stream.pagination.type === "next_url")
+    add(
+      at("pagination", "type"),
+      "post_next_url",
+      "A POST request stays on its endpoint: it takes no next page URL from a response",
+    );
+
+  // Pagination: each page value goes to a URL parameter or a body path.
+  const pagination = stream.pagination;
+  const placement = (param: unknown, bodyPath: unknown, property: string) => {
+    if ((param === undefined) === (bodyPath === undefined))
+      add(
+        at("pagination", property),
+        "pagination_placement",
+        "Choose either a URL parameter or a body path",
+      );
+  };
+  if (pagination.type === "cursor") {
+    placement(pagination.param, pagination.bodyPath, "param");
+    if (pagination.firstPage !== undefined && pagination.bodyPath === undefined)
+      add(
+        at("pagination", "firstPage"),
+        "pagination_placement",
+        "The first page value applies to a body path only",
+      );
+  } else if (pagination.type === "offset") {
+    placement(pagination.offsetParam, pagination.offsetBodyPath, "offsetParam");
+    placement(pagination.limitParam, pagination.limitBodyPath, "limitParam");
+  }
+  const written = new Set<string>();
+  for (const [property, raw, omit] of paginationBodyPaths(pagination)) {
+    const path = at("pagination", property);
+    if (method !== "POST" || body === undefined) {
+      add(
+        path,
+        "body_path_invalid",
+        "Body paths need a POST request with a body",
+      );
+      continue;
+    }
+    let segments: DataPathSegment[];
+    try {
+      segments = parseDataPath(raw);
+    } catch {
+      continue; // reported by the property's own check
+    }
+    const problem = customApiBodyPathProblem(body, segments, { omit });
+    if (problem) add(path, "body_path_invalid", BODY_PATH_PROBLEMS[problem]);
+    const key = JSON.stringify(segments);
+    if (written.has(key))
+      add(path, "body_path_invalid", "Two page values name the same body path");
+    written.add(key);
+  }
+
+  // Query parameter clashes.
+  const apiKeyQuery =
+    auth.type === "api_key" && auth.placement === "query"
+      ? auth.name
+      : undefined;
+  if (apiKeyQuery !== undefined && Object.hasOwn(request.query, apiKeyQuery))
+    add(
+      at("request", "query", apiKeyQuery),
+      "pagination_param_clash",
+      "The API key query parameter is set by the auth method",
+    );
+  const taken = new Set(Object.keys(request.query));
+  if (apiKeyQuery !== undefined) taken.add(apiKeyQuery);
+  for (const [property, param] of paginationParams(pagination)) {
+    if (taken.has(param))
+      add(
+        at("pagination", property),
+        "pagination_param_clash",
+        "This parameter is already used by the request or auth",
+      );
+    taken.add(param);
+  }
+
+  // URL parameters that could override a GraphQL body (ADR 0030 §2).
+  if (body?.kind === "graphql") {
+    const reserved = "This URL parameter could override the GraphQL body";
+    for (const key of Object.keys(request.query))
+      if (isCustomApiGraphqlReservedParam(key))
+        add(at("request", "query", key), "graphql_param_reserved", reserved);
+    if (
+      apiKeyQuery !== undefined &&
+      isCustomApiGraphqlReservedParam(apiKeyQuery)
+    )
+      add([...options.paths.auth, "name"], "graphql_param_reserved", reserved);
+    for (const [property, param] of paginationParams(pagination))
+      if (isCustomApiGraphqlReservedParam(param))
+        add(at("pagination", property), "graphql_param_reserved", reserved);
+  }
+
+  if (
+    pagination.type === "page_number" &&
+    pagination.sizeParam !== undefined &&
+    pagination.size === undefined
+  )
+    add(
+      at("pagination", "size"),
+      undefined,
+      "A page size parameter needs a page size",
+    );
+}
 
 function checkDocument(doc: CustomApiDefinition, ctx: z.RefinementCtx): void {
   const add = (path: Path, code: CustomApiIssueCode, message: string) =>
@@ -749,81 +1089,17 @@ function checkDocument(doc: CustomApiDefinition, ctx: z.RefinementCtx): void {
           "Auth headers may use connection variables only",
         );
 
-  const apiKeyQuery =
-    auth.type === "api_key" && auth.placement === "query"
-      ? auth.name
-      : undefined;
-
   doc.streams.forEach((stream, s) => {
     const at = (...path: Path): Path => ["streams", s, ...path];
-    const pages = customApiPagePlaceholders(stream.pagination);
-
-    const checkTemplate = (value: string, path: Path) => {
-      for (const ref of placeholdersOf(value)) {
-        if (WINDOW_NAMES.has(ref.name)) {
-          if (stream.window.type === "none")
-            add(
-              path,
-              "placeholder_window_without_window",
-              "Window placeholders need a window",
-            );
-        } else if (PAGE_NAMES.has(ref.name)) {
-          if (!pages.has(ref.name as PagePlaceholder))
-            add(
-              path,
-              "placeholder_page_without_pagination",
-              "This page placeholder needs a matching pagination type",
-            );
-        } else {
-          const variable = variables.get(ref.name);
-          if (!variable)
-            add(path, "placeholder_unknown", "Unknown placeholder");
-          else if (variable.secret)
-            add(
-              path,
-              "placeholder_secret_outside_auth",
-              "Secret variables can only be used in auth headers",
-            );
-        }
-      }
-    };
-    checkTemplate(stream.request.path, at("request", "path"));
-    for (const [key, value] of Object.entries(stream.request.query))
-      checkTemplate(value, at("request", "query", key));
-    for (const [key, value] of Object.entries(stream.request.headers))
-      checkTemplate(value, at("request", "headers", key));
-
-    // Query parameter clashes.
-    if (
-      apiKeyQuery !== undefined &&
-      Object.hasOwn(stream.request.query, apiKeyQuery)
-    )
-      add(
-        at("request", "query", apiKeyQuery),
-        "pagination_param_clash",
-        "The API key query parameter is set by the auth method",
-      );
-    const taken = new Set(Object.keys(stream.request.query));
-    if (apiKeyQuery !== undefined) taken.add(apiKeyQuery);
-    for (const [property, param] of paginationParams(stream.pagination)) {
-      if (taken.has(param))
-        add(
-          at("pagination", property),
-          "pagination_param_clash",
-          "This parameter is already used by the request or auth",
-        );
-      taken.add(param);
-    }
-    if (
-      stream.pagination.type === "page_number" &&
-      stream.pagination.sizeParam !== undefined &&
-      stream.pagination.size === undefined
-    )
-      ctx.addIssue({
-        code: "custom",
-        path: at("pagination", "size"),
-        message: "A page size parameter needs a page size",
-      });
+    checkCustomApiStreamRequest(
+      stream,
+      doc,
+      (path, code, message) =>
+        code === undefined
+          ? ctx.addIssue({ code: "custom", path, message })
+          : add(path, code, message),
+      { paths: { stream: at(), auth: ["auth"] } },
+    );
 
     // Fields: mirrors of sourceDatasetSchema, plus role and format.
     const fields = new Map<string, CustomApiField>();
@@ -1106,11 +1382,17 @@ function inputBytes(raw: unknown): number {
 
 /**
  * Upgrade steps by source version: UPGRADES[n] turns a version-n document into
- * n+1. Empty while only v1 exists. Every step needs fixtures/v<n>-*.json.
+ * n+1. Every step needs fixtures/v<n>-*.json.
+ *
+ * 1 → 2 (ADR 0030 §5) changes only the version: an absent `method` means
+ * GET, and nothing writes it, so an upgraded document is exactly as large
+ * as the original and fits the same size limit.
  */
 export const CUSTOM_API_UPGRADES: Readonly<
   Record<number, (doc: Record<string, unknown>) => Record<string, unknown>>
-> = Object.freeze({});
+> = Object.freeze({
+  1: (doc: Record<string, unknown>) => ({ ...doc, schemaVersion: 2 }),
+});
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value))

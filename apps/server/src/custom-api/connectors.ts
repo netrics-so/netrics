@@ -143,6 +143,8 @@ export function callOptionsFor(
         resolved.customApi.definition,
         input.credentials as CustomApiCredentials,
         input.config ?? {},
+        // Rendered bodies are redacted like rendered headers (ADR 0030 §4).
+        resolved.customApi.definition.streams,
       ),
     ],
   });

@@ -2100,7 +2100,7 @@
         "properties": {
           "schemaVersion": {
             "type": "number",
-            "const": 1
+            "const": 2
           },
           "name": {
             "type": "string",
@@ -2473,6 +2473,13 @@
                 "request": {
                   "type": "object",
                   "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "GET",
+                        "POST"
+                      ]
+                    },
                     "path": {
                       "type": "string",
                       "maxLength": 2000
@@ -2501,6 +2508,49 @@
                         "type": "string",
                         "maxLength": 2000
                       }
+                    },
+                    "body": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "json"
+                            },
+                            "value": {},
+                            "readOnlyConfirmed": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "graphql"
+                            },
+                            "query": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32768
+                            },
+                            "variables": {}
+                          },
+                          "required": [
+                            "kind",
+                            "query",
+                            "variables"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -2585,6 +2635,16 @@
                           "minLength": 1,
                           "maxLength": 100
                         },
+                        "offsetBodyPath": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "limitBodyPath": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
                         "limit": {
                           "type": "integer",
                           "minimum": 1,
@@ -2593,8 +2653,6 @@
                       },
                       "required": [
                         "type",
-                        "offsetParam",
-                        "limitParam",
                         "limit"
                       ],
                       "additionalProperties": false
@@ -2615,12 +2673,23 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 100
+                        },
+                        "bodyPath": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "firstPage": {
+                          "type": "string",
+                          "enum": [
+                            "null",
+                            "omit"
+                          ]
                         }
                       },
                       "required": [
                         "type",
-                        "cursorPath",
-                        "param"
+                        "cursorPath"
                       ],
                       "additionalProperties": false
                     },
@@ -4982,7 +5051,7 @@
         "properties": {
           "schemaVersion": {
             "type": "number",
-            "const": 1
+            "const": 2
           },
           "name": {
             "type": "string",
@@ -5366,6 +5435,13 @@
                 "request": {
                   "type": "object",
                   "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "GET",
+                        "POST"
+                      ]
+                    },
                     "path": {
                       "type": "string",
                       "maxLength": 2000
@@ -5394,6 +5470,49 @@
                         "type": "string",
                         "maxLength": 2000
                       }
+                    },
+                    "body": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "json"
+                            },
+                            "value": {},
+                            "readOnlyConfirmed": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "graphql"
+                            },
+                            "query": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32768
+                            },
+                            "variables": {}
+                          },
+                          "required": [
+                            "kind",
+                            "query",
+                            "variables"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -5481,6 +5600,16 @@
                           "minLength": 1,
                           "maxLength": 100
                         },
+                        "offsetBodyPath": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "limitBodyPath": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
                         "limit": {
                           "type": "integer",
                           "minimum": 1,
@@ -5489,8 +5618,6 @@
                       },
                       "required": [
                         "type",
-                        "offsetParam",
-                        "limitParam",
                         "limit"
                       ],
                       "additionalProperties": false
@@ -5511,12 +5638,23 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 100
+                        },
+                        "bodyPath": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "firstPage": {
+                          "type": "string",
+                          "enum": [
+                            "null",
+                            "omit"
+                          ]
                         }
                       },
                       "required": [
                         "type",
-                        "cursorPath",
-                        "param"
+                        "cursorPath"
                       ],
                       "additionalProperties": false
                     },
@@ -70968,6 +71106,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -71054,6 +71195,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -71098,6 +71242,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -71496,6 +71643,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -71582,6 +71732,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -71626,6 +71779,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -71827,6 +71983,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -71913,6 +72072,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -71957,6 +72119,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -72171,6 +72336,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -72257,6 +72425,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -72476,6 +72647,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -72731,6 +72905,101 @@
                                 },
                                 "loginMissing": {
                                   "type": "boolean"
+                                },
+                                "requests": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "stream": {
+                                        "type": "string"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "method": {
+                                        "type": "string",
+                                        "enum": [
+                                          "GET",
+                                          "POST"
+                                        ]
+                                      },
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "body": {
+                                        "anyOf": [
+                                          {
+                                            "oneOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "json"
+                                                    ]
+                                                  },
+                                                  "value": {
+                                                    "$ref": "#/components/schemas/schema0"
+                                                  },
+                                                  "readOnlyConfirmed": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "value",
+                                                  "readOnlyConfirmed"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "graphql"
+                                                    ]
+                                                  },
+                                                  "query": {
+                                                    "type": "string"
+                                                  },
+                                                  "variables": {
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "$ref": "#/components/schemas/schema1"
+                                                    }
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "query",
+                                                  "variables"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "stream",
+                                      "name",
+                                      "method",
+                                      "path",
+                                      "body"
+                                    ],
+                                    "additionalProperties": false
+                                  }
                                 }
                               },
                               "required": [
@@ -72740,7 +73009,8 @@
                                 "environmentName",
                                 "currentVersion",
                                 "updateAvailable",
-                                "loginMissing"
+                                "loginMissing",
+                                "requests"
                               ],
                               "additionalProperties": false
                             },
@@ -72989,6 +73259,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -73075,6 +73348,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -73119,6 +73395,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -73287,6 +73566,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -73441,6 +73723,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -73527,6 +73812,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -73571,6 +73859,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -73956,6 +74247,13 @@
                           "request": {
                             "type": "object",
                             "properties": {
+                              "method": {
+                                "type": "string",
+                                "enum": [
+                                  "GET",
+                                  "POST"
+                                ]
+                              },
                               "path": {
                                 "type": "string",
                                 "maxLength": 2000
@@ -73984,6 +74282,53 @@
                                   "type": "string",
                                   "maxLength": 2000
                                 }
+                              },
+                              "body": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "json"
+                                        ]
+                                      },
+                                      "value": {},
+                                      "readOnlyConfirmed": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "graphql"
+                                        ]
+                                      },
+                                      "query": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 32768
+                                      },
+                                      "variables": {}
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "query",
+                                      "variables"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -74078,6 +74423,16 @@
                                     "minLength": 1,
                                     "maxLength": 100
                                   },
+                                  "offsetBodyPath": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "limitBodyPath": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
                                   "limit": {
                                     "type": "integer",
                                     "minimum": 1,
@@ -74086,8 +74441,6 @@
                                 },
                                 "required": [
                                   "type",
-                                  "offsetParam",
-                                  "limitParam",
                                   "limit"
                                 ],
                                 "additionalProperties": false
@@ -74110,12 +74463,23 @@
                                     "type": "string",
                                     "minLength": 1,
                                     "maxLength": 100
+                                  },
+                                  "bodyPath": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "firstPage": {
+                                    "type": "string",
+                                    "enum": [
+                                      "null",
+                                      "omit"
+                                    ]
                                   }
                                 },
                                 "required": [
                                   "type",
-                                  "cursorPath",
-                                  "param"
+                                  "cursorPath"
                                 ],
                                 "additionalProperties": false
                               },
@@ -74569,6 +74933,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -74655,6 +75022,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -74699,6 +75069,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -74819,6 +75192,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -74963,6 +75339,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -75049,6 +75428,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -75093,6 +75475,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -75109,7 +75494,7 @@
     },
     "/v1/workspaces/{workspaceId}/custom-api/drafts/{draftId}/test": {
       "post": {
-        "summary": "Run one stream of the builder's unsaved definition against the draft's secrets (at most 5 pages, 1,000 records, 60 s) and answer the redacted, bounded first response, record arrays, field suggestions, mapped preview rows and a request log. The definition is stored on the draft first. At most 30 test requests per workspace and minute (429 custom_api_test_rate_limited with Retry-After); 409 custom_api_credentials_host_changed without any request when the secrets were entered for other hosts",
+        "summary": "Run one stream of the builder's unsaved definition against the draft's secrets (at most 5 pages, 1,000 records, 60 s) and answer the redacted, bounded first response, record arrays, field suggestions, mapped preview rows and a request log. The definition is stored on the draft first. At most 30 test requests per workspace and minute (429 custom_api_test_rate_limited with Retry-After); 409 custom_api_credentials_host_changed without any request when the secrets were entered for other hosts. The draft runs the saved definition's request rules first (400 invalid_request with issues: the GraphQL read-only guard, body and body-pagination rules); a JSON-body POST needs readOnlyConfirmation, the hash a 400 custom_api_read_only_unconfirmed answers for exactly this request (ADR 0030)",
         "tags": [
           "custom-api"
         ],
@@ -75478,6 +75863,13 @@
                           "request": {
                             "type": "object",
                             "properties": {
+                              "method": {
+                                "type": "string",
+                                "enum": [
+                                  "GET",
+                                  "POST"
+                                ]
+                              },
                               "path": {
                                 "type": "string",
                                 "maxLength": 2000
@@ -75506,6 +75898,53 @@
                                   "type": "string",
                                   "maxLength": 2000
                                 }
+                              },
+                              "body": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "json"
+                                        ]
+                                      },
+                                      "value": {},
+                                      "readOnlyConfirmed": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "graphql"
+                                        ]
+                                      },
+                                      "query": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 32768
+                                      },
+                                      "variables": {}
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "query",
+                                      "variables"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -75600,6 +76039,16 @@
                                     "minLength": 1,
                                     "maxLength": 100
                                   },
+                                  "offsetBodyPath": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "limitBodyPath": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
                                   "limit": {
                                     "type": "integer",
                                     "minimum": 1,
@@ -75608,8 +76057,6 @@
                                 },
                                 "required": [
                                   "type",
-                                  "offsetParam",
-                                  "limitParam",
                                   "limit"
                                 ],
                                 "additionalProperties": false
@@ -75632,12 +76079,23 @@
                                     "type": "string",
                                     "minLength": 1,
                                     "maxLength": 100
+                                  },
+                                  "bodyPath": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "firstPage": {
+                                    "type": "string",
+                                    "enum": [
+                                      "null",
+                                      "omit"
+                                    ]
                                   }
                                 },
                                 "required": [
                                   "type",
-                                  "cursorPath",
-                                  "param"
+                                  "cursorPath"
                                 ],
                                 "additionalProperties": false
                               },
@@ -75963,6 +76421,10 @@
                       "start",
                       "end"
                     ]
+                  },
+                  "readOnlyConfirmation": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                   }
                 },
                 "required": [
@@ -76240,7 +76702,8 @@
                           "method": {
                             "type": "string",
                             "enum": [
-                              "GET"
+                              "GET",
+                              "POST"
                             ]
                           },
                           "url": {
@@ -76431,6 +76894,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -76517,6 +76983,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -76561,6 +77030,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -76605,6 +77077,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -76757,6 +77232,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -76801,6 +77279,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77007,6 +77488,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77093,6 +77577,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77137,6 +77624,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77262,6 +77752,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77348,6 +77841,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77392,6 +77888,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77598,6 +78097,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77684,6 +78186,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -77728,6 +78233,9 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "readOnlyConfirmation": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -79787,6 +80295,101 @@
                                 },
                                 "loginMissing": {
                                   "type": "boolean"
+                                },
+                                "requests": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "stream": {
+                                        "type": "string"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "method": {
+                                        "type": "string",
+                                        "enum": [
+                                          "GET",
+                                          "POST"
+                                        ]
+                                      },
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "body": {
+                                        "anyOf": [
+                                          {
+                                            "oneOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "json"
+                                                    ]
+                                                  },
+                                                  "value": {
+                                                    "$ref": "#/components/schemas/schema0"
+                                                  },
+                                                  "readOnlyConfirmed": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "value",
+                                                  "readOnlyConfirmed"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "graphql"
+                                                    ]
+                                                  },
+                                                  "query": {
+                                                    "type": "string"
+                                                  },
+                                                  "variables": {
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "$ref": "#/components/schemas/schema1"
+                                                    }
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "query",
+                                                  "variables"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "stream",
+                                      "name",
+                                      "method",
+                                      "path",
+                                      "body"
+                                    ],
+                                    "additionalProperties": false
+                                  }
                                 }
                               },
                               "required": [
@@ -79796,7 +80399,8 @@
                                 "environmentName",
                                 "currentVersion",
                                 "updateAvailable",
-                                "loginMissing"
+                                "loginMissing",
+                                "requests"
                               ],
                               "additionalProperties": false
                             },
@@ -98179,6 +98783,101 @@
                                 },
                                 "loginMissing": {
                                   "type": "boolean"
+                                },
+                                "requests": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "stream": {
+                                        "type": "string"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "method": {
+                                        "type": "string",
+                                        "enum": [
+                                          "GET",
+                                          "POST"
+                                        ]
+                                      },
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "body": {
+                                        "anyOf": [
+                                          {
+                                            "oneOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "json"
+                                                    ]
+                                                  },
+                                                  "value": {
+                                                    "$ref": "#/components/schemas/schema0"
+                                                  },
+                                                  "readOnlyConfirmed": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "value",
+                                                  "readOnlyConfirmed"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "graphql"
+                                                    ]
+                                                  },
+                                                  "query": {
+                                                    "type": "string"
+                                                  },
+                                                  "variables": {
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "$ref": "#/components/schemas/schema1"
+                                                    }
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "query",
+                                                  "variables"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "stream",
+                                      "name",
+                                      "method",
+                                      "path",
+                                      "body"
+                                    ],
+                                    "additionalProperties": false
+                                  }
                                 }
                               },
                               "required": [
@@ -98188,7 +98887,8 @@
                                 "environmentName",
                                 "currentVersion",
                                 "updateAvailable",
-                                "loginMissing"
+                                "loginMissing",
+                                "requests"
                               ],
                               "additionalProperties": false
                             },
@@ -98664,6 +99364,101 @@
                                   },
                                   "loginMissing": {
                                     "type": "boolean"
+                                  },
+                                  "requests": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "stream": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "method": {
+                                          "type": "string",
+                                          "enum": [
+                                            "GET",
+                                            "POST"
+                                          ]
+                                        },
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "body": {
+                                          "anyOf": [
+                                            {
+                                              "oneOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "json"
+                                                      ]
+                                                    },
+                                                    "value": {
+                                                      "$ref": "#/components/schemas/schema0"
+                                                    },
+                                                    "readOnlyConfirmed": {
+                                                      "type": "boolean"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "value",
+                                                    "readOnlyConfirmed"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "graphql"
+                                                      ]
+                                                    },
+                                                    "query": {
+                                                      "type": "string"
+                                                    },
+                                                    "variables": {
+                                                      "type": "object",
+                                                      "propertyNames": {
+                                                        "type": "string"
+                                                      },
+                                                      "additionalProperties": {
+                                                        "$ref": "#/components/schemas/schema1"
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "query",
+                                                    "variables"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "stream",
+                                        "name",
+                                        "method",
+                                        "path",
+                                        "body"
+                                      ],
+                                      "additionalProperties": false
+                                    }
                                   }
                                 },
                                 "required": [
@@ -98673,7 +99468,8 @@
                                   "environmentName",
                                   "currentVersion",
                                   "updateAvailable",
-                                  "loginMissing"
+                                  "loginMissing",
+                                  "requests"
                                 ],
                                 "additionalProperties": false
                               },
@@ -99110,6 +99906,101 @@
                                   },
                                   "loginMissing": {
                                     "type": "boolean"
+                                  },
+                                  "requests": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "stream": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "method": {
+                                          "type": "string",
+                                          "enum": [
+                                            "GET",
+                                            "POST"
+                                          ]
+                                        },
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "body": {
+                                          "anyOf": [
+                                            {
+                                              "oneOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "json"
+                                                      ]
+                                                    },
+                                                    "value": {
+                                                      "$ref": "#/components/schemas/schema0"
+                                                    },
+                                                    "readOnlyConfirmed": {
+                                                      "type": "boolean"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "value",
+                                                    "readOnlyConfirmed"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "graphql"
+                                                      ]
+                                                    },
+                                                    "query": {
+                                                      "type": "string"
+                                                    },
+                                                    "variables": {
+                                                      "type": "object",
+                                                      "propertyNames": {
+                                                        "type": "string"
+                                                      },
+                                                      "additionalProperties": {
+                                                        "$ref": "#/components/schemas/schema1"
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "query",
+                                                    "variables"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "stream",
+                                        "name",
+                                        "method",
+                                        "path",
+                                        "body"
+                                      ],
+                                      "additionalProperties": false
+                                    }
                                   }
                                 },
                                 "required": [
@@ -99119,7 +100010,8 @@
                                   "environmentName",
                                   "currentVersion",
                                   "updateAvailable",
-                                  "loginMissing"
+                                  "loginMissing",
+                                  "requests"
                                 ],
                                 "additionalProperties": false
                               },
@@ -99946,6 +100838,101 @@
                                 },
                                 "loginMissing": {
                                   "type": "boolean"
+                                },
+                                "requests": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "stream": {
+                                        "type": "string"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "method": {
+                                        "type": "string",
+                                        "enum": [
+                                          "GET",
+                                          "POST"
+                                        ]
+                                      },
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "body": {
+                                        "anyOf": [
+                                          {
+                                            "oneOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "json"
+                                                    ]
+                                                  },
+                                                  "value": {
+                                                    "$ref": "#/components/schemas/schema0"
+                                                  },
+                                                  "readOnlyConfirmed": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "value",
+                                                  "readOnlyConfirmed"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "graphql"
+                                                    ]
+                                                  },
+                                                  "query": {
+                                                    "type": "string"
+                                                  },
+                                                  "variables": {
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "$ref": "#/components/schemas/schema1"
+                                                    }
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "query",
+                                                  "variables"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "stream",
+                                      "name",
+                                      "method",
+                                      "path",
+                                      "body"
+                                    ],
+                                    "additionalProperties": false
+                                  }
                                 }
                               },
                               "required": [
@@ -99955,7 +100942,8 @@
                                 "environmentName",
                                 "currentVersion",
                                 "updateAvailable",
-                                "loginMissing"
+                                "loginMissing",
+                                "requests"
                               ],
                               "additionalProperties": false
                             },
@@ -100917,6 +101905,101 @@
                                 },
                                 "loginMissing": {
                                   "type": "boolean"
+                                },
+                                "requests": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "stream": {
+                                        "type": "string"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "method": {
+                                        "type": "string",
+                                        "enum": [
+                                          "GET",
+                                          "POST"
+                                        ]
+                                      },
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "body": {
+                                        "anyOf": [
+                                          {
+                                            "oneOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "json"
+                                                    ]
+                                                  },
+                                                  "value": {
+                                                    "$ref": "#/components/schemas/schema0"
+                                                  },
+                                                  "readOnlyConfirmed": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "value",
+                                                  "readOnlyConfirmed"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "graphql"
+                                                    ]
+                                                  },
+                                                  "query": {
+                                                    "type": "string"
+                                                  },
+                                                  "variables": {
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "$ref": "#/components/schemas/schema1"
+                                                    }
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "query",
+                                                  "variables"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "stream",
+                                      "name",
+                                      "method",
+                                      "path",
+                                      "body"
+                                    ],
+                                    "additionalProperties": false
+                                  }
                                 }
                               },
                               "required": [
@@ -100926,7 +102009,8 @@
                                 "environmentName",
                                 "currentVersion",
                                 "updateAvailable",
-                                "loginMissing"
+                                "loginMissing",
+                                "requests"
                               ],
                               "additionalProperties": false
                             },
@@ -102820,6 +103904,101 @@
                                   },
                                   "loginMissing": {
                                     "type": "boolean"
+                                  },
+                                  "requests": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "stream": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "method": {
+                                          "type": "string",
+                                          "enum": [
+                                            "GET",
+                                            "POST"
+                                          ]
+                                        },
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "body": {
+                                          "anyOf": [
+                                            {
+                                              "oneOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "json"
+                                                      ]
+                                                    },
+                                                    "value": {
+                                                      "$ref": "#/components/schemas/schema0"
+                                                    },
+                                                    "readOnlyConfirmed": {
+                                                      "type": "boolean"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "value",
+                                                    "readOnlyConfirmed"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "graphql"
+                                                      ]
+                                                    },
+                                                    "query": {
+                                                      "type": "string"
+                                                    },
+                                                    "variables": {
+                                                      "type": "object",
+                                                      "propertyNames": {
+                                                        "type": "string"
+                                                      },
+                                                      "additionalProperties": {
+                                                        "$ref": "#/components/schemas/schema1"
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "query",
+                                                    "variables"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "stream",
+                                        "name",
+                                        "method",
+                                        "path",
+                                        "body"
+                                      ],
+                                      "additionalProperties": false
+                                    }
                                   }
                                 },
                                 "required": [
@@ -102829,7 +104008,8 @@
                                   "environmentName",
                                   "currentVersion",
                                   "updateAvailable",
-                                  "loginMissing"
+                                  "loginMissing",
+                                  "requests"
                                 ],
                                 "additionalProperties": false
                               },

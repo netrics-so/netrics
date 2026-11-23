@@ -189,6 +189,22 @@ describe("createEgressFetch", () => {
     ).rejects.toThrow(/too many redirects/);
   });
 
+  it("follows no redirect of a POST in same-host mode (ADR 0030)", async () => {
+    const custom = fixtureFetch({ redirects: "same-host" });
+    // A same-host loop: GET follows it until the cap.
+    await expect(
+      custom(`http://api.fixture.test:${port}/loop`),
+    ).rejects.toThrow(/too many redirects/);
+    // POST gets the 3xx itself, unfollowed.
+    const response = await custom(`http://api.fixture.test:${port}/loop`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe("/loop");
+  });
+
   it("keeps App Store icon requests on the exact pinned hosts, on every hop (#226)", async () => {
     const icons = fixtureFetch({
       allowedDomains: appStoreConnectManifest.outboundDomains,

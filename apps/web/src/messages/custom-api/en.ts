@@ -553,6 +553,21 @@ export const customApiEn = {
           "Data with images needs a time field to find the newest items.",
         variable_reserved:
           "A secret connection value can't use the name of a login credential.",
+        method_body:
+          "A POST request needs a body, and only a POST request sends one.",
+        post_next_url:
+          "A POST request stays on its endpoint: it can't take the next page's address from a response.",
+        placeholder_page_in_body:
+          "Paging values reach a body only through the paging's body paths.",
+        graphql_operation:
+          "The GraphQL query must be exactly one query: no mutation, subscription, second operation or fragment definition.",
+        graphql_query_placeholder:
+          "The GraphQL query is sent as written: put values in braces into the variables.",
+        graphql_param_reserved:
+          "A GraphQL request can't use the URL parameters query, operationName, variables or extensions.",
+        body_path_invalid: "A body path doesn't point to a value of the body.",
+        pagination_placement: "Choose either a URL parameter or a body path.",
+        read_only_unconfirmed: "Confirm that this request only reads data.",
         invalid: "A value is missing or not valid.",
       },
     },

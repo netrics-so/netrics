@@ -3,8 +3,11 @@
 // definition. Credentials only ever go to the environment host.
 
 import {
+  isCustomApiGraphqlReservedParam,
   parsePlaceholders,
+  renderCustomApiBody,
   renderTemplate,
+  type CustomApiBodyWrite,
   type CustomApiDefinition,
   type CustomApiEnvironment,
   type CustomApiStream,
@@ -18,15 +21,25 @@ import {
 } from "./errors.js";
 import { customApiEnvironmentHost } from "./manifest.js";
 import { CUSTOM_API_MESSAGES } from "./messages.js";
+import { firstPageParams } from "./pagination.js";
 
 export interface BuiltRequest {
+  method: "GET" | "POST";
   url: string;
   headers: Record<string, string>;
+  /** POST: the rendered JSON body. Redacted like rendered headers (ADR 0030 §4). */
+  body?: string;
   /** The URL with the API key and cursor values (every query value of a next URL) replaced. */
   redactedUrl: string;
 }
 
 const REDACTED = "[redacted]";
+
+/** Fixed messages of requests a POST or GraphQL stream refuses to send. */
+export const POST_FIXED_ENDPOINT =
+  "A POST request stays on the endpoint its definition names: it takes no next page URL";
+export const GRAPHQL_URL_PARAM =
+  "A GraphQL request cannot carry the URL parameters query, operationName, variables or extensions";
 
 type AuthInput = Pick<CustomApiDefinition, "auth" | "variables">;
 
@@ -160,11 +173,22 @@ export function buildRequest(input: {
   placeholders: Readonly<Record<string, string>>;
   /** Added by the pagination type. */
   pageParams: Readonly<Record<string, string>>;
+  /** Page values the pagination type writes into a POST body. */
+  bodyWrites?: readonly CustomApiBodyWrite[];
   /** next_url pages: used as is after the host check. */
   nextUrl?: string;
 }): BuiltRequest {
   const { definition, stream, environment, credentials } = input;
   checkBinding(environment, credentials);
+  const method = stream.request.method ?? "GET";
+  const requestBody = stream.request.body;
+  // A POST stream stays on the endpoint its definition names (ADR 0030 §2).
+  if (method === "POST" && input.nextUrl !== undefined)
+    throw new CustomApiConfigError(POST_FIXED_ENDPOINT);
+  if ((method === "POST") !== (requestBody !== undefined))
+    throw new CustomApiConfigError(
+      "A POST request needs a body, and only a POST request sends one",
+    );
   const base = new URL(environment.baseUrl);
   const values = { ...stringValues(input.config), ...input.placeholders };
   let url: URL;
@@ -202,6 +226,21 @@ export function buildRequest(input: {
     credentials,
     input.config,
   );
+  let body: string | undefined;
+  if (requestBody !== undefined) {
+    // Checked on every request, whatever the definition check found:
+    // some servers let URL parameters override a GraphQL body.
+    if (requestBody.kind === "graphql")
+      for (const name of url.searchParams.keys())
+        if (isCustomApiGraphqlReservedParam(name))
+          throw new CustomApiConfigError(GRAPHQL_URL_PARAM);
+    body = renderCustomApiBody(
+      requestBody,
+      (template) => renderTemplate(template, values, (value) => value),
+      input.bodyWrites ?? [],
+    );
+    headers["content-type"] = "application/json; charset=utf-8";
+  }
 
   const redacted = new URL(url.href);
   const auth = definition.auth;
@@ -217,8 +256,10 @@ export function buildRequest(input: {
       redacted.searchParams.set(name, REDACTED);
   }
   return {
+    method,
     url: url.href,
     headers,
+    ...(body !== undefined ? { body } : {}),
     redactedUrl: `${redacted.origin}${redacted.pathname}${redacted.search.replaceAll("%5Bredacted%5D", REDACTED)}`,
   };
 }
@@ -226,12 +267,14 @@ export function buildRequest(input: {
 /**
  * Values the host adds to its redaction set besides the stored credential
  * values: the basic "user:pass" base64 and "Basic <b64>", "<prefix> <token>",
- * rendered auth.headers values, secret variable values.
+ * rendered auth.headers values, secret variable values, and the rendered
+ * bodies of `streams` (ADR 0030 §4).
  */
 export function customApiSecretValues(
   definition: AuthInput,
   credentials: CustomApiCredentials,
   config: Record<string, unknown> = {},
+  streams: readonly Pick<CustomApiStream, "request" | "pagination">[] = [],
 ): string[] {
   const values: string[] = [];
   const auth = definition.auth;
@@ -253,7 +296,45 @@ export function customApiSecretValues(
   } catch {
     // A header that does not render is not sent either.
   }
+  values.push(...renderedBodies(streams, config));
   return [...new Set(values.filter((value) => value.length > 0))];
+}
+
+/**
+ * The first-page bodies of POST streams as they are sent (ADR 0030 §4),
+ * for streams whose body renders from the connection's values alone. A
+ * body with window values differs per chunk: the connector redacts each
+ * rendered body from its own errors (redactRenderedBody).
+ */
+function renderedBodies(
+  streams: readonly Pick<CustomApiStream, "request" | "pagination">[],
+  config: Record<string, unknown>,
+): string[] {
+  const values = stringValues(config);
+  const bodies: string[] = [];
+  for (const stream of streams) {
+    const body = stream.request.body;
+    if (body === undefined) continue;
+    try {
+      bodies.push(
+        renderCustomApiBody(
+          body,
+          (template) => renderTemplate(template, values, (value) => value),
+          firstPageParams(stream.pagination).bodyWrites,
+        ),
+      );
+    } catch {
+      // Needs window values: redacted per request by the connector.
+    }
+  }
+  return bodies;
+}
+
+/** `text` without the rendered body of `built` (ADR 0030 §4). */
+export function redactRenderedBody(text: string, built: BuiltRequest): string {
+  return built.body !== undefined && built.body.length >= 4
+    ? text.split(built.body).join(REDACTED)
+    : text;
 }
 
 /**

@@ -28,7 +28,7 @@ import {
 
 /** The spec's section 2 example (the currency field made non-null, as money needs). */
 const SHOP: CustomApiDefinition = customApiDefinitionSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   name: "Shop API",
   environments: [
     {

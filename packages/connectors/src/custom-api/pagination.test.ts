@@ -174,8 +174,66 @@ describe("custom API pagination", () => {
     expect(
       nextPage({ ...base, body: { meta: { next: 7 } }, recordCount: 3 }),
     ).toEqual({
+      // The JSON type is kept (ADR 0030 §3); a URL parameter gets its text.
       type: "cursor",
-      cursor: "7",
+      cursor: 7,
+    });
+    expect(
+      pageParams(base.pagination, { type: "cursor", cursor: 7 }).params,
+    ).toEqual({ cursor: "7" });
+  });
+});
+
+describe("pagination through the body (ADR 0030 §3)", () => {
+  const cursorPath = [{ key: "variables" }, { key: "after" }];
+
+  it("sends null or nothing as the first cursor, never an empty string", () => {
+    const cursor = {
+      type: "cursor" as const,
+      cursorPath: "next",
+      bodyPath: "variables.after",
+    };
+    expect(pageParams(cursor, { type: "first" })).toMatchObject({
+      params: {},
+      bodyWrites: [{ path: cursorPath, value: null }],
+    });
+    expect(
+      pageParams({ ...cursor, firstPage: "omit" }, { type: "first" })
+        .bodyWrites,
+    ).toEqual([{ path: cursorPath, omit: true }]);
+  });
+
+  it("keeps a numeric cursor a number in the body", () => {
+    const cursor = {
+      type: "cursor" as const,
+      cursorPath: "next",
+      bodyPath: "variables.after",
+    };
+    expect(
+      pageParams(cursor, { type: "cursor", cursor: 20 }).bodyWrites,
+    ).toEqual([{ path: cursorPath, value: 20 }]);
+    expect(
+      pageParams(cursor, { type: "cursor", cursor: "c20" }).bodyWrites,
+    ).toEqual([{ path: cursorPath, value: "c20" }]);
+  });
+
+  it("writes offset and limit as numbers", () => {
+    expect(
+      pageParams(
+        {
+          type: "offset",
+          offsetBodyPath: "page.offset",
+          limitBodyPath: "page.limit",
+          limit: 10,
+        },
+        { type: "offset", offset: 30 },
+      ),
+    ).toMatchObject({
+      params: {},
+      bodyWrites: [
+        { path: [{ key: "page" }, { key: "offset" }], value: 30 },
+        { path: [{ key: "page" }, { key: "limit" }], value: 10 },
+      ],
     });
   });
 });
