@@ -1,4 +1,5 @@
 import type {
+  ConnectionCustomApiRequest,
   ConnectionAuthReason,
   ConnectionAuthState,
   ConnectionFreshnessStream,
@@ -133,6 +134,42 @@ export function presentConnection(
   };
 }
 
+/**
+ * The method, path and body template of each stream a custom-api
+ * connection's pinned version sends (ADR 0030 §2): templates only, never a
+ * rendered value or a secret. Null for bundled connectors. Only on
+ * single-connection responses.
+ */
+function presentCustomApiRequests(
+  resolved: ReturnType<typeof connectorFor>,
+): ConnectionCustomApiRequest[] | null {
+  const definition = resolved?.customApi?.definition;
+  if (!definition) return null;
+  return definition.streams.map((stream) => {
+    const body = stream.request.body;
+    return {
+      stream: stream.key,
+      name: stream.name,
+      method: stream.request.method ?? "GET",
+      path: stream.request.path,
+      body:
+        body === undefined
+          ? null
+          : body.kind === "json"
+            ? {
+                kind: "json" as const,
+                value: body.value,
+                readOnlyConfirmed: body.readOnlyConfirmed === true,
+              }
+            : {
+                kind: "graphql" as const,
+                query: body.query,
+                variables: body.variables,
+              },
+    };
+  });
+}
+
 export function presentConnectionDetail(
   registry: ConnectorRegistry,
   loaded: ConnectionWithState,
@@ -148,6 +185,7 @@ export function presentConnectionDetail(
     ...presentConnection(registry, loaded, locale),
     config,
     signedKey,
+    customApiRequests: presentCustomApiRequests(connectorFor(registry, loaded)),
   };
 }
 

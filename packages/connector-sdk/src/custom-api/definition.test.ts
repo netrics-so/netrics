@@ -6,6 +6,7 @@ import { DATASET_LIMITS, sourceDatasetSchema } from "../datasets.js";
 import {
   CUSTOM_API_ISSUE_CODES,
   CUSTOM_API_LIMITS,
+  CUSTOM_API_SCHEMA_VERSION,
   customApiDefinitionSchema,
   customApiIssues,
   customApiStreamSchema,
@@ -21,9 +22,15 @@ const fixture = (name: string): Doc =>
     readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"),
   );
 
+/** A fixture at the current schema version (v1 fixtures differ only in the version). */
+const current = (name: string): Doc => ({
+  ...fixture(name),
+  schemaVersion: CUSTOM_API_SCHEMA_VERSION,
+});
+
 function minimal(): Doc {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: "Minimal",
     environments: [
       { id: "prod", name: "Production", baseUrl: "https://api.example.com" },
@@ -143,8 +150,8 @@ function issuesOf(input: unknown) {
 
 describe("customApiDefinitionSchema", () => {
   it("accepts every fixture", () => {
-    for (const name of ["v1-shop", "v1-all-auth", "v1-images"]) {
-      const result = customApiDefinitionSchema.safeParse(fixture(name));
+    for (const name of ["v1-shop", "v1-all-auth", "v1-images", "v2-post"]) {
+      const result = customApiDefinitionSchema.safeParse(current(name));
       expect(
         result.success,
         `${name}: ${JSON.stringify(result.error?.issues)}`,
@@ -682,7 +689,7 @@ describe("customApiDefinitionSchema", () => {
     ],
     [
       "a newer schema version",
-      doc((d) => (d.schemaVersion = 2)),
+      doc((d) => (d.schemaVersion = 3)),
       "invalid",
       "schemaVersion",
     ],
@@ -933,9 +940,9 @@ describe("customApiDefinitionSchema", () => {
   });
 
   it("yields a valid source dataset for every stream", () => {
-    for (const name of ["v1-shop", "v1-all-auth", "v1-images"]) {
+    for (const name of ["v1-shop", "v1-all-auth", "v1-images", "v2-post"]) {
       const definition: CustomApiDefinition = customApiDefinitionSchema.parse(
-        fixture(name),
+        current(name),
       );
       for (const stream of definition.streams) {
         const result = sourceDatasetSchema.safeParse({

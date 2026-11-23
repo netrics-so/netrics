@@ -38,7 +38,7 @@ const noop = () => {};
 
 /** A definition with a connection value, as the gate's voilà API. */
 const IMAGES: CustomApiDefinition = customApiDefinitionSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   name: "Public images",
   environments: [
     {

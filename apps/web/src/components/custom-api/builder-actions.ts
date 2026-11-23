@@ -246,6 +246,18 @@ export function builderErrorMessage(cause: unknown, locale: Locale): string {
   return apiErrorMessage(cause, locale);
 }
 
+/**
+ * The server's read-only challenge in a refused test (ADR 0030 §2): the
+ * hash to send back once the author confirmed the request; null for any
+ * other refusal.
+ */
+export function readOnlyChallenge(cause: unknown): string | null {
+  return cause instanceof client.CustomApiRequestError &&
+    cause.code === "custom_api_read_only_unconfirmed"
+    ? cause.readOnlyConfirmation
+    : null;
+}
+
 /** Sends a test request (1 page from the Request step, 5 to test paging). */
 export async function runTest(
   api: BuilderClient,
@@ -255,6 +267,8 @@ export async function runTest(
   pages: number,
   /** Typed, not yet saved secrets: stored on the draft before the test. */
   typed: Readonly<Record<string, string>> = {},
+  /** The server's confirmation of this JSON-body POST request (ADR 0030). */
+  readOnlyConfirmation?: string,
 ): Promise<{ state: BuilderState; secretsLost: boolean; sent: boolean }> {
   const secrets = typedSecretsFor(state, typed);
   if (secrets) {
@@ -266,6 +280,7 @@ export async function runTest(
     environmentId: state.environmentId,
     variables: plainValues(state),
     pages,
+    ...(readOnlyConfirmation ? { readOnlyConfirmation } : {}),
   });
   const applied = withDraft(state, result.draft);
   return {

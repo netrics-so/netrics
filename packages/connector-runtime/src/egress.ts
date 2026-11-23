@@ -377,7 +377,9 @@ export interface EgressOptions {
   maxRedirects?: number;
   /**
    * "allowlist": every hop must be in allowedDomains (default).
-   * "same-host": every hop keeps the first URL's scheme, host and port.
+   * "same-host": every hop keeps the first URL's scheme, host and port,
+   * and only GET requests follow redirects: any other request's 3xx is
+   * answered as it is (ADR 0030: a custom API POST follows none).
    */
   redirects?: "allowlist" | "same-host";
   /** Whole request: connect, every hop, headers and body. Default 60_000. */
@@ -629,7 +631,17 @@ export function createEgressFetch(options: EgressOptions) {
           throw error;
         }
         const location = response.headers.get("location");
-        if (response.status >= 300 && response.status < 400 && location) {
+        // "same-host" (custom APIs) follows redirects of GET requests only:
+        // a POST stays on the endpoint its definition names (ADR 0030 §2),
+        // so its 3xx comes back to the connector, unfollowed.
+        const follows =
+          options.redirects !== "same-host" || (init.method ?? "GET") === "GET";
+        if (
+          follows &&
+          response.status >= 300 &&
+          response.status < 400 &&
+          location
+        ) {
           await response.body?.cancel();
           if (redirects >= maxRedirects) {
             throw new EgressDeniedError(`egress denied: too many redirects`);

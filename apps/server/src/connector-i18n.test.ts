@@ -25,7 +25,11 @@ import {
   ROLE_MESSAGE,
   vercelManifest,
 } from "@netrics/connectors";
-import { CUSTOM_API_MESSAGES } from "@netrics/connectors/custom-api";
+import {
+  CUSTOM_API_GRAPHQL_ERRORS,
+  CUSTOM_API_MESSAGES,
+  CustomApiGraphqlError,
+} from "@netrics/connectors/custom-api";
 import {
   localizedProviderMessage,
   PROVIDER_MESSAGE_CODES,
@@ -389,9 +393,27 @@ describe("provider reason codes (#795)", () => {
       expect(german, code).not.toBe(english);
     }
     expect(new Set(recorded.map(([code]) => code)).size).toBe(10);
-    expect(recorded.map(([code]) => code).sort()).toEqual(
+    expect([...recorded.map(([code]) => code), ...generic].sort()).toEqual(
       Object.keys(PROVIDER_MESSAGE_CODES).sort(),
     );
+  });
+
+  // Codes whose recorded message carries values (ADR 0030: the stream, the
+  // HTTP status and the number of GraphQL errors): the catalog words a
+  // generic sentence in English and German, the message keeps the values.
+  const generic = [CUSTOM_API_GRAPHQL_ERRORS];
+
+  it("word value-carrying codes generically in English and German", () => {
+    const recordedMessage = new CustomApiGraphqlError("items", 400, 2).message;
+    for (const code of generic) {
+      const english = providerMessageForCode(code, "en");
+      const german = providerMessageForCode(code, "de");
+      expect(english, code).toEqual(expect.any(String));
+      expect(german, code).toEqual(expect.any(String));
+      expect(german).not.toBe(english);
+      expect(english).not.toBe(recordedMessage);
+    }
+    expect(recordedMessage).toContain("stream items, HTTP 400, 2 errors");
   });
 });
 

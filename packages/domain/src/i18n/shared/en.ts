@@ -185,6 +185,8 @@ export const sharedEn = {
         "The token endpoint refused the client ID or client secret. Check both values and enter them again.",
       scopeRefused:
         "The token endpoint did not grant every scope this API needs. Check the client's permissions at the provider, then enter the client ID and secret again.",
+      graphqlErrors:
+        "The GraphQL API answered with errors. Check the query and its variables in the definition.",
     },
   },
 } as const;

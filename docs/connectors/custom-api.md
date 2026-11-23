@@ -208,6 +208,49 @@ clientSecret } }`.
   goes on, and its log counts skipped records and emptied values per field.
 - **Windows**: date or timestamp windows with a step, a lookback for
   incremental runs and a backfill depth, in the definition's time zone.
+- **Methods**: GET, and POST with a fixed JSON body (definition schema
+  version 2, see below).
+
+## POST and GraphQL (ADR 0030)
+
+A stream may send `method: "POST"` with a `body` (schema version 2;
+version 1 definitions upgrade by their version number alone, and an absent
+method is GET). The body is sent as `application/json; charset=utf-8`:
+
+- **`{ "kind": "graphql", "query", "variables" }`**: the query must parse
+  as exactly one `query` operation: a mutation, a subscription, a second
+  operation or a fragment definition is refused. The query is sent as
+  written; placeholders go into `variables` (a JSON object). The stream may
+  not set the URL parameters `query`, `operationName`, `variables` or
+  `extensions` (nor may its login or pagination), and every request is
+  checked for them before it leaves. A response with a non-empty `errors`
+  array fails the run with `graphql_errors`, naming the stream, the HTTP
+  status and the number of errors, never the errors' text.
+- **`{ "kind": "json", "value", "readOnlyConfirmed": true }`**: any JSON
+  value. netrics cannot verify that such a request only reads data: the
+  definition's author confirms it, the version stores the confirmation,
+  and the connection page shows the method and body to everyone who can
+  see the connection. A builder test of an unsaved JSON-body request is
+  refused (`400 custom_api_read_only_unconfirmed`) until it carries the
+  `readOnlyConfirmation` the refusal names for exactly that request; any
+  change to the base URL, path, query, headers, body, pagination, login
+  configuration, a connection value it uses or the test window needs a
+  new one. An import never takes over a file's confirmations: a file with
+  JSON bodies is refused (`custom_api_import_read_only_unconfirmed`)
+  unless the importer confirms (`readOnlyConfirmed: true`).
+
+String leaves of a body take the same placeholders as query parameters
+(connection values, window dates), never secrets or page values. Page
+values reach the body through body paths that name an existing value of
+the template: `cursor` pagination with `bodyPath` (GraphQL: under
+`variables`, e.g. `variables.after`) and `firstPage` `"null"` (default:
+the first request sends `null`) or `"omit"` (leave the property out), and
+`offset` pagination with `offsetBodyPath` and `limitBodyPath`. A cursor
+keeps the JSON type the response gave it. A POST stream stays on its
+endpoint: no next URL pagination, no page values in its path, and a
+redirect (3xx) fails the run. A body is at most 64 KiB as a template and
+128 KiB once its values are filled in. A GraphQL error envelope on a non-2xx
+status (other than 401, 403, 3xx and 429) fails with `graphql_errors` too.
 
 ## Bounds
 
@@ -218,7 +261,7 @@ Each request may answer at most 10 MiB (50 MiB once decompressed) within
 window) reads every stream again from the first one. JSON nested deeper than 64 levels is refused.
 
 Requests go out only through the egress guard: https only, public addresses
-only, redirects only to the same host (with credentials never sent to
+only, redirects only to the same host and only for GET (with credentials never sent to
 another host), and the DNS answer checked once is the one connected to.
 Next page links are stored in the run's position without the API key and
 any other secret; netrics adds the key again when it requests them.

@@ -125,6 +125,8 @@ export const sharedDe: Catalog<SharedMessages> = {
         "Der Token-Endpunkt hat Client-ID oder Client-Secret abgelehnt. Prüf beide Werte und gib sie erneut ein.",
       scopeRefused:
         "Der Token-Endpunkt hat nicht alle Scopes gewährt, die diese API braucht. Prüf die Berechtigungen des Clients beim Anbieter und gib Client-ID und Client-Secret erneut ein.",
+      graphqlErrors:
+        "Die GraphQL-API hat mit Fehlern geantwortet. Prüf die Abfrage und ihre Variablen in der Definition.",
     },
   },
 };

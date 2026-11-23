@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   customApiDefinitionSchema,
+  upgradeCustomApiDefinition,
   type CustomApiDefinition,
 } from "@netrics/connector-sdk/custom-api";
 
@@ -11,7 +12,7 @@ import { customApiFixture } from "./test-helpers.js";
 // The pure diff behind a connection's update offer (#808).
 
 const shop = (): CustomApiDefinition =>
-  customApiDefinitionSchema.parse(customApiFixture("v1-shop"));
+  upgradeCustomApiDefinition(customApiFixture("v1-shop"));
 
 const connection = {
   environmentId: "production",

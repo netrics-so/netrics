@@ -22,6 +22,7 @@ import {
   readDataPath,
   WINDOW_PLACEHOLDERS,
   type CustomApiAuth,
+  type CustomApiBody,
   type CustomApiDefinition,
   type CustomApiDraftDefinition,
   type CustomApiField,
@@ -75,6 +76,12 @@ export interface BuilderState {
   stream: {
     key: string;
     name: string;
+    /**
+     * A saved POST stream's method and body (ADR 0030), kept as they are:
+     * the editor does not change them yet (#869), and never turns a POST
+     * stream into a GET one. Absent: GET.
+     */
+    post?: { method: "POST"; body: CustomApiBody };
     path: string;
     query: KeyValue[];
     headers: KeyValue[];
@@ -189,6 +196,14 @@ export function stateFromDefinition(
     stream: {
       key: stream.key,
       name: stream.name,
+      ...(stream.request.method === "POST" && stream.request.body
+        ? {
+            post: {
+              method: "POST" as const,
+              body: structuredClone(stream.request.body),
+            },
+          }
+        : {}),
       path: stream.request.path,
       query: rows(stream.request.query),
       headers: rows(stream.request.headers),
@@ -228,12 +243,49 @@ function variablesOf(state: BuilderState) {
     }));
 }
 
-function requestOf(state: BuilderState) {
+function requestOf(state: BuilderState): CustomApiStream["request"] {
+  const post = state.stream.post;
   return {
+    ...(post ? { method: post.method } : {}),
     path: state.stream.path.trim() || "/",
     query: recordOf(state.stream.query),
     headers: recordOf(state.stream.headers),
+    ...(post ? { body: structuredClone(post.body) } : {}),
   };
+}
+
+/** JSON with object keys sorted: equal values compare equal in any order. */
+function sortedJson(value: unknown): string {
+  return JSON.stringify(value, (_key, entry: unknown) =>
+    entry !== null && typeof entry === "object" && !Array.isArray(entry)
+      ? Object.fromEntries(
+          Object.keys(entry)
+            .sort()
+            .map((key) => [key, (entry as Record<string, unknown>)[key]]),
+        )
+      : entry,
+  );
+}
+
+/**
+ * A JSON body's read-only confirmation (ADR 0030 §2) holds for the request
+ * its author confirmed: when the path, query, headers or pagination changed
+ * in the editor, it is dropped, and the save asks for it again.
+ */
+function confirmedRequest(
+  request: CustomApiStream["request"],
+  pagination: CustomApiPagination,
+  previous: CustomApiStream | undefined,
+): CustomApiStream["request"] {
+  const body = request.body;
+  if (body?.kind !== "json" || body.readOnlyConfirmed !== true) return request;
+  const same =
+    previous !== undefined &&
+    sortedJson(previous.request) === sortedJson(request) &&
+    sortedJson(previous.pagination) === sortedJson(pagination);
+  if (same) return request;
+  const { readOnlyConfirmed: _dropped, ...unconfirmed } = body;
+  return { ...request, body: unconfirmed };
 }
 
 /** The unsaved definition a draft stores and a test request runs. */
@@ -276,7 +328,11 @@ export function definitionOf(
   const stream: CustomApiStream = {
     key: state.stream.key,
     name: state.stream.name,
-    request: requestOf(state),
+    request: confirmedRequest(
+      requestOf(state),
+      state.stream.pagination,
+      previous,
+    ),
     pagination: state.stream.pagination,
     records: state.stream.records ?? "",
     fields: state.stream.fields,
@@ -823,7 +879,10 @@ function pagingIssues(state: BuilderState): string[] {
   return issues;
 }
 
-function reviewIssues(state: BuilderState): string[] {
+function reviewIssues(
+  state: BuilderState,
+  original: CustomApiDefinition | undefined,
+): string[] {
   const minutes = state.defaults.refreshMinutes;
   const issues: string[] = [];
   if (
@@ -832,18 +891,29 @@ function reviewIssues(state: BuilderState): string[] {
     minutes > CUSTOM_API_LIMITS.refreshMinutesMax
   )
     issues.push("issues.refreshRange");
-  if (definitionIssues(state).length > 0)
+  if (definitionIssues(state, original).length > 0)
     issues.push("issues.definitionInvalid");
   return issues;
+}
+
+/**
+ * How the steps are checked: `editing` a saved definition, whose
+ * document is `original`. The review checks the document saveAndConnect
+ * saves, `definitionOf(state, original)`, so a JSON body's read-only
+ * confirmation counts as it will be saved (ADR 0030).
+ */
+export interface StepOptions {
+  editing?: boolean;
+  original?: CustomApiDefinition;
 }
 
 /** Message keys (namespace `customApi`) of what keeps a step from being complete; [] = complete. */
 export function stepIssues(
   state: BuilderState,
   step: BuilderStep,
-  options: { editing?: boolean } = {},
+  options: StepOptions = {},
 ): string[] {
-  const all = allStepIssues(state, step);
+  const all = allStepIssues(state, step, options.original);
   return options.editing ? all.filter((key) => !EDIT_HINTS.has(key)) : all;
 }
 
@@ -862,14 +932,20 @@ const EDIT_HINTS = new Set([
 export function stepHints(
   state: BuilderState,
   step: BuilderStep,
-  options: { editing?: boolean } = {},
+  options: StepOptions = {},
 ): string[] {
   return options.editing
-    ? allStepIssues(state, step).filter((key) => EDIT_HINTS.has(key))
+    ? allStepIssues(state, step, options.original).filter((key) =>
+        EDIT_HINTS.has(key),
+      )
     : [];
 }
 
-function allStepIssues(state: BuilderState, step: BuilderStep): string[] {
+function allStepIssues(
+  state: BuilderState,
+  step: BuilderStep,
+  original: CustomApiDefinition | undefined,
+): string[] {
   switch (step) {
     case "basics":
       return basicsIssues(state);
@@ -882,7 +958,7 @@ function allStepIssues(state: BuilderState, step: BuilderStep): string[] {
     case "paging":
       return pagingIssues(state);
     case "review":
-      return reviewIssues(state);
+      return reviewIssues(state, original);
   }
 }
 

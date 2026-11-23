@@ -11,17 +11,26 @@ import type {
 } from "@netrics/connector-sdk/custom-api";
 
 import type { CustomApiCredentials } from "../credentials.js";
-import { CustomApiAuthError, CustomApiResponseError } from "../errors.js";
+import {
+  CustomApiAuthError,
+  CustomApiGraphqlError,
+  CustomApiResponseError,
+} from "../errors.js";
 import { customApiEnvironment, customApiEnvironmentHost } from "../manifest.js";
 import { CUSTOM_API_MESSAGES } from "../messages.js";
 import { nextPage, pageParams, type PageState } from "../pagination.js";
 import { jsonTooDeep, mapRecords, selectRecords } from "../records.js";
-import { buildRequest } from "../request.js";
+import { buildRequest, type BuiltRequest } from "../request.js";
+import {
+  checkGraphqlErrors,
+  graphqlErrorCount,
+  sendCustomApiRequest,
+} from "../connector.js";
 import { windowPlaceholders, type Chunk } from "../windows.js";
 
 export interface CustomApiPageTrace {
   page: number;
-  method: "GET";
+  method: "GET" | "POST";
   /** BuiltRequest.redactedUrl. */
   url: string;
   status: number | null;
@@ -35,8 +44,15 @@ export interface CustomApiPageTrace {
 
 /** A non-2xx answer other than 401/403; the trace holds its body. */
 export class CustomApiHttpError extends Error {
-  constructor(readonly status: number) {
-    super(`The API answered HTTP ${status}.`);
+  constructor(
+    readonly status: number,
+    method: "GET" | "POST" = "GET",
+  ) {
+    super(
+      method === "POST" && status >= 300 && status < 400
+        ? `The API answered HTTP ${status}, a redirect. A POST request follows no redirects.`
+        : `The API answered HTTP ${status}.`,
+    );
     this.name = "CustomApiHttpError";
   }
 }
@@ -67,7 +83,7 @@ export async function runCustomApiTestStream(input: {
   >;
   stream: Pick<
     CustomApiStream,
-    "request" | "pagination" | "records" | "window"
+    "key" | "request" | "pagination" | "records" | "window"
   > &
     Pick<Partial<CustomApiStream>, "keyFields"> & {
       fields: CustomApiStream["fields"];
@@ -79,7 +95,18 @@ export async function runCustomApiTestStream(input: {
   /** C-G3 windows.ts; the server computes the default chunk. */
   chunk: Chunk | null;
   limits: { maxPages: number; maxRecords: number; deadline: number };
+  /**
+   * The `window.*` values the host resolved from `chunk` (and, for a
+   * JSON body, confirmed): sent as given instead of computed again, so
+   * what was confirmed is what is sent.
+   */
+  windowValues?: Readonly<Record<string, string>>;
   onPage?: (trace: CustomApiPageTrace) => void;
+  /**
+   * Each request just before it is sent, rendered body included: for the
+   * host's redaction set, never for the public trace (ADR 0030 §4).
+   */
+  onSend?: (built: BuiltRequest) => void;
   /** Clock (ms) for the deadline; tests pin it. */
   now?: () => number;
 }): Promise<CustomApiTestStreamResult> {
@@ -89,9 +116,10 @@ export async function runCustomApiTestStream(input: {
   const environment = customApiEnvironment(definition, input.environmentId);
   const apiHost = customApiEnvironmentHost(environment);
   const window =
-    stream.window.type !== "none" && input.chunk
+    input.windowValues ??
+    (stream.window.type !== "none" && input.chunk
       ? windowPlaceholders(stream.window, input.chunk, timeZone)
-      : {};
+      : {});
   const mapping = { fields: stream.fields, keyFields: stream.keyFields ?? [] };
   const rows: Record<string, unknown>[] = [];
   const nulled: Record<string, number> = {};
@@ -111,12 +139,13 @@ export async function runCustomApiTestStream(input: {
       credentials: input.credentials,
       placeholders: { ...window, ...params.placeholders },
       pageParams: params.params,
+      bodyWrites: params.bodyWrites,
       ...(params.nextUrl !== undefined ? { nextUrl: params.nextUrl } : {}),
     });
     const started = now();
     const trace: CustomApiPageTrace = {
       page,
-      method: "GET",
+      method: built.method,
       url: built.redactedUrl,
       status: null,
       durationMs: 0,
@@ -127,7 +156,8 @@ export async function runCustomApiTestStream(input: {
     };
     let response: Awaited<ReturnType<ConnectorRuntime["fetch"]>>;
     try {
-      response = await input.fetch(built.url, { headers: built.headers });
+      input.onSend?.(built);
+      response = await sendCustomApiRequest(input.fetch, built);
     } catch (error) {
       trace.durationMs = Math.max(0, Math.round(now() - started));
       input.onPage?.(trace);
@@ -153,7 +183,17 @@ export async function runCustomApiTestStream(input: {
     }
     if (response.status < 200 || response.status >= 300) {
       input.onPage?.(trace);
-      throw new CustomApiHttpError(response.status);
+      // A GraphQL error envelope: graphql_errors, as on a 2xx (not for a
+      // redirect or a rate limit).
+      const count =
+        (response.status < 300 || response.status >= 400) &&
+        response.status !== 429 &&
+        body.json
+          ? graphqlErrorCount(stream, body.value)
+          : 0;
+      if (count > 0)
+        throw new CustomApiGraphqlError(stream.key, response.status, count);
+      throw new CustomApiHttpError(response.status, built.method);
     }
     if (!body.json) {
       input.onPage?.(trace);
@@ -161,6 +201,7 @@ export async function runCustomApiTestStream(input: {
     }
     let selected: unknown[];
     try {
+      checkGraphqlErrors(stream, response.status, body.value);
       selected = selectRecords(body.value, stream.records);
     } catch (error) {
       input.onPage?.(trace);

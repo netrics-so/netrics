@@ -5,6 +5,7 @@
 // one; a tls fixture origin gives a document the schema accepts.
 
 import {
+  CUSTOM_API_SCHEMA_VERSION,
   customApiDefinitionSchema,
   type CustomApiDefinition,
 } from "@netrics/connector-sdk/custom-api";
@@ -44,6 +45,13 @@ export const FIXTURE_DEFINITION_NAMES = [
   "oauth_client_credentials_basic",
   "oauth_code",
   "oauth_code_no_pkce",
+  "graphql",
+  "graphql_number",
+  "graphql_omit",
+  "graphql_errors",
+  "graphql_redirect",
+  "json_offset",
+  "redirect_same_host",
 ] as const;
 export type FixtureDefinitionName = (typeof FIXTURE_DEFINITION_NAMES)[number];
 
@@ -209,6 +217,61 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
     case "cursor":
       stream = itemStream("items", "/items/cursor", cursor);
       break;
+    case "graphql":
+    case "graphql_number":
+    case "graphql_omit":
+    case "graphql_errors":
+    case "graphql_redirect": {
+      const path = {
+        graphql: "/graphql/string-cursor",
+        graphql_number: "/graphql/number-cursor",
+        graphql_omit: "/graphql/omit-cursor",
+        graphql_errors: "/graphql/errors",
+        graphql_redirect: "/graphql/redirect",
+      }[name];
+      stream = itemStream(
+        "items",
+        path,
+        {
+          type: "cursor",
+          cursorPath: "data.items.pageInfo.endCursor",
+          bodyPath: "variables.after",
+          ...(name === "graphql_omit" ? { firstPage: "omit" } : {}),
+        },
+        "data.items.nodes",
+        {
+          method: "POST",
+          body: {
+            kind: "graphql",
+            query:
+              "query Items($first: Int!, $after: String) { items(first: $first, after: $after) { nodes { id name created_at price } pageInfo { endCursor } } }",
+            variables: { first: 10, after: null },
+          },
+        },
+      );
+      break;
+    }
+    case "json_offset":
+      stream = itemStream(
+        "items",
+        "/query",
+        {
+          type: "offset",
+          offsetBodyPath: "page.offset",
+          limitBodyPath: "page.limit",
+          limit: 10,
+        },
+        "items",
+        {
+          method: "POST",
+          body: {
+            kind: "json",
+            value: { kind: "ItemsQuery", page: { offset: 0, limit: 0 } },
+            readOnlyConfirmed: true,
+          },
+        },
+      );
+      break;
     case "next_body":
       stream = itemStream("items", "/items/next-body", {
         type: "next_url",
@@ -316,6 +379,9 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
     case "redirect_off_host":
       stream = itemStream("items", "/edge/redirect-off-host", none);
       break;
+    case "redirect_same_host":
+      stream = itemStream("items", "/edge/redirect-same-host", none);
+      break;
     case "repeat_cursor":
       stream = itemStream("items", "/edge/repeat-cursor", cursor);
       break;
@@ -387,7 +453,7 @@ function rawDefinition(name: FixtureDefinitionName): Record<string, unknown> {
       break;
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: CUSTOM_API_SCHEMA_VERSION,
     name: `Fixture ${name}`,
     environments: [
       { id: "production", name: "Production", baseUrl: PLACEHOLDER_ORIGIN },

@@ -4,6 +4,7 @@ import { datasetFieldTypeSchema } from "@netrics/connector-sdk";
 import {
   CUSTOM_API_FIELD_FORMATS,
   CUSTOM_API_LIMITS,
+  checkCustomApiStreamRequest,
   customApiAuthSchema,
   customApiDefinitionSchema,
   customApiEnvironmentSchema,
@@ -153,20 +154,55 @@ export type CustomApiFieldSuggestion = z.infer<
   typeof customApiFieldSuggestionSchema
 >;
 
-export const customApiTestRequestSchema = z.strictObject({
-  definition: customApiDraftDefinitionSchema,
-  environmentId: z.string().min(1).max(64),
-  variables: z.record(z.string(), z.string().max(1000)).default({}),
-  pages: z.number().int().min(1).max(5).default(1),
-  window: z
-    .object({ start: z.iso.datetime(), end: z.iso.datetime() })
-    .optional(),
-});
+export const customApiTestRequestSchema = z
+  .strictObject({
+    definition: customApiDraftDefinitionSchema,
+    environmentId: z.string().min(1).max(64),
+    variables: z.record(z.string(), z.string().max(1000)).default({}),
+    pages: z.number().int().min(1).max(5).default(1),
+    window: z
+      .object({ start: z.iso.datetime(), end: z.iso.datetime() })
+      .optional(),
+    /**
+     * A JSON-body POST stream (ADR 0030 §2): the confirmation of exactly
+     * this request, as a 400 custom_api_read_only_unconfirmed answered it
+     * after the author confirmed "this request only reads data". Any
+     * change to the request needs a new one.
+     */
+    readOnlyConfirmation: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+  })
+  // A draft runs the saved definition's request rules before anything is
+  // sent (ADR 0030 §2): the GraphQL guard, body and body-pagination rules,
+  // placeholders and parameter clashes. One implementation, in the SDK.
+  .superRefine((request, ctx) => {
+    const { definition } = request;
+    checkCustomApiStreamRequest(
+      definition.stream,
+      definition,
+      (path, code, message) =>
+        ctx.addIssue({
+          code: "custom",
+          path,
+          message,
+          ...(code !== undefined ? { params: { code } } : {}),
+        }),
+      {
+        paths: {
+          stream: ["definition", "stream"],
+          auth: ["definition", "auth"],
+        },
+        confirmation: "draft",
+      },
+    );
+  });
 export type CustomApiTestRequest = z.input<typeof customApiTestRequestSchema>;
 
 export const customApiRequestLogEntrySchema = z.object({
   page: z.number().int(),
-  method: z.literal("GET"),
+  method: z.enum(["GET", "POST"]),
   /** Redacted: no API key, cursor or secret value. */
   url: z.string(),
   status: z.number().int().nullable(),
@@ -477,6 +513,13 @@ export const importCustomApiDefinitionRequestSchema = z.strictObject({
     .describe("The exported file's JSON (customApiExportSchema)"),
   name: z.string().trim().min(1).max(100).optional(),
   projectId: z.uuid().nullable().default(null),
+  /**
+   * The importer confirms that the file's JSON-body POST requests only
+   * read data (ADR 0030 §2). A file's own confirmations are never taken
+   * over: without this, a file with JSON bodies is refused with
+   * custom_api_import_read_only_unconfirmed.
+   */
+  readOnlyConfirmed: z.boolean().optional(),
 });
 export type ImportCustomApiDefinitionRequest = z.input<
   typeof importCustomApiDefinitionRequestSchema

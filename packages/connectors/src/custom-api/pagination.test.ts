@@ -174,8 +174,134 @@ describe("custom API pagination", () => {
     expect(
       nextPage({ ...base, body: { meta: { next: 7 } }, recordCount: 3 }),
     ).toEqual({
+      // The JSON type is kept (ADR 0030 §3); a URL parameter gets its text.
       type: "cursor",
-      cursor: "7",
+      cursor: 7,
     });
+    expect(
+      pageParams(base.pagination, { type: "cursor", cursor: 7 }).params,
+    ).toEqual({ cursor: "7" });
+  });
+});
+
+describe("pagination through the body (ADR 0030 §3)", () => {
+  const cursorPath = [{ key: "variables" }, { key: "after" }];
+
+  it("sends null or nothing as the first cursor, never an empty string", () => {
+    const cursor = {
+      type: "cursor" as const,
+      cursorPath: "next",
+      bodyPath: "variables.after",
+    };
+    expect(pageParams(cursor, { type: "first" })).toMatchObject({
+      params: {},
+      bodyWrites: [{ path: cursorPath, value: null }],
+    });
+    expect(
+      pageParams({ ...cursor, firstPage: "omit" }, { type: "first" })
+        .bodyWrites,
+    ).toEqual([{ path: cursorPath, omit: true }]);
+  });
+
+  it("keeps a numeric cursor a number in the body", () => {
+    const cursor = {
+      type: "cursor" as const,
+      cursorPath: "next",
+      bodyPath: "variables.after",
+    };
+    expect(
+      pageParams(cursor, { type: "cursor", cursor: 20 }).bodyWrites,
+    ).toEqual([{ path: cursorPath, value: 20 }]);
+    expect(
+      pageParams(cursor, { type: "cursor", cursor: "c20" }).bodyWrites,
+    ).toEqual([{ path: cursorPath, value: "c20" }]);
+  });
+
+  it("writes offset and limit as numbers", () => {
+    expect(
+      pageParams(
+        {
+          type: "offset",
+          offsetBodyPath: "page.offset",
+          limitBodyPath: "page.limit",
+          limit: 10,
+        },
+        { type: "offset", offset: 30 },
+      ),
+    ).toMatchObject({
+      params: {},
+      bodyWrites: [
+        { path: [{ key: "page" }, { key: "offset" }], value: 30 },
+        { path: [{ key: "page" }, { key: "limit" }], value: 10 },
+      ],
+    });
+  });
+});
+
+describe("URL parameter names and repeated cursors", () => {
+  it("keeps a parameter named __proto__ as a parameter (null-prototype map)", () => {
+    const page = pageParams(
+      {
+        type: "page_number",
+        param: "page",
+        start: 1,
+        sizeParam: "__proto__",
+        size: 10,
+      },
+      { type: "first" },
+    );
+    expect(Object.getPrototypeOf(page.params)).toBeNull();
+    expect(Object.entries(page.params)).toEqual([
+      ["page", "1"],
+      ["__proto__", "10"],
+    ]);
+  });
+
+  const base = {
+    linkHeader: undefined,
+    requestUrl: "http://127.0.0.1/items",
+    apiHost: "127.0.0.1",
+    recordCount: 3,
+  };
+
+  it("compares a URL cursor by the text it sends", () => {
+    const pagination = {
+      type: "cursor" as const,
+      cursorPath: "next",
+      param: "cursor",
+    };
+    // A cursor stored as text by an earlier build, answered as a number.
+    expect(
+      nextPage({
+        ...base,
+        pagination,
+        state: { type: "cursor", cursor: "5" },
+        body: { next: 5 },
+      }),
+    ).toBeNull();
+  });
+
+  it("compares a body cursor by its JSON value and type", () => {
+    const pagination = {
+      type: "cursor" as const,
+      cursorPath: "next",
+      bodyPath: "variables.after",
+    };
+    expect(
+      nextPage({
+        ...base,
+        pagination,
+        state: { type: "cursor", cursor: "5" },
+        body: { next: 5 },
+      }),
+    ).toEqual({ type: "cursor", cursor: 5 });
+    expect(
+      nextPage({
+        ...base,
+        pagination,
+        state: { type: "cursor", cursor: 5 },
+        body: { next: 5 },
+      }),
+    ).toBeNull();
   });
 });

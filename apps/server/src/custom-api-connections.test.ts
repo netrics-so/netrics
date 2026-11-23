@@ -229,6 +229,78 @@ afterAll(async () => {
 });
 
 describe("connections from a custom API definition", () => {
+  it("shows every stream's method and body template on the connection (ADR 0030)", async () => {
+    const graphql = fixtureDefinition("graphql", fixture.origin).streams[0]!;
+    const json = fixtureDefinition("json_offset", fixture.origin).streams[0]!;
+    const definition = await createDefinition({
+      ...keyed(),
+      streams: [
+        ...keyed().streams,
+        { ...graphql, key: "graphql_items" },
+        { ...json, key: "query_items" },
+      ],
+    });
+    const created = await connect(definition.id);
+    expect(created.statusCode, created.body).toBe(201);
+    const { id } = connectionResponseSchema.parse(created.json()).connection;
+    const seen = connectionResponseSchema.parse(
+      (
+        await call(
+          "GET",
+          `/v1/workspaces/${workspaceId}/connections/${id}`,
+          owner,
+        )
+      ).json(),
+    ).connection;
+    // The workspace list stays light: no templates there (review round 2).
+    const listed = await call(
+      "GET",
+      `/v1/workspaces/${workspaceId}/connections`,
+      owner,
+    );
+    expect(listed.statusCode).toBe(200);
+    const inList = (
+      listed.json() as { connections: Record<string, unknown>[] }
+    ).connections.find((connection) => connection.id === id)!;
+    expect(inList).not.toHaveProperty("customApiRequests");
+    expect(inList.customApi).not.toHaveProperty("requests");
+    expect(listed.body).not.toContain("ItemsQuery");
+    expect(seen.customApiRequests).toEqual([
+      {
+        stream: "items",
+        name: "items",
+        method: "GET",
+        path: "/auth/api-key-header",
+        body: null,
+      },
+      {
+        stream: "graphql_items",
+        name: "items",
+        method: "POST",
+        path: "/graphql/string-cursor",
+        body: {
+          kind: "graphql",
+          query: (graphql.request.body as { query: string }).query,
+          variables: { first: 10, after: null },
+        },
+      },
+      {
+        stream: "query_items",
+        name: "items",
+        method: "POST",
+        path: "/query",
+        body: {
+          kind: "json",
+          value: { kind: "ItemsQuery", page: { offset: 0, limit: 0 } },
+          readOnlyConfirmed: true,
+        },
+      },
+    ]);
+    // Templates only: no credential or secret variable value.
+    expect(JSON.stringify(seen)).not.toContain("tenant-secret-0001");
+    expect(JSON.stringify(seen)).not.toContain(FIXTURE_SECRETS.apiKey);
+  });
+
   it("creates two connections of one definition with different environments and lists them with the definition's name", async () => {
     const definition = await createDefinition();
     const production = await connect(definition.id);

@@ -11,6 +11,7 @@ import type {
 import { CustomApiRequestError } from "@/lib/custom-api";
 import {
   BUILDER_STEPS,
+  draftDefinitionOf,
   emptyBuilderState,
   pickRecords,
   requiredSecrets,
@@ -19,6 +20,7 @@ import {
   stepIssues,
   type BuilderState,
   type BuilderStep,
+  type StepOptions,
 } from "@/lib/custom-api-builder";
 import {
   readStoredBuilder,
@@ -35,6 +37,7 @@ import {
   draftReady,
   ensureDraft,
   moveToStep,
+  readOnlyChallenge,
   runTest,
   saveAndConnect,
   startSignIn,
@@ -48,6 +51,7 @@ import { StepPaging } from "./step-paging";
 import { StepRequest } from "./step-request";
 import { StepResponse } from "./step-response";
 import { StepSchedule } from "./step-schedule";
+import { ReadOnlyConfirm } from "./read-only-confirm";
 import { TestPanel } from "./test-panel";
 import { CustomApiSummary } from "./summary";
 
@@ -66,7 +70,7 @@ type Pending = "draft" | "secrets" | "test" | "save" | "discard" | null;
 /** The first step that is not complete, or the last one. */
 export function firstOpenStep(
   state: BuilderState,
-  options: { editing?: boolean } = {},
+  options: StepOptions = {},
 ): BuilderStep {
   return (
     BUILDER_STEPS.find((step) => stepIssues(state, step, options).length > 0) ??
@@ -78,7 +82,7 @@ export function firstOpenStep(
 export function reachable(
   state: BuilderState,
   step: BuilderStep,
-  options: { editing?: boolean } = {},
+  options: StepOptions = {},
 ): boolean {
   const index = BUILDER_STEPS.indexOf(step);
   return BUILDER_STEPS.slice(0, index).every(
@@ -136,6 +140,12 @@ export function CustomApiBuilder({
   const [pending, setPending] = useState<Pending>(null);
   const [error, setError] = useState<string | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  /** A JSON-body POST test waiting for its read-only confirmation (ADR 0030). */
+  const [challenge, setChallenge] = useState<{
+    hash: string;
+    pages: number;
+    from: BuilderState;
+  } | null>(null);
   const [secretsLost, setSecretsLost] = useState(false);
   const [testedFields, setTestedFields] = useState<string | null>(null);
   const [pagingTest, setPagingTest] = useState<CustomApiTestResponse | null>(
@@ -155,6 +165,11 @@ export function CustomApiBuilder({
   /** The page is leaving on purpose (the OAuth redirect): no leave prompt. */
   const leaving = useRef(false);
   const editing = definition !== undefined;
+  // The document saveAndConnect saves against: the step checks use it too.
+  const stepOptions: StepOptions = {
+    editing,
+    ...(definition ? { original: definition.document } : {}),
+  };
   const definitionId = definition?.id ?? null;
   const stored = (): StoredBuilder => ({
     state,
@@ -312,9 +327,14 @@ export function CustomApiBuilder({
     }
   }
 
-  async function test(pages: number, from: BuilderState = state) {
+  async function test(
+    pages: number,
+    from: BuilderState = state,
+    readOnlyConfirmation?: string,
+  ) {
     setTestError(null);
     setError(null);
+    setChallenge(null);
     setState(from);
     if (!draftReady(from)) {
       setTestError(t("issues.definitionInvalid"));
@@ -331,6 +351,7 @@ export function CustomApiBuilder({
         from,
         pages,
         secretInputs,
+        readOnlyConfirmation,
       );
       setState(result.state);
       const after = afterSecretsSent(result, secretsLost);
@@ -339,6 +360,12 @@ export function CustomApiBuilder({
       setTestedFields(JSON.stringify(result.state.stream.fields));
       setPagingTest(pages > 1 ? result.state.lastTest : null);
     } catch (cause) {
+      const hash = readOnlyChallenge(cause);
+      if (hash !== null && hash !== readOnlyConfirmation) {
+        // Nothing was sent: show the request and ask.
+        setChallenge({ hash, pages, from });
+        return;
+      }
       setState(refused(cause, from));
       setTestError(message(cause));
     } finally {
@@ -440,12 +467,12 @@ export function CustomApiBuilder({
   );
   const typedCoversMissing =
     missing.length > 0 && missing.every((name) => typed.has(name));
-  const issues = stepIssues(state, step, { editing }).filter(
+  const issues = stepIssues(state, step, stepOptions).filter(
     (key) =>
       !typedCoversMissing ||
       (key !== "issues.secretMissing" && key !== "issues.secretValueMissing"),
   );
-  const hints = stepHints(state, step, { editing });
+  const hints = stepHints(state, step, stepOptions);
   const setSecretInput = (name: string, value: string | undefined) =>
     setSecretInputs((current) => {
       const next = { ...current };
@@ -534,6 +561,7 @@ export function CustomApiBuilder({
           state={state}
           update={update}
           onGoTo={(target) => void goTo(target)}
+          {...(definition ? { original: definition.document } : {})}
         />
       );
       break;
@@ -546,7 +574,7 @@ export function CustomApiBuilder({
       <nav className="custom-api-stepper" aria-label={t("stepper.label")}>
         <ol>
           {BUILDER_STEPS.map((entry, i) => {
-            const open = stepIssues(state, entry, { editing }).length > 0;
+            const open = stepIssues(state, entry, stepOptions).length > 0;
             const current = entry === step;
             const status = current
               ? t("stepper.current")
@@ -564,7 +592,7 @@ export function CustomApiBuilder({
                   type="button"
                   aria-current={current ? "step" : undefined}
                   disabled={
-                    busy || current || !reachable(state, entry, { editing })
+                    busy || current || !reachable(state, entry, stepOptions)
                   }
                   onClick={() => void goTo(entry)}
                 >
@@ -664,6 +692,16 @@ export function CustomApiBuilder({
           )}
         </div>
       </section>
+      {withPanel && challenge ? (
+        <ReadOnlyConfirm
+          request={draftDefinitionOf(challenge.from).stream.request}
+          pending={pending === "test"}
+          onConfirm={() =>
+            void test(challenge.pages, challenge.from, challenge.hash)
+          }
+          onCancel={() => setChallenge(null)}
+        />
+      ) : null}
       {withPanel ? (
         <TestPanel
           test={state.lastTest}

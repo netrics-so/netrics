@@ -220,13 +220,13 @@ export function StepPaging({
           {text(
             "custom-api-offset-param",
             t("offsetParam"),
-            pagination.offsetParam,
+            pagination.offsetParam ?? "",
             (offsetParam) => setPagination({ ...pagination, offsetParam }),
           )}
           {text(
             "custom-api-limit-param",
             t("limitParam"),
-            pagination.limitParam,
+            pagination.limitParam ?? "",
             (limitParam) => setPagination({ ...pagination, limitParam }),
           )}
           {number(
@@ -244,7 +244,7 @@ export function StepPaging({
           {text(
             "custom-api-cursor-param",
             t("cursorParam"),
-            pagination.param,
+            pagination.param ?? "",
             (param) => setPagination({ ...pagination, param }),
           )}
           <div className="field">

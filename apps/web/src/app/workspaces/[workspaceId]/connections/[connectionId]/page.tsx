@@ -27,6 +27,7 @@ import { SyncRunError } from "./sync-run-error";
 import { ConnectionRefresh } from "./connection-refresh";
 import { waitsForSync } from "./wait-for-sync";
 import { CustomApiConnectionLogin } from "@/components/custom-api/connection-login";
+import { CustomApiConnectionRequests } from "@/components/custom-api/connection-requests";
 import { CustomApiUpdateBanner } from "@/components/custom-api/connection-update-review";
 import {
   getConnection,
@@ -371,6 +372,10 @@ export default async function ConnectionDetailPage({
             )}
           </p>
         </div>
+      ) : null}
+
+      {connection.customApiRequests ? (
+        <CustomApiConnectionRequests requests={connection.customApiRequests} />
       ) : null}
 
       <div className="card">

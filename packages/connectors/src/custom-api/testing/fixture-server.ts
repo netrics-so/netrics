@@ -74,6 +74,8 @@ export interface RecordedRequest {
   path: string;
   query: Record<string, string>;
   headers: Record<string, string>;
+  /** The body of a POST (outside /oauth/*), as received. */
+  body?: string;
 }
 
 export interface CustomApiFixtureServer {
@@ -535,7 +537,28 @@ export async function startCustomApiFixtureServer(
     });
   };
 
+  // POST bodies (ADR 0030) are read whole before routing; /oauth/* reads
+  // its own.
   const handler = (request: IncomingMessage, response: ServerResponse) => {
+    if (
+      request.method === "POST" &&
+      !(request.url ?? "").startsWith("/oauth/")
+    ) {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () =>
+        route(request, response, Buffer.concat(chunks).toString("utf8")),
+      );
+      return;
+    }
+    route(request, response, undefined);
+  };
+
+  const route = (
+    request: IncomingMessage,
+    response: ServerResponse,
+    bodyText: string | undefined,
+  ) => {
     const host = single(request.headers.host);
     const url = new URL(request.url ?? "/", `${scheme}://${host || "x"}`);
     const query = Object.fromEntries(url.searchParams);
@@ -548,6 +571,7 @@ export async function startCustomApiFixtureServer(
       path: url.pathname,
       query,
       headers,
+      ...(bodyText !== undefined ? { body: bodyText } : {}),
     });
     const origin = `${scheme}://${urlHost(publicHost)}:${port}`;
     const otherOrigin = `${scheme}://${urlHost(otherHost)}:${port}`;
@@ -784,6 +808,96 @@ export async function startCustomApiFixtureServer(
       case "/edge/redirect-off-host":
         response.writeHead(302, { location: `${otherOrigin}/items/pages` });
         return response.end();
+      case "/edge/redirect-same-host":
+        response.writeHead(302, { location: `${origin}/items/pages` });
+        return response.end();
+      // GraphQL (ADR 0030): 10 items per page after `variables.after`.
+      // string-cursor answers "c<end>", number-cursor answers <end> and
+      // refuses a cursor that arrives as a string; omit-cursor refuses a
+      // first page that sends `after` at all.
+      case "/graphql/string-cursor":
+      case "/graphql/number-cursor":
+      case "/graphql/omit-cursor": {
+        if (request.method !== "POST") return send(405, { error: "POST" });
+        let body: { query?: unknown; variables?: Record<string, unknown> };
+        try {
+          body = JSON.parse(bodyText ?? "") as typeof body;
+        } catch {
+          return send(400, { errors: [{ message: "not json" }] });
+        }
+        const variables = body.variables ?? {};
+        const after = variables.after;
+        const numbers = url.pathname === "/graphql/number-cursor";
+        if (numbers && typeof after === "string")
+          return send(400, { errors: [{ message: "Int expected" }] });
+        if (
+          url.pathname === "/graphql/omit-cursor" &&
+          Object.hasOwn(variables, "after") &&
+          after === null
+        )
+          return send(400, { errors: [{ message: "after: null" }] });
+        const start =
+          typeof after === "number"
+            ? after
+            : typeof after === "string"
+              ? Number(after.slice(1))
+              : 0;
+        const first = Number(variables.first ?? PAGE_SIZE);
+        const end = start + first;
+        return send(200, {
+          data: {
+            items: {
+              nodes: items.slice(start, end),
+              pageInfo: {
+                endCursor:
+                  end < items.length ? (numbers ? end : `c${end}`) : null,
+              },
+            },
+          },
+        });
+      }
+      case "/graphql/errors":
+        return send(200, {
+          data: null,
+          errors: [
+            { message: "LEAKED-PROVIDER-TEXT one" },
+            { message: "LEAKED-PROVIDER-TEXT two" },
+          ],
+        });
+      // GraphQL error envelopes on other statuses (ADR 0030): a 400 for a
+      // bad query, and a 401 and a 429 whose own handling comes first.
+      case "/graphql/errors-400":
+      case "/graphql/errors-401":
+      case "/graphql/errors-429": {
+        const status = Number(url.pathname.slice(-3));
+        return send(
+          status,
+          { errors: [{ message: "LEAKED-PROVIDER-TEXT bad" }] },
+          status === 429 ? { "retry-after": "30" } : {},
+        );
+      }
+      // Answers the request body it got as a string (as some APIs echo
+      // a query): the builder's preview must not show it.
+      case "/query-echo": {
+        if (request.method !== "POST") return send(405, { error: "POST" });
+        return send(200, { items: [{ id: 1 }], echo: bodyText ?? "" });
+      }
+      case "/graphql/redirect":
+        response.writeHead(307, {
+          location: `${origin}/graphql/string-cursor`,
+        });
+        return response.end();
+      case "/query": {
+        if (request.method !== "POST") return send(405, { error: "POST" });
+        const parsed = JSON.parse(bodyText ?? "{}") as {
+          page?: { offset?: unknown; limit?: unknown };
+        };
+        const offset = parsed.page?.offset;
+        const limit = parsed.page?.limit;
+        if (typeof offset !== "number" || typeof limit !== "number")
+          return send(400, { error: "numbers expected" });
+        return send(200, { items: items.slice(offset, offset + limit) });
+      }
       case "/edge/repeat-cursor":
         return send(200, {
           data: items.slice(0, PAGE_SIZE),

@@ -5,6 +5,8 @@
 // run is stored except the draft's updated_at; no secret reaches the
 // answer, the log or the error text.
 
+import { timingSafeEqual } from "node:crypto";
+
 import {
   customApiTestRequestSchema,
   type CustomApiDraftDefinition,
@@ -21,6 +23,7 @@ import {
   CUSTOM_API_MESSAGES,
   CustomApiAuthError,
   CustomApiConfigError,
+  CustomApiGraphqlError,
   CustomApiHttpError,
   CustomApiResponseError,
   customApiCredentialHosts,
@@ -32,6 +35,7 @@ import {
   shortPath,
   streamChunks,
   suggestFields,
+  windowPlaceholders,
   type Chunk,
   type CustomApiCredentials,
   type CustomApiPageTrace,
@@ -55,6 +59,7 @@ import {
   type DraftResult,
 } from "./drafts.js";
 import { customApiEgress } from "./connectors.js";
+import { draftReadOnlyConfirmation } from "./read-only-confirmation.js";
 import { isCustomOAuthAuth } from "../oauth/providers/custom.js";
 import { customOAuthFailureMessage } from "../oauth/tokens.js";
 import {
@@ -76,7 +81,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type TestRequestResult =
   | DraftResult<CustomApiTestResponse>
-  | { ok: false; status: 429; error: string; retryAfterSeconds: number };
+  | { ok: false; status: 429; error: string; retryAfterSeconds: number }
+  | {
+      ok: false;
+      status: 400;
+      error: "custom_api_read_only_unconfirmed";
+      /** The confirmation of exactly this request (ADR 0030 §2). */
+      readOnlyConfirmation: string;
+    };
 
 export interface CustomApiTestRequestDeps extends CustomApiDraftDeps {
   db: Database;
@@ -84,6 +96,15 @@ export interface CustomApiTestRequestDeps extends CustomApiDraftDeps {
   privateHosts: readonly string[];
   /** Tests only: egress options (tlsCa, allowPrivateHosts, …). */
   executeOptions?: ExecuteOptions;
+}
+
+/** Constant-time comparison of a sent confirmation with the expected one. */
+function confirmationMatches(
+  sent: string | undefined,
+  expected: string,
+): boolean {
+  if (sent === undefined || sent.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(sent), Buffer.from(expected));
 }
 
 function jsonType(value: unknown): string {
@@ -130,6 +151,9 @@ function errorOf(
     return { code: "custom_api_auth_rejected", message: error.message };
   if (error instanceof CustomApiHttpError)
     return { code: "custom_api_http_error", message: error.message };
+  // Stream, status and count only: no text of the response (ADR 0030 §2).
+  if (error instanceof CustomApiGraphqlError)
+    return { code: "custom_api_graphql_errors", message: error.message };
   if (
     error instanceof CustomApiResponseError &&
     error.message === CUSTOM_API_MESSAGES.recordsNotList
@@ -363,6 +387,36 @@ export function createCustomApiTestRequestService(
           status: 400,
           error: "custom_api_environment_not_found",
         };
+      // The window the test reads, resolved once: the same values are
+      // confirmed (below) and sent.
+      const chunk = testChunk(definition, body.window, now());
+      const windowValues =
+        chunk && definition.stream.window.type !== "none"
+          ? windowPlaceholders(
+              definition.stream.window,
+              chunk,
+              definition.defaults.timeZone,
+            )
+          : {};
+      // A JSON-body POST leaves only with its author's confirmation of
+      // exactly this request (ADR 0030 §2), checked before anything else
+      // happens to it.
+      const confirmation = draftReadOnlyConfirmation(
+        definition,
+        body.environmentId,
+        body.variables,
+        windowValues,
+      );
+      if (
+        confirmation !== null &&
+        !confirmationMatches(body.readOnlyConfirmation, confirmation)
+      )
+        return {
+          ok: false,
+          status: 400,
+          error: "custom_api_read_only_unconfirmed",
+          readOnlyConfirmation: confirmation,
+        };
       const hostChanged = !draftBindingHolds(
         before.value.state,
         draftBinding(definition, body.environmentId),
@@ -448,10 +502,17 @@ export function createCustomApiTestRequestService(
           envelope.variables && typeof envelope.variables === "object"
             ? (envelope.variables as Record<string, string>)
             : {};
-        const secrets: SecretSet = secretSetOf(envelope, secretVariables, [
-          ...customApiSecretValues(definition, credentials, body.variables),
-        ]);
-        const chunk = testChunk(definition, body.window, now());
+        // The bodies actually sent join the redaction set after the run
+        // (ADR 0030 §4), matched by plain search apart from the secrets'
+        // pattern; they never enter the public trace.
+        const sentBodies = new Set<string>();
+        const secretsWith = (rendered: Iterable<string>): SecretSet =>
+          secretSetOf(
+            envelope,
+            secretVariables,
+            customApiSecretValues(definition, credentials, body.variables),
+            [...rendered],
+          );
         const controller = new AbortController();
         const egress = customApiEgress(
           deps.privateHosts,
@@ -482,12 +543,16 @@ export function createCustomApiTestRequestService(
             credentials,
             fetch,
             chunk,
+            windowValues,
             limits: {
               maxPages: body.pages,
               maxRecords: CUSTOM_API_TEST_LIMITS.maxRecords,
               deadline: Date.now() + CUSTOM_API_TEST_LIMITS.totalMs,
             },
             onPage: (trace) => traces.push(trace),
+            onSend: (built) => {
+              if (built.body !== undefined) sentBodies.add(built.body);
+            },
           });
         } catch (error) {
           failure = errorOf(
@@ -503,6 +568,7 @@ export function createCustomApiTestRequestService(
           controller.abort();
         }
 
+        const secrets = secretsWith(sentBodies);
         const first = traces[0];
         const firstBody = first?.body ?? null;
         const recordsAt =

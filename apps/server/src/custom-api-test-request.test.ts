@@ -561,6 +561,450 @@ describe("the custom API test request", () => {
     expect(response.json()).toEqual({ error: "custom_api_variable_reserved" });
     expect(fixture.requests).toHaveLength(0);
   });
+
+  it("still follows a same-host redirect of a GET request (ADR 0027)", async () => {
+    const id = await newDraft();
+    const body = parsed(
+      await testRequest(id, {
+        definition: draftDefinition({
+          path: "/edge/redirect-same-host",
+          pagination: { type: "none" },
+          fields: [{ id: "id", name: "ID", path: "id", type: "integer" }],
+        }),
+      }),
+    );
+    expect(body.ok, JSON.stringify(body.error)).toBe(true);
+    expect(fixture.requests.map((r) => r.path)).toEqual([
+      "/edge/redirect-same-host",
+      "/items/pages",
+    ]);
+  });
+});
+
+describe("read-only POST test requests (ADR 0030)", () => {
+  const ID_FIELD = [{ id: "id", name: "ID", path: "id", type: "integer" }];
+  const QUERY =
+    "query Items($first: Int!, $after: String) { items(first: $first, after: $after) { nodes { id } pageInfo { endCursor } } }";
+
+  function graphqlDraft(path = "/graphql/string-cursor", query = QUERY) {
+    const base = draftDefinition({
+      path,
+      records: "data.items.nodes",
+      fields: ID_FIELD,
+      pagination: {
+        type: "cursor",
+        cursorPath: "data.items.pageInfo.endCursor",
+        bodyPath: "variables.after",
+      },
+    });
+    return {
+      ...base,
+      stream: {
+        ...base.stream,
+        request: {
+          method: "POST",
+          path,
+          body: {
+            kind: "graphql",
+            query,
+            variables: { first: 10, after: null },
+          },
+        },
+      },
+    };
+  }
+
+  function jsonDraft(kind = "ItemsQuery", value = "v1") {
+    const base = draftDefinition({
+      path: "/query",
+      records: "items",
+      fields: ID_FIELD,
+      pagination: {
+        type: "offset",
+        offsetBodyPath: "page.offset",
+        limitBodyPath: "page.limit",
+        limit: 10,
+      },
+    });
+    return {
+      ...base,
+      variables: [{ id: "tenant", label: "Tenant", secret: false }],
+      stream: {
+        ...base.stream,
+        request: {
+          method: "POST",
+          path: "/query",
+          body: {
+            kind: "json",
+            value: {
+              kind,
+              tenant: "{{tenant}}",
+              version: value,
+              page: { offset: 0, limit: 0 },
+            },
+          },
+        },
+      },
+    };
+  }
+
+  it("sends a GraphQL query and pages through its variables", async () => {
+    const id = await newDraft();
+    const body = parsed(
+      await testRequest(id, { definition: graphqlDraft(), pages: 3 }),
+    );
+    expect(body.ok, JSON.stringify(body.error)).toBe(true);
+    expect(body.log.map((l) => [l.method, l.status])).toEqual([
+      ["POST", 200],
+      ["POST", 200],
+      ["POST", 200],
+    ]);
+    expect(body.rows).toHaveLength(25);
+    expect(
+      fixture.requests.map((r) => JSON.parse(r.body!).variables.after),
+    ).toEqual([null, "c10", "c20"]);
+  });
+
+  it.each([
+    ["a mutation", "mutation { deleteItems { id } }"],
+    ["a subscription", "subscription { items { id } }"],
+    ["two operations", "query A { a } query B { b }"],
+    ["a fragment definition", "query A { ...F } fragment F on Query { a }"],
+  ])(
+    "refuses %s before anything is sent, as a saved definition does",
+    async (_label, query) => {
+      const id = await newDraft();
+      const response = await testRequest(id, {
+        definition: graphqlDraft("/graphql/string-cursor", query),
+      });
+      expect(response.statusCode, response.body).toBe(400);
+      expect(response.json()).toMatchObject({
+        error: "invalid_request",
+        issues: [
+          {
+            path: "definition.stream.request.body.query",
+            code: "graphql_operation",
+          },
+        ],
+      });
+      expect(fixture.requests).toHaveLength(0);
+    },
+  );
+
+  it("refuses page placeholders in the body and reserved URL parameters", async () => {
+    const id = await newDraft();
+    const definition = graphqlDraft();
+    definition.stream.request.body.variables.after =
+      "{{page.cursor}}" as unknown as null;
+    (definition.stream.request as Record<string, unknown>).query = {
+      operationName: "Items",
+    };
+    const response = await testRequest(id, { definition });
+    expect(response.statusCode, response.body).toBe(400);
+    const codes = (
+      response.json() as { issues: { code: string }[] }
+    ).issues.map((issue) => issue.code);
+    expect(codes).toEqual(
+      expect.arrayContaining([
+        "placeholder_page_in_body",
+        "graphql_param_reserved",
+      ]),
+    );
+    expect(fixture.requests).toHaveLength(0);
+  });
+
+  it("fails on GraphQL errors without the response's error text", async () => {
+    const id = await newDraft();
+    const body = parsed(
+      await testRequest(id, { definition: graphqlDraft("/graphql/errors") }),
+    );
+    expect(body.ok).toBe(false);
+    expect(body.error).toEqual({
+      code: "custom_api_graphql_errors",
+      message:
+        "The GraphQL API answered with errors (graphql_errors): stream stats, HTTP 200, 2 errors.",
+    });
+  });
+
+  it("follows no redirect of a POST: the 3xx fails the test", async () => {
+    const id = await newDraft();
+    const body = parsed(
+      await testRequest(id, { definition: graphqlDraft("/graphql/redirect") }),
+    );
+    expect(body.ok).toBe(false);
+    expect(body.error).toEqual({
+      code: "custom_api_http_error",
+      message:
+        "The API answered HTTP 307, a redirect. A POST request follows no redirects.",
+    });
+    expect(fixture.requests.map((r) => r.path)).toEqual(["/graphql/redirect"]);
+  });
+
+  it("sends a JSON body only with the confirmation of exactly that request", async () => {
+    const id = await newDraft();
+    const variables = { tenant: "acme" };
+    const unconfirmed = await testRequest(id, {
+      definition: jsonDraft(),
+      variables,
+    });
+    expect(unconfirmed.statusCode, unconfirmed.body).toBe(400);
+    const { error, readOnlyConfirmation } = unconfirmed.json() as {
+      error: string;
+      readOnlyConfirmation: string;
+    };
+    expect(error).toBe("custom_api_read_only_unconfirmed");
+    expect(readOnlyConfirmation).toMatch(/^[0-9a-f]{64}$/);
+
+    const wrong = await testRequest(id, {
+      definition: jsonDraft(),
+      variables,
+      readOnlyConfirmation: "0".repeat(64),
+    });
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json()).toMatchObject({
+      error: "custom_api_read_only_unconfirmed",
+      readOnlyConfirmation,
+    });
+    expect(fixture.requests).toHaveLength(0);
+
+    const confirmed = parsed(
+      await testRequest(id, {
+        definition: jsonDraft(),
+        variables,
+        readOnlyConfirmation,
+        pages: 3,
+      }),
+    );
+    expect(confirmed.ok, JSON.stringify(confirmed.error)).toBe(true);
+    expect(confirmed.rows).toHaveLength(25);
+    expect(fixture.requests.map((r) => JSON.parse(r.body!))).toEqual(
+      [0, 10, 20].map((offset) => ({
+        kind: "ItemsQuery",
+        tenant: "acme",
+        version: "v1",
+        page: { offset, limit: 10 },
+      })),
+    );
+  });
+
+  /** A JSON body that reads a date window and is echoed back by /query-echo. */
+  function windowedDraft(path = "/query") {
+    const base = jsonDraft();
+    return {
+      ...base,
+      stream: {
+        ...base.stream,
+        request: {
+          ...base.stream.request,
+          path,
+          body: {
+            kind: "json",
+            value: {
+              kind: "ItemsQuery",
+              from: "{{window.start}}",
+              to: "{{window.end}}",
+              page: { offset: 0, limit: 0 },
+            },
+          },
+        },
+        window: {
+          type: "date",
+          stepDays: 1,
+          backfillDays: 30,
+          paramFormat: "date",
+        },
+      },
+    };
+  }
+
+  it("confirms the window it sends: another window needs another confirmation", async () => {
+    const id = await newDraft();
+    const marchFirst = {
+      start: "2024-03-01T00:00:00.000Z",
+      end: "2024-03-02T00:00:00.000Z",
+    };
+    const marchSecond = {
+      start: "2024-03-02T00:00:00.000Z",
+      end: "2024-03-03T00:00:00.000Z",
+    };
+    const confirmationFor = async (window: typeof marchFirst) => {
+      const response = await testRequest(id, {
+        definition: windowedDraft(),
+        variables: { tenant: "acme" },
+        window,
+      });
+      expect(response.statusCode, response.body).toBe(400);
+      return (response.json() as { readOnlyConfirmation: string })
+        .readOnlyConfirmation;
+    };
+    const first = await confirmationFor(marchFirst);
+    expect(await confirmationFor(marchSecond)).not.toBe(first);
+    // A confirmation for one window does not send another.
+    const other = await testRequest(id, {
+      definition: windowedDraft(),
+      variables: { tenant: "acme" },
+      window: marchSecond,
+      readOnlyConfirmation: first,
+    });
+    expect(other.statusCode).toBe(400);
+    expect(fixture.requests).toHaveLength(0);
+    // The confirmed window is the one sent.
+    const sent = parsed(
+      await testRequest(id, {
+        definition: windowedDraft(),
+        variables: { tenant: "acme" },
+        window: marchFirst,
+        readOnlyConfirmation: first,
+      }),
+    );
+    expect(sent.ok, JSON.stringify(sent.error)).toBe(true);
+    expect(JSON.parse(fixture.requests[0]!.body!)).toMatchObject({
+      from: "2024-03-01",
+      to: "2024-03-02",
+    });
+  });
+
+  it("redacts the body it sent from the response preview", async () => {
+    const id = await newDraft();
+    const window = {
+      start: "2024-03-01T00:00:00.000Z",
+      end: "2024-03-02T00:00:00.000Z",
+    };
+    const definition = windowedDraft("/query-echo");
+    const unconfirmed = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+    });
+    const { readOnlyConfirmation } = unconfirmed.json() as {
+      readOnlyConfirmation: string;
+    };
+    const res = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+      readOnlyConfirmation,
+    });
+    const body = parsed(res);
+    expect(body.ok, JSON.stringify(body.error)).toBe(true);
+    const sentBody = fixture.requests[0]!.body!;
+    expect(sentBody).toContain('"from":"2024-03-01"');
+    expect(body.response!.body).toMatchObject({ echo: "[redacted]" });
+    expect(res.body).not.toContain(JSON.stringify(sentBody).slice(1, -1));
+    // The public log carries no body.
+    expect(JSON.stringify(body.log)).not.toContain("ItemsQuery");
+  });
+
+  it("redacts a large non-ASCII body it sent without a 500 (review round 2)", async () => {
+    const id = await newDraft();
+    const window = {
+      start: "2024-03-01T00:00:00.000Z",
+      end: "2024-03-02T00:00:00.000Z",
+    };
+    const definition = windowedDraft("/query-echo");
+    // About 60 KB of non-ASCII text, just inside the template limit.
+    const text = "ü€ö".repeat(2_800);
+    (definition.stream.request.body.value as Record<string, unknown>).notes = [
+      text,
+      text,
+      text,
+    ];
+    const unconfirmed = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+    });
+    expect(unconfirmed.statusCode, unconfirmed.body).toBe(400);
+    const { readOnlyConfirmation } = unconfirmed.json() as {
+      readOnlyConfirmation: string;
+    };
+    const res = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+      readOnlyConfirmation,
+    });
+    const body = parsed(res);
+    expect(body.ok, JSON.stringify(body.error)).toBe(true);
+    expect(body.response!.body).toMatchObject({ echo: "[redacted]" });
+    expect(res.body).not.toContain(text);
+  });
+
+  it("answers graphql_errors for an error envelope on a 400", async () => {
+    const id = await newDraft();
+    const body = parsed(
+      await testRequest(id, {
+        definition: graphqlDraft("/graphql/errors-400"),
+      }),
+    );
+    expect(body.error).toEqual({
+      code: "custom_api_graphql_errors",
+      message:
+        "The GraphQL API answered with errors (graphql_errors): stream stats, HTTP 400, 1 error.",
+    });
+  });
+
+  it("refuses a page value in a POST path before anything is sent", async () => {
+    const id = await newDraft();
+    const definition = graphqlDraft();
+    definition.stream.request.path = "/graphql/{{page.cursor}}";
+    const response = await testRequest(id, { definition });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "invalid_request",
+      issues: [
+        {
+          path: "definition.stream.request.path",
+          code: "placeholder_page_in_post_path",
+        },
+      ],
+    });
+    expect(fixture.requests).toHaveLength(0);
+  });
+
+  it("clears the confirmation when the request changes, not when a secret does", async () => {
+    const id = await newDraft();
+    const confirmationOf = async (
+      definition: Record<string, unknown>,
+      variables: Record<string, string>,
+    ) => {
+      const response = await testRequest(id, { definition, variables });
+      expect(response.statusCode, response.body).toBe(400);
+      return (response.json() as { readOnlyConfirmation: string })
+        .readOnlyConfirmation;
+    };
+    const base = await confirmationOf(jsonDraft(), { tenant: "acme" });
+    // The body template, a non-secret value it uses, the pagination rule,
+    // a header template and the auth placement each change it.
+    expect(
+      await confirmationOf(jsonDraft("Other"), { tenant: "acme" }),
+    ).not.toBe(base);
+    expect(await confirmationOf(jsonDraft(), { tenant: "other" })).not.toBe(
+      base,
+    );
+    const paged = jsonDraft();
+    (paged.stream.pagination as { limit: number }).limit = 5;
+    expect(await confirmationOf(paged, { tenant: "acme" })).not.toBe(base);
+    const headed = jsonDraft();
+    (headed.stream.request as Record<string, unknown>).headers = {
+      "X-Mode": "read",
+    };
+    expect(await confirmationOf(headed, { tenant: "acme" })).not.toBe(base);
+    const keyed = {
+      ...jsonDraft(),
+      auth: { type: "api_key", placement: "header", name: "X-Key" },
+    };
+    expect(await confirmationOf(keyed, { tenant: "acme" })).not.toBe(base);
+    // A new secret value leaves it as it was: secrets are never part of it.
+    const stored = await call("PUT", `${drafts()}/${id}`, {
+      definition: jsonDraft(),
+      environmentId: "production",
+      secrets: { token: `${TOKEN}-rotated` },
+    });
+    expect(stored.statusCode, stored.body).toBe(200);
+    expect(await confirmationOf(jsonDraft(), { tenant: "acme" })).toBe(base);
+    expect(fixture.requests).toHaveLength(0);
+  });
 });
 
 describe("the test request rate limit", () => {

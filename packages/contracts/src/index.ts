@@ -48,7 +48,10 @@ import {
   connectionRetentionChoiceSchema,
   connectorDatasetRetentionSchema,
 } from "./connection-retention.js";
-import { connectionCustomApiViewSchema } from "./custom-api.js";
+import {
+  connectionCustomApiRequestSchema,
+  connectionCustomApiViewSchema,
+} from "./custom-api.js";
 import { goalProgressSchema, goalResponseSchema } from "./goals.js";
 import {
   CUSTOM_API_IMAGE_NEWEST_MAX,
@@ -1134,6 +1137,11 @@ export const connectionDetailSchema = connectionSchema.extend({
   config: connectionConfigSchema,
   /** The stored signed key's non-secret fields; null for other connections. */
   signedKey: connectionSignedKeyViewSchema.nullable(),
+  /**
+   * A custom-api connection's request templates (ADR 0030 §2); null for
+   * bundled connectors and when its definition cannot be read.
+   */
+  customApiRequests: z.array(connectionCustomApiRequestSchema).nullable(),
 });
 export type ConnectionDetail = z.infer<typeof connectionDetailSchema>;
 

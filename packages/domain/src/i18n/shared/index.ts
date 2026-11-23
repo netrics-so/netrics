@@ -164,6 +164,9 @@ export const PROVIDER_MESSAGE_CODES = {
     "providerMessages.appStoreConnect.agreementsMissing",
   "railway.token_rejected": "providerMessages.railway.tokenRejected",
   "railway.workspace_denied": "providerMessages.railway.workspaceDenied",
+  // The stored message keeps the stream, the HTTP status and the number of
+  // errors (ADR 0030); the catalog text is the generic sentence.
+  "custom_api.graphql_errors": "providerMessages.customApi.graphqlErrors",
 } as const satisfies Readonly<Record<string, MessageKey<SharedMessages>>>;
 
 export type ProviderMessageCode = keyof typeof PROVIDER_MESSAGE_CODES;

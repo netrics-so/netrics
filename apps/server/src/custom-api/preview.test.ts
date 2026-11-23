@@ -14,6 +14,46 @@ import {
 const none = secretSetOf({}, {});
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
+describe("redaction of large values (ADR 0030 review)", () => {
+  // A rendered POST body of up to 128 KiB, non-ASCII: its percent-encoded
+  // forms alone would make one combined pattern too large for V8.
+  const body = JSON.stringify({
+    q: "ü€".repeat(20_000),
+    tenant: "acme-tenant",
+  });
+
+  it("matches rendered bodies as plain text, next to the secrets", () => {
+    const secrets = secretSetOf({ token: "tok-123456" }, {}, [], [body]);
+    expect(redactText(`echo ${body} tok-123456`, secrets)).toBe(
+      "echo [redacted] [redacted]",
+    );
+    expect(redactText(JSON.stringify({ echo: body }), secrets)).toBe(
+      '{"echo":"[redacted]"}',
+    );
+    expect(boundedPreview({ echo: body }, secrets).body).toEqual({
+      echo: "[redacted]",
+    });
+  });
+
+  it("never throws, nor names a secret, when the secrets' pattern would be too large", () => {
+    const huge = Array.from(
+      { length: 20 },
+      (_, i) => `${i}-${"ü€/ +".repeat(1_600)}`,
+    );
+    let secrets: ReturnType<typeof secretSetOf> | undefined;
+    expect(() => {
+      secrets = secretSetOf(
+        { token: "tok-123456" },
+        Object.fromEntries(huge.map((value, i) => [`v${i}`, value])),
+      );
+    }).not.toThrow();
+    const text = `a ${huge[3]} b ${encodeURIComponent(huge[7]!)} c ${encodeURIComponent(huge[9]!).toLowerCase()} tok-123456`;
+    expect(redactText(text, secrets!)).toBe(
+      "a [redacted] b [redacted] c [redacted] [redacted]",
+    );
+  });
+});
+
 describe("redaction", () => {
   it("redacts an echoed token in values, keys, URL-encoded form and URLs", () => {
     const secrets = secretSetOf({ token: "tok/en+value" }, {});

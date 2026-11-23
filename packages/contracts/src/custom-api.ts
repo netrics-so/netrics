@@ -9,6 +9,8 @@ import { projectFilterQuerySchema } from "./project-filter.js";
 // connector SDK's internal subpath, the one package both contracts and
 // connectors may import; the API contract re-exports it.
 export {
+  CUSTOM_API_BODY_LIMITS,
+  CUSTOM_API_GRAPHQL_RESERVED_PARAMS,
   CUSTOM_API_CREDENTIAL_NAMES,
   CUSTOM_API_FIELD_FORMATS,
   CUSTOM_API_FORBIDDEN_HEADERS,
@@ -16,7 +18,10 @@ export {
   CUSTOM_API_LIMITS,
   CUSTOM_API_SCHEMA_VERSION,
   CustomApiDefinitionError,
+  checkCustomApiStreamRequest,
   customApiAuthSchema,
+  customApiBodySchema,
+  customApiGraphqlProblem,
   customApiDefinitionSchema,
   customApiEnvironmentSchema,
   customApiFieldSchema,
@@ -43,6 +48,8 @@ export {
 export type {
   DataPathSegment,
   CustomApiAuth,
+  CustomApiBody,
+  CustomApiJsonValue,
   CustomApiDefinition,
   CustomApiDefinitionErrorCode,
   CustomApiEnvironment,
@@ -148,6 +155,13 @@ export const customApiErrorResponseSchema = z.object({
     )
     .max(20)
     .optional(),
+  /**
+   * 400 custom_api_read_only_unconfirmed (a draft test of a JSON-body POST,
+   * ADR 0030 §2): the confirmation of exactly this request. Show the
+   * method and body, ask "this request only reads data", and send the
+   * test again with it as `readOnlyConfirmation`.
+   */
+  readOnlyConfirmation: z.string().optional(),
 });
 export type CustomApiErrorResponse = z.infer<
   typeof customApiErrorResponseSchema
@@ -216,4 +230,36 @@ export const connectionCustomApiViewSchema = z.object({
 });
 export type ConnectionCustomApiView = z.infer<
   typeof connectionCustomApiViewSchema
+>;
+
+/**
+ * What each stream of a custom-api connection's pinned version sends
+ * (ADR 0030 §2), shown to everyone who can see the connection: the method,
+ * path and, for POST, the body template. Bodies hold no secrets (secret
+ * variables are only allowed in auth headers), only `{{ placeholders }}`.
+ * A JSON body's read-only promise is its author's; netrics cannot verify
+ * it. Only on single-connection responses: the list stays light.
+ */
+export const connectionCustomApiRequestSchema = z.object({
+  stream: z.string(),
+  name: z.string(),
+  method: z.enum(["GET", "POST"]),
+  path: z.string(),
+  body: z
+    .discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("json"),
+        value: z.json(),
+        readOnlyConfirmed: z.boolean(),
+      }),
+      z.object({
+        kind: z.literal("graphql"),
+        query: z.string(),
+        variables: z.record(z.string(), z.json()),
+      }),
+    ])
+    .nullable(),
+});
+export type ConnectionCustomApiRequest = z.infer<
+  typeof connectionCustomApiRequestSchema
 >;

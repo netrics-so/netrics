@@ -314,7 +314,7 @@ export function registerCustomApiBuilderRoutes(
           attachValidation: true,
           schema: routeSchema({
             summary:
-              "Run one stream of the builder's unsaved definition against the draft's secrets (at most 5 pages, 1,000 records, 60 s) and answer the redacted, bounded first response, record arrays, field suggestions, mapped preview rows and a request log. The definition is stored on the draft first. At most 30 test requests per workspace and minute (429 custom_api_test_rate_limited with Retry-After); 409 custom_api_credentials_host_changed without any request when the secrets were entered for other hosts",
+              "Run one stream of the builder's unsaved definition against the draft's secrets (at most 5 pages, 1,000 records, 60 s) and answer the redacted, bounded first response, record arrays, field suggestions, mapped preview rows and a request log. The definition is stored on the draft first. At most 30 test requests per workspace and minute (429 custom_api_test_rate_limited with Retry-After); 409 custom_api_credentials_host_changed without any request when the secrets were entered for other hosts. The draft runs the saved definition's request rules first (400 invalid_request with issues: the GraphQL read-only guard, body and body-pagination rules); a JSON-body POST needs readOnlyConfirmation, the hash a 400 custom_api_read_only_unconfirmed answers for exactly this request (ADR 0030)",
             tags: TAGS,
             body: customApiTestRequestSchema,
             response: customApiTestResponseSchema,
@@ -337,9 +337,14 @@ export function registerCustomApiBuilderRoutes(
           if (result.ok) return customApiTestResponseSchema.parse(result.value);
           if (result.status === 429)
             void reply.header("retry-after", String(result.retryAfterSeconds));
-          return reply
-            .code(result.status)
-            .send(customApiErrorResponseSchema.parse({ error: result.error }));
+          return reply.code(result.status).send(
+            customApiErrorResponseSchema.parse({
+              error: result.error,
+              ...("readOnlyConfirmation" in result
+                ? { readOnlyConfirmation: result.readOnlyConfirmation }
+                : {}),
+            }),
+          );
         },
       );
 

@@ -28,7 +28,7 @@ import {
 
 /** The spec's section 2 example (the currency field made non-null, as money needs). */
 const SHOP: CustomApiDefinition = customApiDefinitionSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   name: "Shop API",
   environments: [
     {
@@ -122,6 +122,86 @@ describe("custom API builder state", () => {
     expect(definitionOf(stateFromDefinition(SHOP), SHOP)).toEqual(SHOP);
     // Without the original as well: one stream, nothing lost.
     expect(definitionOf(stateFromDefinition(SHOP))).toEqual(SHOP);
+  });
+
+  it("keeps a POST stream's method and body through the editor (ADR 0030)", () => {
+    const graphql = {
+      ...SHOP.streams[0]!,
+      request: {
+        ...SHOP.streams[0]!.request,
+        method: "POST" as const,
+        body: {
+          kind: "graphql" as const,
+          query: "query Q($after: String) { a }",
+          variables: { after: null },
+        },
+      },
+    };
+    const json = {
+      ...SHOP.streams[0]!,
+      request: {
+        ...SHOP.streams[0]!.request,
+        method: "POST" as const,
+        body: {
+          kind: "json" as const,
+          value: { q: "{{window.start}}" },
+          readOnlyConfirmed: true,
+        },
+      },
+    };
+    for (const stream of [graphql, json]) {
+      const post: CustomApiDefinition = { ...SHOP, streams: [stream] };
+      const state = stateFromDefinition(post);
+      // Saved and tested as POST, never as GET.
+      expect(definitionOf(state, post)).toEqual(post);
+      expect(draftDefinitionOf(state).stream.request).toMatchObject({
+        method: "POST",
+        body: stream.request.body,
+      });
+    }
+    // An edit to a JSON-body request drops its read-only confirmation:
+    // the save asks for it again.
+    const post: CustomApiDefinition = { ...SHOP, streams: [json] };
+    const state = stateFromDefinition(post);
+    const edited = definitionOf(
+      { ...state, stream: { ...state.stream, path: "/other" } },
+      post,
+    );
+    expect(edited.streams[0]!.request).toMatchObject({
+      method: "POST",
+      body: { kind: "json", value: { q: "{{window.start}}" } },
+    });
+    expect(edited.streams[0]!.request.body).not.toHaveProperty(
+      "readOnlyConfirmed",
+    );
+  });
+
+  it("lets a name-only edit of a saved JSON POST definition be saved (review round 2)", () => {
+    const json = {
+      ...SHOP.streams[0]!,
+      request: {
+        ...SHOP.streams[0]!.request,
+        method: "POST" as const,
+        body: {
+          kind: "json" as const,
+          value: { q: "{{window.start}}" },
+          readOnlyConfirmed: true,
+        },
+      },
+    };
+    const saved: CustomApiDefinition = { ...SHOP, streams: [json] };
+    const state = { ...stateFromDefinition(saved), name: "Renamed shop" };
+    // The review checks the document the save sends: against the original,
+    // the confirmation holds.
+    expect(
+      stepIssues(state, "review", { editing: true, original: saved }),
+    ).toEqual([]);
+    expect(definitionIssues(state, saved)).toEqual([]);
+    // A changed request drops it, and the review says so.
+    const changed = { ...state, stream: { ...state.stream, path: "/other" } };
+    expect(
+      stepIssues(changed, "review", { editing: true, original: saved }),
+    ).toContain("issues.definitionInvalid");
   });
 
   it("keeps the other streams of an edited definition", () => {
