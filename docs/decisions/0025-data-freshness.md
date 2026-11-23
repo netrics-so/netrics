@@ -492,7 +492,11 @@ the two differ:
   estimates widths; the rule holds for what is drawn, wherever the line
   is drawn. On the web a measure tile's one-source line, whose parts the
   stylesheet drops, measures both wordings in the browser and names the
-  day only when that shows as many parts; a footer or a several-source
+  day only when every part the plain wording shows whole is whole in the
+  named one too (a part counts only when it is fully visible: inside the line's clip
+  box on all four sides, so not cut at an edge and not on a hidden
+  further line; the one-line clip is one line at the font size in use,
+  also under a browser's minimum font size); a footer or a several-source
   form picked with the day named that the browser would cut falls back to
   the same parts without, checked again whenever the line's box or font
   size changes (a resized tile, another font scale, the browser's default

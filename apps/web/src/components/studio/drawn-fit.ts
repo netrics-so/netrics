@@ -6,14 +6,97 @@ import { useLayoutEffect, useRef, useState } from "react";
 // layout picks the wording from estimated glyph widths; the browser draws
 // the real ones. These hooks check what was drawn and fall back.
 
-/** Whether an element's text is drawn wider than its box, or on more lines. */
-function overflows(element: HTMLElement): boolean {
+/** A drawn box, as `getBoundingClientRect` gives it. */
+export interface DrawnBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** Sub-pixel layout: an edge may sit half a pixel outside its line. */
+const EDGE = 0.5;
+
+/**
+ * Whether a piece of a line (a part, or its text as laid out) is fully
+ * visible: its box inside the line's clip box on all four sides. A piece
+ * that runs past the right edge is cut (clipped, or ended by an
+ * ellipsis); one wrapped onto a further line, or taller than the line, is
+ * cut at the bottom. The one definition for every drawn check here.
+ */
+export function fullyVisible(piece: DrawnBox, line: DrawnBox): boolean {
+  return (
+    piece.left >= line.left - EDGE &&
+    piece.right <= line.right + EDGE &&
+    piece.top >= line.top - EDGE &&
+    piece.bottom <= line.bottom + EDGE
+  );
+}
+
+/**
+ * Whether the named wording may replace the plain one, by which parts of
+ * each are fully visible: the named line must show whole every part the
+ * plain line shows whole, and its first part (the day) at all. A set, not
+ * a count: showing as many parts is not enough when one of them is cut.
+ */
+export function namedKeepsEveryPart(
+  named: readonly boolean[],
+  plain: readonly boolean[],
+): boolean {
+  return (
+    named[0] === true &&
+    plain.every((whole, index) => !whole || named[index] === true)
+  );
+}
+
+/** Which parts (children) of a line of parts are fully visible. */
+function visibleParts(line: HTMLElement): boolean[] {
+  const box = line.getBoundingClientRect();
+  return [...line.children].map((part) =>
+    fullyVisible(part.getBoundingClientRect(), box),
+  );
+}
+
+/**
+ * The extent of a text as rendered, for `fullyVisible`, from the rects of
+ * its runs (a `Range` over it): their union across, and down the middle
+ * two thirds of their union.
+ *
+ * Why not all of it down: a run's rect is the font's own box, taller than
+ * the text's ink and than a tight line. On an ordinary footer it reaches
+ * about a pixel past the line's box above and below, for the named and
+ * the plain wording alike, so the whole rect would call every footer cut.
+ * The middle two thirds is the body of the text. One mechanism for both
+ * ways a line is cut at the bottom: a line taller than its box (a browser
+ * minimum font size in a tile that flex has shrunk), and a text wrapped
+ * onto further lines, whose union is at least two lines high. Null
+ * without text.
+ */
+export function textExtent(runs: readonly DrawnBox[]): DrawnBox | null {
+  if (runs.length === 0) return null;
+  const top = Math.min(...runs.map((run) => run.top));
+  const bottom = Math.max(...runs.map((run) => run.bottom));
+  const sixth = (bottom - top) / 6;
+  return {
+    left: Math.min(...runs.map((run) => run.left)),
+    right: Math.max(...runs.map((run) => run.right)),
+    top: top + sixth,
+    bottom: bottom - sixth,
+  };
+}
+
+/** Whether all of an element's text is fully visible in its box. */
+function textVisible(element: HTMLElement): boolean {
   const range = document.createRange();
   range.selectNodeContents(element);
-  const text = range.getBoundingClientRect();
-  const box = element.getBoundingClientRect();
-  return text.width > box.width + 0.5 || text.height > box.height * 1.5;
+  const text = textExtent(
+    [...range.getClientRects()].filter((run) => run.width > 0),
+  );
+  return text === null || fullyVisible(text, element.getBoundingClientRect());
 }
+
+/** Whether an element's text is drawn cut: past its box, or on more lines. */
+const overflows = (element: HTMLElement) => !textVisible(element);
 
 const widthOf = (element: HTMLElement) => element.getBoundingClientRect().width;
 
@@ -106,20 +189,13 @@ export function useDrawnCut(
   return fallback;
 }
 
-/** The parts of a line of parts on its first, visible line. */
-function firstLineParts(line: HTMLElement): number {
-  const parts = [...line.children] as HTMLElement[];
-  const top = parts[0]?.offsetTop;
-  return parts.filter((part) => part.offsetTop === top).length;
-}
-
 /**
  * For a line of parts that drops those that do not fit (a measure tile's
  * freshness line): whether to show it with the day named. `line` shows one
  * wording, `probe` (out of sight, given the line's width here) the other.
- * Named only when it shows as many parts as the plain wording does, as
- * drawn; false until measured, so a tile never shows fewer parts than
- * before. `enabled`: there is a named wording at all.
+ * Named only when it shows whole every part the plain wording shows whole
+ * (`namedKeepsEveryPart`), as drawn; false until measured, so a tile never
+ * shows less than before. `enabled`: there is a named wording at all.
  */
 export function useNamedParts(
   enabled: boolean,
@@ -142,9 +218,9 @@ export function useNamedParts(
       if (!alive) return;
       other.style.width = `${widthOf(drawn)}px`;
       const [namedParts, plainParts] = shown
-        ? [firstLineParts(drawn), firstLineParts(other)]
-        : [firstLineParts(other), firstLineParts(drawn)];
-      const next = namedParts > 0 && namedParts >= plainParts;
+        ? [visibleParts(drawn), visibleParts(other)]
+        : [visibleParts(other), visibleParts(drawn)];
+      const next = namedKeepsEveryPart(namedParts, plainParts);
       if (next !== shown) setNamed(next);
     };
     check();

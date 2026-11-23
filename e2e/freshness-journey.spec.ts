@@ -1,4 +1,5 @@
 import {
+  chromium,
   expect,
   test,
   type Locator,
@@ -194,6 +195,9 @@ const wording = {
       /^Last reporting day: \w{3} \d{1,2} · fetched 10 min\. ago · next ~\d/,
     metricDay: /^(?:Last reporting day:|Up to) \w{3} \d{1,2}/,
     scrollView: "Scroll view",
+    screenView: "Screen view",
+    namedDay: "Last reporting day: ",
+    sept30: "Sep 30",
     named: /^Last reporting day: /,
     cardDay: /^Last reporting day: Sep 30 · fetched 10 min\. ago · next ~\d/,
     plainDay: "Up to ",
@@ -211,6 +215,9 @@ const wording = {
       /^Letzter Berichtstag: \d{1,2}\. \S+ · abgerufen vor 10 Min\. · nächste ~\d/,
     metricDay: /^(?:Letzter Berichtstag:|Bis) \d{1,2}\. \S+/,
     scrollView: "Scroll-Ansicht",
+    screenView: "Bildschirm-Ansicht",
+    namedDay: "Letzter Berichtstag: ",
+    sept30: "30. Sept.",
     named: /^Letzter Berichtstag: /,
     cardDay:
       /^Letzter Berichtstag: 30\. Sept\. · abgerufen vor 10 Min\. · nächste ~\d/,
@@ -227,19 +234,27 @@ const wording = {
 } as const;
 
 /**
- * How many parts of a measure tile's freshness line are on its one visible
- * line, as drawn and with the day worded the other way (named or plain),
- * measured in place on a copy.
+ * Which parts of a measure tile's freshness line are fully visible: inside
+ * the line's box on all four sides, so neither on the hidden second line
+ * nor cut at the right edge or at the bottom. As drawn, and with the day worded the other way
+ * (named or plain), measured in place on a copy.
  */
 async function visibleParts(line: Locator, named: RegExp, plainDay: string) {
   return line.evaluate(
     (element, { named, plainDay }) => {
-      const count = (p: Element) => {
-        const parts = [...p.children] as HTMLElement[];
-        const top = parts[0]?.offsetTop;
-        return parts.filter((part) => part.offsetTop === top).length;
+      const visible = (p: Element) => {
+        const box = p.getBoundingClientRect();
+        return ([...p.children] as HTMLElement[]).map((part) => {
+          const rect = part.getBoundingClientRect();
+          return (
+            rect.left >= box.left - 0.5 &&
+            rect.right <= box.right + 0.5 &&
+            rect.top >= box.top - 0.5 &&
+            rect.bottom <= box.bottom + 0.5
+          );
+        });
       };
-      const shown = count(element);
+      const shown = visible(element);
       const copy = element.cloneNode(true) as HTMLElement;
       const first = copy.children[0] as HTMLElement;
       const text = first.textContent ?? "";
@@ -251,28 +266,46 @@ async function visibleParts(line: Locator, named: RegExp, plainDay: string) {
       copy.style.visibility = "hidden";
       copy.style.width = `${element.getBoundingClientRect().width}px`;
       element.after(copy);
-      const plain = count(copy);
+      const plain = visible(copy);
       copy.remove();
-      return { shown, plain, isNamed, total: element.children.length };
+      return { shown, plain, isNamed, first: text };
     },
     { named: named.source, plainDay },
   );
 }
 
+/**
+ * The rule as drawn: every part the plain wording shows whole, the line
+ * shows whole; and its first part, the day, is never cut.
+ */
+function expectNothingLost(
+  drawn: Awaited<ReturnType<typeof visibleParts>>,
+  where: string,
+) {
+  const message = `${where} ${JSON.stringify(drawn)}`;
+  expect(drawn.plain[0], message).toBe(true);
+  drawn.plain.forEach((whole, index) => {
+    if (whole) expect(drawn.shown[index], message).toBe(true);
+  });
+}
+
+/** The time zone the page words its times in. */
+const resolvedZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 // Two zones: the wording must not depend on where the journey runs.
 for (const timezoneId of ["Europe/Berlin", "Asia/Dhaka"]) {
   test.describe(timezoneId, () => {
     test.use({ timezoneId });
-    test(
-      "widgets and the connection page say how far the data reaches",
-      journey,
-    );
+    test("widgets and the connection page say how far the data reaches", ({
+      page,
+    }, testInfo) => journey({ page }, testInfo, timezoneId));
   });
 }
 
 async function journey(
   { page }: { page: Page },
   testInfo: TestInfo,
+  timezoneId: string,
 ): Promise<void> {
   const locale = testInfo.project.name as Locale;
   const w = wording[locale];
@@ -299,6 +332,7 @@ async function journey(
   // The dashboards, on the pinned clock.
   await pinFreshness(seeded.connectionId);
   await page.clock.setFixedTime(CLOCK);
+  expect(await page.evaluate(resolvedZone)).toBe(timezoneId);
   const downloads = await metricModel(
     page,
     workspaceId,
@@ -396,10 +430,7 @@ async function journey(
       const line = widget(title).locator(".sw-measure-freshness");
       await expect(line).toHaveAttribute("title", /~\d/);
       const drawn = await visibleParts(line, w.named, w.plainDay);
-      expect(drawn.plain, title).toBeGreaterThan(0);
-      expect(drawn.shown, `${title} ${JSON.stringify(drawn)}`).toBe(
-        drawn.plain,
-      );
+      expectNothingLost(drawn, title);
     }
     const footer = page.locator("article.sw-metric .sw-footer").first();
     await expect(footer).toHaveText(w.metricDay);
@@ -493,7 +524,8 @@ async function journey(
   for (const bottom of box.parts)
     expect(bottom).toBeLessThanOrEqual(box.line + 1);
   const wide = await visibleParts(periodic, w.named, w.plainDay);
-  expect(wide).toEqual({ shown: 3, plain: 3, isNamed: true, total: 3 });
+  expect(wide.isNamed).toBe(true);
+  expect(wide.shown).toEqual([true, true, true]);
   await drawnAsBefore();
   await expect(continuous).toHaveAttribute("title", w.continuous);
   await expect(periodic).not.toHaveClass(/sw-notice/);
@@ -619,4 +651,132 @@ async function journey(
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });
+
+  // A browser with a minimum font size (26 px here, for this tile's width;
+  // reported at 18 px on a narrower one): on the narrow tile "Up
+  // to Sep 30" fits its line, the named day is wider than the line. Both
+  // would be "one part on the first line"; only the plain one is whole, so
+  // the tile keeps it and the date is never cut.
+  const minimum = await chromium.launch({
+    args: ["--blink-settings=minimumFontSize=26,minimumLogicalFontSize=26"],
+  });
+  try {
+    const context = await minimum.newContext({
+      storageState: await page.context().storageState(),
+      locale: locale === "de" ? "de-DE" : "en-US",
+      // Launched by hand, it inherits nothing from the project.
+      timezoneId,
+      viewport: { width: 1280, height: 720 },
+    });
+    const tab = await context.newPage();
+    await tab.clock.setFixedTime(CLOCK);
+    expect(await tab.evaluate(resolvedZone)).toBe(timezoneId);
+    await tab.goto(`/workspaces/${workspaceId}/dashboards/${dashboardId}`);
+    // The scroll view was chosen above and is remembered: back to slides.
+    await tab.getByRole("button", { name: w.screenView, exact: true }).click();
+    const tile = (title: string) =>
+      tab
+        .locator("article.sw-measure")
+        .filter({ has: tab.getByRole("heading", { name: title, exact: true }) })
+        .locator(".sw-measure-freshness");
+    await expect(tile("Narrow")).toHaveAttribute("title", /~\d/);
+    expect(
+      await tile("Narrow").evaluate((element) =>
+        parseFloat(getComputedStyle(element).fontSize),
+      ),
+    ).toBe(26);
+    const narrow = await visibleParts(tile("Narrow"), w.named, w.plainDay);
+    expectNothingLost(narrow, "Narrow at a minimum font size");
+    // One line of text is whole at the font size in use, top to bottom.
+    expect(narrow.shown[0], JSON.stringify(narrow)).toBe(true);
+    expect(
+      await tile("Narrow").evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const day = element.children[0]!.getBoundingClientRect();
+        return {
+          above: box.top - day.top,
+          below: day.bottom - box.bottom,
+        };
+      }),
+    ).toEqual({ above: expect.closeTo(0, 0), below: expect.closeTo(0, 0) });
+    // The case itself: the plain day is whole, the named one would not be.
+    expect(narrow.isNamed, JSON.stringify(narrow)).toBe(false);
+    expect(narrow.first).toBe(w.plainDay + w.sept30);
+    const named = await tile("Narrow").evaluate((element, text) => {
+      const copy = element.cloneNode(true) as HTMLElement;
+      copy.children[0]!.textContent = text;
+      copy.style.position = "absolute";
+      copy.style.visibility = "hidden";
+      copy.style.width = `${element.getBoundingClientRect().width}px`;
+      element.after(copy);
+      const cut =
+        copy.children[0]!.getBoundingClientRect().right -
+        copy.getBoundingClientRect().right;
+      copy.remove();
+      return cut;
+    }, w.namedDay + w.sept30);
+    expect(named, "the named day is wider than the line").toBeGreaterThan(0.5);
+    expectNothingLost(
+      await visibleParts(tile("Downloads"), w.named, w.plainDay),
+      "Downloads at a minimum font size",
+    );
+    // A wide, short metric tile at that font size: the named footer fits
+    // across, but the tile has no room for a line that high and its box
+    // is shorter than the text. A footer cut like that is not named: the
+    // tile keeps the plain line, as it did before.
+    const made = await page.request.post(
+      `/v1/workspaces/${workspaceId}/dashboards`,
+      {
+        headers: { origin: ORIGIN },
+        data: {
+          name: "Wide",
+          slides: [
+            {
+              widgets: [
+                {
+                  type: "metric",
+                  title: "Wide metric",
+                  x: 0,
+                  y: 0,
+                  w: 12,
+                  h: 2,
+                  connectionId: seeded.connectionId,
+                  metricKey: seeded.downloadsKey,
+                  period: "last_7_days",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    );
+    expect(made.status(), await made.text()).toBe(200);
+    const wideId = ((await made.json()) as { dashboard: { id: string } })
+      .dashboard.id;
+    await tab.goto(`/workspaces/${workspaceId}/dashboards/${wideId}`);
+    const wideFooter = tab.locator("article.sw-metric .sw-footer");
+    await expect(wideFooter).toHaveText(
+      new RegExp(`^${w.plainDay}${w.sept30.replace(".", "\\.")} · `),
+    );
+    const wide = await wideFooter.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const text = range.getBoundingClientRect();
+      const box = element.getBoundingClientRect();
+      return {
+        // Room across for the named wording too; none down for a line.
+        across: box.width - text.width,
+        text: text.height,
+        box: box.height,
+      };
+    });
+    expect(wide.across, JSON.stringify(wide)).toBeGreaterThan(150);
+    expect(wide.box, JSON.stringify(wide)).toBeLessThan(wide.text / 2);
+    await testInfo.attach(`minimum-font-${locale}`, {
+      body: await tab.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+  } finally {
+    await minimum.close();
+  }
 }

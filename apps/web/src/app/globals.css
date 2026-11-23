@@ -5428,7 +5428,12 @@ a.button.primary:hover {
   margin: 0;
   font-size: calc(var(--u, 1px) * 24 * var(--measure-scale, 1));
   line-height: 1.3;
+  /* One line as it is drawn: `lh` follows the font size in use, which a
+     browser's minimum font size makes larger than the one set here, where
+     1.3em would cut the line's own text at the bottom (#791). The same
+     height wherever the font is the one set, so the fit is unchanged. */
   max-height: 1.3em;
+  max-height: 1lh;
   overflow: hidden;
   color: var(--t-muted);
 }
@@ -5448,6 +5453,7 @@ a.button.primary:hover {
   font-size: calc(var(--u, 1px) * 24 * var(--measure-scale, 1));
   line-height: 1.3;
   max-height: 1.3em;
+  max-height: 1lh;
   overflow: hidden;
 }
 /* A provider overdue by a day: the stale warning (ADR 0025 section 8), in
