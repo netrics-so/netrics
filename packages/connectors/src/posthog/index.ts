@@ -312,6 +312,19 @@ export const posthogManifest: ConnectorManifest = {
 
 // ─── Connector ──────────────────────────────────────────────────────────────
 
+/** Projects the check queries at most, within its 15-second deadline. */
+export const CHECK_PROBES = 3;
+
+/** A refusal of one organization or project, not of the key. */
+function isProjectRefusal(error: unknown): boolean {
+  return (
+    error instanceof PostHogApiError &&
+    (error.kind === "forbidden" ||
+      error.kind === "not_found" ||
+      error.kind === "query")
+  );
+}
+
 export interface PostHogConnectorOptions extends ClientOptions {
   /** The clock of the sync windows; replaced in tests. */
   now?: () => number;
@@ -378,9 +391,11 @@ export function createPostHogConnector(
       try {
         const api = client(context, runtime);
         if (projectIds.ids) {
-          // A key limited to projects: each named project answers a
+          // A key limited to projects: the first named projects answer a
           // constant query (project endpoints only, posthog/permissions.py).
-          for (const id of projectIds.ids) {
+          // The check stays within its deadline; a sync reports any other
+          // named project it cannot read (logged, and stale).
+          for (const id of projectIds.ids.slice(0, CHECK_PROBES)) {
             try {
               await api.query(id, PROBE_BODY);
             } catch (error) {
@@ -398,14 +413,28 @@ export function createPostHogConnector(
             }
           }
         } else {
-          // The cheapest reads of what a sync needs: one organization, one
-          // project and a constant query.
+          // The cheapest reads of what a sync needs: one organization, a
+          // few of its projects and a constant query in the first that
+          // answers. A project the key may not query (403, 404) is the
+          // sync's to report, not a reason to stop every other one; a
+          // wrong key or a missing scope still fails here.
           const [organization] = (await organizationsPage(api, 0))
             .organizations;
-          if (organization) {
-            const [project] = (await projectsPage(api, organization.id, 0, 1))
-              .projects;
-            if (project) await api.query(project.id, PROBE_BODY);
+          const projects = organization
+            ? await projectsPage(api, organization.id, 0, CHECK_PROBES)
+                .then((page) => page.projects)
+                .catch((error: unknown) => {
+                  if (isProjectRefusal(error)) return [];
+                  throw error;
+                })
+            : [];
+          for (const project of projects) {
+            try {
+              await api.query(project.id, PROBE_BODY);
+              break;
+            } catch (error) {
+              if (!isProjectRefusal(error)) throw error;
+            }
           }
         }
         if (insights[0]) {

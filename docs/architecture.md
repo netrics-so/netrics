@@ -364,7 +364,9 @@ that names other configured hosts than the connection's
 credentials), and the runtime refuses any call whose configuration names
 other hosts than the bound ones while it carries credentials
 (`CredentialHostMismatchError`, `connection.credentials_host_changed`)
-before the connector runs. The connector never sees the binding.
+before the connector runs; the sync worker records it as an authentication
+failure (`auth_failed`), not an outage, and does not retry it. The
+connector never sees the binding.
 
 Connector code reaches the network only through `runtime.fetch`. It allows
 https hosts from `outboundDomains`, and since SDK 0.2.20 the host names the

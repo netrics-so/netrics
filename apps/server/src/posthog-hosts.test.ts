@@ -44,6 +44,8 @@ const ORG = "0190b4c2-7d1e-7000-8000-000000000001";
 
 /** Every request the stand-in for PostHog saw: host and key. */
 const seen: Array<{ host: string; authorization: string | undefined }> = [];
+/** Projects whose queries PostHog refuses (403). */
+const refused = new Set<string>();
 
 function answer(status: number, body: unknown): ConnectorResponse {
   const text = JSON.stringify(body);
@@ -70,8 +72,21 @@ const provider: ConnectorRuntime = {
     if (url.pathname === "/api/organizations/")
       return answer(200, page([{ id: ORG, name: "Acme" }]));
     if (url.pathname === `/api/organizations/${ORG}/projects/`)
-      return answer(200, page([{ id: 1000, name: "Site" }]));
-    if (url.pathname === "/api/projects/1000/query/") {
+      return answer(
+        200,
+        page([
+          { id: 1000, name: "Site" },
+          { id: 1001, name: "App" },
+        ]),
+      );
+    const project = /^\/api\/projects\/(\d+)\/query\/$/.exec(url.pathname)?.[1];
+    if (project && refused.has(project))
+      return answer(403, {
+        type: "authentication_error",
+        code: "permission_denied",
+        detail: `API key does not have access to the requested project: ID ${project}.`,
+      });
+    if (project) {
       const query = (
         JSON.parse(init!.body!) as { query: Record<string, unknown> }
       ).query;
@@ -313,5 +328,68 @@ describe("a PostHog key stays with its host (#884 review)", () => {
       logger: pino({ level: "silent" }),
     }).catch(() => undefined);
     expect(toNewHost()).toEqual([]);
+    // A refusal only new credentials (a new connection) can repair: an
+    // auth failure with its reason code, not an outage that retries
+    // (#884 review 2).
+    const [run] = await owner`
+      select error_class, error_code from sync_runs
+      where connection_id = ${connectionId}
+      order by started_at desc limit 1`;
+    expect(run).toEqual({
+      error_class: "auth",
+      error_code: "connection.credentials_host_changed",
+    });
+    const [state] = await owner`
+      select auth_state from connection_state
+      where connection_id = ${connectionId}`;
+    expect(state!.auth_state).toBe("auth_failed");
+  });
+});
+
+describe("a project the key may not query (#884 review 2)", () => {
+  it("connects and syncs the other projects through the worker", async () => {
+    refused.add("1000");
+    try {
+      const created = await call(
+        "POST",
+        `/v1/workspaces/${workspaceId}/connections`,
+        {
+          connectorId: "posthog",
+          name: "Partly readable",
+          config: { host: "posthog.third.example" },
+          credentials: { token: KEY },
+        },
+      );
+      expect(created.statusCode, created.body).toBe(200);
+      const id = connectionResponseSchema.parse(created.json()).connection.id;
+      // The worker's run: the check, then the sync pages.
+      await createJobHandlers({
+        registry: registry(),
+        credentialKeyring: keyring,
+      })["connection.sync"]!({
+        job: {
+          id: crypto.randomUUID(),
+          kind: "connection.sync",
+          workspaceId,
+          connectionId: id,
+          attempts: 0,
+          payload: {},
+        } as unknown as Job,
+        appDb: db,
+        schedulerDb,
+        logger: pino({ level: "silent" }),
+      });
+      const [run] = await owner`
+        select status from sync_runs
+        where connection_id = ${id}
+        order by started_at desc limit 1`;
+      expect(run!.status).toBe("succeeded");
+      const resources = await owner`
+        select distinct dimensions ->> 'resource' as resource
+        from observations where connection_id = ${id}`;
+      expect(resources.map((row) => row.resource)).toEqual(["1001"]);
+    } finally {
+      refused.clear();
+    }
   });
 });

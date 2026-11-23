@@ -40,11 +40,13 @@ may collide, never share one connection's history.
 PostHog refuses organization endpoints to a key limited to projects
 (`scoped_teams`: "API keys with scoped projects are only supported on
 project-based endpoints", `posthog/permissions.py`). With **Project IDs**
-set, netrics lists no organization: the check runs `SELECT 1` in each named
-project, discovery offers exactly those projects (named by their ID, since
+set, netrics lists no organization: the check runs `SELECT 1` in the first
+three named projects (its deadline is 15 seconds), discovery offers exactly
+those projects (named by their ID, since
 no project endpoint names a project for such a key), and a sync reads them
-through project endpoints only. Without Project IDs, such a key fails the
-check with `posthog.projects_required`.
+through project endpoints only. A named project the key cannot read is
+logged by the sync and shows as stale. Without Project IDs, such a key
+fails the check with `posthog.projects_required`.
 
 After connecting, choose the projects to sync (all of them, or some). Each
 project is a resource that can be linked to a workspace project, like a
@@ -54,19 +56,21 @@ The key is stored encrypted (AES-GCM, bound to the connection) and is never
 shown or logged. PostHog has no read-only key kind apart from the scopes;
 netrics never sends anything but the reads below.
 
-The connection check reads one page of organizations, one project and runs
-the query `SELECT 1` in it (which needs `query:read`), or with Project IDs
-runs `SELECT 1` in each of them, and, when insights are configured, lists
-one insight. It fails with a reason:
+The connection check reads one page of organizations and up to three of the
+first one's projects, and runs the query `SELECT 1` (which needs
+`query:read`) in the first project that answers; a project the key may not
+query (403, 404) is skipped there and shows as stale after the sync. With
+Project IDs it runs `SELECT 1` in the first three of them. When insights are
+configured, it lists one insight. It fails with a reason:
 
-| Code                        | When                                                                    |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `posthog.key_rejected`      | PostHog answers 401: a wrong or deleted key, or a key of another region |
-| `posthog.scope_missing`     | PostHog answers 403 naming a missing scope                              |
-| `posthog.host_invalid`      | The host is no valid host name (see below); nothing is sent             |
-| `posthog.insights_invalid`  | An entry of **Saved insights** is not an insight link, or more than 20  |
-| `posthog.projects_required` | The key is limited to projects and no Project IDs are set               |
-| `posthog.projects_invalid`  | A Project ID is no ID, more than 50, or one the key cannot read         |
+| Code                        | When                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `posthog.key_rejected`      | PostHog answers 401: a wrong or deleted key, or a key of another region                                 |
+| `posthog.scope_missing`     | PostHog answers 403 naming a missing scope                                                              |
+| `posthog.host_invalid`      | The host is no valid host name (see below); nothing is sent                                             |
+| `posthog.insights_invalid`  | An entry of **Saved insights** is not an insight link, or more than 20                                  |
+| `posthog.projects_required` | The key is limited to projects and no Project IDs are set                                               |
+| `posthog.projects_invalid`  | A Project ID is no ID, more than 50, none at all (`,,,`), or one of the first three the key cannot read |
 
 A stored key whose bound host differs from the connection's configuration
 (a row changed outside the API) is refused by the runtime before any
@@ -122,8 +126,8 @@ Datasets:
 - `insights` (snapshot): what became of each configured insight on the last
   sync: `ok`, `not_found` (deleted or unknown), `unsupported` (not a trends
   insight, or an interval other than day, week or month), `too_large` (more
-  than 5,000 rows, or more than ten dataset pages, which long labels or
-  breakdown values reach first), `not_selected` (its project is not synced), `denied`
+  than 5,000 rows, more than ten dataset pages, which long labels or
+  breakdown values reach first, or a row above the 64 KiB record limit), `not_selected` (its project is not synced), `denied`
   (PostHog refused it) or `not_ready` (PostHog has not computed it). The
   last two keep the stored `insight_results`.
 
@@ -144,7 +148,15 @@ otherwise, with the insight's own date range, filters and breakdowns.
   grow during the day. A project PostHog refuses (403, 404), or whose
   PostHog refuses the query (400, say an older self-hosted version), is
   skipped for the rest of the run and its entry is not reported, so it shows
-  as stale; the other projects go on.
+  as stale; the other projects go on. An organization whose project list
+  PostHog refuses during a run is skipped the same way.
+
+Errors carry netrics' own fixed text for the status (no text of PostHog's
+answer, which may echo what was sent). A stored key whose bound host
+differs from the configuration fails the run as an authentication failure
+(`connection.credentials_host_changed`), which only a new connection
+repairs; it is not retried.
+
 - **Insights** (`insights`, continuous): reported when every configured
   insight was read or definitively left out.
 

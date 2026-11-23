@@ -478,6 +478,17 @@ export function insightRows(
   if (chunks(rows).length > MAX_INSIGHT_PAGES) {
     return { status: "too_large", interval, rows: [] };
   }
+  // A record above ADR 0026's per-record limit (64 KiB of JSON, as the host
+  // measures it) would fail the whole page: the insight is left out
+  // instead (#884 review 2).
+  if (
+    rows.some(
+      (record) =>
+        Buffer.byteLength(JSON.stringify(record)) > DATASET_LIMITS.rowBytes,
+    )
+  ) {
+    return { status: "too_large", interval, rows: [] };
+  }
   return { status: "ok", interval, rows };
 }
 
@@ -581,20 +592,33 @@ export async function syncPage(
       } else delete run.listing;
       return;
     }
-    const page = await projectsPage(
-      client,
-      run.orgs[listing.org]!,
-      listing.offset,
-    );
+    const advance = () => {
+      if (listing.org + 1 < run.orgs.length) {
+        run.listing = { stage: "projects", org: listing.org + 1, offset: 0 };
+      } else delete run.listing;
+    };
+    let page;
+    try {
+      page = await projectsPage(client, run.orgs[listing.org]!, listing.offset);
+    } catch (error) {
+      // An organization the key may no longer read (403, 404) since it was
+      // listed: the run goes on with the next one instead of repeating
+      // this step forever (#884 review 2). Its projects get no freshness.
+      if (!isRefused(error)) throw error;
+      log?.warn("organization refused, skipped", {
+        organization: run.orgs[listing.org]!,
+        status: (error as PostHogApiError).status,
+      });
+      advance();
+      return;
+    }
     for (const project of page.projects) {
       if (selected && !selected.has(project.id)) continue;
       if (run.projects.some(([id]) => id === project.id)) continue;
       run.projects.push([project.id, project.name]);
     }
     if (page.next !== null) listing.offset = page.next;
-    else if (listing.org + 1 < run.orgs.length) {
-      run.listing = { stage: "projects", org: listing.org + 1, offset: 0 };
-    } else delete run.listing;
+    else advance();
   }
 
   /** Moves to the next project; nothing of this one carries over. */

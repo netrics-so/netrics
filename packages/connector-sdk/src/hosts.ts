@@ -40,17 +40,48 @@ export function configuredHost(value: unknown): string | null {
  * Invalid or missing values add nothing.
  */
 export function configuredHostsOf(
-  manifest: { configuredHosts?: readonly string[] },
+  manifest: { configuredHosts?: readonly string[]; configSchema?: unknown },
   config: Record<string, unknown>,
 ): string[] {
   const hosts: string[] = [];
   for (const key of manifest.configuredHosts ?? []) {
-    const host = Object.hasOwn(config, key)
-      ? configuredHost(config[key])
-      : null;
+    const host = configuredHost(effectiveValue(manifest, config, key));
     if (host !== null && !hosts.includes(host)) hosts.push(host);
   }
   return hosts;
+}
+
+/**
+ * A configured value as the connector reads it: missing, null or blank is
+ * the configSchema property's default (#884 review 2), so `{}`, `""` and
+ * the default name one destination, for egress and for the binding alike.
+ */
+function effectiveValue(
+  manifest: { configSchema?: unknown },
+  config: Record<string, unknown>,
+  key: string,
+): unknown {
+  const value = Object.hasOwn(config, key) ? config[key] : undefined;
+  if (
+    value !== undefined &&
+    value !== null &&
+    !(typeof value === "string" && value.trim() === "")
+  ) {
+    return value;
+  }
+  const properties =
+    manifest.configSchema && typeof manifest.configSchema === "object"
+      ? (manifest.configSchema as { properties?: unknown }).properties
+      : undefined;
+  const property =
+    properties &&
+    typeof properties === "object" &&
+    Object.hasOwn(properties, key)
+      ? (properties as Record<string, unknown>)[key]
+      : undefined;
+  return property && typeof property === "object"
+    ? (property as { default?: unknown }).default
+    : undefined;
 }
 
 // ─── Credentials bound to configured hosts (#884 review) ───────────────────
@@ -81,7 +112,7 @@ function sameHosts(a: readonly string[], b: readonly string[]): boolean {
  * them to another host.
  */
 export function bindCredentialHosts(
-  manifest: { configuredHosts?: readonly string[] },
+  manifest: { configuredHosts?: readonly string[]; configSchema?: unknown },
   config: Record<string, unknown>,
   credentials: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -108,7 +139,7 @@ export function withoutCredentialHosts(
  * configured).
  */
 export function credentialHostsMatch(
-  manifest: { configuredHosts?: readonly string[] },
+  manifest: { configuredHosts?: readonly string[]; configSchema?: unknown },
   config: Record<string, unknown>,
   credentials: Record<string, unknown>,
 ): boolean {
@@ -126,7 +157,7 @@ export function credentialHostsMatch(
 
 /** Whether a config change names other configured hosts. */
 export function configuredHostsChanged(
-  manifest: { configuredHosts?: readonly string[] },
+  manifest: { configuredHosts?: readonly string[]; configSchema?: unknown },
   before: Record<string, unknown>,
   after: Record<string, unknown>,
 ): boolean {

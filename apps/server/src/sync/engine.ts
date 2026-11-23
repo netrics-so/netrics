@@ -3,6 +3,7 @@ import type { DataPolicy } from "@netrics/domain";
 
 import {
   ContractViolationError,
+  CredentialHostMismatchError,
   executeCheck,
   executeDiscover,
   executeSync,
@@ -1048,6 +1049,13 @@ async function runSync(
    * error to throw, or null when the error is not one.
    */
   const authFailure = async (error: unknown): Promise<Error | null> => {
+    if (error instanceof CredentialHostMismatchError) {
+      // Stored credentials bound to another host than the configuration
+      // names (#884 review 2): only new credentials, in a new connection,
+      // help. auth_failed with its reason code; no retries.
+      await recordFailure("auth", error);
+      return new TerminalJobError(error.message);
+    }
     if (error instanceof SignedKeyRejectedError) {
       // auth_failed with the provider's "upload a new key" message; the
       // scheduler skips the connection until new credentials arrive.

@@ -52,6 +52,29 @@ describe("credentials bound to configured hosts (#884 review)", () => {
     );
   });
 
+  it("reads an empty or missing host as the schema's default (#884 review 2)", () => {
+    const withDefault = {
+      configuredHosts: ["host"],
+      configSchema: {
+        type: "object",
+        properties: { host: { type: "string", default: "us.example.com" } },
+      },
+    };
+    for (const empty of [{}, { host: "" }, { host: "  " }, { host: null }]) {
+      expect(configuredHostsOf(withDefault, empty)).toEqual(["us.example.com"]);
+      expect(
+        configuredHostsChanged(withDefault, empty, at("us.example.com")),
+      ).toBe(false);
+      expect(
+        credentialHostsMatch(
+          withDefault,
+          at("us.example.com"),
+          bindCredentialHosts(withDefault, empty, { token: "t" }),
+        ),
+      ).toBe(true);
+    }
+  });
+
   it("tells a change of configured hosts from other changes", () => {
     expect(
       configuredHostsChanged(

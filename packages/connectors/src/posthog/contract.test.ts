@@ -1304,3 +1304,129 @@ describe("review round 1 (#884)", () => {
     );
   });
 });
+
+describe("review round 2 (#884)", () => {
+  it("passes the check when the first project refuses its query but another answers", async () => {
+    const posthog = fake({
+      projects: [{ id: 1000, refused: 403 }, { id: 1001 }],
+    });
+    expect(await connector().check(context(), posthog.runtime)).toEqual({
+      ok: true,
+    });
+    // A missing scope still fails, whichever project answers it.
+    const scoped = fake({
+      projects: [{ id: 1000, refused: 403 }, { id: 1001 }],
+      intercept: (request) =>
+        request.path === "/api/projects/1001/query/"
+          ? scopeMissing()
+          : undefined,
+    });
+    expect(await connector().check(context(), scoped.runtime)).toMatchObject({
+      ok: false,
+      code: SCOPE_MISSING_CODE,
+    });
+  });
+
+  it("refuses Project IDs that hold no ID", async () => {
+    const posthog = fake({ scopedProjects: [1000] });
+    for (const projects of [",,,", " , "]) {
+      expect(
+        await connector().check(context({ projects }), posthog.runtime),
+      ).toMatchObject({ ok: false, code: "posthog.projects_invalid" });
+    }
+    expect(posthog.requests).toEqual([]);
+  });
+
+  it("probes only a few named projects in the check, and reports the others in the sync", async () => {
+    const ids = Array.from({ length: 50 }, (_, index) => 1000 + index);
+    const posthog = fake({
+      scopedProjects: ids.slice(0, 49),
+      projects: ids.map((id) => ({ id })),
+    });
+    const ctx = context({ projects: ids.join(" ") });
+    expect(await connector().check(ctx, posthog.runtime)).toEqual({ ok: true });
+    expect(posthog.requests.length).toBeLessThanOrEqual(3);
+    const warnings: Array<Record<string, unknown>> = [];
+    const logging: ConnectorRuntime = {
+      ...posthog.runtime,
+      log: {
+        debug: () => {},
+        info: () => {},
+        warn: (_message, fields) => warnings.push({ ...fields }),
+        error: () => {},
+      },
+    };
+    const run = await syncAll(
+      logging,
+      { mode: "incremental", from: "2024-01-09T00:00:00.000Z", to: NOW },
+      ctx,
+    );
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1048")).toBeDefined();
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1049")).toBeUndefined();
+    expect(warnings).toContainEqual(
+      expect.objectContaining({ project: "1049", status: 403 }),
+    );
+  });
+
+  it("goes past an organization whose projects become unreadable", async () => {
+    const second = { id: "0190b4c2-7d1e-7000-8000-000000000002", name: "Two" };
+    const posthog = fake({
+      orgs: [second, ORG],
+      projects: [{ id: 1000 }, { id: 2000, org: second.id }],
+      intercept: (request) =>
+        request.path === `/api/organizations/${second.id}/projects/`
+          ? answer(403, { detail: "You do not have access." })
+          : undefined,
+    });
+    const run = await syncAll(posthog.runtime);
+    expect(valuesOf(run, METRICS.events, "1000")).toHaveLength(10);
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1000")).toBeDefined();
+  });
+
+  it("refuses an insight with a record above the per-record limit", async () => {
+    const posthog = fake({
+      insights: [
+        {
+          project: 1000,
+          shortId: "Huge1",
+          result: [
+            {
+              action: { order: 0 },
+              label: "x".repeat(70_000),
+              data: [1],
+              days: ["2024-01-10"],
+            },
+          ],
+        },
+      ],
+    });
+    const run = await syncAll(
+      posthog.runtime,
+      WINDOW,
+      context({ insights: "1000/Huge1" }),
+    );
+    expect(rowsOf(run.datasetPages, "insights")[0]).toMatchObject({
+      status: "too_large",
+    });
+    expect(rowsOf(run.datasetPages, "insight_results")).toEqual([]);
+  });
+
+  it("never copies PostHog's error text into its errors", async () => {
+    const echo = `${FAKE_KEY} secret-detail`;
+    for (const status of [400, 403, 404, 418]) {
+      const error = apiError(status, { detail: echo });
+      expect(error.message).not.toContain("secret-detail");
+      expect(error.message).not.toContain(FAKE_KEY);
+    }
+    const posthog = fake({
+      intercept: (request) =>
+        request.path.endsWith("/query/")
+          ? answer(418, { detail: echo })
+          : undefined,
+    });
+    const error = await connector()
+      .sync(context(), WINDOW, posthog.runtime)
+      .catch((caught: unknown) => caught);
+    expect(String((error as Error).message)).not.toContain("secret-detail");
+  });
+});

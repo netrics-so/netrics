@@ -66,7 +66,9 @@ export function apiKeyOf(context: ConnectionContext): string | undefined {
  */
 export function hostOf(context: ConnectionContext): string | null {
   const host = context.config.host;
-  return host === undefined || host === null || host === ""
+  return host === undefined ||
+    host === null ||
+    (typeof host === "string" && host.trim() === "")
     ? US_HOST
     : configuredHost(host);
 }
@@ -95,6 +97,9 @@ export function projectIdsOf(context: ConnectionContext): {
     invalid += ids.length - MAX_PROJECT_IDS;
     ids.length = MAX_PROJECT_IDS;
   }
+  // A value that names no ID at all (",,,") is no list of projects: it
+  // would make the check run no query (#884 review 2).
+  if (ids.length === 0) invalid += 1;
   return { ids, invalid };
 }
 

@@ -47,8 +47,10 @@ export type PostHogErrorKind =
   | "other";
 
 /**
- * A refused PostHog request. Only PostHog's own error text is kept (never
- * the request, its headers or the key), cut short.
+ * A refused PostHog request. Its message is netrics' own fixed text for the
+ * status and kind: never the request, its headers, the key, or PostHog's
+ * response text, which may echo what it was sent (#884 review 2). `detail`
+ * is netrics' own description of an answer of the wrong shape.
  */
 export class PostHogApiError extends Error {
   readonly status: number;
@@ -88,20 +90,19 @@ function describe(
   if (status >= 500) {
     return `PostHog is not answering right now (${status}). netrics tries again later.`;
   }
-  const text = detail.replace(/\s+/g, " ").trim().slice(0, 200);
   switch (kind) {
     case "project_scoped":
       return "The personal API key is limited to projects; PostHog answers organization requests only for other keys (403).";
     case "forbidden":
-      return `PostHog does not let the key read this project (403): ${text}`;
+      return "PostHog does not let the key read this organization or project (403).";
     case "not_found":
-      return `PostHog did not find a project or insight the key may read (404): ${text}`;
+      return "PostHog did not find a project or insight the key may read (404).";
     case "query":
-      return `PostHog refused netrics' query (${status}): ${text}`;
+      return `PostHog refused netrics' query (${status}).`;
     case "invalid":
-      return `PostHog's answer does not have the expected shape: ${text}`;
+      return `PostHog's answer does not have the expected shape: ${detail.slice(0, 200)}`;
     default:
-      return `PostHog API answered ${status}: ${text || "no message"}`;
+      return `PostHog API answered ${status}.`;
   }
 }
 
@@ -115,7 +116,10 @@ function errorDetail(json: unknown): { code: string; detail: string } {
   };
 }
 
-/** Classifies a refused answer by status and PostHog's error body. */
+/**
+ * Classifies a refused answer by status and PostHog's error body. The body
+ * only classifies: none of its text goes into the error.
+ */
 export function apiError(status: number, json: unknown): PostHogApiError {
   const { detail } = errorDetail(json);
   if (status === 401) return new PostHogApiError(status, "auth", "");
@@ -125,16 +129,16 @@ export function apiError(status: number, json: unknown): PostHogApiError {
     // "API keys with scoped projects are only supported on project-based
     // endpoints."
     if (/scoped projects/i.test(detail)) {
-      return new PostHogApiError(status, "project_scoped", detail);
+      return new PostHogApiError(status, "project_scoped", "");
     }
     if (scope !== null || /\bscope\b/i.test(detail)) {
       return new PostHogApiError(status, "scope", "", scope);
     }
-    return new PostHogApiError(status, "forbidden", detail);
+    return new PostHogApiError(status, "forbidden", "");
   }
-  if (status === 404) return new PostHogApiError(status, "not_found", detail);
-  if (status === 400) return new PostHogApiError(status, "query", detail);
-  return new PostHogApiError(status, "other", detail);
+  if (status === 404) return new PostHogApiError(status, "not_found", "");
+  if (status === 400) return new PostHogApiError(status, "query", "");
+  return new PostHogApiError(status, "other", "");
 }
 
 /**
