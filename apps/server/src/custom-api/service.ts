@@ -302,15 +302,20 @@ export function createCustomApiService(deps: {
           if (current.definition.currentVersion !== body.baseVersion) {
             return fail(409, "custom_api_definition_stale");
           }
+          // Compared at today's schema version: a stored version-1 document
+          // and its restored (upgraded) copy are the same definition.
+          const currentDocument = readStoredCustomApiDefinition(
+            current.version.document,
+          );
           if (
             options.restoredFrom !== undefined &&
-            canonicalSha256(document) === current.version.documentSha256
+            canonicalSha256(document) === canonicalSha256(currentDocument)
           ) {
             return fail(409, "custom_api_version_unchanged");
           }
           const datasetVersions = customApiDatasetVersions(
             {
-              document: readStoredCustomApiDefinition(current.version.document),
+              document: currentDocument,
               datasetVersions: current.version.datasetVersions as Record<
                 string,
                 number

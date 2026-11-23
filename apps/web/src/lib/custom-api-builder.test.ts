@@ -124,6 +124,58 @@ describe("custom API builder state", () => {
     expect(definitionOf(stateFromDefinition(SHOP))).toEqual(SHOP);
   });
 
+  it("keeps a POST stream's method and body through the editor (ADR 0030)", () => {
+    const graphql = {
+      ...SHOP.streams[0]!,
+      request: {
+        ...SHOP.streams[0]!.request,
+        method: "POST" as const,
+        body: {
+          kind: "graphql" as const,
+          query: "query Q($after: String) { a }",
+          variables: { after: null },
+        },
+      },
+    };
+    const json = {
+      ...SHOP.streams[0]!,
+      request: {
+        ...SHOP.streams[0]!.request,
+        method: "POST" as const,
+        body: {
+          kind: "json" as const,
+          value: { q: "{{window.start}}" },
+          readOnlyConfirmed: true,
+        },
+      },
+    };
+    for (const stream of [graphql, json]) {
+      const post: CustomApiDefinition = { ...SHOP, streams: [stream] };
+      const state = stateFromDefinition(post);
+      // Saved and tested as POST, never as GET.
+      expect(definitionOf(state, post)).toEqual(post);
+      expect(draftDefinitionOf(state).stream.request).toMatchObject({
+        method: "POST",
+        body: stream.request.body,
+      });
+    }
+    // An edit to a JSON-body request drops its read-only confirmation:
+    // the save asks for it again.
+    const post: CustomApiDefinition = { ...SHOP, streams: [json] };
+    const state = stateFromDefinition(post);
+    const edited = definitionOf(
+      { ...state, stream: { ...state.stream, path: "/other" } },
+      post,
+    );
+    expect(edited.streams[0]!.request).toMatchObject({
+      method: "POST",
+      body: { kind: "json", value: { q: "{{window.start}}" } },
+    });
+    expect(edited.streams[0]!.request.body).not.toHaveProperty(
+      "readOnlyConfirmed",
+    );
+  });
+
   it("keeps the other streams of an edited definition", () => {
     const second = { ...SHOP.streams[0]!, key: "orders", name: "Orders" };
     const two: CustomApiDefinition = {

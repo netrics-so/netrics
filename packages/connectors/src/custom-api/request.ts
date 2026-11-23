@@ -3,6 +3,7 @@
 // definition. Credentials only ever go to the environment host.
 
 import {
+  CustomApiBodyError,
   isCustomApiGraphqlReservedParam,
   parsePlaceholders,
   renderCustomApiBody,
@@ -191,6 +192,9 @@ export function buildRequest(input: {
     );
   const base = new URL(environment.baseUrl);
   const values = { ...stringValues(input.config), ...input.placeholders };
+  const fixedValues = Object.fromEntries(
+    Object.entries(values).filter(([name]) => !name.startsWith("page.")),
+  );
   let url: URL;
   if (input.nextUrl !== undefined) {
     try {
@@ -202,7 +206,14 @@ export function buildRequest(input: {
       throw new CustomApiResponseError(CUSTOM_API_MESSAGES.nextUrlOffHost);
     url.hash = "";
   } else {
-    const path = renderTemplate(stream.request.path, values, pathSegmentValue);
+    // A POST stays on its endpoint: page values never reach its path or
+    // body templates (the definition check refuses them; this holds even
+    // for a document that skipped it).
+    const path = renderTemplate(
+      stream.request.path,
+      method === "POST" ? fixedValues : values,
+      pathSegmentValue,
+    );
     url = new URL(`${environment.baseUrl}${path}`);
     if (url.host !== base.host)
       throw new CustomApiConfigError("The request left the environment host");
@@ -234,11 +245,18 @@ export function buildRequest(input: {
       for (const name of url.searchParams.keys())
         if (isCustomApiGraphqlReservedParam(name))
           throw new CustomApiConfigError(GRAPHQL_URL_PARAM);
-    body = renderCustomApiBody(
-      requestBody,
-      (template) => renderTemplate(template, values, (value) => value),
-      input.bodyWrites ?? [],
-    );
+    try {
+      body = renderCustomApiBody(
+        requestBody,
+        (template) => renderTemplate(template, fixedValues, (value) => value),
+        input.bodyWrites ?? [],
+      );
+    } catch (error) {
+      // Fixed sentences: the rendered body is never part of the message.
+      if (error instanceof CustomApiBodyError)
+        throw new CustomApiConfigError(error.message);
+      throw error;
+    }
     headers["content-type"] = "application/json; charset=utf-8";
   }
 

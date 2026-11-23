@@ -787,6 +787,146 @@ describe("read-only POST test requests (ADR 0030)", () => {
     );
   });
 
+  /** A JSON body that reads a date window and is echoed back by /query-echo. */
+  function windowedDraft(path = "/query") {
+    const base = jsonDraft();
+    return {
+      ...base,
+      stream: {
+        ...base.stream,
+        request: {
+          ...base.stream.request,
+          path,
+          body: {
+            kind: "json",
+            value: {
+              kind: "ItemsQuery",
+              from: "{{window.start}}",
+              to: "{{window.end}}",
+              page: { offset: 0, limit: 0 },
+            },
+          },
+        },
+        window: {
+          type: "date",
+          stepDays: 1,
+          backfillDays: 30,
+          paramFormat: "date",
+        },
+      },
+    };
+  }
+
+  it("confirms the window it sends: another window needs another confirmation", async () => {
+    const id = await newDraft();
+    const marchFirst = {
+      start: "2024-03-01T00:00:00.000Z",
+      end: "2024-03-02T00:00:00.000Z",
+    };
+    const marchSecond = {
+      start: "2024-03-02T00:00:00.000Z",
+      end: "2024-03-03T00:00:00.000Z",
+    };
+    const confirmationFor = async (window: typeof marchFirst) => {
+      const response = await testRequest(id, {
+        definition: windowedDraft(),
+        variables: { tenant: "acme" },
+        window,
+      });
+      expect(response.statusCode, response.body).toBe(400);
+      return (response.json() as { readOnlyConfirmation: string })
+        .readOnlyConfirmation;
+    };
+    const first = await confirmationFor(marchFirst);
+    expect(await confirmationFor(marchSecond)).not.toBe(first);
+    // A confirmation for one window does not send another.
+    const other = await testRequest(id, {
+      definition: windowedDraft(),
+      variables: { tenant: "acme" },
+      window: marchSecond,
+      readOnlyConfirmation: first,
+    });
+    expect(other.statusCode).toBe(400);
+    expect(fixture.requests).toHaveLength(0);
+    // The confirmed window is the one sent.
+    const sent = parsed(
+      await testRequest(id, {
+        definition: windowedDraft(),
+        variables: { tenant: "acme" },
+        window: marchFirst,
+        readOnlyConfirmation: first,
+      }),
+    );
+    expect(sent.ok, JSON.stringify(sent.error)).toBe(true);
+    expect(JSON.parse(fixture.requests[0]!.body!)).toMatchObject({
+      from: "2024-03-01",
+      to: "2024-03-02",
+    });
+  });
+
+  it("redacts the body it sent from the response preview", async () => {
+    const id = await newDraft();
+    const window = {
+      start: "2024-03-01T00:00:00.000Z",
+      end: "2024-03-02T00:00:00.000Z",
+    };
+    const definition = windowedDraft("/query-echo");
+    const unconfirmed = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+    });
+    const { readOnlyConfirmation } = unconfirmed.json() as {
+      readOnlyConfirmation: string;
+    };
+    const res = await testRequest(id, {
+      definition,
+      variables: { tenant: "acme" },
+      window,
+      readOnlyConfirmation,
+    });
+    const body = parsed(res);
+    expect(body.ok, JSON.stringify(body.error)).toBe(true);
+    const sentBody = fixture.requests[0]!.body!;
+    expect(sentBody).toContain('"from":"2024-03-01"');
+    expect(body.response!.body).toMatchObject({ echo: "[redacted]" });
+    expect(res.body).not.toContain(JSON.stringify(sentBody).slice(1, -1));
+    // The public log carries no body.
+    expect(JSON.stringify(body.log)).not.toContain("ItemsQuery");
+  });
+
+  it("answers graphql_errors for an error envelope on a 400", async () => {
+    const id = await newDraft();
+    const body = parsed(
+      await testRequest(id, {
+        definition: graphqlDraft("/graphql/errors-400"),
+      }),
+    );
+    expect(body.error).toEqual({
+      code: "custom_api_graphql_errors",
+      message:
+        "The GraphQL API answered with errors (graphql_errors): stream stats, HTTP 400, 1 error.",
+    });
+  });
+
+  it("refuses a page value in a POST path before anything is sent", async () => {
+    const id = await newDraft();
+    const definition = graphqlDraft();
+    definition.stream.request.path = "/graphql/{{page.cursor}}";
+    const response = await testRequest(id, { definition });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: "invalid_request",
+      issues: [
+        {
+          path: "definition.stream.request.path",
+          code: "placeholder_page_in_post_path",
+        },
+      ],
+    });
+    expect(fixture.requests).toHaveLength(0);
+  });
+
   it("clears the confirmation when the request changes, not when a secret does", async () => {
     const id = await newDraft();
     const confirmationOf = async (

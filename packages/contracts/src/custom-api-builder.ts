@@ -513,6 +513,13 @@ export const importCustomApiDefinitionRequestSchema = z.strictObject({
     .describe("The exported file's JSON (customApiExportSchema)"),
   name: z.string().trim().min(1).max(100).optional(),
   projectId: z.uuid().nullable().default(null),
+  /**
+   * The importer confirms that the file's JSON-body POST requests only
+   * read data (ADR 0030 §2). A file's own confirmations are never taken
+   * over: without this, a file with JSON bodies is refused with
+   * custom_api_import_read_only_unconfirmed.
+   */
+  readOnlyConfirmed: z.boolean().optional(),
 });
 export type ImportCustomApiDefinitionRequest = z.input<
   typeof importCustomApiDefinitionRequestSchema

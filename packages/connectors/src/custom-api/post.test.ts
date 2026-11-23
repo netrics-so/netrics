@@ -136,6 +136,42 @@ describe("GraphQL streams", () => {
   });
 });
 
+describe("GraphQL error envelopes on other statuses", () => {
+  const at = (path: string): CustomApiDefinition => {
+    const definition = def("graphql_errors");
+    const stream = definition.streams[0]!;
+    return {
+      ...definition,
+      streams: [{ ...stream, request: { ...stream.request, path } }],
+    };
+  };
+  const failureOf = (path: string) =>
+    syncAll(connector(at(path))).then(
+      () => null,
+      (error: unknown) => error as Error,
+    );
+
+  it("fails a 400 with errors as graphql_errors, without their text", async () => {
+    const error = await failureOf("/graphql/errors-400");
+    expect(error).toBeInstanceOf(ConnectorError);
+    expect(error!.message).toBe(
+      "The GraphQL API answered with errors (graphql_errors): stream items, HTTP 400, 1 error.",
+    );
+    expect(
+      await connector(at("/graphql/errors-400")).check(context, runtime),
+    ).toEqual({ ok: false, message: error!.message });
+  });
+
+  it("keeps auth and rate-limit handling first", async () => {
+    expect((await failureOf("/graphql/errors-401"))!.name).toBe(
+      "CustomApiAuthError",
+    );
+    expect((await failureOf("/graphql/errors-429"))!.name).toBe(
+      "RateLimitedError",
+    );
+  });
+});
+
 describe("JSON body streams", () => {
   it("pages through offset and limit in the body, as numbers", async () => {
     fixture.reset();
@@ -192,10 +228,65 @@ describe("checks before every send", () => {
     expect(build().url).toBe(`${fixture.origin}/graphql/string-cursor`);
   });
 
+  it("never lets a page value change a POST path", () => {
+    expect(() =>
+      buildRequest({
+        definition: graphql,
+        stream: {
+          request: { ...stream.request, path: "/graphql/{{page.cursor}}" },
+        },
+        environment,
+        config: {},
+        credentials: { host } as CustomApiCredentials,
+        placeholders: { "page.cursor": "c10" },
+        pageParams: {},
+      }),
+    ).toThrow(/No value for placeholder/);
+  });
+
   it("refuses a POST to a URL from a response", () => {
     expect(() =>
       build({ nextUrl: `${fixture.origin}/graphql/string-cursor?x=1` }),
     ).toThrow(POST_FIXED_ENDPOINT);
+  });
+});
+
+describe("the rendered body's size", () => {
+  it("refuses a body over the limit once values are filled in, before the fetch", async () => {
+    const base = def("json_offset");
+    const stream = base.streams[0]!;
+    const definition: CustomApiDefinition = {
+      ...base,
+      variables: [{ id: "big", label: "Big", secret: false }],
+      streams: [
+        {
+          ...stream,
+          request: {
+            ...stream.request,
+            body: {
+              kind: "json",
+              value: {
+                list: Array.from({ length: 300 }, () => "{{big}}"),
+                page: { offset: 0, limit: 0 },
+              },
+              readOnlyConfirmed: true,
+            },
+          },
+        },
+      ],
+    };
+    const value = "b".repeat(500);
+    fixture.reset();
+    const failure = await connector(definition)
+      .sync({ ...context, config: { big: value } }, REQUEST, runtime)
+      .then(
+        () => null,
+        (error: unknown) => error as Error,
+      );
+    expect(failure?.name).toBe("CustomApiConfigError");
+    expect(failure?.message).toMatch(/larger than 128 KiB/);
+    expect(failure?.message).not.toContain(value);
+    expect(fixture.requests).toHaveLength(0);
   });
 });
 

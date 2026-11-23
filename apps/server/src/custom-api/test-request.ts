@@ -35,6 +35,7 @@ import {
   shortPath,
   streamChunks,
   suggestFields,
+  windowPlaceholders,
   type Chunk,
   type CustomApiCredentials,
   type CustomApiPageTrace,
@@ -386,6 +387,17 @@ export function createCustomApiTestRequestService(
           status: 400,
           error: "custom_api_environment_not_found",
         };
+      // The window the test reads, resolved once: the same values are
+      // confirmed (below) and sent.
+      const chunk = testChunk(definition, body.window, now());
+      const windowValues =
+        chunk && definition.stream.window.type !== "none"
+          ? windowPlaceholders(
+              definition.stream.window,
+              chunk,
+              definition.defaults.timeZone,
+            )
+          : {};
       // A JSON-body POST leaves only with its author's confirmation of
       // exactly this request (ADR 0030 §2), checked before anything else
       // happens to it.
@@ -393,6 +405,7 @@ export function createCustomApiTestRequestService(
         definition,
         body.environmentId,
         body.variables,
+        windowValues,
       );
       if (
         confirmation !== null &&
@@ -489,12 +502,14 @@ export function createCustomApiTestRequestService(
           envelope.variables && typeof envelope.variables === "object"
             ? (envelope.variables as Record<string, string>)
             : {};
-        const secrets: SecretSet = secretSetOf(envelope, secretVariables, [
-          ...customApiSecretValues(definition, credentials, body.variables, [
-            definition.stream,
-          ]),
-        ]);
-        const chunk = testChunk(definition, body.window, now());
+        // The bodies actually sent join the redaction set after the run
+        // (ADR 0030 §4); they never enter the public trace.
+        const sentBodies = new Set<string>();
+        const secretsWith = (extra: Iterable<string>): SecretSet =>
+          secretSetOf(envelope, secretVariables, [
+            ...customApiSecretValues(definition, credentials, body.variables),
+            ...extra,
+          ]);
         const controller = new AbortController();
         const egress = customApiEgress(
           deps.privateHosts,
@@ -525,12 +540,16 @@ export function createCustomApiTestRequestService(
             credentials,
             fetch,
             chunk,
+            windowValues,
             limits: {
               maxPages: body.pages,
               maxRecords: CUSTOM_API_TEST_LIMITS.maxRecords,
               deadline: Date.now() + CUSTOM_API_TEST_LIMITS.totalMs,
             },
             onPage: (trace) => traces.push(trace),
+            onSend: (built) => {
+              if (built.body !== undefined) sentBodies.add(built.body);
+            },
           });
         } catch (error) {
           failure = errorOf(
@@ -546,6 +565,7 @@ export function createCustomApiTestRequestService(
           controller.abort();
         }
 
+        const secrets = secretsWith(sentBodies);
         const first = traces[0];
         const firstBody = first?.body ?? null;
         const recordsAt =

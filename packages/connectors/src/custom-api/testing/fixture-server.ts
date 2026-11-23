@@ -864,6 +864,24 @@ export async function startCustomApiFixtureServer(
             { message: "LEAKED-PROVIDER-TEXT two" },
           ],
         });
+      // GraphQL error envelopes on other statuses (ADR 0030): a 400 for a
+      // bad query, and a 401 and a 429 whose own handling comes first.
+      case "/graphql/errors-400":
+      case "/graphql/errors-401":
+      case "/graphql/errors-429": {
+        const status = Number(url.pathname.slice(-3));
+        return send(
+          status,
+          { errors: [{ message: "LEAKED-PROVIDER-TEXT bad" }] },
+          status === 429 ? { "retry-after": "30" } : {},
+        );
+      }
+      // Answers the request body it got as a string (as some APIs echo
+      // a query): the builder's preview must not show it.
+      case "/query-echo": {
+        if (request.method !== "POST") return send(405, { error: "POST" });
+        return send(200, { items: [{ id: 1 }], echo: bodyText ?? "" });
+      }
       case "/graphql/redirect":
         response.writeHead(307, {
           location: `${origin}/graphql/string-cursor`,

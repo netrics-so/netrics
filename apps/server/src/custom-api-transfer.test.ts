@@ -281,6 +281,49 @@ describe("custom API import", () => {
     });
   });
 
+  it("never takes over a file's read-only confirmation: the importer confirms (ADR 0030)", async () => {
+    const json = fixtureDefinition("json_offset", fixture.origin).streams[0]!;
+    const definition = {
+      ...bearer(),
+      streams: [...bearer().streams, { ...json, key: "query_items" }],
+    };
+    const file = {
+      format: CUSTOM_API_EXPORT_FORMAT,
+      schemaVersion: 2,
+      exportedAt: new Date().toISOString(),
+      definition,
+    };
+    // The exporter's confirmation travels in the file; it does not count.
+    const refused = await importFile(file);
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.json()).toMatchObject({
+      error: "custom_api_import_read_only_unconfirmed",
+      issues: [
+        {
+          path: "definition.streams.1.request.body",
+          code: "read_only_unconfirmed",
+        },
+      ],
+    });
+    // The importer confirms, also for a file without any confirmation.
+    const unconfirmedFile = structuredClone(file);
+    delete (
+      unconfirmedFile.definition.streams[1]!.request.body as {
+        readOnlyConfirmed?: boolean;
+      }
+    ).readOnlyConfirmed;
+    for (const sent of [file, unconfirmedFile]) {
+      const imported = await importFile(sent, { readOnlyConfirmed: true });
+      expect(imported.statusCode, imported.body).toBe(201);
+      const stored = customApiDefinitionResponseSchema.parse(imported.json())
+        .definition.document.streams[1]!.request.body;
+      expect(stored).toMatchObject({ kind: "json", readOnlyConfirmed: true });
+    }
+    // A file without JSON bodies needs no confirmation.
+    const plain = await importFile({ ...file, definition: bearer() });
+    expect(plain.statusCode, plain.body).toBe(201);
+  });
+
   it("refuses a newer schema version with a clear code", async () => {
     for (const file of [
       {

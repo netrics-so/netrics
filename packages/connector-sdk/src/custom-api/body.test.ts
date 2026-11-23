@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   CUSTOM_API_BODY_LIMITS,
+  CustomApiBodyError,
   checkCustomApiStreamRequest,
+  customApiTemplateNames,
   customApiDefinitionSchema,
   customApiGraphqlProblem,
   customApiIssues,
@@ -130,6 +132,37 @@ describe("POST streams (schema version 2)", () => {
       "invalid",
       "streams.1.request.body.value",
     );
+  });
+});
+
+describe("page values in a POST path", () => {
+  it("refuses them: the endpoint stays fixed between pages", () => {
+    expectIssue(
+      doc((g) => (g.request.path = "/graphql/{{page.cursor}}")),
+      "placeholder_page_in_post_path",
+      "streams.0.request.path",
+    );
+    expectIssue(
+      doc((_g, j) => (j.request.path = "/query/{{page.offset}}")),
+      "placeholder_page_in_post_path",
+      "streams.1.request.path",
+    );
+  });
+
+  it("keeps them allowed in a GET path and in URL parameters", () => {
+    const get = doc((g, _j, d) => {
+      d.streams = [
+        {
+          ...g,
+          request: {
+            path: "/items/{{page.cursor}}",
+            query: { c: "{{page.cursor}}" },
+          },
+          pagination: { type: "cursor", cursorPath: "next", param: "cursor" },
+        },
+      ];
+    });
+    expect(customApiDefinitionSchema.safeParse(get).success).toBe(true);
   });
 });
 
@@ -439,6 +472,47 @@ describe("renderCustomApiBody", () => {
       renderCustomApiBody(graphql, (t) => t, [{ path, omit: true }]),
     );
     expect(omitted.variables).not.toHaveProperty("after");
+  });
+
+  it("refuses a body larger than the limit once rendered, without its values", () => {
+    const value = "v".repeat(500);
+    const body: CustomApiBody = {
+      kind: "json",
+      value: Array.from({ length: 300 }, () => "{{big}}"),
+    };
+    let failure: unknown;
+    try {
+      renderCustomApiBody(body, (t) => t.replace("{{big}}", value));
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(CustomApiBodyError);
+    expect((failure as Error).message).toBe(
+      "The request body is larger than 128 KiB once its values are filled in",
+    );
+    // A page value write that pushes it over the limit is refused too.
+    const near: CustomApiBody = {
+      kind: "json",
+      value: { pad: "x".repeat(16_000), cursor: null },
+    };
+    const writes = [
+      {
+        path: [{ key: "cursor" }],
+        value: "c".repeat(CUSTOM_API_BODY_LIMITS.renderedBytes),
+      },
+    ];
+    expect(() => renderCustomApiBody(near, (t) => t, writes)).toThrow(
+      CustomApiBodyError,
+    );
+    expect(() => renderCustomApiBody(near, (t) => t)).not.toThrow();
+  });
+
+  it("names the placeholders of a template, none for a broken one", () => {
+    expect(customApiTemplateNames("/a/{{x}}/{{ window.start }}")).toEqual([
+      "x",
+      "window.start",
+    ]);
+    expect(customApiTemplateNames("{{ broken")).toEqual([]);
   });
 
   it("refuses a write into the query", () => {

@@ -36,11 +36,20 @@ export interface PageParams {
   nextUrl?: string;
 }
 
+/**
+ * URL parameters by name, without a prototype: a parameter named
+ * `__proto__` (a valid name) stays an own entry, not the map's prototype.
+ */
+function paramMap(): Record<string, string> {
+  return Object.create(null) as Record<string, string>;
+}
+
 function pageNumberParams(
   p: Extract<CustomApiPagination, { type: "page_number" }>,
   number: number,
 ): PageParams {
-  const params: Record<string, string> = { [p.param]: String(number) };
+  const params = paramMap();
+  params[p.param] = String(number);
   const placeholders: Record<string, string> = {
     "page.number": String(number),
   };
@@ -56,7 +65,7 @@ function offsetParams(
   p: Extract<CustomApiPagination, { type: "offset" }>,
   offset: number,
 ): PageParams {
-  const params: Record<string, string> = {};
+  const params = paramMap();
   const bodyWrites: CustomApiBodyWrite[] = [];
   if (p.offsetParam !== undefined) params[p.offsetParam] = String(offset);
   if (p.offsetBodyPath !== undefined)
@@ -78,7 +87,7 @@ function cursorParams(
   p: Extract<CustomApiPagination, { type: "cursor" }>,
   cursor: CursorValue | null,
 ): PageParams {
-  const params: Record<string, string> = {};
+  const params = paramMap();
   const bodyWrites: CustomApiBodyWrite[] = [];
   // The first page has no cursor yet: no URL parameter, and a template
   // that names it gets "". A body path sends JSON null or leaves the
@@ -152,6 +161,21 @@ export function cursorValue(value: unknown): CursorValue | undefined {
   return undefined;
 }
 
+/**
+ * A repeated cursor ends the stream. A URL parameter sends a cursor's text,
+ * so 5 and "5" are the same request there; a body path sends its JSON type,
+ * so there they differ.
+ */
+function sameCursor(
+  p: Extract<CustomApiPagination, { type: "cursor" }>,
+  previous: CursorValue,
+  next: CursorValue,
+): boolean {
+  return p.bodyPath !== undefined
+    ? previous === next
+    : String(previous) === String(next);
+}
+
 /** null = the stream is done. */
 export function nextPage(input: {
   pagination: CustomApiPagination;
@@ -181,7 +205,8 @@ export function nextPage(input: {
         readDataPath(input.body, parseDataPath(p.cursorPath)),
       );
       if (cursor === undefined) return null;
-      if (state.type === "cursor" && state.cursor === cursor) return null;
+      if (state.type === "cursor" && sameCursor(p, state.cursor, cursor))
+        return null;
       return { type: "cursor", cursor };
     }
     case "next_url": {

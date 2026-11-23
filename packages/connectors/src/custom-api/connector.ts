@@ -150,13 +150,31 @@ export function checkGraphqlErrors(
   status: number,
   body: unknown,
 ): void {
-  if (stream.request.body?.kind !== "graphql") return;
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return;
+  const count = graphqlErrorCount(stream, body);
+  if (count > 0) throw new CustomApiGraphqlError(stream.key, status, count);
+}
+
+/** The length of a GraphQL stream's top-level `errors` array; 0 otherwise. */
+export function graphqlErrorCount(
+  stream: Pick<CustomApiStream, "request">,
+  body: unknown,
+): number {
+  if (stream.request.body?.kind !== "graphql") return 0;
+  if (body === null || typeof body !== "object" || Array.isArray(body))
+    return 0;
   const errors = Object.hasOwn(body, "errors")
     ? (body as { errors: unknown }).errors
     : undefined;
-  if (Array.isArray(errors) && errors.length > 0)
-    throw new CustomApiGraphqlError(stream.key, status, errors.length);
+  return Array.isArray(errors) ? errors.length : 0;
+}
+
+/** A response body as JSON, or undefined when it is not JSON. */
+function readJsonQuietly(response: ConnectorResponse): unknown {
+  try {
+    return readJson(response);
+  } catch {
+    return undefined;
+  }
 }
 
 function sha256(...parts: string[]): string {
@@ -252,6 +270,14 @@ export function createCustomApiConnector(
           at,
         );
     }
+    // A GraphQL error envelope on another status (a 400 for a bad query):
+    // the same fixed graphql_errors failure, after auth, redirects and
+    // rate limits.
+    if (response.status !== 429) {
+      const count = graphqlErrorCount(stream, readJsonQuietly(response));
+      if (count > 0)
+        throw new CustomApiGraphqlError(stream.key, response.status, count);
+    }
     throw new Error(
       `HTTP ${response.status} from ${built.redactedUrl} (${where})`,
     );
@@ -289,9 +315,9 @@ export function createCustomApiConnector(
       return { ok: false, message: CUSTOM_API_MESSAGES.unauthorized };
     if (response.status === 403)
       return { ok: false, message: CUSTOM_API_MESSAGES.forbidden };
-    if (response.status < 200 || response.status >= 300)
-      refuse(response, built, stream);
     try {
+      if (response.status < 200 || response.status >= 300)
+        refuse(response, built, stream);
       checkGraphqlErrors(stream, response.status, readJson(response));
     } catch (error) {
       if (

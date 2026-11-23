@@ -163,6 +163,15 @@ export function StepRequest({
 
   return (
     <div className="custom-api-form">
+      {state.stream.post ? (
+        <p className="notice" role="note" data-testid="custom-api-post-kept">
+          {t(
+            state.stream.post.body.kind === "graphql"
+              ? "postKeptGraphql"
+              : "postKeptJson",
+          )}
+        </p>
+      ) : null}
       <div className="field">
         <label htmlFor="custom-api-path">{t("path")}</label>
         <input

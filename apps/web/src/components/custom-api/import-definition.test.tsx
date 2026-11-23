@@ -6,6 +6,7 @@ import {
   ImportDefinition,
   ImportIssues,
   importFlow,
+  importSendsJsonBodies,
   readImportFile,
 } from "./import-definition";
 import { D, W } from "./test-fixtures";
@@ -66,6 +67,44 @@ describe("import", () => {
     expect(
       renderI18n(<ImportIssues message="Newer file" issues={[]} />, locale),
     ).toContain("Newer file");
+  });
+
+  it("asks the importer to confirm JSON bodies and sends the confirmation (ADR 0030)", async () => {
+    const withJson = {
+      definition: {
+        streams: [
+          { request: { path: "/a" } },
+          {
+            request: {
+              method: "POST",
+              body: { kind: "json", value: {}, readOnlyConfirmed: true },
+            },
+          },
+        ],
+      },
+    };
+    const graphqlOnly = {
+      definition: {
+        streams: [{ request: { method: "POST", body: { kind: "graphql" } } }],
+      },
+    };
+    expect(importSendsJsonBodies(withJson)).toBe(true);
+    expect(importSendsJsonBodies(graphqlOnly)).toBe(false);
+    expect(importSendsJsonBodies(null)).toBe(false);
+    const importDefinition = vi.fn(async () => ({
+      definition: { id: D },
+    }));
+    await importFlow({ importDefinition } as never, W, {
+      file: withJson,
+      name: "",
+      projectId: null,
+      readOnlyConfirmed: true,
+    });
+    expect(importDefinition).toHaveBeenCalledWith(W, {
+      file: withJson,
+      projectId: null,
+      readOnlyConfirmed: true,
+    });
   });
 
   it("opens the new definition after an import", async () => {

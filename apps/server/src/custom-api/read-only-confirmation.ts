@@ -9,34 +9,28 @@
 import type { CustomApiDraftDefinition } from "@netrics/contracts";
 import {
   customApiBodyStringLeaves,
-  parsePlaceholders,
+  customApiTemplateNames,
 } from "@netrics/connector-sdk/custom-api";
 
 import { canonicalSha256 } from "./canonical-json.js";
-
-function placeholderNames(template: string): string[] {
-  try {
-    return parsePlaceholders(template).map((ref) => ref.name);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * The confirmation a draft test of `definition`'s stream needs, or null
  * when it needs none (GET, or a GraphQL body: the operation guard holds).
  * Covers the environment's base URL, the stream's method, path, query
  * parameters, header templates, body template and pagination rule, the
- * auth configuration (type and placement, never a credential value) and
- * the values of the non-secret variables the request uses. Secret values
- * are never part of it.
+ * auth configuration (type and placement, never a credential value), the
+ * values of the non-secret variables the request uses, and the window the
+ * test reads: its rule, the time zone and the resolved `window.*` values,
+ * the same ones the test sends. Secret values are never part of it.
  */
 export function draftReadOnlyConfirmation(
   definition: CustomApiDraftDefinition,
   environmentId: string,
   values: Readonly<Record<string, string>>,
+  windowValues: Readonly<Record<string, string>>,
 ): string | null {
-  const { request, pagination } = definition.stream;
+  const { request, pagination, window } = definition.stream;
   const body = request.body;
   if (request.method !== "POST" || body?.kind !== "json") return null;
   const environment = definition.environments.find(
@@ -53,7 +47,9 @@ export function draftReadOnlyConfirmation(
     ...customApiBodyStringLeaves(body).map((leaf) => leaf.value),
   ];
   const used = [
-    ...new Set(templates.flatMap(placeholderNames).filter((n) => plain.has(n))),
+    ...new Set(
+      templates.flatMap(customApiTemplateNames).filter((n) => plain.has(n)),
+    ),
   ].sort();
   return canonicalSha256({
     confirmation: "custom-api-read-only/1",
@@ -71,5 +67,10 @@ export function draftReadOnlyConfirmation(
         Object.hasOwn(values, name) ? values[name]! : null,
       ]),
     ),
+    window: {
+      rule: window,
+      timeZone: definition.defaults.timeZone,
+      values: windowValues,
+    },
   });
 }

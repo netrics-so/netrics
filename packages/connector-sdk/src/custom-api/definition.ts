@@ -112,6 +112,7 @@ export const CUSTOM_API_ISSUE_CODES = [
   "method_body",
   "post_next_url",
   "placeholder_page_in_body",
+  "placeholder_page_in_post_path",
   "graphql_operation",
   "graphql_query_placeholder",
   "graphql_param_reserved",
@@ -819,7 +820,12 @@ export function checkCustomApiStreamRequest(
   const body: CustomApiBody | undefined = request.body;
   const auth = scope.auth;
 
-  const checkRef = (name: string, path: Path, inBody: boolean) => {
+  // "path" of a POST stream: its endpoint stays fixed between pages.
+  const checkRef = (
+    name: string,
+    path: Path,
+    where: "url" | "post_path" | "body",
+  ) => {
     if (WINDOW_NAMES.has(name)) {
       if (stream.window.type === "none")
         add(
@@ -828,11 +834,17 @@ export function checkCustomApiStreamRequest(
           "Window placeholders need a window",
         );
     } else if (PAGE_NAMES.has(name)) {
-      if (inBody)
+      if (where === "body")
         add(
           path,
           "placeholder_page_in_body",
           "Page values reach a body only through the pagination's body paths",
+        );
+      else if (where === "post_path")
+        add(
+          path,
+          "placeholder_page_in_post_path",
+          "A POST request stays on its endpoint: page values cannot change its path",
         );
       else if (!pages.has(name as PagePlaceholder))
         add(
@@ -851,10 +863,18 @@ export function checkCustomApiStreamRequest(
         );
     }
   };
-  const checkTemplate = (value: string, path: Path) => {
-    for (const ref of placeholdersOf(value)) checkRef(ref.name, path, false);
+  const checkTemplate = (
+    value: string,
+    path: Path,
+    where: "url" | "post_path" = "url",
+  ) => {
+    for (const ref of placeholdersOf(value)) checkRef(ref.name, path, where);
   };
-  checkTemplate(request.path, at("request", "path"));
+  checkTemplate(
+    request.path,
+    at("request", "path"),
+    method === "POST" ? "post_path" : "url",
+  );
   for (const [key, value] of Object.entries(request.query))
     checkTemplate(value, at("request", "query", key));
   for (const [key, value] of Object.entries(request.headers))
@@ -884,7 +904,7 @@ export function checkCustomApiStreamRequest(
         add(path, "placeholder_syntax", "Invalid placeholder syntax");
         continue;
       }
-      for (const ref of refs) checkRef(ref.name, path, true);
+      for (const ref of refs) checkRef(ref.name, path, "body");
     }
     if (body.kind === "graphql") {
       if (body.query.includes("{{"))

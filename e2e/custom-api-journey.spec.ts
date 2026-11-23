@@ -371,7 +371,7 @@ test("a member versions, updates, exports and imports a custom API", async ({
   const file = JSON.parse(text) as Record<string, unknown>;
   expect(file).toMatchObject({
     format: "netrics.custom-api-definition",
-    schemaVersion: 1,
+    schemaVersion: 2,
   });
 
   // Import it in another workspace, connect it there (exit gate 5 in
@@ -451,5 +451,117 @@ test("a member changes a custom API connection's values on its page", async ({
     ((await stored.json()) as { connection: { config: unknown } }).connection
       .config,
   ).toEqual({ shop: "south" });
+  await noToken(page);
+});
+
+/**
+ * ADR 0030: a connection shows what it sends to everyone who can see it,
+ * the POST bodies included, with the JSON body's read-only note.
+ */
+test("a connection shows its POST and GraphQL requests", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const c = labels(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  const base = `/v1/workspaces/${workspaceId}/custom-api/definitions`;
+  const shop = shopDocument(true);
+  const query =
+    "query Items($first: Int!, $after: String) { items(first: $first, after: $after) { nodes { id } pageInfo { endCursor } } }";
+  const itemFields = [
+    { id: "id", name: "ID", path: "id", type: "integer", nullable: false },
+  ];
+  const document = {
+    ...shop,
+    schemaVersion: 2,
+    streams: [
+      ...shop.streams,
+      {
+        key: "graphql_items",
+        name: "GraphQL items",
+        request: {
+          method: "POST",
+          path: "/graphql/string-cursor",
+          body: {
+            kind: "graphql",
+            query,
+            variables: { first: 10, after: null },
+          },
+        },
+        pagination: {
+          type: "cursor",
+          cursorPath: "data.items.pageInfo.endCursor",
+          bodyPath: "variables.after",
+        },
+        records: "data.items.nodes",
+        fields: itemFields,
+        keyFields: ["id"],
+        mode: "snapshot",
+      },
+      {
+        key: "query_items",
+        name: "Query items",
+        request: {
+          method: "POST",
+          path: "/query",
+          body: {
+            kind: "json",
+            value: { kind: "ItemsQuery", page: { offset: 0, limit: 0 } },
+            readOnlyConfirmed: true,
+          },
+        },
+        pagination: {
+          type: "offset",
+          offsetBodyPath: "page.offset",
+          limitBodyPath: "page.limit",
+          limit: 10,
+        },
+        records: "items",
+        fields: itemFields,
+        keyFields: ["id"],
+        mode: "snapshot",
+      },
+    ],
+  };
+  const created = await page.request.post(base, {
+    headers: { origin: ORIGIN },
+    data: { document },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const definitionId = (
+    (await created.json()) as { definition: { id: string } }
+  ).definition.id;
+  const connected = await page.request.post(
+    `${base}/${definitionId}/connections`,
+    {
+      headers: { origin: ORIGIN },
+      data: {
+        name: "Shop API",
+        environmentId: "production",
+        credentials: { token: TOKEN },
+      },
+    },
+  );
+  expect(connected.status(), await connected.text()).toBe(201);
+  const connectionId = (
+    (await connected.json()) as { connection: { id: string } }
+  ).connection.id;
+
+  await page.goto(`/workspaces/${workspaceId}/connections/${connectionId}`);
+  const requests = page.locator("#custom-api-requests");
+  await expect(
+    requests.getByRole("heading", { name: c.connectionRequests.title }),
+  ).toBeVisible();
+  await expect(
+    requests.getByTestId("custom-api-request-daily_stats"),
+  ).toContainText("GET /builder/stats");
+  const graphql = requests.getByTestId("custom-api-request-graphql_items");
+  await expect(graphql).toContainText("POST /graphql/string-cursor");
+  await expect(graphql).toContainText(c.connectionRequests.graphql);
+  await expect(graphql).toContainText(query);
+  const json = requests.getByTestId("custom-api-request-query_items");
+  await expect(json).toContainText("POST /query");
+  await expect(json).toContainText(c.connectionRequests.jsonReadOnly);
+  await expect(json).toContainText('"kind": "ItemsQuery"');
   await noToken(page);
 });

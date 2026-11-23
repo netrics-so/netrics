@@ -165,6 +165,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     custom_api_update_none: "Diese Verbindung nutzt schon die neueste Version.",
     custom_api_import_invalid:
       "Diese Datei ist keine gültige Definition einer eigenen API.",
+    custom_api_import_read_only_unconfirmed:
+      "Diese Definition sendet JSON-Bodys per POST. Bestätige, dass diese Anfragen nur Daten lesen.",
     custom_api_import_newer:
       "Diese Datei stammt aus einer neueren netrics-Version. Aktualisiere netrics zuerst.",
     custom_api_import_too_large: "Die Datei ist größer als 512 KB.",

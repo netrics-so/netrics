@@ -26,13 +26,38 @@ export function readImportFile(
 }
 
 /**
+ * Whether a file's definition sends JSON bodies with POST (ADR 0030): the
+ * importer confirms they only read data; the file's own confirmation is
+ * never taken over.
+ */
+export function importSendsJsonBodies(file: unknown): boolean {
+  const streams = (
+    (file as { definition?: { streams?: unknown } } | null)?.definition as
+      { streams?: unknown } | undefined
+  )?.streams;
+  return (
+    Array.isArray(streams) &&
+    streams.some(
+      (stream: unknown) =>
+        (stream as { request?: { body?: { kind?: unknown } } } | null)?.request
+          ?.body?.kind === "json",
+    )
+  );
+}
+
+/**
  * Sends the file; the new definition's id, or the refusal with the
  * definition's issues (custom_api_import_invalid lists them).
  */
 export async function importFlow(
   client: { importDefinition: typeof importDefinition },
   workspaceId: string,
-  input: { file: unknown; name: string; projectId: string | null },
+  input: {
+    file: unknown;
+    name: string;
+    projectId: string | null;
+    readOnlyConfirmed?: boolean;
+  },
 ): Promise<
   | { ok: true; definitionId: string }
   | { ok: false; cause: unknown; issues: Issue[] }
@@ -42,6 +67,7 @@ export async function importFlow(
       file: input.file,
       ...(input.name.trim() ? { name: input.name.trim() } : {}),
       projectId: input.projectId,
+      ...(input.readOnlyConfirmed ? { readOnlyConfirmed: true } : {}),
     });
     return { ok: true, definitionId: definition.id };
   } catch (cause) {
@@ -98,6 +124,8 @@ export function ImportDefinition({
   const [name, setName] = useState("");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
+  const sendsJson = file !== undefined && importSendsJsonBodies(file);
   const [problem, setProblem] = useState<{
     message: string;
     issues: Issue[];
@@ -106,6 +134,7 @@ export function ImportDefinition({
   async function choose(chosen: File | undefined) {
     setProblem(null);
     setFile(undefined);
+    setReadOnly(false);
     if (!chosen) return;
     const read = readImportFile(
       chosen.size > CUSTOM_API_IMPORT_MAX_BYTES ? "" : await chosen.text(),
@@ -124,6 +153,7 @@ export function ImportDefinition({
       file,
       name,
       projectId,
+      readOnlyConfirmed: sendsJson && readOnly,
     });
     if (result.ok) {
       router.push(
@@ -180,6 +210,21 @@ export function ImportDefinition({
           </select>
         </div>
       ) : null}
+      {sendsJson ? (
+        <div className="field">
+          <p className="notice warning">{t("jsonBodies")}</p>
+          <label className="checkbox">
+            <input
+              id="custom-api-import-read-only"
+              type="checkbox"
+              checked={readOnly}
+              disabled={pending}
+              onChange={(event) => setReadOnly(event.target.checked)}
+            />{" "}
+            {t("readOnlyConfirm")}
+          </label>
+        </div>
+      ) : null}
       {problem ? (
         <ImportIssues message={problem.message} issues={problem.issues} />
       ) : null}
@@ -187,7 +232,7 @@ export function ImportDefinition({
         <button
           type="submit"
           className="primary"
-          disabled={pending || file === undefined}
+          disabled={pending || file === undefined || (sendsJson && !readOnly)}
         >
           {pending ? t("importing") : t("button")}
         </button>

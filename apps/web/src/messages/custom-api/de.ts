@@ -101,6 +101,10 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         "Wenn du die URLs, die Client-ID oder das Client-Secret änderst, endet die Anmeldung. Du meldest dich dann erneut an.",
     },
     request: {
+      postKeptGraphql:
+        "Diese Anfrage sendet eine GraphQL-Abfrage per POST. Dieser Editor übernimmt Methode, Abfrage und Variablen unverändert; sie zu ändern kommt mit einer späteren Version.",
+      postKeptJson:
+        "Diese Anfrage sendet einen JSON-Body per POST. Dieser Editor übernimmt Methode und Body unverändert; sie zu ändern kommt mit einer späteren Version. Wenn du die Anfrage änderst, bestätige erneut, dass sie nur Daten liest.",
       path: "Pfad",
       query: "Query-Parameter",
       headers: "Header",
@@ -392,6 +396,9 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       help: "Die Datei enthält nur die Definition, keine Anmeldungen und keine Verbindungswerte.",
     },
     import: {
+      jsonBodies:
+        "Diese Definition sendet JSON-Bodys per POST. netrics kann nicht prüfen, ob eine solche Anfrage nur Daten liest, und übernimmt die Bestätigung der Person, die die Datei exportiert hat, nicht.",
+      readOnlyConfirm: "Ich bestätige, dass diese Anfragen nur Daten lesen.",
       title: "Eigene API importieren",
       button: "Importieren",
       choose: "Definitionsdatei auswählen",
@@ -479,6 +486,15 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         "Die Verbindung wurde inzwischen geändert. Sieh dir die Aktualisierung noch einmal an.",
       done: "Die Verbindung nutzt jetzt Version {version}.",
       back: "Zurück zur Verbindung",
+    },
+    connectionRequests: {
+      title: "Anfragen",
+      help: "Was diese Verbindung an die API sendet, so wie es ihre Definitionsversion vorgibt. Werte in geschweiften Klammern werden für jede Anfrage eingesetzt.",
+      graphql:
+        "Eine GraphQL-Abfrage, per POST gesendet. netrics hat geprüft, dass sie eine einzelne Abfrage ist, die nur Daten liest.",
+      variables: "Variablen",
+      jsonReadOnly:
+        "Ein JSON-Body, per POST gesendet. Die Person, die die Definition erstellt hat, hat bestätigt, dass diese Anfrage nur Daten liest; netrics kann das nicht prüfen.",
     },
     connectionLogin: {
       enterAgain: "Gib die Anmeldung im Bereich „Anmeldung“ neu ein.",
@@ -583,6 +599,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
           "Eine POST-Anfrage braucht einen Body, und nur eine POST-Anfrage sendet einen.",
         post_next_url:
           "Eine POST-Anfrage bleibt bei ihrem Endpunkt: Sie kann die Adresse der nächsten Seite nicht aus einer Antwort übernehmen.",
+        placeholder_page_in_post_path:
+          "Eine POST-Anfrage bleibt bei ihrem Endpunkt: Seitenwerte können ihren Pfad nicht ändern.",
         placeholder_page_in_body:
           "Seitenwerte kommen nur über die Body-Pfade der Seitenart in einen Body.",
         graphql_operation:

@@ -61,9 +61,45 @@ export function exportFileSlug(name: string): string {
 
 type ImportFailure = {
   ok: false;
-  error: "custom_api_import_invalid" | "custom_api_import_newer";
+  error:
+    | "custom_api_import_invalid"
+    | "custom_api_import_newer"
+    | "custom_api_import_read_only_unconfirmed";
   issues: CustomApiIssue[];
 };
+
+/**
+ * The file's definition with every JSON body's read-only confirmation
+ * replaced by the importer's (ADR 0030 §2): an exported confirmation is
+ * its author's, not the importer's. Returns a copy; the paths of the
+ * JSON bodies it found, for the refusal.
+ */
+function withImporterConfirmation(
+  raw: unknown,
+  confirmed: boolean,
+): { definition: unknown; jsonBodies: string[] } {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return { definition: raw, jsonBodies: [] };
+  const definition = structuredClone(raw) as Record<string, unknown>;
+  const jsonBodies: string[] = [];
+  const streams = definition.streams;
+  if (Array.isArray(streams))
+    streams.forEach((stream: unknown, index) => {
+      const request = (stream as { request?: unknown } | null)?.request;
+      const body = (request as { body?: unknown } | null | undefined)?.body;
+      if (
+        body === null ||
+        typeof body !== "object" ||
+        (body as { kind?: unknown }).kind !== "json"
+      )
+        return;
+      const json = body as Record<string, unknown>;
+      delete json.readOnlyConfirmed;
+      if (confirmed) json.readOnlyConfirmed = true;
+      jsonBodies.push(`definition.streams.${index}.request.body`);
+    });
+  return { definition, jsonBodies };
+}
 
 const prefixed = (issues: CustomApiIssue[]) =>
   issues.map((issue) => ({
@@ -78,6 +114,7 @@ const prefixed = (issues: CustomApiIssue[]) =>
  */
 export function parseImport(
   file: unknown,
+  readOnlyConfirmed = false,
 ): { ok: true; document: CustomApiDefinition } | ImportFailure {
   const envelope = customApiExportSchema.safeParse(file);
   const newer = (version: unknown) =>
@@ -105,10 +142,24 @@ export function parseImport(
         code: "invalid",
       })),
     };
+  const imported = withImporterConfirmation(
+    envelope.data.definition,
+    readOnlyConfirmed,
+  );
+  if (imported.jsonBodies.length > 0 && !readOnlyConfirmed)
+    return {
+      ok: false,
+      error: "custom_api_import_read_only_unconfirmed",
+      issues: imported.jsonBodies.slice(0, 20).map((path) => ({
+        path,
+        code: "read_only_unconfirmed",
+        message: "Confirm that this request only reads data",
+      })),
+    };
   try {
     return {
       ok: true,
-      document: upgradeCustomApiDefinition(envelope.data.definition),
+      document: upgradeCustomApiDefinition(imported.definition),
     };
   } catch (error) {
     if (error instanceof CustomApiDefinitionError)
@@ -179,7 +230,7 @@ export function createCustomApiTransferService(deps: {
       actor: Actor,
       body: ImportCustomApiDefinitionRequest,
     ): Promise<CustomApiResult<CustomApiDefinitionResponse>> {
-      const parsed = parseImport(body.file);
+      const parsed = parseImport(body.file, body.readOnlyConfirmed === true);
       if (!parsed.ok)
         return {
           ok: false,

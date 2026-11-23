@@ -100,6 +100,10 @@ export const customApiEn = {
         "Changing the URLs, the client ID or the client secret ends the sign-in. You then sign in again.",
     },
     request: {
+      postKeptGraphql:
+        "This request sends a GraphQL query with POST. This editor keeps the method, query and variables as they are; changing them comes with a later version.",
+      postKeptJson:
+        "This request sends a JSON body with POST. This editor keeps the method and body as they are; changing them comes with a later version. When you change the request, confirm again that it only reads data.",
       path: "Path",
       query: "Query parameters",
       headers: "Headers",
@@ -381,6 +385,9 @@ export const customApiEn = {
       help: "The file has the definition only, no logins and no connection values.",
     },
     import: {
+      jsonBodies:
+        "This definition sends JSON bodies with POST. netrics can't check that such a request only reads data, and it doesn't take over the confirmation of whoever exported the file.",
+      readOnlyConfirm: "I confirm that these requests only read data.",
       title: "Import a custom API",
       button: "Import",
       choose: "Choose a definition file",
@@ -462,6 +469,15 @@ export const customApiEn = {
       stale: "The connection changed meanwhile. Review the update again.",
       done: "The connection uses version {version} now.",
       back: "Back to the connection",
+    },
+    connectionRequests: {
+      title: "Requests",
+      help: "What this connection sends to the API, as its definition version says. Values in braces are filled in for each request.",
+      graphql:
+        "A GraphQL query, sent with POST. netrics checked that it is a single query that only reads data.",
+      variables: "Variables",
+      jsonReadOnly:
+        "A JSON body, sent with POST. The definition's author confirmed that this request only reads data; netrics can't verify it.",
     },
     connectionLogin: {
       enterAgain: "Enter the login again in the Login panel.",
@@ -557,6 +573,8 @@ export const customApiEn = {
           "A POST request needs a body, and only a POST request sends one.",
         post_next_url:
           "A POST request stays on its endpoint: it can't take the next page's address from a response.",
+        placeholder_page_in_post_path:
+          "A POST request stays on its endpoint: paging values can't change its path.",
         placeholder_page_in_body:
           "Paging values reach a body only through the paging's body paths.",
         graphql_operation:

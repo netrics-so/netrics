@@ -12,6 +12,7 @@ import {
   startCustomApiTestApp,
   type CustomApiTestApp,
 } from "./custom-api/test-helpers.js";
+import { canonicalSha256 } from "./custom-api/canonical-json.js";
 import { TEST_DATABASE_SETUP_TIMEOUT_MS } from "./test-db.js";
 
 // Version history and rollback of custom API definitions (#808): who
@@ -172,6 +173,25 @@ describe("custom API version history", () => {
     expect(res.statusCode).toBe(409);
     expect(errorOf(res)).toBe("custom_api_version_unchanged");
     expect((await restore(definition.id, 9, 3)).statusCode).toBe(404);
+  });
+
+  it("refuses restoring the current content stored at an older schema version (ADR 0030)", async () => {
+    const definition = await create();
+    await save(definition.id, 1, shop(90));
+    await save(definition.id, 2, shop(60));
+    // Version 3 as a version-1 server stored it.
+    const [stored] = await t.admin<{ document: Doc }[]>`
+      select document from custom_api_definition_versions
+      where definition_id = ${definition.id} and version = 3`;
+    const v1 = { ...stored!.document, schemaVersion: 1 };
+    await t.admin`
+      update custom_api_definition_versions
+      set document = ${t.admin.json(v1 as never)},
+          document_sha256 = ${canonicalSha256(v1)}, schema_version = 1
+      where definition_id = ${definition.id} and version = 3`;
+    const res = await restore(definition.id, 1, 3);
+    expect(res.statusCode, res.body).toBe(409);
+    expect(errorOf(res)).toBe("custom_api_version_unchanged");
   });
 
   it("upgrades an older schema version while restoring", async () => {

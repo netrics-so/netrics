@@ -160,6 +160,8 @@ export const apiErrorsEn = {
     custom_api_update_none: "This connection already uses the newest version.",
     custom_api_import_invalid:
       "This file is not a valid custom API definition.",
+    custom_api_import_read_only_unconfirmed:
+      "This definition sends JSON bodies with POST. Confirm that these requests only read data.",
     custom_api_import_newer:
       "This file is from a newer netrics. Update netrics first.",
     custom_api_import_too_large: "The file is larger than 512 KB.",

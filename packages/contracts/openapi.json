@@ -77938,6 +77938,9 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "readOnlyConfirmed": {
+                    "type": "boolean"
                   }
                 },
                 "required": [

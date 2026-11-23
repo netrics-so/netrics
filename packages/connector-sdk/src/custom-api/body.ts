@@ -8,6 +8,7 @@ import { Kind, parse } from "graphql";
 
 import { utf8ByteLength } from "../utf8.js";
 import type { DataPathSegment } from "./path.js";
+import { PlaceholderSyntaxError, parsePlaceholders } from "./placeholders.js";
 
 /** A JSON value whose string leaves may hold `{{ placeholder }}` templates. */
 export type CustomApiJsonValue =
@@ -48,6 +49,11 @@ export const CUSTOM_API_BODY_LIMITS = {
   stringLength: 16_384,
   /** One object key. */
   keyLength: 200,
+  /**
+   * A body as sent: after placeholders and page values, before the fetch
+   * and the redaction set (connection values may lengthen string leaves).
+   */
+  renderedBytes: 131_072,
   /** A GraphQL query document. */
   graphqlQueryLength: 32_768,
   /** Lexer tokens the GraphQL parser reads at most. */
@@ -253,8 +259,16 @@ export function renderCustomApiBody(
   render: (template: string) => string,
   writes: readonly CustomApiBodyWrite[] = [],
 ): string {
+  // Rendered strings are counted as they come, so a template that grows
+  // with its values stops at the limit instead of being built whole.
+  let rendered = 0;
   const clone = (value: CustomApiJsonValue): CustomApiJsonValue => {
-    if (typeof value === "string") return render(value);
+    if (typeof value === "string") {
+      const text = render(value);
+      rendered += utf8ByteLength(text);
+      if (rendered > CUSTOM_API_BODY_LIMITS.renderedBytes) throw tooLarge();
+      return text;
+    }
     if (Array.isArray(value)) return value.map(clone);
     if (value !== null && typeof value === "object") {
       const out: Record<string, CustomApiJsonValue> = Object.create(null);
@@ -269,7 +283,9 @@ export function renderCustomApiBody(
       : { query: body.query, variables: clone(body.variables) };
   for (const write of writes) {
     if (customApiBodyPathProblem(body, write.path, { omit: "omit" in write }))
-      throw new Error("A body path does not name a leaf of the body");
+      throw new CustomApiBodyError(
+        "A body path does not name a leaf of the body",
+      );
     let parent: unknown = root;
     for (const segment of write.path.slice(0, -1))
       parent =
@@ -284,5 +300,31 @@ export function renderCustomApiBody(
       delete (parent as Record<string, CustomApiJsonValue>)[last.key];
     else (parent as Record<string, CustomApiJsonValue>)[last.key] = write.value;
   }
-  return JSON.stringify(root);
+  const text = JSON.stringify(root);
+  if (utf8ByteLength(text) > CUSTOM_API_BODY_LIMITS.renderedBytes)
+    throw tooLarge();
+  return text;
+}
+
+const tooLarge = () =>
+  new CustomApiBodyError(
+    `The request body is larger than ${CUSTOM_API_BODY_LIMITS.renderedBytes / 1024} KiB once its values are filled in`,
+  );
+
+/** Placeholder names a template uses; none for one with a syntax error. */
+export function customApiTemplateNames(template: string): string[] {
+  try {
+    return parsePlaceholders(template).map((ref) => ref.name);
+  } catch (error) {
+    if (error instanceof PlaceholderSyntaxError) return [];
+    throw error;
+  }
+}
+
+/** A body that cannot be sent as rendered. A fixed message, never a value. */
+export class CustomApiBodyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CustomApiBodyError";
+  }
 }

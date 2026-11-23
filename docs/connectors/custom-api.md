@@ -234,7 +234,10 @@ method is GET). The body is sent as `application/json; charset=utf-8`:
   refused (`400 custom_api_read_only_unconfirmed`) until it carries the
   `readOnlyConfirmation` the refusal names for exactly that request; any
   change to the base URL, path, query, headers, body, pagination, login
-  configuration or a connection value it uses needs a new one.
+  configuration, a connection value it uses or the test window needs a
+  new one. An import never takes over a file's confirmations: a file with
+  JSON bodies is refused (`custom_api_import_read_only_unconfirmed`)
+  unless the importer confirms (`readOnlyConfirmed: true`).
 
 String leaves of a body take the same placeholders as query parameters
 (connection values, window dates), never secrets or page values. Page
@@ -244,7 +247,10 @@ the template: `cursor` pagination with `bodyPath` (GraphQL: under
 the first request sends `null`) or `"omit"` (leave the property out), and
 `offset` pagination with `offsetBodyPath` and `limitBodyPath`. A cursor
 keeps the JSON type the response gave it. A POST stream stays on its
-endpoint: no next URL pagination, and a redirect (3xx) fails the run.
+endpoint: no next URL pagination, no page values in its path, and a
+redirect (3xx) fails the run. A body is at most 64 KiB as a template and
+128 KiB once its values are filled in. A GraphQL error envelope on a non-2xx
+status (other than 401, 403, 3xx and 429) fails with `graphql_errors` too.
 
 ## Bounds
 
