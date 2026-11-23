@@ -1,6 +1,6 @@
 # 0030 — Read-only POST and GraphQL in the custom API connector
 
-Status: proposed (2026-11-23, milestone 13.1). Revises the "no POST" line
+Status: accepted (2026-11-23, milestone 13.1; owner go on 2026-11-23). Revises the "no POST" line
 of milestone 13's out-of-scope list. Builds on ADR 0027 (the custom API
 connector) and leaves its credential, egress and redaction rules unchanged.
 
