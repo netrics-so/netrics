@@ -68,8 +68,10 @@ distribution runs the signed images.
 | [11 — Reusable data models and dashboard filtering](./11-projects-and-derived-metrics.md) | Prepare and relate data, define measures, filter full dashboards |
 | [11.2 — App slides on TV](./11.2-app-slides-on-tv.md)                                     | Per-app slides with data freshness on Apple TV                   |
 | [13 — Custom API connector](./13-custom-api-connector.md) (done 2026-11-21)               | Safe declarative connection builder                              |
-| [12 — Community connector system](./12-community-connectors.md)                           | Public SDK, template, catalog, and review pipeline               |
+| [13.1 — Developer sources](./13.1-developer-sources.md)                                   | Railway, Vercel deploys, Hetzner, PostHog, health checks on TV   |
+| [13.2 — Quick setup and live TV](./13.2-setup-and-live-tv.md)                             | Few-step product setup, TV applies changes within seconds        |
 | [14 — Alerts and notifications](./14-alerts-and-notifications.md)                         | Stateful rules deliver email and webhooks                        |
+| [12 — Community connector system](./12-community-connectors.md)                           | Public SDK, template, catalog, and review pipeline               |
 | [15 — Collaboration and access](./15-collaboration-and-access.md)                         | Complete sharing, identity, and administration                   |
 | [16 — SaaS control plane](./16-saas-control-plane.md)                                     | Billing, provisioning, limits, and operations                    |
 | [17 — Production hardening and v1](./17-production-hardening.md)                          | Tested self-host and SaaS v1 release                             |
@@ -99,7 +101,9 @@ distribution runs the signed images.
                                             ├── 11.2 app slides on TV
                                             └── 12 community connectors
                                                 └── 13 custom API
-                                                    └── 14 alerts
+                                                    └── 13.1 developer sources
+                                                        └── 13.2 quick setup and live TV
+                                                            └── 14 alerts
                                                         └── 15 collaboration
                                                             └── 16 SaaS control plane
                                                                 └── 17 v1 hardening
@@ -173,6 +177,19 @@ State on 2026-11-14.
   TV with one slide per app and, on every number, when the next numbers are
   expected. [Milestone 11.2](./11.2-app-slides-on-tv.md) (#701–#710) is
   planned before milestone 12.
+- Priority update 2026-11-23: milestone 13 is done (2026-11-21). The owner
+  runs several products on Railway, Vercel, Hetzner, the App Store, Google
+  Play, PostHog and Search Console and wants their operations on the TV
+  next to the product numbers. The order is now
+  [13.1 developer sources](./13.1-developer-sources.md) (read-only POST and
+  GraphQL in the custom API connector,
+  [ADR 0030](../decisions/0030-custom-api-read-only-post.md), plus native
+  Railway, Vercel deployments, Hetzner Cloud and PostHog connectors, health
+  checks and a status widget), then
+  [13.2 quick setup and live TV](./13.2-setup-and-live-tv.md) (#783,
+  #789), then 14 (alerts), then the slide design pass. Milestone 12
+  (community connectors) moves after 14; the dependency map above still
+  shows its technical prerequisites, not the delivery order.
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 
