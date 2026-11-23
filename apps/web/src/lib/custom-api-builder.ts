@@ -24,16 +24,19 @@ import {
   PAGE_PLACEHOLDERS,
   parseDataPath,
   parsePlaceholders,
+  renderCustomApiBody,
   readDataPath,
   WINDOW_PLACEHOLDERS,
   type CustomApiAuth,
   type CustomApiBody,
+  type CustomApiBodyWrite,
   type CustomApiDefinition,
   type CustomApiDraftDefinition,
   type CustomApiField,
   type CustomApiFieldSuggestion,
   type CustomApiImages,
   type CustomApiIssueCode,
+  type CustomApiJsonValue,
   type DataPathSegment,
   type CustomApiPagination,
   type CustomApiStream,
@@ -893,6 +896,72 @@ export function bodyLeafPaths(state: BuilderState): string[] {
     else if (path.length > 0) out.push(formatDataPath(path));
   }
   return out;
+}
+
+/** A page value the paging writes into the body (ADR 0030 §3). */
+export interface BodyPageWrite {
+  value: PageValue;
+  path: string;
+  /** What the first request sends there: a number, null, or nothing. */
+  first: number | "null" | "omit";
+}
+
+/** The page values a pagination writes into the body, with their first-page values. */
+export function bodyPageWrites(
+  pagination: CustomApiPagination | undefined,
+): BodyPageWrite[] {
+  const writes: BodyPageWrite[] = [];
+  if (pagination?.type === "offset") {
+    if (pagination.offsetBodyPath)
+      writes.push({
+        value: "offset",
+        path: pagination.offsetBodyPath,
+        first: 0,
+      });
+    if (pagination.limitBodyPath)
+      writes.push({
+        value: "limit",
+        path: pagination.limitBodyPath,
+        first: pagination.limit,
+      });
+  } else if (pagination?.type === "cursor" && pagination.bodyPath)
+    writes.push({
+      value: "cursor",
+      path: pagination.bodyPath,
+      first: pagination.firstPage === "omit" ? "omit" : "null",
+    });
+  return writes;
+}
+
+/**
+ * The JSON body the first request sends: the template with the page
+ * values written as the sync writes them (offset 0, the limit, the
+ * cursor's null or nothing), by the SDK's own body renderer. Placeholders
+ * stay as written. Null when the writes don't fit the body yet.
+ */
+export function firstPageBody(
+  body: CustomApiBody,
+  pagination: CustomApiPagination | undefined,
+): CustomApiJsonValue | null {
+  const writes: CustomApiBodyWrite[] = [];
+  try {
+    for (const write of bodyPageWrites(pagination)) {
+      const path = parseDataPath(write.path);
+      writes.push(
+        write.first === "omit"
+          ? { path, omit: true }
+          : { path, value: write.first === "null" ? null : write.first },
+      );
+    }
+    const sent = JSON.parse(
+      renderCustomApiBody(body, (template) => template, writes),
+    ) as CustomApiJsonValue;
+    return body.kind === "json"
+      ? sent
+      : ((sent as { variables: CustomApiJsonValue }).variables ?? null);
+  } catch {
+    return null;
+  }
 }
 
 // ------------------------------------------------------- the shared checks

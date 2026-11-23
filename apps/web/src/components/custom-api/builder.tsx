@@ -98,6 +98,19 @@ export function rememberedConfirmation(
     : undefined;
 }
 
+/**
+ * The remembered test confirmation after an edit (ADR 0030 §2): kept while
+ * the request is the same, dropped by the first request-shaping change.
+ * Once dropped it stays dropped, so undoing the change asks again.
+ */
+export function keptTestConfirmation<
+  T extends Pick<PendingChallenge, "hash" | "fingerprint">,
+>(confirmed: T | null, state: BuilderState): T | null {
+  return confirmed && confirmed.fingerprint === draftTestFingerprint(state)
+    ? confirmed
+    : null;
+}
+
 /** The first step that is not complete, or the last one. */
 export function firstOpenStep(
   state: BuilderState,
@@ -286,6 +299,13 @@ export function CustomApiBuilder({
       setTestError(t("test.readOnly.changed"));
     }
   }, [challenge, challengeHolds, t]);
+  // So does a remembered confirmation: the first request-shaping edit
+  // drops it for good, and undoing that edit asks again.
+  const testConfirmationHolds =
+    keptTestConfirmation(confirmedTest, state) !== null;
+  useEffect(() => {
+    if (confirmedTest && !testConfirmationHolds) setConfirmedTest(null);
+  }, [confirmedTest, testConfirmationHolds]);
 
   if (!canEdit && definition)
     return <CustomApiSummary definition={definition} />;

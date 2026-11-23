@@ -649,6 +649,9 @@ test("a member confirms a JSON-body POST test before it is sent", async ({
   await expect(confirm).toContainText(c.test.readOnly.title);
   await expect(confirm).toContainText(`POST ${CUSTOM_API_ORIGIN}/query`);
   await expect(confirm).toContainText('"kind": "ItemsQuery"');
+  // The body as sent: the paging's limit (10), not the template's 0.
+  await expect(confirm).toContainText('"limit": 10');
+  await expect(confirm).toContainText(c.test.readOnly.laterRequests);
   const send = confirm.getByRole("button", { name: c.test.readOnly.send });
   await expect(send).toBeDisabled();
   await confirm.getByLabel(c.test.readOnly.confirm).check();
@@ -659,6 +662,19 @@ test("a member confirms a JSON-body POST test before it is sent", async ({
   await expect(log).toHaveCount(1);
   await expect(log.first().locator("td").nth(2)).toHaveText("200");
   await expect(page.getByTestId("custom-api-read-only")).toHaveCount(0);
+
+  // "Insert value" never edits a body editor that is hidden (#886 review):
+  // after switching to GraphQL it inserts into the path instead.
+  const json = page.locator("#custom-api-body-json");
+  const before = await json.inputValue();
+  await json.click();
+  await page.getByLabel(c.request.bodyKinds.graphql).check();
+  await page.locator("#custom-api-insert").selectOption("window.start");
+  await expect(page.locator("#custom-api-path")).toHaveValue(
+    "/query{{window.start}}",
+  );
+  await page.getByLabel(c.request.bodyKinds.json).check();
+  await expect(json).toHaveValue(before);
 });
 
 /** A new builder up to its Request step, without a login (#869). */
@@ -831,7 +847,7 @@ test("a member builds a JSON POST stream and confirms it at save", async ({
       .check();
     await page.locator(`#custom-api-${value}-body-path`).selectOption(path);
   }
-  await page.locator("#custom-api-limit").fill("10");
+  await page.locator("#custom-api-limit").fill("7");
   await page.getByRole("button", { name: c.paging.test }).click();
   // The paging changed the request: it is confirmed again before sending.
   await expect(confirm).toContainText("page.offset");
@@ -850,6 +866,9 @@ test("a member builds a JSON POST stream and confirms it at save", async ({
   const saveConfirm = page.getByTestId("custom-api-read-only-save");
   await expect(saveConfirm).toContainText(`POST ${CUSTOM_API_ORIGIN}/query`);
   await expect(saveConfirm).toContainText('"kind": "ItemsQuery"');
+  // The body as sent: the paging writes limit 7 over the template's 10.
+  await expect(saveConfirm).toContainText('"limit": 7');
+  await expect(saveConfirm).not.toContainText('"limit": 10');
   await saveConfirm.getByRole("checkbox").check();
   await expect(save).toBeEnabled();
   await save.click();

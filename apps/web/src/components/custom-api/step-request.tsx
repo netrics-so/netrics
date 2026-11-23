@@ -24,6 +24,30 @@ type Target =
   | { kind: "json" }
   | { kind: "variables" };
 
+/**
+ * The target "Insert value" uses now: the last focused input while it is
+ * shown, else the path (#886 review). A body editor hidden by GET or by
+ * the other body kind, or a removed row, is never edited unseen.
+ */
+export function insertionTarget(target: Target, state: BuilderState): Target {
+  const { method, body } = state.stream;
+  switch (target.kind) {
+    case "path":
+      return target;
+    case "json":
+    case "variables": {
+      const kind = target.kind === "json" ? "json" : "graphql";
+      return method === "POST" && body.kind === kind
+        ? target
+        : { kind: "path" };
+    }
+    default:
+      return state.stream[target.kind][target.index]
+        ? target
+        : { kind: "path" };
+  }
+}
+
 function insertAt(text: string, value: string, start: number, end: number) {
   return text.slice(0, start) + value + text.slice(end);
 }
@@ -57,7 +81,10 @@ export function StepRequest({
   });
   // The body takes no page values (ADR 0030 §1): its list leaves them out.
   const [inBody, setInBody] = useState(false);
-  const placeholders = inBody
+  const shown = insertionTarget(cursor.current.target, state);
+  const intoBody =
+    inBody && (shown.kind === "json" || shown.kind === "variables");
+  const placeholders = intoBody
     ? bodyPlaceholders(state)
     : availablePlaceholders(state);
   const track =
@@ -78,7 +105,17 @@ export function StepRequest({
 
   const insert = (name: string) => {
     const text = `{{${name}}}`;
-    const { target, start, end } = cursor.current;
+    // A hidden editor is no target: the placeholder goes to the path's end.
+    const kept = insertionTarget(cursor.current.target, state);
+    const { target, start, end } =
+      kept === cursor.current.target
+        ? cursor.current
+        : {
+            target: kept,
+            start: state.stream.path.length,
+            end: state.stream.path.length,
+          };
+    if (target !== cursor.current.target) setInBody(false);
     update((current) => {
       if (target.kind === "json" || target.kind === "variables") {
         const typed = current.stream.body[target.kind];
@@ -218,7 +255,7 @@ export function StepRequest({
           ))}
         </select>
         <p className="help">
-          {t(inBody ? "placeholderBodyHelp" : "placeholderHelp")}
+          {t(intoBody ? "placeholderBodyHelp" : "placeholderHelp")}
         </p>
       </div>
 

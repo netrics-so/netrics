@@ -7,7 +7,11 @@ import type {
   CustomApiPagination,
 } from "@netrics/contracts";
 
-import type { ReadOnlyRequest } from "@/lib/custom-api-builder";
+import {
+  bodyPageWrites,
+  firstPageBody,
+  type ReadOnlyRequest,
+} from "@/lib/custom-api-builder";
 import { useT } from "@/lib/i18n/client";
 
 type Request = CustomApiDraftDefinition["stream"]["request"];
@@ -29,18 +33,17 @@ export function RequestPreview({
 }) {
   const t = useT("customApi.test.readOnly");
   const method: string = request.method ?? "GET";
-  const body = request.body?.kind === "json" ? request.body.value : null;
+  // The body as the first request sends it: page values written over the
+  // template (ADR 0030 §3), so the author confirms what is actually sent.
+  const writes =
+    request.body?.kind === "json" ? bodyPageWrites(pagination) : [];
+  const body =
+    request.body?.kind === "json"
+      ? (firstPageBody(request.body, pagination) ?? request.body.value)
+      : null;
+  const limit = pagination?.type === "offset" ? pagination.limit : 0;
   const query = Object.entries(request.query ?? {});
   const headers = Object.entries(request.headers ?? {});
-  const bodyPaths: [string, string][] = [];
-  if (pagination?.type === "cursor" && pagination.bodyPath)
-    bodyPaths.push([t("pageCursor"), pagination.bodyPath]);
-  if (pagination?.type === "offset") {
-    if (pagination.offsetBodyPath)
-      bodyPaths.push([t("pageOffset"), pagination.offsetBodyPath]);
-    if (pagination.limitBodyPath)
-      bodyPaths.push([t("pageLimit"), pagination.limitBodyPath]);
-  }
   return (
     <div className="stack custom-api-request-preview">
       {(baseUrls.length ? baseUrls : [""]).map((baseUrl) => (
@@ -75,19 +78,33 @@ export function RequestPreview({
           ))}
         </dl>
       ) : null}
-      {bodyPaths.length ? (
+      {writes.length ? <p>{t("firstRequest")}</p> : null}
+      <pre>
+        <code>{JSON.stringify(body, null, 2)}</code>
+      </pre>
+      {writes
+        .filter((write) => write.value === "cursor")
+        .map((write) => (
+          <p key={`first-${write.path}`}>
+            {t(write.first === "omit" ? "cursorOmitted" : "cursorNull", {
+              path: write.path,
+            })}
+          </p>
+        ))}
+      {writes.length ? (
         <dl>
-          <dt>{t("pageValues")}</dt>
-          {bodyPaths.map(([label, path]) => (
-            <dd key={label}>
-              {label}: <code>{path}</code>
+          <dt>{t("laterRequests")}</dt>
+          {writes.map((write) => (
+            <dd key={write.path}>
+              {write.value === "cursor"
+                ? t("laterCursor", { path: write.path })
+                : write.value === "offset"
+                  ? t("laterOffset", { path: write.path, limit })
+                  : t("laterLimit", { path: write.path, limit })}
             </dd>
           ))}
         </dl>
       ) : null}
-      <pre>
-        <code>{JSON.stringify(body, null, 2)}</code>
-      </pre>
     </div>
   );
 }

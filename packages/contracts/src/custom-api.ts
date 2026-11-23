@@ -23,6 +23,7 @@ export {
   customApiBodyPathProblem,
   customApiBodySchema,
   customApiBodyStringLeaves,
+  renderCustomApiBody,
   customApiGraphqlProblem,
   customApiDefinitionSchema,
   customApiEnvironmentSchema,
@@ -49,6 +50,7 @@ export {
 } from "@netrics/connector-sdk/custom-api";
 export type {
   BodyPathProblem,
+  CustomApiBodyWrite,
   DataPathSegment,
   GraphqlOperationProblem,
   CustomApiAuth,
