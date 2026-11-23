@@ -252,6 +252,21 @@ redirect (3xx) fails the run. A body is at most 64 KiB as a template and
 128 KiB once its values are filled in. A GraphQL error envelope on a non-2xx
 status (other than 401, 403, 3xx and 429) fails with `graphql_errors` too.
 
+In the builder (#869), the Request step chooses the method and, for POST,
+a JSON body or a GraphQL query with its variables. The GraphQL check (one
+`query` operation, no placeholders in the query) shows as the query is
+typed; it is the SDK's check the server runs, not a copy. The Paging step
+puts each page value in a URL parameter or a value of the body, never
+both, and offers no next-link paging for POST. A JSON-body request is
+confirmed twice, each time for the exact request shown: before a test
+sends it (a pending question goes away as soon as the request or the test
+environment changes, and is asked again), and at **Save** for every
+JSON-body stream of the version. The saved confirmation covers every
+environment's base URL, the login settings, the connection values the
+request uses, and the stream's method, path, query, headers, body,
+pagination and window; any change to one of these, in any stream, clears
+it, and changing the setting back does not restore it.
+
 ## Bounds
 
 Each request may answer at most 10 MiB (50 MiB once decompressed) within

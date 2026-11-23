@@ -6,13 +6,16 @@ import {
 } from "@netrics/contracts";
 
 import {
+  confirmReadOnly,
   definitionHosts,
   definitionIssues,
+  readOnlyRequests,
   type BuilderStep,
   type StreamMode,
 } from "@/lib/custom-api-builder";
 import { useLocale, useT } from "@/lib/i18n/client";
 
+import { ReadOnlySave } from "./read-only-confirm";
 import type { StepProps } from "./step-props";
 
 const MODES: readonly StreamMode[] = [
@@ -145,6 +148,15 @@ export function StepSchedule({
           </p>
         ) : null}
       </section>
+      <ReadOnlySave
+        requests={readOnlyRequests(state, original)}
+        baseUrls={state.environments.map((e) => e.baseUrl.trim())}
+        onConfirm={(streamKey, confirmed) =>
+          update((current) =>
+            confirmReadOnly(current, streamKey, confirmed, original),
+          )
+        }
+      />
       {issues.length ? (
         <div className="error" role="alert">
           <p>{t("fixFirst")}</p>

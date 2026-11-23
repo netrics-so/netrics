@@ -18,6 +18,7 @@ import * as client from "@/lib/custom-api";
 import { webTranslator } from "@/lib/i18n/catalogs";
 import {
   BUILDER_STEPS,
+  bodyProblems,
   definitionOf,
   draftDefinitionOf,
   requiredSecrets,
@@ -39,8 +40,12 @@ export type BuilderClient = Pick<
 
 export const defaultClient: BuilderClient = client;
 
-/** The draft can store this state (its definition passes the draft schema). */
+/**
+ * The draft can store this state (its definition passes the draft schema)
+ * and a POST body is complete: one that doesn't parse yet is never sent.
+ */
 export function draftReady(state: BuilderState): boolean {
+  if (Object.keys(bodyProblems(state)).length > 0) return false;
   return customApiDraftDefinitionSchema.safeParse(draftDefinitionOf(state))
     .success;
 }

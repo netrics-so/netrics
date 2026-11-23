@@ -101,10 +101,46 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         "Wenn du die URLs, die Client-ID oder das Client-Secret änderst, endet die Anmeldung. Du meldest dich dann erneut an.",
     },
     request: {
-      postKeptGraphql:
-        "Diese Anfrage sendet eine GraphQL-Abfrage per POST. Dieser Editor übernimmt Methode, Abfrage und Variablen unverändert; sie zu ändern kommt mit einer späteren Version.",
-      postKeptJson:
-        "Diese Anfrage sendet einen JSON-Body per POST. Dieser Editor übernimmt Methode und Body unverändert; sie zu ändern kommt mit einer späteren Version. Wenn du die Anfrage änderst, bestätige erneut, dass sie nur Daten liest.",
+      method: "Methode",
+      getHelp: "GET liest die Adresse; es sendet keinen Body.",
+      postHelp:
+        "POST sendet einen Body und bleibt für jede Seite bei dieser Adresse. Verwende es nur für Anfragen, die Daten lesen, etwa GraphQL-Abfragen oder Such-APIs.",
+      bodyKind: "Body",
+      bodyKinds: { json: "JSON-Body", graphql: "GraphQL-Abfrage" },
+      bodyJson: "Body (JSON)",
+      bodyHelp:
+        "Setze einen Wert in Klammern in einen Textwert, etwa \"'{{'account_id'}}'\": Verbindungswerte sowie Start und Ende des Zeitraums.",
+      bodyNoPage:
+        "Seitenwerte können nicht als Werte in Klammern in den Body: Wähle im Schritt Seiten den Wert im Body, den sie ersetzen.",
+      jsonReadOnly:
+        "netrics kann nicht prüfen, was ein JSON-Body bei der API bewirkt. Du bestätigst, dass er nur Daten liest, bevor ein Test ihn sendet und beim Speichern.",
+      bodyErrors: {
+        syntax: "Das ist noch kein gültiges JSON.",
+        limits: "Der Body ist zu groß oder zu tief verschachtelt.",
+        empty: "Gib die GraphQL-Abfrage ein.",
+        variables: {
+          syntax: "Die Variablen sind noch kein gültiges JSON.",
+          object:
+            "Die Variablen sind ein JSON-Objekt, etwa '{' \"first\": 10 '}'.",
+          limits: "Die Variablen sind zu groß oder zu tief verschachtelt.",
+        },
+      },
+      graphqlQuery: "GraphQL-Abfrage",
+      graphqlQueryHelp:
+        "Wird genau so gesendet. Setze Werte in Klammern in die Variablen, nicht in die Abfrage.",
+      graphqlCheck: {
+        ok: "Eine Query-Operation: Sie liest nur Daten.",
+        syntax: "Die Abfrage ist noch kein gültiges GraphQL.",
+        not_query:
+          "Nur eine Query kann gesendet werden: keine Mutation und keine Subscription.",
+        several_definitions:
+          "Sende genau eine Query: keine zweite Operation und keine Fragment-Definitionen.",
+        placeholder:
+          "Die Abfrage wird so gesendet, wie sie ist: Verschiebe Werte in Klammern in die Variablen.",
+      },
+      graphqlVariables: "Variablen (JSON-Objekt)",
+      graphqlVariablesHelp:
+        "Textwerte dürfen Werte in Klammern enthalten: Verbindungswerte sowie Start und Ende des Zeitraums.",
       path: "Pfad",
       query: "Query-Parameter",
       headers: "Header",
@@ -120,6 +156,8 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       remove: "Entfernen",
       placeholderHelp:
         "Füge einen Wert mit '{'Klammern'}' ein: Verbindungswerte, Start und Ende des Zeitraums oder den Seitenwert.",
+      placeholderBodyHelp:
+        "Füge einen Wert mit '{'Klammern'}' in einen Textwert des Bodys ein: Verbindungswerte, Start und Ende des Zeitraums. Seitenwerte kommen über den Schritt Seiten in den Body.",
       insert: "Wert einfügen",
       insertInto: "Einfügen in",
       targets: {
@@ -224,6 +262,25 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       limit: "Limit",
       cursorPath: "Cursor in der Antwort",
       cursorParam: "Cursor senden als",
+      postNoNextUrl:
+        "Eine POST-Anfrage bleibt bei ihrer Adresse, sie kann also keinem Link zur nächsten Seite aus der Antwort folgen.",
+      placement: {
+        url: "URL-Parameter",
+        body: "Wert im Body",
+        param: "Name des Parameters",
+        bodyPath: "Wert im Body",
+        choose: "Wähle einen Wert",
+        bodyHelp:
+          "Der Wert an dieser Stelle im Body wird auf jeder Seite ersetzt; er behält den Typ des Seitenwerts.",
+        bodyHelpGraphql:
+          "Ein Wert unter variables wird auf jeder Seite ersetzt; die Abfrage selbst ändert sich nie.",
+      },
+      firstPage: {
+        title: "Auf der ersten Seite",
+        null: "null senden",
+        omit: "Wert weglassen",
+        help: "Vor der ersten Seite gibt es keinen Cursor. Weglassen geht nur bei einer Objekt-Eigenschaft, nicht bei einem Listenelement.",
+      },
       nextSource: "Wo steht der Link zur nächsten Seite?",
       nextBody: "In der Antwort",
       nextHeader: "Link-Header",
@@ -286,6 +343,11 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       stale:
         "Jemand hat eine neuere Version gespeichert. Lade die Seite neu, um sie zu bearbeiten; deine Änderungen hier sind nicht gespeichert.",
       fixFirst: "Behebe zuerst:",
+      readOnly: {
+        title: "Lesen diese Anfragen nur Daten?",
+        help: "Diese Anfragen senden einen JSON-Body per POST. netrics kann nicht prüfen, was sie bei der API bewirken. Die Version, die du speicherst, hält fest, dass du jede Anfrage so bestätigt hast, wie sie hier steht; jede Änderung an einer Anfrage fragt erneut.",
+        confirm: "{name}: Diese Anfrage liest nur Daten.",
+      },
     },
     test: {
       readOnly: {
@@ -294,6 +356,19 @@ export const customApiDe: Catalog<typeof customApiEn> = {
         confirm: "Diese Anfrage liest nur Daten.",
         send: "Test senden",
         cancel: "Abbrechen",
+        changed:
+          "Die Anfrage hat sich geändert, nachdem du sie bestätigen solltest. Sende den Test erneut, um die neue Anfrage zu bestätigen.",
+        query: "Query-Parameter",
+        headers: "Header",
+        firstRequest: "Die erste Anfrage sendet:",
+        laterRequests: "Spätere Anfragen ändern nur diese Werte:",
+        cursorNull:
+          "Die erste Anfrage sendet null bei {path}: Es gibt noch keinen Cursor.",
+        cursorOmitted:
+          "Die erste Anfrage lässt {path} weg: Es gibt noch keinen Cursor.",
+        laterOffset: "{path}: der nächste Offset, jeweils um {limit} höher",
+        laterLimit: "{path}: {limit} bei jeder Anfrage",
+        laterCursor: "Cursor bei {path}: aus der vorigen Antwort",
       },
       title: "Test",
       ok: "Die Anfrage hat funktioniert.",
@@ -561,6 +636,12 @@ export const customApiDe: Catalog<typeof customApiEn> = {
       refreshRange:
         "Aktualisiere zwischen 1 Minute und 7 Tagen (10.080 Minuten).",
       definitionInvalid: "Die Definition hat Fehler (siehe unten).",
+      bodyJson: "Der Body ist kein gültiges JSON.",
+      bodyLimits: "Der Body ist zu groß oder zu tief verschachtelt.",
+      graphqlQuery: "Gib die GraphQL-Abfrage ein.",
+      graphqlVariables: "Die GraphQL-Variablen müssen ein JSON-Objekt sein.",
+      readOnlyUnconfirmed:
+        "Bestätige unten, dass jede Anfrage mit JSON-Body nur Daten liest.",
       codes: {
         placeholder_syntax:
           "Ein Wert in Klammern ist nicht richtig geschrieben.",

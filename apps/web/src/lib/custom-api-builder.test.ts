@@ -154,9 +154,13 @@ describe("custom API builder state", () => {
       const state = stateFromDefinition(post);
       // Saved and tested as POST, never as GET.
       expect(definitionOf(state, post)).toEqual(post);
-      expect(draftDefinitionOf(state).stream.request).toMatchObject({
-        method: "POST",
-        body: stream.request.body,
+      // A draft test carries the server's hash, never the stored flag.
+      const { readOnlyConfirmed: _flag, ...body } = stream.request.body as {
+        readOnlyConfirmed?: boolean;
+      };
+      expect(draftDefinitionOf(state).stream.request).toEqual({
+        ...stream.request,
+        body,
       });
     }
     // An edit to a JSON-body request drops its read-only confirmation:
@@ -197,11 +201,11 @@ describe("custom API builder state", () => {
       stepIssues(state, "review", { editing: true, original: saved }),
     ).toEqual([]);
     expect(definitionIssues(state, saved)).toEqual([]);
-    // A changed request drops it, and the review says so.
+    // A changed request drops it, and the review asks for it again.
     const changed = { ...state, stream: { ...state.stream, path: "/other" } };
     expect(
       stepIssues(changed, "review", { editing: true, original: saved }),
-    ).toContain("issues.definitionInvalid");
+    ).toEqual(["issues.readOnlyUnconfirmed"]);
   });
 
   it("keeps the other streams of an edited definition", () => {
