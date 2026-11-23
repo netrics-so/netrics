@@ -99,14 +99,14 @@ distribution runs the signed images.
                                     └── 10 Apple Ads
                                         └── 11 reusable data models and dashboard filtering
                                             ├── 11.2 app slides on TV
-                                            └── 12 community connectors
-                                                └── 13 custom API
-                                                    └── 13.1 developer sources
-                                                        └── 13.2 quick setup and live TV
-                                                            └── 14 alerts
-                                                        └── 15 collaboration
-                                                            └── 16 SaaS control plane
-                                                                └── 17 v1 hardening
+                                            ├── 12 community connectors
+                                            └── 13 custom API (needs only the dataset contract of 11)
+                                                ├── 13.1 developer sources (also after 11.2)
+                                                │   └── 13.2 quick setup and live TV
+                                                └── 14 alerts
+                                                    └── 15 collaboration
+                                                        └── 16 SaaS control plane
+                                                            └── 17 v1 hardening
 ```
 
 The ordering is intentionally strict for a solo implementation. Later, a larger
@@ -188,8 +188,8 @@ State on 2026-11-14.
   checks and a status widget), then
   [13.2 quick setup and live TV](./13.2-setup-and-live-tv.md) (#783,
   #789), then 14 (alerts), then the slide design pass. Milestone 12
-  (community connectors) moves after 14; the dependency map above still
-  shows its technical prerequisites, not the delivery order.
+  (community connectors) moves after 14. The dependency map shows
+  technical prerequisites; the sequence table shows the delivery order.
 - Tracking: GitHub milestones, issues and the "netrics roadmap" project
   board; hosted-service steps are tracked in the private cloud repository
 

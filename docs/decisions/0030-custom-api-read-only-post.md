@@ -48,11 +48,30 @@ operation. Variables follow rule 1. Errors in the response's `errors`
 array fail the run like an HTTP error, with the message redacted as in
 ADR 0027 §4.
 
+The checked operation is the one sent, on every request:
+
+- `query` is a literal: it may hold no placeholder, and nothing (pagination
+  included) writes into it. Substitutions in a GraphQL body reach only
+  leaves under `variables`.
+- The body has exactly the keys `query` and `variables`; no
+  `operationName` or `extensions`.
+- A GraphQL stream may not set the URL query parameters `query`,
+  `operationName`, `variables` or `extensions`, by itself, by its auth
+  method or by pagination, because some servers let URL parameters override
+  the body.
+
 A plain JSON body (`body.kind: "json"`) has no such guard. The builder
 requires the definition's author to confirm "this request only reads data",
 stores that confirmation with the version, and shows the method and body on
 the connection page to everyone who can see the connection. The
 documentation says plainly that netrics cannot verify it.
+
+The confirmation is checked by the server before any JSON-body POST leaves
+it, not only when a version is saved: the builder's test request for an
+unsaved draft carries the confirmation for that exact request (a hash of
+method, path, query and body template), and the server refuses to send a
+draft request whose hash does not match. Editing the request clears the
+confirmation.
 
 ### 3. Pagination through the body
 
@@ -60,7 +79,15 @@ The existing pagination types work unchanged where they set query
 parameters. Two additions place page values in the body instead:
 `cursor` pagination may name a body path for the next cursor (GraphQL
 `after` variables), and `offset` pagination may name body paths for offset
-and limit. A body path must point at an existing string or number leaf.
+and limit. A body path must point at an existing leaf of the template (in a
+GraphQL body, under `variables`); the leaf's template value is replaced, not
+templated, so its type follows the page value.
+
+The first page often needs no cursor. A cursor body path therefore names
+what the first request sends: `firstPage: "null"` (the leaf is JSON
+`null`, the default) or `firstPage: "omit"` (the key is removed). Later
+pages write the cursor the previous response returned. An empty string is
+never sent as a cursor.
 
 ### 4. Everything else stays as in ADR 0027
 
@@ -73,7 +100,11 @@ same host; 301, 302 and 303 fail the run instead of turning into a GET.
 ### 5. Schema version 2
 
 These fields need definition schema version 2. Version 1 documents upgrade
-to version 2 unchanged (method GET, no body); a host that only knows
+to version 2 by changing only the schema version: an absent `method` means
+GET, and neither the upgrade nor the parser writes defaults into the stored
+or normalized document, so an upgraded document is no larger than the
+original apart from the version number and fits the same size limit. A
+boundary-sized version 1 fixture proves it. A host that only knows
 version 1 refuses a version 2 document as it refuses any unknown version.
 The connector SDK exports both the parser and the upgrade.
 
@@ -89,8 +120,10 @@ The connector SDK exports both the parser and the upgrade.
 - The builder gains a method choice, a body editor with placeholder hints,
   and a GraphQL mode with the read-only check.
 - Contract tests cover the GraphQL guard (mutation, subscription, several
-  operations, fragments), placeholder rules in bodies, body pagination and
-  POST redirects.
+  operations, fragments, placeholders or pagination in `query`, overriding
+  URL parameters), the confirmation check on draft test requests,
+  placeholder rules in bodies, body pagination including the first page,
+  the size of upgraded version 1 documents, and POST redirects.
 
 ## Alternatives considered
 
