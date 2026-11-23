@@ -404,3 +404,33 @@
   margin: 4px 0 0;
   padding-left: 18px;
 }
+
+/* POST bodies (#869): JSON and GraphQL editors, the inline checks. */
+.custom-api-code {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  resize: vertical;
+}
+
+.custom-api-check-ok {
+  color: var(--success);
+}
+
+.custom-api-field-errors {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.custom-api-request-preview dl {
+  margin: 0;
+}
+
+.custom-api-request-preview dd {
+  margin-left: 12px;
+}
+
+.custom-api-request-preview pre {
+  max-width: 100%;
+  overflow-x: auto;
+}

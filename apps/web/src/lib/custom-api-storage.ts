@@ -2,15 +2,21 @@
 // or the OAuth round trip, keyed by workspace and draft. It never holds a
 // secret (the builder state has none); the last test answer is dropped.
 
+import type { CustomApiBody } from "@netrics/contracts";
+
 import {
   BUILDER_STEPS,
+  bodyEditorOf,
   type BuilderState,
   type BuilderStep,
 } from "./custom-api-builder";
 
 const PREFIX = "netrics.customApi.builder.";
-/** Bumped when the stored shape changes; older copies are ignored. */
-const VERSION = 1;
+/**
+ * Bumped when the stored shape changes; older copies are ignored, except
+ * version 1 (before #869), whose kept POST body is read into the editor.
+ */
+const VERSION = 2;
 
 export interface StoredBuilder {
   state: BuilderState;
@@ -38,7 +44,7 @@ export function parseStoredBuilder(
   if (value === null || typeof value !== "object") return null;
   const stored = value as Partial<StoredBuilder> & { version?: unknown };
   if (
-    stored.version !== VERSION ||
+    (stored.version !== VERSION && stored.version !== 1) ||
     !stored.state ||
     typeof stored.state !== "object" ||
     !Array.isArray(stored.state.environments) ||
@@ -50,9 +56,23 @@ export function parseStoredBuilder(
         !Number.isInteger(stored.baseVersion)))
   )
     return null;
+  const stream = stored.state.stream as BuilderState["stream"] & {
+    post?: { method: "POST"; body: CustomApiBody };
+  };
+  const { post, ...rest } = stream;
   return {
     state: {
       ...stored.state,
+      stream:
+        stored.version === 1
+          ? {
+              ...rest,
+              method: post ? "POST" : "GET",
+              body: bodyEditorOf(post?.body),
+            }
+          : stream,
+      // Before #869 no confirmation was kept: the save asks again.
+      readOnly: stored.state.readOnly ?? {},
       images: stored.state.images ?? null,
       // Stored before #834's review: every field counts as set.
       nullableChosen:

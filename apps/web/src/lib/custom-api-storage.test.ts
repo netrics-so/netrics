@@ -43,10 +43,40 @@ describe("builder session copy", () => {
     expect(parseStoredBuilder(raw, null)).not.toBeNull();
     expect(parseStoredBuilder(raw, DEF)).toBeNull();
     expect(
-      parseStoredBuilder(raw.replace('"version":1', '"version":0'), null),
+      parseStoredBuilder(raw.replace('"version":2', '"version":0'), null),
     ).toBeNull();
     expect(parseStoredBuilder("{", null)).toBeNull();
-    expect(parseStoredBuilder('{"version":1,"step":"nope"}', null)).toBeNull();
+    expect(parseStoredBuilder('{"version":2,"step":"nope"}', null)).toBeNull();
+  });
+
+  it("reads a copy from before #869 with its kept POST body", () => {
+    const state = emptyBuilderState("en", "UTC");
+    const { method: _method, body: _body, ...stream } = state.stream;
+    const { readOnly: _readOnly, ...rest } = state;
+    const raw = JSON.stringify({
+      version: 1,
+      state: {
+        ...rest,
+        stream: {
+          ...stream,
+          path: "/query",
+          post: {
+            method: "POST",
+            body: { kind: "json", value: { q: 1 }, readOnlyConfirmed: true },
+          },
+        },
+      },
+      step: "request",
+      definitionId: null,
+      baseVersion: null,
+    });
+    const parsed = parseStoredBuilder(raw, null)!;
+    expect(parsed.state.stream.method).toBe("POST");
+    expect(parsed.state.stream.body.kind).toBe("json");
+    expect(JSON.parse(parsed.state.stream.body.json)).toEqual({ q: 1 });
+    expect(parsed.state.stream).not.toHaveProperty("post");
+    // No confirmation was kept then: the save asks again.
+    expect(parsed.state.readOnly).toEqual({});
   });
 
   it("is keyed by workspace and draft, and sign-out clears every copy", () => {

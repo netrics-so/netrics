@@ -12,6 +12,7 @@ import { D, DRAFT, TEST_RESPONSE, W } from "./test-fixtures";
 import { CustomApiRequestError } from "@/lib/custom-api";
 import {
   draftDefinitionOf,
+  EMPTY_BODY,
   emptyBuilderState,
   type BuilderState,
 } from "@/lib/custom-api-builder";
@@ -31,9 +32,11 @@ function jsonPost(): BuilderState {
     stream: {
       ...state.stream,
       path: "/query",
-      post: {
-        method: "POST",
-        body: { kind: "json", value: { kind: "EventsQuery", limit: 10 } },
+      method: "POST",
+      body: {
+        ...EMPTY_BODY,
+        kind: "json",
+        json: JSON.stringify({ kind: "EventsQuery", limit: 10 }),
       },
     },
   };

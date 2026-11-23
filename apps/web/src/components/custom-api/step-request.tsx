@@ -1,21 +1,52 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import {
   availablePlaceholders,
+  bodyPlaceholders,
   variableIdFromLabel,
+  withBody,
   withRequest,
   type BuilderState,
   type KeyValue,
 } from "@/lib/custom-api-builder";
 import { useT } from "@/lib/i18n/client";
 
+import { RequestBody } from "./request-body";
 import { enteredSecrets, SecretInputs } from "./step-login";
 import type { StepProps } from "./step-props";
 
 /** Where "Insert value" puts a placeholder: the last focused template input. */
-type Target = { kind: "path" } | { kind: "query" | "headers"; index: number };
+type Target =
+  | { kind: "path" }
+  | { kind: "query" | "headers"; index: number }
+  | { kind: "json" }
+  | { kind: "variables" };
+
+/**
+ * The target "Insert value" uses now: the last focused input while it is
+ * shown, else the path (#886 review). A body editor hidden by GET or by
+ * the other body kind, or a removed row, is never edited unseen.
+ */
+export function insertionTarget(target: Target, state: BuilderState): Target {
+  const { method, body } = state.stream;
+  switch (target.kind) {
+    case "path":
+      return target;
+    case "json":
+    case "variables": {
+      const kind = target.kind === "json" ? "json" : "graphql";
+      return method === "POST" && body.kind === kind
+        ? target
+        : { kind: "path" };
+    }
+    default:
+      return state.stream[target.kind][target.index]
+        ? target
+        : { kind: "path" };
+  }
+}
 
 function insertAt(text: string, value: string, start: number, end: number) {
   return text.slice(0, start) + value + text.slice(end);
@@ -48,15 +79,25 @@ export function StepRequest({
     start: state.stream.path.length,
     end: state.stream.path.length,
   });
-  const placeholders = availablePlaceholders(state);
+  // The body takes no page values (ADR 0030 §1): its list leaves them out.
+  const [inBody, setInBody] = useState(false);
+  const shown = insertionTarget(cursor.current.target, state);
+  const intoBody =
+    inBody && (shown.kind === "json" || shown.kind === "variables");
+  const placeholders = intoBody
+    ? bodyPlaceholders(state)
+    : availablePlaceholders(state);
   const track =
-    (target: Target) => (event: { currentTarget: HTMLInputElement }) => {
+    (target: Target) =>
+    (event: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
       const input = event.currentTarget;
       cursor.current = {
         target,
         start: input.selectionStart ?? input.value.length,
         end: input.selectionEnd ?? input.value.length,
       };
+      const body = target.kind === "json" || target.kind === "variables";
+      if (body !== inBody) setInBody(body);
     };
   const setRequest = (
     patch: Partial<Pick<BuilderState["stream"], "path" | "query" | "headers">>,
@@ -64,8 +105,25 @@ export function StepRequest({
 
   const insert = (name: string) => {
     const text = `{{${name}}}`;
-    const { target, start, end } = cursor.current;
+    // A hidden editor is no target: the placeholder goes to the path's end.
+    const kept = insertionTarget(cursor.current.target, state);
+    const { target, start, end } =
+      kept === cursor.current.target
+        ? cursor.current
+        : {
+            target: kept,
+            start: state.stream.path.length,
+            end: state.stream.path.length,
+          };
+    if (target !== cursor.current.target) setInBody(false);
     update((current) => {
+      if (target.kind === "json" || target.kind === "variables") {
+        const typed = current.stream.body[target.kind];
+        const at = Math.min(start, typed.length);
+        return withBody(current, {
+          [target.kind]: insertAt(typed, text, at, Math.min(end, typed.length)),
+        });
+      }
       if (target.kind === "path") {
         const path = current.stream.path;
         const at = Math.min(start, path.length);
@@ -163,15 +221,6 @@ export function StepRequest({
 
   return (
     <div className="custom-api-form">
-      {state.stream.post ? (
-        <p className="notice" role="note" data-testid="custom-api-post-kept">
-          {t(
-            state.stream.post.body.kind === "graphql"
-              ? "postKeptGraphql"
-              : "postKeptJson",
-          )}
-        </p>
-      ) : null}
       <div className="field">
         <label htmlFor="custom-api-path">{t("path")}</label>
         <input
@@ -186,6 +235,11 @@ export function StepRequest({
       </div>
       {rowsEditor("query")}
       {rowsEditor("headers")}
+      <RequestBody
+        state={state}
+        update={update}
+        onTrack={(kind) => track({ kind })}
+      />
       <div className="field custom-api-insert">
         <label htmlFor="custom-api-insert">{t("insert")}</label>
         <select
@@ -200,7 +254,9 @@ export function StepRequest({
             <option key={name} value={name}>{`{{${name}}}`}</option>
           ))}
         </select>
-        <p className="help">{t("placeholderHelp")}</p>
+        <p className="help">
+          {t(intoBody ? "placeholderBodyHelp" : "placeholderHelp")}
+        </p>
       </div>
 
       <fieldset className="field">

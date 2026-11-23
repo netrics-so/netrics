@@ -1,12 +1,25 @@
 "use client";
 
+import { useState } from "react";
+
 import type {
   CustomApiPagination,
   CustomApiTestResponse,
   CustomApiWindow,
 } from "@netrics/contracts";
 
-import { DEFAULT_WINDOW } from "@/lib/custom-api-builder";
+import {
+  bodyLeafPaths,
+  DEFAULT_WINDOW,
+  endsAtArrayElement,
+  pageValuePlacement,
+  placePageValue,
+  requestCheckIssues,
+  setFirstPage,
+  setPageBodyPath,
+  setPageParam,
+  type PageValue,
+} from "@/lib/custom-api-builder";
 
 const DEFAULT_WINDOW_STEP_DAYS =
   DEFAULT_WINDOW.type === "none" ? 7 : DEFAULT_WINDOW.stepDays;
@@ -43,6 +56,13 @@ export function defaultPagination(
   }
 }
 
+/** The pagination properties of each page value: URL parameter and body path. */
+const PAGE_PROPERTIES = {
+  cursor: { param: "param", bodyPath: "bodyPath" },
+  offset: { param: "offsetParam", bodyPath: "offsetBodyPath" },
+  limit: { param: "limitParam", bodyPath: "limitBodyPath" },
+} as const;
+
 /** Pages and records a paging test fetched. */
 export function fetchedOf(test: CustomApiTestResponse): {
   pages: number;
@@ -78,7 +98,14 @@ export function StepPaging({
   onTest: () => void;
 }) {
   const t = useT("customApi.paging");
+  const all = useT("customApi");
   const pagination = state.stream.pagination;
+  const post = state.stream.method === "POST";
+  // Where a page value goes while neither a parameter nor a body path is
+  // set yet (ADR 0030 §3: exactly one of the two).
+  const [placing, setPlacing] = useState<
+    Partial<Record<PageValue, "url" | "body">>
+  >({});
   const window = state.stream.window;
   const body = state.lastTest?.response?.body;
   const setPagination = (next: CustomApiPagination) =>
@@ -149,13 +176,132 @@ export function StepPaging({
     );
 
   const fetched = pagingTest ? fetchedOf(pagingTest) : null;
+  const leaves = post ? bodyLeafPaths(state) : [];
+  // The SDK's paging rules, shown at the setting they are about.
+  const checks = requestCheckIssues(state);
+  const problemsAt = (property: string) => [
+    ...new Set(
+      checks
+        .filter((issue) => issue.path.join(".") === `pagination.${property}`)
+        .map((issue) => all(`issues.codes.${issue.code}`)),
+    ),
+  ];
+
+  /** A URL parameter input; emptying it removes the parameter (never ""). */
+  const paramInput = (value: PageValue, label: string) => {
+    const owner = pagination as Record<string, unknown>;
+    const property = PAGE_PROPERTIES[value].param;
+    const problems = problemsAt(property);
+    const id = `custom-api-${value}-param`;
+    return (
+      <div className="field">
+        <label htmlFor={id}>{label}</label>
+        <input
+          id={id}
+          value={(owner[property] as string | undefined) ?? ""}
+          spellCheck={false}
+          aria-invalid={problems.length > 0 || undefined}
+          aria-describedby={problems.length ? `${id}-errors` : undefined}
+          onChange={(event) =>
+            setPagination(setPageParam(pagination, value, event.target.value))
+          }
+        />
+        {problems.length ? (
+          <p className="error" id={`${id}-errors`}>
+            {problems.join(" ")}
+          </p>
+        ) : null}
+      </div>
+    );
+  };
+
+  /**
+   * A POST stream's page value: a URL parameter or a value of the body
+   * (ADR 0030 §3), never both. The URL input is shown only for "URL".
+   */
+  const placement = (value: PageValue, label: string) => {
+    const placed =
+      pageValuePlacement(pagination, value) ?? placing[value] ?? "url";
+    const owner = pagination as Record<string, unknown>;
+    const bodyProperty = PAGE_PROPERTIES[value].bodyPath;
+    const bodyPath = (owner[bodyProperty] as string | undefined) ?? "";
+    const problems = problemsAt(bodyProperty);
+    const id = `custom-api-${value}-body-path`;
+    const options =
+      bodyPath && !leaves.includes(bodyPath) ? [bodyPath, ...leaves] : leaves;
+    return (
+      <fieldset className="field" data-testid={`custom-api-${value}-placement`}>
+        <legend>{label}</legend>
+        <div className="custom-api-choices">
+          {(["url", "body"] as const).map((where) => (
+            <label className="checkbox" key={where}>
+              <input
+                type="radio"
+                name={`custom-api-${value}-placement`}
+                checked={placed === where}
+                onChange={() => {
+                  setPlacing((current) => ({ ...current, [value]: where }));
+                  setPagination(placePageValue(pagination, value, where));
+                }}
+              />
+              {t(`placement.${where}`)}
+            </label>
+          ))}
+        </div>
+        {placed === "url" ? (
+          paramInput(value, t("placement.param"))
+        ) : (
+          <div className="field">
+            <label htmlFor={id}>{t("placement.bodyPath")}</label>
+            <select
+              id={id}
+              value={bodyPath}
+              aria-invalid={problems.length > 0 || undefined}
+              aria-describedby={
+                [`${id}-help`, problems.length ? `${id}-errors` : ""]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
+              onChange={(event) =>
+                setPagination(
+                  setPageBodyPath(pagination, value, event.target.value),
+                )
+              }
+            >
+              <option value="">{t("placement.choose")}</option>
+              {options.map((path) => (
+                <option key={path} value={path}>
+                  {path}
+                </option>
+              ))}
+            </select>
+            <p className="help" id={`${id}-help`}>
+              {t(
+                state.stream.body.kind === "graphql"
+                  ? "placement.bodyHelpGraphql"
+                  : "placement.bodyHelp",
+              )}
+            </p>
+            {problems.length ? (
+              <p className="error" id={`${id}-errors`}>
+                {problems.join(" ")}
+              </p>
+            ) : null}
+          </div>
+        )}
+      </fieldset>
+    );
+  };
 
   return (
     <div className="custom-api-form">
       <fieldset className="field">
         <legend>{t("style")}</legend>
         <div className="custom-api-choices">
-          {PAGINATION_TYPES.map((type) => (
+          {PAGINATION_TYPES.filter(
+            // A POST request stays on its endpoint (ADR 0030 §2).
+            (type) => !post || type !== "next_url",
+          ).map((type) => (
             <label className="checkbox" key={type}>
               <input
                 type="radio"
@@ -167,6 +313,7 @@ export function StepPaging({
             </label>
           ))}
         </div>
+        {post ? <p className="help">{t("postNoNextUrl")}</p> : null}
       </fieldset>
 
       {pagination.type === "page_number" ? (
@@ -217,18 +364,12 @@ export function StepPaging({
 
       {pagination.type === "offset" ? (
         <div className="custom-api-pair">
-          {text(
-            "custom-api-offset-param",
-            t("offsetParam"),
-            pagination.offsetParam ?? "",
-            (offsetParam) => setPagination({ ...pagination, offsetParam }),
-          )}
-          {text(
-            "custom-api-limit-param",
-            t("limitParam"),
-            pagination.limitParam ?? "",
-            (limitParam) => setPagination({ ...pagination, limitParam }),
-          )}
+          {post
+            ? placement("offset", t("offsetParam"))
+            : paramInput("offset", t("offsetParam"))}
+          {post
+            ? placement("limit", t("limitParam"))
+            : paramInput("limit", t("limitParam"))}
           {number(
             "custom-api-limit",
             t("limit"),
@@ -241,12 +382,42 @@ export function StepPaging({
 
       {pagination.type === "cursor" ? (
         <>
-          {text(
-            "custom-api-cursor-param",
-            t("cursorParam"),
-            pagination.param ?? "",
-            (param) => setPagination({ ...pagination, param }),
-          )}
+          {post
+            ? placement("cursor", t("cursorParam"))
+            : paramInput("cursor", t("cursorParam"))}
+          {post && pagination.bodyPath !== undefined ? (
+            <fieldset className="field">
+              <legend>{t("firstPage.title")}</legend>
+              <div className="custom-api-choices">
+                {(["null", "omit"] as const).map((firstPage) => {
+                  const disabled =
+                    firstPage === "omit" &&
+                    endsAtArrayElement(pagination.bodyPath ?? "");
+                  return (
+                    <label className="checkbox" key={firstPage}>
+                      <input
+                        type="radio"
+                        name="custom-api-first-page"
+                        checked={(pagination.firstPage ?? "null") === firstPage}
+                        disabled={disabled}
+                        aria-describedby="custom-api-first-page-help"
+                        onChange={() =>
+                          setPagination(setFirstPage(pagination, firstPage))
+                        }
+                      />
+                      {t(`firstPage.${firstPage}`)}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="help" id="custom-api-first-page-help">
+                {t("firstPage.help")}
+              </p>
+              {problemsAt("firstPage").length ? (
+                <p className="error">{problemsAt("firstPage").join(" ")}</p>
+              ) : null}
+            </fieldset>
+          ) : null}
           <div className="field">
             <span className="custom-api-label">{t("cursorPath")}</span>
             {pickedPath(pagination.cursorPath, (cursorPath) =>
