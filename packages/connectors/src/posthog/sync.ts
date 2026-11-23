@@ -636,9 +636,16 @@ export async function syncPage(
         run.project = { from: windowEnd + DAY_MS, part: "trends" };
       }
     } catch (error) {
-      if (!isRefused(error)) throw error;
-      // Deleted or unshared since the listing: no freshness for it. What
-      // earlier windows read stays true.
+      // A project deleted or unshared since the listing, or one whose
+      // PostHog refuses netrics' query (400, say an older self-hosted
+      // version): skipped without freshness, so it shows as stale instead
+      // of stopping every other project. What earlier windows read stays.
+      if (
+        !isRefused(error) &&
+        !(error instanceof PostHogApiError && error.kind === "query")
+      ) {
+        throw error;
+      }
       log?.warn("project refused, skipped", {
         project: projectId,
         status: (error as PostHogApiError).status,

@@ -717,6 +717,25 @@ describe("PostHog sync", () => {
     expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1002")).toBeUndefined();
   });
 
+  it("skips a project whose PostHog refuses the query, without stopping the others", async () => {
+    const posthog = fake({
+      projects: fakeProjects(2),
+      intercept: (request) =>
+        request.path === "/api/projects/1000/query/" &&
+        (request.body?.query as { kind?: string }).kind === "HogQLQuery"
+          ? answer(400, {
+              type: "validation_error",
+              code: "invalid_input",
+              detail: "Syntax error",
+            })
+          : undefined,
+    });
+    const run = await syncAll(posthog.runtime);
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1000")).toBeUndefined();
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1001")).toBeDefined();
+    expect(valuesOf(run, METRICS.events, "1001")).toHaveLength(10);
+  });
+
   it("refuses a revoked key and a missing scope with the check's reason codes", async () => {
     const revoked = await connector()
       .sync(

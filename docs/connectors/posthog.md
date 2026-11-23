@@ -112,8 +112,10 @@ otherwise, with the insight's own date range, filters and breakdowns.
 - **Daily numbers** (`analytics`, periodic, UTC days, one entry per
   project): a sync that read a project's whole window reports the day
   before today as its last complete day. Today's numbers are sent too and
-  grow during the day. A project PostHog refuses (403, 404) is skipped, and
-  its entry is not reported, so it shows as stale.
+  grow during the day. A project PostHog refuses (403, 404), or whose
+  PostHog refuses the query (400, say an older self-hosted version), is
+  skipped for the rest of the run and its entry is not reported, so it shows
+  as stale; the other projects go on.
 - **Insights** (`insights`, continuous): reported when every configured
   insight was read or definitively left out.
 
