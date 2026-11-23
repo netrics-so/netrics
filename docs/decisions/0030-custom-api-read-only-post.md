@@ -30,10 +30,10 @@ a definition may express and from what the person connecting confirms.
 
 A stream's request gains `method: "GET" | "POST"` (default `GET`) and, for
 POST, `body`: a JSON value of bounded size and depth. String leaves may hold
-the same `{{ placeholder }}` names a query parameter may hold (variables,
-window dates, page values), under the same document rules: secrets only in
-auth headers, page placeholders only with a matching pagination type,
-window placeholders only with a window. Placeholders fill whole string
+the same `{{ placeholder }}` names a query parameter may hold except page
+values (variables and window dates), under the same document rules:
+secrets only in auth headers, window placeholders only with a window. Page
+values reach a body only through body paths (§3). Placeholders fill whole string
 leaves or parts of them; they never add keys, change structure or produce
 numbers or booleans from text. The body is sent as
 `application/json; charset=utf-8`. No other method and no other content
@@ -44,7 +44,8 @@ type is accepted.
 `body.kind: "graphql"` holds `query` and `variables`. The definition check
 parses the query with a GraphQL parser and refuses it unless it is exactly
 one `query` operation: no `mutation`, no `subscription`, no second
-operation. Variables follow rule 1. A response with a non-empty `errors`
+operation. `variables` is a JSON object (`{}` when the operation has
+none); its descendants follow rule 1. A response with a non-empty `errors`
 array fails the run with a fixed message (`graphql_errors`) that names the
 stream, the HTTP status and the number of errors. No text from the
 response, `errors[].message` included, reaches errors, logs or check
@@ -61,13 +62,21 @@ The checked operation is the one sent, on every request:
   `operationName`, `variables` or `extensions`, by itself, by its auth
   method or by pagination, because some servers let URL parameters override
   the body.
-- A GraphQL stream takes no URL from a response: `next_url` pagination is
-  refused for it, and it follows no redirects (a 3xx fails the run).
 - Independently of the definition check, the connector checks every URL it
   is about to send a GraphQL request to and refuses one that carries any of
   those parameters.
 
-A plain JSON body (`body.kind: "json"`) has no such guard. The builder
+Every POST stream, GraphQL or JSON body, stays on the endpoint its
+definition names: it takes no URL from a response (`next_url` pagination is
+refused for it) and follows no redirects (a 3xx fails the run). Between
+pages only the declared pagination values change.
+
+The builder's test request for an unsaved draft runs the same checks as a
+saved definition before anything is sent: the GraphQL operation check, the
+body rules and the body-pagination rules. The draft schema and the
+definition parser share these checks rather than each having its own.
+
+A plain JSON body (`body.kind: "json"`) has no operation guard. The builder
 requires the definition's author to confirm "this request only reads data",
 stores that confirmation with the version, and shows the method and body on
 the connection page to everyone who can see the connection. The
@@ -76,10 +85,12 @@ documentation says plainly that netrics cannot verify it.
 The confirmation is checked by the server before any JSON-body POST leaves
 it, not only when a version is saved: the builder's test request for an
 unsaved draft carries the confirmation for that exact request: a hash of
-the selected environment's base URL, method, path, query parameters, body
-template and the stream's pagination rule. The server refuses to send a
-draft request whose hash does not match. Changing any of these, the
-environment included, clears the confirmation.
+everything that shapes it, namely the selected environment's base URL, the
+stream's method, path, query parameters, header templates, body template
+and pagination rule, the definition's auth configuration (its type and
+placement, never credential values), and the values of the non-secret
+variables the request uses. The server refuses to send a draft request
+whose hash does not match. Changing any of these clears the confirmation.
 
 ### 3. Pagination through the body
 
@@ -93,13 +104,14 @@ templated, so its type follows the page value.
 
 The first page often needs no cursor. A cursor body path therefore names
 what the first request sends: `firstPage: "null"` (the leaf is JSON
-`null`, the default) or `firstPage: "omit"` (the key is removed). Later
+`null`, the default) or `firstPage: "omit"` (the key is removed; only for
+an object property, never an array element). Later
 pages write the cursor the previous response returned. An empty string is
 never sent as a cursor.
 
-Page values enter a POST body only through body paths: page placeholders
-(`{{ page.cursor }}`, `{{ page.offset }}` and the like) are refused in body
-templates, so no empty first-page value reaches a body. They stay allowed
+Page placeholders (`{{ page.cursor }}`, `{{ page.offset }}` and the like)
+are refused in body templates (§1), so no empty first-page value reaches a
+body. They stay allowed
 in URL query parameters as today. A cursor written through a body path
 keeps the JSON type the response gave it (a number stays a number) across
 pages; conversion to a string happens only where a cursor goes into a URL
@@ -109,9 +121,8 @@ parameter or a string template.
 
 Credentials stay bound to the environment host, redirects stay same-host,
 the response size, decompression and time limits stay, and redaction covers
-the rendered body as it covers rendered headers. A redirect of a JSON-body
-POST is followed only for 307 and 308, keeping method and body, and only
-to the same host (GraphQL streams follow none, §2); 301, 302 and 303 fail the run instead of turning into a GET.
+the rendered body as it covers rendered headers. GET streams keep the
+same-host redirects of ADR 0027; POST streams follow none (§2).
 
 ### 5. Schema version 2
 
@@ -135,7 +146,8 @@ The connector SDK exports both the parser and the upgrade.
   damage; it is not prevented.
 - The builder gains a method choice, a body editor with placeholder hints,
   and a GraphQL mode with the read-only check.
-- Contract tests cover the GraphQL guard (mutation, subscription, several
+- Contract tests cover POST streams refusing redirects and `next_url`,
+  draft tests running the saved-definition checks, the GraphQL guard (mutation, subscription, several
   operations, fragments, placeholders or pagination in `query`, overriding
   URL parameters), the confirmation check on draft test requests,
   placeholder rules in bodies, body pagination including the first page,
