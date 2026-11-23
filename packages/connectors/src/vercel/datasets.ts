@@ -104,6 +104,7 @@ export const productionDeploymentsDataset: SourceDatasetDefinition = {
       nullable: true,
     }),
     field("live_url", "Live deployment URL", "string", { nullable: true }),
+    field("rolled_back", "Rolled back", "boolean"),
     field("checked_at", "Checked", "timestamp"),
   ],
 };
@@ -244,13 +245,21 @@ function iso(ms: number | null | undefined): string | null {
   return typeof ms === "number" ? new Date(ms).toISOString() : null;
 }
 
+/** A provider record's own property: never one of Object's prototype. */
+function own(
+  record: Record<string, unknown> | null | undefined,
+  key: string,
+): unknown {
+  return record && Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
 function branchOf(meta: VercelDeployment["meta"]): string | null {
   for (const key of [
     "githubCommitRef",
     "gitlabCommitRef",
     "bitbucketCommitRef",
   ]) {
-    const value = meta?.[key];
+    const value = own(meta, key);
     if (typeof value === "string" && value !== "") {
       return value.slice(0, STRING_CAP);
     }
@@ -361,9 +370,32 @@ export function productionState(
   return "down";
 }
 
+/** A target's deployment from `targets`, read as an own property only. */
+export function targetDeployment(
+  targets: Record<string, LiveDeployment | null | undefined> | null | undefined,
+  target: string,
+): LiveDeployment | null {
+  return targets && Object.hasOwn(targets, target)
+    ? (targets[target] ?? null)
+    : null;
+}
+
+/**
+ * Production points at an older build than the newest promoted READY one:
+ * it was rolled back (owner decision, 2026-11-24). Its state stays `up`.
+ */
+export function isRolledBack(
+  ready: LatestDeployment | null,
+  live: LiveDeployment | null,
+): boolean {
+  if (!ready || !live || live.id === ready.uid) return false;
+  return typeof live.createdAt === "number" && live.createdAt < ready.created;
+}
+
 export function productionRecord(
   project: { id: string; name: string; analytics: boolean },
   latest: LatestDeployment | null,
+  ready: LatestDeployment | null,
   live: LiveDeployment | null,
   checkedAt: string,
 ): DatasetRecord {
@@ -384,6 +416,7 @@ export function productionRecord(
       live_created_at: iso(live?.createdAt),
       live_ready_at: iso(live?.readyAt),
       live_url: live?.url ?? null,
+      rolled_back: isRolledBack(ready, live),
       checked_at: checkedAt,
     },
   };
@@ -416,8 +449,8 @@ export function chargeProject(charge: Charge): {
   name: string | null;
 } {
   const tags = charge.Tags ?? {};
-  const id = tags.ProjectId ?? tags.projectId;
-  const name = tags.ProjectName ?? tags.projectName;
+  const id = own(tags, "ProjectId") ?? own(tags, "projectId");
+  const name = own(tags, "ProjectName") ?? own(tags, "projectName");
   return {
     id: typeof id === "string" ? id.slice(0, 200) : "",
     name: typeof name === "string" ? name.slice(0, STRING_CAP) : null,

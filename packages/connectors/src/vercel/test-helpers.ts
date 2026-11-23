@@ -104,6 +104,10 @@ export interface FakeVercelOptions {
   environments?: Record<string, string>;
   /** Deployment lists without their pagination object. */
   omitPagination?: boolean;
+  /** A creation time per deployment id, instead of the generated one. */
+  created?: Record<string, number>;
+  /** Thrown by the runtime's fetch for the billing export (a size cap). */
+  billingThrows?: () => Error;
   /** Answers per path that fail once, after `after` successful requests. */
   failAfter?: {
     after: number;
@@ -194,6 +198,7 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
   const requests: FakeVercel["requests"] = [];
   let served = 0;
   let failedOnce = false;
+  const deleted = new Set(options.deleted ?? []);
 
   let remaining = options.window?.remaining ?? 0;
   const windowHeaders = (): Record<string, string> => {
@@ -249,17 +254,17 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
         .map((deployment) => {
           const state = options.states?.[deployment.uid];
           const slug = options.environments?.[deployment.uid];
+          const created = options.created?.[deployment.uid];
           return {
             ...deployment,
             ...(state ? { readyState: state } : {}),
+            ...(created !== undefined ? { created } : {}),
             ...(slug
               ? { target: null, customEnvironment: { id: `env_${slug}`, slug } }
               : {}),
           };
         })
-        .filter(
-          (deployment) => !(options.deleted ?? []).includes(deployment.uid),
-        );
+        .filter((deployment) => !deleted.has(deployment.uid));
     const projectPath = /^\/v9\/projects\/([^/]+)$/.exec(url.pathname);
     if (projectPath) {
       const found = projects.find(
@@ -317,11 +322,13 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
         ? Number(query.get("until"))
         : Number.POSITIVE_INFINITY;
       const target = query.get("target");
+      const state = query.get("state");
       const matching = deploymentsOf(project).filter(
         (deployment) =>
           deployment.created > since &&
           deployment.created < until &&
-          (target === null || deployment.target === target),
+          (target === null || deployment.target === target) &&
+          (state === null || deployment.readyState === state),
       );
       const page = matching.slice(0, limit);
       const next =
@@ -521,6 +528,9 @@ export function createFakeVercel(options: FakeVercelOptions = {}): FakeVercel {
         requests.push({ url, init });
         if (url.protocol !== "https:" || url.hostname !== "api.vercel.com") {
           throw new Error(`fake Vercel refuses ${raw}`);
+        }
+        if (options.billingThrows && url.pathname === "/v1/billing/charges") {
+          throw options.billingThrows();
         }
         return answer(url, init);
       },

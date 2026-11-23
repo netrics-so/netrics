@@ -1,3 +1,7 @@
+import {
+  CURRENCY_DIMENSION,
+  CURRENCY_MINOR_UNIT,
+} from "@netrics/connector-sdk";
 import type {
   CheckResult,
   ConnectionContext,
@@ -116,6 +120,11 @@ const vercelDe: ManifestTranslation = {
       description:
         "Deployments pro Tag (UTC), Projekt und Umgebung, die fehlgeschlagen sind (Zustand ERROR).",
     },
+    [METRICS.cost]: {
+      name: "Kosten",
+      description:
+        "Die effektiven Kosten pro Tag (UTC) aus Vercels Abrechnung, nach Rabatten, pro Projekt; teamweite Kosten (Plätze, Plan) unter dem Team.",
+    },
   },
   dimensions: {
     resource: "Projekt",
@@ -123,6 +132,8 @@ const vercelDe: ManifestTranslation = {
     country: "Land",
     event: "Event",
     target: "Umgebung",
+    team: "Team",
+    currency: "Währung",
   },
   freshnessStreams: {
     [ANALYTICS_STREAM]: "Besucher und Seitenaufrufe",
@@ -258,6 +269,20 @@ export const vercelManifest: ConnectorManifest = {
       aggregations: ["sum", "avg", "min", "max"],
       better: "lower",
     },
+    {
+      // Spend (owner decision, 2026-11-24): effective cost, net, summed
+      // per calendar month by the template.
+      key: METRICS.cost,
+      name: "Cost",
+      description:
+        "Effective cost per day (UTC) from Vercel's billing, net of discounts, per project; team-wide charges (seats, the plan) under the team.",
+      kind: "delta",
+      unit: CURRENCY_MINOR_UNIT,
+      granularity: "day",
+      dimensions: ["resource", "team", CURRENCY_DIMENSION],
+      aggregations: ["sum", "avg", "min", "max"],
+      better: "lower",
+    },
   ],
   minRefreshIntervalSeconds: 900,
   supportsBackfill: true,
@@ -301,6 +326,7 @@ export const vercelManifest: ConnectorManifest = {
       key: BILLING_STREAM,
       name: "Charges",
       kind: "continuous",
+      metrics: [METRICS.cost],
       datasets: [billingChargesDataset.key],
     },
   ],

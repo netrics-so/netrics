@@ -34,6 +34,7 @@ import { createHash } from "node:crypto";
 
 import {
   DATASET_LIMITS,
+  FRESHNESS_LIMITS,
   type ConnectionContext,
   type ConnectorLogger,
   type DatasetPage,
@@ -68,6 +69,7 @@ import {
   productionDeploymentsDataset,
   productionRecord,
   projectTargetsSchema,
+  targetDeployment,
   stateOf,
   targetOf,
   type LatestDeployment,
@@ -102,11 +104,22 @@ export const MAX_BILLING_ROWS = 5_000;
  * tombstones. A project with more in the re-read days gets none.
  */
 export const MAX_REMEMBERED_DEPLOYMENTS = 2_000;
+/** Newest READY production deployments read to find the newest promoted one. */
+export const READY_DEPLOYMENTS_PER_REQUEST = 20;
 /** Rows and bytes per dataset page, well inside ADR 0026's limits. */
 const PAGE_ROWS = 500;
 const PAGE_BYTES = DATASET_LIMITS.pageBytes / 2;
-/** A step adds at most this many dataset pages to a result. */
-const PAGES_PER_STEP = 2;
+/**
+ * The most dataset pages one step can add to a result: a deployments page
+ * (up to 100 rows) with its project's tombstones (up to
+ * MAX_REMEMBERED_DEPLOYMENTS), one more where they continue a page begun
+ * before, and a production row. A step starts only while that much room is
+ * left (review round 2 of #889).
+ */
+const PAGES_PER_STEP =
+  Math.ceil(
+    (DEPLOYMENTS_PER_REQUEST + MAX_REMEMBERED_DEPLOYMENTS) / PAGE_ROWS,
+  ) + 2;
 
 /** Freshness streams (ADR 0025). */
 export const ANALYTICS_STREAM = "web_analytics";
@@ -121,7 +134,26 @@ export const METRICS = {
   events: "vercel.events",
   deployments: "vercel.deployments",
   failedDeployments: "vercel.failed_deployments",
+  cost: "vercel.cost",
 } as const;
+
+/** Minor units per unit of a currency (Vercel bills in USD: cents). */
+function minorUnits(currency: string): number {
+  return ["JPY", "KRW", "VND", "CLP", "ISK"].includes(currency) ? 1 : 100;
+}
+
+/**
+ * The host refused an answer for its size (the runtime's response limit):
+ * its EgressDeniedError, which connectors cannot import, named and worded
+ * so. Only the name and that wording are relied on.
+ */
+function isResponseTooLarge(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === "EgressDeniedError" &&
+    /response exceeds/.test(error.message)
+  );
+}
 
 /** Targets every day has a count for, zero included. */
 const COUNTED_TARGETS = ["production", "preview"];
@@ -169,25 +201,40 @@ function planWindowDays(error: VercelApiError): number | null {
 
 // ─── Run state (the cursor) ─────────────────────────────────────────────────
 
-/** Deployment counts of one day: target → [all, failed]. */
-type DayCounts = Record<string, [number, number]>;
+// Keys Vercel supplies (project, account and team IDs, environment slugs)
+// are never object keys here: a slug like `constructor` or `__proto__`
+// would read or replace Object's prototype (review round 2 of #889). They
+// live in Maps while a page runs and as [key, value] lists in the cursor.
+
+/** Deployment counts of one day: [target, all, failed]. */
+type DayCounts = Array<[string, number, number]>;
 
 /** [deployment id, created (ms)]. */
 type Seen = [string, number];
 
-/**
- * What a run read in the days the next run reads again, per project: the
- * deployments (null: too many to remember) and their targets.
- */
-type Remembered = Record<string, { seen: Seen[] | null; targets: string[] }>;
+/** What a run read in the days the next run reads again, for one project. */
+interface Memory {
+  /** The deployments; null: too many to remember. */
+  seen: Seen[] | null;
+  targets: string[];
+}
+
+/** Per project: [project id, memory]. */
+type Remembered = Array<[string, Memory]>;
 
 /** Where the current project is. Dropped whenever the run moves on. */
 interface ProjectProgress {
-  stage: "latest" | "live" | "deploys" | "analytics";
+  stage: "latest" | "ready" | "live" | "deploys" | "analytics";
   /** Production: the newest build, once read (null: none). */
   latest?: LatestDeployment | null;
-  /** Deployments: the `until` of the next request; absent before the first. */
-  until?: number;
+  /** Production: the newest promoted READY build, once read (null: none). */
+  ready?: LatestDeployment | null;
+  /**
+   * Deployments: the creation instant the last page ended at, and the
+   * deployments of that instant already read. The next page asks up to and
+   * including it, so one sharing it is not lost (review round 2 of #889).
+   */
+  boundary?: { ms: number; ids: string[] };
   /** Deployments: days from this one on are counted and sent. */
   below?: number;
   /** Deployments: counts of the days below `below` read so far. */
@@ -233,8 +280,11 @@ interface RunState {
   projects: ProjectEntry[];
   index: number;
   project?: ProjectProgress;
-  /** The first day each account's plan keeps analytics for, once learned. */
-  plan: Record<string, number>;
+  /**
+   * [account id, first day its plan keeps analytics for], once learned;
+   * moved forward when Vercel reports a later one (its window rolls daily).
+   */
+  plan: Array<[string, number]>;
   /** Projects Vercel no longer knew during the run. */
   gone: string[];
   /** Projects whose deployments, or analytics, were read completely. */
@@ -522,14 +572,17 @@ export async function syncPage(
       listing: { from: null },
       projects: [],
       index: 0,
-      plan: {},
+      plan: [],
       gone: [],
       deploysDone: [],
       analyticsDone: [],
       // The previous run's final cursor, of this scope: its deployments of
       // the days read again.
-      prior: decoded?.kind === "done" ? decoded.remember : {},
-      remember: {},
+      prior:
+        decoded?.kind === "done" && Array.isArray(decoded.remember)
+          ? decoded.remember
+          : [],
+      remember: [],
       charges: {},
       queue: [],
       last: {},
@@ -547,6 +600,15 @@ export async function syncPage(
   // The run's clock is the time it started, on every page: a run that
   // crosses midnight UTC reads and reports the days as of its start.
   const today = startOfUtcDay(run.at);
+
+  // Provider-keyed state as Maps while the page runs.
+  const prior = new Map(run.prior);
+  const remember = new Map(run.remember);
+  const plan = new Map(run.plan);
+  const saveMaps = () => {
+    run.remember = [...remember];
+    run.plan = [...plan];
+  };
 
   // ── Steps ──
 
@@ -587,35 +649,59 @@ export async function syncPage(
   function gone(projectId: string) {
     log?.warn("project not found, skipped", { project: projectId });
     if (!run.gone.includes(projectId)) run.gone.push(projectId);
-    delete run.remember[projectId];
+    remember.delete(projectId);
     nextProject();
   }
 
-  async function latestStep(
-    [id, , accountId]: ProjectEntry,
-    progress: ProjectProgress,
-  ) {
-    let answer;
+  /** The newest production deployments of a project, or null when it is gone. */
+  async function productionList([id, , accountId]: ProjectEntry, query: Query) {
     try {
-      answer = parseAnswer(
+      return parseAnswer(
         deploymentsPageSchema,
         await ask("/v7/deployments", {
           ...ownerQuery(accountId),
           projectId: id,
           target: "production",
-          limit: "1",
+          ...query,
         }),
         "the production deployments",
+      ).deployments.filter(
+        (deployment) => targetOf(deployment) === "production",
       );
     } catch (error) {
       if (!isMissing(error)) throw error;
       gone(id);
-      return;
+      return null;
     }
-    const newest = answer.deployments
-      .filter((deployment) => targetOf(deployment) === "production")
-      .sort((a, b) => b.created - a.created)[0];
+  }
+
+  async function latestStep(project: ProjectEntry, progress: ProjectProgress) {
+    const deployments = await productionList(project, { limit: "1" });
+    if (deployments === null) return;
+    const newest = deployments.sort((a, b) => b.created - a.created)[0];
     progress.latest = newest ? latestOf(newest) : null;
+    progress.stage = "ready";
+  }
+
+  /**
+   * The newest READY production build that was promoted (a STAGED one never
+   * served traffic): production pointing at an older one was rolled back
+   * (owner decision, 2026-11-24).
+   */
+  async function readyStep(project: ProjectEntry, progress: ProjectProgress) {
+    const deployments = await productionList(project, {
+      state: "READY",
+      limit: String(READY_DEPLOYMENTS_PER_REQUEST),
+    });
+    if (deployments === null) return;
+    const newest = deployments
+      .filter(
+        (deployment) =>
+          stateOf(deployment) === "READY" &&
+          deployment.readySubstate !== "STAGED",
+      )
+      .sort((a, b) => b.created - a.created)[0];
+    progress.ready = newest ? latestOf(newest) : null;
     progress.stage = "live";
   }
 
@@ -642,7 +728,8 @@ export async function syncPage(
       productionRecord(
         { id, name, analytics: analytics === 1 },
         progress.latest ?? null,
-        answer.targets?.production ?? null,
+        progress.ready ?? null,
+        targetDeployment(answer.targets, "production"),
         iso(run.at),
       ),
     );
@@ -656,15 +743,18 @@ export async function syncPage(
   ) {
     // Targets the previous run saw in these days are counted again, zero
     // when their deployments are gone (review of #889).
+    const byTarget = new Map(
+      counts.map(([target, all, failed]) => [target, [all, failed]] as const),
+    );
     const targets = [
       ...new Set([
         ...COUNTED_TARGETS,
-        ...(run.prior[projectId]?.targets ?? []),
-        ...Object.keys(counts),
+        ...(prior.get(projectId)?.targets ?? []),
+        ...byTarget.keys(),
       ]),
     ].sort();
     for (const target of targets) {
-      const [all, failed] = counts[target] ?? [0, 0];
+      const [all, failed] = byTarget.get(target) ?? [0, 0];
       const dimensions = { resource: projectId, target };
       out.observations.push(
         {
@@ -687,7 +777,11 @@ export async function syncPage(
     [id, name, accountId, analytics]: ProjectEntry,
     progress: ProjectProgress,
   ) {
-    const until = progress.until ?? run.toMs;
+    // The first page asks below the window's end. A later one asks up to and
+    // including the instant the page before ended at (`until` + 1), and
+    // skips what it already read there (review round 2 of #889).
+    const boundary = progress.boundary;
+    const until = boundary ? boundary.ms + 1 : run.toMs;
     let answer;
     try {
       answer = parseAnswer(
@@ -713,14 +807,27 @@ export async function syncPage(
       throw new VercelInvalidResponseError("the deployments");
     }
     const rows: DatasetRecord[] = [];
-    const open: Record<string, DayCounts> = { ...(progress.open ?? {}) };
+    const open = new Map<string, Map<string, [number, number]>>(
+      Object.entries(progress.open ?? {}).map(([day, counts]) => [
+        day,
+        new Map(counts.map(([target, all, failed]) => [target, [all, failed]])),
+      ]),
+    );
     const found = new Set<string>();
     const remembered: Seen[] = [];
     const targets = new Set<string>();
+    const already = new Set(boundary?.ids ?? []);
     let older = false;
     for (const deployment of answer.deployments) {
-      // A deployment at `until` itself was read with the page before.
+      // Newer than the page before ended at, or read there already.
       if (deployment.created >= until) continue;
+      if (
+        boundary &&
+        deployment.created === boundary.ms &&
+        already.has(deployment.uid)
+      ) {
+        continue;
+      }
       if (deployment.created < run.depStartMs) {
         older = true;
         continue;
@@ -728,23 +835,38 @@ export async function syncPage(
       if (deployment.projectId !== undefined && deployment.projectId !== id) {
         throw new VercelInvalidResponseError("the deployments");
       }
+      if (found.has(deployment.uid)) continue;
       rows.push(deploymentRecord(deployment, { id, name }));
       found.add(deployment.uid);
       const day = String(startOfUtcDay(deployment.created));
-      const counts = { ...(open[day] ?? {}) };
+      const counts = open.get(day) ?? new Map<string, [number, number]>();
       const target = targetOf(deployment);
-      const [all, failed] = counts[target] ?? [0, 0];
-      counts[target] = [
+      const [all, failed] = counts.get(target) ?? [0, 0];
+      counts.set(target, [
         all + 1,
         failed + (isFailed(stateOf(deployment)) ? 1 : 0),
-      ];
-      open[day] = counts;
+      ]);
+      open.set(day, counts);
       if (deployment.created >= run.resumeMs) {
         remembered.push([deployment.uid, deployment.created]);
         targets.add(target);
       }
     }
+    // A page that ends where the one before did and reads nothing new would
+    // be asked again forever.
+    if (
+      next !== null &&
+      boundary &&
+      next === boundary.ms &&
+      rows.length === 0
+    ) {
+      throw new VercelInvalidResponseError("the deployments");
+    }
     const finished = older || next === null || next < run.depStartMs;
+    const dayCounts = (day: number): DayCounts =>
+      [...(open.get(String(day)) ?? new Map())].map(
+        ([target, [all, failed]]) => [target, all, failed],
+      );
 
     // Newest first: every day after the one `next` falls on is complete.
     // Each complete day gets its counts, zero included, so a re-read day
@@ -754,24 +876,24 @@ export async function syncPage(
       ? startOfUtcDay(run.depStartMs)
       : Math.max(startOfUtcDay(next!) + DAY_MS, startOfUtcDay(run.depStartMs));
     for (let day = below - DAY_MS; day >= lowest; day -= DAY_MS) {
-      countObservations(id, day, open[String(day)] ?? {});
-      delete open[String(day)];
+      countObservations(id, day, dayCounts(day));
+      open.delete(String(day));
     }
 
     // What the next run needs to tombstone deletions in its window.
-    const memory = run.remember[id] ?? { seen: [], targets: [] };
+    const memory: Memory = remember.get(id) ?? { seen: [], targets: [] };
     memory.targets = [...new Set([...memory.targets, ...targets])].sort();
     if (memory.seen !== null) {
       memory.seen.push(...remembered);
       if (memory.seen.length > MAX_REMEMBERED_DEPLOYMENTS) memory.seen = null;
     }
-    run.remember[id] = memory;
+    remember.set(id, memory);
 
     // What the previous run read in this window and this one has not found.
-    const prior = run.prior[id]?.seen ?? null;
+    const priorSeen = prior.get(id)?.seen ?? null;
     const missing = (
       progress.missing ??
-      (prior ?? []).filter(
+      (priorSeen ?? []).filter(
         ([, created]) => created >= run.depStartMs && created < run.toMs,
       )
     ).filter(([uid]) => !found.has(uid));
@@ -793,9 +915,23 @@ export async function syncPage(
       }
       return;
     }
-    progress.until = next!;
+    // The deployments read at the instant this page ends at.
+    const atNext = answer.deployments
+      .filter((deployment) => deployment.created === next)
+      .map((deployment) => deployment.uid);
+    progress.boundary = {
+      ms: next!,
+      ids: [
+        ...new Set([
+          ...(boundary && boundary.ms === next ? boundary.ids : []),
+          ...atNext,
+        ]),
+      ],
+    };
     progress.below = Math.min(below, lowest);
-    progress.open = open;
+    progress.open = Object.fromEntries(
+      [...open.keys()].map((day) => [day, dayCounts(Number(day))]),
+    );
     progress.missing = missing;
   }
 
@@ -804,7 +940,7 @@ export async function syncPage(
 
   /** The first day of `month` the account's plan keeps, or null. */
   function analyticsSince(accountId: string, month: number): number | null {
-    const since = Math.max(month, run.plan[accountId] ?? month);
+    const since = Math.max(month, plan.get(accountId) ?? month);
     const last = Math.min(startOfNextUtcMonth(month) - DAY_MS, today);
     return since <= last ? since : null;
   }
@@ -846,10 +982,16 @@ export async function syncPage(
       } catch (error) {
         const days =
           error instanceof VercelApiError ? planWindowDays(error) : null;
-        if (days === null || run.plan[accountId] !== undefined) throw error;
-        // The plan keeps fewer days than the backfill asks for: learned
-        // once per account, then asked again from the first day it keeps.
-        run.plan[accountId] = today - (days - 1) * DAY_MS;
+        if (days === null) throw error;
+        // The plan keeps fewer days than the backfill asks for. Vercel's
+        // window rolls with the current UTC day, so the first day it keeps
+        // is counted from now, not from the run's start: a run that goes on
+        // after midnight moves it forward (review round 2 of #889). The
+        // run's last day stays as it started.
+        const cutoff = startOfUtcDay(now()) - (days - 1) * DAY_MS;
+        const known = plan.get(accountId);
+        if (known !== undefined && cutoff <= known) throw error;
+        plan.set(accountId, cutoff);
         body = await query();
       }
     } catch (error) {
@@ -964,16 +1106,17 @@ export async function syncPage(
         ),
       );
     } catch (error) {
-      if (
-        !(error instanceof VercelApiError) ||
-        error.isAuth ||
-        !BILLING_REFUSALS.has(error.status)
-      ) {
-        throw error;
-      }
-      // Not readable with this token (its role) or plan: no charges this
-      // run, and the stored snapshot stays.
-      log?.warn("billing charges not readable", { status: error.status });
+      const refused =
+        error instanceof VercelApiError &&
+        !error.isAuth &&
+        BILLING_REFUSALS.has(error.status);
+      if (!refused && !isResponseTooLarge(error)) throw error;
+      // Not readable with this token (its role) or plan, or one day's
+      // export larger than the host lets an answer be: no charges this
+      // run, and the stored snapshot stays; every other dataset publishes.
+      log?.warn("billing charges not read", {
+        reason: refused ? "refused" : "too_large",
+      });
       run.billingPartial = true;
       run.charges = {};
       run.billing = { team: run.teams!.length, day: billingFirstDay };
@@ -981,6 +1124,11 @@ export async function syncPage(
     }
     const selected = new Set(run.projects.map(([id]) => id));
     const sums: Record<string, ChargeSum> = {};
+    /** The day's effective cost per resource and currency, in minor units. */
+    const daily = new Map<
+      string,
+      { resource: string; currency: string; cost: number }
+    >();
     for (const charge of charges) {
       // A charge belongs to the day it starts on: one that spans several
       // days is counted once, with the first day read.
@@ -1022,6 +1170,18 @@ export async function syncPage(
       if (sum.values.currency !== charge.BillingCurrency) {
         throw new VercelInvalidResponseError("the billing charges");
       }
+      // Spend (owner decision, 2026-11-24): effective cost, net of
+      // discounts; a project's under its ID, team-wide charges under the
+      // team's.
+      const resource = project.id === "" ? team : project.id;
+      const dailyKey = JSON.stringify([resource, charge.BillingCurrency]);
+      const day = daily.get(dailyKey) ?? {
+        resource,
+        currency: charge.BillingCurrency,
+        cost: 0,
+      };
+      day.cost += charge.EffectiveCost;
+      daily.set(dailyKey, day);
       sums[key] = {
         values: sum.values,
         billed: sum.billed + charge.BilledCost,
@@ -1041,6 +1201,14 @@ export async function syncPage(
       run.charges = {};
       run.billing = { team: run.teams!.length, day: billingFirstDay };
       return;
+    }
+    for (const { resource, currency, cost } of daily.values()) {
+      out.observations.push({
+        metricKey: METRICS.cost,
+        sourceTimestamp: iso(position.day),
+        value: Math.round(cost * minorUnits(currency)),
+        dimensions: { resource, team, currency },
+      });
     }
     nextBillingDay(position);
   }
@@ -1078,6 +1246,9 @@ export async function syncPage(
       const progress = run.project;
       if (progress.stage === "latest") {
         return () => latestStep(project, progress);
+      }
+      if (progress.stage === "ready") {
+        return () => readyStep(project, progress);
       }
       if (progress.stage === "live") {
         return () => liveStep(project, progress);
@@ -1161,6 +1332,7 @@ export async function syncPage(
   }
 
   if (!step && run.queue.length === 0) run.finishing = true;
+  saveMaps();
 
   if (step || !run.finishing || datasetPages.length > 0) {
     return {
@@ -1194,29 +1366,38 @@ export async function syncPage(
   if (everySelected(run.deploysDone)) received.push(deploymentsDataset.key);
 
   const freshness: FreshnessEntry[] = [];
-  // Deployments: per project read completely, and for the connection when
-  // every selected one was.
-  if (everySelected(run.deploysDone)) {
-    freshness.push({ stream: DEPLOYS_STREAM });
-  }
-  for (const id of run.deploysDone) {
-    freshness.push({ stream: DEPLOYS_STREAM, resource: id });
+  // Deployments: for the connection when every selected project was read,
+  // and per project read completely. Every per-project entry the
+  // connection entry already covers is left out when the entries would
+  // exceed the bound, so Web Analytics, which has no connection entry,
+  // keeps its per-project entries (review round 2 of #889, ADR 0025 §3).
+  const deploysComplete = everySelected(run.deploysDone);
+  if (deploysComplete) freshness.push({ stream: DEPLOYS_STREAM });
+  const deployEntries = run.deploysDone.map((id) => ({
+    stream: DEPLOYS_STREAM,
+    resource: id,
+  }));
+  const analyticsEntries = run.analyticsDone.map((id) => ({
+    stream: ANALYTICS_STREAM,
+    resource: id,
+  }));
+  const spare =
+    FRESHNESS_LIMITS.entries - freshness.length - analyticsEntries.length - 1;
+  if (!deploysComplete || deployEntries.length <= spare) {
+    freshness.push(...deployEntries);
   }
   // Web Analytics: per project only. A project without it gets no entry,
   // and no connection entry covers it: it never claims data (#871).
-  for (const id of run.analyticsDone) {
-    freshness.push({ stream: ANALYTICS_STREAM, resource: id });
-  }
+  freshness.push(...analyticsEntries);
   if (billingComplete) freshness.push({ stream: BILLING_STREAM });
   const bounded = boundFreshness(freshness, listed);
 
   // The next run starts at resumeMs: it needs the deployments this one
   // read from there on, for the projects read completely.
-  const remember: Remembered = {};
-  for (const id of run.deploysDone) {
-    const memory = run.remember[id];
-    if (memory) remember[id] = memory;
-  }
+  const carried: Remembered = run.deploysDone.flatMap((id) => {
+    const memory = remember.get(id);
+    return memory ? [[id, memory] as [string, Memory]] : [];
+  });
   const resumeAt = iso(run.resumeMs);
   return {
     observations: out.observations,
@@ -1228,7 +1409,7 @@ export async function syncPage(
       kind: "done",
       connection: run.connection,
       scope: run.scope,
-      remember,
+      remember: carried,
     }),
     nextFrom: resumeAt,
     done: true,

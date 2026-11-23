@@ -185,12 +185,17 @@ function recordedRuntime(): ConnectorRuntime {
             pagination: { count: 2, next: null, prev: null },
           });
         }
-        // The page after the recorded one is empty.
+        // The page after the recorded one (asked up to and including the
+        // instant it ended at) holds only that instant's deployment.
         const until = Number(url.searchParams.get("until"));
+        const next = RECORDED_DEPLOYMENTS.pagination.next;
         return reply(
           200,
-          until <= RECORDED_DEPLOYMENTS.pagination.next
-            ? { deployments: [], pagination: { count: 0, next: null } }
+          until <= next + 1
+            ? {
+                deployments: RECORDED_DEPLOYMENTS.deployments.slice(-1),
+                pagination: { count: 1, next: null },
+              }
             : RECORDED_DEPLOYMENTS,
         );
       }
@@ -677,7 +682,8 @@ describe("vercel connector", () => {
     // One count per day and target: a day spanning two requests is not
     // counted twice.
     const keys = observations.map(
-      (o) => `${o.metricKey}|${o.sourceTimestamp}|${o.dimensions.target}`,
+      (o) =>
+        `${o.metricKey}|${o.sourceTimestamp}|${o.dimensions.resource}|${o.dimensions.target}`,
     );
     expect(new Set(keys).size).toBe(keys.length);
     for (const page of pages) {
@@ -793,9 +799,11 @@ describe("vercel connector", () => {
   });
 
   it("a rate limit after other steps returns them; the next page waits for the reset", async () => {
+    // alpha's newest build and newest READY build are read; its
+    // deployments are rate-limited.
     const api = fake({
       failAfter: {
-        after: 1,
+        after: 2,
         status: 429,
         path: "/v7/deployments",
         headers: { "retry-after": "3600" },
@@ -803,6 +811,7 @@ describe("vercel connector", () => {
     });
     const first = await connector().sync(context(), RECENT, api.runtime);
     expect(first.done).toBe(false);
+    // alpha's production row went out with the page.
     expect(first.datasetPages?.length).toBeGreaterThan(0);
   });
 
@@ -1315,6 +1324,241 @@ describe("vercel review findings (#889)", () => {
     await expect(
       syncAll(fake({ omitPagination: true }).runtime, RECENT),
     ).rejects.toBeInstanceOf(VercelInvalidResponseError);
+  });
+});
+
+// ─── Review round 2 of #889, and the owner's decisions (2026-11-24) ────────
+
+describe("vercel review round 2 (#889)", () => {
+  async function twoRuns(
+    first: FakeVercelOptions,
+    second: FakeVercelOptions,
+    request: SyncRequest = RECENT,
+  ) {
+    const one = await syncAll(fake(first).runtime, request);
+    const two = await syncAll(fake(second).runtime, {
+      ...request,
+      cursor: one.pages.at(-1)!.nextCursor,
+    });
+    return { one, two };
+  }
+
+  it("P1: a backfill that learned the plan's window resumes after UTC midnight", async () => {
+    const request: SyncRequest = {
+      mode: "backfill",
+      from: "2024-01-01T00:00:00.000Z",
+      to: `${TODAY}T12:00:00.000Z`,
+    };
+    // Four projects of one team: more than one page of requests.
+    const projects = ["prj_alpha", "prj_beta", "prj_delta", "prj_epsilon"].map(
+      (id) => ({ ...FAKE_PROJECTS[0]!, id, name: id }),
+    );
+    // The run starts on 31 December, learns the 30-day window, and goes on
+    // after midnight, when Vercel's window has moved a day.
+    const dayOne = fake({ planDays: 30, projects });
+    const dayTwo = createFakeVercel({
+      today: "2025-01-01",
+      planDays: 30,
+      projects,
+    });
+    const nextDay = () => Date.parse("2025-01-01T01:00:00.000Z");
+    let page = await connector().sync(context(), request, dayOne.runtime);
+    expect(page.done).toBe(false);
+    for (let guard = 0; !page.done && guard < 100; guard += 1) {
+      page = await connector(nextDay).sync(
+        context(),
+        { ...request, cursor: page.nextCursor },
+        dayTwo.runtime,
+      );
+      expectHostAccepts(page);
+    }
+    expect(page.done).toBe(true);
+    // The old cutoff was asked after midnight, and refused, at least once.
+    expect(
+      dayTwo.requests.some(
+        ({ url }) =>
+          url.pathname.startsWith("/v1/query/") &&
+          url.searchParams.get("since") === "2024-12-02",
+      ),
+    ).toBe(true);
+    expect(freshnessEntry(page, ANALYTICS_STREAM, "prj_epsilon")).toBeDefined();
+  });
+
+  it("P2: tombstones of many projects stay within 20 dataset pages per result", async () => {
+    const projects = Array.from({ length: 5 }, (_, index) => ({
+      ...FAKE_PROJECTS[2]!,
+      id: `prj_many_${index}`,
+      deployments: 2_000,
+      deployEveryMs: 60_000,
+    }));
+    const all = projects.flatMap((project) =>
+      fakeDeployments(project, TODAY).map((deployment) => deployment.uid),
+    );
+    const { two } = await twoRuns({ projects }, { projects, deleted: all });
+    const tombstones = two.datasetPages
+      .flatMap((page) => page.records)
+      .filter((record) => record.deleted);
+    expect(tombstones).toHaveLength(10_000);
+  });
+
+  it("P2: deployments sharing a creation millisecond across a page boundary are both read", async () => {
+    const project = {
+      ...FAKE_PROJECTS[2]!,
+      deployments: 150,
+      deployEveryMs: 60_000,
+    };
+    const deployments = fakeDeployments(project, TODAY);
+    const { datasetPages, observations } = await syncAll(
+      fake({
+        projects: [project],
+        created: { dpl_prj_gamma_100: deployments[99]!.created },
+      }).runtime,
+      RECENT,
+    );
+    const ids = rows(datasetPages, "deployments").map(
+      (row) => row.deployment_id,
+    );
+    expect(ids).toContain("dpl_prj_gamma_99");
+    expect(ids).toContain("dpl_prj_gamma_100");
+    expect(new Set(ids).size).toBe(150);
+    expect(
+      observations
+        .filter((o) => o.metricKey === "vercel.deployments")
+        .reduce((total, o) => total + o.value, 0),
+    ).toBe(150);
+  });
+
+  it("P2: environment slugs like constructor and __proto__ are plain targets", async () => {
+    const environments = {
+      dpl_prj_alpha_1: "constructor",
+      dpl_prj_alpha_3: "__proto__",
+    };
+    const request = { ...RECENT, resources: ["prj_alpha"] };
+    const { one, two } = await twoRuns(
+      { environments },
+      { environments, deleted: ["dpl_prj_alpha_3"] },
+      request,
+    );
+    const count = (observations: Observation[], target: string) =>
+      observations
+        .filter(
+          (o) =>
+            o.metricKey === "vercel.deployments" &&
+            o.dimensions.target === target,
+        )
+        .reduce((total, o) => total + o.value, 0);
+    expect(count(one.observations, "constructor")).toBe(1);
+    expect(count(one.observations, "__proto__")).toBe(1);
+    // Remembered across runs: the deleted one's target is counted as zero.
+    expect(
+      two.observations.some(
+        (o) =>
+          o.metricKey === "vercel.deployments" &&
+          o.dimensions.target === "__proto__" &&
+          o.value === 0,
+      ),
+    ).toBe(true);
+  });
+
+  it("P2: a billing export over the response cap leaves the charges as stored, the rest publishes", async () => {
+    const { pages, datasetPages } = await syncAll(
+      fake({
+        billingThrows: () =>
+          Object.assign(
+            new Error("egress denied: response exceeds 10485760 bytes"),
+            { name: "EgressDeniedError" },
+          ),
+      }).runtime,
+      RECENT,
+    );
+    const done = pages.at(-1)!;
+    expect(done.receivedDatasets).toContain("deployments");
+    expect(done.receivedDatasets).not.toContain("billing_charges");
+    expect(freshnessEntry(done, BILLING_STREAM)).toBeUndefined();
+    expect(
+      datasetPages.some((page) => page.datasetKey === "billing_charges"),
+    ).toBe(false);
+  });
+
+  it("P3: with a thousand projects, Web Analytics stays reported per project", async () => {
+    const projects = Array.from({ length: 1_000 }, (_, index) => ({
+      ...FAKE_PROJECTS[0]!,
+      id: `prj_${String(index).padStart(4, "0")}`,
+      deployments: 0,
+    }));
+    const { pages } = await syncAll(fake({ projects }).runtime, {
+      ...RECENT,
+      from: "2024-12-31T00:00:00.000Z",
+    });
+    const done = pages.at(-1)!;
+    expect(
+      (done.freshness ?? []).filter(
+        (entry) => entry.stream === ANALYTICS_STREAM && entry.resource,
+      ),
+    ).toHaveLength(1_000);
+    expect(freshnessEntry(done, DEPLOYS_STREAM)).toBeDefined();
+  }, 120_000);
+
+  it("owner A: production pointing at an older build than the newest READY one is rolled back, and up", async () => {
+    const project = { ...FAKE_PROJECTS[0]!, deployments: 20 };
+    const rolled = await syncAll(
+      fake({
+        projects: [project],
+        states: { dpl_prj_alpha_0: "READY" },
+        live: { prj_alpha: "dpl_prj_alpha_14" },
+      }).runtime,
+      RECENT,
+    );
+    expect(
+      rows(rolled.datasetPages, "production_deployments")[0],
+    ).toMatchObject({
+      state: "up",
+      rolled_back: true,
+      live_deployment_id: "dpl_prj_alpha_14",
+    });
+    const current = await syncAll(
+      fake({ projects: [project], states: { dpl_prj_alpha_0: "READY" } })
+        .runtime,
+      RECENT,
+    );
+    expect(
+      rows(current.datasetPages, "production_deployments")[0],
+    ).toMatchObject({
+      state: "up",
+      rolled_back: false,
+      live_deployment_id: "dpl_prj_alpha_0",
+    });
+  });
+
+  it("owner B: vercel.cost is the effective cost per day, project and team, in minor units", async () => {
+    const { observations } = await syncAll(fake().runtime, RECENT);
+    const cost = observations.filter((o) => o.metricKey === "vercel.cost");
+    expect(cost).toContainEqual({
+      metricKey: "vercel.cost",
+      sourceTimestamp: "2024-12-01T00:00:00.000Z",
+      value: 25,
+      dimensions: {
+        resource: "prj_alpha",
+        team: "team_fixture",
+        currency: "USD",
+      },
+    });
+    // Team-wide charges (the seat) under the team.
+    expect(cost).toContainEqual({
+      metricKey: "vercel.cost",
+      sourceTimestamp: "2024-12-01T00:00:00.000Z",
+      value: 2_000,
+      dimensions: {
+        resource: "team_fixture",
+        team: "team_fixture",
+        currency: "USD",
+      },
+    });
+    expect(
+      cost
+        .filter((o) => o.dimensions.resource === "prj_alpha")
+        .reduce((total, o) => total + o.value, 0),
+    ).toBe(31 * 25);
   });
 });
 

@@ -68,12 +68,12 @@ scope), so this connector uses tokens.
 
 ### Deployments
 
-| Data                             | Meaning                                                                                                                                      |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dataset `deployments`            | One row per deployment: state, target, created, build started, ready, build duration, branch, URL                                            |
-| Dataset `production_deployments` | Per project as of the last sync: the newest production deployment, the one serving traffic, and `state` (`up`, `building`, `failed`, `down`) |
-| Metric Deployments               | Deployments per day (UTC), project and environment (`production`, `preview`, or a custom environment), by creation time                      |
-| Metric Failed deployments        | The same, counting state `ERROR` only                                                                                                        |
+| Data                             | Meaning                                                                                                                                                     |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dataset `deployments`            | One row per deployment: state, target, created, build started, ready, build duration, branch, URL                                                           |
+| Dataset `production_deployments` | Per project as of the last sync: the newest production deployment, the one serving traffic, and `state` (`up`, `building`, `failed`, `down`), `rolled_back` |
+| Metric Deployments               | Deployments per day (UTC), project and environment (`production`, `preview`, or a custom environment), by creation time                                     |
+| Metric Failed deployments        | The same, counting state `ERROR` only                                                                                                                       |
 
 - `state` is Vercel's `readyState`: `QUEUED`, `INITIALIZING`, `BUILDING`,
   `READY`, `ERROR`, `CANCELED`, `BLOCKED` or `DELETED`. A state Vercel adds
@@ -88,12 +88,19 @@ scope), so this connector uses tokens.
   instant rollback, however old), even when a newer build failed; else
   `failed` when the newest build failed; else `down`. The `live_*` fields
   are that target's deployment, the `latest_*` fields the newest build.
+- `rolled_back` is true when production points at an older build than the
+  newest promoted `READY` production build (read from the newest 20 READY
+  ones); `state` stays `up`, so a status widget can show "up · rolled
+  back".
 - The first sync reads deployments up to 90 days back. Every sync then
   reads each project's deployments of the last two days again: a
   deployment that finished building shows its new state, and one the
   previous sync read in those days that Vercel no longer lists was deleted
   and is removed. Older rows keep the state they had when last read. A sync
   stores the dataset once, whatever the number of projects.
+- A page of deployments that ends at an instant shared with the next one
+  is continued from that instant, and the deployments already read there
+  are skipped: none is lost or counted twice.
 - Each day of a read window gets a count for `production`, `preview` and
   every environment the previous sync saw in the re-read days, zero
   included, so a re-read day whose deployments were deleted drops to
@@ -137,13 +144,22 @@ selection, charges of other projects are left out; team-wide charges stay.
   without the export (Vercel answers 400, 402, 403 or 404), leaves the
   charges as last stored, and the connection's other data syncs as usual.
   A rate limit or an outage while reading charges is retried like any
-  other request.
+  other request. A day whose export is larger than netrics accepts for one
+  answer (10 MiB) leaves the charges as last stored too; the other data
+  publishes.
+- Metric **Cost** (`vercel.cost`): the effective cost per day (UTC), net of
+  discounts, in minor units (cents) with its currency, per project; charges
+  of no single project under the team's ID as `resource`, and every value
+  with its `team`. Summed over a calendar month it is the month's spend.
+  The billed cost stays in the dataset.
 
 ## History and refresh
 
 - The first sync reads Web Analytics up to 366 days back (plans that keep
   less, like Hobby, as far back as Vercel allows) and deployments up to 90
-  days back.
+  days back. Vercel's plan window moves with the current UTC day: a sync
+  that goes on after midnight starts its analytics queries a day later,
+  while the last day it reads stays the one it started on.
 - Afterwards the connection syncs every 15 minutes and re-reads the last
   two days, which Vercel is still counting and where deployments still
   change state.
@@ -169,7 +185,10 @@ until the day ends.
 - Visitors and page views are checked per project. A project without Web
   Analytics is never reported as checked: its widgets show no data rather
   than a fresh zero.
-- Deployments are checked per project and for the connection.
+- Deployments are checked per project and for the connection. With very
+  many projects (over the 2,000 entries a sync may report) only the
+  connection entry is kept for deployments, so Web Analytics keeps its
+  per-project entries.
 - Charges are checked for the connection when every team's charges were
   read.
 
