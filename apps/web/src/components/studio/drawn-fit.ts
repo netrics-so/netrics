@@ -98,8 +98,6 @@ function textVisible(element: HTMLElement): boolean {
 /** Whether an element's text is drawn cut: past its box, or on more lines. */
 const overflows = (element: HTMLElement) => !textVisible(element);
 
-const widthOf = (element: HTMLElement) => element.getBoundingClientRect().width;
-
 /**
  * How a line is drawn, as far as it decides whether a text fits: its box
  * (a change of font size changes the line box's height) and its font size.
@@ -114,11 +112,28 @@ function drawnSize(lines: readonly HTMLElement[]): string {
 }
 
 /**
- * Whether to try the named line again at a drawn size, once per size: the
- * sizes at which it was found cut, or that showing the plain line led to,
- * are `seen`, and trying again there would only measure the same. This is
- * what makes measure → state → render → measure settle: each size costs
- * at most one more pass, also when showing the other line changes the box.
+ * The named line was measured at a drawn size. Cut: the size is `seen`,
+ * so the plain line shown next is not swapped back at it. Whole: nothing
+ * is seen any more. The sizes guard one fallback cycle only, from a cut
+ * to the next time the named line fits; a tile narrowed and widened again
+ * and again gets its named line back every time.
+ */
+export function namedMeasured(
+  seen: Set<string>,
+  size: string,
+  cut: boolean,
+): void {
+  if (cut) seen.add(size);
+  else seen.clear();
+}
+
+/**
+ * Whether to try the named line again at a drawn size, once per size
+ * within a fallback cycle: the sizes at which it was found cut, or that
+ * showing the plain line led to, are `seen`, and trying again there would
+ * only measure the same. This is what makes measure → state → render →
+ * measure settle: each size costs at most one more pass, also when
+ * showing the other line changes the box.
  */
 export function retryAtSize(seen: Set<string>, size: string): boolean {
   if (seen.has(size)) return false;
@@ -155,11 +170,13 @@ export function useDrawnCut(
     if (lines.length === 0) return;
     const sizes = seen.current.sizes;
     let alive = true;
-    // With the named line drawn: found cut at this size, the plain one.
+    // With the named line drawn: found cut at this size, the plain one;
+    // whole, the cycle is over and its sizes are forgotten.
     const measure = () => {
-      if (!alive || !lines.some(overflows)) return;
-      sizes.add(drawnSize(lines));
-      setCut(named);
+      if (!alive) return;
+      const cut = lines.some(overflows);
+      namedMeasured(sizes, drawnSize(lines), cut);
+      if (cut) setCut(named);
     };
     // The box or the font size changed: with the plain line drawn, try
     // the named one again, once per size.
@@ -192,7 +209,12 @@ export function useDrawnCut(
 /**
  * For a line of parts that drops those that do not fit (a measure tile's
  * freshness line): whether to show it with the day named. `line` shows one
- * wording, `probe` (out of sight, given the line's width here) the other.
+ * wording, `probe` (out of sight) the other. The stylesheet lays the probe
+ * over the line in the same box, so both wordings have the same width by
+ * layout: no width is measured and set, which a transform (Studio's scaled
+ * device preview) would scale twice. Every rect compared here comes from
+ * `getBoundingClientRect` on elements in that one box, so a transform
+ * scales both sides of each comparison alike.
  * Named only when it shows whole every part the plain wording shows whole
  * (`namedKeepsEveryPart`), as drawn; false until measured, so a tile never
  * shows less than before. `enabled`: there is a named wording at all.
@@ -216,7 +238,6 @@ export function useNamedParts(
     let alive = true;
     const check = () => {
       if (!alive) return;
-      other.style.width = `${widthOf(drawn)}px`;
       const [namedParts, plainParts] = shown
         ? [visibleParts(drawn), visibleParts(other)]
         : [visibleParts(other), visibleParts(drawn)];

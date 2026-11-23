@@ -5441,10 +5441,19 @@ a.button.primary:hover {
 .sw-measure-fresh-probe > span {
   white-space: pre;
 }
-/* The line's other wording, measured out of sight (#791): the same type
-   and wrapping, at the line's width, taking no room. */
+/* The line with its other wording, measured out of sight (#791): the
+   same type and wrapping, laid over the line in this box, so it has the
+   line's width by layout and takes no room. */
+.sw-measure-fresh-fit {
+  position: relative;
+  flex-shrink: 0;
+  min-width: 0;
+}
 .sw-measure-fresh-probe {
   position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   visibility: hidden;
   pointer-events: none;
   display: flex;

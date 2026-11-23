@@ -236,12 +236,17 @@ const wording = {
 /**
  * Which parts of a measure tile's freshness line are fully visible: inside
  * the line's box on all four sides, so neither on the hidden second line
- * nor cut at the right edge or at the bottom. As drawn, and with the day worded the other way
- * (named or plain), measured in place on a copy.
+ * nor cut at the right edge or at the bottom. As drawn, and for both
+ * wordings of the day (named and plain), each measured in place on a copy
+ * of the line at its layout width. The copies live where the line does, so
+ * every rect is in the same space, also in a scaled preview.
  */
-async function visibleParts(line: Locator, named: RegExp, plainDay: string) {
+async function visibleParts(
+  line: Locator,
+  wording: { named: RegExp; namedDay: string; plainDay: string },
+) {
   return line.evaluate(
-    (element, { named, plainDay }) => {
+    (element, { named, namedDay, plainDay }) => {
       const visible = (p: Element) => {
         const box = p.getBoundingClientRect();
         return ([...p.children] as HTMLElement[]).map((part) => {
@@ -254,29 +259,44 @@ async function visibleParts(line: Locator, named: RegExp, plainDay: string) {
           );
         });
       };
-      const shown = visible(element);
-      const copy = element.cloneNode(true) as HTMLElement;
-      const first = copy.children[0] as HTMLElement;
-      const text = first.textContent ?? "";
+      const text = element.children[0]!.textContent ?? "";
       const pattern = new RegExp(named);
       const isNamed = pattern.test(text);
-      // The plain wording of the same day; a plain line is copied as it is.
-      first.textContent = isNamed ? text.replace(pattern, plainDay) : text;
-      copy.style.position = "absolute";
-      copy.style.visibility = "hidden";
-      copy.style.width = `${element.getBoundingClientRect().width}px`;
-      element.after(copy);
-      const plain = visible(copy);
-      copy.remove();
-      return { shown, plain, isNamed, first: text };
+      const day = isNamed
+        ? text.replace(pattern, "")
+        : text.slice(plainDay.length);
+      const worded = (first: string) => {
+        const copy = element.cloneNode(true) as HTMLElement;
+        copy.children[0]!.textContent = first;
+        copy.style.position = "absolute";
+        copy.style.visibility = "hidden";
+        // The layout width: not the drawn one, which a transform scales.
+        copy.style.width = `${(element as HTMLElement).offsetWidth}px`;
+        element.after(copy);
+        const parts = visible(copy);
+        copy.remove();
+        return parts;
+      };
+      return {
+        shown: visible(element),
+        plain: worded(plainDay + day),
+        named: worded(namedDay + day),
+        isNamed,
+        first: text,
+      };
     },
-    { named: named.source, plainDay },
+    {
+      named: wording.named.source,
+      namedDay: wording.namedDay,
+      plainDay: wording.plainDay,
+    },
   );
 }
 
 /**
  * The rule as drawn: every part the plain wording shows whole, the line
- * shows whole; and its first part, the day, is never cut.
+ * shows whole; and its first part, the day, is never cut. And the day is
+ * named exactly where that holds: not withheld where there is room.
  */
 function expectNothingLost(
   drawn: Awaited<ReturnType<typeof visibleParts>>,
@@ -287,6 +307,10 @@ function expectNothingLost(
   drawn.plain.forEach((whole, index) => {
     if (whole) expect(drawn.shown[index], message).toBe(true);
   });
+  expect(drawn.isNamed, message).toBe(
+    drawn.named[0] === true &&
+      drawn.plain.every((whole, index) => !whole || drawn.named[index]),
+  );
 }
 
 /** The time zone the page words its times in. */
@@ -429,7 +453,7 @@ async function journey(
     for (const title of ["Downloads", "Narrow"]) {
       const line = widget(title).locator(".sw-measure-freshness");
       await expect(line).toHaveAttribute("title", /~\d/);
-      const drawn = await visibleParts(line, w.named, w.plainDay);
+      const drawn = await visibleParts(line, w);
       expectNothingLost(drawn, title);
     }
     const footer = page.locator("article.sw-metric .sw-footer").first();
@@ -473,7 +497,11 @@ async function journey(
         counter.redraws = 0;
         return count;
       });
+    // Twice each: the named line comes back every time, not only the
+    // first time a size is seen.
     for (const [property, value] of [
+      ["width", "150px"],
+      ["fontSize", "64px"],
       ["width", "150px"],
       ["fontSize", "64px"],
     ] as const) {
@@ -523,7 +551,7 @@ async function journey(
   expect(box.parts.length).toBe(3);
   for (const bottom of box.parts)
     expect(bottom).toBeLessThanOrEqual(box.line + 1);
-  const wide = await visibleParts(periodic, w.named, w.plainDay);
+  const wide = await visibleParts(periodic, w);
   expect(wide.isNamed).toBe(true);
   expect(wide.shown).toEqual([true, true, true]);
   await drawnAsBefore();
@@ -552,6 +580,40 @@ async function journey(
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });
+
+  // Studio's device preview: the slide at a device's real size, scaled
+  // into its frame by a transform. The wording is the one that screen
+  // shows: both are measured at the same width, whatever the scale.
+  await page.goto(
+    `/workspaces/${workspaceId}/dashboards/${dashboardId}/studio`,
+  );
+  for (const target of ["21x9", "4x3"]) {
+    await page.locator(`[role="tab"][data-target="${target}"]`).click();
+    const viewport = page.locator(".device-viewport");
+    await expect(viewport).toBeVisible();
+    const scale = await viewport.evaluate(
+      (element) =>
+        element.getBoundingClientRect().width /
+        (element as HTMLElement).offsetWidth,
+    );
+    expect(scale, target).toBeLessThan(0.95);
+    expect(scale, target).toBeGreaterThan(0);
+    const previewLines = viewport.locator(
+      "article.sw-measure .sw-measure-freshness",
+    );
+    await expect(previewLines.first()).toHaveAttribute("title", /~\d/);
+    let periodicLines = 0;
+    for (const line of await previewLines.all()) {
+      if (!/~\d/.test((await line.getAttribute("title")) ?? "")) continue;
+      if ((await line.locator("span").count()) < 3) continue;
+      periodicLines += 1;
+      expectNothingLost(
+        await visibleParts(line, w),
+        `${target} preview at scale ${scale.toFixed(2)}`,
+      );
+    }
+    expect(periodicLines, target).toBeGreaterThan(0);
+  }
 
   // The same slide at font scale 1.3, where the estimate and the drawn
   // widths differ most: the rule holds as drawn.
@@ -685,7 +747,7 @@ async function journey(
         parseFloat(getComputedStyle(element).fontSize),
       ),
     ).toBe(26);
-    const narrow = await visibleParts(tile("Narrow"), w.named, w.plainDay);
+    const narrow = await visibleParts(tile("Narrow"), w);
     expectNothingLost(narrow, "Narrow at a minimum font size");
     // One line of text is whole at the font size in use, top to bottom.
     expect(narrow.shown[0], JSON.stringify(narrow)).toBe(true);
@@ -717,7 +779,7 @@ async function journey(
     }, w.namedDay + w.sept30);
     expect(named, "the named day is wider than the line").toBeGreaterThan(0.5);
     expectNothingLost(
-      await visibleParts(tile("Downloads"), w.named, w.plainDay),
+      await visibleParts(tile("Downloads"), w),
       "Downloads at a minimum font size",
     );
     // A wide, short metric tile at that font size: the named footer fits

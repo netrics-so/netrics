@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   fullyVisible,
   namedKeepsEveryPart,
+  namedMeasured,
   retryAtSize,
   textExtent,
   type DrawnBox,
@@ -31,8 +32,9 @@ function settle(input: {
     if (passes > 50) throw new Error("does not settle");
     const size = input.size(shows);
     if (shows === "named") {
-      if (!input.cut(size)) break;
-      seen.add(size);
+      const cut = input.cut(size);
+      namedMeasured(seen, size, cut);
+      if (!cut) break;
       shows = "plain";
       continue;
     }
@@ -88,10 +90,71 @@ describe("the named line's drawn check settles (#791)", () => {
       start: "plain",
     });
     expect(back).toMatchObject({ shows: "named", passes: 2 });
-    // The same large size again: decided already, no further pass.
+  });
+
+  // The guard covers one fallback cycle: once the named line fits again,
+  // the sizes it was cut at are forgotten, so the same resize repeated
+  // brings the named line back every time, not only the first.
+  it("narrow, wide, narrow, wide: the named line returns each time", () => {
+    const seen = new Set<string>();
+    const cut = (size: string) => size.startsWith("150x");
+    let shows: "named" | "plain" = "named";
+    for (let round = 0; round < 3; round += 1) {
+      const narrow = settle({
+        size: () => "150x18@16px",
+        cut,
+        seen,
+        start: shows,
+      });
+      expect(narrow, `narrow ${round}`).toMatchObject({ shows: "plain" });
+      expect(narrow.passes).toBeLessThanOrEqual(4);
+      shows = narrow.shows;
+      const wide = settle({
+        size: () => "282x18@16px",
+        cut,
+        seen,
+        start: shows,
+      });
+      expect(wide, `wide ${round}`).toMatchObject({ shows: "named" });
+      expect(wide.passes).toBeLessThanOrEqual(4);
+      shows = wide.shows;
+    }
+  });
+
+  it("font size up and down, twice: the same", () => {
+    const seen = new Set<string>();
+    const cut = (size: string) => size.endsWith("@64px");
+    let shows: "named" | "plain" = "named";
+    for (let round = 0; round < 2; round += 1) {
+      const up = settle({ size: () => "282x74@64px", cut, seen, start: shows });
+      expect(up, `up ${round}`).toMatchObject({ shows: "plain" });
+      expect(up.passes).toBeLessThanOrEqual(4);
+      shows = up.shows;
+      const down = settle({
+        size: () => "282x18@16px",
+        cut,
+        seen,
+        start: shows,
+      });
+      expect(down, `down ${round}`).toMatchObject({ shows: "named" });
+      expect(down.passes).toBeLessThanOrEqual(4);
+      shows = down.shows;
+    }
+  });
+
+  it("within a cycle a size is tried once, also when every swap changes the box", () => {
+    const seen = new Set<string>();
+    const swapping = settle({
+      size: (line) => (line === "named" ? "310x31@24px" : "300x31@24px"),
+      cut: () => true,
+      seen,
+    });
+    expect(swapping).toMatchObject({ shows: "plain" });
+    expect(swapping.passes).toBeLessThanOrEqual(4);
+    // Still cut at those sizes: no further pass.
     expect(
       settle({
-        size: () => "300x41@31.2px",
+        size: (line) => (line === "named" ? "310x31@24px" : "300x31@24px"),
         cut: () => true,
         seen,
         start: "plain",

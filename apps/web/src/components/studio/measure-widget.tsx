@@ -211,33 +211,37 @@ function FreshnessPartsLine({
     list.map((part, index) => (
       <span key={index}>{index === 0 ? part : ` · ${part}`}</span>
     ));
+  const line = (
+    <p
+      ref={fit.line}
+      className={
+        warning
+          ? "sw-measure-freshness sw-measure-freshness--overdue"
+          : "sw-measure-freshness"
+      }
+      title={shown.join(" · ")}
+      suppressHydrationWarning
+    >
+      {/* Whole parts only: those that do not fit wrap out of sight,
+          so a narrow widget drops them from the end. */}
+      {spans(shown)}
+    </p>
+  );
+  if (!named) return line;
+  // The other wording lies over the line in one box: the same width by
+  // layout, whatever scales the tile.
   return (
-    <>
+    <div className="sw-measure-fresh-fit">
+      {line}
       <p
-        ref={fit.line}
-        className={
-          warning
-            ? "sw-measure-freshness sw-measure-freshness--overdue"
-            : "sw-measure-freshness"
-        }
-        title={shown.join(" · ")}
+        ref={fit.probe}
+        className="sw-measure-fresh-probe"
+        aria-hidden="true"
         suppressHydrationWarning
       >
-        {/* Whole parts only: those that do not fit wrap out of sight,
-            so a narrow widget drops them from the end. */}
-        {spans(shown)}
+        {spans(fit.named ? parts : named)}
       </p>
-      {named ? (
-        <p
-          ref={fit.probe}
-          className="sw-measure-fresh-probe"
-          aria-hidden="true"
-          suppressHydrationWarning
-        >
-          {spans(fit.named ? parts : named)}
-        </p>
-      ) : null}
-    </>
+    </div>
   );
 }
 
