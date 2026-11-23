@@ -1,4 +1,11 @@
-import { RateLimitedError, validateDatasetPage } from "@netrics/connector-sdk";
+import {
+  ConnectorError,
+  RateLimitedError,
+  configuredHostsOf,
+  credentialHostsMatch,
+  validateDatasetPage,
+  withoutCredentialHosts,
+} from "@netrics/connector-sdk";
 import {
   CURRENCY_DIMENSION,
   CURRENCY_MINOR_UNIT,
@@ -189,7 +196,13 @@ async function withRuntime<T>(
   const controller = new AbortController();
   const egressFetch = createEgressFetch({
     ...options.egress,
-    allowedDomains: connector.manifest.outboundDomains,
+    // The manifest's hosts, and the hosts this connection's configuration
+    // names under the manifest's configuredHosts (SDK 0.2.20, #873): a
+    // self-hosted provider, reachable by this connection only.
+    allowedDomains: [
+      ...connector.manifest.outboundDomains,
+      ...configuredHostsOf(connector.manifest, context.config),
+    ],
     signal: controller.signal,
   });
   const onResponse = options.onResponse;
@@ -238,6 +251,50 @@ export class ContractViolationError extends Error {
     super(message, options);
     this.name = "ContractViolationError";
   }
+}
+
+/** The reason code of CredentialHostMismatchError (#795 catalog). */
+export const CREDENTIAL_HOST_MISMATCH_CODE =
+  "connection.credentials_host_changed";
+export const CREDENTIAL_HOST_MISMATCH_MESSAGE =
+  "The stored credentials were entered for another host. Enter them again for this host, in a new connection.";
+
+/**
+ * A call whose configuration names other hosts than the ones its
+ * credentials are bound to (SDK 0.2.20 `configuredHosts`, #884 review):
+ * refused before the connector runs, so no credential reaches a host it
+ * was not entered for. A terminal condition, not a provider failure.
+ */
+export class CredentialHostMismatchError extends ConnectorError {
+  constructor() {
+    super(CREDENTIAL_HOST_MISMATCH_MESSAGE, CREDENTIAL_HOST_MISMATCH_CODE);
+    this.name = "CredentialHostMismatchError";
+  }
+}
+
+/**
+ * The context a connector gets: credentials without their bound hosts,
+ * after checking that the configuration names exactly those hosts
+ * (`credentialHostsMatch`). Every entry point runs it before the egress
+ * allowlist takes the configured hosts.
+ */
+function boundContext(
+  connector: Connector,
+  context: ConnectionContext,
+): ConnectionContext {
+  if (
+    !credentialHostsMatch(
+      connector.manifest,
+      context.config,
+      context.credentials,
+    )
+  ) {
+    throw new CredentialHostMismatchError();
+  }
+  const credentials = withoutCredentialHosts(context.credentials);
+  return credentials === context.credentials
+    ? context
+    : { ...context, credentials };
 }
 
 function formatIssues(
@@ -407,6 +464,7 @@ export async function executeSync(
     );
   }
   assertContextIsPlain(context);
+  context = boundContext(connector, context);
   let raw: unknown;
   try {
     raw = await withRuntime(connector, context, options, (runtime) =>
@@ -434,6 +492,7 @@ export async function executeCheck(
   options: ExecuteOptions = {},
 ): Promise<CheckResult> {
   assertContextIsPlain(context);
+  context = boundContext(connector, context);
   let raw: unknown;
   try {
     raw = await withRuntime(
@@ -478,6 +537,7 @@ export async function executeDiscover(
   options: ExecuteOptions = {},
 ): Promise<Resource[]> {
   assertContextIsPlain(context);
+  context = boundContext(connector, context);
   let raw: unknown;
   try {
     raw = await withRuntime(
@@ -517,6 +577,7 @@ export async function executeTrustedCall<T>(
   call: (runtime: ConnectorRuntime) => Promise<T>,
 ): Promise<T> {
   assertContextIsPlain(context);
+  context = boundContext(connector, context);
   try {
     return await withRuntime(connector, context, options, call);
   } catch (error) {
@@ -564,6 +625,7 @@ export async function executeResourceIcons(
     );
   }
   assertContextIsPlain(context);
+  context = boundContext(connector, context);
   let raw: unknown;
   try {
     raw = await withRuntime(

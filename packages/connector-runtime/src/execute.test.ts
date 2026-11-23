@@ -1,4 +1,5 @@
 import {
+  CREDENTIAL_HOSTS_KEY,
   ConnectorError,
   RateLimitedError,
   sourceDatasetSchema,
@@ -22,7 +23,9 @@ import { describe, expect, it } from "vitest";
 import { demoManifest } from "@netrics/connectors";
 
 import {
+  CREDENTIAL_HOST_MISMATCH_CODE,
   ContractViolationError,
+  CredentialHostMismatchError,
   customApiCallOptions,
   executeCheck,
   executeDiscover,
@@ -1288,6 +1291,157 @@ describe("host egress policy (#801)", () => {
         executeCheck(connector, baseContext, { egress }),
       ).rejects.toThrow(/non-public address/);
     });
+  });
+
+  it("lets a connection reach the host its configuration names (SDK 0.2.20, #873)", async () => {
+    await withProvider(async (port) => {
+      const selfHosted: Connector = {
+        ...connectorWith({
+          ...demoManifest,
+          configSchema: {
+            type: "object",
+            properties: { host: { type: "string" } },
+          },
+          configuredHosts: ["host"],
+        }),
+        check: async (_context, runtime) => {
+          await runtime.fetch(`http://posthog.fixture.test:${port}/ok`);
+          return { ok: true };
+        },
+      };
+      const egress = {
+        allowInsecureHttp: true,
+        lookup: toLocalhost,
+        allowPrivateHosts: ["posthog.fixture.test"],
+      };
+      const withHost = (host: unknown): ConnectionContext => ({
+        ...baseContext,
+        config: { host },
+      });
+      await expect(
+        executeCheck(selfHosted, withHost("posthog.fixture.test"), { egress }),
+      ).resolves.toEqual({ ok: true });
+      await expect(
+        executeCheck(selfHosted, withHost("https://POSTHOG.fixture.test/"), {
+          egress,
+        }),
+      ).resolves.toEqual({ ok: true });
+      // Another connection's host, an invalid value or none: refused.
+      for (const context of [
+        withHost("other.fixture.test"),
+        withHost("posthog.fixture.test:8000"),
+        baseContext,
+      ]) {
+        await expect(
+          executeCheck(selfHosted, context, { egress }),
+        ).rejects.toThrow(/not in the connector's outboundDomains/);
+      }
+      // A manifest without configuredHosts ignores the config value.
+      const undeclared: Connector = {
+        ...selfHosted,
+        manifest: { ...selfHosted.manifest, configuredHosts: undefined },
+      };
+      await expect(
+        executeCheck(undeclared, withHost("posthog.fixture.test"), { egress }),
+      ).rejects.toThrow(/not in the connector's outboundDomains/);
+    });
+  });
+
+  it("sends credentials only to the configured host they are bound to (#884 review)", async () => {
+    let requests = 0;
+    const server = createServer((_req, res) => {
+      requests += 1;
+      res.setHeader("connection", "close");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    try {
+      const seen: Array<Record<string, unknown>> = [];
+      const selfHosted: Connector = {
+        ...connectorWith({
+          ...demoManifest,
+          configSchema: {
+            type: "object",
+            properties: { host: { type: "string" } },
+          },
+          configuredHosts: ["host"],
+        }),
+        check: async (context, runtime) => {
+          seen.push(context.credentials);
+          await runtime.fetch(
+            `http://${String(context.config.host)}:${port}/ok`,
+          );
+          return { ok: true };
+        },
+      };
+      const egress = {
+        allowInsecureHttp: true,
+        lookup: toLocalhost,
+        allowPrivateHosts: ["old.fixture.test", "new.fixture.test"],
+      };
+      const call = (host: string, credentials: Record<string, unknown>) =>
+        executeCheck(
+          selfHosted,
+          { ...baseContext, config: { host }, credentials },
+          { egress },
+        );
+
+      // Bound to the host they were entered with: sent, without the binding.
+      await expect(
+        call("old.fixture.test", {
+          token: "secret-0001",
+          [CREDENTIAL_HOSTS_KEY]: ["old.fixture.test"],
+        }),
+      ).resolves.toEqual({ ok: true });
+      expect(seen).toEqual([{ token: "secret-0001" }]);
+      expect(requests).toBe(1);
+
+      // The same stored key with a draft config naming another host, and an
+      // unbound key with a configured host: refused before any request.
+      for (const credentials of [
+        { token: "secret-0001", [CREDENTIAL_HOSTS_KEY]: ["old.fixture.test"] },
+        { token: "secret-0001" },
+      ]) {
+        const refused = await call("new.fixture.test", credentials).catch(
+          (error: unknown) => error,
+        );
+        expect(refused).toBeInstanceOf(CredentialHostMismatchError);
+        expect((refused as CredentialHostMismatchError).code).toBe(
+          CREDENTIAL_HOST_MISMATCH_CODE,
+        );
+      }
+      expect(requests).toBe(1);
+      expect(seen).toHaveLength(1);
+      // Sync and discover refuse the same way.
+      await expect(
+        executeSync(
+          selfHosted,
+          {
+            ...baseContext,
+            config: { host: "new.fixture.test" },
+            credentials: {
+              token: "secret-0001",
+              [CREDENTIAL_HOSTS_KEY]: ["old.fixture.test"],
+            },
+          },
+          request,
+        ),
+      ).rejects.toBeInstanceOf(CredentialHostMismatchError);
+      await expect(
+        executeDiscover(selfHosted, {
+          ...baseContext,
+          config: { host: "new.fixture.test" },
+          credentials: { token: "secret-0001" },
+        }),
+      ).rejects.toBeInstanceOf(CredentialHostMismatchError);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
   });
 
   it("treats an egress timeout as a retryable provider failure", async () => {

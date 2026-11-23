@@ -1,0 +1,49 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 4211,
+      "short_id": "AbCd1234",
+      "name": "Signups by plan",
+      "derived_name": "signed_up count by plan",
+      "query": {
+        "kind": "InsightVizNode",
+        "source": {
+          "kind": "TrendsQuery",
+          "interval": "week",
+          "series": [
+            { "kind": "EventsNode", "event": "signed_up", "math": "total" }
+          ],
+          "breakdownFilter": { "breakdown": "plan", "breakdown_type": "event" }
+        }
+      },
+      "deleted": false,
+      "saved": true,
+      "last_refresh": "2024-01-10T09:30:00.123456Z",
+      "is_cached": true,
+      "result": [
+        {
+          "action": { "order": 0, "name": "signed_up", "math": "total" },
+          "label": "signed_up - pro",
+          "count": 7,
+          "data": [3, 4],
+          "labels": ["1-Jan-2024", "8-Jan-2024"],
+          "days": ["2024-01-01", "2024-01-08"],
+          "breakdown_value": "pro"
+        },
+        {
+          "action": { "order": 0, "name": "signed_up", "math": "total" },
+          "label": "signed_up - free",
+          "count": 30,
+          "data": [12, 18],
+          "labels": ["1-Jan-2024", "8-Jan-2024"],
+          "days": ["2024-01-01", "2024-01-08"],
+          "breakdown_value": "free"
+        }
+      ],
+      "query_status": null
+    }
+  ]
+}

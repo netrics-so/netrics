@@ -1,0 +1,85 @@
+{
+  "results": [
+    {
+      "action": {
+        "id": null,
+        "type": "events",
+        "order": 0,
+        "name": "All events",
+        "custom_name": null,
+        "math": "total",
+        "math_property": null,
+        "math_hogql": null
+      },
+      "label": "All events",
+      "count": 451,
+      "data": [140, 160, 151],
+      "labels": ["8-Jan-2024", "9-Jan-2024", "10-Jan-2024"],
+      "days": ["2024-01-08", "2024-01-09", "2024-01-10"],
+      "filter": { "interval": "day" }
+    },
+    {
+      "action": {
+        "id": "$pageview",
+        "type": "events",
+        "order": 1,
+        "name": "$pageview",
+        "math": "total"
+      },
+      "label": "$pageview",
+      "count": 225,
+      "data": [70, 80, 75],
+      "labels": ["8-Jan-2024", "9-Jan-2024", "10-Jan-2024"],
+      "days": ["2024-01-08", "2024-01-09", "2024-01-10"]
+    },
+    {
+      "action": {
+        "id": null,
+        "type": "events",
+        "order": 2,
+        "name": "All events",
+        "math": "dau"
+      },
+      "label": "All events",
+      "count": 33,
+      "data": [11, 12, 10],
+      "labels": ["8-Jan-2024", "9-Jan-2024", "10-Jan-2024"],
+      "days": ["2024-01-08", "2024-01-09", "2024-01-10"]
+    },
+    {
+      "action": {
+        "id": null,
+        "type": "events",
+        "order": 3,
+        "name": "All events",
+        "math": "weekly_active"
+      },
+      "label": "All events",
+      "count": 150,
+      "data": [50, 51, 49],
+      "labels": ["8-Jan-2024", "9-Jan-2024", "10-Jan-2024"],
+      "days": ["2024-01-08", "2024-01-09", "2024-01-10"]
+    },
+    {
+      "action": {
+        "id": null,
+        "type": "events",
+        "order": 4,
+        "name": "All events",
+        "math": "monthly_active"
+      },
+      "label": "All events",
+      "count": 303,
+      "data": [100, 101, 102],
+      "labels": ["8-Jan-2024", "9-Jan-2024", "10-Jan-2024"],
+      "days": ["2024-01-08", "2024-01-09", "2024-01-10"]
+    }
+  ],
+  "is_cached": false,
+  "last_refresh": "2024-01-10T12:00:00.000000Z",
+  "timezone": "UTC",
+  "resolved_date_range": {
+    "date_from": "2024-01-08T00:00:00Z",
+    "date_to": "2024-01-10T23:59:59.999999Z"
+  }
+}

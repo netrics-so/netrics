@@ -3,6 +3,10 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  CREDENTIAL_HOST_MISMATCH_CODE,
+  CREDENTIAL_HOST_MISMATCH_MESSAGE,
+} from "@netrics/connector-runtime";
+import {
   connectionListResponseSchema,
   connectionResponseSchema,
   connectorListResponseSchema,
@@ -17,6 +21,18 @@ import {
   demoManifest,
   KEY_MISMATCH_CODE,
   KEY_MISMATCH_MESSAGE,
+  POSTHOG_HOST_INVALID_CODE,
+  POSTHOG_HOST_INVALID_MESSAGE,
+  POSTHOG_INSIGHTS_INVALID_CODE,
+  POSTHOG_INSIGHTS_INVALID_MESSAGE,
+  POSTHOG_KEY_REJECTED_CODE,
+  POSTHOG_KEY_REJECTED_MESSAGE,
+  POSTHOG_PROJECTS_INVALID_CODE,
+  POSTHOG_PROJECTS_INVALID_MESSAGE,
+  POSTHOG_PROJECTS_REQUIRED_CODE,
+  POSTHOG_PROJECTS_REQUIRED_MESSAGE,
+  POSTHOG_SCOPE_MISSING_CODE,
+  POSTHOG_SCOPE_MISSING_MESSAGE,
   RAILWAY_TOKEN_REJECTED_CODE,
   RAILWAY_TOKEN_REJECTED_MESSAGE,
   RAILWAY_WORKSPACE_DENIED_CODE,
@@ -160,6 +176,7 @@ describe("connector catalog sync", () => {
       "demo",
       "google-play",
       "google-search-console",
+      "posthog",
       "railway",
       "vercel",
     ]);
@@ -381,10 +398,17 @@ describe("provider reason codes (#795)", () => {
     [AGREEMENTS_CODE, AGREEMENTS_MESSAGE],
     [RAILWAY_TOKEN_REJECTED_CODE, RAILWAY_TOKEN_REJECTED_MESSAGE],
     [RAILWAY_WORKSPACE_DENIED_CODE, RAILWAY_WORKSPACE_DENIED_MESSAGE],
+    [POSTHOG_KEY_REJECTED_CODE, POSTHOG_KEY_REJECTED_MESSAGE],
+    [POSTHOG_SCOPE_MISSING_CODE, POSTHOG_SCOPE_MISSING_MESSAGE],
+    [POSTHOG_HOST_INVALID_CODE, POSTHOG_HOST_INVALID_MESSAGE],
+    [POSTHOG_INSIGHTS_INVALID_CODE, POSTHOG_INSIGHTS_INVALID_MESSAGE],
+    [POSTHOG_PROJECTS_REQUIRED_CODE, POSTHOG_PROJECTS_REQUIRED_MESSAGE],
+    [POSTHOG_PROJECTS_INVALID_CODE, POSTHOG_PROJECTS_INVALID_MESSAGE],
+    [CREDENTIAL_HOST_MISMATCH_CODE, CREDENTIAL_HOST_MISMATCH_MESSAGE],
   ];
 
   it("are worded by the catalog in English and German", () => {
-    expect(recorded).toHaveLength(10);
+    expect(recorded).toHaveLength(17);
     for (const [code, english] of recorded) {
       expect(code, english).toEqual(expect.any(String));
       expect(providerMessageForCode(code, "en"), code).toBe(english);
@@ -392,7 +416,7 @@ describe("provider reason codes (#795)", () => {
       expect(german, code).toEqual(expect.any(String));
       expect(german, code).not.toBe(english);
     }
-    expect(new Set(recorded.map(([code]) => code)).size).toBe(10);
+    expect(new Set(recorded.map(([code]) => code)).size).toBe(17);
     expect([...recorded.map(([code]) => code), ...generic].sort()).toEqual(
       Object.keys(PROVIDER_MESSAGE_CODES).sort(),
     );

@@ -812,6 +812,7 @@ describe("catalog sync", () => {
       "pager-fresh",
       "pager-large",
       "pager-resume",
+      "posthog",
       "probe",
       "railway",
       "refused-check",

@@ -355,8 +355,24 @@ backoff (App Store Connect's rolling hourly limit, Google Cloud Storage's
 Use JSON-compatible transport objects even inside TypeScript. A future isolated
 runner can then use the same contract over JSON-RPC or another process boundary.
 
+Credentials of a connector with `configuredHosts` are bound to the hosts
+they were entered for (#884 review, ADR 0027 §2 for every connector): the
+server records the configured hosts in the credential envelope when
+credentials are entered (`bindCredentialHosts`), refuses a preview or save
+that names other configured hosts than the connection's
+(`connection_host_fixed`; another host is a new connection with its own
+credentials), and the runtime refuses any call whose configuration names
+other hosts than the bound ones while it carries credentials
+(`CredentialHostMismatchError`, `connection.credentials_host_changed`)
+before the connector runs; the sync worker records it as an authentication
+failure (`auth_failed`), not an outage, and does not retry it. The
+connector never sees the binding.
+
 Connector code reaches the network only through `runtime.fetch`. It allows
-https hosts from `outboundDomains`, refuses private and metadata addresses,
+https hosts from `outboundDomains`, and since SDK 0.2.20 the host names the
+connection's own configuration gives under the manifest's `configuredHosts`
+(a self-hosted PostHog, #873: a bare public name, no IP literal, port or
+path, for that connection only). It refuses private and metadata addresses,
 re-checks redirects and buffers the whole body within a size cap (10 MiB by
 default) before the connector sees it. The guard (`createEgressFetch`) also:
 
@@ -445,6 +461,7 @@ keeps loading on every 0.2.x runtime.
 | 0.2.17 | Optional dataset field role "image"; dataset contract v1 (ADR 0026)  |
 | 0.2.18 | Optional reason codes: `CheckResult.code`, `ConnectorError` (#795)   |
 | 0.2.19 | Optional `discoversBeforeFirstSync`: names before a first run (#782) |
+| 0.2.20 | Optional `configuredHosts`: a host the configuration names (#873)    |
 
 Since SDK 0.2.13 a manifest may group its metrics and datasets into
 `freshnessStreams` (periodic, with the provider's time zone, or continuous),

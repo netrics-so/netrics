@@ -393,6 +393,22 @@ export const connectorManifestSchema = z
     /** How far back a backfill reaches; required when supportsBackfill. */
     backfillDays: z.number().int().positive().max(3650).optional(),
     outboundDomains: z.array(z.string().min(1)),
+    /**
+     * Config keys whose value names a host the connector may also reach
+     * (SDK 0.2.20, #873), such as a self-hosted instance of the provider.
+     * The host adds each valid value (see `configuredHost`) to the
+     * connection's egress allowlist, for that connection only. Optional;
+     * every key must be a property of configSchema.
+     *
+     * Credentials are bound to these hosts (#884 review, see hosts.ts):
+     * the host records the configured hosts in the credential envelope
+     * when credentials are entered (`bindCredentialHosts`), the runtime
+     * refuses a call whose configuration names other hosts while it
+     * carries credentials (`credentialHostsMatch`), and a connection's
+     * configured hosts never change (`configuredHostsChanged`): another
+     * host is another connection, with credentials entered for it.
+     */
+    configuredHosts: z.array(z.string().min(1)).max(4).optional(),
     rateLimit: rateLimitHintSchema.optional(),
     resourceNoun: resourceNounSchema.optional(),
     /** Honors SyncRequest.resources as a multi-resource collection scope. */
@@ -436,6 +452,15 @@ export const connectorManifestSchema = z
         message: "A connector must declare metrics or datasets",
       });
     checkFreshnessStreams(manifest, context);
+    const configProperties = propertyKeys(manifest.configSchema);
+    for (const key of manifest.configuredHosts ?? []) {
+      if (!configProperties.has(key))
+        context.addIssue({
+          code: "custom",
+          message: `configuredHosts names "${key}", which is not a property of configSchema`,
+          path: ["configuredHosts"],
+        });
+    }
     if (!manifest.translations) {
       return;
     }

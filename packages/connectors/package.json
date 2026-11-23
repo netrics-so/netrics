@@ -36,6 +36,10 @@
       "types": "./dist/google-play/index.d.ts",
       "default": "./dist/google-play/index.js"
     },
+    "./posthog": {
+      "types": "./dist/posthog/index.d.ts",
+      "default": "./dist/posthog/index.js"
+    },
     "./railway": {
       "types": "./dist/railway/index.d.ts",
       "default": "./dist/railway/index.js"

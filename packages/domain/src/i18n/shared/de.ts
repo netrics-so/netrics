@@ -102,6 +102,24 @@ export const sharedDe: Catalog<SharedMessages> = {
       workspaceDenied:
         "Railway hat das Token für die Workspace-ID dieser Verbindung nicht akzeptiert: Die ID ist falsch, das Token gehört zu einem anderen Workspace, oder es wurde gelöscht. Prüf die Workspace-ID oder erstell ein neues Token für diesen Workspace.",
     },
+    posthog: {
+      keyRejected:
+        "PostHog hat den Personal API Key nicht akzeptiert: Er ist falsch, wurde gelöscht oder gehört zu einer anderen Region oder Instanz. Erstell in PostHog einen Personal API Key (Settings → Personal API keys) auf dem Host, den diese Verbindung nennt.",
+      scopeMissing:
+        "Dem Personal API Key fehlt ein Scope, den netrics braucht. Gib ihm in PostHog (Settings → Personal API keys) die Lese-Scopes Organization, Project, Query und Insight, oder erstell einen neuen Key mit ihnen.",
+      hostInvalid:
+        "Gib den Host deines PostHog ein: us.posthog.com, eu.posthog.com oder den Host-Namen deiner eigenen Instanz, zum Beispiel posthog.example.com: einen öffentlichen Namen, erreichbar über https, ohne Pfad oder Port.",
+      insightsInvalid:
+        "netrics konnte die gespeicherten Insights nicht lesen. Füge den Link jedes Insights aus PostHog ein (…/project/12345/insights/AbCd1234), getrennt durch Leerzeichen oder Kommas, höchstens 20.",
+      projectsRequired:
+        "Der Personal API Key ist auf einige Projekte beschränkt, daher listet PostHog sie nicht auf. Trag ihre Projekt-IDs unter Projekt-IDs ein (PostHog: Project settings → Project ID).",
+      projectsInvalid:
+        "netrics konnte nicht jede Projekt-ID mit diesem Key lesen. Trag die numerischen IDs von Projekten ein, die der Key lesen darf (PostHog: Project settings → Project ID), getrennt durch Leerzeichen oder Kommas, höchstens 50.",
+    },
+    connection: {
+      credentialsHostChanged:
+        "Die gespeicherten Zugangsdaten wurden für einen anderen Host eingegeben. Gib sie für diesen Host erneut ein, in einer neuen Verbindung.",
+    },
     customApi: {
       unauthorized:
         "Die API hat die Zugangsdaten abgelehnt (HTTP 401). Gib für diese Verbindung einen neuen Schlüssel, ein neues Token oder Passwort ein oder verbinde sie neu.",

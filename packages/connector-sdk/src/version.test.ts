@@ -56,8 +56,8 @@ describe("assertManifestCompatible", () => {
     ).toThrow();
   });
 
-  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.19", () => {
-    expect(SDK_VERSION).toBe("0.2.19");
+  it("keeps loading connectors written for SDK ^0.2.0 to ^0.2.20", () => {
+    expect(SDK_VERSION).toBe("0.2.20");
     for (const sdkVersion of [
       "^0.2.0",
       "^0.2.1",
@@ -79,11 +79,32 @@ describe("assertManifestCompatible", () => {
       "^0.2.17",
       "^0.2.18",
       "^0.2.19",
+      "^0.2.20",
     ]) {
       expect(
         assertManifestCompatible({ ...validManifest(), sdkVersion }).id,
       ).toBe("acme-analytics");
     }
+  });
+
+  it("accepts configuredHosts that name config properties only (0.2.20)", () => {
+    const withHosts = (configuredHosts: string[]) => ({
+      ...validManifest(),
+      configSchema: {
+        type: "object",
+        properties: { host: { type: "string" } },
+      },
+      configuredHosts,
+    });
+    expect(
+      assertManifestCompatible(withHosts(["host"])).configuredHosts,
+    ).toEqual(["host"]);
+    expect(
+      assertManifestCompatible(validManifest()).configuredHosts,
+    ).toBeUndefined();
+    expect(() => assertManifestCompatible(withHosts(["url"]))).toThrow(
+      /not a property of configSchema/,
+    );
   });
 
   it("keeps the optional discoversBeforeFirstSync, off by default (0.2.19)", () => {

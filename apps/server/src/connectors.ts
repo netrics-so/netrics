@@ -7,6 +7,7 @@ import {
   createAppleAdsConnector,
   createDemoConnector,
   createGooglePlayConnector,
+  createPostHogConnector,
   createRailwayConnector,
   createSearchConsoleConnector,
   createVercelConnector,
@@ -40,9 +41,10 @@ export interface DefaultRegistryOptions {
 /**
  * The connector bundle compiled into this server image: the demo connector,
  * Vercel Web Analytics, Google Search Console, App Store Connect, Google
- * Play, Apple Ads and Railway. A preview connector (PREVIEW_CONNECTORS,
- * currently Railway) is registered outside production, and in production only when
- * listed in NETRICS_PREVIEW_CONNECTORS. Reviewed connectors join here
+ * Play, Apple Ads, Railway and PostHog. A preview connector
+ * (PREVIEW_CONNECTORS, currently Railway and PostHog) is registered outside
+ * production, and in production only when listed in
+ * NETRICS_PREVIEW_CONNECTORS. Reviewed connectors join here
  * per the architecture's distribution workflow. The runtime only knows the
  * registry; which connectors ship is decided by the application (#39).
  * OAuth connectors are listed as unavailable until their provider is
@@ -67,6 +69,7 @@ export function createDefaultRegistry(
     createGooglePlayConnector(),
     createAppleAdsConnector(),
     createRailwayConnector(),
+    createPostHogConnector(),
   ];
   for (const connector of connectors) {
     const id = connector.manifest.id;
