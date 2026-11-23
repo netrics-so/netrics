@@ -44,9 +44,11 @@ type is accepted.
 `body.kind: "graphql"` holds `query` and `variables`. The definition check
 parses the query with a GraphQL parser and refuses it unless it is exactly
 one `query` operation: no `mutation`, no `subscription`, no second
-operation. Variables follow rule 1. Errors in the response's `errors`
-array fail the run like an HTTP error, with the message redacted as in
-ADR 0027 §4.
+operation. Variables follow rule 1. A response with a non-empty `errors`
+array fails the run with a fixed message (`graphql_errors`) that names the
+stream, the HTTP status and the number of errors. No text from the
+response, `errors[].message` included, reaches errors, logs or check
+messages (ADR 0027 §4).
 
 The checked operation is the one sent, on every request:
 
@@ -59,6 +61,11 @@ The checked operation is the one sent, on every request:
   `operationName`, `variables` or `extensions`, by itself, by its auth
   method or by pagination, because some servers let URL parameters override
   the body.
+- A GraphQL stream takes no URL from a response: `next_url` pagination is
+  refused for it, and it follows no redirects (a 3xx fails the run).
+- Independently of the definition check, the connector checks every URL it
+  is about to send a GraphQL request to and refuses one that carries any of
+  those parameters.
 
 A plain JSON body (`body.kind: "json"`) has no such guard. The builder
 requires the definition's author to confirm "this request only reads data",
@@ -68,10 +75,11 @@ documentation says plainly that netrics cannot verify it.
 
 The confirmation is checked by the server before any JSON-body POST leaves
 it, not only when a version is saved: the builder's test request for an
-unsaved draft carries the confirmation for that exact request (a hash of
-method, path, query and body template), and the server refuses to send a
-draft request whose hash does not match. Editing the request clears the
-confirmation.
+unsaved draft carries the confirmation for that exact request: a hash of
+the selected environment's base URL, method, path, query parameters, body
+template and the stream's pagination rule. The server refuses to send a
+draft request whose hash does not match. Changing any of these, the
+environment included, clears the confirmation.
 
 ### 3. Pagination through the body
 
@@ -89,13 +97,21 @@ what the first request sends: `firstPage: "null"` (the leaf is JSON
 pages write the cursor the previous response returned. An empty string is
 never sent as a cursor.
 
+Page values enter a POST body only through body paths: page placeholders
+(`{{ page.cursor }}`, `{{ page.offset }}` and the like) are refused in body
+templates, so no empty first-page value reaches a body. They stay allowed
+in URL query parameters as today. A cursor written through a body path
+keeps the JSON type the response gave it (a number stays a number) across
+pages; conversion to a string happens only where a cursor goes into a URL
+parameter or a string template.
+
 ### 4. Everything else stays as in ADR 0027
 
 Credentials stay bound to the environment host, redirects stay same-host,
 the response size, decompression and time limits stay, and redaction covers
-the rendered body as it covers rendered headers. A redirect of a POST is
-followed only for 307 and 308, keeping method and body, and only to the
-same host; 301, 302 and 303 fail the run instead of turning into a GET.
+the rendered body as it covers rendered headers. A redirect of a JSON-body
+POST is followed only for 307 and 308, keeping method and body, and only
+to the same host (GraphQL streams follow none, §2); 301, 302 and 303 fail the run instead of turning into a GET.
 
 ### 5. Schema version 2
 
