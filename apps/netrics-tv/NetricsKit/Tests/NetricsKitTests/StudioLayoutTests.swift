@@ -707,8 +707,11 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                     let derived = plain.map { "derived · \(FreshnessText.midLine($0))" }
                     for type in types {
                         let candidates = type == .compare ? derived : plain
-                        for w in 3...12 {
-                            for h in 2...6 {
+                        // A spread of tile sizes rather than every one: the sweep
+                        // runs beside timing tests and must not hold a thread for
+                        // seconds. 6×3 is the reported gauge.
+                        for w in [3, 4, 6, 8, 12] {
+                            for h in [2, 3, 4, 6] {
                                 for scale in [1.0, 1.15, 1.3] {
                                     let placement = StudioPlacement(x: 0, y: 0, w: w, h: h)
                                     let box = StudioRender.contentBox(placement, showHeader: true)
@@ -716,18 +719,27 @@ private func weight(_ any: Any?) -> StudioFontWeight {
                                         StudioLayout.typeScale(type, placement: placement, fontScale: scale)[.any]
                                         ?? StudioLayout.Minimum.any
                                     // The column a gauge beside its ring draws its text in.
-                                    let gauge = StudioLayout.gaugeLayout(
-                                        label: "Monthly proceeds", width: box.width, height: box.height,
-                                        fontScale: scale,
-                                        value: StudioLayout.TableValueText(full: "62", compact: "62"), suffix: "%",
-                                        progress: "752 to go · 14 days left")
-                                    let column = type == .gauge && gauge.orientation == .side ? gauge.textWidth : nil
-                                    let whole = WidgetFooter.line(
-                                        candidates, type: type, placement: placement, showHeader: true,
-                                        fontScale: scale)
+                                    // Only laid out for a gauge: the sweep runs beside
+                                    // timing tests and must not hold a thread for long.
+                                    let gauge =
+                                        type == .gauge
+                                        ? StudioLayout.gaugeLayout(
+                                            label: "Monthly proceeds", width: box.width, height: box.height,
+                                            fontScale: scale,
+                                            value: StudioLayout.TableValueText(full: "62", compact: "62"),
+                                            suffix: "%",
+                                            progress: "752 to go · 14 days left") : nil
+                                    let column = gauge?.orientation == .side ? gauge?.textWidth : nil
                                     let line = WidgetFooter.line(
                                         candidates, type: type, placement: placement, showHeader: true,
                                         fontScale: scale, drawnWidth: column)
+                                    // Without a narrower column the two are the same call.
+                                    let whole =
+                                        column == nil
+                                        ? line
+                                        : WidgetFooter.line(
+                                            candidates, type: type, placement: placement, showHeader: true,
+                                            fontScale: scale)
                                     guard let line, let whole else { continue }
                                     let width = column ?? box.width
                                     for screen in [1.0, 2.0] {
