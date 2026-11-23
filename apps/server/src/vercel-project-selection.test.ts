@@ -4,18 +4,22 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  connectionDetailResponseSchema,
   connectionResponseSchema,
+  errorResponseSchema,
   storedConnectionPreviewResponseSchema,
   workspaceListResponseSchema,
 } from "@netrics/contracts";
 import { ConnectorRegistry } from "@netrics/connector-runtime";
 import type { Connector, ConnectorRuntime } from "@netrics/connector-sdk";
 import { createVercelConnector } from "@netrics/connectors";
-import { createDatabase, type Database } from "@netrics/database";
+import { createDatabase, type Database, type Job } from "@netrics/database";
 
 import { buildApp } from "./app.js";
 import { createAuthService } from "./auth/index.js";
+import { createCredentialKeyring } from "./credentials.js";
 import { loadConfig } from "./env.js";
+import { createJobHandlers } from "./jobs/handlers.js";
 import { syncCatalog } from "./sync/catalog.js";
 import {
   createTestDatabase,
@@ -35,11 +39,15 @@ const PROJECTS = [
   { id: "prj_gamma", name: "gamma-docs", analytics: false },
 ];
 
+/** Requests the stand-in for Vercel answered. */
+let providerRequests = 0;
+
 /** Vercel's project list for the token; anything else is refused. */
 const provider: ConnectorRuntime = {
   signal: new AbortController().signal,
   fetch: async (raw, init) => {
     const url = new URL(raw);
+    providerRequests += 1;
     const answer = (status: number, body: unknown) => {
       const text = JSON.stringify(body);
       return {
@@ -85,6 +93,8 @@ function registry(): ConnectorRegistry {
 
 let app: FastifyInstance;
 let db: Database;
+let schedulerDb: Database;
+let keyring: ReturnType<typeof createCredentialKeyring>;
 let owner: postgres.Sql;
 let cookie: string;
 let outsider: string;
@@ -158,6 +168,14 @@ beforeAll(async () => {
     WEB_ORIGIN: "http://localhost:3000",
   });
   db = createDatabase(testDb.appUrl);
+  const schedulerUrl = new URL(testDb.adminUrl);
+  schedulerUrl.username = "netrics_scheduler";
+  schedulerUrl.password = "netrics_scheduler";
+  schedulerDb = createDatabase(schedulerUrl.toString());
+  keyring = createCredentialKeyring(
+    config.appEncryptionKey,
+    config.appEncryptionKeysPrevious,
+  );
   owner = postgres(testDb.adminUrl, { max: 1, onnotice: () => {} });
   const catalogOwner = createDatabase(testDb.adminUrl, { max: 1 });
   await syncCatalog(catalogOwner, registry());
@@ -203,6 +221,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await app?.close();
   await owner?.end({ timeout: 5 }).catch(() => undefined);
+  await schedulerDb?.$client.end({ timeout: 5 }).catch(() => undefined);
   await db?.$client.end({ timeout: 5 }).catch(() => undefined);
 });
 
@@ -321,7 +340,7 @@ describe("Vercel project selection after connecting (#782)", () => {
     }
   });
 
-  it("with no analytics project left the check refuses, and the selection can still be cleared", async () => {
+  it("with no analytics project left the check refuses, and the selection stays as it is (#854)", async () => {
     const enabled = PROJECTS.filter((project) => project.analytics);
     for (const project of enabled) project.analytics = false;
     try {
@@ -332,12 +351,22 @@ describe("Vercel project selection after connecting (#782)", () => {
       );
       expect(listed.check.ok).toBe(false);
       expect(listed.selection).toEqual(["prj_alpha"]);
+      // Clearing it is no way out any more: nothing would be collected.
       const cleared = await select([]);
-      expect(cleared.statusCode, cleared.body).toBe(200);
-      expect(await storedSelection()).toEqual([]);
+      expect(cleared.statusCode, cleared.body).toBe(400);
+      expect(errorResponseSchema.parse(cleared.json()).error).toBe(
+        "resource_selection_empty",
+      );
+      // Nor is a project without Web Analytics: the provider's reason.
+      const kept = await select(["prj_alpha"]);
+      expect(kept.statusCode).toBe(400);
+      expect(kept.body).toContain("Web Analytics is not enabled");
+      expect(await storedSelection()).toEqual(["prj_alpha"]);
     } finally {
       for (const project of enabled) project.analytics = true;
     }
+    // Web Analytics enabled again: the selection saves.
+    expect((await select(["prj_alpha", "prj_beta"])).statusCode).toBe(200);
     expect((await select(["prj_alpha"])).statusCode).toBe(200);
   });
 
@@ -364,5 +393,232 @@ describe("Vercel project selection after connecting (#782)", () => {
       expect([403, 404]).toContain(listed.statusCode);
     }
     expect(await storedSelection()).toEqual(["prj_alpha"]);
+  });
+});
+
+describe("the synced projects are shown, and at least one is required (#854)", () => {
+  async function detail() {
+    const response = await call("GET", connectionUrl());
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.body).not.toContain(TOKEN);
+    return connectionDetailResponseSchema.parse(response.json());
+  }
+  /** Writes a selection as an earlier version could store it. */
+  async function storeSelection(selection: string[]) {
+    await owner`
+      update connections
+      set config = jsonb_set(config, '{resourceSelection}', ${owner.json(selection)})
+      where id = ${connectionId}`;
+  }
+  /** One incremental sync of the connection, as the worker runs it. */
+  const sync = () =>
+    createJobHandlers({ registry: registry(), credentialKeyring: keyring })[
+      "connection.sync"
+    ]!({
+      job: {
+        id: crypto.randomUUID(),
+        kind: "connection.sync",
+        workspaceId,
+        connectionId,
+        attempts: 0,
+        payload: {},
+      } as unknown as Job,
+      appDb: db,
+      schedulerDb,
+      logger: pino({ level: "silent" }),
+    });
+
+  it("the detail response carries the selection: names where known, IDs otherwise", async () => {
+    // prj_alpha and prj_beta were named when they were selected.
+    expect((await detail()).resourceSelection).toEqual([
+      { id: "prj_alpha", name: "alpha-site" },
+    ]);
+    // A project no discovery has named yet comes after the named ones.
+    await storeSelection(["prj_alpha", "prj_beta", "prj_0_unnamed"]);
+    const shown = await detail();
+    expect(shown.resourceSelection).toEqual([
+      { id: "prj_alpha", name: "alpha-site" },
+      { id: "prj_beta", name: "beta-site" },
+      { id: "prj_0_unnamed", name: null },
+    ]);
+    // The selection stays out of the echoed config.
+    expect(shown.connection.config).not.toHaveProperty("resourceSelection");
+    await storeSelection(["prj_alpha"]);
+  });
+
+  it("a stored name that only repeats the ID is no name", async () => {
+    // A discovery that could not resolve a title stores the ID (#623).
+    await owner`
+      insert into connection_resources
+        (connection_id, workspace_id, resource_id, name, kind)
+      values (${connectionId}, ${workspaceId}, 'aaa.placeholder',
+        'aaa.placeholder', 'project')`;
+    await storeSelection(["aaa.placeholder", "prj_alpha", "prj_beta"]);
+    try {
+      // Unnamed, so after the named ones, although its ID sorts first.
+      expect((await detail()).resourceSelection).toEqual([
+        { id: "prj_alpha", name: "alpha-site" },
+        { id: "prj_beta", name: "beta-site" },
+        { id: "aaa.placeholder", name: null },
+      ]);
+    } finally {
+      await storeSelection(["prj_alpha"]);
+      await owner`
+        delete from connection_resources
+        where connection_id = ${connectionId}
+          and resource_id = 'aaa.placeholder'`;
+    }
+  });
+
+  it("every role that may read the connection gets the selection", async () => {
+    const [member] = await owner`
+      select m.user_id from memberships m
+      where m.workspace_id = ${workspaceId}`;
+    // Another owner keeps the workspace while this one changes roles.
+    const [other] = await owner`
+      select id from users where email = 'projects-outsider@example.com'`;
+    await owner`
+      insert into memberships (workspace_id, user_id, role)
+      values (${workspaceId}, ${other!.id}, 'owner')`;
+    try {
+      for (const role of ["owner", "admin", "editor", "viewer"]) {
+        await owner`
+          update memberships set role = ${role}
+          where workspace_id = ${workspaceId} and user_id = ${member!.user_id}`;
+        expect((await detail()).resourceSelection, role).toEqual([
+          { id: "prj_alpha", name: "alpha-site" },
+        ]);
+      }
+      // A viewer reads it and cannot change it.
+      expect((await select(["prj_beta"])).statusCode).toBe(403);
+      expect(await storedSelection()).toEqual(["prj_alpha"]);
+    } finally {
+      await owner`
+        update memberships set role = 'owner'
+        where workspace_id = ${workspaceId} and user_id = ${member!.user_id}`;
+      await owner`
+        delete from memberships
+        where workspace_id = ${workspaceId} and user_id = ${other!.id}`;
+    }
+  });
+
+  it("a selection far beyond the SQL parameter limit still reads", async () => {
+    // Nothing caps a stored selection's length: the names are looked up
+    // with the IDs as one parameter, not one each (65,535 at most).
+    const many = [
+      "prj_alpha",
+      ...Array.from({ length: 70_000 }, (_, index) => `prj_many_${index}`),
+    ];
+    await storeSelection(many);
+    try {
+      const shown = (await detail()).resourceSelection!;
+      expect(shown).toHaveLength(many.length);
+      expect(shown[0]).toEqual({ id: "prj_alpha", name: "alpha-site" });
+      expect(shown.filter((resource) => resource.name !== null)).toHaveLength(
+        1,
+      );
+    } finally {
+      await storeSelection(["prj_alpha"]);
+    }
+  });
+
+  it("no stored selection reads as all projects", async () => {
+    expect((await select(null)).statusCode).toBe(200);
+    expect((await detail()).resourceSelection).toBeNull();
+    expect((await select(["prj_alpha"])).statusCode).toBe(200);
+  });
+
+  it("refuses to save an empty selection, with a code", async () => {
+    const before = await backfillJobs();
+    const response = await select([]);
+    expect(response.statusCode, response.body).toBe(400);
+    expect(errorResponseSchema.parse(response.json()).error).toBe(
+      "resource_selection_empty",
+    );
+    expect(await storedSelection()).toEqual(["prj_alpha"]);
+    expect(await backfillJobs()).toBe(before);
+    // With other changes in the same request too: nothing is saved.
+    const renamed = await call("PATCH", connectionUrl(), {
+      name: "Renamed",
+      resources: [],
+    });
+    expect(renamed.statusCode).toBe(400);
+    expect((await detail()).connection.name).toBe("Websites");
+  });
+
+  it("refuses a new connection with an empty selection", async () => {
+    const [before] = await owner`
+      select count(*)::int as count from connections
+      where workspace_id = ${workspaceId}`;
+    const created = await call(
+      "POST",
+      `/v1/workspaces/${workspaceId}/connections`,
+      {
+        connectorId: "vercel",
+        name: "Nothing",
+        config: {},
+        credentials: { token: TOKEN },
+        resources: [],
+      },
+    );
+    expect(created.statusCode, created.body).toBe(400);
+    expect(errorResponseSchema.parse(created.json()).error).toBe(
+      "resource_selection_empty",
+    );
+    const [after] = await owner`
+      select count(*)::int as count from connections
+      where workspace_id = ${workspaceId}`;
+    expect(after!.count).toBe(before!.count);
+  });
+
+  it("a connection that already stores an empty selection reads fine and syncs nothing", async () => {
+    // Saved before a project was required: it is not migrated.
+    await storeSelection([]);
+    try {
+      const shown = await detail();
+      expect(shown.resourceSelection).toEqual([]);
+      // The project list still loads, with the empty selection to change.
+      const listed = storedConnectionPreviewResponseSchema.parse(
+        (
+          await call("POST", `${connectionUrl()}/preview`, { config: {} })
+        ).json(),
+      );
+      expect(listed.check.ok).toBe(true);
+      expect(listed.selection).toEqual([]);
+      // Its other settings still save, and the selection stays.
+      const renamed = await call("PATCH", connectionUrl(), {
+        name: "Websites (paused)",
+      });
+      expect(renamed.statusCode, renamed.body).toBe(200);
+      expect(await storedSelection()).toEqual([]);
+      // A sync succeeds and asks no project for anything: the stand-in
+      // refuses every request but the project list.
+      const [observations] = await owner`
+        select count(*)::int as count from observations
+        where connection_id = ${connectionId}`;
+      providerRequests = 0;
+      await sync();
+      const [run] = await owner`
+        select status, observations_written from sync_runs
+        where connection_id = ${connectionId}
+        order by started_at desc limit 1`;
+      expect(run).toMatchObject({ status: "succeeded" });
+      expect(run!.observations_written).toBe(0);
+      expect(providerRequests).toBeLessThanOrEqual(2);
+      const [after] = await owner`
+        select count(*)::int as count from observations
+        where connection_id = ${connectionId}`;
+      expect(after!.count).toBe(observations!.count);
+      // Saving it again is refused like any empty selection.
+      expect((await select([])).statusCode).toBe(400);
+    } finally {
+      await call("PATCH", connectionUrl(), { name: "Websites" });
+    }
+    // Repaired by choosing a project.
+    const repaired = await select(["prj_alpha"]);
+    expect(repaired.statusCode, repaired.body).toBe(200);
+    expect((await detail()).resourceSelection).toEqual([
+      { id: "prj_alpha", name: "alpha-site" },
+    ]);
   });
 });

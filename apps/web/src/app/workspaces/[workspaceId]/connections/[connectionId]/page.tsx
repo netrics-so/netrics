@@ -7,7 +7,7 @@ import { HealthBadge, RateLimitText } from "../../health-badge";
 import { FinishSetup } from "../finish-setup";
 import { OAuthOutcomeBanner } from "../oauth-outcome";
 import { ReconnectBanner } from "../reconnect-banner";
-import { ProjectSelection } from "../project-selection";
+import { ProjectSelection, SyncedProjectsReadOnly } from "../project-selection";
 import { StoreConnectionSettings } from "../store-connection-settings";
 import { SearchConsoleSettings } from "../search-console-settings";
 import { ConnectionActions } from "./connection-actions";
@@ -665,9 +665,21 @@ export default async function ConnectionDetailPage({
               workspaceId={workspaceId}
               connection={connection}
               connector={connector}
+              synced={detail.resourceSelection}
+              canDelete={can(role, "connections:delete")}
             />
           ) : null}
         </div>
+      ) : null}
+
+      {/* Someone who may read the connection but not change it still sees
+          which projects are selected, and that none is why nothing syncs
+          (#854); the form above is for those who can change it. */}
+      {!canUpdate &&
+      connector?.supportsResourceSelection &&
+      !storeConnection &&
+      !searchConsole ? (
+        <SyncedProjectsReadOnly selection={detail.resourceSelection} />
       ) : null}
 
       {retention ? (
