@@ -54,5 +54,13 @@ export {
   createSearchConsoleConnector,
   searchConsoleManifest,
 } from "./google-search-console/index.js";
+export {
+  createRailwayConnector,
+  railwayManifest,
+  TOKEN_REJECTED_CODE as RAILWAY_TOKEN_REJECTED_CODE,
+  TOKEN_REJECTED_MESSAGE as RAILWAY_TOKEN_REJECTED_MESSAGE,
+  WORKSPACE_DENIED_CODE as RAILWAY_WORKSPACE_DENIED_CODE,
+  WORKSPACE_DENIED_MESSAGE as RAILWAY_WORKSPACE_DENIED_MESSAGE,
+} from "./railway/index.js";
 export { createVercelConnector, vercelManifest } from "./vercel/index.js";
 export * from "./custom-api/index.js";

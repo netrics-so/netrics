@@ -7,6 +7,7 @@ import {
   createAppleAdsConnector,
   createDemoConnector,
   createGooglePlayConnector,
+  createRailwayConnector,
   createSearchConsoleConnector,
   createVercelConnector,
 } from "@netrics/connectors";
@@ -31,7 +32,7 @@ export interface DefaultRegistryOptions {
   previewConnectors?: ReadonlySet<string>;
   /**
    * Which connectors count as previews. Default: PREVIEW_CONNECTORS; tests
-   * pass their own, since the bundle has no preview at the moment.
+   * pass their own to cover the mechanism with other connectors.
    */
   previews?: ReadonlySet<string>;
 }
@@ -39,8 +40,8 @@ export interface DefaultRegistryOptions {
 /**
  * The connector bundle compiled into this server image: the demo connector,
  * Vercel Web Analytics, Google Search Console, App Store Connect, Google
- * Play and Apple Ads. A preview connector (PREVIEW_CONNECTORS, currently
- * none) is registered outside production, and in production only when
+ * Play, Apple Ads and Railway. A preview connector (PREVIEW_CONNECTORS,
+ * currently Railway) is registered outside production, and in production only when
  * listed in NETRICS_PREVIEW_CONNECTORS. Reviewed connectors join here
  * per the architecture's distribution workflow. The runtime only knows the
  * registry; which connectors ship is decided by the application (#39).
@@ -65,6 +66,7 @@ export function createDefaultRegistry(
     createAppStoreConnectConnector(),
     createGooglePlayConnector(),
     createAppleAdsConnector(),
+    createRailwayConnector(),
   ];
   for (const connector of connectors) {
     const id = connector.manifest.id;

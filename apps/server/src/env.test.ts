@@ -125,7 +125,7 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ NETRICS_PREVIEW_CONNECTORS: "apple-adz" }),
     ).toThrow(
-      /"apple-adz" is not a connector of this release \(preview connectors: none\)/,
+      /"apple-adz" is not a connector of this release \(preview connectors: railway\)/,
     );
   });
 
@@ -144,6 +144,14 @@ describe("loadConfig", () => {
       expect(config.previewConnectorsIgnored).toEqual(["apple-ads"]);
     }
     expect(loadConfig({}).previewConnectorsIgnored).toEqual([]);
+  });
+
+  it("turns on Railway, a preview of milestone 13.1, when listed (#870)", () => {
+    for (const load of [loadConfig, loadMigrationConfig]) {
+      const config = load({ NETRICS_PREVIEW_CONNECTORS: "railway" });
+      expect([...config.previewConnectors]).toEqual(["railway"]);
+      expect(config.previewConnectorsIgnored).toEqual([]);
+    }
   });
 
   it("trusts private proxy hops by default", () => {

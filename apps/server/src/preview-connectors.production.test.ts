@@ -17,9 +17,10 @@ import {
 // The API as a production instance builds it from its environment (#378):
 // without NETRICS_PREVIEW_CONNECTORS, and with a leftover
 // NETRICS_PREVIEW_CONNECTORS=apple-ads from before Apple Ads left the
-// previews. The bundle has no preview at the moment, so a third app marks
-// a test-only preview to keep the catalog badge covered. All share one
-// database and auth secret, so one session works on each.
+// previews. A third app marks a test-only preview to keep the catalog
+// badge covered, and a fourth opts into Railway, the bundle's preview of
+// milestone 13.1 (#870). All share one database and auth secret, so one
+// session works on each.
 
 const ORIGIN = "https://netrics.example.com";
 const secrets = {
@@ -32,6 +33,7 @@ let appUrl: string;
 let plain: FastifyInstance;
 let leftover: FastifyInstance;
 let withPreview: FastifyInstance;
+let withRailway: FastifyInstance;
 let cookie: string;
 const logLines: string[] = [];
 const testPreview = "google-play";
@@ -81,6 +83,7 @@ beforeAll(async () => {
     logLines,
   );
   withPreview = await productionApp({}, undefined, testPreview);
+  withRailway = await productionApp({ NETRICS_PREVIEW_CONNECTORS: "railway" });
   const signUp = await plain.inject({
     method: "POST",
     url: "/api/auth/sign-up/email",
@@ -103,6 +106,7 @@ afterAll(async () => {
   await plain?.close();
   await leftover?.close();
   await withPreview?.close();
+  await withRailway?.close();
   await db?.$client.end({ timeout: 5 }).catch(() => undefined);
 });
 
@@ -148,6 +152,16 @@ describe("preview connectors in production (#378)", () => {
     expect(String(warnings[0]!.msg)).toMatch(
       /^NETRICS_PREVIEW_CONNECTORS names/,
     );
+  });
+
+  it("leaves Railway out unless opted in, then lists it as a preview (#870)", async () => {
+    expect((await catalog(plain)).map((entry) => entry.id)).not.toContain(
+      "railway",
+    );
+    const railway = (await catalog(withRailway)).find(
+      (entry) => entry.id === "railway",
+    );
+    expect(railway?.preview).toBe(true);
   });
 
   it("marks an opted-in preview connector in the catalog", async () => {

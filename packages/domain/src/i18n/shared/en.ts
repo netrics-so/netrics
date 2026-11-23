@@ -146,6 +146,19 @@ export const sharedEn = {
         "App Store Connect requires an agreement that is missing or has expired. The Account Holder must accept the latest agreements in App Store Connect (Business), then try again.",
     },
     /**
+     * The Railway connector's failed checks (#870), equal to
+     * TOKEN_REJECTED_MESSAGE and WORKSPACE_DENIED_MESSAGE in
+     * @netrics/connectors/railway.
+     */
+    railway: {
+      /** `me` (no workspace ID) answered "Not Authorized". */
+      tokenRejected:
+        "Railway did not accept the token: it is wrong, was deleted, or is a project token. Create an account or workspace token in Railway (Account Settings → Tokens). For a workspace token, also enter its workspace ID.",
+      /** The configured workspace answered "Not Authorized" or "not found". */
+      workspaceDenied:
+        "Railway did not accept the token for this connection's workspace ID: the ID is wrong, the token belongs to another workspace, or it was deleted. Check the workspace ID, or create a new token for that workspace.",
+    },
+    /**
      * The custom-api connector's fixed messages (milestone 13), equal to
      * CUSTOM_API_MESSAGES in @netrics/connectors/custom-api.
      */

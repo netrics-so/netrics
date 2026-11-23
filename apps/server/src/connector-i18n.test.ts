@@ -17,6 +17,10 @@ import {
   demoManifest,
   KEY_MISMATCH_CODE,
   KEY_MISMATCH_MESSAGE,
+  RAILWAY_TOKEN_REJECTED_CODE,
+  RAILWAY_TOKEN_REJECTED_MESSAGE,
+  RAILWAY_WORKSPACE_DENIED_CODE,
+  RAILWAY_WORKSPACE_DENIED_MESSAGE,
   ROLE_CODE,
   ROLE_MESSAGE,
   vercelManifest,
@@ -152,6 +156,7 @@ describe("connector catalog sync", () => {
       "demo",
       "google-play",
       "google-search-console",
+      "railway",
       "vercel",
     ]);
     const demo = rows.find((row) => row.id === "demo")!;
@@ -370,10 +375,12 @@ describe("provider reason codes (#795)", () => {
     [KEY_MISMATCH_CODE, KEY_MISMATCH_MESSAGE],
     [ROLE_CODE, ROLE_MESSAGE],
     [AGREEMENTS_CODE, AGREEMENTS_MESSAGE],
+    [RAILWAY_TOKEN_REJECTED_CODE, RAILWAY_TOKEN_REJECTED_MESSAGE],
+    [RAILWAY_WORKSPACE_DENIED_CODE, RAILWAY_WORKSPACE_DENIED_MESSAGE],
   ];
 
   it("are worded by the catalog in English and German", () => {
-    expect(recorded).toHaveLength(8);
+    expect(recorded).toHaveLength(10);
     for (const [code, english] of recorded) {
       expect(code, english).toEqual(expect.any(String));
       expect(providerMessageForCode(code, "en"), code).toBe(english);
@@ -381,7 +388,7 @@ describe("provider reason codes (#795)", () => {
       expect(german, code).toEqual(expect.any(String));
       expect(german, code).not.toBe(english);
     }
-    expect(new Set(recorded.map(([code]) => code)).size).toBe(8);
+    expect(new Set(recorded.map(([code]) => code)).size).toBe(10);
     expect(recorded.map(([code]) => code).sort()).toEqual(
       Object.keys(PROVIDER_MESSAGE_CODES).sort(),
     );
