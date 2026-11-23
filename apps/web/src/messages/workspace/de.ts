@@ -269,7 +269,7 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       title: "Projekte für die Synchronisierung",
       all: "Alle aktuellen und zukünftigen Projekte",
       allHelp:
-        "Neue Projekte, die dieses Token sehen kann, werden automatisch einbezogen.",
+        "Neue Projekte, die das Token auflistet (für die Team-ID in den Einstellungen, falls gesetzt), werden automatisch einbezogen, sobald Web Analytics für sie aktiviert ist. Projekte ohne Web Analytics werden übersprungen.",
       choose: "Projekte auswählen",
       search: "Projekte nach Name oder ID suchen",
       selectResults: "Suchergebnisse auswählen ({count})",
@@ -283,7 +283,25 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
         "Keine Projekte mit Web Analytics gefunden. Prüfe den Scope des Tokens.",
       noResults: "Keine passenden Projekte.",
       noneHelp:
-        "Keine Projekte ausgewählt: Es wird nichts Neues synchronisiert. Bereits importierte Daten bleiben verfügbar.",
+        "Wähle mindestens ein Projekt aus oder alle Projekte: Eine leere Auswahl kann nicht gespeichert werden.",
+      syncedAll:
+        "Auswahl: alle aktuellen und zukünftigen Projekte. Synchronisiert werden die Projekte, die das Token auflistet (für die Team-ID in den Einstellungen, falls gesetzt) und für die Web Analytics aktiviert ist; Projekte ohne Web Analytics werden übersprungen.",
+      syncedList:
+        "{count, plural, one {Ausgewähltes Projekt (#):} other {Ausgewählte Projekte (#):}}",
+      syncedHelp:
+        "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist. „{action}“ lädt die aktuelle Liste und kennzeichnet ausgewählte Projekte, die nicht aufgelistet sind.",
+      syncedHelpViewer:
+        "Ein ausgewähltes Projekt wird nur synchronisiert, solange das Token es sehen kann und Web Analytics dafür aktiviert ist.",
+      syncedMore: "und {count} weitere",
+      syncedShowAll: "Alle {count} anzeigen",
+      syncedShowMore: "{count} weitere anzeigen",
+      syncedShowFewer: "Weniger anzeigen",
+      syncedNoneNoDelete:
+        "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Wähle über „{action}“ mindestens ein Projekt (oder alle Projekte) aus; bereits importierte Daten bleiben erhalten. Soll die Verbindung stattdessen gelöscht werden, bitte einen Inhaber oder Admin darum: Dabei werden auch ihre importierten Daten gelöscht.",
+      syncedNoneViewer:
+        "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Bereits importierte Daten bleiben erhalten. Bitte einen Inhaber, Admin oder Bearbeiter dieses Workspace, mindestens ein Projekt (oder alle Projekte) auszuwählen.",
+      syncedNone:
+        "Kein Projekt ist ausgewählt, deshalb importiert diese Verbindung nichts Neues. Wähle über „{action}“ mindestens ein Projekt (oder alle Projekte) aus; bereits importierte Daten bleiben erhalten. Wenn du stattdessen die Verbindung löschst, werden auch ihre importierten Daten gelöscht.",
       pages: "Seiten der Projektliste",
       previous: "Zurück",
       next: "Weiter",
@@ -294,7 +312,9 @@ export const workspaceDe: Catalog<typeof workspaceEn> = {
       checking: "Projekte werden geladen…",
       accessFailed: "Die Projektliste konnte nicht geladen werden.",
       refusedHelp:
-        "Du kannst unten weiterhin Projekte aus der Auswahl entfernen und speichern.",
+        "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Wenn du stattdessen diese Verbindung löschst, werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
+      refusedHelpNoDelete:
+        "Wenn sich kein Projekt synchronisieren lässt: Aktiviere Web Analytics für ein Projekt in Vercel und lade die Liste neu, oder wähle ein anderes Projekt; bereits importierte Daten bleiben in beiden Fällen erhalten. Soll die Verbindung stattdessen gelöscht werden, bitte einen Inhaber oder Admin darum: Dabei werden auch ihre importierten Daten gelöscht. Du kannst unten weiterhin Projekte aus der Auswahl entfernen; mindestens eines muss ausgewählt bleiben.",
       save: "Projektauswahl speichern",
       cancel: "Abbrechen",
       saved:

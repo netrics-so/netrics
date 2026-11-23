@@ -26,17 +26,29 @@ see.
 
 ## Change which projects are synced
 
-On the connection's page, **Edit connection → Synced projects** lists the
-projects the token can see (those with Web Analytics enabled) and lets you
-choose all current and future projects, or a selection.
+On the connection's page, **Edit connection → Synced projects** shows what
+is selected: all current and future projects, or the selected ones by name
+(by ID until a project has been named). A selected project is only synced
+while the token can see it and Web Analytics is enabled for it; with "all
+projects", those the token lists (for the Team ID, if one is set) that have
+Web Analytics. **Change project selection** lists
+the projects the token can see (those with Web Analytics enabled) and lets
+you choose all current and future projects, or a selection.
 
 - A project you remove is no longer synced and is no longer offered in
   pickers. The data it already collected is kept.
 - A project you add gets its history with the next import, which reads the
   connection's history again.
-- With no project selected, nothing new is collected. The connection stays
-  healthy as long as its token is valid, and its widgets show the last
-  values with the time they were last checked.
+- At least one project has to be selected: a selection without a project
+  cannot be saved, in the app or through the API
+  (`resource_selection_empty`). A connection that was saved without a
+  project before this was required keeps collecting nothing new; its page
+  says so, its widgets show the last values with the time they were last
+  checked, and choosing a project (or all projects) makes it sync again.
+- When none of the selected projects can be synced (Web Analytics was
+  turned off for them), the list says so. Enable Web Analytics for a
+  project in Vercel, or choose another project. Deleting the connection
+  is the third way out, and also deletes the data it collected.
 
 A Vercel token grants the same access you have within its scope. netrics
 only reads the project list and Web Analytics with it. The token is stored
