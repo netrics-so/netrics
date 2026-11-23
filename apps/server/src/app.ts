@@ -68,6 +68,7 @@ import { registerThemeRoutes } from "./routes/themes.js";
 import { registerCustomApiRoutes } from "./routes/custom-api.js";
 import { registerCustomApiBuilderRoutes } from "./routes/custom-api-builder.js";
 import { registerWorkspaceRoutes } from "./routes/workspaces.js";
+import type { WorkspaceDeletionGate } from "./workspaces/deletion-gate.js";
 
 export interface AppDeps {
   checkDb?: () => Promise<boolean>;
@@ -96,6 +97,8 @@ export interface AppDeps {
   devicePayloadCacheMs?: number;
   /** How long a device's item image ids are reused (#810); tests set 0. */
   deviceItemImagesMs?: number;
+  /** The queue of workspace deletions (#855); tests pass their own. */
+  workspaceDeletionGate?: WorkspaceDeletionGate;
   /** The device API's request limit per device (#829); tests lower it. */
   deviceRateLimit?: DeviceRateLimit;
   /** The newest store template; tests pass other versions. */
@@ -207,6 +210,9 @@ export async function buildApp(
     authService,
     db,
     exchangeRates: config.exchangeRates,
+    ...(deps.workspaceDeletionGate
+      ? { deletionGate: deps.workspaceDeletionGate }
+      : {}),
     addDemoContent: createOnboarding({
       db,
       registry,

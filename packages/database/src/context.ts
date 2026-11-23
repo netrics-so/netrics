@@ -115,6 +115,17 @@ export type WorkspaceState = "live" | "deleted" | "missing";
 export const WORKSPACE_DELETED_SQLSTATE = "WS001";
 
 /**
+ * SQLSTATE delete_workspace() raises when the workspace is the only one of
+ * the user who deletes it (#855, migration 0095).
+ */
+export const LAST_WORKSPACE_SQLSTATE = "WS002";
+
+/** Whether an error (or one it wraps) is that refusal. */
+export function isLastWorkspaceError(error: unknown): boolean {
+  return hasSqlstate(error, LAST_WORKSPACE_SQLSTATE);
+}
+
+/**
  * A transaction was asked to act for a deleted workspace (#839). The API
  * answers it like an unknown workspace; a job ends without retries.
  */

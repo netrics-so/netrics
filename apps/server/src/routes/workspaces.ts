@@ -30,9 +30,10 @@ import {
   findMembership,
   findProject,
   findWorkspace,
-  hasSqlstate,
   insertAuditEvent,
   isLastOwnerError,
+  isDeletionOutOfTime,
+  isLastWorkspaceError,
   listAuditEvents,
   listMembers,
   listMembershipsForUser,
@@ -44,6 +45,7 @@ import {
   updateMembershipRole,
   withWorkspace,
   type Database,
+  type DeleteWorkspaceOutcome,
   type MemberDetails,
   type Project,
   type Workspace,
@@ -59,6 +61,11 @@ import {
 import type { AuthService } from "../auth/index.js";
 import { conversionOptions } from "../metrics/query.js";
 import type { AddDemoContent } from "../onboarding.js";
+import {
+  createWorkspaceDeletionGate,
+  DELETION_GATE_BUSY,
+  type WorkspaceDeletionGate,
+} from "../workspaces/deletion-gate.js";
 import { parseBody, resolveAccess, sendError } from "./access.js";
 import { routeSchema } from "./openapi.js";
 import { createRequireSession } from "./session.js";
@@ -70,10 +77,77 @@ export interface WorkspaceRouteDeps {
   addDemoContent?: AddDemoContent;
   /** NETRICS_EXCHANGE_RATES: whether a display currency can be set (#191). */
   exchangeRates?: boolean;
+  /** One deletion at a time in this process (#855); tests pass their own. */
+  deletionGate?: WorkspaceDeletionGate;
 }
 
 const memberParamsSchema = z.object({ userId: z.uuid() });
 const projectParamsSchema = z.object({ projectId: z.uuid() });
+
+/**
+ * Deletes a workspace within one deadline (#855). The request waits, in
+ * this order, for the process's deletion gate (one deletion at a time, so
+ * a burst does not use up the pool), for a connection of the pool, and in
+ * delete_workspace() for the installation's deletion lock, the workspace's
+ * fence and row locks. The gate fixes the deadline on arrival. Until the
+ * transaction has a connection the request is answered at the deadline
+ * (DELETION_GATE_BUSY); from then on the database holds the deadline as an
+ * instant on its own clock, starts nothing after it and is cut off by
+ * statement_timeout (an error, isDeletionOutOfTime). So the answer comes
+ * by the deadline plus the round trips of the two statements that fix the
+ * instant and call the function (see deleteWorkspace), and a request
+ * answered "busy" deletes nothing, then or later.
+ */
+function deleteWithinDeadline(
+  gate: WorkspaceDeletionGate,
+  db: Database,
+  ctx: { workspaceId: string; userId: string },
+  name: string,
+): Promise<DeleteWorkspaceOutcome | typeof DELETION_GATE_BUSY> {
+  return new Promise((resolve, reject) => {
+    void gate
+      .run(async (deadline) => {
+        // postgres.js has no limit on the wait for a pooled connection, so
+        // the wait is given up here: the request is answered at the
+        // deadline, and the transaction, when its turn comes, finds itself
+        // abandoned and does nothing. The gate stays held until then, so
+        // at most one such transaction of this process is ever queued.
+        let started = false;
+        let abandoned = false;
+        const timer = setTimeout(
+          () => {
+            if (started) return;
+            abandoned = true;
+            resolve(DELETION_GATE_BUSY);
+          },
+          Math.max(0, deadline.remainingMs()),
+        );
+        try {
+          // No fence of its own: delete_workspace() takes it exclusively.
+          // Read committed by name, whatever the role or database defaults
+          // to: the function counts the caller's other workspaces after
+          // waiting for another deletion and refuses a transaction whose
+          // snapshot could predate it.
+          return await withWorkspace(
+            db,
+            ctx,
+            async (tx) => {
+              // With a connection, right before the call: what is left now.
+              const remainingMs = deadline.remainingMs();
+              if (abandoned || remainingMs < 1) return DELETION_GATE_BUSY;
+              started = true;
+              return deleteWorkspace(tx, name, { remainingMs });
+            },
+            { fence: "none", isolationLevel: "read committed" },
+          );
+        } finally {
+          clearTimeout(timer);
+        }
+      })
+      // After an abandoned request was answered these settle nothing.
+      .then(resolve, reject);
+  });
+}
 
 function toWorkspace(workspace: Workspace) {
   return {
@@ -113,6 +187,7 @@ export function registerWorkspaceRoutes(
   deps: WorkspaceRouteDeps,
 ): void {
   const requireSession = createRequireSession(deps.authService);
+  const deletionGate = deps.deletionGate ?? createWorkspaceDeletionGate();
 
   void app.register(
     (scope, _opts, done) => {
@@ -446,18 +521,26 @@ export function registerWorkspaceRoutes(
       // here and again by delete_workspace() under the workspace row lock,
       // with the caller's role. Afterwards the workspace has no members,
       // so every later request for it is a 404 like any unknown workspace.
+      // The owner's only workspace is not deleted (#855): the database
+      // decides that too, under a lock that puts deletions in one order.
       scope.post(
         "/workspaces/:workspaceId/delete",
         {
           schema: routeSchema({
-            summary: "Delete a workspace and everything in it",
+            summary:
+              "Delete a workspace and everything in it (409 workspace_last for the caller's only workspace)",
             tags: ["workspaces"],
             body: deleteWorkspaceRequestSchema,
             errors: [400, 403, 404, 409],
           }),
         },
         async (request, reply) => {
-          const access = await resolveAccess(deps.db, request, reply);
+          // Without the fence: a request for a workspace that is being
+          // deleted would wait for it on a connection, before the queue
+          // below. The membership is one read; the database decides again.
+          const access = await resolveAccess(deps.db, request, reply, {
+            fence: false,
+          });
           if (!access) {
             return;
           }
@@ -468,22 +551,30 @@ export function registerWorkspaceRoutes(
           if (!body) {
             return;
           }
-          let outcome: Awaited<ReturnType<typeof deleteWorkspace>>;
+          let outcome: Awaited<ReturnType<typeof deleteWithinDeadline>>;
           try {
-            // No fence of its own: delete_workspace() takes it exclusively.
-            outcome = await withWorkspace(
+            outcome = await deleteWithinDeadline(
+              deletionGate,
               deps.db,
               { workspaceId: access.workspaceId, userId: access.callerId },
-              (tx) => deleteWorkspace(tx, body.name),
-              { fence: "none" },
+              body.name,
             );
           } catch (error) {
-            // Work for the workspace was still running after 10 seconds
-            // (lock_not_available): nothing was deleted, try again.
-            if (hasSqlstate(error, "55P03")) {
+            // The deadline passed while the database waited for a lock
+            // (work for the workspace, another deletion, a row a worker
+            // holds) or was still working: nothing was deleted, try again.
+            if (isDeletionOutOfTime(error)) {
               return sendError(reply, 409, "workspace_busy");
             }
+            if (isLastWorkspaceError(error)) {
+              return sendError(reply, 409, "workspace_last");
+            }
             throw error;
+          }
+          if (outcome === DELETION_GATE_BUSY) {
+            // The deadline passed before the deletion could start: other
+            // deletions were still ahead, or no connection was free.
+            return sendError(reply, 409, "workspace_busy");
           }
           if (outcome === "not_found") {
             return sendError(reply, 404, "workspace_not_found");
