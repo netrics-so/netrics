@@ -51,24 +51,42 @@
 --     while they delete this one can be left without a workspace. Out of
 --     scope here; the removal runs under that workspace's shared fence only.
 --
--- One deadline for the whole call: 10 seconds after it starts, as in 0094
--- (there for the fence only), or sooner when the caller has already waited
--- (the API queues deletion requests in its own process and may wait for a
--- connection, see apps/server/src/workspaces/deletion-gate.ts): it says how
--- much is left in app.workspace_delete_wait_ms, transaction-local, which
--- can only shorten the time. Every statement below that can wait for a
--- lock (the deletion lock, the fence, the workspace and membership rows,
--- and each UPDATE, DELETE and INSERT, which wait for row locks of jobs a
--- worker is finishing, tokens being rotated and the like) first sets
--- lock_timeout to what is left of the deadline, and fails with 55P03
--- (answered 409 workspace_busy) when nothing is left. So the call never
--- waits past its deadline, and never while it holds the deletion lock
--- longer than that; a 55P03 ends the transaction and nothing is deleted.
--- The caller's lock_timeout is back when the function returns.
+-- One deadline for the whole call, an instant on this server's clock: 10
+-- seconds after the call starts, as in 0094 (there for the fence only), or
+-- an earlier instant the caller names in app.workspace_delete_deadline,
+-- transaction-local, as microseconds since the epoch (a number, never a
+-- formatted time: what a timestamp prints as depends on DateStyle and
+-- TimeZone, and some of it does not read back as the same instant). An
+-- instant far in the past or the future is taken as "passed" or as the 10
+-- seconds. The API does: its requests queue in
+-- their own process and may wait for a connection first (see
+-- apps/server/src/workspaces/deletion-gate.ts), and it fixes the instant
+-- with this server's clock before it calls. The setting can only shorten
+-- the time, and because it is an instant and not a duration, a call that
+-- arrives late does not get its time again.
 --
--- Time a statement spends working, not waiting, is not bounded from in
--- here (a timeout set inside a running statement does not apply to it):
--- the API sets statement_timeout for the call to the same deadline.
+-- What the function does with it: before every statement that can wait
+-- for a lock (the deletion lock, the fence, the workspace and membership
+-- rows, and each UPDATE, DELETE and INSERT, which wait for row locks of
+-- jobs a worker is finishing, tokens being rotated and the like) it fails
+-- with 55P03 (answered 409 workspace_busy) when the instant has passed,
+-- and otherwise sets lock_timeout to what is left. It checks once more
+-- before it answers 'deleted'. A 55P03 ends the transaction and nothing is
+-- deleted. The caller's lock_timeout is back when the function returns.
+--
+-- What that guarantees, and what not:
+--   - No statement of the function starts after the deadline; in
+--     particular the workspace is not marked deleted after it.
+--   - Each single lock wait ends by the deadline. lock_timeout counts per
+--     lock, though: one UPDATE that waits for several locked rows in turn
+--     gets the remaining time for each of them.
+--   - Time a statement spends working rather than waiting is not bounded
+--     from in here: a timeout set inside a running statement does not
+--     apply to it.
+--   So the function alone does not end by its deadline. The API also sets
+--   statement_timeout for the call, which does end it (57014, answered
+--   like 55P03). Whoever calls the function directly in SQL and needs that
+--   bound sets statement_timeout too.
 CREATE FUNCTION workspace_delete_wait(p_deadline timestamptz)
 RETURNS void
 LANGUAGE plpgsql
@@ -76,13 +94,24 @@ VOLATILE
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_left integer := floor(extract(epoch FROM p_deadline - clock_timestamp()) * 1000)::integer;
+  v_now timestamptz := clock_timestamp();
 BEGIN
-  IF v_left < 1 THEN
+  -- Expiry first, on the instants themselves: nothing here overflows,
+  -- however far the deadline lies in the past.
+  IF p_deadline IS NULL OR p_deadline <= v_now THEN
     RAISE EXCEPTION 'the workspace deletion ran out of time'
       USING ERRCODE = 'lock_not_available';
   END IF;
-  PERFORM set_config('lock_timeout', v_left::text || 'ms', true);
+  -- At least a millisecond (0 would mean no timeout), at most the 10
+  -- seconds a deletion ever gets; bounded before it becomes an integer.
+  PERFORM set_config(
+    'lock_timeout',
+    least(
+      10000,
+      greatest(1, ceil(extract(epoch FROM least(p_deadline, v_now + interval '10 seconds') - v_now) * 1000))
+    )::integer::text || 'ms',
+    true
+  );
 END;
 $$;
 --> statement-breakpoint
@@ -99,17 +128,21 @@ DECLARE
   v_workspace_id uuid := nullif(current_setting('app.workspace_id', true), '')::uuid;
   v_user_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
   v_lock_timeout text := current_setting('lock_timeout');
-  v_wait_ms integer := least(
-    10000,
+  v_started timestamptz := clock_timestamp();
+  -- The caller's instant, relative to now and held between "a second ago"
+  -- and "in 10 seconds" while it is still a number: any value, however
+  -- large, becomes an instant near now without a conversion that can fail.
+  v_deadline timestamptz := v_started + make_interval(secs => least(
+    10,
     greatest(
-      1,
+      -1,
       coalesce(
-        nullif(current_setting('app.workspace_delete_wait_ms', true), '')::integer,
-        10000
+        nullif(current_setting('app.workspace_delete_deadline', true), '')::numeric / 1000000
+          - extract(epoch FROM v_started)::numeric,
+        10
       )
     )
-  );
-  v_deadline timestamptz := clock_timestamp() + make_interval(secs => v_wait_ms / 1000.0);
+  )::double precision);
   v_name text;
   v_role text;
   v_counts jsonb;

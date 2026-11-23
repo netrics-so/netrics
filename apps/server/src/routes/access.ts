@@ -54,6 +54,17 @@ export async function resolveAccess(
   db: Database,
   request: FastifyRequest,
   reply: FastifyReply,
+  options: {
+    /**
+     * false: the membership alone, without the workspace's fence. Only for
+     * the route that deletes the workspace (#855): delete_workspace()
+     * checks state, role and name again under the exclusive fence, and a
+     * request that waited for the fence here would hold a connection
+     * before it reaches the queue of deletions. A deleted or purged
+     * workspace has no members, so the answer is the same 404.
+     */
+    fence?: boolean;
+  } = {},
 ): Promise<WorkspaceAccess | null> {
   const params = workspaceParamsSchema.safeParse(request.params);
   if (!params.success) {
@@ -67,6 +78,7 @@ export async function resolveAccess(
     db,
     { userId: callerId },
     async (tx) =>
+      options.fence === false ||
       (await workspaceState(tx, params.data.workspaceId)) === "live"
         ? findMembership(tx, params.data.workspaceId, callerId)
         : null,

@@ -89,10 +89,14 @@ const projectParamsSchema = z.object({ projectId: z.uuid() });
  * this order, for the process's deletion gate (one deletion at a time, so
  * a burst does not use up the pool), for a connection of the pool, and in
  * delete_workspace() for the installation's deletion lock, the workspace's
- * fence and row locks. All of it is measured against the deadline the gate
- * fixes on arrival: DELETION_GATE_BUSY when it passes before the deletion
- * could start, an error (isDeletionOutOfTime) when it passes in the
- * database. In neither case is anything deleted, then or later.
+ * fence and row locks. The gate fixes the deadline on arrival. Until the
+ * transaction has a connection the request is answered at the deadline
+ * (DELETION_GATE_BUSY); from then on the database holds the deadline as an
+ * instant on its own clock, starts nothing after it and is cut off by
+ * statement_timeout (an error, isDeletionOutOfTime). So the answer comes
+ * by the deadline plus the round trips of the two statements that fix the
+ * instant and call the function (see deleteWorkspace), and a request
+ * answered "busy" deletes nothing, then or later.
  */
 function deleteWithinDeadline(
   gate: WorkspaceDeletionGate,
@@ -129,10 +133,10 @@ function deleteWithinDeadline(
             ctx,
             async (tx) => {
               // With a connection, right before the call: what is left now.
-              const waitMs = deadline.remainingMs();
-              if (abandoned || waitMs < 1) return DELETION_GATE_BUSY;
+              const remainingMs = deadline.remainingMs();
+              if (abandoned || remainingMs < 1) return DELETION_GATE_BUSY;
               started = true;
-              return deleteWorkspace(tx, name, { waitMs });
+              return deleteWorkspace(tx, name, { remainingMs });
             },
             { fence: "none", isolationLevel: "read committed" },
           );
@@ -531,7 +535,12 @@ export function registerWorkspaceRoutes(
           }),
         },
         async (request, reply) => {
-          const access = await resolveAccess(deps.db, request, reply);
+          // Without the fence: a request for a workspace that is being
+          // deleted would wait for it on a connection, before the queue
+          // below. The membership is one read; the database decides again.
+          const access = await resolveAccess(deps.db, request, reply, {
+            fence: false,
+          });
           if (!access) {
             return;
           }

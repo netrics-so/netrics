@@ -91,28 +91,48 @@ produced one after the other.
   add memberships, and a deletion that misses one refuses where it could
   have passed.
 - A deletion that waits in the database holds a connection. So the API
-  queues deletion requests in its own process before it opens a
-  transaction (`apps/server/src/workspaces/deletion-gate.ts`): one deletion
-  at a time per process, in order of arrival, and a burst keeps at most one
-  connection of a process's pool waiting. The gate is an economy, not the
-  guarantee: the database lock is what orders deletions of several API
-  processes.
+  queues deletion requests in its own process before it opens the deleting
+  transaction (`apps/server/src/workspaces/deletion-gate.ts`): one at a
+  time per process, in order of arrival, so a burst keeps at most one
+  connection of a process's pool waiting for a deletion. For the same
+  reason this one route reads the caller's membership without the fence
+  (a request for a workspace that is being deleted would otherwise wait
+  for the fence on a connection before it reached the queue);
+  `delete_workspace()` checks state, role and name again under the
+  exclusive fence, so who may delete is unchanged. The gate is an economy,
+  not the guarantee: the database lock is what orders deletions of several
+  API processes.
 - **One deadline.** A deletion request has one instant, 10 seconds after it
-  reaches the gate, and everything it waits for is measured against that
-  instant instead of getting time of its own: the gate, a free connection
-  (the pool has no limit on that wait, so the request is answered at the
-  deadline and its transaction, when it gets a connection, does nothing),
-  and in `delete_workspace()` every lock: the deletion lock, the fence, and
-  the row locks of each statement, for example a job a worker is finishing.
-  The function is told what is left (`app.workspace_delete_wait_ms`, which
-  can only shorten its own 10 seconds) and sets `lock_timeout` from the
-  remaining time before each statement that can wait; the API also sets
-  `statement_timeout` for the call, because a statement that works rather
-  than waits cannot be bounded from inside it. When the deadline passes the
-  answer is `workspace_busy` and nothing is deleted, then or later; in
-  particular no deletion holds the deletion lock past its deadline. The
-  deadline is also what bounds the gate's queue; there is no limit on its
-  length.
+  reaches the gate. The gate and the wait for a pooled connection are given
+  up at that instant (the pool has no limit on that wait, so the request is
+  answered and its transaction, when it gets a connection, does nothing).
+  With a connection, the API sends one statement that fixes, on the
+  database's clock at that moment, both the instant
+  (`app.workspace_delete_deadline`, microseconds since the epoch, which can
+  only shorten the function's own 10 seconds) and a `statement_timeout` of
+  the same remainder, and calls `delete_workspace()` right after. The
+  function starts no statement after that instant and sets `lock_timeout`
+  from the remaining time before each statement that can wait. What this
+  guarantees:
+  - Through the API, a deletion request is answered with 204 or
+    `workspace_busy` by its deadline plus the round trips of those two
+    statements: the instant is fixed when the first reaches the database,
+    and the timeout counts from when the second does. Past that there is
+    only the commit or rollback. One round trip for both was not possible: a timeout cannot be set
+    for a statement from inside it, so a function that wraps the two would
+    still need the timeout sent ahead.
+  - A workspace is never marked deleted after that instant, and a request
+    answered `workspace_busy` deletes nothing, then or later.
+  - The function alone does not end by the deadline. `lock_timeout` counts
+    per lock, so a statement that waits for several locked rows in turn can
+    take longer, and a statement that works rather than waits cannot be
+    bounded from inside it. `statement_timeout` is what ends the call; the
+    API sets it, and someone who calls the function directly in SQL sets it
+    themselves.
+  - The gate's queue is bounded by the deadline, not by a length. The gate
+    itself can stay held past a deadline, until the holder's abandoned
+    transaction got its connection; requests behind it are answered
+    `workspace_busy` at their own deadlines meanwhile.
 - Removing a member is not ordered with deletions. An owner who is removed
   from their other workspace while they delete this one can be left without
   a workspace. Not covered.

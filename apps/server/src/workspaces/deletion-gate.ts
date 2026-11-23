@@ -14,15 +14,16 @@
 // function) take turns.
 //
 // A request has ONE deadline, an instant fixed when it arrives at the gate:
-// `budgetMs` later. Everything it then waits for is measured against that
-// instant, not given time of its own: the gate, a free connection of the
-// pool, and the locks of delete_workspace() (which is told what is left,
-// see deleteWithinDeadline in routes/workspaces.ts). A request that does
-// not get the gate by its deadline is told so and never takes a
-// connection. The deadline is also what bounds the queue: nobody waits
-// longer, whatever the holder does, and the holder is bound by its own.
+// `budgetMs` later. The gate and the wait for a pooled connection are given
+// up at that instant, and delete_workspace() starts nothing after it (see
+// deleteWithinDeadline in routes/workspaces.ts and migration 0095 for what
+// exactly is guaranteed). A request that does not get the gate by its
+// deadline is told so and takes no connection for the deletion. The
+// deadline is also what bounds the queue: nobody waits here longer. The
+// gate itself is held until the holder's work settles, which can be after
+// the holder's deadline (its transaction still waiting for a connection).
 
-/** How long a deletion request may take to start deleting, in all. */
+/** From reaching the gate to the deadline of a deletion request. */
 export const WORKSPACE_DELETION_BUDGET_MS = 10_000;
 
 /** The gate was not free within the budget. */

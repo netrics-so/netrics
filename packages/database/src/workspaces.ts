@@ -384,24 +384,43 @@ export async function deleteWorkspace(
   name: string,
   options: {
     /**
-     * What is left of the caller's deadline, at most and by default 10
-     * seconds. The function measures every lock wait against it (55P03,
-     * lock_not_available, when it runs out), and the call as a whole is
-     * cancelled at that point (57014, query_canceled) should it still be
-     * working. Either way nothing is deleted: isDeletionOutOfTime(). Sets
-     * statement_timeout for the rest of the transaction, which should end
-     * with this call.
+     * What is left of the caller's deadline now, in milliseconds (at most
+     * 10 seconds count). One statement turns it into an instant on the
+     * database's clock, which delete_workspace() then measures against:
+     * it starts no statement after that instant, so it does not mark the
+     * workspace deleted after it, and each of its lock waits ends by it
+     * (55P03, lock_not_available). The same statement sets
+     * statement_timeout to the same remainder, which ends the call should
+     * it still be working (57014, query_canceled), and stays set for the
+     * rest of the transaction, which should end with this call. Either
+     * way nothing is deleted: isDeletionOutOfTime().
+     *
+     * The slack is the two round trips involved, nothing else: the instant
+     * is fixed when that statement reaches the database (not when
+     * `remainingMs` was read), and the statement timeout counts from when
+     * the call reaches it, one round trip later.
      */
-    waitMs?: number;
+    remainingMs?: number;
   } = {},
 ): Promise<DeleteWorkspaceOutcome> {
-  if (options.waitMs !== undefined) {
-    const waitMs = String(
-      Math.min(10_000, Math.max(1, Math.floor(options.waitMs))),
+  if (options.remainingMs !== undefined) {
+    const remainingMs = Math.min(
+      10_000,
+      Math.max(1, Math.floor(options.remainingMs)),
     );
+    // One statement, on the database's clock at one moment: the instant
+    // (microseconds since the epoch, a number that reads back the same
+    // under every DateStyle and TimeZone) and the statement timeout. The
+    // call follows at once; the round trip between the two is the slack.
     await tx.execute(
-      sql`select set_config('app.workspace_delete_wait_ms', ${waitMs}, true),
-            set_config('statement_timeout', ${waitMs}, true)`,
+      sql`select set_config(
+              'app.workspace_delete_deadline',
+              (floor(extract(epoch from t.now) * 1000000)::bigint
+                + ${remainingMs}::bigint * 1000)::text,
+              true
+            ),
+            set_config('statement_timeout', ${remainingMs}::integer::text, true)
+          from (select clock_timestamp() as now) t`,
     );
   }
   const rows = await tx.execute<{ outcome: DeleteWorkspaceOutcome }>(

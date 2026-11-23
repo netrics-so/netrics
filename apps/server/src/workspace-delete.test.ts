@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -414,6 +414,17 @@ describe("deleting a workspace", () => {
         })
       ).statusCode,
     ).toBe(401);
+    // A workspace that never was, or is purged, and an id that is none:
+    // the same answer, to the owner of another workspace too.
+    for (const id of [randomUUID(), "not-a-uuid"]) {
+      for (const cookie of [fixture.owner, strangerCookie]) {
+        expectError(
+          await requestDelete(id, cookie, NAME),
+          404,
+          "workspace_not_found",
+        );
+      }
+    }
     for (const name of ["", "items", "Item", "Kept", `${NAME}!`]) {
       expectError(
         await requestDelete(doomed, fixture.owner, name),
@@ -649,6 +660,50 @@ describe("deleting a workspace", () => {
     // No token in what was logged about the revocation.
     for (const line of logs) {
       expect(line).not.toMatch(/refresh[-_]?token["']?\s*[:=]\s*["'][^"']+/i);
+    }
+  });
+
+  it("a deleted and a purged workspace answer every role like an unknown one", async () => {
+    // `doomed` is purged by now; another is deleted and not purged.
+    const waiting = await createWorkspaceAs(fixture.owner, "Waiting");
+    const invited = await addMemberViaInvitation(
+      fixture.app,
+      fixture.db,
+      fixture.owner,
+      waiting,
+      "wsdelete-admin@example.com",
+      "admin",
+    );
+    expect(invited.statusCode, invited.body).toBe(200);
+    expectError(
+      await requestDelete(waiting, adminCookie, "Waiting"),
+      403,
+      "forbidden",
+    );
+    expect(
+      (await requestDelete(waiting, fixture.owner, "Waiting")).statusCode,
+    ).toBe(204);
+    expect(await workspaceRow(waiting)).toMatchObject({
+      deleted_at: expect.any(Date),
+    });
+    expect(await workspaceRow(doomed)).toBeUndefined();
+    for (const [id, name] of [
+      [waiting, "Waiting"],
+      [doomed, NAME],
+    ] as const) {
+      for (const cookie of [
+        fixture.owner,
+        adminCookie,
+        editorCookie,
+        viewerCookie,
+        strangerCookie,
+      ]) {
+        expectError(
+          await requestDelete(id, cookie, name),
+          404,
+          "workspace_not_found",
+        );
+      }
     }
   });
 
