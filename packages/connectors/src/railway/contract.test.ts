@@ -9,6 +9,7 @@ import type {
 import {
   ConnectorError,
   RateLimitedError,
+  syncResultSchema,
   validateDatasetPage,
 } from "@netrics/connector-sdk";
 import {
@@ -54,8 +55,36 @@ const noSleep = async () => {};
 const clock = () => Date.parse(NOW);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function connector() {
-  return createRailwayConnector({ now: clock, sleep: noSleep });
+function connector(now: () => number = clock) {
+  return createRailwayConnector({ now, sleep: noSleep });
+}
+
+/**
+ * The host's rules for one result (connector-runtime validateSyncResult,
+ * ADR 0026 §7), which the connectors package may not import: a final result
+ * carries only complete pages, received datasets only on the final result,
+ * and every page fits its dataset. apps/server's railway-sync.test.ts runs
+ * whole syncs through the real validation.
+ */
+function expectHostAccepts(result: SyncResult): void {
+  const parsed = syncResultSchema.safeParse(result);
+  expect(parsed.success, parsed.error?.message).toBe(true);
+  if (result.done) {
+    for (const page of result.datasetPages ?? []) {
+      expect(page.complete, `${page.datasetKey} ${page.pageKey}`).toBe(true);
+    }
+    expectValidFreshness(railwayManifest, result);
+  } else {
+    expect(result.receivedDatasets ?? []).toEqual([]);
+  }
+  const schemas = new Map(
+    RAILWAY_DATASETS.map((dataset) => [dataset.key, dataset]),
+  );
+  for (const page of result.datasetPages ?? []) {
+    expect(() =>
+      validateDatasetPage(schemas.get(page.datasetKey)!, page),
+    ).not.toThrow();
+  }
 }
 
 function context(
@@ -98,6 +127,7 @@ async function syncAll(
       { ...request, ...(cursor ? { cursor } : {}) },
       runtime,
     );
+    expectHostAccepts(page);
     pages.push(page);
     if (page.done) break;
     expect(page.nextCursor).not.toBe(cursor);
@@ -749,6 +779,7 @@ async function runPages(
       fakeRailway.runtime,
     );
     requestsPerPage.push(fakeRailway.requests.length - before);
+    expectHostAccepts(page);
     pages.push(page);
     if (page.done) break;
     cursor = page.nextCursor;
@@ -957,6 +988,7 @@ describe("review round 1", () => {
         .sync(context(), { ...WINDOW, ...(cursor ? { cursor } : {}) }, failing)
         .catch(() => null);
       if (page === null) continue; // the host retries the same checkpoint
+      expectHostAccepts(page);
       pages.push(page);
       if (page.done) break;
       cursor = page.nextCursor;
@@ -1003,5 +1035,186 @@ describe("review round 1", () => {
     ).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ConnectorError);
     expect((error as ConnectorError).code).toBe(TOKEN_REJECTED_CODE);
+  });
+});
+
+// ─── Review round 2 (#881) ──────────────────────────────────────────────────
+
+describe("review round 2", () => {
+  it("finishes a one-project sync with only complete pages in the final result", async () => {
+    const projects = fakeProjects().slice(1, 2); // prj-site
+    const run = await runPages(
+      fake({ projects }),
+      {
+        mode: "incremental",
+        from: "2024-01-08T00:00:00.000Z",
+        to: NOW,
+      },
+      context(),
+    );
+    // expectHostAccepts ran on every result; the rows all arrived.
+    expect(rowsOf(run.datasetPages, "service_states")).toHaveLength(1);
+    expect(rowsOf(run.datasetPages, "deployments")).toHaveLength(1);
+    expect(rowsOf(run.datasetPages, "project_usage")).toHaveLength(1);
+    expect(run.last.receivedDatasets).toEqual([
+      "deployments",
+      "service_states",
+      "project_usage",
+    ]);
+  });
+
+  it("publishes a usage snapshot larger than one page", async () => {
+    const projects: FakeProject[] = Array.from({ length: 620 }, (_, index) => ({
+      id: `prj-${String(index).padStart(4, "0")}`,
+      name: `project-${index}`,
+      workspaceId: "ws-fixture",
+      services: [],
+      environments: [],
+      instances: [],
+      deployments: [],
+      rates: { cpu: 0.01, memory: 0.01, egress: 0, disk: 0 },
+    }));
+    const run = await runPages(
+      fake({ projects }),
+      { mode: "incremental", from: "2024-01-10T00:00:00.000Z", to: NOW },
+      context(),
+    );
+    const usagePages = run.datasetPages.filter(
+      (page) => page.datasetKey === "project_usage",
+    );
+    expect(usagePages.length).toBeGreaterThan(1);
+    expect(rowsOf(run.datasetPages, "project_usage")).toHaveLength(620);
+    expect(usagePages.at(-1)!.complete).toBe(true);
+  });
+
+  it("starts over when the token changed since the checkpoint", async () => {
+    const first = await connector().sync(context(), WINDOW, fake().runtime);
+    expect(first.done).toBe(false);
+    // Another account's token: only ws-b and its project.
+    const setup = withSecondWorkspace();
+    const other = fake({
+      token: "railway-other-token-9876543210",
+      projects: setup.projects.filter((project) => project.id === "prj-b"),
+      workspaces: [{ id: "ws-b", name: "B team" }],
+    });
+    const rest = await runPages(
+      other,
+      WINDOW,
+      context({ credentials: { token: "railway-other-token-9876543210" } }),
+      { cursor: first.nextCursor! },
+    );
+    expect(
+      new Set(rest.observations.map((item) => item.dimensions.resource)),
+    ).toEqual(new Set(["prj-b"]));
+    expect(freshnessEntry(rest.last, DEPLOYS_STREAM)).toBeDefined();
+    // The cursor carries no token, only a fingerprint.
+    expect(first.nextCursor).not.toContain(FAKE_TOKEN);
+    expect(
+      Buffer.from(
+        first.nextCursor!.slice(first.nextCursor!.indexOf(":") + 1),
+        "base64url",
+      ).toString("utf8"),
+    ).not.toContain(FAKE_TOKEN);
+  });
+
+  it("leaves the state snapshot as stored when a project disappeared after its rows went out", async () => {
+    const projects = fakeProjects();
+    projects[0]!.deployments = deploymentsEvery({
+      prefix: "dep-busy",
+      count: 1_200,
+      newest: "2024-01-10T11:00:00.000Z",
+      stepMs: 10 * 60 * 1000,
+      serviceId: "svc-web",
+      environmentId: "env-production",
+    });
+    const gone = new Set<string>();
+    const railway = fake({ projects, gone });
+    const run = await runPages(railway, WINDOW, context(), {
+      between: (page) => {
+        if (page === 1) gone.add("prj-api");
+      },
+    });
+    // prj-api's state rows went out on the first page.
+    expect(
+      rowsOf(run.datasetPages, "service_states").some(
+        (row) => row.project_id === "prj-api",
+      ),
+    ).toBe(true);
+    expect(
+      run.datasetPages.some(
+        (page) => page.datasetKey === "service_states" && page.complete,
+      ),
+    ).toBe(false);
+    expect(run.last.receivedDatasets).not.toContain("service_states");
+    expect(freshnessEntry(run.last, DEPLOYS_STREAM)).toBeUndefined();
+  });
+
+  it("reports cost only through the days read when a run crosses midnight", async () => {
+    let nowMs = Date.parse("2024-01-10T23:59:00.000Z");
+    const railway = fake();
+    const pages: SyncResult[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 50; guard += 1) {
+      const page = await connector(() => nowMs).sync(
+        context(),
+        {
+          mode: "incremental",
+          from: "2024-01-08T00:00:00.000Z",
+          to: "2024-01-10T23:59:00.000Z",
+          ...(cursor ? { cursor } : {}),
+        },
+        railway.runtime,
+      );
+      expectHostAccepts(page);
+      pages.push(page);
+      if (page.done) break;
+      cursor = page.nextCursor;
+      nowMs = Date.parse("2024-01-11T00:30:00.000Z");
+    }
+    const last = pages.at(-1)!;
+    expect(freshnessEntry(last, COST_STREAM)?.dataThrough).toBe("2024-01-09");
+    const usage = railway.requests.filter(
+      (request) => request.operation === "netricsUsage",
+    );
+    for (const request of usage) {
+      expect(
+        Date.parse(request.variables.endDate as string),
+      ).toBeLessThanOrEqual(Date.parse("2024-01-10T23:59:00.000Z"));
+    }
+    const days = pages
+      .flatMap((page) => page.observations)
+      .filter((item) => item.metricKey === METRICS.cost)
+      .map((item) => item.sourceTimestamp);
+    expect(days).not.toContain("2024-01-11T00:00:00.000Z");
+  });
+
+  it("names every service and environment of a large project in discovery", async () => {
+    const projects = fakeProjects();
+    const api = projects[0]!;
+    api.services = Array.from({ length: 130 }, (_, index) => ({
+      id: `svc-${index}`,
+      name: `service-${index}`,
+    }));
+    api.environments = Array.from({ length: 70 }, (_, index) => ({
+      id: `env-${index}`,
+      name: `environment-${index}`,
+    }));
+    const resources = await connector().discover(
+      context(),
+      fake({ projects }).runtime,
+    );
+    expect(
+      resources.filter((resource) => resource.kind === "service"),
+    ).toHaveLength(130 + 1);
+    expect(
+      resources.filter((resource) => resource.kind === "environment"),
+    ).toHaveLength(70 + 2);
+  });
+
+  it("finishes empty when the token sees no workspace", async () => {
+    const run = await runPages(fake({ workspaces: [] }), WINDOW, context());
+    expect(run.last.done).toBe(true);
+    expect(run.observations).toEqual([]);
+    expect(rowsOf(run.datasetPages, "service_states")).toEqual([]);
   });
 });

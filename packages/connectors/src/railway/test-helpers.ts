@@ -303,6 +303,29 @@ export function createFakeRailway(
   const failures = [...(options.failures ?? [])];
   const requests: FakeRailway["requests"] = [];
 
+  function servicesOf(
+    project: FakeProject,
+    first: number,
+    after: string | null,
+  ) {
+    const { slice, pageInfo } = page(project.services, first, after, 1_000);
+    return { pageInfo, edges: slice.map((node) => ({ node })) };
+  }
+
+  function environmentsOf(
+    project: FakeProject,
+    first: number,
+    after: string | null,
+  ) {
+    const { slice, pageInfo } = page(project.environments, first, after, 1_000);
+    return {
+      pageInfo,
+      edges: slice.map((environment) => ({
+        node: { isEphemeral: false, ...environment },
+      })),
+    };
+  }
+
   function instancesOf(
     project: FakeProject,
     environmentId: string,
@@ -392,20 +415,45 @@ export function createFakeRailway(
                 node: {
                   id: project.id,
                   name: project.name,
-                  services: {
-                    edges: project.services.map((node) => ({ node })),
-                  },
-                  environments: {
-                    edges: project.environments.map((environment) => ({
-                      node: {
-                        isEphemeral: false,
-                        ...environment,
-                      },
-                    })),
-                  },
+                  // Railway's defaults when the query names no page size.
+                  services: servicesOf(
+                    project,
+                    Number(variables.servicesFirst ?? 100),
+                    null,
+                  ),
+                  environments: environmentsOf(
+                    project,
+                    Number(variables.environmentsFirst ?? 50),
+                    null,
+                  ),
                 },
               })),
             },
+          },
+        };
+      }
+      case "netricsProjectServices":
+      case "netricsProjectEnvironments": {
+        const project = projects.find(
+          (entry) => entry.id === variables.projectId,
+        );
+        if (!project || !workspaceVisible(project.workspaceId)) {
+          return notFound("Project");
+        }
+        const first = Number(variables.first);
+        const after = variables.after as string | null;
+        return {
+          data: {
+            project:
+              operation === "netricsProjectServices"
+                ? {
+                    id: project.id,
+                    services: servicesOf(project, first, after),
+                  }
+                : {
+                    id: project.id,
+                    environments: environmentsOf(project, first, after),
+                  },
           },
         };
       }

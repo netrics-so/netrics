@@ -7,8 +7,12 @@ import { RailwayApiError, type RailwayQuery } from "./api.js";
 import {
   ME_QUERY,
   PROJECTS_QUERY,
+  PROJECT_ENVIRONMENTS_QUERY,
+  PROJECT_SERVICES_QUERY,
   WORKSPACE_QUERY,
   meSchema,
+  projectEnvironmentsSchema,
+  projectServicesSchema,
   projectsSchema,
   workspaceAnswerSchema,
 } from "./queries.js";
@@ -77,17 +81,43 @@ export async function listWorkspaces(
   return meSchema.parse(await query(ME_QUERY)).me.workspaces;
 }
 
-/** One page of a workspace's projects. */
+/** Services and environments per project in a projects page. */
+const SERVICES_PER_REQUEST = 100;
+const ENVIRONMENTS_PER_REQUEST = 50;
+
+interface NestedPages {
+  /** Where a project's services and environments continue, if they do. */
+  services: string | null;
+  environments: string | null;
+}
+
+/**
+ * One page of a workspace's projects. `nested` is how many services and
+ * environments to read along: a sync only needs ids and names (1), the
+ * discovery all of them (full pages, then `completeProject`).
+ */
 export async function projectsPage(
   query: RailwayQuery,
   workspaceId: string,
   after: string | null,
   first = PROJECTS_PER_REQUEST,
-): Promise<{ projects: ProjectListing[]; next: string | null }> {
+  nested: "names" | "full" = "names",
+): Promise<{
+  projects: Array<ProjectListing & { more: NestedPages }>;
+  next: string | null;
+}> {
   const answer = projectsSchema.parse(
-    await query(PROJECTS_QUERY, { workspaceId, first, after }),
+    await query(PROJECTS_QUERY, {
+      workspaceId,
+      first,
+      after,
+      servicesFirst: nested === "full" ? SERVICES_PER_REQUEST : 1,
+      environmentsFirst: nested === "full" ? ENVIRONMENTS_PER_REQUEST : 1,
+    }),
   );
   const { hasNextPage, endCursor } = answer.projects.pageInfo;
+  const more = (info: { hasNextPage: boolean; endCursor?: string | null }) =>
+    info.hasNextPage && info.endCursor ? info.endCursor : null;
   return {
     projects: answer.projects.edges.map(({ node }) => ({
       id: node.id,
@@ -95,22 +125,76 @@ export async function projectsPage(
       workspaceId,
       services: node.services.edges.map((edge) => edge.node),
       environments: node.environments.edges.map((edge) => edge.node),
+      more: {
+        services: more(node.services.pageInfo),
+        environments: more(node.environments.pageInfo),
+      },
     })),
     next: hasNextPage && endCursor ? endCursor : null,
   };
 }
 
+/** Reads the rest of a project's services and environments (#881). */
+async function completeProject(
+  query: RailwayQuery,
+  project: ProjectListing,
+  more: NestedPages,
+): Promise<void> {
+  for (let after = more.services; after !== null;) {
+    const answer = projectServicesSchema.parse(
+      await query(PROJECT_SERVICES_QUERY, {
+        projectId: project.id,
+        first: SERVICES_PER_REQUEST,
+        after,
+      }),
+    ).project.services;
+    project.services.push(...answer.edges.map((edge) => edge.node));
+    after =
+      answer.pageInfo.hasNextPage && answer.pageInfo.endCursor
+        ? answer.pageInfo.endCursor
+        : null;
+  }
+  for (let after = more.environments; after !== null;) {
+    const answer = projectEnvironmentsSchema.parse(
+      await query(PROJECT_ENVIRONMENTS_QUERY, {
+        projectId: project.id,
+        first: ENVIRONMENTS_PER_REQUEST,
+        after,
+      }),
+    ).project.environments;
+    project.environments.push(...answer.edges.map((edge) => edge.node));
+    after =
+      answer.pageInfo.hasNextPage && answer.pageInfo.endCursor
+        ? answer.pageInfo.endCursor
+        : null;
+  }
+}
+
+/**
+ * A workspace's projects. With `complete`, every service and environment
+ * of each (discovery names them); otherwise ids and names only.
+ */
 export async function listProjects(
   query: RailwayQuery,
   workspaceId: string,
   first = PROJECTS_PER_REQUEST,
   maxRequests = MAX_PROJECT_REQUESTS,
+  complete = false,
 ): Promise<ProjectListing[]> {
   const projects: ProjectListing[] = [];
   let after: string | null = null;
   for (let request = 0; request < maxRequests; request += 1) {
-    const page = await projectsPage(query, workspaceId, after, first);
-    projects.push(...page.projects);
+    const page = await projectsPage(
+      query,
+      workspaceId,
+      after,
+      first,
+      complete ? "full" : "names",
+    );
+    for (const { more, ...project } of page.projects) {
+      if (complete) await completeProject(query, project, more);
+      projects.push(project);
+    }
     if (page.next === null) break;
     after = page.next;
   }

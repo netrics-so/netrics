@@ -364,7 +364,13 @@ export function createRailwayConnector(
           query,
           workspaceIdOf(context),
         )) {
-          for (const project of await listProjects(query, workspace.id)) {
+          for (const project of await listProjects(
+            query,
+            workspace.id,
+            undefined,
+            undefined,
+            true,
+          )) {
             add({
               id: project.id,
               name: project.name,

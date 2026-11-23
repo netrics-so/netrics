@@ -91,7 +91,8 @@ them.
   on every sync, so their status follows Railway (building → success).
   Older deployment rows keep the status they had then; `service_states` is
   always current. A project deleted during a sync leaves the stream
-  unreported for that sync.
+  unreported for that sync, and the stored `service_states` snapshot in
+  place until the next sync.
 - **Cost** (`cost`, periodic, UTC days): Railway counts usage continuously,
   so a UTC day is complete at midnight UTC. A sync reports the day before
   today as the last complete day, only when every workspace's usage was
@@ -106,9 +107,16 @@ of projects, a page of a project's environments or of an environment's
 service instances, a page of its deployments, one day's usage of one
 workspace, one workspace's estimate. A sync page runs at most ten requests
 and checkpoints the next step in its cursor, so a failure or a rate limit
-repeats one step, not a page of them. The cursor belongs to the connection
-and its workspace ID: after a change of the workspace ID the next sync
-starts a new run. Snapshots are completed by the run's last page only.
+repeats one step, not a page of them. The cursor belongs to the connection,
+its workspace ID and its token (a salted, shortened hash of it, never the
+token): after a change of either, the next sync starts a new run. A run
+uses the time it started on every page, so a run that crosses midnight UTC
+reports the days as of its start. Rows go out on pages before the last;
+the last page only completes the run's refreshes (ADR 0026), and only
+those that were read whole.
+
+Discovery reads every service and environment of each project, following
+Railway's page cursors.
 
 ## How cost is estimated
 

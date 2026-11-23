@@ -33,16 +33,44 @@ export const WORKSPACE_QUERY = `query netricsWorkspace($workspaceId: String!) {
 }`;
 
 /** Projects of a workspace with their services and environments, by name. */
-export const PROJECTS_QUERY = `query netricsProjects($workspaceId: String!, $first: Int!, $after: String) {
+export const PROJECTS_QUERY = `query netricsProjects($workspaceId: String!, $first: Int!, $after: String, $servicesFirst: Int!, $environmentsFirst: Int!) {
   projects(workspaceId: $workspaceId, first: $first, after: $after) {
     pageInfo { hasNextPage endCursor }
     edges {
       node {
         id
         name
-        services(first: 100) { edges { node { id name } } }
-        environments(first: 50) { edges { node { id name isEphemeral } } }
+        services(first: $servicesFirst) {
+          pageInfo { hasNextPage endCursor }
+          edges { node { id name } }
+        }
+        environments(first: $environmentsFirst) {
+          pageInfo { hasNextPage endCursor }
+          edges { node { id name isEphemeral } }
+        }
       }
+    }
+  }
+}`;
+
+/** Further services of one project, for discovery. */
+export const PROJECT_SERVICES_QUERY = `query netricsProjectServices($projectId: String!, $first: Int!, $after: String) {
+  project(id: $projectId) {
+    id
+    services(first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      edges { node { id name } }
+    }
+  }
+}`;
+
+/** Further environments of one project (PR environments too), for discovery. */
+export const PROJECT_ENVIRONMENTS_QUERY = `query netricsProjectEnvironments($projectId: String!, $first: Int!, $after: String) {
+  project(id: $projectId) {
+    id
+    environments(first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      edges { node { id name isEphemeral } }
     }
   }
 }`;
@@ -135,6 +163,8 @@ export const ALL_QUERIES = [
   ME_QUERY,
   WORKSPACE_QUERY,
   PROJECTS_QUERY,
+  PROJECT_SERVICES_QUERY,
+  PROJECT_ENVIRONMENTS_QUERY,
   PROJECT_STATE_QUERY,
   ENVIRONMENT_INSTANCES_QUERY,
   DEPLOYMENTS_QUERY,
@@ -153,7 +183,7 @@ const pageInfo = z.object({
   endCursor: z.string().nullish(),
 });
 const connection = <T extends z.ZodType>(node: T) =>
-  z.object({ edges: z.array(z.object({ node })) });
+  z.object({ pageInfo, edges: z.array(z.object({ node })) });
 
 export const workspaceSchema = z.object({ id, name: z.string() });
 export const meSchema = z.object({
@@ -180,6 +210,14 @@ export const projectsSchema = z.object({
       }),
     ),
   }),
+});
+
+export const projectServicesSchema = z.object({
+  project: z.object({ id, services: connection(namedSchema) }),
+});
+
+export const projectEnvironmentsSchema = z.object({
+  project: z.object({ id, environments: connection(environmentSchema) }),
 });
 
 const statusSchema = z.enum(DEPLOYMENT_STATUSES);

@@ -64,7 +64,12 @@ import {
   usageSchema,
   type RailwayServiceInstance,
 } from "./queries.js";
-import { listWorkspaces, projectsPage, workspaceIdOf } from "./reading.js";
+import {
+  listWorkspaces,
+  projectsPage,
+  tokenOf,
+  workspaceIdOf,
+} from "./reading.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /**
@@ -145,10 +150,15 @@ interface ProjectProgress {
 }
 
 interface RunState {
-  v: 2;
-  /** What the run reads: the connection and its workspace scope. */
+  v: 3;
+  /**
+   * What the run reads: the connection, and its scope (workspace ID and a
+   * fingerprint of the token, never the token).
+   */
   connection: string;
   scope: string;
+  /** When the run started: the clock of all its pages. */
+  at: number;
   refresh: string;
   startMs: number;
   toMs: number;
@@ -175,11 +185,34 @@ interface RunState {
   /** Dataset refresh chains: last page key per dataset, page counter. */
   last: Record<string, string | null>;
   pages: number;
-  /** A project disappeared during the run: no deploy freshness. */
+  /**
+   * A project disappeared during the run: no deploy freshness, and the
+   * state snapshot is left incomplete, so the stored one stays.
+   */
   deploysPartial?: boolean;
+  /**
+   * Every step is done and the rows of the last ones went out on a page
+   * that is not final: the next page completes the refreshes. Set with
+   * `usageStaged` when the usage snapshot's rows went out.
+   */
+  finishing?: boolean;
+  usageStaged?: boolean;
 }
 
-const CURSOR_PREFIX = "railway.v2:";
+const CURSOR_PREFIX = "railway.v3:";
+
+/**
+ * A checkpoint belongs to the workspace ID and the token it was read
+ * with: another account's token must not continue it (#881). Only a
+ * salted, shortened hash of the token is kept.
+ */
+function scopeOf(context: ConnectionContext): string {
+  const fingerprint = createHash("sha256")
+    .update(`railway-cursor|${context.connectionId}|${tokenOf(context) ?? ""}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `${workspaceIdOf(context) ?? ""}|${fingerprint}`;
+}
 
 function encodeState(state: RunState): string {
   return (
@@ -200,7 +233,7 @@ function decodeState(
         "utf8",
       ),
     ) as RunState;
-    return state.v === 2 &&
+    return state.v === 3 &&
       state.connection === connection &&
       state.scope === scope
       ? state
@@ -298,7 +331,7 @@ export async function syncPage(
   options: RailwaySyncOptions,
 ): Promise<SyncResult> {
   const { now } = options;
-  const scope = workspaceIdOf(context) ?? "";
+  const scope = scopeOf(context);
   let budget = MAX_REQUESTS_PER_PAGE;
   const ask: RailwayQuery = (document, variables) => {
     budget -= 1;
@@ -311,14 +344,16 @@ export async function syncPage(
     const startMs = startOfUtcDay(Date.parse(request.from));
     const toMs = Date.parse(request.to);
     state = {
-      v: 2,
+      v: 3,
       connection: context.connectionId,
       scope,
+      at: now(),
       refresh: refreshKey(context.connectionId, scope, startMs, toMs),
       startMs,
       toMs,
       workspaces: workspaces.map((workspace) => workspace.id),
-      listing: { ws: 0, after: null },
+      // A token without workspaces has nothing to list (#881).
+      ...(workspaces.length > 0 ? { listing: { ws: 0, after: null } } : {}),
       projects: [],
       index: 0,
       costDays: 0,
@@ -333,7 +368,10 @@ export async function syncPage(
   const run = state;
   const out: PageOutput = { observations: [], states: [], deployments: [] };
 
-  const nowMs = now();
+  // The run's clock is the time it started, on every page: a run that
+  // crosses midnight UTC reads and reports the days as of its start, so it
+  // never calls a day complete that it read only partly (#881).
+  const nowMs = run.at;
   const today = startOfUtcDay(nowMs);
   const lastCostDay = Math.min(startOfUtcDay(run.toMs - 1), today);
   const firstCostDay = Math.max(run.startMs, startOfPreviousUtcMonth(nowMs));
@@ -734,48 +772,9 @@ export async function syncPage(
     return null;
   }
 
-  // ── The page ──
-
-  // A step sends one request, a deployments step whose project may be gone
-  // two (see deploymentsStep): a step starts only while two are left.
-  let step = nextStep();
-  while (step && budget >= 2) {
-    await step();
-    step = nextStep();
-  }
-
-  const datasetPages: DatasetPage[] = [];
-  const flush = (key: string, records: DatasetRecord[]) => {
-    for (const chunk of chunks(records)) {
-      datasetPages.push(datasetPage(run, key, chunk, false));
-    }
-  };
-  flush(serviceStatesDataset.key, out.states);
-  flush(deploymentsDataset.key, out.deployments);
-
-  if (step) {
-    return {
-      observations: out.observations,
-      datasetPages,
-      nextCursor: encodeState(run),
-      done: false,
-    };
-  }
-
-  // The last page completes this run's refreshes. The usage snapshot is
-  // only replaced when today's usage of every workspace was read (ADR
-  // 0026): otherwise the stored one stays.
-  datasetPages.push(
-    datasetPage(run, deploymentsDataset.key, [], true),
-    datasetPage(run, serviceStatesDataset.key, [], true),
-  );
-  const received = [deploymentsDataset.key, serviceStatesDataset.key];
-  const usageComplete =
-    run.costDenied.length === 0 &&
-    lastCostDay === today &&
-    run.workspaces.every((workspace) => run.todayRead.includes(workspace));
-  if (usageComplete) {
-    const records: DatasetRecord[] = run.projects.map(([projectId, , name]) => {
+  /** The usage snapshot: every project, today's usage and estimate. */
+  function usageRecords(): DatasetRecord[] {
+    return run.projects.map(([projectId, , name]) => {
       const usage = run.today[projectId] ?? {};
       const estimate = run.estimates[projectId];
       return {
@@ -795,18 +794,72 @@ export async function syncPage(
         },
       };
     });
-    const parts = chunks(records);
-    if (parts.length === 0) parts.push([]);
-    parts.forEach((part, index) =>
-      datasetPages.push(
-        datasetPage(
-          run,
-          projectUsageDataset.key,
-          part,
-          index === parts.length - 1,
-        ),
-      ),
-    );
+  }
+
+  // ── The page ──
+
+  // A step sends one request, a deployments step whose project may be gone
+  // two (see deploymentsStep): a step starts only while two are left.
+  let step = nextStep();
+  while (step && budget >= 2) {
+    await step();
+    step = nextStep();
+  }
+
+  const datasetPages: DatasetPage[] = [];
+  const flush = (key: string, records: DatasetRecord[]) => {
+    for (const chunk of chunks(records)) {
+      datasetPages.push(datasetPage(run, key, chunk, false));
+    }
+  };
+  flush(serviceStatesDataset.key, out.states);
+  flush(deploymentsDataset.key, out.deployments);
+
+  const usageComplete =
+    run.costDenied.length === 0 &&
+    lastCostDay === today &&
+    run.workspaces.every((workspace) => run.todayRead.includes(workspace));
+
+  // Every step done, rows still to send: they go out on this page, which is
+  // not final, and the next page completes the refreshes. The host refuses
+  // a final result with an incomplete page (ADR 0026 §7), so the final
+  // result carries nothing but the empty pages that complete them.
+  if (!step && !run.finishing) {
+    // The usage snapshot is replaced only when today's usage of every
+    // workspace was read (ADR 0026): otherwise the stored one stays. Its
+    // rows wait for the next page when this one has no room for them.
+    const usage = usageComplete ? chunks(usageRecords()) : [];
+    if (datasetPages.length + usage.length <= DATASET_LIMITS.datasets) {
+      for (const chunk of usage) {
+        datasetPages.push(
+          datasetPage(run, projectUsageDataset.key, chunk, false),
+        );
+      }
+      run.usageStaged = usageComplete;
+      run.finishing = true;
+    }
+  }
+
+  if (step || !run.finishing || datasetPages.length > 0) {
+    return {
+      observations: out.observations,
+      datasetPages,
+      nextCursor: encodeState(run),
+      done: false,
+    };
+  }
+
+  // The final page. A project that disappeared during the run leaves the
+  // state refresh incomplete: its rows already went out, and only the
+  // stored snapshot is known to be whole (ADR 0026 §7).
+  const received = [deploymentsDataset.key];
+  datasetPages.push(datasetPage(run, deploymentsDataset.key, [], true));
+  if (!run.deploysPartial) {
+    datasetPages.push(datasetPage(run, serviceStatesDataset.key, [], true));
+    received.push(serviceStatesDataset.key);
+  }
+  if (run.usageStaged) {
+    datasetPages.push(datasetPage(run, projectUsageDataset.key, [], true));
     received.push(projectUsageDataset.key);
   }
 
