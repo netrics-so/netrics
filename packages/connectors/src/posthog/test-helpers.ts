@@ -47,8 +47,8 @@ export interface FakeProject {
   org?: string;
   /** Events on a day (UTC, YYYY-MM-DD); default 100 + day of month. */
   events?: (day: string) => number;
-  /** Distinct event names per day; default 12. */
-  eventNames?: number;
+  /** Distinct event names per day; default 12. A function: per day. */
+  eventNames?: number | ((day: string) => number);
   /** The key may not read this project's data. */
   refused?: 403 | 404;
 }
@@ -78,6 +78,12 @@ export interface FakePostHogOptions {
   nextScheme?: "https" | "http";
   /** Answers a request before the fake does; undefined lets it through. */
   intercept?: (request: FakeRequest) => ConnectorResponse | undefined;
+  /**
+   * A key limited to these projects (PostHog's `scoped_teams`): PostHog
+   * refuses organization endpoints and other projects with 403
+   * (posthog/permissions.py).
+   */
+  scopedProjects?: number[];
 }
 
 export interface FakeRequest {
@@ -194,12 +200,15 @@ export function createFakePostHog(options: FakePostHogOptions = {}) {
     const [from, to] = [
       ...text.matchAll(/toDateTime\('(\d{4}-\d{2}-\d{2})/g),
     ].map((match) => match[1]!);
-    const names = project.eventNames ?? 12;
+    const namesOf = (day: string) =>
+      typeof project.eventNames === "function"
+        ? project.eventNames(day)
+        : (project.eventNames ?? 12);
     const events = project.events ?? defaultEvents;
     const rows: Array<[string, string, number]> = [];
     for (const day of daysBetween(from!, to!)) {
       if (events(day) === 0) continue;
-      for (let index = 0; index < Math.min(names, 10); index += 1) {
+      for (let index = 0; index < Math.min(namesOf(day), 10); index += 1) {
         rows.push([
           day,
           index === 0 ? "$pageview" : `event_${index}`,
@@ -339,6 +348,26 @@ export function createFakePostHog(options: FakePostHogOptions = {}) {
       if (intercepted) return intercepted;
       if (init?.headers?.authorization !== `Bearer ${key}`) {
         return unauthorized();
+      }
+      if (options.scopedProjects) {
+        const project = /^\/api\/projects\/(\d+)\//.exec(request.path)?.[1];
+        if (project === undefined) {
+          return answer(403, {
+            type: "authentication_error",
+            code: "permission_denied",
+            detail:
+              "API keys with scoped projects are only supported on project-based endpoints.",
+            attr: null,
+          });
+        }
+        if (!options.scopedProjects.includes(Number(project))) {
+          return answer(403, {
+            type: "authentication_error",
+            code: "permission_denied",
+            detail: `API key does not have access to the requested project: ID ${project}.`,
+            attr: null,
+          });
+        }
       }
       return route(request);
     },

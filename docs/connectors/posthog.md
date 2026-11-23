@@ -23,10 +23,28 @@ milestone's exit gate passes.
 3. Choose the scopes **Organization: Read**, **Project: Read**, **Query:
    Read** and **Insight: Read**, click **Create** and copy the key. PostHog
    shows it only once.
-4. In netrics, choose the **Region**: `us` for PostHog Cloud US
-   (`us.posthog.com`), `eu` for PostHog Cloud EU (`eu.posthog.com`), or
-   `self-hosted` with your instance's **Host** (for example
-   `posthog.example.com`), and paste the key.
+4. In netrics, enter the **Host**: `us.posthog.com` for PostHog Cloud US
+   (the default when left empty), `eu.posthog.com` for PostHog Cloud EU, or
+   your instance's host (for example `posthog.example.com`), and paste the
+   key. For a key limited to projects, also enter their **Project IDs**
+   (PostHog: Project settings → Project ID).
+
+The host of a connection is fixed: its stored key goes only to the host it
+was entered for. A preview or save that names another host is refused
+(`connection_host_fixed`) before any request; another host is a new
+connection, with its own key. So two PostHog instances, whose project IDs
+may collide, never share one connection's history.
+
+### Keys limited to projects
+
+PostHog refuses organization endpoints to a key limited to projects
+(`scoped_teams`: "API keys with scoped projects are only supported on
+project-based endpoints", `posthog/permissions.py`). With **Project IDs**
+set, netrics lists no organization: the check runs `SELECT 1` in each named
+project, discovery offers exactly those projects (named by their ID, since
+no project endpoint names a project for such a key), and a sync reads them
+through project endpoints only. Without Project IDs, such a key fails the
+check with `posthog.projects_required`.
 
 After connecting, choose the projects to sync (all of them, or some). Each
 project is a resource that can be linked to a workspace project, like a
@@ -37,15 +55,22 @@ shown or logged. PostHog has no read-only key kind apart from the scopes;
 netrics never sends anything but the reads below.
 
 The connection check reads one page of organizations, one project and runs
-the query `SELECT 1` in it (which needs `query:read`), and, when insights are
-configured, lists one insight. It fails with a reason:
+the query `SELECT 1` in it (which needs `query:read`), or with Project IDs
+runs `SELECT 1` in each of them, and, when insights are configured, lists
+one insight. It fails with a reason:
 
-| Code                       | When                                                                    |
-| -------------------------- | ----------------------------------------------------------------------- |
-| `posthog.key_rejected`     | PostHog answers 401: a wrong or deleted key, or a key of another region |
-| `posthog.scope_missing`    | PostHog answers 403 naming a missing scope                              |
-| `posthog.host_invalid`     | `self-hosted` without a valid host (see below); nothing is sent         |
-| `posthog.insights_invalid` | An entry of **Saved insights** is not an insight link, or more than 20  |
+| Code                        | When                                                                    |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `posthog.key_rejected`      | PostHog answers 401: a wrong or deleted key, or a key of another region |
+| `posthog.scope_missing`     | PostHog answers 403 naming a missing scope                              |
+| `posthog.host_invalid`      | The host is no valid host name (see below); nothing is sent             |
+| `posthog.insights_invalid`  | An entry of **Saved insights** is not an insight link, or more than 20  |
+| `posthog.projects_required` | The key is limited to projects and no Project IDs are set               |
+| `posthog.projects_invalid`  | A Project ID is no ID, more than 50, or one the key cannot read         |
+
+A stored key whose bound host differs from the connection's configuration
+(a row changed outside the API) is refused by the runtime before any
+request: `connection.credentials_host_changed`.
 
 ### Self-hosted PostHog
 
@@ -53,7 +78,9 @@ The **Host** is a host name, or an `https://` origin without a path: a
 name with at least one dot, no IP address, no port. The connection reaches
 that host only: since SDK 0.2.20 a manifest can name config keys whose value
 the host adds to that connection's egress allowlist (`configuredHosts`), and
-the PostHog connector names `host`. The egress guard still refuses private,
+the PostHog connector names `host`. The key is bound to that host in its
+encrypted envelope, and the runtime refuses to use it with another one
+(see `docs/architecture.md`). The egress guard still refuses private,
 loopback and metadata addresses, so the instance must be reachable from the
 internet over https. A PostHog on a private network is not supported (the
 private-host allowance of self-hosted netrics applies to custom APIs only).
@@ -82,8 +109,9 @@ Datasets:
 - `top_events` (upsert): the ten most frequent event names per project and
   UTC day, with their counts and rank, from one HogQL query per window
   (`… GROUP BY day, event … LIMIT 10 BY day`). The key is project, day and
-  rank, so a day read again replaces its ranks and an event that drops out
-  of the top leaves no stale row.
+  rank. Every window is read whole, so a day read again replaces its ranks,
+  and the ranks it no longer has are deleted with tombstones (ADR 0026 §3):
+  a day with three events keeps no fourth rank from an earlier read.
 - `insight_results` (snapshot): the results of the configured saved
   insights, as PostHog last computed them: one row per series (a breakdown
   value or comparison is a series of its own) and time bucket, with the
@@ -94,7 +122,8 @@ Datasets:
 - `insights` (snapshot): what became of each configured insight on the last
   sync: `ok`, `not_found` (deleted or unknown), `unsupported` (not a trends
   insight, or an interval other than day, week or month), `too_large` (more
-  than 5,000 rows), `not_selected` (its project is not synced), `denied`
+  than 5,000 rows, or more than ten dataset pages, which long labels or
+  breakdown values reach first), `not_selected` (its project is not synced), `denied`
   (PostHog refused it) or `not_ready` (PostHog has not computed it). The
   last two keep the stored `insight_results`.
 

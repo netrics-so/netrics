@@ -30,7 +30,11 @@ import {
   KEY_REJECTED_CODE,
   KEY_REJECTED_MESSAGE,
   MAX_INSIGHTS,
-  REGIONS,
+  MAX_PROJECT_IDS,
+  PROJECTS_INVALID_CODE,
+  PROJECTS_INVALID_MESSAGE,
+  PROJECTS_REQUIRED_CODE,
+  PROJECTS_REQUIRED_MESSAGE,
   SCOPE_MISSING_CODE,
   SCOPE_MISSING_MESSAGE,
   apiKeyOf,
@@ -38,6 +42,7 @@ import {
   insightsOf,
   listProjects,
   organizationsPage,
+  projectIdsOf,
   projectsPage,
   rethrow,
 } from "./reading.js";
@@ -56,6 +61,10 @@ export {
   INSIGHTS_INVALID_MESSAGE,
   KEY_REJECTED_CODE,
   KEY_REJECTED_MESSAGE,
+  PROJECTS_INVALID_CODE,
+  PROJECTS_INVALID_MESSAGE,
+  PROJECTS_REQUIRED_CODE,
+  PROJECTS_REQUIRED_MESSAGE,
   REQUIRED_SCOPES,
   SCOPE_MISSING_CODE,
   SCOPE_MISSING_MESSAGE,
@@ -93,18 +102,18 @@ const posthogDe: ManifestTranslation = {
     "Öffne in PostHog Settings → Personal API keys (oben rechts über dein Profil).",
     "Klicke auf „Create personal API key“, gib ihm einen Namen (zum Beispiel „netrics“) und wähle die Organisation oder die Projekte, die netrics lesen soll.",
     "Wähle die Scopes Organization: Read, Project: Read, Query: Read und Insight: Read, klicke auf Create und kopiere den Key. PostHog zeigt ihn nur einmal an.",
-    "Wähle unten die Region deines PostHog (US oder EU Cloud) oder „self-hosted“ mit dem Host deiner Instanz, und füge den Key ein.",
+    "Trag unten den Host deines PostHog ein (us.posthog.com, eu.posthog.com oder deine eigene Instanz) und füge den Key ein. Ist der Key auf Projekte beschränkt, trag auch ihre Projekt-IDs ein.",
   ],
   config: {
-    region: {
-      title: "Region",
-      description:
-        "„us“ für PostHog Cloud US (us.posthog.com), „eu“ für PostHog Cloud EU (eu.posthog.com), „self-hosted“ für deine eigene Instanz.",
-    },
     host: {
-      title: "Host (self-hosted)",
+      title: "Host",
       description:
-        "Nur für „self-hosted“: der Host-Name deiner PostHog-Instanz, zum Beispiel posthog.example.com. netrics erreicht ihn über https; er muss öffentlich erreichbar sein.",
+        "us.posthog.com für PostHog Cloud US (ohne Eingabe), eu.posthog.com für PostHog Cloud EU, oder der Host-Name deiner eigenen Instanz, zum Beispiel posthog.example.com: öffentlich erreichbar über https. Der Host bleibt für die Verbindung fest; ein anderer Host ist eine neue Verbindung.",
+    },
+    projects: {
+      title: "Projekt-IDs",
+      description:
+        "Nur für einen Key, der auf Projekte beschränkt ist: die IDs dieser Projekte (PostHog: Project settings → Project ID), getrennt durch Leerzeichen oder Kommas, höchstens 50. Ohne Eingabe liest netrics die Projekte der Organisationen des Keys.",
     },
     insights: {
       title: "Gespeicherte Insights",
@@ -186,7 +195,7 @@ export const posthogManifest: ConnectorManifest = {
           "In PostHog, open Settings → Personal API keys (top right, through your profile).",
           "Click “Create personal API key”, name it (for example “netrics”) and choose the organization or the projects netrics should read.",
           "Choose the scopes Organization: Read, Project: Read, Query: Read and Insight: Read, click Create and copy the key. PostHog shows it only once.",
-          "Below, choose your PostHog's region (US or EU Cloud), or “self-hosted” with your instance's host, and paste the key.",
+          "Below, enter your PostHog's host (us.posthog.com, eu.posthog.com or your own instance) and paste the key. For a key limited to projects, also enter their project IDs.",
         ],
         url: "https://us.posthog.com/settings/user-api-keys",
       },
@@ -195,20 +204,19 @@ export const posthogManifest: ConnectorManifest = {
   configSchema: {
     type: "object",
     properties: {
-      region: {
-        type: "string",
-        title: "Region",
-        description:
-          "“us” for PostHog Cloud US (us.posthog.com), “eu” for PostHog Cloud EU (eu.posthog.com), “self-hosted” for your own instance.",
-        enum: [...REGIONS],
-        default: "us",
-      },
       host: {
         type: "string",
-        title: "Host (self-hosted)",
+        title: "Host",
         description:
-          "Only for “self-hosted”: the host name of your PostHog instance, such as posthog.example.com. netrics reaches it over https; it must be reachable from the internet.",
+          "us.posthog.com for PostHog Cloud US (the default), eu.posthog.com for PostHog Cloud EU, or your own instance's host name, such as posthog.example.com: reachable from the internet over https. The host stays fixed for the connection; another host is another connection.",
+        default: US_HOST,
         maxLength: 253,
+      },
+      projects: {
+        type: "string",
+        title: "Project IDs",
+        description: `Only for a key limited to projects: their IDs (PostHog: Project settings → Project ID), separated by spaces or commas, at most ${MAX_PROJECT_IDS}. Without them netrics reads the projects of the key's organizations.`,
+        maxLength: 1000,
       },
       insights: {
         type: "string",
@@ -359,15 +367,46 @@ export function createPostHogConnector(
           code: INSIGHTS_INVALID_CODE,
         };
       }
+      const projectIds = projectIdsOf(context);
+      if (projectIds.invalid > 0) {
+        return {
+          ok: false,
+          message: PROJECTS_INVALID_MESSAGE,
+          code: PROJECTS_INVALID_CODE,
+        };
+      }
       try {
         const api = client(context, runtime);
-        // The cheapest reads of what a sync needs: one organization, one
-        // project, a constant query, and the configured insights' listing.
-        const [organization] = (await organizationsPage(api, 0)).organizations;
-        if (organization) {
-          const [project] = (await projectsPage(api, organization.id, 0, 1))
-            .projects;
-          if (project) await api.query(project.id, PROBE_BODY);
+        if (projectIds.ids) {
+          // A key limited to projects: each named project answers a
+          // constant query (project endpoints only, posthog/permissions.py).
+          for (const id of projectIds.ids) {
+            try {
+              await api.query(id, PROBE_BODY);
+            } catch (error) {
+              if (
+                error instanceof PostHogApiError &&
+                (error.kind === "forbidden" || error.kind === "not_found")
+              ) {
+                return {
+                  ok: false,
+                  message: PROJECTS_INVALID_MESSAGE,
+                  code: PROJECTS_INVALID_CODE,
+                };
+              }
+              throw error;
+            }
+          }
+        } else {
+          // The cheapest reads of what a sync needs: one organization, one
+          // project and a constant query.
+          const [organization] = (await organizationsPage(api, 0))
+            .organizations;
+          if (organization) {
+            const [project] = (await projectsPage(api, organization.id, 0, 1))
+              .projects;
+            if (project) await api.query(project.id, PROBE_BODY);
+          }
         }
         if (insights[0]) {
           await api
@@ -401,6 +440,16 @@ export function createPostHogConnector(
             code: SCOPE_MISSING_CODE,
           };
         }
+        if (
+          error instanceof PostHogApiError &&
+          error.kind === "project_scoped"
+        ) {
+          return {
+            ok: false,
+            message: PROJECTS_REQUIRED_MESSAGE,
+            code: PROJECTS_REQUIRED_CODE,
+          };
+        }
         throw error;
       }
       return { ok: true };
@@ -408,14 +457,19 @@ export function createPostHogConnector(
 
     async discover(context, runtime): Promise<Resource[]> {
       try {
-        return (await listProjects(client(context, runtime))).map(
-          (project) => ({
-            id: project.id,
-            name: project.name,
-            kind: "project",
-            metadata: { organizationId: project.organizationId },
-          }),
-        );
+        return (
+          await listProjects(
+            client(context, runtime),
+            projectIdsOf(context).ids,
+          )
+        ).map((project) => ({
+          id: project.id,
+          name: project.name,
+          kind: "project",
+          ...(project.organizationId
+            ? { metadata: { organizationId: project.organizationId } }
+            : {}),
+        }));
       } catch (error) {
         rethrow(error);
       }

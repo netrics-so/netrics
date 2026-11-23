@@ -7,7 +7,8 @@ import type {
   SyncRequest,
   SyncResult,
 } from "@netrics/connector-sdk";
-import { createPostHogConnector } from "@netrics/connectors";
+import { bindCredentialHosts } from "@netrics/connector-sdk";
+import { createPostHogConnector, posthogManifest } from "@netrics/connectors";
 import { describe, expect, it } from "vitest";
 
 // Whole PostHog syncs through the host's own result validation
@@ -155,8 +156,13 @@ async function syncThroughHost(
 ): Promise<SyncResult[]> {
   const context: ConnectionContext = {
     connectionId: "posthog-host-test",
-    config: { region: "us", insights: "1000/Signup1" },
-    credentials: { token: KEY },
+    config: { host: "us.posthog.com", insights: "1000/Signup1" },
+    // Bound to the host as the server stores them (#884 review).
+    credentials: bindCredentialHosts(
+      posthogManifest,
+      { host: "us.posthog.com" },
+      { token: KEY },
+    ),
   };
   const results: SyncResult[] = [];
   let cursor: string | undefined;
@@ -172,11 +178,13 @@ async function syncThroughHost(
   throw new Error("the sync did not finish");
 }
 
+/** The rows a dataset received, tombstones left out. */
 const rows = (results: SyncResult[], key: string) =>
   results
     .flatMap((result) => result.datasetPages ?? [])
     .filter((page) => page.datasetKey === key)
-    .flatMap((page) => page.records);
+    .flatMap((page) => page.records)
+    .filter((record) => !record.deleted);
 
 describe("PostHog syncs through the host's validation (#873)", () => {
   it("accepts a one-project incremental sync", async () => {

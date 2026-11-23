@@ -108,9 +108,17 @@ export const sharedDe: Catalog<SharedMessages> = {
       scopeMissing:
         "Dem Personal API Key fehlt ein Scope, den netrics braucht. Gib ihm in PostHog (Settings → Personal API keys) die Lese-Scopes Organization, Project, Query und Insight, oder erstell einen neuen Key mit ihnen.",
       hostInvalid:
-        "Gib den Host-Namen deines selbst gehosteten PostHog ein, zum Beispiel posthog.example.com: einen öffentlichen Namen, erreichbar über https, ohne Pfad oder Port.",
+        "Gib den Host deines PostHog ein: us.posthog.com, eu.posthog.com oder den Host-Namen deiner eigenen Instanz, zum Beispiel posthog.example.com: einen öffentlichen Namen, erreichbar über https, ohne Pfad oder Port.",
       insightsInvalid:
         "netrics konnte die gespeicherten Insights nicht lesen. Füge den Link jedes Insights aus PostHog ein (…/project/12345/insights/AbCd1234), getrennt durch Leerzeichen oder Kommas, höchstens 20.",
+      projectsRequired:
+        "Der Personal API Key ist auf einige Projekte beschränkt, daher listet PostHog sie nicht auf. Trag ihre Projekt-IDs unter Projekt-IDs ein (PostHog: Project settings → Project ID).",
+      projectsInvalid:
+        "netrics konnte nicht jede Projekt-ID mit diesem Key lesen. Trag die numerischen IDs von Projekten ein, die der Key lesen darf (PostHog: Project settings → Project ID), getrennt durch Leerzeichen oder Kommas, höchstens 50.",
+    },
+    connection: {
+      credentialsHostChanged:
+        "Die gespeicherten Zugangsdaten wurden für einen anderen Host eingegeben. Gib sie für diesen Host erneut ein, in einer neuen Verbindung.",
     },
     customApi: {
       unauthorized:

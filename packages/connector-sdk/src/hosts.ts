@@ -52,3 +52,86 @@ export function configuredHostsOf(
   }
   return hosts;
 }
+
+// ─── Credentials bound to configured hosts (#884 review) ───────────────────
+//
+// A connection's credentials go only to the hosts they were entered for.
+// When a host stores credentials of a connector with `configuredHosts`, it
+// records the configured hosts in the credential envelope under
+// CREDENTIAL_HOSTS_KEY (`bindCredentialHosts`). The runtime refuses a call
+// whose configuration names other hosts than the bound ones while it
+// carries credentials (`credentialHostsMatch`), and hands the connector the
+// credentials without that key. The host also keeps a connection's
+// configured hosts fixed (`configuredHostsChanged`): another host is
+// another connection, entered with its own credentials.
+
+/** The reserved credential key holding the bound hosts. */
+export const CREDENTIAL_HOSTS_KEY = "$configuredHosts";
+
+function sameHosts(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((host) => right.has(host));
+}
+
+/**
+ * Freshly entered credentials, bound to the configured hosts of the config
+ * they are checked and stored with. Unchanged for a manifest without
+ * `configuredHosts`. Never apply it to stored credentials: that would move
+ * them to another host.
+ */
+export function bindCredentialHosts(
+  manifest: { configuredHosts?: readonly string[] },
+  config: Record<string, unknown>,
+  credentials: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!manifest.configuredHosts?.length) return credentials;
+  return {
+    ...withoutCredentialHosts(credentials),
+    [CREDENTIAL_HOSTS_KEY]: configuredHostsOf(manifest, config),
+  };
+}
+
+/** The credentials as a connector sees them: without the bound hosts. */
+export function withoutCredentialHosts(
+  credentials: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!Object.hasOwn(credentials, CREDENTIAL_HOSTS_KEY)) return credentials;
+  const { [CREDENTIAL_HOSTS_KEY]: _bound, ...rest } = credentials;
+  return rest;
+}
+
+/**
+ * Whether credentials may be used with this config: always for a manifest
+ * without `configuredHosts` or for credentials without a secret; otherwise
+ * only when the config names exactly the bound hosts (none bound: none
+ * configured).
+ */
+export function credentialHostsMatch(
+  manifest: { configuredHosts?: readonly string[] },
+  config: Record<string, unknown>,
+  credentials: Record<string, unknown>,
+): boolean {
+  if (!manifest.configuredHosts?.length) return true;
+  if (Object.keys(withoutCredentialHosts(credentials)).length === 0) {
+    return true;
+  }
+  const raw = credentials[CREDENTIAL_HOSTS_KEY];
+  const bound =
+    Array.isArray(raw) && raw.every((host) => typeof host === "string")
+      ? (raw as string[])
+      : [];
+  return sameHosts(bound, configuredHostsOf(manifest, config));
+}
+
+/** Whether a config change names other configured hosts. */
+export function configuredHostsChanged(
+  manifest: { configuredHosts?: readonly string[] },
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): boolean {
+  return !sameHosts(
+    configuredHostsOf(manifest, before),
+    configuredHostsOf(manifest, after),
+  );
+}

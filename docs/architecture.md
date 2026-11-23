@@ -355,6 +355,17 @@ backoff (App Store Connect's rolling hourly limit, Google Cloud Storage's
 Use JSON-compatible transport objects even inside TypeScript. A future isolated
 runner can then use the same contract over JSON-RPC or another process boundary.
 
+Credentials of a connector with `configuredHosts` are bound to the hosts
+they were entered for (#884 review, ADR 0027 §2 for every connector): the
+server records the configured hosts in the credential envelope when
+credentials are entered (`bindCredentialHosts`), refuses a preview or save
+that names other configured hosts than the connection's
+(`connection_host_fixed`; another host is a new connection with its own
+credentials), and the runtime refuses any call whose configuration names
+other hosts than the bound ones while it carries credentials
+(`CredentialHostMismatchError`, `connection.credentials_host_changed`)
+before the connector runs. The connector never sees the binding.
+
 Connector code reaches the network only through `runtime.fetch`. It allows
 https hosts from `outboundDomains`, and since SDK 0.2.20 the host names the
 connection's own configuration gives under the manifest's `configuredHosts`

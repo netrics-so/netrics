@@ -169,12 +169,27 @@ export const sharedEn = {
       /** PostHog answered 403 naming a missing scope. */
       scopeMissing:
         "The personal API key lacks a scope netrics needs. Give it the read scopes Organization, Project, Query and Insight in PostHog (Settings → Personal API keys), or create a new key with them.",
-      /** A self-hosted connection without a valid host. */
+      /** A host that is no valid host name. */
       hostInvalid:
-        "Enter the host name of your self-hosted PostHog, such as posthog.example.com: a public name reached over https, without a path or port.",
+        "Enter your PostHog's host: us.posthog.com, eu.posthog.com, or your own instance's host name such as posthog.example.com: a public name reached over https, without a path or port.",
       /** Saved insights that are not insight links. */
       insightsInvalid:
         "netrics could not read the saved insights. Paste each insight's link from PostHog (…/project/12345/insights/AbCd1234), separated by spaces or commas, at most 20.",
+      /** A key limited to projects, without their IDs (#884 review). */
+      projectsRequired:
+        "The personal API key is limited to some projects, so PostHog does not list them. Enter their project IDs under Project IDs (PostHog: Project settings → Project ID).",
+      /** Project IDs that are no IDs, or that the key cannot read. */
+      projectsInvalid:
+        "netrics could not read every project ID with this key. Enter the numeric IDs of projects the key may read (PostHog: Project settings → Project ID), separated by spaces or commas, at most 50.",
+    },
+    /**
+     * The runtime's refusal of credentials whose bound host differs from
+     * the configuration (SDK 0.2.20 configuredHosts, #884 review), equal
+     * to CREDENTIAL_HOST_MISMATCH_MESSAGE in @netrics/connector-runtime.
+     */
+    connection: {
+      credentialsHostChanged:
+        "The stored credentials were entered for another host. Enter them again for this host, in a new connection.",
     },
     /**
      * The custom-api connector's fixed messages (milestone 13), equal to

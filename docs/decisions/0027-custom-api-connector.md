@@ -52,6 +52,15 @@ host. Auth is applied only to URLs on the environment host
 before any request goes there. Secret variables are usable only in the
 definition's auth headers.
 
+The same rule holds for bundled connectors whose manifest names
+`configuredHosts` (SDK 0.2.20, the PostHog connector's self-hosted host,
+#884 review): the envelope records the configured hosts the credentials
+were entered for (`$configuredHosts`), the runtime refuses a call whose
+configuration names other hosts while it carries credentials, and the
+server keeps a connection's configured hosts fixed, so another host is a
+new connection with credentials entered for it. It is this decision
+applied to configuration-named hosts, so it needs no ADR of its own.
+
 ### 3. Egress
 
 The server sets the custom API egress values in one place

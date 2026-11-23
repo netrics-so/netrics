@@ -44,6 +44,7 @@ import {
 } from "./datasets.js";
 import {
   MAX_WINDOW_DAYS,
+  TOP_EVENTS,
   TOP_EVENTS_ROW_LIMIT,
   TREND_SERIES,
   completedQuery,
@@ -60,6 +61,7 @@ import {
   apiKeyOf,
   insightsOf,
   organizationsPage,
+  projectIdsOf,
   projectsPage,
 } from "./reading.js";
 
@@ -84,6 +86,8 @@ const PAGE_BYTES = DATASET_LIMITS.pageBytes / 2;
  * "too_large" in the `insights` dataset instead of being cut.
  */
 export const MAX_INSIGHT_ROWS = 5_000;
+/** Dataset pages of one insight at most (rows are cut by bytes, too). */
+export const MAX_INSIGHT_PAGES = 10;
 /**
  * Dataset pages a result may already hold before another step starts: an
  * insight adds up to ten, a window of top events one, and the result keeps
@@ -213,8 +217,9 @@ function scopeOf(
   const insights = insightsOf(context)
     .insights.map((insight) => `${insight.project}/${insight.shortId}`)
     .join(",");
+  const projects = projectIdsOf(context).ids?.join(",") ?? "*";
   return createHash("sha256")
-    .update(JSON.stringify([host, selection, insights, fingerprint]))
+    .update(JSON.stringify([host, selection, projects, insights, fingerprint]))
     .digest("hex")
     .slice(0, 32);
 }
@@ -361,12 +366,21 @@ export function topEventRows(json: unknown): Array<[string, string, number]> {
       "the top events answer may be cut off",
     );
   }
+  const perDay = new Map<string, number>();
   for (const [day] of answer.results) {
     if (!DAY_PATTERN.test(day)) {
       throw new PostHogApiError(
         200,
         "invalid",
         "a top events day is not a date",
+      );
+    }
+    perDay.set(day, (perDay.get(day) ?? 0) + 1);
+    if (perDay.get(day)! > TOP_EVENTS) {
+      throw new PostHogApiError(
+        200,
+        "invalid",
+        "the top events answer has more events per day than asked for",
       );
     }
   }
@@ -458,6 +472,12 @@ export function insightRows(
       return { status: "too_large", interval, rows: [] };
     }
   }
+  // Long labels or breakdown values fill pages by bytes before rows
+  // (#884 review): an insight that needs more pages than one result
+  // holds is left out whole, never cut.
+  if (chunks(rows).length > MAX_INSIGHT_PAGES) {
+    return { status: "too_large", interval, rows: [] };
+  }
   return { status: "ok", interval, rows };
 }
 
@@ -472,7 +492,9 @@ export interface PostHogSyncOptions {
 function isFatal(error: unknown): boolean {
   return (
     error instanceof PostHogApiError &&
-    (error.kind === "auth" || error.kind === "scope")
+    (error.kind === "auth" ||
+      error.kind === "scope" ||
+      error.kind === "project_scoped")
   );
 }
 
@@ -495,6 +517,7 @@ export async function syncPage(
   const scope = scopeOf(context, client.host, request);
 
   let state = decodeState(request.cursor, context.connectionId, scope);
+  const projectIds = projectIdsOf(context).ids;
   if (!state) {
     const at = now();
     const startMs = startOfUtcDay(Date.parse(request.from));
@@ -514,9 +537,15 @@ export async function syncPage(
       startMs,
       lastDay,
       toMs,
-      listing: { stage: "orgs", offset: 0 },
+      // A key limited to projects reads the configured IDs, through
+      // project endpoints only: no organization listing.
+      ...(projectIds === undefined
+        ? { listing: { stage: "orgs" as const, offset: 0 } }
+        : {}),
       orgs: [],
-      projects: [],
+      projects: (projectIds ?? [])
+        .filter((id) => !request.resources || request.resources.includes(id))
+        .map((id): [string, string] => [id, id]),
       index: 0,
       done: [],
       denied: [],
@@ -628,6 +657,22 @@ export async function syncPage(
             events: Math.round(events),
           },
         });
+      }
+      // The window was read whole: a rank a day no longer has is deleted,
+      // so a day read again never keeps an event that fell out of its top
+      // (#884 review, ADR 0026 §3 tombstones).
+      for (let day = progress.from; day <= windowEnd; day += DAY_MS) {
+        const key = isoDay(day);
+        for (
+          let rank = (ranks.get(key) ?? 0) + 1;
+          rank <= TOP_EVENTS;
+          rank += 1
+        ) {
+          out.topEvents.push({
+            values: { project_id: projectId, day: key, rank },
+            deleted: true,
+          });
+        }
       }
       if (windowEnd >= run.lastDay) {
         run.done.push(projectId);

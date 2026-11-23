@@ -13,7 +13,7 @@ import { startWorkspace } from "./support/session.ts";
 // viewer's language. The checks against PostHog itself are covered by the
 // connector's contract tests.
 
-test("a self-hosted PostHog without a valid host is refused before any request", async ({
+test("a PostHog host that is no public name is refused before any request", async ({
   page,
 }, testInfo) => {
   const locale = testInfo.project.name as Locale;
@@ -32,10 +32,7 @@ test("a self-hosted PostHog without a valid host is refused before any request",
       : []);
   await expect(page.getByText(steps[2]!)).toBeVisible();
 
-  const region = translation?.config?.region?.title ?? "Region";
-  await page.getByLabel(region, { exact: false }).selectOption("self-hosted");
-  const host = translation?.config?.host?.title ?? "Host (self-hosted)";
-  await page.getByLabel(host, { exact: false }).fill("localhost");
+  await page.locator("#config-host").fill("localhost");
   // The wizard's token field, under its own label.
   await page.locator("#connection-token").fill("phx_not_a_real_key");
   const wizard = (locale === "de" ? workspaceDe : workspaceEn).connections

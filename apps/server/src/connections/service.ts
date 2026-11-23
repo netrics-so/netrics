@@ -40,10 +40,12 @@ import {
   type ConnectorRegistry,
   type ExecuteOptions,
 } from "@netrics/connector-runtime";
-import type {
-  ConnectionContext,
-  Connector,
-  ConnectorManifest,
+import {
+  bindCredentialHosts,
+  configuredHostsChanged,
+  type ConnectionContext,
+  type Connector,
+  type ConnectorManifest,
 } from "@netrics/connector-sdk";
 import {
   ANALYTICS_METRIC_KEYS,
@@ -339,6 +341,13 @@ const SELECTION_NEEDS_A_RESOURCE: ReadonlySet<string> = new Set([
 ]);
 /** Saving an empty selection for such a connector. */
 const RESOURCE_SELECTION_EMPTY = "resource_selection_empty";
+/**
+ * A preview or save that names other configured hosts (SDK 0.2.20
+ * `configuredHosts`, #884 review) than the connection's: a stored key goes
+ * only to the host it was entered for, so the host of a connection stays
+ * fixed, and another host is a new connection with its own credentials.
+ */
+const CONNECTION_HOST_FIXED = "connection_host_fixed";
 
 function resourceSelectionOf(config: Record<string, unknown>): string[] | null {
   const value = config.resourceSelection;
@@ -950,6 +959,15 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     if (!registered) return fail(400, "connector_unavailable");
     const validated = validateConfig(registered.manifest, input.config);
     if (!validated.ok) return validated;
+    if (
+      configuredHostsChanged(
+        registered.manifest,
+        existing.row.config as Record<string, unknown>,
+        validated.value,
+      )
+    ) {
+      return fail(400, CONNECTION_HOST_FIXED);
+    }
     const selection = resourceSelectionOf(
       existing.row.config as Record<string, unknown>,
     );
@@ -1097,7 +1115,15 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     connectionId: string,
     config: Record<string, unknown>,
     credentials: Record<string, unknown>,
-    options: { probeAdditional?: boolean } = {},
+    options: {
+      probeAdditional?: boolean;
+      /**
+       * Credentials entered in this request, not stored ones: they are
+       * bound to the configured hosts of `config` (#884 review). Stored
+       * credentials keep their binding.
+       */
+      fresh?: boolean;
+    } = {},
   ): Promise<Result<Record<string, unknown>>> {
     const manifest = registered.manifest;
     const provider = signedKeys.providerFor(manifest, credentials);
@@ -1120,14 +1146,17 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       );
       return check.ok ? ok(key.value.stored()) : check;
     }
+    const bound = options.fresh
+      ? bindCredentialHosts(manifest, config, credentials)
+      : credentials;
     const check = await checkCredentials(
       registered,
       connectionId,
       config,
-      credentials,
+      bound,
       callOptions,
     );
-    return check.ok ? ok(credentials) : check;
+    return check.ok ? ok(bound) : check;
   }
 
   /**
@@ -1881,6 +1910,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         entry.id,
         entry.config,
         resolved.value.credentials ?? {},
+        { fresh: !lent },
       );
       if (!check.ok) {
         return entries.length > 1
@@ -2435,7 +2465,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       const context = {
         connectionId: "preview",
         config: validated.value,
-        credentials: body.credentials ?? {},
+        credentials: bindCredentialHosts(
+          registered.manifest,
+          validated.value,
+          body.credentials ?? {},
+        ),
       };
       let check;
       try {
@@ -2903,6 +2937,15 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           return validated;
         }
         nextConfig = { ...validated.value };
+        if (
+          configuredHostsChanged(
+            registered.manifest,
+            existingConfig,
+            nextConfig,
+          )
+        ) {
+          return fail(400, CONNECTION_HOST_FIXED);
+        }
         // Configuration forms do not clear an existing resource selection.
         if (existingConfig.resourceSelection !== undefined) {
           nextConfig.resourceSelection = existingConfig.resourceSelection;
@@ -3066,7 +3109,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           connectionId,
           nextConfig ?? existingConfig,
           credentials,
-          { probeAdditional: body.credentials !== undefined },
+          {
+            probeAdditional: body.credentials !== undefined,
+            fresh: body.credentials !== undefined,
+          },
         );
         if (!check.ok) {
           return check;
@@ -3102,7 +3148,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               sibling.row.id,
               sibling.row.config as Record<string, unknown>,
               body.credentials,
-              { probeAdditional: true },
+              { probeAdditional: true, fresh: true },
             );
             if (!siblingCheck.ok) {
               return fail(

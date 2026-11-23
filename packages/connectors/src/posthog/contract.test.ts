@@ -409,12 +409,9 @@ describe("PostHog check", () => {
   it("accepts a key on PostHog Cloud US, EU and a self-hosted host", async () => {
     for (const [config, host] of [
       [{}, "us.posthog.com"],
-      [{ region: "us" }, "us.posthog.com"],
-      [{ region: "eu" }, "eu.posthog.com"],
-      [
-        { region: "self-hosted", host: "https://posthog.example.com/" },
-        "posthog.example.com",
-      ],
+      [{ host: "us.posthog.com" }, "us.posthog.com"],
+      [{ host: "eu.posthog.com" }, "eu.posthog.com"],
+      [{ host: "https://posthog.example.com/" }, "posthog.example.com"],
     ] as const) {
       const posthog = fake({ host });
       await expect(
@@ -458,17 +455,14 @@ describe("PostHog check", () => {
 
   it("refuses an invalid self-hosted host before sending anything", async () => {
     for (const host of [
-      undefined,
       "localhost",
       "http://posthog.example.com",
       "10.0.0.8",
+      "posthog.example.com:8443",
     ]) {
       const posthog = fake();
       expect(
-        await connector().check(
-          context({ region: "self-hosted", ...(host ? { host } : {}) }),
-          posthog.runtime,
-        ),
+        await connector().check(context({ host }), posthog.runtime),
       ).toMatchObject({ ok: false, code: HOST_INVALID_CODE });
       expect(posthog.requests).toEqual([]);
     }
@@ -667,11 +661,8 @@ describe("PostHog sync", () => {
 
   it("reads PostHog Cloud EU and a self-hosted host only there", async () => {
     for (const [config, host] of [
-      [{ region: "eu" }, "eu.posthog.com"],
-      [
-        { region: "self-hosted", host: "posthog.example.com" },
-        "posthog.example.com",
-      ],
+      [{ host: "eu.posthog.com" }, "eu.posthog.com"],
+      [{ host: "posthog.example.com" }, "posthog.example.com"],
     ] as const) {
       const posthog = fake({ host });
       const run = await syncAll(posthog.runtime, WINDOW, context(config));
@@ -688,7 +679,12 @@ describe("PostHog sync", () => {
     expect(
       valuesOf(run, METRICS.events, "1000").every(([, v]) => v === 0),
     ).toBe(true);
-    expect(rowsOf(run.datasetPages, "top_events")).toEqual([]);
+    // Every rank of every day is a tombstone: nothing stays stored.
+    const top = run.datasetPages
+      .filter((page) => page.datasetKey === "top_events")
+      .flatMap((page) => page.records);
+    expect(top.every((record) => record.deleted)).toBe(true);
+    expect(top).toHaveLength(10 * 10);
     expect(
       freshnessEntry(run.last, ANALYTICS_STREAM, "1000")?.dataThrough,
     ).toBe("2024-01-09");
@@ -925,14 +921,14 @@ describe("PostHog sync", () => {
     expect(first.done).toBe(false);
     const restarts: Array<[ConnectionContext, SyncRequest]> = [
       [context({}, { credentials: { token: `${FAKE_KEY}-rotated` } }), WINDOW],
-      [context({ region: "eu" }), WINDOW],
+      [context({ host: "eu.posthog.com" }), WINDOW],
       [context(), { ...WINDOW, resources: ["1001"] }],
       [context({ insights: "1000/AbCd" }), WINDOW],
     ];
     for (const [ctx, request] of restarts) {
       const recorder = fake({
         projects: fakeProjects(2),
-        host: ctx.config.region === "eu" ? "eu.posthog.com" : "us.posthog.com",
+        host: String(ctx.config.host ?? "us.posthog.com"),
         key: String(ctx.credentials.token),
       });
       await connector().sync(
@@ -1188,3 +1184,123 @@ async function countRequests(count: number): Promise<number> {
   await syncAll(posthog.runtime);
   return posthog.requests.length;
 }
+
+describe("review round 1 (#884)", () => {
+  it("names a project-scoped key without project IDs, with a reason code", async () => {
+    const posthog = fake({ scopedProjects: [1000] });
+    expect(await connector().check(context(), posthog.runtime)).toMatchObject({
+      ok: false,
+      code: "posthog.projects_required",
+    });
+    const error = await connector()
+      .sync(context(), WINDOW, posthog.runtime)
+      .catch((caught: unknown) => caught);
+    expect((error as ConnectorError).code).toBe("posthog.projects_required");
+  });
+
+  it("checks, discovers and syncs a project-scoped key through project endpoints only", async () => {
+    const posthog = fake({
+      scopedProjects: [1000, 1002],
+      projects: fakeProjects(3),
+    });
+    const ctx = context({ projects: "1000, 1002" });
+    expect(await connector().check(ctx, posthog.runtime)).toEqual({
+      ok: true,
+    });
+    expect(
+      (await connector().discover(ctx, posthog.runtime)).map(
+        (resource) => resource.id,
+      ),
+    ).toEqual(["1000", "1002"]);
+    const run = await syncAll(
+      posthog.runtime,
+      { ...WINDOW, resources: ["1002"] },
+      ctx,
+    );
+    expect(valuesOf(run, METRICS.events, "1002")).toHaveLength(10);
+    expect(valuesOf(run, METRICS.events, "1000")).toEqual([]);
+    expect(freshnessEntry(run.last, ANALYTICS_STREAM, "1002")).toBeDefined();
+    expect(
+      posthog.requests.filter((request) =>
+        request.path.startsWith("/api/organizations/"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("refuses project IDs the key cannot read, or that are no IDs", async () => {
+    const posthog = fake({ scopedProjects: [1000], projects: fakeProjects(2) });
+    for (const projects of ["1001", "1000 abc"]) {
+      expect(
+        await connector().check(context({ projects }), posthog.runtime),
+      ).toMatchObject({ ok: false, code: "posthog.projects_invalid" });
+    }
+  });
+
+  it("refuses an insight whose rows need more pages than a result holds", async () => {
+    const days = Array.from({ length: 450 }, (_, index) =>
+      new Date(Date.UTC(2023, 0, 1 + index)).toISOString().slice(0, 10),
+    );
+    // 10 series × 450 days = 4,500 rows of about 5 KB: 45 byte-bound pages.
+    const result = Array.from({ length: 10 }, (_, index) => ({
+      action: { order: 0 },
+      label: `series ${index}`,
+      breakdown_value: `${index}-${"x".repeat(5_000)}`,
+      data: days.map(() => 1),
+      days,
+    }));
+    const posthog = fake({
+      insights: [{ project: 1000, shortId: "Wide1", result }],
+    });
+    const run = await syncAll(
+      posthog.runtime,
+      WINDOW,
+      context({ insights: "1000/Wide1" }),
+    );
+    expect(rowsOf(run.datasetPages, "insight_results")).toEqual([]);
+    expect(rowsOf(run.datasetPages, "insights")[0]).toMatchObject({
+      insight_id: "Wide1",
+      status: "too_large",
+    });
+  });
+
+  it("deletes the ranks a day no longer has when it is read again", async () => {
+    let names = 10;
+    const posthog = fake({
+      projects: [{ id: 1000, eventNames: () => names }],
+    });
+    const incremental: SyncRequest = {
+      mode: "incremental",
+      from: "2024-01-09T00:00:00.000Z",
+      to: NOW,
+    };
+    await syncAll(posthog.runtime, incremental);
+    names = 3;
+    const again = await syncAll(posthog.runtime, incremental);
+    const records = again.datasetPages
+      .filter((page) => page.datasetKey === "top_events")
+      .flatMap((page) => page.records);
+    expect(
+      records
+        .filter((record) => !record.deleted)
+        .map((record) => [record.values.day, record.values.rank]),
+    ).toEqual([
+      ["2024-01-09", 1],
+      ["2024-01-09", 2],
+      ["2024-01-09", 3],
+      ["2024-01-10", 1],
+      ["2024-01-10", 2],
+      ["2024-01-10", 3],
+    ]);
+    expect(
+      records.filter((record) => record.deleted).map((record) => record.values),
+    ).toEqual(
+      ["2024-01-09", "2024-01-10"].flatMap((day) =>
+        [4, 5, 6, 7, 8, 9, 10].map((rank) => ({
+          project_id: "1000",
+          day,
+          rank,
+        })),
+      ),
+    );
+  });
+});

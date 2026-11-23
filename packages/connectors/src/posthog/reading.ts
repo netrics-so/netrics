@@ -7,12 +7,7 @@ import {
   type ConnectionContext,
 } from "@netrics/connector-sdk";
 
-import {
-  EU_HOST,
-  PostHogApiError,
-  US_HOST,
-  type PostHogClient,
-} from "./api.js";
+import { PostHogApiError, US_HOST, type PostHogClient } from "./api.js";
 import {
   LIST_LIMIT,
   nextOffset,
@@ -24,6 +19,8 @@ import {
 const MAX_LIST_REQUESTS = 20;
 /** Saved insights a connection reads at most. */
 export const MAX_INSIGHTS = 20;
+/** Project IDs a project-scoped key's connection names at most. */
+export const MAX_PROJECT_IDS = 50;
 
 /** The scopes netrics needs, as PostHog names them. */
 export const REQUIRED_SCOPES = [
@@ -43,41 +40,62 @@ export const SCOPE_MISSING_MESSAGE =
   "The personal API key lacks a scope netrics needs. Give it the read scopes Organization, Project, Query and Insight in PostHog (Settings → Personal API keys), or create a new key with them.";
 export const HOST_INVALID_CODE = "posthog.host_invalid";
 export const HOST_INVALID_MESSAGE =
-  "Enter the host name of your self-hosted PostHog, such as posthog.example.com: a public name reached over https, without a path or port.";
+  "Enter your PostHog's host: us.posthog.com, eu.posthog.com, or your own instance's host name such as posthog.example.com: a public name reached over https, without a path or port.";
 export const INSIGHTS_INVALID_CODE = "posthog.insights_invalid";
 export const INSIGHTS_INVALID_MESSAGE =
   "netrics could not read the saved insights. Paste each insight's link from PostHog (…/project/12345/insights/AbCd1234), separated by spaces or commas, at most 20.";
+export const PROJECTS_REQUIRED_CODE = "posthog.projects_required";
+export const PROJECTS_REQUIRED_MESSAGE =
+  "The personal API key is limited to some projects, so PostHog does not list them. Enter their project IDs under Project IDs (PostHog: Project settings → Project ID).";
+export const PROJECTS_INVALID_CODE = "posthog.projects_invalid";
+export const PROJECTS_INVALID_MESSAGE =
+  "netrics could not read every project ID with this key. Enter the numeric IDs of projects the key may read (PostHog: Project settings → Project ID), separated by spaces or commas, at most 50.";
 
 // ─── Configuration ──────────────────────────────────────────────────────────
-
-export const REGIONS = ["us", "eu", "self-hosted"] as const;
-export type Region = (typeof REGIONS)[number];
 
 export function apiKeyOf(context: ConnectionContext): string | undefined {
   const key = context.credentials.token;
   return typeof key === "string" && key.trim() !== "" ? key.trim() : undefined;
 }
 
-export function regionOf(context: ConnectionContext): Region {
-  const region = context.config.region;
-  return region === "eu" || region === "self-hosted" ? region : "us";
+/**
+ * The API host of the connection: the configured `host` (us.posthog.com
+ * when none is set), read by `configuredHost`, the rule the egress
+ * allowlist and the credential binding read it with. Null when the value
+ * is no valid host.
+ */
+export function hostOf(context: ConnectionContext): string | null {
+  const host = context.config.host;
+  return host === undefined || host === null || host === ""
+    ? US_HOST
+    : configuredHost(host);
 }
 
 /**
- * The API host of the connection: PostHog Cloud US or EU, or the
- * configured self-hosted host (`configuredHost`, the rule the egress
- * allowlist reads it with). Null for a self-hosted connection without a
- * valid host.
+ * The project IDs a connection names for a key limited to projects
+ * (PostHog's `scoped_teams`): then netrics reads those projects through
+ * project endpoints and lists no organization. `undefined` when none are
+ * configured; `invalid` counts what is no ID, or above MAX_PROJECT_IDS.
  */
-export function hostOf(context: ConnectionContext): string | null {
-  switch (regionOf(context)) {
-    case "us":
-      return US_HOST;
-    case "eu":
-      return EU_HOST;
-    default:
-      return configuredHost(context.config.host);
+export function projectIdsOf(context: ConnectionContext): {
+  ids: string[] | undefined;
+  invalid: number;
+} {
+  const raw = context.config.projects;
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return { ids: undefined, invalid: 0 };
   }
+  const ids: string[] = [];
+  let invalid = 0;
+  for (const token of raw.split(/[\s,]+/).filter((entry) => entry !== "")) {
+    if (!/^\d{1,20}$/.test(token)) invalid += 1;
+    else if (!ids.includes(token)) ids.push(token);
+  }
+  if (ids.length > MAX_PROJECT_IDS) {
+    invalid += ids.length - MAX_PROJECT_IDS;
+    ids.length = MAX_PROJECT_IDS;
+  }
+  return { ids, invalid };
 }
 
 /** A saved insight a connection reads: its project and short ID. */
@@ -135,6 +153,12 @@ export function rethrow(error: unknown): never {
     if (error.kind === "scope") {
       throw new ConnectorError(SCOPE_MISSING_MESSAGE, SCOPE_MISSING_CODE);
     }
+    if (error.kind === "project_scoped") {
+      throw new ConnectorError(
+        PROJECTS_REQUIRED_MESSAGE,
+        PROJECTS_REQUIRED_CODE,
+      );
+    }
   }
   throw error;
 }
@@ -189,8 +213,19 @@ export async function projectsPage(
   };
 }
 
-/** Every organization and project the key sees, for discover. */
-export async function listProjects(client: PostHogClient): Promise<Project[]> {
+/**
+ * Every organization and project the key sees, for discover; for a
+ * connection that names project IDs, those projects (PostHog has no
+ * project endpoint that names a project for a project-scoped key, so the
+ * ID is the name).
+ */
+export async function listProjects(
+  client: PostHogClient,
+  projectIds?: readonly string[],
+): Promise<Project[]> {
+  if (projectIds) {
+    return projectIds.map((id) => ({ id, name: id, organizationId: "" }));
+  }
   const organizations: Organization[] = [];
   for (
     let offset: number | null = 0, request = 0;

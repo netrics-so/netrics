@@ -399,6 +399,14 @@ export const connectorManifestSchema = z
      * The host adds each valid value (see `configuredHost`) to the
      * connection's egress allowlist, for that connection only. Optional;
      * every key must be a property of configSchema.
+     *
+     * Credentials are bound to these hosts (#884 review, see hosts.ts):
+     * the host records the configured hosts in the credential envelope
+     * when credentials are entered (`bindCredentialHosts`), the runtime
+     * refuses a call whose configuration names other hosts while it
+     * carries credentials (`credentialHostsMatch`), and a connection's
+     * configured hosts never change (`configuredHostsChanged`): another
+     * host is another connection, with credentials entered for it.
      */
     configuredHosts: z.array(z.string().min(1)).max(4).optional(),
     rateLimit: rateLimitHintSchema.optional(),

@@ -1,6 +1,74 @@
 import { describe, expect, it } from "vitest";
 
-import { configuredHost, configuredHostsOf } from "./hosts.js";
+import {
+  CREDENTIAL_HOSTS_KEY,
+  bindCredentialHosts,
+  configuredHost,
+  configuredHostsChanged,
+  configuredHostsOf,
+  credentialHostsMatch,
+  withoutCredentialHosts,
+} from "./hosts.js";
+
+describe("credentials bound to configured hosts (#884 review)", () => {
+  const manifest = { configuredHosts: ["host"] };
+  const at = (host: string) => ({ host });
+
+  it("binds fresh credentials to the config's hosts, and only for such manifests", () => {
+    expect(
+      bindCredentialHosts(manifest, at("a.example.com"), { token: "t" }),
+    ).toEqual({ token: "t", [CREDENTIAL_HOSTS_KEY]: ["a.example.com"] });
+    expect(
+      bindCredentialHosts({}, at("a.example.com"), { token: "t" }),
+    ).toEqual({
+      token: "t",
+    });
+    expect(
+      withoutCredentialHosts({
+        token: "t",
+        [CREDENTIAL_HOSTS_KEY]: ["x.example"],
+      }),
+    ).toEqual({ token: "t" });
+  });
+
+  it("matches only the bound hosts while a secret is present", () => {
+    const bound = bindCredentialHosts(manifest, at("a.example.com"), {
+      token: "t",
+    });
+    expect(credentialHostsMatch(manifest, at("a.example.com"), bound)).toBe(
+      true,
+    );
+    expect(credentialHostsMatch(manifest, at("b.example.com"), bound)).toBe(
+      false,
+    );
+    // Unbound credentials never go to a configured host.
+    expect(
+      credentialHostsMatch(manifest, at("a.example.com"), { token: "t" }),
+    ).toBe(false);
+    // No secret, nothing to protect; no configuredHosts, no rule.
+    expect(credentialHostsMatch(manifest, at("b.example.com"), {})).toBe(true);
+    expect(credentialHostsMatch({}, at("b.example.com"), { token: "t" })).toBe(
+      true,
+    );
+  });
+
+  it("tells a change of configured hosts from other changes", () => {
+    expect(
+      configuredHostsChanged(
+        manifest,
+        { host: "a.example.com", other: 1 },
+        { host: "A.example.com", other: 2 },
+      ),
+    ).toBe(false);
+    expect(
+      configuredHostsChanged(
+        manifest,
+        at("a.example.com"),
+        at("b.example.com"),
+      ),
+    ).toBe(true);
+  });
+});
 
 describe("configuredHost (#873)", () => {
   it("reads a bare host name or an https origin", () => {

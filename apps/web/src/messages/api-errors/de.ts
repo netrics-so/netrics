@@ -109,6 +109,8 @@ export const apiErrorsDe: Catalog<typeof apiErrorsEn> = {
     connection_not_found: "Diese Verbindung gibt es nicht mehr.",
     resource_selection_empty:
       "Wähle mindestens ein Projekt oder alle Projekte aus. Eine leere Auswahl kann nicht gespeichert werden.",
+    connection_host_fixed:
+      "Der Host einer Verbindung lässt sich nicht ändern: Ihr gespeicherter Key geht nur an den Host, für den er eingegeben wurde. Leg für den anderen Host eine neue Verbindung an.",
     custom_api_definition_not_found: "Diese eigene API gibt es nicht mehr.",
     custom_api_definition_invalid:
       "Die Definition der eigenen API enthält Fehler. Korrigier die markierten Felder und speichere erneut.",

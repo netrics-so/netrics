@@ -29,6 +29,12 @@ export type PostHogErrorKind =
   | "auth"
   /** 403 naming a scope: the key lacks a scope netrics needs. */
   | "scope"
+  /**
+   * 403 on an organization endpoint for a key limited to projects
+   * (PostHog's `scoped_teams`, posthog/permissions.py): such a key reads
+   * project endpoints only.
+   */
+  | "project_scoped"
   /** 403 otherwise: the key may not read this organization or project. */
   | "forbidden"
   /** 404: an organization, project or insight the key cannot see. */
@@ -84,6 +90,8 @@ function describe(
   }
   const text = detail.replace(/\s+/g, " ").trim().slice(0, 200);
   switch (kind) {
+    case "project_scoped":
+      return "The personal API key is limited to projects; PostHog answers organization requests only for other keys (403).";
     case "forbidden":
       return `PostHog does not let the key read this project (403): ${text}`;
     case "not_found":
@@ -114,6 +122,11 @@ export function apiError(status: number, json: unknown): PostHogApiError {
   if (status === 403) {
     // "API key missing required scope 'query:read'"
     const scope = /scope '([a-z_]+:[a-z]+)'/i.exec(detail)?.[1] ?? null;
+    // "API keys with scoped projects are only supported on project-based
+    // endpoints."
+    if (/scoped projects/i.test(detail)) {
+      return new PostHogApiError(status, "project_scoped", detail);
+    }
     if (scope !== null || /\bscope\b/i.test(detail)) {
       return new PostHogApiError(status, "scope", "", scope);
     }

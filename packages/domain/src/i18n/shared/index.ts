@@ -168,6 +168,10 @@ export const PROVIDER_MESSAGE_CODES = {
   "posthog.scope_missing": "providerMessages.posthog.scopeMissing",
   "posthog.host_invalid": "providerMessages.posthog.hostInvalid",
   "posthog.insights_invalid": "providerMessages.posthog.insightsInvalid",
+  "posthog.projects_required": "providerMessages.posthog.projectsRequired",
+  "posthog.projects_invalid": "providerMessages.posthog.projectsInvalid",
+  "connection.credentials_host_changed":
+    "providerMessages.connection.credentialsHostChanged",
   // The stored message keeps the stream, the HTTP status and the number of
   // errors (ADR 0030); the catalog text is the generic sentence.
   "custom_api.graphql_errors": "providerMessages.customApi.graphqlErrors",
