@@ -1,14 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useId, useMemo, useRef, useState, type FormEvent } from "react";
 import type {
   ConnectionDetail,
   ConnectorCatalogEntry,
@@ -24,7 +17,7 @@ import {
   updateConnection,
 } from "@/lib/api";
 import { parseConfigSchema } from "@/lib/config-schema";
-import { holdsFocus } from "@/lib/focus-handoff";
+import { useFocusKeeper } from "@/lib/focus-handoff";
 import { useLocale, useT } from "@/lib/i18n/client";
 
 /** A project the connector could not sync: Web Analytics is not enabled. */
@@ -123,7 +116,6 @@ export function SyncedProjects({
 }) {
   const t = useT("connections.projects");
   const listId = useId();
-  const toggle = useRef<HTMLButtonElement>(null);
   const [limit, setLimit] = useState(initialLimit);
   if (selection === undefined) return null;
   if (selection === null) return <p>{t("syncedAll")}</p>;
@@ -150,13 +142,16 @@ export function SyncedProjects({
         ) : null}
       </ul>
       {selection.length > SYNCED_SHOWN ? (
-        <div className="actions">
+        // The list's buttons can go while one has the keyboard focus (the
+        // extra "Show fewer"; both when a shorter saved selection arrives):
+        // whoever renders this list keeps the focus (`syncedFocusZone`).
+        <div className="actions" data-synced-actions>
           {/* One button for the whole list, mounted throughout: it shows
               more while there is more and closes the list once all of it
               is shown, so the keyboard focus that opened the list is still
               on the control that closes it. */}
           <button
-            ref={toggle}
+            data-synced-toggle
             type="button"
             aria-expanded={expanded}
             aria-controls={listId}
@@ -171,16 +166,13 @@ export function SyncedProjects({
                 : t("syncedShowMore", { count: next })}
           </button>
           {/* Part of a very long list is open: closing it needs no walk
-              to its end. This button goes with the click, so the focus
-              moves to the one that stays. */}
+              to its end. This button goes with the click; the focus it
+              had moves to the one that stays. */}
           {expanded && rest > 0 ? (
             <button
               type="button"
               aria-controls={listId}
-              onClick={(event) => {
-                if (holdsFocus(event.currentTarget)) toggle.current?.focus();
-                setLimit(SYNCED_SHOWN);
-              }}
+              onClick={() => setLimit(SYNCED_SHOWN)}
             >
               {t("syncedShowFewer")}
             </button>
@@ -196,6 +188,15 @@ export function SyncedProjects({
   );
 }
 
+/** Whether a focused element is one of the list's buttons. */
+function inSyncedActions(element: Element): boolean {
+  return element.closest("[data-synced-actions]") !== null;
+}
+/** The list's toggle, where the focus of a button that went goes. */
+function syncedToggle(region: Element | null): HTMLElement | null {
+  return region?.querySelector<HTMLElement>("[data-synced-toggle]") ?? null;
+}
+
 /**
  * The selection for someone who may read the connection but not change it
  * (#854): the panel's heading and what is selected, without the form.
@@ -206,9 +207,11 @@ export function SyncedProjectsReadOnly({
   selection: readonly SelectedResource[] | null | undefined;
 }) {
   const t = useT("connections.projects");
+  const card = useRef<HTMLDivElement>(null);
+  useFocusKeeper(card, () => syncedToggle(card.current));
   if (selection === undefined) return null;
   return (
-    <div className="card stack" id="project-selection">
+    <div className="card stack" id="project-selection" ref={card}>
       <h2>{t("heading")}</h2>
       <SyncedProjects selection={selection} canChange={false} />
     </div>
@@ -324,32 +327,49 @@ export function ProjectSelection({
   const [notice, setNotice] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const leaveDialog = useLeaveGuard(dirty, t("unsaved"));
-  // Opening and closing the picker replaces the control that had the
-  // keyboard focus: it moves into the picker when the list has loaded, and
-  // back to "Change project selection" when the picker closes (cancelled
-  // or saved), instead of being dropped to the page. Only then: `handOn`
-  // is set just before such an update, and only if what it removes still
-  // has the focus (`holdsFocus`). Someone who tabbed elsewhere while the
-  // list loaded or the selection was saved stays where they are.
+  // Updates of the panel remove or disable what may have the keyboard
+  // focus: the list of selected projects with its buttons and "Change
+  // project selection" when the picker opens; the picker when it closes
+  // (cancelled or saved); the picker's fields while saving; the list's
+  // buttons when a shorter saved selection arrives. The form keeps its
+  // focus (`useFocusKeeper`), and where it goes depends on where it was
+  // and on what the form shows afterwards.
   const form = useRef<HTMLFormElement>(null);
   const change = useRef<HTMLButtonElement>(null);
-  const handOn = useRef(false);
-  const open = resources !== null;
-  const wasOpen = useRef(open);
-  useEffect(() => {
-    if (wasOpen.current === open) return;
-    wasOpen.current = open;
-    if (!handOn.current) return;
-    handOn.current = false;
-    if (open) {
-      // The chosen mode's radio: "all projects" first, "choose" second.
-      const modes = form.current?.querySelectorAll<HTMLElement>(
-        'fieldset input[type="radio"]',
+  useFocusKeeper<"picker" | "list" | "panel">(
+    form,
+    (zone) => {
+      const picker = form.current?.querySelector<HTMLFieldSetElement>(
+        "fieldset.app-picker",
       );
-      modes?.[selection === null ? 0 : 1]?.focus();
-    } else change.current?.focus();
-    // Only when the picker opens or closes, with the selection it has then.
-  }, [open]);
+      // The picker is closed: a button of the list that went hands on to
+      // the list's toggle if there still is one; everything else, and the
+      // closed picker, to the button that opens it.
+      if (!picker)
+        return (
+          (zone === "list" ? syncedToggle(form.current) : null) ??
+          change.current
+        );
+      // Saving: the fields are disabled, Save stays focusable.
+      if (picker.disabled)
+        return form.current?.querySelector<HTMLElement>(
+          'button[type="submit"]',
+        );
+      // A change inside the open picker is the picker's own to keep.
+      if (zone === "picker") return null;
+      // The picker has just opened: onto the chosen mode ("all projects"
+      // first, "choose" second).
+      return picker.querySelectorAll<HTMLElement>('input[type="radio"]')[
+        selection === null ? 0 : 1
+      ];
+    },
+    (element) =>
+      element.closest("fieldset.app-picker")
+        ? "picker"
+        : inSyncedActions(element)
+          ? "list"
+          : "panel",
+  );
 
   async function load() {
     setPending("load");
@@ -367,8 +387,6 @@ export function ProjectSelection({
         ),
       });
       const state = pickerState(result);
-      // The button is replaced by the picker.
-      handOn.current = holdsFocus(change.current);
       setHidden(state.hidden);
       setResources(state.resources);
       setSelection(state.selection);
@@ -392,8 +410,6 @@ export function ProjectSelection({
       await updateConnection(workspaceId, connection.id, {
         resources: selection,
       });
-      // The picker closes.
-      handOn.current = holdsFocus(form.current);
       setDirty(false);
       setResources(null);
       setRefusal(null);
@@ -442,7 +458,6 @@ export function ProjectSelection({
             setSelection(value);
           }}
           onCancel={() => {
-            handOn.current = holdsFocus(form.current);
             setResources(null);
             setRefusal(null);
             setDirty(false);

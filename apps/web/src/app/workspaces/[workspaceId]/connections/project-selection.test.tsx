@@ -226,8 +226,10 @@ describe("the synced projects up front, and at least one required (#854)", () =>
     expect(de).toContain("und 3 weitere");
     // The rest opens in place: a button that names the list it controls.
     const listId = en.match(/<ul id="([^"]+)">/)![1];
-    expect(en).toContain(
-      `<button type="button" aria-expanded="false" aria-controls="${listId}">Show all 23</button>`,
+    expect(en).toMatch(
+      new RegExp(
+        `<button[^>]*type="button" aria-expanded="false" aria-controls="${listId}">Show all 23</button>`,
+      ),
     );
     expect(en).not.toContain("Show fewer");
     expect(de).toContain(">Alle 23 anzeigen</button>");

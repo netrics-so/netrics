@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { DiscoveredResource } from "@netrics/contracts";
-import { holdsFocus } from "@/lib/focus-handoff";
+import { useFocusKeeper } from "@/lib/focus-handoff";
 import { useT } from "@/lib/i18n/client";
 
 const PAGE_SIZE = 50;
@@ -49,35 +49,50 @@ export function AppPicker({
     current * PAGE_SIZE,
     (current + 1) * PAGE_SIZE,
   );
-  // A selected resource the account no longer lists leaves the list when
-  // it is unticked, and its checkbox with it: if that checkbox has the
-  // keyboard focus (`holdsFocus`), it goes to the checkbox that took its
-  // place (or the last one, or the search field), instead of being dropped
-  // to the page.
+  // Changes here remove what may have the keyboard focus: a selected
+  // resource the account no longer lists leaves the list when it is
+  // unticked or the selection is cleared, a search or another page replaces
+  // the rows, "all" removes the list with its search field and buttons.
+  // The picker keeps its focus (`useFocusKeeper`): when the focused element
+  // goes, the focus moves to the checkbox that took a row's place (or the
+  // last one), else to the search field, else to the chosen mode. While
+  // the whole picker is disabled it has nowhere to go here; the form around
+  // it has its own keeper.
+  const root = useRef<HTMLFieldSetElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const searchField = useRef<HTMLInputElement>(null);
-  const refocus = useRef<number | null>(null);
-  useEffect(() => {
-    const index = refocus.current;
-    if (index === null) return;
-    refocus.current = null;
-    const boxes = list.current?.querySelectorAll<HTMLInputElement>(
+  const boxes = () => [
+    ...(list.current?.querySelectorAll<HTMLInputElement>(
       'input[type="checkbox"]',
-    );
-    (
-      boxes?.[Math.min(index, (boxes?.length ?? 0) - 1)] ?? searchField.current
-    )?.focus();
-  });
-  function toggle(key: string, box: HTMLInputElement) {
-    if (selected.has(key)) {
-      selected.delete(key);
-      if (missing.includes(key) && holdsFocus(box))
-        refocus.current = visible.findIndex((entry) => entry.id === key);
-    } else selected.add(key);
+    ) ?? []),
+  ];
+  useFocusKeeper<number>(
+    root,
+    (row = -1) => {
+      if (root.current?.disabled) return null;
+      const rows = boxes();
+      return (
+        (row >= 0 ? rows[Math.min(row, rows.length - 1)] : undefined) ??
+        searchField.current ??
+        root.current?.querySelector<HTMLElement>(
+          'input[type="radio"]:checked',
+        ) ??
+        root.current?.querySelector<HTMLElement>('input[type="radio"]')
+      );
+    },
+    // The row of a focused checkbox, while it is still in the list.
+    (element) => boxes().findIndex((box) => box === element),
+  );
+  function toggle(key: string) {
+    if (selected.has(key)) selected.delete(key);
+    else selected.add(key);
     onChange([...selected]);
   }
+  function show(next: number) {
+    if (next >= 0 && next < pages) setPage(next);
+  }
   return (
-    <fieldset className="stack app-picker" disabled={disabled}>
+    <fieldset className="stack app-picker" disabled={disabled} ref={root}>
       <legend>{t("title")}</legend>
       <label className="checkbox-row">
         <input
@@ -142,7 +157,7 @@ export function AppPicker({
                 <input
                   type="checkbox"
                   checked={selected.has(resource.id)}
-                  onChange={(event) => toggle(resource.id, event.currentTarget)}
+                  onChange={() => toggle(resource.id)}
                 />
                 <span>
                   {resource.name}
@@ -168,16 +183,23 @@ export function AppPicker({
             <nav className="actions" aria-label={t("pages")}>
               <button
                 type="button"
-                disabled={disabled || current === 0}
-                onClick={() => setPage(current - 1)}
+                // Not disabled at the first page: a disabled button drops
+                // the keyboard focus that just pressed it.
+                disabled={disabled}
+                aria-disabled={current === 0}
+                onClick={() => show(current - 1)}
               >
                 {t("previous")}
               </button>
-              <span>{t("page", { page: current + 1, pages })}</span>
+              {/* Read out when the page changes. */}
+              <span role="status">
+                {t("page", { page: current + 1, pages })}
+              </span>
               <button
                 type="button"
-                disabled={disabled || current + 1 === pages}
-                onClick={() => setPage(current + 1)}
+                disabled={disabled}
+                aria-disabled={current + 1 === pages}
+                onClick={() => show(current + 1)}
               >
                 {t("next")}
               </button>
