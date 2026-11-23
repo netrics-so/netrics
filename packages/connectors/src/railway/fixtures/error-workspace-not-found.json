@@ -1,0 +1,12 @@
+{
+  "errors": [
+    {
+      "message": "Workspace not found",
+      "locations": [{ "line": 1, "column": 49 }],
+      "path": ["workspace"],
+      "extensions": { "code": "INTERNAL_SERVER_ERROR" },
+      "traceId": "0000000000000000000"
+    }
+  ],
+  "data": null
+}

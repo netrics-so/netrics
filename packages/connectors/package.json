@@ -36,6 +36,10 @@
       "types": "./dist/google-play/index.d.ts",
       "default": "./dist/google-play/index.js"
     },
+    "./railway": {
+      "types": "./dist/railway/index.d.ts",
+      "default": "./dist/railway/index.js"
+    },
     "./vercel": {
       "types": "./dist/vercel/index.d.ts",
       "default": "./dist/vercel/index.js"

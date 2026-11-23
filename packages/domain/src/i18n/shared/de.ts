@@ -96,6 +96,12 @@ export const sharedDe: Catalog<SharedMessages> = {
       agreementsMissing:
         "App Store Connect verlangt eine Vereinbarung, die fehlt oder abgelaufen ist. Der Account Holder muss die neuesten Vereinbarungen in App Store Connect (Business) akzeptieren. Versuch es danach erneut.",
     },
+    railway: {
+      tokenRejected:
+        "Railway hat das Token nicht akzeptiert: Es ist falsch, wurde gelöscht oder ist ein Projekt-Token. Erstell in Railway ein Account- oder Workspace-Token (Account Settings → Tokens). Für ein Workspace-Token trag auch seine Workspace-ID ein.",
+      workspaceDenied:
+        "Railway hat das Token für die Workspace-ID dieser Verbindung nicht akzeptiert: Die ID ist falsch, das Token gehört zu einem anderen Workspace, oder es wurde gelöscht. Prüf die Workspace-ID oder erstell ein neues Token für diesen Workspace.",
+    },
     customApi: {
       unauthorized:
         "Die API hat die Zugangsdaten abgelehnt (HTTP 401). Gib für diese Verbindung einen neuen Schlüssel, ein neues Token oder Passwort ein oder verbinde sie neu.",

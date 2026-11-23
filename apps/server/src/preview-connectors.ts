@@ -7,16 +7,19 @@
  * them, and its catalog has no rows for them. An opted-in preview connector
  * is marked as a preview in the catalog (`preview: true`).
  *
- * Currently none. Apple Ads (milestone 10) was the last preview: it left
- * this set when its exit gate (#378) passed on the hosted service and on a
- * self-hosted install, and is available everywhere since. A variable that
- * still names a finished connector (such as apple-ads) is ignored with a
- * warning, so the instance starts as before.
+ * Currently Railway (#870, milestone 13.1), until the milestone's exit gate
+ * (#877) passes. Apple Ads (milestone 10) left this set when its exit gate
+ * (#378) passed on the hosted service and on a self-hosted install, and is
+ * available everywhere since. A variable that still names a finished
+ * connector (such as apple-ads) is ignored with a warning, so the instance
+ * starts as before.
  *
  * Kept apart from connectors.ts so the server config can validate the
  * opt-in without loading the connector bundle.
  */
-export const PREVIEW_CONNECTORS: ReadonlySet<string> = new Set<string>();
+export const PREVIEW_CONNECTORS: ReadonlySet<string> = new Set<string>([
+  "railway",
+]);
 
 /**
  * The IDs of every connector in the bundle (createDefaultRegistry), finished
@@ -32,4 +35,5 @@ export const BUNDLE_CONNECTORS: ReadonlySet<string> = new Set([
   "app-store-connect",
   "google-play",
   "apple-ads",
+  "railway",
 ]);

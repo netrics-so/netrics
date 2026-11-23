@@ -813,6 +813,7 @@ describe("catalog sync", () => {
       "pager-large",
       "pager-resume",
       "probe",
+      "railway",
       "refused-check",
       "revising",
       "vercel",

@@ -9,6 +9,7 @@ import { appleAdsManifest } from "./apple-ads/index.js";
 import { demoManifest } from "./demo/index.js";
 import { searchConsoleManifest } from "./google-search-console/index.js";
 import { googlePlayManifest } from "./google-play/index.js";
+import { railwayManifest } from "./railway/index.js";
 import { vercelManifest } from "./vercel/index.js";
 
 // #257 (ADR 0016 section 6): the first-party connectors are complete in
@@ -22,6 +23,7 @@ const FIRST_PARTY: ConnectorManifest[] = [
   appStoreConnectManifest,
   appleAdsManifest,
   googlePlayManifest,
+  railwayManifest,
 ];
 
 const LOCALES = ["de"] as const;

@@ -1,0 +1,10 @@
+{
+  "errors": [
+    {
+      "message": "Cannot query field \"statuz\" on type \"Deployment\". Did you mean \"status\"?",
+      "locations": [{ "line": 1, "column": 76 }],
+      "extensions": { "code": "GRAPHQL_VALIDATION_FAILED" },
+      "traceId": "0000000000000000000"
+    }
+  ]
+}

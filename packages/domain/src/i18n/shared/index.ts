@@ -162,6 +162,8 @@ export const PROVIDER_MESSAGE_CODES = {
     "providerMessages.appStoreConnect.roleMissing",
   "app_store_connect.agreements_missing":
     "providerMessages.appStoreConnect.agreementsMissing",
+  "railway.token_rejected": "providerMessages.railway.tokenRejected",
+  "railway.workspace_denied": "providerMessages.railway.workspaceDenied",
 } as const satisfies Readonly<Record<string, MessageKey<SharedMessages>>>;
 
 export type ProviderMessageCode = keyof typeof PROVIDER_MESSAGE_CODES;

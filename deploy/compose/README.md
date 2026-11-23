@@ -165,9 +165,9 @@ and the `web` app).
 
 Connectors that are not finished yet ship in the images as previews and
 stay off: the catalogue does not list them, and nothing can connect or sync
-them. There are currently none: every connector in the images is
-available without a setting. When a release ships one, name it in
-`NETRICS_PREVIEW_CONNECTORS` in `.env` (comma-separated IDs) and run
+them. Currently that is Railway (`railway`, milestone 13.1); every other
+connector in the images is available without a setting. To try a preview,
+name it in `NETRICS_PREVIEW_CONNECTORS` in `.env` (comma-separated IDs) and run
 `docker compose up -d`. It applies to `migrate` (the connector catalog),
 the `api` and the `worker`, which log the connectors they registered at
 startup. The catalogue then lists the connector with a "Preview" tag: it

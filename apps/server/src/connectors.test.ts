@@ -20,8 +20,7 @@ import { BUNDLE_CONNECTORS } from "./preview-connectors.js";
 describe("createDefaultRegistry", () => {
   it("ships Apple Ads in production without an opt-in, since its exit gate passed (#378)", () => {
     expect(PREVIEW_CONNECTORS.has("apple-ads")).toBe(false);
-    expect([...PREVIEW_CONNECTORS]).toEqual([]);
-    const all = [
+    const finished = [
       "demo",
       "vercel",
       "google-search-console",
@@ -29,13 +28,31 @@ describe("createDefaultRegistry", () => {
       "google-play",
       "apple-ads",
     ];
-    for (const nodeEnv of ["production", "development", "test"] as const) {
+    expect(
+      createDefaultRegistry({ nodeEnv: "production" })
+        .list()
+        .map(({ manifest }) => manifest.id),
+    ).toEqual(finished);
+    for (const nodeEnv of ["development", "test"] as const) {
       expect(
         createDefaultRegistry({ nodeEnv })
           .list()
           .map(({ manifest }) => manifest.id),
-      ).toEqual(all);
+      ).toEqual([...finished, "railway"]);
     }
+  });
+
+  it("ships Railway as a preview until milestone 13.1's exit gate (#870, #877)", () => {
+    expect([...PREVIEW_CONNECTORS]).toEqual(["railway"]);
+    expect(
+      createDefaultRegistry({ nodeEnv: "production" }).get("railway"),
+    ).toBeUndefined();
+    expect(
+      createDefaultRegistry({
+        nodeEnv: "production",
+        previewConnectors: new Set(["railway"]),
+      }).get("railway"),
+    ).toBeDefined();
   });
 
   // The bundle has no preview at the moment; a test-only set keeps the

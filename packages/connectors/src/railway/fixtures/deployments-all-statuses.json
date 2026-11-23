@@ -1,0 +1,165 @@
+{
+  "data": {
+    "deployments": {
+      "pageInfo": { "hasNextPage": false, "endCursor": "cursor-13" },
+      "edges": [
+        {
+          "node": {
+            "id": "dep-status-queued",
+            "status": "QUEUED",
+            "createdAt": "2024-01-10T11:50:00.000Z",
+            "updatedAt": "2024-01-10T11:50:00.000Z",
+            "statusUpdatedAt": null,
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-waiting",
+            "status": "WAITING",
+            "createdAt": "2024-01-10T11:40:00.000Z",
+            "updatedAt": "2024-01-10T11:40:01.000Z",
+            "statusUpdatedAt": "2024-01-10T11:40:01.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-needs-approval",
+            "status": "NEEDS_APPROVAL",
+            "createdAt": "2024-01-10T11:30:00.000Z",
+            "updatedAt": "2024-01-10T11:30:01.000Z",
+            "statusUpdatedAt": "2024-01-10T11:30:01.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-initializing",
+            "status": "INITIALIZING",
+            "createdAt": "2024-01-10T11:20:00.000Z",
+            "updatedAt": "2024-01-10T11:20:02.000Z",
+            "statusUpdatedAt": "2024-01-10T11:20:02.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-building",
+            "status": "BUILDING",
+            "createdAt": "2024-01-10T11:10:00.000Z",
+            "updatedAt": "2024-01-10T11:10:30.000Z",
+            "statusUpdatedAt": "2024-01-10T11:10:30.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-deploying",
+            "status": "DEPLOYING",
+            "createdAt": "2024-01-10T11:00:00.000Z",
+            "updatedAt": "2024-01-10T11:02:00.000Z",
+            "statusUpdatedAt": "2024-01-10T11:02:00.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-success",
+            "status": "SUCCESS",
+            "createdAt": "2024-01-10T10:00:00.000Z",
+            "updatedAt": "2024-01-10T10:02:05.000Z",
+            "statusUpdatedAt": "2024-01-10T10:02:05.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-failed",
+            "status": "FAILED",
+            "createdAt": "2024-01-10T09:00:00.000Z",
+            "updatedAt": "2024-01-10T09:01:10.000Z",
+            "statusUpdatedAt": "2024-01-10T09:01:10.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-skipped",
+            "status": "SKIPPED",
+            "createdAt": "2024-01-10T08:00:00.000Z",
+            "updatedAt": "2024-01-10T08:00:03.000Z",
+            "statusUpdatedAt": "2024-01-10T08:00:03.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-crashed",
+            "status": "CRASHED",
+            "createdAt": "2024-01-09T20:00:00.000Z",
+            "updatedAt": "2024-01-10T07:15:00.000Z",
+            "statusUpdatedAt": "2024-01-10T07:15:00.000Z",
+            "serviceId": "svc-worker",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-sleeping",
+            "status": "SLEEPING",
+            "createdAt": "2024-01-09T18:00:00.000Z",
+            "updatedAt": "2024-01-10T03:00:00.000Z",
+            "statusUpdatedAt": "2024-01-10T03:00:00.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-removing",
+            "status": "REMOVING",
+            "createdAt": "2024-01-09T12:00:00.000Z",
+            "updatedAt": "2024-01-10T10:02:06.000Z",
+            "statusUpdatedAt": "2024-01-10T10:02:06.000Z",
+            "serviceId": "svc-web",
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        },
+        {
+          "node": {
+            "id": "dep-status-removed",
+            "status": "REMOVED",
+            "createdAt": "2024-01-08T12:00:00.000Z",
+            "updatedAt": "2024-01-09T12:02:00.000Z",
+            "statusUpdatedAt": "2024-01-09T12:02:00.000Z",
+            "serviceId": null,
+            "environmentId": "env-production",
+            "projectId": "prj-api"
+          }
+        }
+      ]
+    }
+  }
+}
