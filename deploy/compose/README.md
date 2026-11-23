@@ -567,8 +567,9 @@ It happens in two steps.
    data, then datasets, models, dashboards and images, then the workspace
    itself with everything left (projects, themes, goals, screens, its own
    audit log). It works in small steps, so a restart continues where it
-   stopped, and the `scheduler` queues the job again within the hour if it
-   was lost. **Without a running `worker` the data stays in the database**,
+   stopped. If the job is lost, the `scheduler` queues it again as part of
+   its hourly maintenance, at most 100 workspaces per pass, so a backlog
+   takes several passes. **Without a running `worker` the data stays in the database**,
    unreachable but not removed. A finished purge logs `workspace purged`
    (`docker compose logs worker`).
 
@@ -622,9 +623,15 @@ docker compose exec postgres psql -U netrics -d netrics -c \
   attempt that finished the purge.** When the job was retried or the
   `worker` restarted on the way, connections removed in earlier attempts
   are missing, so `failed: 0` does not prove that every revocation worked.
-  The `worker` log has one line per connection with an OAuth grant
+  The `worker` log has a line per connection with an OAuth grant
   (`oauth grant of a purged connection`: workspace id, connection id,
-  provider and outcome, never a token), in every attempt.
+  provider and outcome, never a token), written in whichever attempt
+  removed the connection, after the provider answered. One case leaves no
+  record at all: a connection is deleted first and the provider is called
+  afterwards, so a `worker` that stops between the two has removed the
+  connection without an outcome, and the next attempt finds nothing to
+  retry. When a connection with an OAuth grant has no such line, check the
+  access at the provider and revoke it there.
 
 They are deleted after 12 months, like every audit entry. Container logs
 keep the workspace's id for as long as you keep logs.
@@ -635,6 +642,12 @@ deleted (the `backup` service keeps 14 days; copies you made elsewhere stay
 until you remove them). Restoring such a dump brings the workspace back as
 it was, with its members, and without the two audit entries. If the deletion
 has to hold, have an owner delete the workspace again after the restore.
+That can be refused: if the owner created their second workspace after the
+dump was taken, the restored installation has only the first again, and
+deleting it answers "this is your only workspace" (`409 workspace_last`).
+The owner then has to create or join another workspace first. Do the
+repeated deletion, and check that it went through, before you let users
+back in.
 OAuth access that was revoked stays revoked: those connections fail until
 they are connected again. A dump taken between the two steps holds the
 workspace marked as deleted, and the purge continues after the restore.
