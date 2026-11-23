@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Base pinned by digest; bump deliberately (Dependabot proposes updates).
-FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS base
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS base
 RUN npm install -g pnpm@10.34.5
 WORKDIR /app
 
@@ -26,7 +26,7 @@ RUN cd /prod/server \
       -o -name docs -o -name bench -o -name benchmark -o -name benchmarks \) \
       -path '*/node_modules/*' -prune -exec rm -rf {} +
 
-FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS runner
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runner
 ARG APP_VERSION=0.0.0-dev
 ARG GIT_SHA=dev
 ENV NODE_ENV=production \

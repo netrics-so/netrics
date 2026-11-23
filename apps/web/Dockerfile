@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Base pinned by digest; bump deliberately (Dependabot proposes updates).
-FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS base
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS base
 RUN npm install -g pnpm@10.34.5
 WORKDIR /app
 
@@ -15,7 +15,7 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @netrics/web... build
 
-FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS runner
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runner
 # NETRICS_API_URL (where the web server reaches the API) is read at request
 # time; set it per deployment, e.g. http://api:3001 in Compose. Nothing about
 # the API location is baked into the image.
