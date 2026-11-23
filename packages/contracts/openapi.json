@@ -15658,6 +15658,242 @@
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "states": {
+                    "default": [],
+                    "maxItems": 48,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "binding": {
+                          "type": "object",
+                          "properties": {
+                            "modelId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "nameDimensionId": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                            },
+                            "stateDimensionId": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                            },
+                            "changedAtDimensionId": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                            },
+                            "rolledBackDimensionId": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                            },
+                            "filter": {
+                              "$ref": "#/components/schemas/DataExpressionDepth16Input"
+                            },
+                            "exclusions": {
+                              "default": [],
+                              "maxItems": 30,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "filterId": {
+                                    "type": "string",
+                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  }
+                                },
+                                "required": [
+                                  "filterId",
+                                  "reason"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "modelId",
+                            "nameDimensionId",
+                            "stateDimensionId"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "options": {
+                          "type": "object",
+                          "properties": {
+                            "layout": {
+                              "default": "list",
+                              "type": "string",
+                              "enum": [
+                                "list",
+                                "single"
+                              ]
+                            },
+                            "item": {
+                              "default": null,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "limit": {
+                              "default": 8,
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 20
+                            },
+                            "showChanged": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "states": {
+                              "default": {},
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 60
+                              },
+                              "additionalProperties": {
+                                "type": "string",
+                                "enum": [
+                                  "up",
+                                  "down",
+                                  "failed",
+                                  "building",
+                                  "sleeping",
+                                  "unknown"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "scope": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                          },
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "values"
+                                    ]
+                                  },
+                                  "values": {
+                                    "minItems": 1,
+                                    "maxItems": 100,
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "maxLength": 65536
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "values"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "range"
+                                    ]
+                                  },
+                                  "from": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "maxLength": 65536
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "to": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "maxLength": 65536
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "from",
+                                  "to"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "binding",
+                        "options"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -16643,6 +16879,253 @@
                         "additionalProperties": false
                       }
                     },
+                    "states": {
+                      "default": [],
+                      "maxItems": 48,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "widgetId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ok",
+                              "no_data"
+                            ]
+                          },
+                          "items": {
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 200
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "up",
+                                    "down",
+                                    "failed",
+                                    "building",
+                                    "sleeping",
+                                    "unknown"
+                                  ]
+                                },
+                                "rolledBack": {
+                                  "type": "boolean"
+                                },
+                                "changedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 40
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 60
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "state",
+                                "rolledBack",
+                                "changedAt",
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "exclusions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "filterId": {
+                                  "type": "string",
+                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "filterId",
+                                "reason"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "freshness": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "periodic",
+                                  "continuous"
+                                ]
+                              },
+                              "stream": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "fetchedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "dataThrough": {
+                                "type": "string",
+                                "format": "date",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                              },
+                              "period": {
+                                "type": "string",
+                                "enum": [
+                                  "month"
+                                ]
+                              },
+                              "nextExpectedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "late": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              },
+                              "nextCheckAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "sources": {
+                                "minItems": 2,
+                                "maxItems": 50,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 60
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "periodic",
+                                        "continuous"
+                                      ]
+                                    },
+                                    "stream": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "fetchedAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    "dataThrough": {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    "period": {
+                                      "type": "string",
+                                      "enum": [
+                                        "month"
+                                      ]
+                                    },
+                                    "nextExpectedAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    "late": {
+                                      "type": "boolean",
+                                      "enum": [
+                                        true
+                                      ]
+                                    },
+                                    "nextCheckAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "kind",
+                                    "stream",
+                                    "fetchedAt"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "stream",
+                              "fetchedAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "widgetId",
+                          "status",
+                          "items",
+                          "total",
+                          "error",
+                          "exclusions"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "values": {
                       "type": "object",
                       "propertyNames": {
@@ -16753,6 +17236,7 @@
                   "required": [
                     "widgets",
                     "items",
+                    "states",
                     "values"
                   ],
                   "additionalProperties": false
@@ -18506,6 +18990,253 @@
                         "additionalProperties": false
                       }
                     },
+                    "states": {
+                      "default": [],
+                      "maxItems": 48,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "widgetId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ok",
+                              "no_data"
+                            ]
+                          },
+                          "items": {
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 200
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "up",
+                                    "down",
+                                    "failed",
+                                    "building",
+                                    "sleeping",
+                                    "unknown"
+                                  ]
+                                },
+                                "rolledBack": {
+                                  "type": "boolean"
+                                },
+                                "changedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 40
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 60
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "state",
+                                "rolledBack",
+                                "changedAt",
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "exclusions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "filterId": {
+                                  "type": "string",
+                                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "filterId",
+                                "reason"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "freshness": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "periodic",
+                                  "continuous"
+                                ]
+                              },
+                              "stream": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "fetchedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "dataThrough": {
+                                "type": "string",
+                                "format": "date",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                              },
+                              "period": {
+                                "type": "string",
+                                "enum": [
+                                  "month"
+                                ]
+                              },
+                              "nextExpectedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "late": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              },
+                              "nextCheckAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "sources": {
+                                "minItems": 2,
+                                "maxItems": 50,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 60
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "periodic",
+                                        "continuous"
+                                      ]
+                                    },
+                                    "stream": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "fetchedAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    "dataThrough": {
+                                      "type": "string",
+                                      "format": "date",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                    },
+                                    "period": {
+                                      "type": "string",
+                                      "enum": [
+                                        "month"
+                                      ]
+                                    },
+                                    "nextExpectedAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    "late": {
+                                      "type": "boolean",
+                                      "enum": [
+                                        true
+                                      ]
+                                    },
+                                    "nextCheckAt": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "kind",
+                                    "stream",
+                                    "fetchedAt"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "stream",
+                              "fetchedAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "widgetId",
+                          "status",
+                          "items",
+                          "total",
+                          "error",
+                          "exclusions"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "values": {
                       "type": "object",
                       "propertyNames": {
@@ -18616,6 +19347,7 @@
                   "required": [
                     "widgets",
                     "items",
+                    "states",
                     "values"
                   ],
                   "additionalProperties": false
@@ -18943,7 +19675,8 @@
                                         "gauge",
                                         "review",
                                         "measure",
-                                        "items"
+                                        "items",
+                                        "state"
                                       ]
                                     },
                                     "x": {
@@ -20063,6 +20796,201 @@
                                       "showTime": {
                                         "default": true,
                                         "type": "boolean"
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h",
+                                  "binding"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "state"
+                                    ]
+                                  },
+                                  "filterExclusions": {
+                                    "maxItems": 30,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "filterId": {
+                                          "type": "string",
+                                          "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                        },
+                                        "reason": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        }
+                                      },
+                                      "required": [
+                                        "filterId",
+                                        "reason"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 14
+                                  },
+                                  "w": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16
+                                  },
+                                  "h": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 14
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "binding": {
+                                    "type": "object",
+                                    "properties": {
+                                      "modelId": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "nameDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                      },
+                                      "stateDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                      },
+                                      "changedAtDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                      },
+                                      "rolledBackDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                      },
+                                      "filter": {
+                                        "$ref": "#/components/schemas/DataExpressionDepth16Input"
+                                      },
+                                      "exclusions": {
+                                        "default": [],
+                                        "maxItems": 30,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "filterId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "reason": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 200
+                                            }
+                                          },
+                                          "required": [
+                                            "filterId",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "modelId",
+                                      "nameDimensionId",
+                                      "stateDimensionId"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "options": {
+                                    "default": {},
+                                    "type": "object",
+                                    "properties": {
+                                      "layout": {
+                                        "default": "list",
+                                        "type": "string",
+                                        "enum": [
+                                          "list",
+                                          "single"
+                                        ]
+                                      },
+                                      "item": {
+                                        "default": null,
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 200
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "limit": {
+                                        "default": 8,
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 20
+                                      },
+                                      "showChanged": {
+                                        "default": true,
+                                        "type": "boolean"
+                                      },
+                                      "states": {
+                                        "default": {},
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 60
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "enum": [
+                                            "up",
+                                            "down",
+                                            "failed",
+                                            "building",
+                                            "sleeping",
+                                            "unknown"
+                                          ]
+                                        }
                                       }
                                     }
                                   }
@@ -22968,6 +23896,207 @@
                                             "rotateSeconds",
                                             "imageFit",
                                             "showTime"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "binding",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "state"
+                                          ]
+                                        },
+                                        "filterExclusions": {
+                                          "maxItems": 30,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "filterId": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "reason": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 200
+                                              }
+                                            },
+                                            "required": [
+                                              "filterId",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "binding": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "nameDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "stateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "changedAtDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "rolledBackDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "filter": {
+                                              "$ref": "#/components/schemas/DataExpressionDepth16"
+                                            },
+                                            "exclusions": {
+                                              "default": [],
+                                              "maxItems": 30,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "filterId": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                  },
+                                                  "reason": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 200
+                                                  }
+                                                },
+                                                "required": [
+                                                  "filterId",
+                                                  "reason"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "nameDimensionId",
+                                            "stateDimensionId",
+                                            "exclusions"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "layout": {
+                                              "default": "list",
+                                              "type": "string",
+                                              "enum": [
+                                                "list",
+                                                "single"
+                                              ]
+                                            },
+                                            "item": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 200
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "limit": {
+                                              "default": 8,
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 20
+                                            },
+                                            "showChanged": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "states": {
+                                              "default": {},
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "up",
+                                                  "down",
+                                                  "failed",
+                                                  "building",
+                                                  "sleeping",
+                                                  "unknown"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "layout",
+                                            "item",
+                                            "limit",
+                                            "showChanged",
+                                            "states"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -26226,6 +27355,207 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
+                                            "state"
+                                          ]
+                                        },
+                                        "filterExclusions": {
+                                          "maxItems": 30,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "filterId": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "reason": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 200
+                                              }
+                                            },
+                                            "required": [
+                                              "filterId",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "binding": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "nameDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "stateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "changedAtDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "rolledBackDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "filter": {
+                                              "$ref": "#/components/schemas/DataExpressionDepth16"
+                                            },
+                                            "exclusions": {
+                                              "default": [],
+                                              "maxItems": 30,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "filterId": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                  },
+                                                  "reason": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 200
+                                                  }
+                                                },
+                                                "required": [
+                                                  "filterId",
+                                                  "reason"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "nameDimensionId",
+                                            "stateDimensionId",
+                                            "exclusions"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "layout": {
+                                              "default": "list",
+                                              "type": "string",
+                                              "enum": [
+                                                "list",
+                                                "single"
+                                              ]
+                                            },
+                                            "item": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 200
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "limit": {
+                                              "default": 8,
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 20
+                                            },
+                                            "showChanged": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "states": {
+                                              "default": {},
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "up",
+                                                  "down",
+                                                  "failed",
+                                                  "building",
+                                                  "sleeping",
+                                                  "unknown"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "layout",
+                                            "item",
+                                            "limit",
+                                            "showChanged",
+                                            "states"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "binding",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
                                             "metric"
                                           ]
                                         },
@@ -29370,6 +30700,201 @@
                                   "type": {
                                     "type": "string",
                                     "enum": [
+                                      "state"
+                                    ]
+                                  },
+                                  "filterExclusions": {
+                                    "maxItems": 30,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "filterId": {
+                                          "type": "string",
+                                          "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                        },
+                                        "reason": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        }
+                                      },
+                                      "required": [
+                                        "filterId",
+                                        "reason"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "x": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 16
+                                  },
+                                  "y": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 14
+                                  },
+                                  "w": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 16
+                                  },
+                                  "h": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 14
+                                  },
+                                  "title": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "binding": {
+                                    "type": "object",
+                                    "properties": {
+                                      "modelId": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "nameDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                      },
+                                      "stateDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                      },
+                                      "changedAtDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                      },
+                                      "rolledBackDimensionId": {
+                                        "type": "string",
+                                        "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                      },
+                                      "filter": {
+                                        "$ref": "#/components/schemas/DataExpressionDepth16Input"
+                                      },
+                                      "exclusions": {
+                                        "default": [],
+                                        "maxItems": 30,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "filterId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "reason": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 200
+                                            }
+                                          },
+                                          "required": [
+                                            "filterId",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "modelId",
+                                      "nameDimensionId",
+                                      "stateDimensionId"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "options": {
+                                    "default": {},
+                                    "type": "object",
+                                    "properties": {
+                                      "layout": {
+                                        "default": "list",
+                                        "type": "string",
+                                        "enum": [
+                                          "list",
+                                          "single"
+                                        ]
+                                      },
+                                      "item": {
+                                        "default": null,
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 200
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "limit": {
+                                        "default": 8,
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 20
+                                      },
+                                      "showChanged": {
+                                        "default": true,
+                                        "type": "boolean"
+                                      },
+                                      "states": {
+                                        "default": {},
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 60
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "enum": [
+                                            "up",
+                                            "down",
+                                            "failed",
+                                            "building",
+                                            "sleeping",
+                                            "unknown"
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h",
+                                  "binding"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
                                       "metric"
                                     ]
                                   },
@@ -32266,6 +33791,207 @@
                                             "rotateSeconds",
                                             "imageFit",
                                             "showTime"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "binding",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "state"
+                                          ]
+                                        },
+                                        "filterExclusions": {
+                                          "maxItems": 30,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "filterId": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "reason": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 200
+                                              }
+                                            },
+                                            "required": [
+                                              "filterId",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "binding": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "nameDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "stateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "changedAtDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "rolledBackDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "filter": {
+                                              "$ref": "#/components/schemas/DataExpressionDepth16"
+                                            },
+                                            "exclusions": {
+                                              "default": [],
+                                              "maxItems": 30,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "filterId": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                  },
+                                                  "reason": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 200
+                                                  }
+                                                },
+                                                "required": [
+                                                  "filterId",
+                                                  "reason"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "nameDimensionId",
+                                            "stateDimensionId",
+                                            "exclusions"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "layout": {
+                                              "default": "list",
+                                              "type": "string",
+                                              "enum": [
+                                                "list",
+                                                "single"
+                                              ]
+                                            },
+                                            "item": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 200
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "limit": {
+                                              "default": 8,
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 20
+                                            },
+                                            "showChanged": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "states": {
+                                              "default": {},
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "up",
+                                                  "down",
+                                                  "failed",
+                                                  "building",
+                                                  "sleeping",
+                                                  "unknown"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "layout",
+                                            "item",
+                                            "limit",
+                                            "showChanged",
+                                            "states"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -35657,6 +37383,207 @@
                                             "rotateSeconds",
                                             "imageFit",
                                             "showTime"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "binding",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "state"
+                                          ]
+                                        },
+                                        "filterExclusions": {
+                                          "maxItems": 30,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "filterId": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "reason": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 200
+                                              }
+                                            },
+                                            "required": [
+                                              "filterId",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "binding": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "nameDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "stateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "changedAtDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "rolledBackDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "filter": {
+                                              "$ref": "#/components/schemas/DataExpressionDepth16"
+                                            },
+                                            "exclusions": {
+                                              "default": [],
+                                              "maxItems": 30,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "filterId": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                  },
+                                                  "reason": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 200
+                                                  }
+                                                },
+                                                "required": [
+                                                  "filterId",
+                                                  "reason"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "nameDimensionId",
+                                            "stateDimensionId",
+                                            "exclusions"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "layout": {
+                                              "default": "list",
+                                              "type": "string",
+                                              "enum": [
+                                                "list",
+                                                "single"
+                                              ]
+                                            },
+                                            "item": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 200
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "limit": {
+                                              "default": 8,
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 20
+                                            },
+                                            "showChanged": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "states": {
+                                              "default": {},
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "up",
+                                                  "down",
+                                                  "failed",
+                                                  "building",
+                                                  "sleeping",
+                                                  "unknown"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "layout",
+                                            "item",
+                                            "limit",
+                                            "showChanged",
+                                            "states"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -84793,7 +86720,7 @@
     },
     "/v1/device/dashboard": {
       "get": {
-        "summary": "The device's dashboard: schema 1 (tiles) by default, schema 2 (slides, widgets, theme, images in the 16:9 layout) with ?schema=2, schema 3 (primary and custom layouts per screen format, device rotation and display mode) with ?schema=3, each when server info lists it; ?features=items adds latest-items widgets (others get a text in their place); ETags are per schema and features: send If-None-Match with the last ETag to get 304 when nothing changed",
+        "summary": "The device's dashboard: schema 1 (tiles) by default, schema 2 (slides, widgets, theme, images in the 16:9 layout) with ?schema=2, schema 3 (primary and custom layouts per screen format, device rotation and display mode) with ?schema=3, each when server info lists it; ?features=items adds latest-items widgets and ?features=state state widgets (others get a text in their place); ETags are per schema and features: send If-None-Match with the last ETag to get 304 when nothing changed",
         "tags": [
           "devices"
         ],
@@ -86499,6 +88426,295 @@
                                           "required": [
                                             "status",
                                             "items"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "state"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 12
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 8
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 12
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 8
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "layout": {
+                                              "default": "list",
+                                              "type": "string",
+                                              "enum": [
+                                                "list",
+                                                "single"
+                                              ]
+                                            },
+                                            "item": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 200
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "limit": {
+                                              "default": 8,
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 20
+                                            },
+                                            "showChanged": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "layout",
+                                            "item",
+                                            "limit",
+                                            "showChanged"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "no_data"
+                                              ]
+                                            },
+                                            "items": {
+                                              "maxItems": 20,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "name": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string",
+                                                        "maxLength": 200
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "state": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "up",
+                                                      "down",
+                                                      "failed",
+                                                      "building",
+                                                      "sleeping",
+                                                      "unknown"
+                                                    ]
+                                                  },
+                                                  "rolledBack": {
+                                                    "type": "boolean"
+                                                  },
+                                                  "changedAt": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string",
+                                                        "maxLength": 40
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "name",
+                                                  "state",
+                                                  "rolledBack",
+                                                  "changedAt"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "total": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "freshness": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "periodic",
+                                                    "continuous"
+                                                  ]
+                                                },
+                                                "stream": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "fetchedAt": {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                "dataThrough": {
+                                                  "type": "string",
+                                                  "format": "date",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                },
+                                                "period": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "month"
+                                                  ]
+                                                },
+                                                "nextExpectedAt": {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                "late": {
+                                                  "type": "boolean",
+                                                  "enum": [
+                                                    true
+                                                  ]
+                                                },
+                                                "nextCheckAt": {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                "sources": {
+                                                  "minItems": 2,
+                                                  "maxItems": 50,
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "source": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 60
+                                                      },
+                                                      "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "periodic",
+                                                          "continuous"
+                                                        ]
+                                                      },
+                                                      "stream": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "fetchedAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                      },
+                                                      "dataThrough": {
+                                                        "type": "string",
+                                                        "format": "date",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                      },
+                                                      "period": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "month"
+                                                        ]
+                                                      },
+                                                      "nextExpectedAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                      },
+                                                      "late": {
+                                                        "type": "boolean",
+                                                        "enum": [
+                                                          true
+                                                        ]
+                                                      },
+                                                      "nextCheckAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "source",
+                                                      "kind",
+                                                      "stream",
+                                                      "fetchedAt"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "stream",
+                                                "fetchedAt"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "status",
+                                            "items",
+                                            "total"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -91777,6 +93993,316 @@
                                           "required": [
                                             "status",
                                             "items"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "min",
+                                        "label",
+                                        "options",
+                                        "data"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "state"
+                                          ]
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "min": {
+                                          "type": "object",
+                                          "properties": {
+                                            "w": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "h": {
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 9007199254740991
+                                            }
+                                          },
+                                          "required": [
+                                            "w",
+                                            "h"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "layout": {
+                                              "default": "list",
+                                              "type": "string",
+                                              "enum": [
+                                                "list",
+                                                "single"
+                                              ]
+                                            },
+                                            "item": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 200
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "limit": {
+                                              "default": 8,
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 20
+                                            },
+                                            "showChanged": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "layout",
+                                            "item",
+                                            "limit",
+                                            "showChanged"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "data": {
+                                          "type": "object",
+                                          "properties": {
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "ok",
+                                                "no_data"
+                                              ]
+                                            },
+                                            "items": {
+                                              "maxItems": 20,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "name": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string",
+                                                        "maxLength": 200
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "state": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "up",
+                                                      "down",
+                                                      "failed",
+                                                      "building",
+                                                      "sleeping",
+                                                      "unknown"
+                                                    ]
+                                                  },
+                                                  "rolledBack": {
+                                                    "type": "boolean"
+                                                  },
+                                                  "changedAt": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string",
+                                                        "maxLength": 40
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "name",
+                                                  "state",
+                                                  "rolledBack",
+                                                  "changedAt"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "total": {
+                                              "type": "integer",
+                                              "minimum": 0,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "freshness": {
+                                              "type": "object",
+                                              "properties": {
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "periodic",
+                                                    "continuous"
+                                                  ]
+                                                },
+                                                "stream": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "fetchedAt": {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                "dataThrough": {
+                                                  "type": "string",
+                                                  "format": "date",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                },
+                                                "period": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "month"
+                                                  ]
+                                                },
+                                                "nextExpectedAt": {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                "late": {
+                                                  "type": "boolean",
+                                                  "enum": [
+                                                    true
+                                                  ]
+                                                },
+                                                "nextCheckAt": {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                },
+                                                "sources": {
+                                                  "minItems": 2,
+                                                  "maxItems": 50,
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "source": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 60
+                                                      },
+                                                      "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "periodic",
+                                                          "continuous"
+                                                        ]
+                                                      },
+                                                      "stream": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "fetchedAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                      },
+                                                      "dataThrough": {
+                                                        "type": "string",
+                                                        "format": "date",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                                      },
+                                                      "period": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "month"
+                                                        ]
+                                                      },
+                                                      "nextExpectedAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                      },
+                                                      "late": {
+                                                        "type": "boolean",
+                                                        "enum": [
+                                                          true
+                                                        ]
+                                                      },
+                                                      "nextCheckAt": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "source",
+                                                      "kind",
+                                                      "stream",
+                                                      "fetchedAt"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "kind",
+                                                "stream",
+                                                "fetchedAt"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "status",
+                                            "items",
+                                            "total"
                                           ],
                                           "additionalProperties": false
                                         }
@@ -107711,6 +110237,207 @@
                                             "rotateSeconds",
                                             "imageFit",
                                             "showTime"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id",
+                                        "x",
+                                        "y",
+                                        "w",
+                                        "h",
+                                        "title",
+                                        "binding",
+                                        "options"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "state"
+                                          ]
+                                        },
+                                        "filterExclusions": {
+                                          "maxItems": 30,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "filterId": {
+                                                "type": "string",
+                                                "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                              },
+                                              "reason": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 200
+                                              }
+                                            },
+                                            "required": [
+                                              "filterId",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid",
+                                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                        },
+                                        "x": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        },
+                                        "y": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 14
+                                        },
+                                        "w": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 16
+                                        },
+                                        "h": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 14
+                                        },
+                                        "title": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "binding": {
+                                          "type": "object",
+                                          "properties": {
+                                            "modelId": {
+                                              "type": "string",
+                                              "format": "uuid",
+                                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                            },
+                                            "nameDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "stateDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "changedAtDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "rolledBackDimensionId": {
+                                              "type": "string",
+                                              "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                            },
+                                            "filter": {
+                                              "$ref": "#/components/schemas/DataExpressionDepth16"
+                                            },
+                                            "exclusions": {
+                                              "default": [],
+                                              "maxItems": 30,
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "filterId": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-zA-Z_][a-zA-Z0-9_.-]{0,99}$"
+                                                  },
+                                                  "reason": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 200
+                                                  }
+                                                },
+                                                "required": [
+                                                  "filterId",
+                                                  "reason"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "modelId",
+                                            "nameDimensionId",
+                                            "stateDimensionId",
+                                            "exclusions"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "options": {
+                                          "type": "object",
+                                          "properties": {
+                                            "layout": {
+                                              "default": "list",
+                                              "type": "string",
+                                              "enum": [
+                                                "list",
+                                                "single"
+                                              ]
+                                            },
+                                            "item": {
+                                              "default": null,
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 200
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "limit": {
+                                              "default": 8,
+                                              "type": "integer",
+                                              "minimum": 1,
+                                              "maximum": 20
+                                            },
+                                            "showChanged": {
+                                              "default": true,
+                                              "type": "boolean"
+                                            },
+                                            "states": {
+                                              "default": {},
+                                              "type": "object",
+                                              "propertyNames": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 60
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "up",
+                                                  "down",
+                                                  "failed",
+                                                  "building",
+                                                  "sleeping",
+                                                  "unknown"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "layout",
+                                            "item",
+                                            "limit",
+                                            "showChanged",
+                                            "states"
                                           ],
                                           "additionalProperties": false
                                         }

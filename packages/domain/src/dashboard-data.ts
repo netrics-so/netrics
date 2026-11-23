@@ -574,6 +574,109 @@ export function itemsModelQuery(
   return { model: withCount, query };
 }
 
+/**
+ * A state widget's binding (#875, ADR 0019 section 15): a published
+ * model's dimensions for each item's name and state (a string, or a
+ * boolean health flag), and optionally the time the state last changed (a
+ * date or timestamp) and a "rolled back" flag (a boolean, a qualifier on
+ * up).
+ */
+export interface StateWidgetBinding {
+  modelId: string;
+  nameDimensionId: string;
+  stateDimensionId: string;
+  changedAtDimensionId?: string;
+  rolledBackDimensionId?: string;
+  filter?: DataExpression;
+  exclusions: DashboardFilterExclusion[];
+}
+
+/** Internal measure id the state query adds to the model: a row count over
+ * the state dimension's dataset. */
+export const STATE_COUNT_MEASURE_ID = "__state_count";
+/** The most items a state widget reads before ordering them (#875). */
+export const STATE_QUERY_MAX = 500;
+
+/** A copy of the model with the state widget's internal count measure. */
+export function stateModelWithCount(
+  model: SemanticModelDefinition,
+  binding: Pick<StateWidgetBinding, "stateDimensionId">,
+): SemanticModelDefinition {
+  const state = model.dimensions.find(
+    (dimension) => dimension.id === binding.stateDimensionId,
+  );
+  if (!state) dataFail("state_dimension_unknown", binding.stateDimensionId);
+  if (model.measures.some((measure) => measure.id === STATE_COUNT_MEASURE_ID))
+    dataFail("model_ids_not_unique");
+  return {
+    ...model,
+    measures: [
+      ...model.measures,
+      {
+        id: STATE_COUNT_MEASURE_ID,
+        name: "items",
+        kind: "aggregate",
+        datasetId: state.datasetId,
+        aggregate: { id: STATE_COUNT_MEASURE_ID, name: "items", op: "count" },
+      },
+    ],
+  };
+}
+
+/** The dimensions a state widget groups by, in query order. */
+export function stateGroupBy(binding: StateWidgetBinding): string[] {
+  return [
+    binding.nameDimensionId,
+    binding.stateDimensionId,
+    ...(binding.changedAtDimensionId ? [binding.changedAtDimensionId] : []),
+    ...(binding.rolledBackDimensionId ? [binding.rolledBackDimensionId] : []),
+  ];
+}
+
+/**
+ * The items of a state widget (#875): a copy of the model with an internal
+ * count measure, and the query grouped by name, state, changed-at and
+ * rolled-back, at most `STATE_QUERY_MAX` groups. `item` (the single form's
+ * chosen name) keeps that item only. Filters, exclusions, the screen's and
+ * the slide's scopes apply as in `dashboardModelQuery`. The caller
+ * normalizes and orders the rows (`sortServiceStateItems`).
+ */
+export function stateModelQuery(
+  model: SemanticModelDefinition,
+  filters: readonly DashboardDataFilter[],
+  values: Readonly<Record<string, DashboardFilterValue>>,
+  binding: StateWidgetBinding,
+  item: string | null = null,
+  scope?: DeviceFilterScope,
+  slide?: SlideFilterScope,
+): { model: SemanticModelDefinition; query: Omit<ModelQuery, "now"> } {
+  const withCount = stateModelWithCount(model, binding);
+  const parts: DataExpression[] = [];
+  if (binding.filter) parts.push(binding.filter);
+  if (item !== null)
+    parts.push({
+      kind: "call",
+      fn: "eq",
+      args: [field(binding.nameDimensionId), literal("string", item)],
+    });
+  const query = dashboardModelQuery(
+    filters,
+    values,
+    {
+      modelId: binding.modelId,
+      measureIds: [STATE_COUNT_MEASURE_ID],
+      groupBy: stateGroupBy(binding),
+      ...(parts.length ? { filter: combine("and", parts)! } : {}),
+      exclusions: binding.exclusions,
+    },
+    STATE_QUERY_MAX,
+    "first",
+    scope,
+    slide,
+  );
+  return { model: withCount, query };
+}
+
 /** A measure widget's options as far as they reach its binding (#768). */
 export interface MeasureTableOptions {
   view: DashboardMeasureView;

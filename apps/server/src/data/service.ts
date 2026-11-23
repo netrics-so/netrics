@@ -3559,7 +3559,7 @@ export async function queryDataModel(
   admit: boolean | DeferredPageAdmission = true,
   /**
    * Extends the published definition before the query runs: a latest-items
-   * widget's internal count measure (#810). The query names what it adds,
+   * (#810) or state widget's (#875) internal count measure. The query names what it adds,
    * so its snapshots never mix with plain queries.
    */
   extend?: (definition: SemanticModelDefinition) => SemanticModelDefinition,

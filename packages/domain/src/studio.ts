@@ -26,6 +26,7 @@ export const WIDGET_TYPES = [
   "review",
   "measure",
   "items",
+  "state",
 ] as const;
 export type WidgetType = (typeof WIDGET_TYPES)[number];
 
@@ -54,6 +55,8 @@ export function dataWidgetCost(type: string): number {
   if (type === "gauge" || type === "review" || type === "measure") return 1;
   // The latest items of a model: one grouped query (#810).
   if (type === "items") return 1;
+  // The states of a model's items: one grouped query (#875).
+  if (type === "state") return 1;
   return isDataWidgetType(type) ? 1 : 0;
 }
 

@@ -135,6 +135,7 @@ export interface WidgetInput {
     | import("@netrics/domain").MeasureWidgetBinding
     | import("@netrics/domain").CompareMeasureBinding
     | import("@netrics/domain").ItemsWidgetBinding
+    | import("@netrics/domain").StateWidgetBinding
     | null;
   filterExclusions?: import("@netrics/domain").DashboardFilterExclusion[];
   /**

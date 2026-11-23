@@ -3,11 +3,15 @@ import {
   DATA_TYPES,
   DASHBOARD_MEASURE_VIEWS,
   PERIODS,
+  SERVICE_STATE_OVERRIDES_MAX,
+  SERVICE_STATE_VALUE_MAX,
+  SERVICE_STATES,
   TIME_GRAINS,
   type DashboardDataFilter,
   type DashboardFilterValue,
   type ItemsWidgetBinding,
   type MeasureWidgetBinding,
+  type StateWidgetBinding,
 } from "@netrics/domain";
 import { CUSTOM_API_IMAGE_NEWEST_MAX } from "./images.js";
 import {
@@ -141,6 +145,64 @@ export const itemsWidgetItemSchema = z.object({
   image: itemsWidgetImageSchema.nullable(),
 });
 export type ItemsWidgetItem = z.infer<typeof itemsWidgetItemSchema>;
+/**
+ * A state widget's binding (#875, ADR 0019 section 15): a published model
+ * and its dimensions for each item's name (a string) and state (a string,
+ * or a boolean health flag), optionally the time it last changed (a date
+ * or timestamp) and a "rolled back" flag (a boolean).
+ */
+export const stateWidgetBindingSchema: z.ZodType<StateWidgetBinding> =
+  z.strictObject({
+    modelId: z.uuid(),
+    nameDimensionId: id,
+    stateDimensionId: id,
+    changedAtDimensionId: id.optional(),
+    rolledBackDimensionId: id.optional(),
+    filter: dataExpressionSchema.optional(),
+    exclusions: z.array(dashboardFilterExclusionSchema).max(30).default([]),
+  });
+/** The most items a state list shows (#875). */
+export const STATE_LIST_MAX = 20;
+export const stateWidgetOptionsSchema = z.object({
+  /** One item's state, or a list, problems first. */
+  layout: z.enum(["list", "single"]).default("list"),
+  /**
+   * Single: the name of the item shown; null shows the most urgent item
+   * (with a slide scoped to a project, usually its only one).
+   */
+  item: z.string().trim().min(1).max(200).nullable().default(null),
+  /** List: the most items listed; the rest is "+N more". */
+  limit: z.number().int().min(1).max(STATE_LIST_MAX).default(8),
+  /** The time the state last changed, when the binding names it. */
+  showChanged: z.boolean().default(true),
+  /**
+   * Source values mapped to a state, over the built-in words
+   * (`normalizeServiceState`); keys compare case-insensitively.
+   */
+  states: z
+    .record(
+      z.string().trim().min(1).max(SERVICE_STATE_VALUE_MAX),
+      z.enum(SERVICE_STATES),
+    )
+    .refine(
+      (states) => Object.keys(states).length <= SERVICE_STATE_OVERRIDES_MAX,
+      { message: `At most ${SERVICE_STATE_OVERRIDES_MAX} state values` },
+    )
+    .default({}),
+});
+export type StateWidgetOptions = z.infer<typeof stateWidgetOptionsSchema>;
+export const stateWidgetItemSchema = z.object({
+  /** At most 200 characters; longer values are cut with "…". */
+  name: z.string().max(200).nullable(),
+  state: z.enum(SERVICE_STATES),
+  /** A qualifier on up: production serves an older build (Vercel). */
+  rolledBack: z.boolean(),
+  /** ISO date or timestamp as stored, when the binding names one. */
+  changedAt: z.string().max(40).nullable(),
+  /** The source value as read, for the Studio's mapping (60 characters). */
+  value: z.string().max(SERVICE_STATE_VALUE_MAX).nullable(),
+});
+export type StateWidgetItem = z.infer<typeof stateWidgetItemSchema>;
 export const dashboardFilterValuesSchema = z.record(
   id,
   dashboardFilterValueSchema,
@@ -306,10 +368,25 @@ export const itemsWidgetDataSchema = z.object({
   freshness: widgetFreshnessSchema.optional(),
 });
 export type ItemsWidgetData = z.infer<typeof itemsWidgetDataSchema>;
+export const stateWidgetDataSchema = z.object({
+  widgetId: z.uuid(),
+  status: z.enum(["ok", "no_data"]),
+  /** Not healthy first (`sortServiceStateItems`), at most the list's limit. */
+  items: z.array(stateWidgetItemSchema).max(STATE_LIST_MAX),
+  /** Every matching item, also those beyond the limit ("+N more"). */
+  total: z.number().int().min(0),
+  error: z.string().nullable(),
+  exclusions: z.array(dashboardFilterExclusionSchema),
+  /** ADR 0025: through the model's sources; absent without freshness. */
+  freshness: widgetFreshnessSchema.optional(),
+});
+export type StateWidgetData = z.infer<typeof stateWidgetDataSchema>;
 export const dashboardDataResponseSchema = z.object({
   widgets: z.array(dashboardWidgetDataSchema),
   /** Latest-items widgets' data (#810). */
   items: z.array(itemsWidgetDataSchema).max(48).default([]),
+  /** State widgets' data (#875). */
+  states: z.array(stateWidgetDataSchema).max(48).default([]),
   values: dashboardFilterValuesSchema,
 });
 export const publishedModelCatalogSchema = z.object({
@@ -336,6 +413,18 @@ export const dashboardMeasurePreviewSchema = z.strictObject({
         id: z.uuid(),
         binding: itemsWidgetBindingSchema,
         options: itemsWidgetOptionsSchema,
+        scope: slideFilterScopeSchema.optional(),
+      }),
+    )
+    .max(48)
+    .default([]),
+  /** Unsaved state widgets (#875). */
+  states: z
+    .array(
+      z.strictObject({
+        id: z.uuid(),
+        binding: stateWidgetBindingSchema,
+        options: stateWidgetOptionsSchema,
         scope: slideFilterScopeSchema.optional(),
       }),
     )

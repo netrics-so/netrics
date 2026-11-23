@@ -35,6 +35,7 @@ import {
   safeDataError,
 } from "../dashboards/data.js";
 import { queryDashboardItems } from "../dashboards/items.js";
+import { queryDashboardState } from "../dashboards/state.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
@@ -294,7 +295,24 @@ export function registerDashboardRoutes(
                     freshness,
                   ),
                 );
-              return { widgets, items, values: body.values };
+              // State widgets (#875).
+              const states = [];
+              for (const widget of body.states)
+                states.push(
+                  await queryDashboardState(
+                    tx,
+                    access.workspaceId,
+                    widget,
+                    body.filters,
+                    body.values,
+                    now,
+                    deps.policy ?? DEFAULT_DATA_POLICY,
+                    {},
+                    widget.scope,
+                    freshness,
+                  ),
+                );
+              return { widgets, items, states, values: body.values };
             },
             { isolationLevel: "repeatable read" },
           );

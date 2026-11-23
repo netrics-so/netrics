@@ -15,6 +15,8 @@ export const sharedDe: Catalog<SharedMessages> = {
   latestItems: "Neueste Einträge",
   itemsNeedNewerApp:
     "Aktualisiere netrics TV, um die neuesten Einträge zu sehen.",
+  serviceStatus: "Status",
+  stateNeedNewerApp: "Aktualisiere netrics TV, um den Status zu sehen.",
   others: "Andere",
   sources: "Quellen",
   goal: "Ziel",

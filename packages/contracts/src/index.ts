@@ -42,6 +42,10 @@ import {
   itemsWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
+  STATE_LIST_MAX,
+  stateWidgetBindingSchema,
+  stateWidgetItemSchema,
+  stateWidgetOptionsSchema,
 } from "./dashboard-data.js";
 
 import {
@@ -2488,6 +2492,12 @@ export const dashboardWidgetInputSchema = z.discriminatedUnion("type", [
     options: itemsWidgetOptionsSchema.prefault({}),
   }),
   z.object({
+    type: z.literal("state"),
+    ...widgetInputShape,
+    binding: stateWidgetBindingSchema,
+    options: stateWidgetOptionsSchema.prefault({}),
+  }),
+  z.object({
     type: z.literal("metric"),
     ...widgetInputShape,
     ...dataBindingInputShape,
@@ -2678,6 +2688,12 @@ export const dashboardWidgetSchema = z.discriminatedUnion("type", [
     ...widgetShape,
     binding: itemsWidgetBindingSchema,
     options: itemsWidgetOptionsSchema,
+  }),
+  z.object({
+    type: z.literal("state"),
+    ...widgetShape,
+    binding: stateWidgetBindingSchema,
+    options: stateWidgetOptionsSchema,
   }),
   z.object({
     type: z.literal("metric"),
@@ -3454,8 +3470,9 @@ export const deviceDashboardQuerySchema = z.object({
    * "measure_split", a measure value view's total with its split. Without
    * it, such widgets arrive as their total alone. "items", the latest-items
    * widget (#810): without it, each such widget arrives as a text widget
-   * saying the app needs an update, and none of its images. Unknown names
-   * are ignored.
+   * saying the app needs an update, and none of its images. "state", the
+   * state widget (#875): without it, each such widget arrives as a text
+   * widget saying the app needs an update. Unknown names are ignored.
    */
   features: z.string().max(200).optional(),
 });
@@ -3843,6 +3860,31 @@ export const deviceItemsDataSchema = z.object({
 });
 export type DeviceItemsData = z.infer<typeof deviceItemsDataSchema>;
 
+/**
+ * A state widget's data on a screen (#875): not healthy first, at most the
+ * list's limit; `total` counts every matching item ("+N more").
+ */
+export const deviceStateDataSchema = z.object({
+  status: z.enum(["ok", "no_data"]),
+  items: z
+    .array(
+      z.object({
+        name: stateWidgetItemSchema.shape.name,
+        state: stateWidgetItemSchema.shape.state,
+        rolledBack: stateWidgetItemSchema.shape.rolledBack,
+        changedAt: stateWidgetItemSchema.shape.changedAt,
+      }),
+    )
+    .max(STATE_LIST_MAX),
+  total: z.number().int().min(0),
+  freshness: widgetFreshnessSchema.optional(),
+});
+export type DeviceStateData = z.infer<typeof deviceStateDataSchema>;
+/** A state widget's options on a screen: the mapping stays on the server. */
+export const deviceStateOptionsSchema = stateWidgetOptionsSchema.omit({
+  states: true,
+});
+
 /** A widget's id and placement in a grid of `columns` × `rows`. */
 function deviceWidgetPlacementShape(grid: { columns: number; rows: number }) {
   return {
@@ -3904,6 +3946,17 @@ function deviceWidgetUnion<E extends z.ZodRawShape>(
       label: deviceDataLabelSchema,
       options: itemsWidgetOptionsSchema,
       data: deviceItemsDataSchema,
+    }),
+    /**
+     * The states of a model's items (#875), sent only to clients that ask
+     * with `features=state`; others get a text widget in its place.
+     */
+    z.object({
+      type: z.literal("state"),
+      ...deviceWidgetShape,
+      label: deviceDataLabelSchema,
+      options: deviceStateOptionsSchema,
+      data: deviceStateDataSchema,
     }),
     z.object({
       type: z.literal("metric"),

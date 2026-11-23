@@ -3,6 +3,7 @@ import {
   compareMeasureBindingSchema,
   dashboardDataFiltersSchema,
   itemsWidgetBindingSchema,
+  stateWidgetBindingSchema,
   measureWidgetBindingSchema,
   preparationGraphSchema,
   semanticModelDefinitionSchema,
@@ -339,6 +340,9 @@ function widgetMeasures(type: string, binding: unknown): string[] | null {
   // measure target.
   if (type === "items")
     return itemsWidgetBindingSchema.safeParse(binding).success ? [] : null;
+  // A state widget (#875) likewise reads dimensions only.
+  if (type === "state")
+    return stateWidgetBindingSchema.safeParse(binding).success ? [] : null;
   if (type === "compare") {
     const parsed = compareMeasureBindingSchema.safeParse(binding);
     return parsed.success ? Object.values(parsed.data.measureIds) : null;

@@ -5,6 +5,8 @@ import {
   dashboardFilterExclusionSchema,
   itemsWidgetBindingSchema,
   itemsWidgetOptionsSchema,
+  stateWidgetBindingSchema,
+  stateWidgetOptionsSchema,
   measureWidgetBindingSchema,
   measureWidgetOptionsSchema,
   semanticModelDefinitionSchema,
@@ -78,6 +80,7 @@ import {
   type WidgetFreshnessResult,
 } from "./freshness.js";
 import { queryDashboardItems } from "./items.js";
+import { queryDashboardState } from "./state.js";
 import {
   modelSourceConnections,
   modelSourceDatasets,
@@ -875,8 +878,30 @@ export async function queryDashboardData(
     throw new DataServiceError("dashboard_filter_unknown");
   const results = [];
   const items = [];
+  const states = [];
   for (const slide of slides)
     for (const widget of slide.widgets) {
+      if (widget.type === "state") {
+        states.push(
+          await queryDashboardState(
+            tx,
+            workspaceId,
+            {
+              id: widget.id,
+              binding: stateWidgetBindingSchema.parse(widget.modelBinding),
+              options: stateWidgetOptionsSchema.parse(widget.options),
+            },
+            filters,
+            values,
+            now,
+            defaults,
+            {},
+            slideScopeOf(slide),
+            freshnessReader,
+          ),
+        );
+        continue;
+      }
       if (widget.type === "items") {
         items.push(
           await queryDashboardItems(
@@ -922,6 +947,7 @@ export async function queryDashboardData(
   return {
     widgets: results,
     items,
+    states,
     values: Object.fromEntries(
       filters.map((filter) => [
         filter.id,
