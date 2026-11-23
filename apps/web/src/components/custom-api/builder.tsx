@@ -12,12 +12,14 @@ import { CustomApiRequestError } from "@/lib/custom-api";
 import {
   BUILDER_STEPS,
   draftDefinitionOf,
+  draftTestFingerprint,
   emptyBuilderState,
   pickRecords,
   requiredSecrets,
   stateFromDefinition,
   stepHints,
   stepIssues,
+  withReadOnlyChecked,
   type BuilderState,
   type BuilderStep,
   type StepOptions,
@@ -66,6 +68,35 @@ const CREDENTIALS = new Set([
 
 type SavedDefinition = CustomApiDefinitionResponse["definition"];
 type Pending = "draft" | "secrets" | "test" | "save" | "discard" | null;
+
+/** A test waiting for "this request only reads data" (ADR 0030 §2). */
+export interface PendingChallenge {
+  hash: string;
+  pages: number;
+  /** draftTestFingerprint of the request the server hashed. */
+  fingerprint: string;
+}
+
+/** The challenge is still about the request the state would send. */
+export function challengeCurrent(
+  challenge: PendingChallenge,
+  state: BuilderState,
+): boolean {
+  return challenge.fingerprint === draftTestFingerprint(state);
+}
+
+/**
+ * The confirmation a test sends without asking again: the last confirmed
+ * one, while the request is exactly the one it was given for.
+ */
+export function rememberedConfirmation(
+  confirmed: Pick<PendingChallenge, "hash" | "fingerprint"> | null,
+  state: BuilderState,
+): string | undefined {
+  return confirmed && confirmed.fingerprint === draftTestFingerprint(state)
+    ? confirmed.hash
+    : undefined;
+}
 
 /** The first step that is not complete, or the last one. */
 export function firstOpenStep(
@@ -140,12 +171,17 @@ export function CustomApiBuilder({
   const [pending, setPending] = useState<Pending>(null);
   const [error, setError] = useState<string | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
-  /** A JSON-body POST test waiting for its read-only confirmation (ADR 0030). */
-  const [challenge, setChallenge] = useState<{
-    hash: string;
-    pages: number;
-    from: BuilderState;
-  } | null>(null);
+  /**
+   * A JSON-body POST test waiting for its read-only confirmation (ADR
+   * 0030): the server's hash, and the fingerprint of the request it was
+   * asked for. Only the state, never a copy of it, is sent on confirm.
+   */
+  const [challenge, setChallenge] = useState<PendingChallenge | null>(null);
+  /** The last test request confirmed and sent: its hash and fingerprint. */
+  const [confirmedTest, setConfirmedTest] = useState<Pick<
+    PendingChallenge,
+    "hash" | "fingerprint"
+  > | null>(null);
   const [secretsLost, setSecretsLost] = useState(false);
   const [testedFields, setTestedFields] = useState<string | null>(null);
   const [pagingTest, setPagingTest] = useState<CustomApiTestResponse | null>(
@@ -239,11 +275,26 @@ export function CustomApiBuilder({
     });
   }, [declared]);
 
+  // A pending read-only challenge holds only for the request it showed:
+  // an edit that shapes the request, or another test environment, drops
+  // it, and the test has to be sent (and confirmed) again.
+  const challengeHolds =
+    challenge !== null && challengeCurrent(challenge, state);
+  useEffect(() => {
+    if (challenge && !challengeHolds) {
+      setChallenge(null);
+      setTestError(t("test.readOnly.changed"));
+    }
+  }, [challenge, challengeHolds, t]);
+
   if (!canEdit && definition)
     return <CustomApiSummary definition={definition} />;
 
+  // Every edit drops the read-only confirmations whose request it changed.
   const update = (change: (current: BuilderState) => BuilderState) =>
-    setState(change);
+    setState((current) =>
+      withReadOnlyChecked(change(current), definition?.document),
+    );
 
   const message = (cause: unknown) => builderErrorMessage(cause, locale);
 
@@ -330,8 +381,12 @@ export function CustomApiBuilder({
   async function test(
     pages: number,
     from: BuilderState = state,
-    readOnlyConfirmation?: string,
+    confirmedNow?: string,
   ) {
+    // A request confirmed before is sent again with its confirmation
+    // while it is exactly the same; any change asks again.
+    const readOnlyConfirmation =
+      confirmedNow ?? rememberedConfirmation(confirmedTest, from);
     setTestError(null);
     setError(null);
     setChallenge(null);
@@ -354,6 +409,11 @@ export function CustomApiBuilder({
         readOnlyConfirmation,
       );
       setState(result.state);
+      if (readOnlyConfirmation)
+        setConfirmedTest({
+          hash: readOnlyConfirmation,
+          fingerprint: draftTestFingerprint(from),
+        });
       const after = afterSecretsSent(result, secretsLost);
       if (after.clearInputs) setSecretInputs({});
       setSecretsLost(after.secretsLost);
@@ -363,7 +423,7 @@ export function CustomApiBuilder({
       const hash = readOnlyChallenge(cause);
       if (hash !== null && hash !== readOnlyConfirmation) {
         // Nothing was sent: show the request and ask.
-        setChallenge({ hash, pages, from });
+        setChallenge({ hash, pages, fingerprint: draftTestFingerprint(from) });
         return;
       }
       setState(refused(cause, from));
@@ -482,6 +542,9 @@ export function CustomApiBuilder({
     });
   const busy = pending !== null;
   const withPanel = index >= 2;
+  const testBaseUrl = state.environments
+    .find((e) => e.id === state.environmentId)
+    ?.baseUrl.trim();
   const fieldsChanged =
     testedFields !== null &&
     testedFields !== JSON.stringify(state.stream.fields);
@@ -692,13 +755,18 @@ export function CustomApiBuilder({
           )}
         </div>
       </section>
-      {withPanel && challenge ? (
+      {withPanel && challenge && challengeHolds ? (
         <ReadOnlyConfirm
-          request={draftDefinitionOf(challenge.from).stream.request}
+          request={draftDefinitionOf(state).stream.request}
+          pagination={state.stream.pagination}
+          {...(testBaseUrl ? { baseUrl: testBaseUrl } : {})}
           pending={pending === "test"}
-          onConfirm={() =>
-            void test(challenge.pages, challenge.from, challenge.hash)
-          }
+          onConfirm={() => {
+            // The current request, which is the one confirmed (checked
+            // again here): never an earlier copy of the state.
+            if (challengeCurrent(challenge, state))
+              void test(challenge.pages, state, challenge.hash);
+          }}
           onCancel={() => setChallenge(null)}
         />
       ) : null}

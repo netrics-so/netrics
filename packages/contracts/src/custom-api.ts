@@ -20,7 +20,9 @@ export {
   CustomApiDefinitionError,
   checkCustomApiStreamRequest,
   customApiAuthSchema,
+  customApiBodyPathProblem,
   customApiBodySchema,
+  customApiBodyStringLeaves,
   customApiGraphqlProblem,
   customApiDefinitionSchema,
   customApiEnvironmentSchema,
@@ -46,7 +48,9 @@ export {
   WINDOW_PLACEHOLDERS,
 } from "@netrics/connector-sdk/custom-api";
 export type {
+  BodyPathProblem,
   DataPathSegment,
+  GraphqlOperationProblem,
   CustomApiAuth,
   CustomApiBody,
   CustomApiJsonValue,

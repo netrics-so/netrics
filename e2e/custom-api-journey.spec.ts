@@ -637,13 +637,17 @@ test("a member confirms a JSON-body POST test before it is sent", async ({
   await expect(
     page.getByRole("heading", { name: c.steps.request }),
   ).toBeVisible();
-  await expect(page.getByTestId("custom-api-post-kept")).toBeVisible();
+  // The saved method and body load into the editor (#869).
+  await expect(page.getByLabel("POST", { exact: true })).toBeChecked();
+  await expect(page.locator("#custom-api-body-json")).toHaveValue(
+    /"kind": "ItemsQuery"/,
+  );
   await page.getByRole("button", { name: c.request.send }).click();
 
   // Nothing is sent before the confirmation.
   const confirm = page.getByTestId("custom-api-read-only");
   await expect(confirm).toContainText(c.test.readOnly.title);
-  await expect(confirm).toContainText("POST /query");
+  await expect(confirm).toContainText(`POST ${CUSTOM_API_ORIGIN}/query`);
   await expect(confirm).toContainText('"kind": "ItemsQuery"');
   const send = confirm.getByRole("button", { name: c.test.readOnly.send });
   await expect(send).toBeDisabled();
@@ -655,4 +659,204 @@ test("a member confirms a JSON-body POST test before it is sent", async ({
   await expect(log).toHaveCount(1);
   await expect(log.first().locator("td").nth(2)).toHaveText("200");
   await expect(page.getByTestId("custom-api-read-only")).toHaveCount(0);
+});
+
+/** A new builder up to its Request step, without a login (#869). */
+async function newRequest(page: Page, locale: Locale, name: string) {
+  const c = labels(locale);
+  const s = sources(locale);
+  const { workspaceId } = await startWorkspace(page, locale);
+  await page.goto(`/workspaces/${workspaceId}/sources`);
+  await page.getByRole("link", { name: s.customApi.buildName }).click();
+  await page.locator("#custom-api-name").fill(name);
+  await page.locator("#custom-api-base-url-0").fill(CUSTOM_API_ORIGIN);
+  await page.getByRole("button", { name: c.nav.continue, exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: c.steps.login }),
+  ).toBeVisible();
+  await page.getByLabel(c.login.methods.none).check();
+  await page.getByRole("button", { name: c.nav.continue, exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: c.steps.request }),
+  ).toBeVisible();
+  return workspaceId;
+}
+
+/** Opens a collapsed node of the response tree. */
+async function expand(page: Page, path: string) {
+  await page
+    .locator(`[data-path="${path}"] > .json-tree-toggle`)
+    .first()
+    .click();
+}
+
+/**
+ * #869: a member authors a GraphQL POST stream in the builder. The
+ * read-only check shows as the query is typed (a mutation is refused),
+ * the test sends it without a confirmation, the cursor goes into the
+ * variables, and the saved connection shows the query.
+ */
+test("a member builds a GraphQL POST stream", async ({ page }, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const c = labels(locale);
+  const workspaceId = await newRequest(page, locale, "GraphQL API");
+
+  await page.locator("#custom-api-path").fill("/graphql/string-cursor");
+  await page.getByLabel("POST", { exact: true }).check();
+  await page.getByLabel(c.request.bodyKinds.graphql).check();
+  const query = page.locator("#custom-api-graphql-query");
+  const check = page.getByTestId("custom-api-graphql-check");
+  await query.fill("mutation { deleteItems }");
+  await expect(check).toHaveText(c.request.graphqlCheck.not_query);
+  await expect(query).toHaveAttribute("aria-invalid", "true");
+  await query.fill(
+    "query Items($first: Int!, $after: String) { items(first: $first, after: $after) { nodes { id name } pageInfo { endCursor } } }",
+  );
+  await expect(check).toHaveText(c.request.graphqlCheck.ok);
+  await page
+    .locator("#custom-api-graphql-variables")
+    .fill('{ "first": 10, "after": null }');
+  await page.getByRole("button", { name: c.request.send }).click();
+  // A GraphQL query needs no read-only confirmation: its check holds.
+  await expect(page.getByText(c.test.ok)).toBeVisible();
+  await expect(page.getByTestId("custom-api-read-only")).toHaveCount(0);
+  const log = page.locator(".custom-api-log-entry");
+  await expect(log.first().locator("td").nth(2)).toHaveText("200");
+  await page.getByRole("button", { name: c.nav.continue, exact: true }).click();
+
+  await expect(
+    page.getByRole("heading", { name: c.steps.response }),
+  ).toBeVisible();
+  await expand(page, "data.items");
+  await page.locator('[data-pick="data.items.nodes"]').click();
+  for (const path of ["id", "name"])
+    await page.getByRole("checkbox", { name: path, exact: true }).check();
+  await page.getByRole("button", { name: c.nav.continue, exact: true }).click();
+
+  // Paging: the cursor goes into the variables, never a URL parameter.
+  await expect(
+    page.getByRole("heading", { name: c.steps.paging }),
+  ).toBeVisible();
+  await expect(page.getByLabel(c.paging.styles.next_url)).toHaveCount(0);
+  await page.getByLabel(c.paging.styles.cursor).check();
+  const placement = page.getByTestId("custom-api-cursor-placement");
+  await placement.getByLabel(c.paging.placement.body).check();
+  await expect(page.locator("#custom-api-cursor-param")).toHaveCount(0);
+  await page
+    .locator("#custom-api-cursor-body-path")
+    .selectOption("variables.after");
+  await expand(page, "data.items");
+  await expand(page, "data.items.pageInfo");
+  await page.locator('[data-pick="data.items.pageInfo.endCursor"]').click();
+  await page.getByRole("button", { name: c.paging.test }).click();
+  await expect(
+    page.getByText(
+      formatMessage(locale, c.paging.fetched, { pages: 3, records: 25 }),
+    ),
+  ).toBeVisible();
+  await page.getByRole("button", { name: c.nav.continue, exact: true }).click();
+
+  await expect(
+    page.getByRole("heading", { name: c.steps.review }),
+  ).toBeVisible();
+  await expect(page.getByTestId("custom-api-read-only-save")).toHaveCount(0);
+  await page.getByRole("button", { name: c.review.save }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/workspaces/${workspaceId}/connections/[0-9a-f-]{36}$`),
+  );
+  const requests = page.locator("#custom-api-requests");
+  await expect(requests).toContainText("POST /graphql/string-cursor");
+  await expect(requests).toContainText(c.connectionRequests.graphql);
+});
+
+/**
+ * #869: a member authors a JSON-body POST stream. A test confirmation goes
+ * stale when the body changes; the offset and limit go into the body; and
+ * the version is saved only after the save-time confirmation of the exact
+ * request.
+ */
+test("a member builds a JSON POST stream and confirms it at save", async ({
+  page,
+}, testInfo) => {
+  const locale = testInfo.project.name as Locale;
+  const c = labels(locale);
+  const workspaceId = await newRequest(page, locale, "Query API");
+
+  await page.locator("#custom-api-path").fill("/query");
+  await page.getByLabel("POST", { exact: true }).check();
+  const body = page.locator("#custom-api-body-json");
+  await body.fill('{ "kind": "ItemsQuery", "page": ');
+  await expect(body).toHaveAttribute("aria-invalid", "true");
+  await body.fill(
+    '{ "kind": "ItemsQuery", "page": { "offset": 0, "limit": 5 } }',
+  );
+  await expect(body).not.toHaveAttribute("aria-invalid", "true");
+  await page.getByRole("button", { name: c.request.send }).click();
+  const confirm = page.getByTestId("custom-api-read-only");
+  await expect(confirm).toContainText(`POST ${CUSTOM_API_ORIGIN}/query`);
+
+  // Changing the body while asked drops the question: nothing is sent.
+  await body.fill(
+    '{ "kind": "ItemsQuery", "page": { "offset": 0, "limit": 10 } }',
+  );
+  await expect(confirm).toHaveCount(0);
+  await expect(page.getByText(c.test.readOnly.changed)).toBeVisible();
+  await page.getByRole("button", { name: c.request.send }).click();
+  await expect(confirm).toContainText('"limit": 10');
+  await confirm.getByLabel(c.test.readOnly.confirm).check();
+  await confirm.getByRole("button", { name: c.test.readOnly.send }).click();
+  await expect(page.getByText(c.test.ok)).toBeVisible();
+  await page.getByRole("button", { name: c.nav.continue, exact: true }).click();
+
+  await expect(
+    page.getByRole("heading", { name: c.steps.response }),
+  ).toBeVisible();
+  await page.locator('[data-pick="items"]').click();
+  for (const path of ["id", "name"])
+    await page.getByRole("checkbox", { name: path, exact: true }).check();
+  await page.getByRole("button", { name: c.nav.continue, exact: true }).click();
+
+  // Paging: offset and limit replace values of the body.
+  await expect(
+    page.getByRole("heading", { name: c.steps.paging }),
+  ).toBeVisible();
+  await page.getByLabel(c.paging.styles.offset).check();
+  for (const [value, path] of [
+    ["offset", "page.offset"],
+    ["limit", "page.limit"],
+  ] as const) {
+    await page
+      .getByTestId(`custom-api-${value}-placement`)
+      .getByLabel(c.paging.placement.body)
+      .check();
+    await page.locator(`#custom-api-${value}-body-path`).selectOption(path);
+  }
+  await page.locator("#custom-api-limit").fill("10");
+  await page.getByRole("button", { name: c.paging.test }).click();
+  // The paging changed the request: it is confirmed again before sending.
+  await expect(confirm).toContainText("page.offset");
+  await confirm.getByLabel(c.test.readOnly.confirm).check();
+  await confirm.getByRole("button", { name: c.test.readOnly.send }).click();
+  await expect(page.locator(".custom-api-fetched")).toBeVisible();
+  await page.getByRole("button", { name: c.nav.continue, exact: true }).click();
+
+  // Save: only after confirming the exact request this version saves.
+  await expect(
+    page.getByRole("heading", { name: c.steps.review }),
+  ).toBeVisible();
+  const save = page.getByRole("button", { name: c.review.save });
+  await expect(save).toBeDisabled();
+  await expect(page.getByText(c.issues.readOnlyUnconfirmed)).toBeVisible();
+  const saveConfirm = page.getByTestId("custom-api-read-only-save");
+  await expect(saveConfirm).toContainText(`POST ${CUSTOM_API_ORIGIN}/query`);
+  await expect(saveConfirm).toContainText('"kind": "ItemsQuery"');
+  await saveConfirm.getByRole("checkbox").check();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page).toHaveURL(
+    new RegExp(`/workspaces/${workspaceId}/connections/[0-9a-f-]{36}$`),
+  );
+  const requests = page.locator("#custom-api-requests");
+  await expect(requests).toContainText("POST /query");
+  await expect(requests).toContainText(c.connectionRequests.jsonReadOnly);
 });

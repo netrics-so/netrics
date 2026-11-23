@@ -100,10 +100,45 @@ export const customApiEn = {
         "Changing the URLs, the client ID or the client secret ends the sign-in. You then sign in again.",
     },
     request: {
-      postKeptGraphql:
-        "This request sends a GraphQL query with POST. This editor keeps the method, query and variables as they are; changing them comes with a later version.",
-      postKeptJson:
-        "This request sends a JSON body with POST. This editor keeps the method and body as they are; changing them comes with a later version. When you change the request, confirm again that it only reads data.",
+      method: "Method",
+      getHelp: "GET reads the address; it sends no body.",
+      postHelp:
+        "POST sends a body and stays on this address for every page. Use it only for requests that read data, such as GraphQL queries or search APIs.",
+      bodyKind: "Body",
+      bodyKinds: { json: "JSON body", graphql: "GraphQL query" },
+      bodyJson: "Body (JSON)",
+      bodyHelp:
+        "Put a value in braces inside a text value, such as \"'{{'account_id'}}'\": connection values and the window start and end.",
+      bodyNoPage:
+        "Paging values can't go into the body as values in braces: choose the body value they replace in the Paging step.",
+      jsonReadOnly:
+        "netrics can't check what a JSON body does at the API. You confirm that it only reads data before a test sends it and when you save.",
+      bodyErrors: {
+        syntax: "This isn't valid JSON yet.",
+        limits: "The body is too large or nested too deeply.",
+        empty: "Enter the GraphQL query.",
+        variables: {
+          syntax: "The variables aren't valid JSON yet.",
+          object:
+            "The variables are a JSON object, such as '{' \"first\": 10 '}'.",
+          limits: "The variables are too large or nested too deeply.",
+        },
+      },
+      graphqlQuery: "GraphQL query",
+      graphqlQueryHelp:
+        "Sent exactly as written. Put values in braces into the variables, not into the query.",
+      graphqlCheck: {
+        ok: "One query operation: it only reads data.",
+        syntax: "The query isn't valid GraphQL yet.",
+        not_query: "Only a query can be sent: no mutation and no subscription.",
+        several_definitions:
+          "Send exactly one query: no second operation and no fragment definitions.",
+        placeholder:
+          "The query is sent as written: move values in braces into the variables.",
+      },
+      graphqlVariables: "Variables (JSON object)",
+      graphqlVariablesHelp:
+        "Text values may hold values in braces: connection values and the window start and end.",
       path: "Path",
       query: "Query parameters",
       headers: "Headers",
@@ -119,6 +154,8 @@ export const customApiEn = {
       remove: "Remove",
       placeholderHelp:
         "Insert a value with '{'braces'}': connection values, window start and end, or the paging value.",
+      placeholderBodyHelp:
+        "Insert a value with '{'braces'}' into a text value of the body: connection values, window start and end. Paging values go into the body through the Paging step.",
       insert: "Insert value",
       insertInto: "Insert into",
       targets: {
@@ -220,6 +257,25 @@ export const customApiEn = {
       limit: "Limit",
       cursorPath: "Cursor in the response",
       cursorParam: "Send the cursor as",
+      postNoNextUrl:
+        "A POST request stays on its address, so it can't follow a next link from the response.",
+      placement: {
+        url: "URL parameter",
+        body: "Value in the body",
+        param: "Parameter name",
+        bodyPath: "Body value",
+        choose: "Choose a value",
+        bodyHelp:
+          "The value at this place in the body is replaced on every page; it keeps the type the page value has.",
+        bodyHelpGraphql:
+          "A value under variables is replaced on every page; the query itself never changes.",
+      },
+      firstPage: {
+        title: "On the first page",
+        null: "Send null",
+        omit: "Leave the value out",
+        help: "There is no cursor before the first page. Leaving it out works only for an object property, not for a list element.",
+      },
       nextSource: "Where is the next link?",
       nextBody: "In the response",
       nextHeader: "Link header",
@@ -279,6 +335,11 @@ export const customApiEn = {
       stale:
         "Someone saved a newer version. Reload the page to edit it; your changes here are not saved.",
       fixFirst: "Fix these first:",
+      readOnly: {
+        title: "Does this request only read data?",
+        help: "These requests send a JSON body with POST. netrics can't check what they do at the API. The version you save records that you confirmed each request as shown here; any change to a request asks again.",
+        confirm: "{name}: this request only reads data.",
+      },
     },
     test: {
       readOnly: {
@@ -287,6 +348,14 @@ export const customApiEn = {
         confirm: "This request only reads data.",
         send: "Send the test",
         cancel: "Cancel",
+        changed:
+          "The request changed after you were asked to confirm it. Send the test again to confirm the new request.",
+        query: "Query parameters",
+        headers: "Headers",
+        pageValues: "Page values written into the body",
+        pageCursor: "Cursor",
+        pageOffset: "Offset",
+        pageLimit: "Limit",
       },
       title: "Test",
       ok: "The request worked.",
@@ -540,6 +609,12 @@ export const customApiEn = {
         "The request uses the window start or end, so it needs a time window.",
       refreshRange: "Refresh between 1 minute and 7 days (10,080 minutes).",
       definitionInvalid: "The definition has errors (see below).",
+      bodyJson: "The body isn't valid JSON.",
+      bodyLimits: "The body is too large or nested too deeply.",
+      graphqlQuery: "Enter the GraphQL query.",
+      graphqlVariables: "The GraphQL variables must be a JSON object.",
+      readOnlyUnconfirmed:
+        "Confirm below that each JSON-body request only reads data.",
       codes: {
         placeholder_syntax: "A value in braces is not written correctly.",
         placeholder_unknown: "A value in braces is unknown.",
