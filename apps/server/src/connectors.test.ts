@@ -38,21 +38,23 @@ describe("createDefaultRegistry", () => {
         createDefaultRegistry({ nodeEnv })
           .list()
           .map(({ manifest }) => manifest.id),
-      ).toEqual([...finished, "railway"]);
+      ).toEqual([...finished, "railway", "posthog"]);
     }
   });
 
-  it("ships Railway as a preview until milestone 13.1's exit gate (#870, #877)", () => {
-    expect([...PREVIEW_CONNECTORS]).toEqual(["railway"]);
-    expect(
-      createDefaultRegistry({ nodeEnv: "production" }).get("railway"),
-    ).toBeUndefined();
-    expect(
-      createDefaultRegistry({
-        nodeEnv: "production",
-        previewConnectors: new Set(["railway"]),
-      }).get("railway"),
-    ).toBeDefined();
+  it("ships Railway and PostHog as previews until milestone 13.1's exit gate (#870, #873, #877)", () => {
+    expect([...PREVIEW_CONNECTORS]).toEqual(["railway", "posthog"]);
+    for (const id of ["railway", "posthog"]) {
+      expect(
+        createDefaultRegistry({ nodeEnv: "production" }).get(id),
+      ).toBeUndefined();
+      expect(
+        createDefaultRegistry({
+          nodeEnv: "production",
+          previewConnectors: new Set([id]),
+        }).get(id),
+      ).toBeDefined();
+    }
   });
 
   // The bundle has no preview at the moment; a test-only set keeps the

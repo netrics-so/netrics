@@ -48,6 +48,7 @@ import type {
 import {
   ANALYTICS_METRIC_KEYS,
   ANALYTICS_STREAM,
+  posthogManifest,
   vercelManifest,
 } from "@netrics/connectors";
 import { upgradeCustomApiDefinition } from "@netrics/connector-sdk/custom-api";
@@ -323,8 +324,9 @@ function configChanged(
 
 /**
  * Connectors whose stored selection names at least one resource (#854): a
- * Vercel connection that syncs no project collects nothing, which was only
- * ever saved by mistake. A rule of this product for this connector, kept
+ * Vercel or PostHog (#873) connection that syncs no project collects
+ * nothing, which was only ever saved by mistake. A rule of this product for
+ * these connectors, kept
  * here instead of in the connector manifest: the SDK contract stays as it
  * is, and the stores, where an empty selection pauses collection on
  * purpose, are untouched. A connection that already stores an empty
@@ -333,6 +335,7 @@ function configChanged(
  */
 const SELECTION_NEEDS_A_RESOURCE: ReadonlySet<string> = new Set([
   vercelManifest.id,
+  posthogManifest.id,
 ]);
 /** Saving an empty selection for such a connector. */
 const RESOURCE_SELECTION_EMPTY = "resource_selection_empty";

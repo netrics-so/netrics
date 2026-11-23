@@ -1290,6 +1290,60 @@ describe("host egress policy (#801)", () => {
     });
   });
 
+  it("lets a connection reach the host its configuration names (SDK 0.2.20, #873)", async () => {
+    await withProvider(async (port) => {
+      const selfHosted: Connector = {
+        ...connectorWith({
+          ...demoManifest,
+          configSchema: {
+            type: "object",
+            properties: { host: { type: "string" } },
+          },
+          configuredHosts: ["host"],
+        }),
+        check: async (_context, runtime) => {
+          await runtime.fetch(`http://posthog.fixture.test:${port}/ok`);
+          return { ok: true };
+        },
+      };
+      const egress = {
+        allowInsecureHttp: true,
+        lookup: toLocalhost,
+        allowPrivateHosts: ["posthog.fixture.test"],
+      };
+      const withHost = (host: unknown): ConnectionContext => ({
+        ...baseContext,
+        config: { host },
+      });
+      await expect(
+        executeCheck(selfHosted, withHost("posthog.fixture.test"), { egress }),
+      ).resolves.toEqual({ ok: true });
+      await expect(
+        executeCheck(selfHosted, withHost("https://POSTHOG.fixture.test/"), {
+          egress,
+        }),
+      ).resolves.toEqual({ ok: true });
+      // Another connection's host, an invalid value or none: refused.
+      for (const context of [
+        withHost("other.fixture.test"),
+        withHost("posthog.fixture.test:8000"),
+        baseContext,
+      ]) {
+        await expect(
+          executeCheck(selfHosted, context, { egress }),
+        ).rejects.toThrow(/not in the connector's outboundDomains/);
+      }
+      // A manifest without configuredHosts ignores the config value.
+      const undeclared: Connector = {
+        ...selfHosted,
+        manifest: { ...selfHosted.manifest, configuredHosts: undefined },
+      };
+      await expect(
+        executeCheck(undeclared, withHost("posthog.fixture.test"), { egress }),
+      ).rejects.toThrow(/not in the connector's outboundDomains/);
+    });
+  });
+
   it("treats an egress timeout as a retryable provider failure", async () => {
     await withProvider(async (port) => {
       const failure = await executeCheck(

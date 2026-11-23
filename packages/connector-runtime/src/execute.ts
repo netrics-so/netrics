@@ -1,4 +1,8 @@
-import { RateLimitedError, validateDatasetPage } from "@netrics/connector-sdk";
+import {
+  RateLimitedError,
+  configuredHostsOf,
+  validateDatasetPage,
+} from "@netrics/connector-sdk";
 import {
   CURRENCY_DIMENSION,
   CURRENCY_MINOR_UNIT,
@@ -189,7 +193,13 @@ async function withRuntime<T>(
   const controller = new AbortController();
   const egressFetch = createEgressFetch({
     ...options.egress,
-    allowedDomains: connector.manifest.outboundDomains,
+    // The manifest's hosts, and the hosts this connection's configuration
+    // names under the manifest's configuredHosts (SDK 0.2.20, #873): a
+    // self-hosted provider, reachable by this connection only.
+    allowedDomains: [
+      ...connector.manifest.outboundDomains,
+      ...configuredHostsOf(connector.manifest, context.config),
+    ],
     signal: controller.signal,
   });
   const onResponse = options.onResponse;

@@ -1,0 +1,6 @@
+{
+  "type": "throttled_error",
+  "code": "api_queries_budget_exceeded",
+  "detail": "Request was throttled. Expected available in 1800 seconds.",
+  "attr": null
+}

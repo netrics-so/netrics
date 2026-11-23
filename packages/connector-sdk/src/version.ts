@@ -29,7 +29,10 @@ import { satisfiesRange } from "./semver.js";
 // 0.2.19: the optional manifest field discoversBeforeFirstSync: discovery
 // is cheap and safe before the first sync, so the host may name the
 // resources before a first run's pages (#782).
-export const SDK_VERSION = "0.2.19";
+// 0.2.20: the optional manifest field configuredHosts: config keys whose
+// value is a host the connection may reach, such as a self-hosted
+// provider (#873).
+export const SDK_VERSION = "0.2.20";
 
 /**
  * Validates a manifest against the contract schema and verifies that its

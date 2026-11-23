@@ -102,6 +102,16 @@ export const sharedDe: Catalog<SharedMessages> = {
       workspaceDenied:
         "Railway hat das Token für die Workspace-ID dieser Verbindung nicht akzeptiert: Die ID ist falsch, das Token gehört zu einem anderen Workspace, oder es wurde gelöscht. Prüf die Workspace-ID oder erstell ein neues Token für diesen Workspace.",
     },
+    posthog: {
+      keyRejected:
+        "PostHog hat den Personal API Key nicht akzeptiert: Er ist falsch, wurde gelöscht oder gehört zu einer anderen Region oder Instanz. Erstell in PostHog einen Personal API Key (Settings → Personal API keys) auf dem Host, den diese Verbindung nennt.",
+      scopeMissing:
+        "Dem Personal API Key fehlt ein Scope, den netrics braucht. Gib ihm in PostHog (Settings → Personal API keys) die Lese-Scopes Organization, Project, Query und Insight, oder erstell einen neuen Key mit ihnen.",
+      hostInvalid:
+        "Gib den Host-Namen deines selbst gehosteten PostHog ein, zum Beispiel posthog.example.com: einen öffentlichen Namen, erreichbar über https, ohne Pfad oder Port.",
+      insightsInvalid:
+        "netrics konnte die gespeicherten Insights nicht lesen. Füge den Link jedes Insights aus PostHog ein (…/project/12345/insights/AbCd1234), getrennt durch Leerzeichen oder Kommas, höchstens 20.",
+    },
     customApi: {
       unauthorized:
         "Die API hat die Zugangsdaten abgelehnt (HTTP 401). Gib für diese Verbindung einen neuen Schlüssel, ein neues Token oder Passwort ein oder verbinde sie neu.",

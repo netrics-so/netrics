@@ -1,0 +1,19 @@
+{
+  "columns": ["day", "event", "events"],
+  "types": [
+    ["day", "Date"],
+    ["event", "String"],
+    ["events", "UInt64"]
+  ],
+  "results": [
+    ["2024-01-09", "$pageview", 80],
+    ["2024-01-09", "$autocapture", 41],
+    ["2024-01-09", "signed_up", 3],
+    ["2024-01-10", "$pageview", 75],
+    ["2024-01-10", "$pageleave", 52]
+  ],
+  "hasMore": null,
+  "hogql": "SELECT toDate(timestamp) AS day, event, count() AS events FROM events …",
+  "is_cached": false,
+  "query_status": null
+}
