@@ -45,6 +45,7 @@ import {
 
 import { LiveMeasureWidget } from "./measure-widget";
 import { LiveItemsWidget } from "./items-widget";
+import { LiveStateWidget } from "./state-widget";
 
 import { LiveBarWidget } from "./bar-widget";
 import { LiveStatusWidget } from "./status-widget";
@@ -115,6 +116,8 @@ export function LiveWidget({
       return <LiveMeasureWidget widget={widget} env={env} fit />;
     case "items":
       return <LiveItemsWidget widget={widget} env={env} />;
+    case "state":
+      return <LiveStateWidget widget={widget} env={env} />;
     case "metric":
       return <LiveMetricWidget widget={widget} env={env} />;
     case "line":

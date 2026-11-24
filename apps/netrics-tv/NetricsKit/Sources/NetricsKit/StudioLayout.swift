@@ -9,7 +9,7 @@ import Foundation
 // canvas answer in canvas points; the type scale answers in units.
 
 public enum StudioWidgetType: String, Sendable, Equatable, CaseIterable, Codable {
-    case metric, line, bar, image, text, clock, table, status, compare, countdown, gauge, review, measure, items
+    case metric, line, bar, image, text, clock, table, status, compare, countdown, gauge, review, measure, items, state
 
     /** Widgets with a title and resource line (bound to a metric). */
     public var isData: Bool {
@@ -152,7 +152,7 @@ public enum StudioLayout {
         case .review, .measure: return (4, 3)
         case .status, .items: return (3, 3)
         case .compare: return (4, 3)
-        case .countdown: return (3, 2)
+        case .countdown, .state: return (3, 2)
         case .gauge: return (3, 3)
         }
     }
@@ -295,6 +295,13 @@ public enum StudioLayout {
             return [
                 .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
                 .cell: Minimum.cell * scale,
+            ]
+        case .state:
+            // A list's rows as cells; the single form's changed line in the change
+            // role, its state word at least a cell and as large as fits (#875).
+            return [
+                .any: any, .title: Minimum.title * scale, .resource: Minimum.resource * scale,
+                .cell: Minimum.cell * scale, .change: Minimum.change * scale,
             ]
         case .items:
             // Each item's title in the body role, its subtitle and time as cells (#810).

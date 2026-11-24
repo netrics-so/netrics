@@ -398,6 +398,16 @@ describe("add widget", () => {
               { id: "taken", name: "Taken", type: "timestamp" as const },
             ],
           },
+          // With a name and a state: service status (#875).
+          {
+            modelId: ID(82),
+            modelName: "Services",
+            measures: [],
+            dimensions: [
+              { id: "service", name: "Service", type: "string" as const },
+              { id: "state", name: "State", type: "string" as const },
+            ],
+          },
         ],
         metrics: [metric],
         imageIds: [ID(50)],

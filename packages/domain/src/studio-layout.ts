@@ -28,7 +28,8 @@ export type StudioWidgetType =
   | "gauge"
   | "review"
   | "measure"
-  | "items";
+  | "items"
+  | "state";
 
 export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "metric",
@@ -45,6 +46,7 @@ export const STUDIO_WIDGET_TYPES: readonly StudioWidgetType[] = [
   "review",
   "measure",
   "items",
+  "state",
 ];
 
 /** A widget's cells: 0-based column and row, width and height in cells. */
@@ -109,6 +111,8 @@ export const STUDIO_MIN_WIDGET_SIZE: Readonly<
   measure: { w: 4, h: 3 },
   // Three items of a grid, or one item with its image and text (#810).
   items: { w: 3, h: 3 },
+  // One item's state at value size, or two rows of a list (#875).
+  state: { w: 3, h: 2 },
 };
 
 /** Widgets with a title and resource line (bound to a metric). */
@@ -615,6 +619,17 @@ export function widgetTypeScale(
         title: m.title * scale,
         resource: m.resource * scale,
         cell: m.cell * scale,
+      };
+    case "state":
+      // A list's rows as cells; the single form's changed line in the
+      // change role, its state word at least a cell and as large as fits
+      // (#875).
+      return {
+        any,
+        title: m.title * scale,
+        resource: m.resource * scale,
+        cell: m.cell * scale,
+        change: m.change * scale,
       };
     case "items":
       // Each item's title in the body role, its subtitle and time as cells.

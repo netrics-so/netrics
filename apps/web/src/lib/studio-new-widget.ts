@@ -11,6 +11,7 @@ import type { NewWidget } from "./studio-document";
 import { pickableMetrics } from "./format-metric";
 import { webTranslator } from "./i18n/catalogs";
 import { itemsBindingFor, itemsModels } from "./studio-items";
+import { stateBindingFor, stateModels } from "./studio-state";
 import { needsCurrency } from "./tile-currency";
 
 // What "Add widget" creates (ADR 0015, section 2): every type with
@@ -90,6 +91,26 @@ export function newWidget(
             rotateSeconds: 8,
             imageFit: "cover",
             showTime: true,
+          },
+        },
+      };
+    }
+    case "state": {
+      const binding = stateModels(input.models ?? [])
+        .map((model) => stateBindingFor(model, input.filters))
+        .find((binding) => binding !== null);
+      if (!binding) return { reason: t("noStateModels") };
+      return {
+        widget: {
+          type,
+          title: null,
+          binding,
+          options: {
+            layout: "list",
+            item: null,
+            limit: 8,
+            showChanged: true,
+            states: {},
           },
         },
       };

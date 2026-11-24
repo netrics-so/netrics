@@ -110,6 +110,14 @@ struct WidgetView: View {
                 placement: placement, image: images, slideStartedAt: appearedAt
             )
             .surface(env, state: SurfaceState(data.status))
+        case .state(let options, let data):
+            // Ages and "changed 3 hours ago" are worded anew every minute.
+            TimelineView(.everyMinute) { context in
+                StateWidgetView(
+                    label: stateLabel(widget.label, env.language), placement: placement, options: options, data: data,
+                    env: env, now: context.date)
+            }
+            .surface(env, state: SurfaceState(data.status))
         case .unsupported:
             // A type this build does not know (a newer server), or one it
             // cannot read: its cell stays, empty and themed.

@@ -63,6 +63,11 @@ struct ScrollCardView: View {
         case .status(let options, let data):
             ScrollStatusCard(label: label, options: options, data: data, env: env, now: now)
                 .scrollCard(env)
+        case .state(let options, let data):
+            ScrollStateCard(
+                label: stateLabel(widget.label, env.language), options: options, data: data, env: env, now: now
+            )
+            .scrollCard(env)
         case .compare(let options, let data):
             ScrollCompareCard(
                 label: label, options: options, data: data.shown(at: now), units: units, env: env, now: now)

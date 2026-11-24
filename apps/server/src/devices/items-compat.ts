@@ -1,11 +1,13 @@
-// Screens that predate the latest-items widget (#810): netrics TV builds up
-// to 0.3.x and kiosks that do not ask with `?features=items` would drop a
-// widget type they do not know, or fail on it. They get a text widget in
-// its place that says to update netrics TV, at the same placement and with
-// the widget's label, and none of the items' images.
+// Screens that predate a widget type would drop it, or fail on it: the
+// latest-items widget (#810) for netrics TV builds up to 0.3.x and kiosks
+// that do not ask with `?features=items`, and the state widget (#875) for
+// clients that do not ask with `?features=state`. They get a text widget
+// in its place that says to update netrics TV, at the same placement and
+// with the widget's label (and, for items, none of the items' images).
 
 import {
   itemsNeedNewerAppText,
+  stateNeedNewerAppText,
   STUDIO_MIN_WIDGET_SIZE,
   type Locale,
 } from "@netrics/domain";
@@ -26,21 +28,25 @@ function collectImageIds(value: unknown, into: Set<string>): void {
 }
 
 /**
- * A schema 2/3 payload for clients without `items`: each items widget
- * becomes a text widget at the same placement with `itemsNeedNewerApp` in
- * the payload's locale and the widget's label; images referenced only by
- * items widgets are removed from `images`; the version gets the suffix
- * "-noitems", so the two forms never share an ETag. The same object when
- * the payload has no items widget.
+ * A schema 2/3 payload with each widget of `type` replaced by a text
+ * widget at the same placement saying `text` with the widget's label;
+ * images referenced only by such widgets are removed from `images`; the
+ * version gets `suffix`, so the two forms never share an ETag. The same
+ * object when the payload has no such widget.
  */
-export function withoutItems<P extends object>(payload: P, locale: Locale): P {
+function withoutWidgetType<P extends object>(
+  payload: P,
+  type: string,
+  text: string,
+  suffix: string,
+): P {
   const slides = (payload as { slides?: unknown }).slides;
   if (!Array.isArray(slides)) return payload;
   let changed = false;
   const next = slides.map((slide: Json) => {
     if (!Array.isArray(slide.widgets)) return slide;
     const widgets = slide.widgets.map((widget: Json) => {
-      if (widget.type !== "items") return widget;
+      if (widget.type !== type) return widget;
       changed = true;
       return {
         type: "text",
@@ -54,7 +60,7 @@ export function withoutItems<P extends object>(payload: P, locale: Locale): P {
           ? { min: { ...STUDIO_MIN_WIDGET_SIZE.text } }
           : {}),
         label: widget.label ?? null,
-        text: itemsNeedNewerAppText(locale),
+        text,
         options: { size: "body", align: "center" },
       };
     });
@@ -73,6 +79,34 @@ export function withoutItems<P extends object>(payload: P, locale: Locale): P {
           images: images.filter((image: Json) => kept.has(image.id as string)),
         }
       : {}),
-    ...(typeof version === "string" ? { version: `${version}-noitems` } : {}),
+    ...(typeof version === "string" ? { version: `${version}${suffix}` } : {}),
   } as P;
+}
+
+/**
+ * A schema 2/3 payload for clients without `items`: each items widget
+ * becomes a text widget with `itemsNeedNewerApp` in the payload's locale;
+ * the version gets the suffix "-noitems".
+ */
+export function withoutItems<P extends object>(payload: P, locale: Locale): P {
+  return withoutWidgetType(
+    payload,
+    "items",
+    itemsNeedNewerAppText(locale),
+    "-noitems",
+  );
+}
+
+/**
+ * A schema 2/3 payload for clients without `state` (#875): each state
+ * widget becomes a text widget with `stateNeedNewerApp` in the payload's
+ * locale; the version gets the suffix "-nostate".
+ */
+export function withoutStates<P extends object>(payload: P, locale: Locale): P {
+  return withoutWidgetType(
+    payload,
+    "state",
+    stateNeedNewerAppText(locale),
+    "-nostate",
+  );
 }

@@ -18,6 +18,7 @@ import { LiveClockWidget } from "./clock-widget";
 import { LiveCountdownWidget } from "./countdown-widget";
 import { ImageWidgetView } from "./image-widget";
 import { ItemsWidgetView, type ItemsWidgetItemView } from "./items-widget";
+import { StateWidgetView } from "./state-widget";
 import { LineWidgetView, type LineReadingProps } from "./line-widget";
 import { MetricWidgetView, type MetricReadingProps } from "./metric-widget";
 import { StatusWidgetView, type StatusReadingProps } from "./status-widget";
@@ -432,6 +433,20 @@ export function DeviceWidgetView({
           items={deviceItemViews(widget, env.images)}
           options={widget.options}
           status={widget.data.status}
+          audience="viewer"
+        />
+      );
+    case "state":
+      return (
+        <StateWidgetView
+          {...common}
+          label={widget.label}
+          items={widget.data.items}
+          total={widget.data.total}
+          counts={widget.data.counts}
+          options={widget.options}
+          status={widget.data.status}
+          freshness={widget.data.freshness ?? null}
           audience="viewer"
         />
       );

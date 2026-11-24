@@ -247,7 +247,7 @@ private func itemsWidget(_ payload: DeviceDashboardV2) throws -> (ItemsWidgetOpt
         await h.start()
         await h.advance(0)
         let request = try #require(h.api.callsTo("GET /v1/device/dashboard").first)
-        #expect(request.query == "schema=3&features=measure_split,items")
+        #expect(request.query == "schema=3&features=measure_split,items,state")
     }
 
     private static func itemRoutes(fail: Set<Int> = []) -> [String: Handler] {

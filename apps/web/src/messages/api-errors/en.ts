@@ -9,6 +9,12 @@ export const apiErrorsEn = {
     items_image_dimension_invalid: "Pick a field marked as image.",
     items_time_dimension_invalid: "Pick a date or time field.",
     items_dimension_unknown: "This field is no longer in the model.",
+    state_dimension_unknown: "This field is no longer in the model.",
+    state_name_dimension_invalid: "Pick a text field for the name.",
+    state_state_dimension_invalid: "Pick a text or yes/no field for the state.",
+    state_changed_dimension_invalid: "Pick a date or time field.",
+    state_rolled_back_dimension_invalid: "Pick a yes/no field.",
+    state_dimensions_not_distinct: "Pick a different field for each part.",
     store_mapping_duplicate: "Each app can belong to only one linked product.",
     store_scope_invalid: "Choose an app from one of the selected connections.",
     store_website_invalid:

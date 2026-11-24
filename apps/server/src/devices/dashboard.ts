@@ -10,6 +10,7 @@ import {
   slideScopedWidgets,
 } from "../dashboards/data.js";
 import { queryDashboardItems } from "../dashboards/items.js";
+import { queryDashboardState } from "../dashboards/state.js";
 import {
   applyFreshness,
   createFreshnessReader,
@@ -37,6 +38,8 @@ import {
   imageWidgetOptionsSchema,
   itemsWidgetBindingSchema,
   itemsWidgetOptionsSchema,
+  stateWidgetBindingSchema,
+  stateWidgetOptionsSchema,
   lineWidgetOptionsSchema,
   metricWidgetOptionsSchema,
   statusWidgetOptionsSchema,
@@ -91,6 +94,7 @@ import {
   compareRatioUnit,
   countdownLabel,
   itemsWidgetLabel,
+  stateWidgetLabel,
   isBuiltinThemeKey,
   isScreenFormat,
   slideLayoutFor,
@@ -199,8 +203,9 @@ export function hasDeviceScope(scope: DeviceFilterScope | undefined): boolean {
 }
 
 /**
- * Whether a widget is shown on a screen with this scope: only measure and
- * latest-items widgets (#810) follow shared filters, so a scoped screen gets no other widget
+ * Whether a widget is shown on a screen with this scope: only measure,
+ * latest-items (#810) and state widgets (#875) follow shared filters, so a
+ * scoped screen gets no other widget
  * that reads data. Text, images, clocks, countdowns and connection status
  * stay.
  */
@@ -212,6 +217,7 @@ export function followsDeviceScope(
     !hasDeviceScope(scope) ||
     type === "measure" ||
     type === "items" ||
+    type === "state" ||
     dataWidgetCost(type) === 0
   );
 }
@@ -1565,6 +1571,46 @@ async function buildSlides(
               ...(data.freshness ? { freshness: data.freshness } : {}),
             },
           });
+      } else if (widget.type === "state") {
+        // A state widget (#875): its items, not healthy first.
+        const binding = stateWidgetBindingSchema.safeParse(widget.modelBinding);
+        const parsed = stateWidgetOptionsSchema.safeParse(widget.options);
+        if (binding.success && parsed.success) {
+          const data = await queryDashboardState(
+            tx,
+            workspaceId,
+            { id: widget.id, binding: binding.data, options: parsed.data },
+            filters,
+            {},
+            options.now,
+            options.dataPolicy,
+            options.scope,
+            slideScopeOf(slide),
+            context.freshness ?? undefined,
+          );
+          const { states: _states, ...stateOptions } = parsed.data;
+          widgets.push({
+            type: "state",
+            ...placement,
+            label: stateWidgetLabel(
+              widget.title,
+              options.locale ?? DEFAULT_LOCALE,
+            ),
+            options: stateOptions,
+            data: {
+              status: data.status,
+              items: data.items.map((item) => ({
+                name: item.name,
+                state: item.state,
+                rolledBack: item.rolledBack,
+                changedAt: item.changedAt,
+              })),
+              total: data.total,
+              counts: data.counts,
+              ...(data.freshness ? { freshness: data.freshness } : {}),
+            },
+          });
+        }
       } else if (isDataWidget(widget)) {
         widgets.push(await dataWidgetOf(tx, widget, context));
       } else if (widget.type === "gauge") {

@@ -24,6 +24,13 @@ export const sharedEn = {
    * place (#810): an older netrics TV or kiosk.
    */
   itemsNeedNewerApp: "Update netrics TV to show the latest items.",
+  /** A state widget without a title (#875). */
+  serviceStatus: "Status",
+  /**
+   * What a screen that does not know the state widget shows in its place
+   * (#875): an older netrics TV or kiosk.
+   */
+  stateNeedNewerApp: "Update netrics TV to show the status.",
   /** A breakdown's remainder: the smaller groups added up. */
   others: "Others",
   /** A status board's default label (ADR 0019 section 7). */

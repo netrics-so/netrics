@@ -1,6 +1,7 @@
 "use client";
 import { LiveMeasureWidget } from "@/components/studio/measure-widget";
 import { LiveItemsWidget } from "@/components/studio/items-widget";
+import { LiveStateWidget } from "@/components/studio/state-widget";
 
 import { useRef } from "react";
 
@@ -1258,6 +1259,8 @@ function LiveScrollClock({
 /** The box a latest-items card is laid out in (#810): a half-wide slide
  * widget, whatever its placement on the slide. */
 export const SCROLL_ITEMS_PLACEMENT = { x: 0, y: 0, w: 6, h: 4 } as const;
+// A state card grows with the rows its list shows (#875 review).
+export { scrollStatePlacement } from "@/components/studio/state-widget";
 
 /** A widget's scroll view card with its own data (signed-in pages). */
 export function LiveScrollWidget({
@@ -1278,6 +1281,16 @@ export function LiveScrollWidget({
           <LiveItemsWidget
             widget={{ ...widget, ...SCROLL_ITEMS_PLACEMENT }}
             env={env}
+          />
+        </div>
+      );
+    case "state":
+      return (
+        <div className="scroll-items scroll-state">
+          <LiveStateWidget
+            widget={{ ...widget, x: 0, y: 0, w: 6, h: 6 }}
+            env={env}
+            grow
           />
         </div>
       );
