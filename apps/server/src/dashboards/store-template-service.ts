@@ -210,7 +210,7 @@ function normalize(input: StoreTemplateRequest) {
  * template's widgets in `widgetKeys` order; its slides in position order are
  * `slideKeys` (version 4), else `slide:<index>`.
  */
-async function installedWidgetKeys(
+export async function installedWidgetKeys(
   tx: Transaction,
   workspaceId: string,
   dashboardId: string,

@@ -142,6 +142,46 @@ export const dashboardsDe: Catalog<typeof dashboardsEn> = {
     identityTooLarge:
       "Die App-Identität kann nicht angezeigt werden: Diese Verbindungen haben mehr Apps oder Website-Projekte, als das Zeilenlimit dieses Workspaces erlaubt. Die Apps oben kannst du weiter ändern, zum Beispiel eine Verbindung entfernen.",
   },
+  developerTemplate: {
+    title: "Developer-Portfolio",
+    templateCard: "Verfügbarkeit, Deploys, Kosten und Nutzer je Projekt",
+    subtitle:
+      "Was nicht läuft, was heute ausgeliefert wurde, die Kosten dieses Monats und aktive Nutzer, mit einer Folie je Projekt. Die Zahlen bleiben bearbeitbare Kennzahlen.",
+    back: "Zurück zu den Dashboards",
+    roleCannot:
+      "Bearbeiter, Admins und Inhaber eines Workspaces können diese Vorlagen installieren.",
+    defaultName: "Developer-Portfolio",
+    empty:
+      "Verbinde Railway, Vercel, Hetzner Cloud, HTTP-Checks, PostHog, Search Console, App Store Connect oder Google Play, um zu beginnen.",
+    connect: "Quellen verbinden",
+    name: "Name des Dashboards",
+    connections: "1. Quellen wählen",
+    connectionsHelp:
+      "Jede Auswahl funktioniert: Eine Quelle, die du weglässt, lässt nur ihre Zahlen weg.",
+    projectsTitle: "2. Projekte",
+    projectsHelp:
+      "Jedes Projekt bekommt eine Folie. Die Ressourcen einer Quelle gehören zum Projekt ihrer Verbindung; du kannst sie später in der Zuordnungstabelle unter Daten anders zuordnen.",
+    noProjects:
+      "Dieser Workspace hat noch keine Projekte: Das Dashboard beginnt nur mit der Übersicht.",
+    inProject: "Projekt: {name}",
+    noProject: "Kein Projekt",
+    resources: "{count, plural, one {# Ressource} other {# Ressourcen}}",
+    setupPending: "Einrichtung abschließen",
+    connectors: {
+      railway: "Railway",
+      vercel: "Vercel",
+      "hetzner-cloud": "Hetzner Cloud",
+      "http-check": "HTTP-Checks",
+      posthog: "PostHog",
+      "google-search-console": "Search Console",
+      "app-store-connect": "App Store Connect",
+      "google-play": "Google Play",
+    },
+    install: "Dashboard erstellen",
+    installing: "Dashboard wird erstellt…",
+    omitted: "Das Dashboard ist voll: {names} erscheinen nur in der Übersicht.",
+    open: "Dashboard öffnen",
+  },
   dashboardsPage: {
     meta: "{count, plural, =0 {Noch keine Dashboards} one {# Dashboard} other {# Dashboards}}",
     metaLive:

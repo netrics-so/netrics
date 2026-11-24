@@ -14,7 +14,7 @@ import {
   listGoals,
   listImages,
   listProjects,
-  listStoreTemplateInstalls,
+  listTemplateInstalls,
   listThemes,
   listWorkspaceMetrics,
   listWorkspaces,
@@ -22,7 +22,7 @@ import {
 import { getT } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/session";
 import {
-  storeUpdatePath,
+  installUpdatePath,
   studioUpdateNote,
   studioViewOnlyPath,
 } from "@/lib/store-updates";
@@ -87,10 +87,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
     getCurrencyConversion(forwarded, workspaceId),
     listGoals(forwarded, workspaceId),
     // Store-template updates (11E) are an extra: the Studio works without.
-    listStoreTemplateInstalls(forwarded, workspaceId).then(
-      ({ installs }) => installs,
-      () => [],
-    ),
+    listTemplateInstalls(forwarded, workspaceId),
   ]);
   const updateNote = studioUpdateNote(storeInstalls, dashboardResult.dashboard);
   const byId: Record<string, StudioConnection> = Object.fromEntries(
@@ -134,7 +131,7 @@ export default async function StudioPage({ params }: StudioPageProps) {
           updateNote
             ? {
                 kind: updateNote.kind,
-                href: storeUpdatePath(workspaceId, updateNote.requestId),
+                href: installUpdatePath(workspaceId, updateNote),
               }
             : null
         }

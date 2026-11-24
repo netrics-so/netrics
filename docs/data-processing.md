@@ -1057,6 +1057,75 @@ reviewed template update (the overview slide and its visitors tables;
 no data record changes), and the website links, which are the products'
 (`data_template_products`), stay as they are.
 
+## Developer Portfolio template
+
+[#876](https://github.com/netrics-so/netrics/issues/876) (milestone 13.1): a
+second template installed and updated like the App Portfolio
+(`.../dashboard-templates/developer`, template id `developer_portfolio`,
+version 1). It reads any subset of Railway, Vercel, Hetzner Cloud, HTTP
+checks, PostHog, Search Console, App Store Connect and Google Play
+connections; a source left out leaves its preparations, model and widgets
+out, and an install with only Railway, or only App Store, is a complete
+dashboard.
+
+**Projects.** Every resource of a source belongs to a workspace project
+through the install's links table (a manual dataset, `app_key` =
+`<connectionId>:<resourceId>` → `product_id` = the project id), named by
+its projects table (`product_id` → `product_name`): the App Portfolio's
+table columns, so its store preparations read the same tables. The install
+seeds the projects table with the workspace's projects (not archived) and
+the links table with every resource of a connection that is in a project
+(the connection's project), then the request's explicit links. A resource
+without a link is its own entry, as an app without a product is. The
+tables are the customer's: a link added, changed or removed, or a project
+renamed, is offered as a template update (as changed apps are), whose plan
+shows the slide changes. A one-flow "add a product" comes with #879.
+
+**Families.** Four families of ordinary preparations, each a preparation per
+source (its rows in common columns, joined to the links and projects
+tables), one append with two sources or more, and a model:
+
+| Family     | Sources (dataset)                                                                                                             | Measures                                                                       |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `state`    | Railway `service_states`, Vercel `production_deployments`, Hetzner `servers`, HTTP `checks`                                   | `items` (count); dimensions item, item with project, state, since, rolled back |
+| `deploys`  | Railway `deployments`, Vercel `deployments` (target `production`)                                                             | `deploys`, `failed_deploys`, `last_deploy`, `last_status`                      |
+| `costs`    | Railway `project_usage` (`cost_usd`), Vercel `billing_charges` (`effective_cost`), Hetzner `cost_items` (`monthly_net`)       | `cost`, per currency                                                           |
+| `audience` | Vercel `vercel.visitors`, Search Console `google-search-console.clicks`, PostHog `posthog.dau` / `posthog.mau` (observations) | `visitors`, `clicks`, `dau`, `mau`                                             |
+
+App Store Connect and Google Play reuse the App Portfolio's records
+(version 7, frozen as `storeTemplateV7`): their downloads, proceeds and
+ratings models, whose `app` dimension is the linked project.
+
+Owner decisions (2026-11-24): cost is the calendar month, effective and
+net of VAT (Railway as computed, not the billing period's estimate;
+Vercel's effective cost; Hetzner's net monthly price as of the last sync);
+models never convert currencies, so `cost` is read per currency and a
+table's total is one per currency. Days are UTC for every source, PostHog
+included. A Vercel project whose production points at an older build than
+the newest ready one is "up · rolled back" (the state widget's flag).
+`dau` and `mau` are each project's newest day, summed over projects, never
+over days.
+
+**Dashboard.** The overview: the state list over every item named with its
+project (problems first, with the count of what is not up), deploys today
+per provider, spend this month per provider and currency, active users per
+project and, with a store, downloads per project. Then one slide per
+project with a linked resource, scoped to it (`project`), in name order:
+downloads, revenue and ratings (stores), usage (visitors, clicks, daily
+users over 30 days), latest deploys, spend this month, and the state list,
+as far as its links fill them. The dashboard's filters (project, provider,
+day) map to every model; widgets with a period of their own exclude the
+day filter, the state lists exclude it too. Projects past the Studio's
+limits (12 slides, 48 data widgets) show in the overview only and are
+named by the install (`omittedProjects`).
+
+**Install and update.** One serializable transaction under the install lock
+(#604, #660) with one batch data service (#668), as the App Portfolio's
+(`developer-template-install.test.ts` keeps it under 20 statements per
+record and reads each table once). Updates use the App Portfolio's engine
+(`store-template-updates.ts` with a template family): the same plan, apply,
+copy, swap and swap back, under the template's own routes and web pages.
+
 ## Non-store campaign example
 
 [#465](https://github.com/netrics-so/netrics/issues/465) supplies a persisted

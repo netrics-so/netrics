@@ -14,15 +14,27 @@ import { ApiError } from "./api";
  * records an update concerns, what the review asks, and where an applied
  * update stands. Pure, so pages and tests share it.
  */
-export type StoreInstall = StoreTemplateInstallList["installs"][number];
+export type StoreInstall = StoreTemplateInstallList["installs"][number] & {
+  /** A Developer Portfolio install (#876); absent: the App Portfolio. */
+  template?: "developer";
+};
 export type PlanRecord = StoreTemplatePlan["records"][number];
 export type PlanItem = PlanRecord["items"][number];
 export type Choice = StoreTemplateApplyRequest["decisions"][number]["choice"];
 export type Decisions = Readonly<Record<string, Choice>>;
 export type UpdateDashboard = StoreTemplateUpdate["dashboards"][number];
 
-export const storeUpdatePath = (workspaceId: string, requestId: string) =>
-  `/workspaces/${workspaceId}/dashboards/stores/updates/${requestId}`;
+/** Where an install's update is reviewed (its template's page). */
+export const storeUpdatePath = (
+  workspaceId: string,
+  requestId: string,
+  template: "stores" | "developer" = "stores",
+) => `/workspaces/${workspaceId}/dashboards/${template}/updates/${requestId}`;
+/** The update path of an install, whichever template it is of. */
+export const installUpdatePath = (
+  workspaceId: string,
+  install: Pick<StoreInstall, "requestId" | "template">,
+) => storeUpdatePath(workspaceId, install.requestId, install.template);
 /**
  * Whether an install's apps can change only after its update: a newer
  * template version some record is not built from yet, the rule the server
@@ -460,7 +472,13 @@ export function studioUpdateNote(
 ): {
   kind: "available" | "copy" | "archived" | "archivedCopy";
   requestId: string;
+  /** The install's template (installUpdatePath); absent: App Portfolio. */
+  template?: "developer";
 } | null {
+  const of = (install: StoreInstall) => ({
+    requestId: install.requestId,
+    ...(install.template ? { template: install.template } : {}),
+  });
   const update = updateOfDashboard(installs, dashboard.id);
   if (dashboard.archivedAt !== null)
     return update
@@ -471,7 +489,7 @@ export function studioUpdateNote(
             update.entry.originalId === dashboard.id
               ? "archived"
               : "archivedCopy",
-          requestId: update.install.requestId,
+          ...of(update.install),
         }
       : null;
   if (
@@ -479,9 +497,9 @@ export function studioUpdateNote(
     update.entry.copyId === dashboard.id &&
     swapState(update.entry) !== "swapped"
   )
-    return { kind: "copy", requestId: update.install.requestId };
+    return { kind: "copy", ...of(update.install) };
   const offered = installWithUpdate(installs, dashboard.id);
-  return offered ? { kind: "available", requestId: offered.requestId } : null;
+  return offered ? { kind: "available", ...of(offered) } : null;
 }
 
 /**

@@ -14,8 +14,8 @@ import { BUILTIN_THEMES, DEFAULT_THEME_KEY } from "@netrics/domain";
 
 import { useT } from "@/lib/i18n/client";
 import {
+  installUpdatePath,
   installWithUpdate,
-  storeUpdatePath,
   updateOfDashboard,
   type StoreInstall,
 } from "@/lib/store-updates";
@@ -83,7 +83,8 @@ export function DashboardsBrowser({
   readOnlyNote?: ReactNode;
 }) {
   const t = useT("dashboardsPage");
-  const stores = useT("storeTemplate");
+  const stores = useT("storeTemplate"),
+    developer = useT("developerTemplate");
   const updates = useT("storeUpdate");
   const [creating, setCreating] = useState<{
     choice: Choice;
@@ -154,6 +155,18 @@ export function DashboardsBrowser({
                 <span className="dashboards-template-text">
                   <strong>{stores("title")}</strong>
                   <span>{stores("templateCard")}</span>
+                </span>
+              </Link>
+            </li>
+            <li>
+              <Link
+                className="dashboards-template dashboards-template--overview"
+                href={`/workspaces/${workspaceId}/dashboards/developer`}
+              >
+                <TemplateGlyph choice="overview" />
+                <span className="dashboards-template-text">
+                  <strong>{developer("title")}</strong>
+                  <span>{developer("templateCard")}</span>
                 </span>
               </Link>
             </li>
@@ -236,9 +249,7 @@ export function DashboardsBrowser({
               workspaceId={workspaceId}
               dashboard={dashboard}
               canEdit={canEdit}
-              updateRequestId={
-                installWithUpdate(storeInstalls, dashboard.id)?.requestId
-              }
+              updateInstall={installWithUpdate(storeInstalls, dashboard.id)}
             />
           ))}
         </ul>
@@ -261,12 +272,7 @@ export function DashboardsBrowser({
                   </span>
                   <span className="muted">{dashboard.updatedLabel}</span>
                   {update ? (
-                    <Link
-                      href={storeUpdatePath(
-                        workspaceId,
-                        update.install.requestId,
-                      )}
-                    >
+                    <Link href={installUpdatePath(workspaceId, update.install)}>
                       {updates("switchBackLink")}
                     </Link>
                   ) : null}
@@ -284,13 +290,13 @@ export function DashboardCard({
   workspaceId,
   dashboard,
   canEdit,
-  updateRequestId,
+  updateInstall,
 }: {
   workspaceId: string;
   dashboard: DashboardCardData;
   canEdit: boolean;
   /** The store-template install with an update for it (11E). */
-  updateRequestId?: string | undefined;
+  updateInstall?: StoreInstall | undefined;
 }) {
   const t = useT("dashboardsPage");
   const updates = useT("storeUpdate");
@@ -327,10 +333,10 @@ export function DashboardCard({
           >
             {dashboard.themeLabel}
           </span>
-          {updateRequestId ? (
+          {updateInstall ? (
             <Link
               className="dash-chip dash-chip--update"
-              href={storeUpdatePath(workspaceId, updateRequestId)}
+              href={installUpdatePath(workspaceId, updateInstall)}
               aria-label={updates("badgeNamed", { name: dashboard.name })}
             >
               {updates("badge")}

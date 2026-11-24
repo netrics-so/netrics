@@ -22,6 +22,7 @@ import {
   readStoreTemplateInstalls,
   swapBackStoreTemplateDashboard,
   swapStoreTemplateDashboard,
+  type TemplateKind,
 } from "@/lib/api";
 import type { WebTranslator } from "@/lib/i18n/catalogs";
 import { useLocale, useT } from "@/lib/i18n/client";
@@ -69,9 +70,12 @@ export function StoreUpdateReview({
   dashboardNames,
   canCopy,
   canSwap,
+  template = "stores",
 }: {
   workspaceId: string;
   install: StoreInstall;
+  /** Whose update: the App Portfolio's or the Developer Portfolio's (#876). */
+  template?: TemplateKind;
   /** The workspace's screens, or null when the role cannot see them. */
   screens: Screen[] | null;
   /** Dashboard names by id, archived ones included. */
@@ -103,7 +107,7 @@ export function StoreUpdateReview({
   const confirmation = useConfirmation();
 
   async function reloadInstall() {
-    const { installs } = await readStoreTemplateInstalls(workspaceId);
+    const { installs } = await readStoreTemplateInstalls(workspaceId, template);
     const next = installs.find(
       (candidate) => candidate.requestId === requestId,
     );
@@ -114,7 +118,7 @@ export function StoreUpdateReview({
   async function loadPlan() {
     setPlanError(null);
     try {
-      setPlan(await getStoreTemplatePlan(workspaceId, requestId));
+      setPlan(await getStoreTemplatePlan(workspaceId, requestId, template));
     } catch (failure) {
       setPlanError(apiErrorMessage(failure, locale));
     }
@@ -132,8 +136,9 @@ export function StoreUpdateReview({
     setAnnouncement(null);
     try {
       const result = await applyReviewed(plan, decisions, {
-        apply: (body) => applyStoreTemplateUpdate(workspaceId, requestId, body),
-        reload: () => getStoreTemplatePlan(workspaceId, requestId),
+        apply: (body) =>
+          applyStoreTemplateUpdate(workspaceId, requestId, body, template),
+        reload: () => getStoreTemplatePlan(workspaceId, requestId, template),
       });
       if (result.kind === "reloaded") {
         setPlan(result.plan);
@@ -196,6 +201,7 @@ export function StoreUpdateReview({
           const known = await getStoreTemplatePlan(
             workspaceId,
             requestId,
+            template,
           ).catch(() => null);
           names = widgetNames(failure.details.refs ?? [], known);
         }
@@ -209,15 +215,21 @@ export function StoreUpdateReview({
   const actions: DashboardActions = {
     copy: (key, options) =>
       void act(key, "copy", () =>
-        createStoreTemplateCopy(workspaceId, update!.id, key, options),
+        createStoreTemplateCopy(
+          workspaceId,
+          update!.id,
+          key,
+          options,
+          template,
+        ),
       ),
     swap: (key) =>
       void act(key, "swap", () =>
-        swapStoreTemplateDashboard(workspaceId, update!.id, key),
+        swapStoreTemplateDashboard(workspaceId, update!.id, key, template),
       ),
     swapBack: (key) =>
       void act(key, "swapBack", () =>
-        swapBackStoreTemplateDashboard(workspaceId, update!.id, key),
+        swapBackStoreTemplateDashboard(workspaceId, update!.id, key, template),
       ),
     close: () => {
       if (!update) return;
@@ -231,7 +243,12 @@ export function StoreUpdateReview({
         .then((confirmed) => {
           if (confirmed)
             void act("", "close", () =>
-              closeStoreTemplateUpdate(workspaceId, requestId, update.id),
+              closeStoreTemplateUpdate(
+                workspaceId,
+                requestId,
+                update.id,
+                template,
+              ),
             );
         });
     },

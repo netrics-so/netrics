@@ -44,7 +44,9 @@ export type DataWorkspace = {
    * Store-template installs (11E): an update offered or in progress shows
    * in data settings, with marks on the records it changes.
    */
-  storeUpdates?: StoreTemplateInstallList["installs"];
+  storeUpdates?: (StoreTemplateInstallList["installs"][number] & {
+    template?: "developer";
+  })[];
 };
 const base = (workspaceId: string) => `/v1/workspaces/${workspaceId}/data`;
 async function read<T>(
@@ -81,15 +83,25 @@ export async function getDataWorkspace(
       base(workspaceId) + "/models" + filter,
       forwarded,
     ),
-    // An extra: data settings work without it.
-    read(
-      storeTemplateInstallListSchema,
-      `/v1/workspaces/${workspaceId}/dashboard-templates/stores/installs`,
-      forwarded,
-    ).then(
-      ({ installs }) => installs,
-      () => [],
-    ),
+    // An extra: data settings work without it. Both templates' installs
+    // (#876), the Developer Portfolio's marked with its template.
+    Promise.all(
+      (["stores", "developer"] as const).map((template) =>
+        read(
+          storeTemplateInstallListSchema,
+          `/v1/workspaces/${workspaceId}/dashboard-templates/${template}/installs`,
+          forwarded,
+        ).then(
+          ({ installs }) =>
+            installs.map((install) =>
+              template === "developer"
+                ? { ...install, template: "developer" as const }
+                : install,
+            ),
+          () => [],
+        ),
+      ),
+    ).then((lists) => lists.flat()),
   ]);
   return { ...sources, ...preparations, ...models, storeUpdates };
 }

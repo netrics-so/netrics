@@ -11,7 +11,7 @@ import { DashboardsBrowser } from "./dashboards-browser";
 import {
   listDashboards,
   listProjects,
-  listStoreTemplateInstalls,
+  listTemplateInstalls,
   listWorkspaces,
 } from "@/lib/api";
 import { getLocale, getT } from "@/lib/i18n/server";
@@ -62,10 +62,7 @@ export default async function DashboardsPage({ params }: DashboardsPageProps) {
       }),
       listProjects(forwarded, workspaceId),
       // Updates are an extra: the page works without them.
-      listStoreTemplateInstalls(forwarded, workspaceId).then(
-        ({ installs }) => installs,
-        () => [],
-      ),
+      listTemplateInstalls(forwarded, workspaceId),
     ]);
   const dashboards = listed.filter((d) => d.archivedAt === null);
   const scope = projectScope(membership.activeProjectId, projects);
